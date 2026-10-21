@@ -2112,7 +2112,7 @@ class _DefenseScheduleBulkImportViewState
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Confirming this import approves the listed faculty as reusable panelists and assigns them to these defenses.',
+                'No eligibility request is needed for admin imports. Confirming assigns the listed faculty to these defenses and automatically adds new panelists to the panelist pool.',
                 style: TextStyle(
                   color: DefensysTokens.textSecondaryOf(context),
                   fontSize: 13,

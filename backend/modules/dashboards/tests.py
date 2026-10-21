@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
-from defense.scheduler.models import DefenseSchedule, SchedulePanelist
+from defense.scheduler.models import DefenseSchedule, SchedulePanelist, PitEventGradingConfig
 from defense.stages.models import DefenseStage, StageDeliverable, StageGradingConfig
 from grading.rubrics.models import Rubric
 from grading.grades.models import TeamGrade
@@ -771,6 +771,9 @@ class DashboardApiTests(APITestCase):
             current_defense_stage='Concept Proposal',
         )
         TeamMembership.objects.create(team=team, student=student, is_leader=True)
+        PitEventGradingConfig.objects.create(
+            semester=semester, year_level='3rd Year', event_name='Concept Proposal',
+        )
         TeamGrade.objects.create(
             team=team,
             semester=semester,
@@ -799,6 +802,42 @@ class DashboardApiTests(APITestCase):
         self.assertNotIn('finalGrade', grades)
         self.assertNotIn('panelist', grades)
         self.assertNotIn('peer', grades)
+
+    def test_student_dashboard_uses_current_pit_event_after_completed_event(self):
+        student = User.objects.create_user(username='pit-current-event', role='student')
+        year = SchoolYear.objects.create(label='2098-2099')
+        semester = Semester.objects.create(school_year=year, label=Semester.FIRST)
+        team = StudentTeam.objects.create(
+            name='PIT Event Team', leader=student, semester=semester,
+            level=StudentTeam.LEVEL_3_PIT, year_level='3rd Year',
+            current_defense_stage='Poster Showcase', ready_for_stage='Poster Showcase',
+        )
+        TeamMembership.objects.create(team=team, student=student, is_leader=True)
+        for label in ['Poster Showcase', 'System Pitching']:
+            PitEventGradingConfig.objects.create(
+                semester=semester, year_level='3rd Year', event_name=label,
+            )
+        schedule = DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_PIT, team=team, semester=semester,
+            event_name='Poster Showcase', scheduled_date='2098-10-14',
+            start_time='08:00', room='Old Room', status=DefenseSchedule.STATUS_DONE,
+        )
+        TeamGrade.objects.create(
+            team=team, semester=semester, scope=TeamGrade.SCOPE_PIT,
+            stage_label='Poster Showcase', schedule=schedule,
+            panel_score=Decimal('90'), peer_score=Decimal('90'),
+            panel_weight=80, peer_weight=20, adviser_weight=0,
+            status=TeamGrade.STATUS_PUBLISHED,
+        )
+        self.client.force_authenticate(user=student)
+        response = self.client.get('/api/dashboards/student/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['current_stage'], 'System Pitching')
+        self.assertEqual(response.data['team']['currentStage'], 'System Pitching')
+        self.assertIsNone(response.data['schedule'])
+        self.assertIsNone(response.data['grades'])
+        self.assertFalse(response.data['peerEvalComplete'])
+        self.assertEqual(response.data['myPeerSubmissions'], [])
 
     def test_student_cannot_get_admin_dashboard(self):
         student = User.objects.create_user(

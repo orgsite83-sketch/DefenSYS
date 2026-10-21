@@ -1478,8 +1478,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           onChanged: changePanelists,
           placeholder: 'Choose faculty panelists',
           enabled: !busy,
-          emptyMessage:
-              'No eligible faculty. Manage the pool to request approval.',
+          emptyMessage: state.canApprovePanelists
+              ? 'No active faculty available.'
+              : 'No eligible faculty. Manage the pool to request approval.',
           detailBuilder: (person) {
             final id = asInt(person['id']);
             return state.canApprovePanelists &&
@@ -1492,7 +1493,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         if (state.selectablePanelists.isEmpty) ...[
           const SizedBox(height: 6),
           Text(
-            'No eligible faculty. Manage the pool to request approval.',
+            state.canApprovePanelists
+                ? 'No active faculty available.'
+                : 'No eligible faculty. Manage the pool to request approval.',
             style: TextStyle(color: _textSecondary, fontSize: 12),
           ),
         ],

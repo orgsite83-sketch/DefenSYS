@@ -32,7 +32,10 @@ class PitEventsManagementScreen extends ConsumerStatefulWidget {
 }
 
 class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementScreen> {
-  List<Map<String, dynamic>> _configs = [];
+  // Scheduler refreshes include the full event setup. Read that same snapshot
+  // so returning from Rubrics cannot retain and save obsolete assignments.
+  List<Map<String, dynamic>> get _configs =>
+      ref.read(defenseSchedulerProvider).pitEvents;
   bool _isLoadingConfigs = true;
   bool _isMatrixView = false;
   final Set<int> _expandedConfigIds = {};
@@ -54,13 +57,8 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
   Future<void> _loadData() async {
     setState(() => _isLoadingConfigs = true);
     await ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
-    final notifier = ref.read(defenseSchedulerProvider.notifier);
-    final activeSem = ref.read(defenseSchedulerProvider).activeSemester;
-    final semesterId = activeSem != null ? int.tryParse(activeSem['id']?.toString() ?? '') : null;
-    final configsList = await notifier.fetchPitEventConfigs(semesterId: semesterId);
     if (mounted) {
       setState(() {
-        _configs = configsList;
         _isLoadingConfigs = false;
       });
     }
@@ -1260,7 +1258,6 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   int _peerWeight = 20;
   bool _peerGradingEnabled = true;
   Map<String, dynamic> _conceptConfig = {};
-  String _projectSetupPolicy = 'continue';
 
   List<Map<String, dynamic>> _deliverables = [];
   Map<String, dynamic>? _selectedDeliverable;
@@ -1289,7 +1286,6 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     if (_peerWeight != initialPeerWeight) return true;
     if (_peerGradingEnabled != normInitialPeerGrading) return true;
     if (jsonEncode(_conceptConfig) != jsonEncode(widget.config?['concept_config'] ?? {})) return true;
-    if (_projectSetupPolicy != (widget.config?['project_setup_policy'] ?? 'continue')) return true;
 
     if (_deliverables.length != initialDelList.length) return true;
 
@@ -1363,7 +1359,6 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       final initialPeerGrading = widget.config!['peer_grading_enabled'];
       _peerGradingEnabled = initialPeerGrading is bool ? initialPeerGrading : true;
       _conceptConfig = Map<String, dynamic>.from(widget.config!['concept_config'] as Map? ?? {});
-      _projectSetupPolicy = widget.config!['project_setup_policy']?.toString() ?? 'continue';
 
       final delList = widget.config!['deliverables'] as List? ?? [];
       _deliverables = delList.map((item) {
@@ -1566,7 +1561,6 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'peer_weight': _peerWeight,
       'peer_grading_enabled': _peerGradingEnabled,
       'concept_config': _conceptConfig,
-      'project_setup_policy': _projectSetupPolicy,
       'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': deliverablesPayload,
     };
@@ -2716,13 +2710,24 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     final assignedPitYear = dashboard?['pit_lead_year']?.toString().trim();
     final pitYear = assignedPitYear ?? '';
 
-    final panelRubrics = state.rubrics.where((r) {
-      return r['scope'] == 'pit' && r['evaluation_type'] == 'panel';
-    }).toList();
-
-    final peerRubrics = state.peerRubrics.where((r) {
-      return r['scope'] == 'pit' && r['evaluation_type'] == 'peer';
-    }).toList();
+    final semesterId = int.tryParse(activeSem?['id']?.toString() ?? '');
+    final eventId = int.tryParse(widget.config?['id']?.toString() ?? '');
+    bool isEligibleRubric(Map<String, dynamic> rubric, String role) {
+      final id = int.tryParse(rubric['id']?.toString() ?? '');
+      final assignedEventId = int.tryParse(rubric['pit_event_id']?.toString() ?? '');
+      final currentId = int.tryParse(widget.config?['${role}_rubric_id']?.toString() ?? '');
+      final assignedElsewhere = (assignedEventId != null && assignedEventId != eventId) ||
+          state.pitEvents.any((event) =>
+            int.tryParse(event['id']?.toString() ?? '') != eventId &&
+            [event['panel_rubric_id'], event['peer_rubric_id']].any((value) =>
+              value != null && int.tryParse(value.toString()) == id));
+      return id != null && rubric['scope'] == 'pit' &&
+          rubric['evaluation_type'] == role && rubric['status'] == 'published' &&
+          semesterId != null && int.tryParse(rubric['semester_id']?.toString() ?? '') == semesterId &&
+          !assignedElsewhere && (rubric['is_locked'] != true || id == currentId);
+    }
+    final panelRubrics = state.rubrics.where((r) => isEligibleRubric(r, 'panel')).toList();
+    final peerRubrics = state.peerRubrics.where((r) => isEligibleRubric(r, 'peer')).toList();
 
     final preDeliverables = _deliverables.where((d) => d['deliverable_type'] == 'pre').toList();
     final postDeliverables = _deliverables.where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault').toList();
@@ -3009,19 +3014,6 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                 _markDirty();
                               },
                             ),
-                            const SizedBox(height: 16),
-                            DropdownButtonFormField<String>(
-                              initialValue: _projectSetupPolicy,
-                              decoration: const InputDecoration(labelText: 'Project requirement'),
-                              items: const [
-                                DropdownMenuItem(value: 'continue', child: Text('Existing projects allowed')),
-                                DropdownMenuItem(value: 'new', child: Text('New projects required')),
-                              ],
-                              onChanged: isLocked || widget.config?['roster_setup_opened'] == true ? null : (value) {
-                                setState(() => _projectSetupPolicy = value ?? 'continue');
-                                _markDirty();
-                              },
-                            ),
                           ],
                         ),
 
@@ -3287,7 +3279,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                               const SizedBox(width: 8),
                                               const Expanded(
                                                 child: Text(
-                                                  'No published PIT rubrics found for this semester. Create rubrics in Evaluation Rubrics to attach.',
+                                                  'No available published PIT rubrics for this event. Create rubrics in Evaluation Rubrics to attach.',
                                                   style: TextStyle(
                                                     fontSize: 11.5,
                                                     color: Color(0xFF92400E),
@@ -3324,7 +3316,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                         initialValue: _panelRubricId,
                                         decoration: _dialogInputDecoration(
                                           labelText: 'Panel Rubric',
-                                          helperText: panelRubrics.isEmpty ? 'No published panel rubrics found for this semester' : null,
+                                          helperText: panelRubrics.isEmpty ? 'No available published panel rubrics for this event' : null,
                                           prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: DefensysTokens.maroon),
                                         ),
                                         style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 13.5, color: DefensysTokens.textPrimary),
@@ -3348,6 +3340,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                             );
                                             list.add(DropdownMenuItem<int?>(
                                               value: _panelRubricId,
+                                              enabled: false,
                                               child: Text(currentRubric['name']?.toString() ?? 'Selected Rubric'),
                                             ));
                                           }
@@ -3363,7 +3356,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                         initialValue: _peerRubricId,
                                         decoration: _dialogInputDecoration(
                                           labelText: 'Peer Rubric',
-                                          helperText: peerRubrics.isEmpty ? 'No published peer rubrics found for this semester' : null,
+                                          helperText: peerRubrics.isEmpty ? 'No available published peer rubrics for this event' : null,
                                           prefixIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFFD97706)),
                                         ),
                                         style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 13.5, color: DefensysTokens.textPrimary),
@@ -3387,6 +3380,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                             );
                                             list.add(DropdownMenuItem<int?>(
                                               value: _peerRubricId,
+                                              enabled: false,
                                               child: Text(currentRubric['name']?.toString() ?? 'Selected Rubric'),
                                             ));
                                           }

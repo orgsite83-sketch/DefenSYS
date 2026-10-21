@@ -10,6 +10,7 @@ import '../../../widgets/defense/team_defense_records.dart';
 import '../../../theme/defensys_tokens.dart';
 import 'peer_eval_tab.dart';
 import 'student_deliverables_tab.dart';
+import 'student_stage_data.dart';
 
 class StudentEventsTab extends ConsumerStatefulWidget {
   final bool isCapstone;
@@ -40,6 +41,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   bool _isDefensePast = false;
   String? _selectedStageForView;
   bool _refreshQueued = false;
+
+  String? get _requestedStage =>
+      _selectedStageForView ??
+      widget.studentData?['team']?['currentStage']?.toString() ??
+      widget.studentData?['current_stage']?.toString();
 
   String? get _studentYearLevel {
     final y = widget.studentData?['year_level']?.toString().trim();
@@ -80,7 +86,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
           .read(capstoneDeliverablesProvider.notifier)
           .fetchDeliverables(
             scope: widget.isCapstone ? 'capstone' : 'pit',
-            selectedStage: widget.initialStage,
+            selectedStage: _requestedStage,
             yearLevel: widget.isCapstone ? null : _studentYearLevel,
           );
     });
@@ -247,6 +253,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
           .read(capstoneDeliverablesProvider.notifier)
           .fetchDeliverables(
             scope: widget.isCapstone ? 'capstone' : 'pit',
+            selectedStage: _requestedStage,
             yearLevel: widget.isCapstone ? null : _studentYearLevel,
           ),
       ref
@@ -346,13 +353,6 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   _selectedStageForView!.trim().toLowerCase(),
             ))
         ? _selectedStageForView!
-        : (delivState.selectedStage.isNotEmpty &&
-              stageOptions.any(
-                (s) =>
-                    s.trim().toLowerCase() ==
-                    delivState.selectedStage.trim().toLowerCase(),
-              ))
-        ? delivState.selectedStage
         : (activeStageName.isNotEmpty
               ? activeStageName
               : (stageOptions.firstOrNull ?? ''));
@@ -448,7 +448,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   _buildPitEventHeader(
                     selectedStageName: selectedStage,
                     stageOptions: stageOptions,
-                    scheduleData: scheduleData,
+                    scheduleData: studentStageRecord(
+                      stage: selectedStage,
+                      stages: stagesList,
+                      field: 'schedule',
+                      fallback: scheduleData,
+                    ),
                     team: team,
                     grades: grades,
                     onStageSelected: (stage) {
@@ -1881,7 +1886,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         stageInfo['is_officially_complete'] == true ||
         stageInfo['stage_status_detail']?.toString() == 'passed' ||
         stageInfo['stage_progress_status']?.toString() == 'passed' ||
-        (selectedIdx != -1 && activeIdx != -1 && selectedIdx < activeIdx);
+        (isCapstone &&
+            selectedIdx != -1 &&
+            activeIdx != -1 &&
+            selectedIdx < activeIdx);
 
     final isActive = (normSelected == normActive);
     final isUpcoming = !isCleared && !isActive;

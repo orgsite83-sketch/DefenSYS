@@ -352,7 +352,7 @@ def _team_payload(team):
         'schoolYear': team.semester.school_year.label,
         'status': team.status,
         'isCapstone': team.is_capstone,
-        'currentStage': (team.current_defense_stage or team.ready_for_stage or active_stage) if has_capstone_stages else None,
+        'currentStage': active_stage if has_capstone_stages else None,
         'readyForStage': (team.ready_for_stage or active_stage) if has_capstone_stages else None,
         'deliverableCount': team.deliverable_submissions.count(),
         'adviserName': _display_name(team.adviser) if team.adviser else None,
@@ -1497,7 +1497,7 @@ class StudentDashboardView(APIView):
         academic_record = _latest_academic_record(user)
         team_payload = _team_payload(team) if team else None
         # Query active schedule scoped to team's current defense stage, fallback to most recent schedule of current stage
-        curr_stage = (team.current_defense_stage or team.ready_for_stage or '').strip() if team else ''
+        curr_stage = (team_payload.get('currentStage') or '').strip() if team_payload else ''
         schedule = None
         if team and curr_stage:
             schedule = (
@@ -1556,7 +1556,7 @@ class StudentDashboardView(APIView):
             if team.is_capstone:
                 from grading.grades.services import canonical_capstone_grade_for_team, resolve_canonical_capstone_grade
                 canonical_grade = canonical_capstone_grade_for_team(
-                    team, team.semester, stage_label=team.current_defense_stage
+                    team, team.semester, stage_label=curr_stage
                 )
                 if canonical_grade is not None:
                     canonical_grade = resolve_canonical_capstone_grade(canonical_grade)

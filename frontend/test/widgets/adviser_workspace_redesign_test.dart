@@ -138,7 +138,7 @@ class _UpcomingDefenseNotifier extends AdviserDefenseNotifier {
 }
 
 void main() {
-  testWidgets('endorsed team shows post-defense files as locked', (
+  testWidgets('endorsement alone keeps post-defense files hidden', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1500, 1000);
@@ -169,6 +169,7 @@ void main() {
                     },
                     'endorsed': true,
                     'archive_unlocked': false,
+                    'post_defense_ready': false,
                     'pre': [],
                     'post': [
                       {
@@ -194,11 +195,11 @@ void main() {
       ],
     );
 
-    expect(find.text('Post-Defense Deliverables'), findsOneWidget);
-    expect(find.text('Final Manuscript'), findsOneWidget);
+    expect(find.text('Post-Defense Deliverables'), findsNothing);
+    expect(find.text('Final Manuscript'), findsNothing);
     expect(
       find.textContaining('Student uploads and faculty review open once'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('Awaiting student upload'), findsNothing);
   });

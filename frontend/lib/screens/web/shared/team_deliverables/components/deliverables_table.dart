@@ -1667,10 +1667,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final endorsed = stage['endorsed'] == true;
     final archiveUnlocked = stage['archive_unlocked'] == true;
     final showPostChecklist =
-        vault.isNotEmpty &&
-        (endorsed ||
-            stage['has_active_schedule'] == true ||
-            stage['has_done_schedule'] == true);
+        vault.isNotEmpty && stage['post_defense_ready'] == true;
     final canEndorse =
         configured &&
         _canEndorseTeam(stage) &&
@@ -1823,18 +1820,27 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               '$teamId:$selectedStage',
               FacultyRequirementsViewState.new,
             ),
-            items: [for (final item in [...pre, ...vault]) {
-              ...item,
-              'can_faculty_review': item['can_faculty_review'] is bool
-                  ? item['can_faculty_review']
-                  : (item['type'] == 'post' || item['deliverable_type'] == 'post')
+            items: [
+              for (final item in [...pre, if (showPostChecklist) ...vault])
+                {
+                  ...item,
+                  'can_faculty_review': item['can_faculty_review'] is bool
+                      ? item['can_faculty_review']
+                      : (item['type'] == 'post' ||
+                            item['deliverable_type'] == 'post')
                       ? stage['can_faculty_review_post'] == true
                       : stage['can_faculty_review'] == true,
-            }],
+                },
+            ],
             stageLabel: selectedStage,
-            programScope: programTrack(scope: widget.state.scope, data: team).name,
+            programScope: programTrack(
+              scope: widget.state.scope,
+              data: team,
+            ).name,
             onRequestRevision: (item, file) => _promptRejectDialog(
-              team, selectedStage, item,
+              team,
+              selectedStage,
+              item,
               fileId: usesGroupedDocumentCard(item) ? file['id'] as int : null,
               requestRevision: true,
             ),
@@ -1963,8 +1969,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 final requiredUploaded = parseAsInt(stage['required_uploaded']);
                 final requiredTotal = parseAsInt(stage['required_total']);
                 final configuredReq = stage['deliverables_configured'] == true;
-                final archiveUnlocked = stage['archive_unlocked'] == true;
-
                 final reqBlock = Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -1990,7 +1994,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   ),
                 );
 
-                if (!archiveUnlocked) {
+                if (!showPostChecklist) {
                   return reqBlock;
                 }
 

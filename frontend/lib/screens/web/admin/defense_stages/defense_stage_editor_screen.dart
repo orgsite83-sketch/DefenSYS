@@ -11,6 +11,7 @@ import '../../../../services/defense_stages_provider.dart';
 import '../../../../services/rubric_engine_provider.dart';
 import '../../../../services/unsaved_changes_provider.dart';
 import '../../../../services/auth_provider.dart';
+import '../../../../services/app/data_refresh_provider.dart';
 import '../../../../utils/stage_setup_draft.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
@@ -94,6 +95,10 @@ class _DefenseStageEditorScreenState
   String? _adviserRubricName;
   int? _peerRubricId;
   String? _peerRubricName;
+  final Set<String> _editedRubricRoles = {};
+  final Map<String, int?> _serverRubricIds = {};
+  bool _editorVisible = false;
+  bool _refreshingRubrics = false;
 
   void _markDirty() {
     if (_loading || _isDirty) return;
@@ -118,6 +123,8 @@ class _DefenseStageEditorScreenState
       'minutes_deliverable_id': _minutesNumber.text,
       'minutes_deliverable_label': _minutesName.text,
       'deliverables': _deliverables,
+      'rubric_assignment_changes': _editedRubricRoles.toList(),
+      'rubric_assignment_base': _serverRubricIds,
       'grading_config': {
         'panel_weight': _panel.text,
         'adviser_weight': _adviser.text,
@@ -256,6 +263,38 @@ class _DefenseStageEditorScreenState
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = TickerMode.of(context);
+    if (visible && !_editorVisible && !_loading) {
+      _scheduleRubricRefresh();
+    }
+    _editorVisible = visible;
+  }
+
+  void _scheduleRubricRefresh() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _editorVisible) _refreshRubricAssignments();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Future<void> _refreshRubricAssignments() async {
+    if (_loading || _saving || _refreshingRubrics) return;
+    _refreshingRubrics = true;
+    try {
+      final detail = await ref.read(defenseStagesProvider.notifier)
+          .fetchStageDetail(widget.stageId, semesterId: _semesterId);
+      if (!mounted || detail?['grading_config'] is! Map) return;
+      setState(() => _syncServerRubricAssignments(
+        Map<String, dynamic>.from(detail!['grading_config'] as Map),
+      ));
+    } finally {
+      _refreshingRubrics = false;
+    }
+  }
+
+  @override
   void dispose() {
     _detachFieldListeners();
     _label.dispose();
@@ -279,6 +318,8 @@ class _DefenseStageEditorScreenState
       _loading = true;
       _error = null;
     });
+    _editedRubricRoles.clear();
+    _serverRubricIds.clear();
 
     await ref.read(academicPeriodProvider.notifier).fetchPeriods();
     final active = ref.read(academicPeriodProvider).activeSemester;
@@ -313,6 +354,7 @@ class _DefenseStageEditorScreenState
       final grading = detail['grading_config'];
       if (grading is Map) {
         _applyWeights(Map<String, dynamic>.from(grading));
+        _syncServerRubricAssignments(Map<String, dynamic>.from(grading));
       }
     }
 
@@ -347,7 +389,16 @@ class _DefenseStageEditorScreenState
     // Locks and workflow metadata always come from the server.
     _stage = serverStage;
     final grading = draft.fields['grading_config'];
-    if (grading is Map) _applyWeights(Map<String, dynamic>.from(grading));
+    if (grading is Map) {
+      // A saved setup snapshot is not an instruction to undo assignments made
+      // in Rubrics since the draft was written. Restore only explicit edits.
+      final base = draft.fields['rubric_assignment_base'] as Map? ?? {};
+      final changes = draft.fields['rubric_assignment_changes'] as List? ?? [];
+      _editedRubricRoles.addAll(changes.whereType<String>().where((role) =>
+        base.containsKey(role) && _asInt(base[role]) == _serverRubricIds[role]));
+      _applyWeights(Map<String, dynamic>.from(grading));
+      _applyRubricAssignments(Map<String, dynamic>.from(grading), roles: _editedRubricRoles);
+    }
     _activeTab = draft.tab;
   }
 
@@ -376,12 +427,32 @@ class _DefenseStageEditorScreenState
     _panel.text = grading['panel_weight']?.toString() ?? '50';
     _adviser.text = grading['adviser_weight']?.toString() ?? '30';
     _peer.text = grading['peer_weight']?.toString() ?? '20';
-    _panelRubricId = _asInt(grading['panel_rubric_id']);
-    _panelRubricName = grading['panel_rubric_name']?.toString();
-    _adviserRubricId = _asInt(grading['adviser_rubric_id']);
-    _adviserRubricName = grading['adviser_rubric_name']?.toString();
-    _peerRubricId = _asInt(grading['peer_rubric_id']);
-    _peerRubricName = grading['peer_rubric_name']?.toString();
+  }
+
+  void _syncServerRubricAssignments(Map<String, dynamic> grading) {
+    for (final role in ['panel', 'adviser', 'peer']) {
+      final id = _asInt(grading['${role}_rubric_id']);
+      // A newer assignment in Rubrics supersedes an older setup draft.
+      if (_serverRubricIds[role] != id) _editedRubricRoles.remove(role);
+      _serverRubricIds[role] = id;
+    }
+    _applyRubricAssignments(grading,
+      roles: {'panel', 'adviser', 'peer'}.difference(_editedRubricRoles));
+  }
+
+  void _applyRubricAssignments(Map<String, dynamic> grading, {required Set<String> roles}) {
+    if (roles.contains('panel')) {
+      _panelRubricId = _asInt(grading['panel_rubric_id']);
+      _panelRubricName = grading['panel_rubric_name']?.toString();
+    }
+    if (roles.contains('adviser')) {
+      _adviserRubricId = _asInt(grading['adviser_rubric_id']);
+      _adviserRubricName = grading['adviser_rubric_name']?.toString();
+    }
+    if (roles.contains('peer')) {
+      _peerRubricId = _asInt(grading['peer_rubric_id']);
+      _peerRubricName = grading['peer_rubric_name']?.toString();
+    }
   }
 
   int? _asInt(dynamic value) {
@@ -499,9 +570,9 @@ class _DefenseStageEditorScreenState
           'panel_weight': int.tryParse(_panel.text.trim()) ?? 0,
           'adviser_weight': int.tryParse(_adviser.text.trim()) ?? 0,
           'peer_weight': int.tryParse(_peer.text.trim()) ?? 0,
-          'panel_rubric_id': _panelRubricId,
-          'adviser_rubric_id': _adviserRubricId,
-          'peer_rubric_id': _peerRubricId,
+          if (_editedRubricRoles.contains('panel')) 'panel_rubric_id': _panelRubricId,
+          if (_editedRubricRoles.contains('adviser')) 'adviser_rubric_id': _adviserRubricId,
+          if (_editedRubricRoles.contains('peer')) 'peer_rubric_id': _peerRubricId,
         });
 
     if (!mounted) return;
@@ -535,7 +606,10 @@ class _DefenseStageEditorScreenState
       final semMatch = _asInt(r['semester_id']) == _semesterId;
       final evalMatch = r['evaluation_type'] == evaluationType;
       final publishedMatch = r['status'] == 'published';
-      return scopeMatch && semMatch && evalMatch && publishedMatch;
+      final assignedStageId = _asInt(r['defense_stage_id']);
+      final stageMatch = assignedStageId == null || assignedStageId == widget.stageId;
+      final available = r['is_locked'] != true || assignedStageId == widget.stageId;
+      return scopeMatch && semMatch && evalMatch && publishedMatch && stageMatch && available;
     }).toList();
   }
 
@@ -547,24 +621,6 @@ class _DefenseStageEditorScreenState
     final options = _getRubricOptions(evaluationType);
     final items = options.map((r) {
       final id = _asInt(r['id']);
-      final assignedStageId = _asInt(r['defense_stage_id']);
-      final assignedStageLabel = r['defense_stage_label']?.toString();
-      final isAssignedToOther = assignedStageId != null && assignedStageId != widget.stageId;
-
-      if (isAssignedToOther) {
-        return DropdownMenuItem<int>(
-          value: id,
-          enabled: false,
-          child: Text(
-            '${r['name']} (Assigned to: ${assignedStageLabel ?? "Another Stage"})',
-            style: TextStyle(
-              color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF9CA3AF),
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        );
-      }
-
       return DropdownMenuItem<int>(
         value: id,
         child: Text(
@@ -580,6 +636,7 @@ class _DefenseStageEditorScreenState
     if (currentId != null && !items.any((item) => item.value == currentId)) {
       items.add(DropdownMenuItem<int>(
         value: currentId,
+        enabled: false,
         child: Text(
           currentName ?? 'Rubric #$currentId',
           style: TextStyle(
@@ -718,6 +775,12 @@ class _DefenseStageEditorScreenState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(dataRefreshProvider, (previous, next) {
+      if (previous?[DataArea.defenseStages] != next[DataArea.defenseStages] &&
+          _editorVisible) {
+        _scheduleRubricRefresh();
+      }
+    });
     final semesters = _semesterOptions();
     final activePeriod = ref.read(academicPeriodProvider).activeSemester;
     final activeSemObj = semesters.firstWhere(
@@ -1169,7 +1232,7 @@ class _DefenseStageEditorScreenState
                                                 const SizedBox(width: 10),
                                                 Expanded(
                                                   child: Text(
-                                                    'No published Capstone rubrics found for this semester. Create and publish rubrics in Evaluation Rubrics so they can be attached here.',
+                                                    'No available published Capstone rubrics for this stage. Create and publish rubrics in Evaluation Rubrics so they can be attached here.',
                                                     style: TextStyle(
                                                       fontSize: 12,
                                                       color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E),
@@ -1199,6 +1262,7 @@ class _DefenseStageEditorScreenState
                                         ],
                                         const SizedBox(height: 16),
                                         DropdownButtonFormField<int>(
+                                          key: ValueKey('panel-rubric-$_panelRubricId'),
                                           initialValue: _panelRubricId,
                                           dropdownColor: _surfaceColor,
                                           style: TextStyle(color: _textPrimaryColor, fontSize: 13),
@@ -1220,12 +1284,14 @@ class _DefenseStageEditorScreenState
                                               : (value) {
                                                   setState(() {
                                                     _panelRubricId = value;
+                                                    _editedRubricRoles.add('panel');
                                                   });
                                                   _markDirty();
                                                 },
                                         ),
                                         const SizedBox(height: 14),
                                         DropdownButtonFormField<int>(
+                                          key: ValueKey('adviser-rubric-$_adviserRubricId'),
                                           initialValue: _adviserRubricId,
                                           dropdownColor: _surfaceColor,
                                           style: TextStyle(color: _textPrimaryColor, fontSize: 13),
@@ -1243,12 +1309,14 @@ class _DefenseStageEditorScreenState
                                               : (value) {
                                                   setState(() {
                                                     _adviserRubricId = value;
+                                                    _editedRubricRoles.add('adviser');
                                                   });
                                                   _markDirty();
                                                 },
                                         ),
                                         const SizedBox(height: 14),
                                         DropdownButtonFormField<int>(
+                                          key: ValueKey('peer-rubric-$_peerRubricId'),
                                           initialValue: _peerRubricId,
                                           dropdownColor: _surfaceColor,
                                           style: TextStyle(color: _textPrimaryColor, fontSize: 13),
@@ -1266,6 +1334,7 @@ class _DefenseStageEditorScreenState
                                               : (value) {
                                                   setState(() {
                                                     _peerRubricId = value;
+                                                    _editedRubricRoles.add('peer');
                                                   });
                                                   _markDirty();
                                                 },

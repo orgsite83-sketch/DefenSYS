@@ -1,10 +1,13 @@
 import 'package:defensys/screens/web/admin/defense_board/defense_board_screen.dart';
 import 'package:defensys/screens/web/admin/defense_board/components/session_evaluator_access_dialog.dart';
+import 'package:defensys/screens/web/admin/defense_scheduler/components/team_readiness_tracker.dart';
+import 'package:defensys/screens/web/admin/defense_scheduler/defense_scheduler_screen.dart';
 import 'package:defensys/services/admin/external_evaluator_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/defense_board_provider.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +35,10 @@ class _Board extends DefenseBoardNotifier {
 }
 
 class _Scheduler extends DefenseSchedulerNotifier {
+  _Scheduler([this.initialState = const DefenseSchedulerState()]);
+  final DefenseSchedulerState initialState;
+  @override
+  DefenseSchedulerState build() => initialState;
   @override
   Future<void> fetchSchedules({
     String? search,
@@ -161,6 +168,7 @@ Future<void> _pump(
   required _External external,
   List<Map<String, dynamic>>? schedules,
   Map<String, dynamic> user = _admin,
+  DefenseSchedulerState schedulerState = const DefenseSchedulerState(),
   double width = 1400,
   bool dark = false,
 }) async {
@@ -175,7 +183,7 @@ Future<void> _pump(
       overrides: [
         authProvider.overrideWith(() => _Auth(user)),
         defenseBoardProvider.overrideWith(() => _Board(schedules ?? [])),
-        defenseSchedulerProvider.overrideWith(_Scheduler.new),
+        defenseSchedulerProvider.overrideWith(() => _Scheduler(schedulerState)),
         externalEvaluatorProvider.overrideWith(() => external),
       ],
       child: RepaintBoundary(
@@ -216,6 +224,168 @@ Future<void> _menu(
 }
 
 void main() {
+  DefenseSchedulerState readinessState({String capstoneStatus = 'ready'}) =>
+      DefenseSchedulerState(
+        canScheduleCapstone: true,
+        canSchedulePit: true,
+        defenseStages: const [
+          {'id': 1, 'label': 'Final Defense'},
+        ],
+        pitEvents: const [
+          {
+            'event_name': 'PIT Presentation',
+            'year_level': '1st Year',
+            'deliverables': [],
+          },
+        ],
+        teams: [
+          {
+            'id': 1,
+            'name': 'Capstone Team',
+            'level': '4th Year Capstone',
+            'section': 'Capstone Section',
+            if (capstoneStatus == 'ready') 'ready_for_stage': 'Final Defense',
+            if (capstoneStatus == 'completed')
+              'completed_stages': ['Final Defense'],
+            'stage_progress': {'Final Defense': capstoneStatus},
+          },
+          for (final id in [2, 3])
+            {
+              'id': id,
+              'name': 'PIT Team $id',
+              'level': '1st Year PIT',
+              'year_level': '1st Year',
+              'section': 'PIT Section',
+              'ready_for_stage': 'PIT Presentation',
+            },
+          {
+            'id': 4,
+            'name': 'Completed PIT Team',
+            'level': '1st Year PIT',
+            'year_level': '1st Year',
+            'section': 'PIT Section',
+            'completed_stages': ['PIT Presentation'],
+          },
+        ],
+      );
+
+  for (final user in [
+    _admin,
+    {..._admin, 'is_pit_lead': true},
+    {'id': 2, 'role': 'faculty', 'is_superuser': true, 'is_pit_lead': true},
+  ]) {
+    testWidgets('admin readiness stays Capstone for $user', (tester) async {
+      await _pump(
+        tester,
+        external: _External(),
+        schedules: [],
+        user: user,
+        width: 1920,
+        schedulerState: readinessState(),
+      );
+      expect(
+        find.text('PIT'),
+        findsOneWidget,
+      ); // Schedule scope remains available.
+      expect(find.text('1 Ready'), findsOneWidget);
+      expect(
+        find.textContaining('1 team has met all deliverable requirements'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Pre-Defense Readiness Queue'));
+      await tester.pumpAndSettle();
+      expect(find.text('PIT'), findsNothing);
+      expect(find.text('PIT Presentation'), findsNothing);
+      expect(find.text('PIT Section'), findsNothing);
+      expect(find.text('Capstone Section'), findsOneWidget);
+      expect(
+        find.text('Capstone Deliverables & Readiness Queue'),
+        findsOneWidget,
+      );
+      expect(find.text('Schedule 1 Ready Team'), findsNWidgets(2));
+      final tracker = tester.widget<TeamReadinessTracker>(
+        find.byType(TeamReadinessTracker),
+      );
+      expect(tracker.scope, 'capstone');
+      expect(tracker.activeStageOrEventName, 'Final Defense');
+      final export = tester.widget<ReportExportMenu>(
+        find.byType(ReportExportMenu),
+      );
+      expect(export.params['scope'], 'capstone');
+      expect(export.params['stage'], 'Final Defense');
+      await capturePreview(
+        tester,
+        find.byKey(const ValueKey('board-session-preview')),
+        'admin-capstone-readiness',
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Schedule 1 Ready Team').first);
+      await tester.pumpAndSettle();
+      final scheduler = tester.widget<DefenseSchedulerScreen>(
+        find.byType(DefenseSchedulerScreen),
+      );
+      expect(scheduler.initialScope, 'capstone');
+      expect(scheduler.initialStageId, 1);
+      expect(scheduler.initialEventName, isNull);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final status in ['pending', 'completed']) {
+    testWidgets('admin readiness badge ignores PIT when Capstone is $status', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        external: _External(),
+        schedules: [],
+        schedulerState: readinessState(capstoneStatus: status),
+      );
+      expect(
+        find.text(status == 'completed' ? 'Complete' : '1 Pending'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('teams have met all deliverable requirements'),
+        findsNothing,
+      );
+      expect(find.text('Open Readiness Queue'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('PIT lead retains PIT readiness and counts', (tester) async {
+    await _pump(
+      tester,
+      external: _External(),
+      schedules: [],
+      user: {
+        'id': 2,
+        'role': 'faculty',
+        'is_pit_lead': true,
+        'pit_lead_year': '1st Year',
+      },
+      width: 1920,
+      schedulerState: readinessState(),
+    );
+    expect(find.text('2 Ready'), findsOneWidget);
+    expect(
+      find.textContaining('2 teams have met all deliverable requirements'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Pre-Defense Readiness Queue'));
+    await tester.pumpAndSettle();
+    final tracker = tester.widget<TeamReadinessTracker>(
+      find.byType(TeamReadinessTracker),
+    );
+    expect(tracker.scope, 'pit');
+    expect(tracker.activeStageOrEventName, 'PIT Presentation');
+    expect(find.text('PIT Section'), findsOneWidget);
+    expect(find.text('Capstone Section'), findsNothing);
+    expect(find.text('Schedule 2 Ready Teams'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('team slots show start and end times', (tester) async {
     await _pump(
       tester,

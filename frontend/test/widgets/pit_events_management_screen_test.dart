@@ -14,8 +14,10 @@ import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import '../helpers/capture_preview.dart';
 
 class _FakeScheduler extends DefenseSchedulerNotifier {
-  _FakeScheduler({this.configs = const []});
+  _FakeScheduler({this.configs = const [], this.rubrics = const [], this.peerRubrics = const []});
   final List<Map<String, dynamic>> configs;
+  final List<Map<String, dynamic>> rubrics;
+  final List<Map<String, dynamic>> peerRubrics;
   Map<String, dynamic>? saved;
 
   @override
@@ -25,8 +27,10 @@ class _FakeScheduler extends DefenseSchedulerNotifier {
   }
 
   @override
-  DefenseSchedulerState build() => const DefenseSchedulerState(
+  DefenseSchedulerState build() => DefenseSchedulerState(
     activeSemester: {'id': 1, 'display_name': '1st Semester, A.Y. 2026-2027'},
+    rubrics: rubrics,
+    peerRubrics: peerRubrics,
     isLoading: false,
   );
 
@@ -36,7 +40,9 @@ class _FakeScheduler extends DefenseSchedulerNotifier {
     String? scope,
     String? status,
     String? successMessage,
-  }) async {}
+  }) async {
+    state = state.copyWith(pitEvents: configs);
+  }
 
   @override
   Future<List<Map<String, dynamic>>> fetchPitEventConfigs({
@@ -91,13 +97,19 @@ void main() {
     Map<String, dynamic>? config,
     int tab = 1,
     Size size = const Size(1400, 1200),
+    List<Map<String, dynamic>> additionalConfigs = const [],
+    List<Map<String, dynamic>> rubrics = const [],
+    List<Map<String, dynamic>> peerRubrics = const [],
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.runAsync(() => loadPreviewFonts());
-    final scheduler = _FakeScheduler(configs: [if (config != null) config]);
+    final scheduler = _FakeScheduler(
+      configs: [if (config != null) config, ...additionalConfigs],
+      rubrics: rubrics, peerRubrics: peerRubrics,
+    );
     await tester.pumpWidget(ProviderScope(
       overrides: [
         authProvider.overrideWith(_FakeAuth.new),
@@ -168,6 +180,107 @@ void main() {
     expect(find.text('Deliverable name cannot be empty (item 1).'), findsOneWidget);
     dismissFeedbackToasts();
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('rubric assignments refresh with scheduler before editing an event', (tester) async {
+    final scheduler = await openPeerSetup(tester, config: {
+      ...sampleConfig,
+      'panel_rubric_id': null,
+      'peer_rubric_id': null,
+    });
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    // The retained setup page receives the same refresh as a return from Rubrics.
+    scheduler.configs[0] = {...sampleConfig};
+    await scheduler.fetchSchedules();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pit-event-menu-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit event'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2. Grading & Rubrics'));
+    await tester.pumpAndSettle();
+    final dropdowns = tester.widgetList<DropdownButtonFormField<int?>>(
+      find.byType(DropdownButtonFormField<int?>),
+    ).toList();
+    expect(dropdowns.map((field) => field.initialValue), [10, 20]);
+    await tester.tap(find.text('Save Changes'));
+    await tester.pumpAndSettle();
+    expect(scheduler.saved?['panel_rubric_id'], 10);
+    expect(scheduler.saved?['peer_rubric_id'], 20);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final creating in [false, true]) {
+    testWidgets('PIT ${creating ? 'creation' : 'editing'} excludes old and unavailable rubric choices', (tester) async {
+      List<Map<String, dynamic>> choices(String role, int currentId) {
+        final rubric = {
+          'id': currentId, 'name': '1st Year PIT — $role Rubric', 'scope': 'pit',
+          'evaluation_type': role, 'status': 'published', 'semester_id': 1,
+          'pit_event_id': 1, 'is_locked': true,
+        };
+        return [
+          rubric,
+          {...rubric, 'id': currentId + 1, 'pit_event_id': 2},
+          {...rubric, 'id': currentId + 2, 'pit_event_id': null, 'is_locked': false,
+            'name': 'Available $role'},
+          {...rubric, 'id': currentId + 3, 'pit_event_id': null, 'semester_id': 2},
+          {...rubric, 'id': currentId + 4, 'pit_event_id': null, 'status': 'draft'},
+          {...rubric, 'id': currentId + 5, 'pit_event_id': null},
+          {...rubric, 'id': currentId + 6, 'pit_event_id': 99, 'is_locked': false},
+          {...rubric, 'id': currentId + 7, 'pit_event_id': null, 'is_locked': false},
+        ];
+      }
+      final scheduler = await openPeerSetup(tester,
+        config: creating ? null : sampleConfig,
+        additionalConfigs: [
+          if (creating) sampleConfig,
+          {'id': 2, 'event_name': 'Completed event', 'is_locked': true,
+            'panel_rubric_id': 11, 'peer_rubric_id': 21},
+          {'id': 3, 'event_name': 'Another event',
+            'panel_rubric_id': 17, 'peer_rubric_id': 27},
+        ],
+        rubrics: choices('panel', 10), peerRubrics: choices('peer', 20),
+      );
+      final pickers = find.byType(DropdownButtonFormField<int?>);
+      final fields = tester.widgetList<DropdownButton<int?>>(
+        find.descendant(of: pickers, matching: find.byType(DropdownButton<int?>)),
+      ).toList();
+      expect(fields[0].items!.map((item) => item.value), [null, if (!creating) 10, 12]);
+      expect(fields[1].items!.map((item) => item.value), [null, if (!creating) 20, 22]);
+      for (final entry in [(pickers.first, 'panel'), (pickers.last, 'peer')]) {
+        await tester.ensureVisible(entry.$1);
+        await tester.tap(entry.$1);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Available ${entry.$2}').last);
+        await tester.pumpAndSettle();
+      }
+      if (creating) {
+        await tester.tap(find.text('3. Deliverables'));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text(creating ? 'Save Configuration' : 'Save Changes'));
+      await tester.pumpAndSettle();
+      expect(scheduler.saved?['panel_rubric_id'], 12);
+      expect(scheduler.saved?['peer_rubric_id'], 22);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('project choices belong to the roster rather than event setup', (tester) async {
+    final scheduler = await openPeerSetup(tester, config: {
+      ...sampleConfig, 'project_setup_policy': 'new',
+    }, tab: 0);
+    expect(find.text('Project requirement'), findsNothing);
+    expect(find.text('Existing projects allowed'), findsNothing);
+    expect(find.text('New projects required'), findsNothing);
+    expect(find.byType(ConceptSettings), findsOneWidget);
+    await tester.tap(find.text('Save Changes'));
+    await tester.pumpAndSettle();
+    expect(scheduler.saved, isNotNull);
+    expect(scheduler.saved!.containsKey('project_setup_policy'), isFalse);
     expect(tester.takeException(), isNull);
   });
 

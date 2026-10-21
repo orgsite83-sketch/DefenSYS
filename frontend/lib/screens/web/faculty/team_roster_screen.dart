@@ -80,16 +80,15 @@ class TeamRosterScreen extends ConsumerStatefulWidget {
 class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
   Map<String, dynamic>? data, review;
   String? year, section, action, error, message, fileName;
-  String selected = 'current',
-      source = 'current',
-      projectMode = 'continue',
-      method = 'alphabetical';
+  String selected = 'current', source = 'current', method = 'alphabetical';
+  String? bulkProjectMode;
   int groupSize = 4, requestVersion = 0;
   StreamSubscription? _dropSubscription;
   bool dragging = false;
   bool busy = false, changed = false, carryProjects = true, missingOnly = false;
   List<Map<String, dynamic>> importRows = [];
   final setupTeams = <int>{};
+  final projectModes = <int, String>{};
   List<Map<String, dynamic>> get rosters => _maps(data?['rosters']);
   Map<String, dynamic>? get roster =>
       rosters.where((r) => keyFor(r) == selected).firstOrNull;
@@ -182,7 +181,16 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
     }
   }
 
-  void begin(String next) {
+  String existingProject(Map<String, dynamic> team) =>
+      '${team['carry_title'] ?? team['project_title'] ?? ''}'.trim();
+
+  String defaultProjectMode(Map<String, dynamic> team) =>
+      team['shared_project'] == true
+      ? 'continue'
+      : team['project_choice']?.toString() ??
+            (existingProject(team).isEmpty ? 'new' : 'continue');
+
+  void begin(String next, {int? teamId}) {
     setState(() {
       action = next;
       review = null;
@@ -195,14 +203,23 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
           orElse: () => rosters.first,
         ),
       );
-      projectMode = roster?['project_setup_policy'] == 'new'
-          ? 'new'
-          : 'continue';
+      if (next == 'copy') carryProjects = true;
+      bulkProjectMode = null;
+      projectModes
+        ..clear()
+        ..addEntries(
+          teams.map((t) => MapEntry(t['id'] as int, defaultProjectMode(t))),
+        );
+      final eligible = teams.where((t) => t['project_locked'] != true).toList();
+      final unopened = eligible
+          .where((t) => t['setup_opened'] != true)
+          .toList();
       setupTeams
         ..clear()
         ..addAll(
-          teams
-              .where((t) => t['setup_opened'] != true)
+          (teamId == null
+                  ? (unopened.isEmpty ? eligible : unopened)
+                  : eligible.where((t) => t['id'] == teamId))
               .map((t) => t['id'] as int),
         );
     });
@@ -237,6 +254,10 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
     final result = await ref.read(teamRosterServiceProvider).preview({
       ...target,
       'operation': action,
+      if (action == 'projects') ...{
+        'team_ids': setupTeams.toList(),
+        'team_modes': {for (final id in setupTeams) '$id': projectModes[id]},
+      },
       'carry_projects': carryProjects,
       if (action == 'copy' && source != 'current')
         'source_event_id': int.parse(source),
@@ -247,7 +268,10 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
   });
 
   Future<void> apply() => run(() async {
-    await ref.read(teamRosterServiceProvider).apply(review!['preview_token']);
+    final projects = action == 'projects';
+    final result = await ref
+        .read(teamRosterServiceProvider)
+        .apply(review!['preview_token']);
     if (!mounted) {
       return;
     }
@@ -261,33 +285,13 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
     await load();
     if (mounted && error == null) {
       setState(
-        () => message = selected == 'current'
+        () => message = projects
+            ? selected == 'current'
+                  ? 'Project choices saved for upcoming events. Saved event rosters are preserved.'
+                  : 'Project choices saved. ${result['requested_count']} team leaders have details to confirm.'
+            : selected == 'current'
             ? 'Current roster updated for upcoming events. Saved event rosters are preserved.'
             : 'Roster applied to ${roster?['name']} · $section.',
-      );
-    }
-  });
-
-  Future<void> openSetup() => run(() async {
-    final result = await ref.read(teamRosterServiceProvider).requestSetup({
-      ...target,
-      'project_mode': projectMode,
-      'team_ids': setupTeams.toList(),
-      'fingerprint': data!['fingerprint'],
-    });
-    if (!mounted) {
-      return;
-    }
-    changed = true;
-    setState(() {
-      action = null;
-      review = null;
-    });
-    await load();
-    if (mounted && error == null) {
-      setState(
-        () => message =
-            'Event setup opened for ${result['requested_count']} teams. Each leader now has a setup task.',
       );
     }
   });
@@ -757,6 +761,20 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                       ),
                     ),
                     if (!preview &&
+                        roster?['can_request_setup'] == true &&
+                        t['project_locked'] != true)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: secondary(
+                            'Project options',
+                            Icons.assignment_outlined,
+                            () => begin('projects', teamId: t['id'] as int),
+                          ),
+                        ),
+                      ),
+                    if (!preview &&
                         roster?['can_correct_details'] == true &&
                         t['details_revision'] != null)
                       Align(
@@ -787,6 +805,27 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
       ),
       const SizedBox(height: 4),
+      if (preview && t['project_action'] != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 5),
+          child: Text(
+            '${t['project_action']}',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+          ),
+        ),
+      if (preview &&
+          '${t['previous_title'] ?? ''}'.trim().isNotEmpty &&
+          t['previous_title'] != t['project_title'])
+        Padding(
+          padding: const EdgeInsets.only(bottom: 5),
+          child: Text(
+            'Previous: ${t['previous_title']}',
+            style: TextStyle(
+              fontSize: 12,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ),
       if (preview && (t['needs_name'] == true || t['needs_project'] == true))
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
@@ -988,55 +1027,146 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
           const WorkflowNotice(
             title: 'Section enrollment',
             message:
-                'Generate balanced teams from active enrolled students in this section. Each student appears once and each leader is a member.',
+                'Generate balanced teams from active enrolled students in this section. Each student appears once and each leader is a member. Generated teams start with new projects.',
           ),
         ],
         if (action == 'projects') ...[
           WorkflowSelect(
-            label: 'Project requirement',
-            value: projectMode,
-            enabled: !busy,
-            options: {
-              if (roster?['project_setup_policy'] != 'new')
-                'continue': 'Continue existing projects',
-              'new': roster?['concept_enabled'] == true
-                  ? 'Request new concepts'
-                  : 'Request new project titles',
+            label: 'Apply to selected teams',
+            value: bulkProjectMode,
+            placeholder: 'Choose a bulk action',
+            enabled: !busy && setupTeams.isNotEmpty,
+            options: const {
+              'continue': 'Keep existing projects',
+              'new': 'Start new projects',
             },
             searchable: false,
-            onChanged: (v) => setState(() => projectMode = v),
+            onChanged: (v) => setState(() {
+              bulkProjectMode = v;
+              for (final team in teams.where(
+                (t) =>
+                    setupTeams.contains(t['id']) && t['shared_project'] != true,
+              )) {
+                final id = team['id'] as int;
+                projectModes[id] =
+                    v == 'continue' && existingProject(team).isEmpty
+                    ? 'new'
+                    : v;
+              }
+            }),
           ),
           WorkflowNotice(
-            title: 'Open event setup',
-            message: roster?['concept_enabled'] == true
-                ? 'Leaders confirm their team details and use the existing concept workflow. Existing proposal counts and shared-system rules still apply.'
-                : 'Leaders confirm their team name and declare a project title. Declaring a title does not imply concept approval.',
+            title: selected == 'current'
+                ? 'Projects for upcoming events'
+                : 'Projects for this event',
+            message: selected == 'current'
+                ? 'Keep existing projects or start fresh. Teams without a project start fresh. Leaders complete project details when event setup opens.'
+                : roster?['concept_enabled'] == true
+                ? 'Leaders confirm their details and submit concepts using the configured proposal counts and shared-system rules. Teams without a project start fresh.'
+                : 'Leaders confirm their team name and project title. Teams without a project start fresh.',
           ),
+          if (roster?['legacy_new_project'] == true)
+            const WorkflowNotice(
+              title: 'Previous project preference',
+              message:
+                  'This event previously requested new projects. That preference is shown below for teams whose setup has not opened. You can review and change each choice here.',
+            ),
           const Text(
-            'Request details from',
+            'Team projects',
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           for (final t in teams)
             Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: ShadCheckbox(
-                value: setupTeams.contains(t['id']),
-                enabled: !busy && t['setup_opened'] != true,
-                onChanged: (v) => setState(
-                  () => v
-                      ? setupTeams.add(t['id'] as int)
-                      : setupTeams.remove(t['id']),
-                ),
-                label: Text(
-                  '${t['name']}${t['setup_opened'] == true ? ' · Setup already opened' : ''}',
-                ),
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ShadCheckbox(
+                    key: ValueKey('project-team-${t['id']}'),
+                    value: setupTeams.contains(t['id']),
+                    enabled: !busy && t['project_locked'] != true,
+                    onChanged: (v) => setState(() {
+                      bulkProjectMode = null;
+                      v
+                          ? setupTeams.add(t['id'] as int)
+                          : setupTeams.remove(t['id']);
+                    }),
+                    label: Text(
+                      '${t['name']}',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 26, top: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          existingProject(t).isEmpty
+                              ? 'No existing project'
+                              : existingProject(t),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: DefensysTokens.textSecondaryOf(context),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        if (t['project_locked'] == true)
+                          Text(
+                            'Work has started. Use the existing review or revision workflow.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: DefensysTokens.textSecondaryOf(context),
+                            ),
+                          )
+                        else if (t['shared_project'] == true)
+                          Text(
+                            'Managed through the shared concept workflow.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: DefensysTokens.textSecondaryOf(context),
+                            ),
+                          )
+                        else if (existingProject(t).isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 12),
+                            child: Text(
+                              'New project required',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          )
+                        else
+                          WorkflowSelect(
+                            key: ValueKey('project-choice-${t['id']}'),
+                            label: 'Project choice',
+                            value: projectModes[t['id']],
+                            enabled: !busy && setupTeams.contains(t['id']),
+                            searchable: false,
+                            options: {
+                              if (existingProject(t).isNotEmpty)
+                                'continue': 'Keep existing project',
+                              'new': 'Start new project',
+                            },
+                            onChanged: (v) => setState(() {
+                              bulkProjectMode = null;
+                              projectModes[t['id'] as int] = v;
+                            }),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          const WorkflowNotice(
-            title: 'Roster confirmation',
-            message:
-                'Opening setup fixes this event’s members and leaders. Future changes to Current roster will not change these teams.',
+          WorkflowNotice(
+            title: 'Review project choices',
+            message: selected == 'current'
+                ? 'Review the replacement and affected upcoming events before saving. Earlier event rosters and their records are preserved.'
+                : 'Changes take effect after review. Selected leaders confirm again; earlier event records are preserved.',
           ),
         ] else
           const WorkflowNotice(
@@ -1064,13 +1194,13 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                   !busy &&
                   (action != 'import' || importRows.isNotEmpty) &&
                   (action != 'projects' || setupTeams.isNotEmpty),
-              onPressed: action == 'projects' ? openSetup : preview,
+              onPressed: preview,
               child: Flexible(
                 child: Text(
                   busy
                       ? 'Working…'
                       : action == 'projects'
-                      ? 'Confirm roster & request details'
+                      ? 'Review project choices'
                       : 'Review roster',
                   textAlign: TextAlign.center,
                 ),
@@ -1082,17 +1212,17 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
     ),
   );
 
-  Widget reviewPanel() => panel(
+  Widget projectReviewPanel() => panel(
     Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
-          'Review roster',
+          'Review project choices',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
         Text(
-          'Save as: ${review!['target']} · $section',
+          '${review!['target']} · $section',
           style: TextStyle(
             fontSize: 12,
             color: DefensysTokens.textSecondaryOf(context),
@@ -1101,39 +1231,25 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
         const SizedBox(height: 16),
         WorkflowNotice(
           title: selected == 'current'
-              ? 'Set the default for upcoming events'
-              : 'Replace this event roster',
+              ? 'Projects for upcoming events'
+              : 'Leader confirmation',
           message: selected == 'current'
-              ? 'These teams become the Current roster for $section. New events and upcoming events using the default will use them. Saved and custom event rosters keep their teams.'
-              : 'Only ${review!['target']} · $section will use these teams. Other event rosters stay unchanged.',
+              ? 'These choices create a replacement Current roster for upcoming events. Earlier event teams keep their projects and records.'
+              : 'Selected leaders confirm their details again. New projects follow this event’s requirements. Earlier event records stay intact.',
         ),
         Wrap(
           spacing: 18,
           runSpacing: 8,
           children: [
-            Text(
-              '${review!['previous_team_count']} → ${review!['team_count']} teams',
-            ),
-            Text('${review!['student_count']} students'),
-            Text(
-              '${review!['omitted_student_count']} enrolled students omitted',
-            ),
+            Text('Keep existing: ${review!['kept_project_count']}'),
+            Text('Start new: ${review!['new_project_count']}'),
           ],
         ),
-        if ((review!['omitted_student_count'] as num? ?? 0) > 0)
-          const Padding(
-            padding: EdgeInsets.only(top: 12),
-            child: WorkflowNotice(
-              title: 'Review omitted students',
-              message:
-                  'Some enrolled students are not included in this replacement. Check that this is the complete roster you intend to use.',
-            ),
-          ),
         if ((review!['affected_events'] as List? ?? []).isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(
-              'Upcoming events using this roster: ${(review!['affected_events'] as List).join(', ')}.',
+              'Events using these choices: ${(review!['affected_events'] as List).join(', ')}.',
               style: const TextStyle(fontSize: 12),
             ),
           ),
@@ -1174,6 +1290,101 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
       ],
     ),
   );
+
+  Widget reviewPanel() => action == 'projects'
+      ? projectReviewPanel()
+      : panel(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Review roster',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Save as: ${review!['target']} · $section',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              const SizedBox(height: 16),
+              WorkflowNotice(
+                title: selected == 'current'
+                    ? 'Set the default for upcoming events'
+                    : 'Replace this event roster',
+                message: selected == 'current'
+                    ? 'These teams become the Current roster for $section. New events and upcoming events using the default will use them. Saved and custom event rosters keep their teams.'
+                    : 'Only ${review!['target']} · $section will use these teams. Other event rosters stay unchanged.',
+              ),
+              Wrap(
+                spacing: 18,
+                runSpacing: 8,
+                children: [
+                  Text(
+                    '${review!['previous_team_count']} → ${review!['team_count']} teams',
+                  ),
+                  Text('${review!['student_count']} students'),
+                  Text(
+                    '${review!['omitted_student_count']} enrolled students omitted',
+                  ),
+                ],
+              ),
+              if ((review!['omitted_student_count'] as num? ?? 0) > 0)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: WorkflowNotice(
+                    title: 'Review omitted students',
+                    message:
+                        'Some enrolled students are not included in this replacement. Check that this is the complete roster you intend to use.',
+                  ),
+                ),
+              if ((review!['affected_events'] as List? ?? []).isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    'Upcoming events using this roster: ${(review!['affected_events'] as List).join(', ')}.',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              if ((review!['preserved_events'] as List? ?? []).isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(
+                    'Event rosters preserved: ${(review!['preserved_events'] as List).join(', ')}.',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              const SizedBox(height: 20),
+              teamTable(_maps(review!['teams']), preview: true),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  secondary(
+                    'Back',
+                    Icons.arrow_back,
+                    () => setState(() => review = null),
+                  ),
+                  ShadButton(
+                    height: 0,
+                    enabled: !busy,
+                    onPressed: apply,
+                    child: Flexible(
+                      child: Text(
+                        busy ? 'Applying…' : '${review!['confirmation']}',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
 
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(

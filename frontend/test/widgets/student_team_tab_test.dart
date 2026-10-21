@@ -152,7 +152,7 @@ void main() {
       expect(find.text('Team Members (2)'), findsOneWidget);
       expect(find.text('Current Defense Stage'), findsOneWidget);
       expect(find.text('View Details'), findsOneWidget);
-      expect(find.textContaining('Score: 94.5'), findsOneWidget);
+      expect(find.textContaining('Score: 94.5'), findsNothing);
       await tester.ensureVisible(find.text('View Details'));
       await tester.tap(find.text('View Details'));
       expect(selectedTab, equals(1));

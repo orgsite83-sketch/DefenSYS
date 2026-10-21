@@ -431,6 +431,101 @@ void main() {
     );
   }
 
+  for (final scope in ['pit', 'capstone']) {
+    testWidgets('$scope post-defense rows follow completed assessment evidence', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1500, 1100));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final stage = ValueNotifier(<String, dynamic>{
+        'stage_label': 'Assessment',
+        'deliverables_configured': true,
+        'required_total': 1,
+        'required_uploaded': 0,
+        'endorsed': true,
+        'has_active_schedule': true,
+        'has_done_schedule': true,
+        'is_defense_done': true,
+        // An upload override or a legacy completion flag is not assessment evidence.
+        'archive_unlocked': true,
+        'post_defense_ready': false,
+        'pre': [
+          {
+            'id': 'PRE',
+            'label': 'Concept paper',
+            'type': 'pre',
+            'required': true,
+            'uploaded': false,
+          },
+        ],
+        'post': [
+          {
+            'id': 'POST',
+            'label': 'Final manuscript',
+            'type': 'post',
+            'required': true,
+            'uploaded': false,
+          },
+        ],
+      });
+      addTearDown(stage.dispose);
+      await pumpDefensysWidget(
+        tester,
+        SingleChildScrollView(
+          child: ValueListenableBuilder<Map<String, dynamic>>(
+            valueListenable: stage,
+            builder: (context, selectedStage, _) => DeliverablesTablePane(
+              state: CapstoneDeliverablesState(
+                scope: scope,
+                selectedStage: 'Assessment',
+                teams: [
+                  {
+                    'id': 8,
+                    'name': 'Assessment team',
+                    'members': [],
+                    'stages': [selectedStage],
+                  },
+                ],
+              ),
+              isAdviser: scope == 'capstone',
+              isPitInstructor: scope == 'pit',
+              compactFaculty: true,
+            ),
+          ),
+        ),
+        overrides: authTestOverrides(),
+      );
+
+      expect(find.text('Concept paper'), findsOneWidget);
+      expect(find.text('Final manuscript'), findsNothing);
+      expect(find.text('Post-defense archive'), findsNothing);
+      expect(find.text('1 deliverables'), findsOneWidget);
+      await tester.tap(find.byType(ShadSelect<String>).last);
+      await tester.pumpAndSettle();
+      expect(find.text('Missing files (1)'), findsOneWidget);
+      await tester.tap(find.text('Missing files (1)'));
+      await tester.pumpAndSettle();
+
+      stage.value = {...stage.value, 'post_defense_ready': true};
+      await tester.pumpAndSettle();
+      expect(find.text('Final manuscript'), findsOneWidget);
+      expect(find.text('Post-defense archive'), findsOneWidget);
+      expect(find.text('2 deliverables'), findsOneWidget);
+      expect(find.text('Missing files (2)'), findsOneWidget);
+
+      await tester.tap(find.text('Final manuscript'));
+      await tester.pumpAndSettle();
+      expect(find.text('All deliverables'), findsOneWidget);
+      // Reopening an assessment also removes an already opened archive detail.
+      stage.value = {...stage.value, 'post_defense_ready': false};
+      await tester.pumpAndSettle();
+      expect(find.text('Final manuscript'), findsNothing);
+      expect(find.text('All deliverables'), findsNothing);
+      expect(find.text('Missing files (1)'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final width in [1500.0, 720.0, 390.0]) {
     for (final dark in [false, true]) {
       testWidgets('compact faculty workspace fits $width, dark=$dark', (
@@ -441,6 +536,7 @@ void main() {
         final stage = <String, dynamic>{
           'stage_label': 'Mini Capstone',
           'deliverables_configured': true,
+          'post_defense_ready': true,
           'required_total': 1,
           'required_uploaded': 0,
           'pre': [

@@ -9,6 +9,7 @@ import '../../../widgets/program_badge.dart';
 import '../../../widgets/student_team_setup_tasks.dart';
 import '../../../services/academic/student_team_selection_provider.dart';
 import '../../../services/academic/team_formation_service.dart';
+import 'student_stage_data.dart';
 
 /// Screen 1: Academic Defense Overview & Student Team Workspace.
 /// Features clean, professional white surfaces, crisp hairline borders,
@@ -216,8 +217,18 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             ? rawActiveStageName
             : stageOptions.first);
 
-    final schedule = studentData?['schedule'] as Map<String, dynamic>?;
-    final grades = studentData?['grades'] as Map<String, dynamic>?;
+    final schedule = studentStageRecord(
+      stage: activeStageName,
+      stages: stagesList,
+      field: 'schedule',
+      fallback: studentData?['schedule'] as Map<String, dynamic>?,
+    );
+    final grades = studentStageRecord(
+      stage: activeStageName,
+      stages: stagesList,
+      field: 'grade',
+      fallback: studentData?['grades'] as Map<String, dynamic>?,
+    );
 
     // Calculate deliverables file count
     final deliverables = (studentData?['deliverables'] as List?)?.cast<Map<String, dynamic>>() ?? [];
@@ -253,6 +264,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     if (evaluatedTeammateKeys.isEmpty) {
       final stages = (studentData?['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       for (final s in stages) {
+        if (s['stage_label']?.toString().trim().toLowerCase() !=
+            activeStageName.trim().toLowerCase()) {
+          continue;
+        }
         final stageSubs = (s['my_peer_submissions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
         for (final sub in stageSubs) {
           final id = sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
@@ -1168,7 +1183,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     final room = schedule?['room']?.toString();
     final hasSchedule = scheduledDate != null && scheduledDate.trim().isNotEmpty;
     final panelChair = schedule?['chair']?.toString() ?? schedule?['panel_chair']?.toString();
-    final isPassed = grades != null && grades['result']?.toString().toUpperCase() == 'PASSED';
+    final isPassed = grades != null &&
+        (grades['is_published'] == true || grades['status'] == 'published') &&
+        grades['result']?.toString().toUpperCase() == 'PASSED';
 
     String monthLabel = 'DATE';
     String dayLabel = '—';

@@ -1025,10 +1025,6 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
         slotIssues.add(
           '$name needs panelist eligibility. Request admin approval before importing this slot.',
         );
-      } else if (state.canApprovePanelists) {
-        warnings.add(
-          '$name will receive reusable panelist eligibility when you confirm this import.',
-        );
       }
     }
 

@@ -156,6 +156,7 @@ class _Stages extends DefenseStagesNotifier {
       savedAt: DateTime(2026, 10, 20, 0, 53),
     ),
     state: DefenseSchedulerState(
+      canApprovePanelists: true,
       activeSemester: const {
         'id': 1,
         'display_name': '1st Semester, A.Y. 2026-2027',
@@ -556,6 +557,12 @@ void main() {
       expect(find.text('11:00 AM–12:00 PM'), findsOneWidget);
       expect(find.text('Needs attention (0)'), findsOneWidget);
       expect(find.text('Issues / notices'), findsNothing);
+      expect(
+        find.textContaining(
+          'No eligibility request is needed for admin imports.',
+        ),
+        findsOneWidget,
+      );
       await tester.pump(const Duration(milliseconds: 700));
       await tester.pumpAndSettle();
       final draft = await loadScheduleImportDraft(scope: 'capstone');

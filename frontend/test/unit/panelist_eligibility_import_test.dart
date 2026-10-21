@@ -26,6 +26,9 @@ void main() {
     ],
   );
   const state = DefenseSchedulerState(
+    pitEvents: [
+      {'event_name': 'PIT 1', 'year_level': '1st Year'},
+    ],
     faculty: [
       {
         'id': 12,
@@ -61,14 +64,12 @@ void main() {
         peerWeight: 20,
       ).single;
 
-  test('admin import approves known faculty when confirmed', () {
+  test('admin preview needs no eligibility request or row notice', () {
     final admin = state.copyWith(canApprovePanelists: true);
     final row = preview(admin);
     expect(row.panelistIds, [12]);
-    expect(
-      row.warnings.any((w) => w.contains('reusable panelist eligibility')),
-      isTrue,
-    );
+    expect(row.warnings, isEmpty);
+    expect(row.ready, isTrue);
     expect(
       row.slotIssues.any((i) => i.contains('panelist eligibility')),
       isFalse,
@@ -105,6 +106,7 @@ void main() {
         row.slotIssues.any((i) => i.contains('panelist eligibility')),
         isFalse,
       );
+      expect(row.ready, isTrue);
       expect(lead.selectablePanelists.length, 1);
     },
   );

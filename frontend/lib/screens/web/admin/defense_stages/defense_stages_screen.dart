@@ -1789,35 +1789,19 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   final semMatch = _asInt(r['semester_id']) == semesterId;
                   final evalMatch = r['evaluation_type'] == evaluationType;
                   final publishedMatch = r['status'] == 'published';
-                  return scopeMatch && semMatch && evalMatch && publishedMatch;
+                  final currentStageId = _asInt(stage?['id']);
+                  final assignedStageId = _asInt(r['defense_stage_id']);
+                  final stageMatch = assignedStageId == null || assignedStageId == currentStageId;
+                  final available = r['is_locked'] != true ||
+                      (currentStageId != null && assignedStageId == currentStageId);
+                  return scopeMatch && semMatch && evalMatch && publishedMatch && stageMatch && available;
                 }).toList();
               }
 
               List<DropdownMenuItem<int>> buildRubricDropdownItems(String evaluationType) {
                 final options = getRubricOptions(evaluationType);
-                final currentStageId = stage != null ? _asInt(stage['id']) : null;
-
                 final items = options.map((r) {
                   final id = _asInt(r['id']);
-                  final assignedStageId = _asInt(r['defense_stage_id']);
-                  final assignedStageLabel = r['defense_stage_label']?.toString();
-                  final isAssignedToOther = assignedStageId != null && assignedStageId != currentStageId;
-
-                  if (isAssignedToOther) {
-                    return DropdownMenuItem<int>(
-                      value: id,
-                      enabled: false,
-                      child: Text(
-                        '${r['name']} (Assigned to: ${assignedStageLabel ?? "Another Stage"})',
-                        style: const TextStyle(
-                          color: Color(0xFF9CA3AF),
-                          fontStyle: FontStyle.italic,
-                          fontSize: 13,
-                        ),
-                      ),
-                    );
-                  }
-
                   return DropdownMenuItem<int>(
                     value: id,
                     child: Text(
@@ -1830,6 +1814,19 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     ),
                   );
                 }).toList();
+
+                final currentId = switch (evaluationType) {
+                  'panel' => panelRubricId,
+                  'adviser' => adviserRubricId,
+                  _ => peerRubricId,
+                };
+                if (currentId != null && !items.any((item) => item.value == currentId)) {
+                  items.add(DropdownMenuItem<int>(
+                    value: currentId,
+                    enabled: false,
+                    child: const Text('Selected rubric (Unavailable)'),
+                  ));
+                }
 
                 items.insert(
                   0,
@@ -2311,7 +2308,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                                     const SizedBox(width: 8),
                                                     const Expanded(
                                                       child: Text(
-                                                        'No published Capstone rubrics found for this semester. Create rubrics in Evaluation Rubrics to attach.',
+                                                        'No available published Capstone rubrics for this stage. Create rubrics in Evaluation Rubrics to attach.',
                                                         style: TextStyle(
                                                           fontSize: 11.5,
                                                           color: Color(0xFF92400E),
@@ -2744,7 +2741,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         // If grading fails after creation, resume that stage instead of adding
         // it again. Keep the complete configuration in its editor draft.
         final pendingDraft = StageSetupDraft(
-          fields: {...snapshotDraft().fields, 'created_stage_id': newStageId},
+          fields: {
+            ...snapshotDraft().fields,
+            'created_stage_id': newStageId,
+            // A new stage has no assigned rubrics until grading setup succeeds.
+            'rubric_assignment_changes': [
+              if (panelRubricId != null) 'panel',
+              if (adviserRubricId != null) 'adviser',
+              if (peerRubricId != null) 'peer',
+            ],
+            'rubric_assignment_base': {'panel': null, 'adviser': null, 'peer': null},
+          },
           tab: 1,
         );
         if (mounted && draftStore?.key == _draftStore()?.key) {

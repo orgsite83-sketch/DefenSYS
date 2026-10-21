@@ -432,6 +432,35 @@ def filter_teams(request, queryset):
 
 
 @read_memoize
+def post_defense_ready(team, stage_label):
+    """Show archive requirements after assessment, before archive-dependent closure.
+
+    Upload overrides and legacy schedule/progress flags are not assessment
+    evidence. Concept hearings also need their current selection/decision.
+    """
+    from grading.grades.models import TeamGrade
+    from grading.grades.services import team_grading_readiness
+    from .concept_completion import post_defense_state
+
+    scope = TeamGrade.SCOPE_CAPSTONE if team.is_capstone else TeamGrade.SCOPE_PIT
+    grade = latest_stage_grade(team, stage_label, scope=scope)
+    if not grade or grade.project_version != team.project_version or not grade.schedule_id:
+        return False
+    schedule = grade.schedule
+    if (schedule.project_version != team.project_version
+            or schedule.semester_id != team.semester_id
+            or schedule.scope != scope
+            or schedule.status not in (DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE)):
+        return False
+    if not team_grading_readiness(grade, grade.semester, scope)['panel_complete']:
+        return False
+    if grade.uses_defense_verdict and grade.verdict not in TeamGrade.PASSING_VERDICTS:
+        return False
+    concept_access = post_defense_state(team, document_context(team, stage_label))
+    return concept_access is None or concept_access['unlocked']
+
+
+@read_memoize
 def archive_unlocked(team, stage_label, deliverable_type='post'):
     from .stage_access import manually_locked
     if manually_locked(team, stage_label, deliverable_type):
@@ -1192,6 +1221,7 @@ def stage_payload(team, stage_label, evaluator=None):
         'has_done_schedule': has_done_schedule,
         'can_cancel_endorsement': can_cancel_endorsement,
         'archive_unlocked': unlocked or any(item.get('can_upload') for item in archive_items),
+        'post_defense_ready': post_defense_ready(team, stage_label),
         'vault_unlocked': unlocked or any(item.get('can_upload') for item in archive_items),
         'pre_unlocked': archive_unlocked(team, stage_label, deliverable_type='pre'),
         'post_unlocked': archive_unlocked(team, stage_label, deliverable_type='post'),

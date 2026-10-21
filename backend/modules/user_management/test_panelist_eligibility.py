@@ -45,6 +45,8 @@ class PanelistEligibilityTests(APITestCase):
         return response.data['request']
 
     def test_admin_schedule_approves_and_pool_is_reusable(self):
+        # Both teams must exist before the first schedule pins this event's roster.
+        other_team = StudentTeam.objects.create(name='Second Eligibility Team', project_title='Another Prototype', level=StudentTeam.LEVEL_1_PIT, year_level='1st Year', semester=self.semester, leader=self.student)
         request = self.nominate()
         self.client.force_authenticate(self.admin)
         response = self.client.post(SCHEDULES, self.payload(), format='json')
@@ -54,7 +56,6 @@ class PanelistEligibilityTests(APITestCase):
         self.assertTrue(FacultyRoleAssignment.objects.filter(user=self.faculty, role_key='panelist', action='assigned', changed_by=self.admin).exists())
         self.assertEqual(PanelistEligibilityRequest.objects.get(pk=request['id']).status, 'approved')
         self.client.force_authenticate(self.lead)
-        other_team = StudentTeam.objects.create(name='Second Eligibility Team', project_title='Another Prototype', level=StudentTeam.LEVEL_1_PIT, year_level='1st Year', semester=self.semester, leader=self.student)
         response = self.client.post(SCHEDULES, self.payload(team_id=other_team.pk, start_time='10:00'), format='json')
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(PanelistEligibilityRequest.objects.count(), 1)

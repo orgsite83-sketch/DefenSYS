@@ -5,7 +5,6 @@ import '../../../../widgets/shadcn/defensys_action_menu.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import 'components/schedule_operations_dialog.dart';
 import 'components/material_deadline_dialog.dart';
-import '../../../../widgets/repository/defense_material_readiness.dart';
 import 'components/schedule_group_actions.dart';
 import 'components/session_evaluator_access_dialog.dart';
 import 'components/schedule_manager_dialog.dart';
@@ -63,7 +62,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   String? _schedulerEventName;
 
   // Readiness State
-  String _readinessScope = 'capstone';
   int? _selectedReadinessStageId;
   String? _selectedReadinessEventName;
   bool _isSendingReminder = false;
@@ -274,7 +272,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
 
-    final effectiveReadinessScope = isPitLead && !isAdmin ? 'pit' : _readinessScope;
+    final effectiveReadinessScope = isPitLead && !isAdmin ? 'pit' : 'capstone';
 
     // Determine active stage/event name
     String activeStageName = '';
@@ -325,7 +323,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             getTeamStageStatus(t, activeStageName) == 'pending')
         .toList();
 
-    final totalReadyAcrossAllStages = schedState.teams
+    final totalReadyAcrossAllStages = scopeTeams
         .where((t) {
           final readyStage = t['ready_for_stage']?.toString() ?? '';
           return readyStage.isNotEmpty && isTeamStageReady(t, readyStage);
@@ -366,7 +364,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       _buildDraftResumeBanner(),
                     ],
                     const SizedBox(height: 20),
-                    _buildViewSwitcher(state, schedState, currentView),
+                    _buildViewSwitcher(state, scopeTeams, currentView),
                     const SizedBox(height: 20),
                     if (currentView == DefenseOperationsView.schedules) ...[
                       _buildReadinessCalloutBanner(totalReadyAcrossAllStages),
@@ -426,9 +424,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           state: schedState,
                           scope: effectiveReadinessScope,
                           activeStageOrEventName: activeStageName,
-                          title: 'Cohort Deliverables & Readiness Queue',
-                          subtitle:
-                              'Monitor deliverable completeness and instructor endorsements across sections. Teams marked "Ready" have met all pre-defense requirements and are eligible for scheduling.',
+                          title: effectiveReadinessScope == 'capstone'
+                              ? 'Capstone Deliverables & Readiness Queue'
+                              : 'Cohort Deliverables & Readiness Queue',
+                          subtitle: effectiveReadinessScope == 'capstone'
+                              ? 'Monitor Capstone deliverable completeness and adviser endorsements across sections. Teams marked "Ready" have met all pre-defense requirements and are eligible for scheduling.'
+                              : 'Monitor deliverable completeness and instructor endorsements across sections. Teams marked "Ready" have met all pre-defense requirements and are eligible for scheduling.',
                           stageSelector: _buildStagePillsRow(
                             schedState,
                             effectiveReadinessScope,
@@ -489,20 +490,20 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Widget _buildViewSwitcher(
     DefenseBoardState state,
-    DefenseSchedulerState schedState,
+    List<Map<String, dynamic>> readinessTeams,
     DefenseOperationsView currentView,
   ) {
     final scheduleCount = _count(state, 'all');
-    final totalReady = schedState.teams
+    final totalReady = readinessTeams
         .where((t) {
           final readyStage = t['ready_for_stage']?.toString() ?? '';
           return readyStage.isNotEmpty && isTeamStageReady(t, readyStage);
         })
         .length;
-    final totalCompleted = schedState.teams
+    final totalCompleted = readinessTeams
         .where((t) => ((t['completed_stages'] as List<dynamic>?) ?? []).isNotEmpty)
         .length;
-    final totalPending = schedState.teams.length - totalReady;
+    final totalPending = readinessTeams.length - totalReady;
 
     String readinessBadge;
     if (totalReady > 0) {
@@ -667,9 +668,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   Widget _buildStagePillsRow(DefenseSchedulerState schedState, String scope, String activeStageName) {
-    final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
-
     return LayoutBuilder(
       builder: (context, constraints) {
         return Container(
@@ -687,7 +685,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   Icon(Icons.tune_rounded, size: 16, color: _textSecondaryColor),
                   const SizedBox(width: 6),
                   Text(
-                    'Target Defense Milestone / Event:',
+                    scope == 'capstone'
+                        ? 'Target Capstone Defense Milestone:'
+                        : 'Target PIT Event:',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -695,24 +695,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       letterSpacing: 0.2,
                     ),
                   ),
-                  const Spacer(),
-                  if (isAdmin) ...[
-                    Container(
-                      height: 28,
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFE2E8F0),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _scopeMiniPill('Capstone', 'capstone', scope == 'capstone'),
-                          _scopeMiniPill('PIT', 'pit', scope == 'pit'),
-                        ],
-                      ),
-                    ),
-                  ],
                 ],
               ),
               const SizedBox(height: 10),
@@ -907,34 +889,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _scopeMiniPill(String label, String value, bool isSelected) {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _readinessScope = value;
-          _selectedReadinessStageId = null;
-          _selectedReadinessEventName = null;
-        });
-      },
-      borderRadius: BorderRadius.circular(4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-        decoration: BoxDecoration(
-          color: isSelected ? (_isDark ? DefensysTokens.mistSurface : Colors.white) : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-            color: isSelected ? (_isDark ? const Color(0xFFF87171) : AppColors.maroon) : _textSecondaryColor,
-          ),
         ),
       ),
     );
