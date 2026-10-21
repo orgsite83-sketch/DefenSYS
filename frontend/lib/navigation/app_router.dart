@@ -7,6 +7,7 @@ import '../screens/app/panelist_dashboard.dart';
 import '../notifications/notification_request_screen.dart';
 import '../screens/web/shared/team_deliverables/team_deliverables_screen.dart';
 import '../screens/web/admin/student_teams/team_creation_page.dart';
+import '../screens/web/faculty/team_roster_screen.dart';
 import '../screens/web/admin/student_teams/student_teams_screen.dart';
 import '../screens/app/documenter_dashboard.dart';
 import '../screens/web/faculty/documenter/minutes_form_screen.dart';
@@ -378,6 +379,7 @@ List<GoRoute> _adminSectionRoutes() {
       pageBuilder: _adminSectionPage,
       routes: [
         _teamCreationRoute(),
+        _teamRosterRoute(),
         GoRoute(
           path: ':teamId',
           builder: (_, state) {
@@ -509,6 +511,7 @@ List<GoRoute> _facultySectionRoutes() {
       pageBuilder: _facultySectionPage,
       routes: [
         _teamCreationRoute(),
+        _teamRosterRoute(),
         GoRoute(
           path: ':teamId',
           builder: (_, state) {
@@ -547,6 +550,7 @@ List<GoRoute> _facultySectionRoutes() {
     GoRoute(path: 'audit-compliance', pageBuilder: _facultySectionPage),
     GoRoute(path: 'deliverables', pageBuilder: _facultySectionPage, routes: [
       _teamCreationRoute(instructor: true),
+      _teamRosterRoute(instructor: true),
       GoRoute(path: 'teams/:teamId', builder: (_, state) => TeamDeliverablesScreen(
         key: ValueKey(state.uri.toString()),
         initialTeamId: int.parse(state.pathParameters['teamId']!),
@@ -563,6 +567,17 @@ List<GoRoute> _facultySectionRoutes() {
     GoRoute(path: 'curriculum-analytics', pageBuilder: _facultySectionPage),
   ];
 }
+
+GoRoute _teamRosterRoute({bool instructor = false}) => GoRoute(
+  path: 'roster',
+  builder: (_, state) => TeamRosterScreen(
+    key: ValueKey(state.uri.toString()),
+    initialYear: state.uri.queryParameters['year'],
+    initialSection: state.uri.queryParameters['section'],
+    initialEvent: state.uri.queryParameters['event'],
+    instructor: instructor,
+  ),
+);
 
 GoRoute _teamCreationRoute({bool instructor = false}) => GoRoute(
   path: 'creation',

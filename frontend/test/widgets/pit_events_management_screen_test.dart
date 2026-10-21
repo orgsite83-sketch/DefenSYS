@@ -9,6 +9,7 @@ import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import '../helpers/capture_preview.dart';
 
@@ -88,11 +89,14 @@ void main() {
 
   Future<_FakeScheduler> openPeerSetup(WidgetTester tester, {
     Map<String, dynamic>? config,
+    int tab = 1,
+    Size size = const Size(1400, 1200),
   }) async {
-    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() => loadPreviewFonts());
     final scheduler = _FakeScheduler(configs: [if (config != null) config]);
     await tester.pumpWidget(ProviderScope(
       overrides: [
@@ -116,12 +120,56 @@ void main() {
       await tester.tap(find.text('Edit event'));
     }
     await tester.pumpAndSettle();
-    await tester.tap(find.text('2. Grading & Rubrics'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Peer Evaluation Access'));
-    await tester.pumpAndSettle();
+    if (tab > 0) {
+      await tester.tap(find.text(tab == 1 ? '2. Grading & Rubrics' : '3. Deliverables'));
+      await tester.pumpAndSettle();
+    }
+    if (tab == 1) {
+      await tester.ensureVisible(find.text('Peer Evaluation Access'));
+      await tester.pumpAndSettle();
+    }
     return scheduler;
   }
+
+  for (final tab in [0, 1, 2]) {
+    testWidgets('PIT rename saves original event ID from step ${tab + 1}', (tester) async {
+      final scheduler = await openPeerSetup(tester, config: sampleConfig, tab: 0,
+        size: const Size(1100, 900));
+      await tester.enterText(find.widgetWithText(TextFormField, 'System Concept Pitching'),
+        'IT Innovation Poster Showcase');
+      if (tab > 0) {
+        await tester.tap(find.text(tab == 1 ? '2. Grading & Rubrics' : '3. Deliverables'));
+        await tester.pumpAndSettle();
+      }
+      expect(find.text('Save Changes'), findsOneWidget);
+      await capturePreview(tester, find.byType(Dialog), 'pit-edit-save-step-${tab + 1}', viewport: true);
+      await tester.tap(find.text('Save Changes'));
+      await tester.pumpAndSettle();
+      expect(scheduler.saved?['config_id'], 1);
+      expect(scheduler.saved?['event_name'], 'IT Innovation Poster Showcase');
+      expect(scheduler.saved?['panel_rubric_id'], 10);
+      expect(scheduler.saved?['peer_rubric_id'], 20);
+      expect(scheduler.saved?['deliverables'], hasLength(3));
+      expect(find.text('Edit PIT Event'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('saving from event details still validates other steps', (tester) async {
+    final scheduler = await openPeerSetup(tester, config: {
+      ...sampleConfig,
+      'deliverables': [{'label': '', 'deliverable_type': 'pre', 'required': true}],
+    }, tab: 0);
+    await tester.tap(find.text('Save Changes'));
+    await tester.pumpAndSettle();
+    expect(scheduler.saved, isNull);
+    expect(find.text('Edit PIT Event'), findsOneWidget);
+    expect(find.text('Add Pre-Defense'), findsOneWidget);
+    expect(find.text('Deliverable name cannot be empty (item 1).'), findsOneWidget);
+    dismissFeedbackToasts();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('new event keeps access enabled before rubrics are attached', (tester) async {
     final scheduler = await openPeerSetup(tester);
@@ -136,6 +184,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(scheduler.saved?['peer_grading_enabled'], isTrue);
     expect(scheduler.saved?['peer_rubric_id'], isNull);
+    expect(scheduler.saved!.containsKey('config_id'), isFalse);
     expect(tester.takeException(), isNull);
   });
 

@@ -109,7 +109,10 @@ def membership_queryset(queryset, event_name):
     return queryset.filter(team__in=teams)
 
 
+@read_memoize
 def event_in_use(event, section):
+    if event.is_officially_complete:
+        return True
     teams = StudentTeam.objects.filter(semester_id=event.semester_id, year_level=event.year_level,
         section=section, level__icontains='PIT')
     from repository.deliverables.models import ConceptRound
@@ -164,8 +167,8 @@ def register(teams, actor, *, event=None, replace=False):
             grouped[(team.semester_id, team.year_level, team.section)].append(team)
     for (semester_id, year, section), section_teams in grouped.items():
         if event:
-            from defense.scheduler.event_scope import require_event_management
-            require_event_management(actor, event)
+            from .roster_workspace import require_roster_scope
+            require_roster_scope(actor, event.semester, event.year_level, section)
             if event_in_use(event, section):
                 raise ValidationError('The event roster changed or is already in use. Review the import again.')
             row, _ = PITEventRoster.objects.select_for_update().get_or_create(event=event, section=section,
@@ -190,6 +193,9 @@ def register(teams, actor, *, event=None, replace=False):
 def pin(team, event):
     if not team.is_pit:
         return
+    from defense.scheduler.models import PitEventGradingConfig
+    # Roster commits take this same lock before replacing an unused event.
+    event = PitEventGradingConfig.objects.select_for_update().get(pk=event.pk)
     section = resolve(team.semester_id, team.year_level, event.pk).get(team.section)
     if not section or team.pk not in section['team_ids']:
         raise ValidationError('This team is not part of the roster used by this event.')
@@ -215,7 +221,11 @@ def protect_membership(team, member_ids, leader_id, *, name=None, section=None):
     changed = (set(team.memberships.values_list('student_id', flat=True)) != set(member_ids)
         or team.leader_id != leader_id or (name is not None and name != team.name)
         or (section is not None and section != team.section))
-    if changed and (team.pit_event_rosters.filter(started_at__isnull=False).exists()
+    from defense.scheduler.models import PitEventGradingConfig
+    completed_use = changed and any(team.pk in effective_ids(team.semester_id, team.year_level, event)
+        for event in PitEventGradingConfig.objects.filter(semester_id=team.semester_id,
+            year_level=team.year_level, is_officially_complete=True))
+    if changed and (completed_use or team.pit_event_rosters.filter(started_at__isnull=False).exists()
             or team.concept_rounds.exists() or team.defense_schedules.filter(scope='pit').exists()
             or team.deliverable_submissions.exists() or team.grade_records.exists()):
         raise ValidationError('This roster is already used by an event. Keep its memberships and name; create a new roster for future events.')

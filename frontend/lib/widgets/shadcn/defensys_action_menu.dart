@@ -14,6 +14,7 @@ class DefensysActionMenu extends StatefulWidget {
     this.triggerLabel,
     this.triggerIcon,
     this.triggerForegroundColor,
+    this.wrapLabel = false,
   });
   final String label;
   final List<Widget> items;
@@ -21,6 +22,7 @@ class DefensysActionMenu extends StatefulWidget {
   final String? triggerLabel;
   final IconData? triggerIcon;
   final Color? triggerForegroundColor;
+  final bool wrapLabel;
 
   @override
   State<DefensysActionMenu> createState() => _DefensysActionMenuState();
@@ -85,7 +87,7 @@ class _DefensysActionMenuState extends State<DefensysActionMenu> {
             child: widget.triggerLabel != null
                 ? ShadButton.outline(
                     enabled: widget.enabled,
-                    height: 36,
+                    height: widget.wrapLabel ? 0 : 36,
                     foregroundColor: widget.triggerForegroundColor,
                     hoverForegroundColor: widget.triggerForegroundColor,
                     hoverBackgroundColor: widget.triggerForegroundColor
@@ -95,7 +97,9 @@ class _DefensysActionMenuState extends State<DefensysActionMenu> {
                       widget.triggerIcon ?? LucideIcons.ellipsis,
                       size: 16,
                     ),
-                    child: Text(widget.triggerLabel!),
+                    child: widget.wrapLabel
+                        ? Flexible(child: Text(widget.triggerLabel!, textAlign: TextAlign.center))
+                        : Text(widget.triggerLabel!),
                   )
                 : ShadButton.ghost(
                     enabled: widget.enabled,

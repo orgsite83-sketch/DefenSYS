@@ -1,5 +1,3 @@
-import 'dialogs/current_roster_dialog.dart';
-import 'package:defensys/services/academic/team_formation_service.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
@@ -36,6 +34,7 @@ import 'dialogs/advisor_assignment_modal.dart';
 import 'dialogs/create_team_modal.dart';
 import 'dialogs/manage_sections_dialog.dart';
 import '../../shared/team_deliverables/team_deliverables_screen.dart';
+import '../../faculty/team_roster_screen.dart';
 
 enum TeamListMode { capstoneAdmin, pitLead, pitInstructor }
 
@@ -318,8 +317,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Future<void> _downloadCsvTemplate() async {
-    final isCapstone = !_isPitLeadManager;
-    final bytes = generateOfficialTeamRosterExcelBytes(isCapstone: isCapstone);
+    final isCapstone = _isCapstoneAdmin;
+    final bytes = generateOfficialTeamRosterExcelBytes(isCapstone: isCapstone,
+      assignedSection: isCapstone ? null : widget.pitSection ?? _section);
     final filename = isCapstone
         ? 'defensys-official-capstone-template.xlsx'
         : 'defensys-official-pit-template.xlsx';
@@ -595,6 +595,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
     String? warning;
     final recognizedHeaders = {
+      'group_key',
       'team_name',
       'project_title',
       'level',
@@ -870,6 +871,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     final effectiveYear = _pitLeadYear ?? widget.pitYearLevel ?? '3rd Year';
     final effectiveSection = _section ?? widget.pitSection;
     final row = <String, dynamic>{
+      'group_key': 'manual/${DateTime.now().microsecondsSinceEpoch}',
       'team_name': '',
       'project_title': '',
       if (!_isCapstoneAdmin) 'year_level': effectiveYear,
@@ -1127,6 +1129,11 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                 ),
                 StudentTeamsHeaderActions(
                   isPitInstructor: _isPitInstructor,
+                  onRoster: _isCapstoneAdmin ? null : () async {
+                    await openTeamRoster(context, year: widget.pitYearLevel,
+                      section: _section, event: displayState.eventName, instructor: _isPitInstructor);
+                    if (mounted) _fetchTeamsForCurrentRole();
+                  },
                   canTapActions: _canTapTeamActions(displayState),
                   importLabel: displayState.eventName == null ? 'Import teams'
                     : displayState.rosterContext.any((r) => r['source'] == 'custom') ? 'Manage event roster' : 'Import different roster',

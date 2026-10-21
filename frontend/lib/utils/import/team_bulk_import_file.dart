@@ -8,9 +8,10 @@ import 'team_bulk_import_csv.dart';
 
 /// Read a batch atomically so a failed file is never silently omitted.
 String readTeamImportFiles(List<PickedTabularFile> files) {
-  final texts = <String>[];
+  final rows = <Map<String, dynamic>>[];
   final errors = <String>[];
-  for (final file in files) {
+  for (var fileIndex = 0; fileIndex < files.length; fileIndex++) {
+    final file = files[fileIndex];
     try {
       if (!file.isXlsx && !file.isCsv) {
         throw const FormatException('Choose a .csv or .xlsx team roster.');
@@ -21,12 +22,13 @@ String readTeamImportFiles(List<PickedTabularFile> files) {
       if (csv.trim().isEmpty) {
         throw const FormatException('The file contains no team data.');
       }
-      if (parseTeamBulkCsv(csv).rows.isEmpty) {
+      final parsed = parseTeamBulkCsv(csv, sourceKey: 'file$fileIndex');
+      if (parsed.rows.isEmpty) {
         throw const FormatException(
           'No team rows were found. Use the DefenSYS team roster template.',
         );
       }
-      texts.add(csv);
+      rows.addAll(parsed.rows);
     } catch (error) {
       final detail = error is FormatException ? error.message : '$error';
       errors.add('${file.name}: $detail');
@@ -37,10 +39,34 @@ String readTeamImportFiles(List<PickedTabularFile> files) {
       'No files were staged. Fix the following and try again:\n${errors.join('\n')}',
     );
   }
-  return texts.join('\n\n');
+  // Normalize each file independently. Concatenating raw sheets can align a
+  // second file's unrelated columns with the first file's table blocks.
+  const fields = [
+    'team_name',
+    'project_title',
+    'level',
+    'year_level',
+    'member_ids',
+    'leader_id',
+    'adviser_name',
+    'instructor_name',
+    'section',
+    'system_name',
+    'project_manager',
+    'group_key',
+  ];
+  String cell(dynamic value) {
+    final text = value is List ? value.join('|') : value?.toString() ?? '';
+    return '"${text.replaceAll('"', '""')}"';
+  }
+
+  return [
+    fields.join(','),
+    for (final row in rows) fields.map((field) => cell(row[field])).join(','),
+  ].join('\n');
 }
 
-String teamXlsxToCsv(List<int> bytes) {
+String teamXlsxToCsv(List<int> bytes, {bool preserveTeamGroups = true}) {
   late final xl.Excel workbook;
   try {
     workbook = safeDecodeExcel(bytes);
@@ -54,6 +80,59 @@ String teamXlsxToCsv(List<int> bytes) {
     throw const FormatException('The workbook has no worksheets.');
   }
   final sheet = workbook.tables.values.first;
+  // Import-only group columns preserve the semantic Team Name merges. They
+  // are omitted from the public CSV/copy template and never added to Excel.
+  final groupColumns = <int, Map<int, String>>{};
+  final groupHeaders = <int, int>{};
+  if (preserveTeamGroups) {
+    for (var r = 0; r < sheet.maxRows && r < 10; r++) {
+      final row = sheet.rows[r];
+      for (var col = 0; col < row.length; col++) {
+        final label = _cellText(
+          row[col]?.value,
+        ).toLowerCase().replaceAll('*', '').trim();
+        if (label != 'team name' && label != 'team_name') continue;
+        var memberCol = -1;
+        for (var c = col + 1; c < row.length; c++) {
+          final header = _cellText(
+            row[c]?.value,
+          ).toLowerCase().replaceAll('*', '').trim();
+          if (header == 'team name' || header == 'team_name') break;
+          if (header == 'team members' || header == 'team_members') {
+            memberCol = c;
+            break;
+          }
+        }
+        if (memberCol < 0) continue;
+        final keys = <int, String>{};
+        for (final span in sheet.spannedItems) {
+          final endpoints = span
+              .split(':')
+              .map(xl.CellIndex.indexByString)
+              .toList();
+          if (endpoints.length != 2) continue;
+          final start = endpoints.first, end = endpoints.last;
+          if (start.columnIndex != col ||
+              end.columnIndex != col ||
+              start.rowIndex <= r ||
+              end.rowIndex <= start.rowIndex) {
+            continue;
+          }
+          for (
+            var memberRow = start.rowIndex;
+            memberRow <= end.rowIndex;
+            memberRow++
+          ) {
+            keys[memberRow] = 'xlsx/c$col/r${start.rowIndex}';
+          }
+        }
+        if (keys.isNotEmpty) {
+          groupColumns[memberCol] = keys;
+          groupHeaders[memberCol] = r;
+        }
+      }
+    }
+  }
   // Copy the spans: editing merged cells can change the sheet's span list.
   for (final span in List<String>.of(sheet.spannedItems)) {
     final parts = span.split(':');
@@ -73,9 +152,18 @@ String teamXlsxToCsv(List<int> bytes) {
     }
   }
   final lines = <String>[];
-  for (final row in sheet.rows) {
-    final cells = row.map((cell) => _cellText(cell?.value)).toList();
-    if (cells.every((text) => text.isEmpty)) continue;
+  for (var r = 0; r < sheet.maxRows; r++) {
+    final row = sheet.rows[r];
+    final cells = <String>[];
+    for (var c = 0; c < sheet.maxColumns; c++) {
+      cells.add(c < row.length ? _cellText(row[c]?.value) : '');
+      if (groupColumns.containsKey(c)) {
+        cells.add(
+          groupHeaders[c] == r ? 'group_key' : groupColumns[c]![r] ?? '',
+        );
+      }
+    }
+    // Preserve group separators, including empty rows between unnamed teams.
     lines.add(
       cells
           .map((text) {
@@ -89,7 +177,7 @@ String teamXlsxToCsv(List<int> bytes) {
           .join(','),
     );
   }
-  if (lines.isEmpty) {
+  if (lines.every((line) => line.replaceAll(',', '').trim().isEmpty)) {
     throw FormatException('The first worksheet "${sheet.sheetName}" is empty.');
   }
   return lines.join('\n');

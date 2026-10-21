@@ -1,5 +1,7 @@
 from django.urls import include, path
 from .roster_views import CurrentRosterView
+from .roster_workspace_views import (RosterWorkspaceView, RosterPreviewView, RosterApplyView,
+    RosterProjectSetupView, EventTeamSetupView, RosterExportView)
 from .formation_views import (TeamFormationView, TeamFormationCommitView, PitTeamPolicyView,
                               MyTeamSetupView, TeamLeaderSetupView, TeamRosterOptionsView)
 from .formation_workspace import (TeamCreationContextView, SectionRosterPreviewView,
@@ -19,6 +21,12 @@ from .views import (
 
 
 urlpatterns = [
+    path('rosters/', RosterWorkspaceView.as_view(), name='pit_roster_workspace'),
+    path('rosters/preview/', RosterPreviewView.as_view(), name='pit_roster_preview'),
+    path('rosters/apply/', RosterApplyView.as_view(), name='pit_roster_apply'),
+    path('rosters/project-setup/', RosterProjectSetupView.as_view(), name='pit_roster_project_setup'),
+    path('rosters/export/', RosterExportView.as_view(), name='pit_roster_export'),
+    path('<int:team_id>/events/<int:event_id>/setup/', EventTeamSetupView.as_view(), name='pit_event_team_setup'),
     path('current-roster/', CurrentRosterView.as_view(), name='current_roster'),
     path('roster-options/', TeamRosterOptionsView.as_view(), name='team_roster_options'),
     path('generation/context/', TeamCreationContextView.as_view(), name='team_creation_context'),

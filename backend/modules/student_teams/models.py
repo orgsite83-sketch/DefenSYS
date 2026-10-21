@@ -26,10 +26,42 @@ class PITEventRoster(models.Model):
     teams = models.ManyToManyField('StudentTeam', related_name='pit_event_rosters')
     started_at = models.DateTimeField(null=True, blank=True)
     current_revision = models.PositiveIntegerField(null=True, blank=True)
+    revision = models.PositiveIntegerField(default=1)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['event', 'section'], name='pit_event_section_roster_unique')]
+
+
+class PITRosterTeamDetails(models.Model):
+    """A roster identity or event confirmation, without changing a shared team.
+
+    The null-event row is the reusable current-roster profile. Event rows retain
+    the display name and project independently of later roster replacements.
+    Concept decisions and papers stay in the existing event concept workflow.
+    """
+    team = models.ForeignKey('StudentTeam', on_delete=models.CASCADE, related_name='roster_details')
+    event = models.ForeignKey('defense.PitEventGradingConfig', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='team_roster_details')
+    name = models.CharField(max_length=120)
+    project_title = models.CharField(max_length=255, blank=True)
+    project_mode = models.CharField(max_length=12, default='continue',
+        choices=[('continue', 'Continue existing project'), ('new', 'New project')])
+    source_event = models.ForeignKey('defense.PitEventGradingConfig', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='+')
+    source_team = models.ForeignKey('StudentTeam', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='+')
+    opened_at = models.DateTimeField(null=True, blank=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    revision = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['team', 'event'], name='pit_event_team_details_unique'),
+            models.UniqueConstraint(fields=['team'], condition=models.Q(event__isnull=True),
+                name='pit_current_team_details_unique'),
+        ]
 
 
 class PITTeamEventEndorsement(models.Model):
@@ -82,6 +114,8 @@ class StudentTeam(models.Model):
     project_title = models.CharField(max_length=255, blank=True)
     setup_pending = models.BooleanField(default=False)
     project_pending = models.BooleanField(default=False)
+    # Versioned roster teams retain public names across independent event copies.
+    roster_identity = models.UUIDField(null=True, blank=True, unique=True, editable=False)
     project_version = models.PositiveIntegerField(default=1)
     # Import intent is independent of the title eventually selected by a panel.
     concept_assignment = models.JSONField(default=dict, blank=True)
@@ -122,7 +156,8 @@ class StudentTeam(models.Model):
     class Meta:
         ordering = ['name']
         constraints = [
-            models.UniqueConstraint(fields=['name', 'level'], name='unique_team_name_per_level'),
+            models.UniqueConstraint(fields=['name', 'level'], condition=models.Q(roster_identity__isnull=True),
+                name='unique_team_name_per_level'),
         ]
 
     @property

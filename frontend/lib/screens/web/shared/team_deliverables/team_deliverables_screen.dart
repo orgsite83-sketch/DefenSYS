@@ -18,7 +18,7 @@ import 'deliverables_view_types.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 import 'package:defensys/widgets/repository/requirement_summary.dart';
 import 'package:defensys/models/team_workflow_status.dart';
-import '../../admin/student_teams/team_creation_page.dart';
+import '../../faculty/team_roster_screen.dart';
 export 'deliverables_view_types.dart';
 
 Widget _notice(IconData icon, String message, Color color) {
@@ -196,26 +196,15 @@ class _TeamDeliverablesScreenState
     super.dispose();
   }
 
-  Future<void> _openCreation() async {
-    final saved = await openTeamCreation(
+  Future<void> _openRoster() async {
+    await openTeamRoster(
       context,
-      level: widget.pitYearLevel == null ? null : '${widget.pitYearLevel} PIT',
+      year: widget.pitYearLevel,
       section: widget.pitSection,
+      event: ref.read(capstoneDeliverablesProvider).selectedStage,
+      instructor: true,
     );
-    if (saved == true && mounted) {
-      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
-      ref.read(pitInstructorDefenseProvider.notifier).fetch();
-    }
-  }
-
-  Future<void> _openImport() async {
-    final saved = await openTeamCreation(
-      context,
-      importTab: true,
-      level: widget.pitYearLevel == null ? null : '${widget.pitYearLevel} PIT',
-      section: widget.pitSection,
-    );
-    if (saved == true && mounted) {
+    if (mounted) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
       ref.read(pitInstructorDefenseProvider.notifier).fetch();
     }
@@ -330,18 +319,9 @@ class _TeamDeliverablesScreenState
                   ShadButton.outline(
                     height: 40,
                     enabled: !state.isSaving,
-                    onPressed: state.isSaving ? null : () => _openImport(),
-                    leading: const Icon(Icons.upload_file_rounded, size: 16),
-                    child: const Text('Import'),
-                  ),
-                  ShadButton(
-                    height: 40,
-                    enabled: !state.isSaving,
-                    backgroundColor: DefensysTokens.maroonOf(context),
-                    foregroundColor: Colors.white,
-                    onPressed: state.isSaving ? null : () => _openCreation(),
-                    leading: const Icon(Icons.add, size: 16),
-                    child: const Text('Generate teams'),
+                    onPressed: state.isSaving ? null : _openRoster,
+                    leading: const Icon(Icons.groups_outlined, size: 16),
+                    child: const Text('Team roster'),
                   ),
                 ],
               ],

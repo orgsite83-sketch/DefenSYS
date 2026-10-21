@@ -246,9 +246,9 @@ class StudentTeamListCreateView(APIView):
 
     def _serialize_teams(self, queryset, user):
         return StudentTeamSerializer(
-            queryset.prefetch_related('stage_progress__defense_stage'),
+            queryset.prefetch_related('stage_progress__defense_stage', 'roster_details'),
             many=True,
-            context={'user': user},
+            context={'user': user, 'request': self.request},
         ).data
 
     def get(self, request):
@@ -745,7 +745,10 @@ class BulkImportTeamsView(APIView):
                     if 'PIT' in serializer.validated_data['level'] and not serializer.validated_data.get('current_defense_stage'):
                         ensure_current(selected_semester.pk, serializer.validated_data['year_level'],
                             {serializer.validated_data.get('section', '')})
-                    team = serializer.save(concept_assignment=result['concept_assignment'])
+                    team = serializer.save(
+                        concept_assignment=result['concept_assignment'],
+                        setup_pending=not bool(row_serializer.validated_data.get('team_name')),
+                        project_pending=not bool(row_serializer.validated_data.get('project_title')))
                     if team.is_pit and not team.current_defense_stage:
                         register([team], request.user)
                     elif team.is_pit and team.current_defense_stage:
@@ -757,6 +760,14 @@ class BulkImportTeamsView(APIView):
                         ).first()
                         if event:
                             register([team], request.user, event=event, replace=False)
+                            from .models import PITRosterTeamDetails
+                            from django.utils import timezone
+                            defaults = {'name': team.name, 'project_title': team.project_title,
+                                'confirmed_at': None if team.setup_pending else timezone.now()}
+                            PITRosterTeamDetails.objects.create(team=team, **defaults)
+                            PITRosterTeamDetails.objects.create(team=team, event=event, **{
+                                **defaults, 'confirmed_at': None,
+                                'opened_at': timezone.now() if team.setup_pending or team.project_pending else None})
                     meta = section_meta.get(team.section)
                     if meta:
                         pm_user = None

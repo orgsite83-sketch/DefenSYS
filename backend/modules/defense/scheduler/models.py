@@ -401,6 +401,8 @@ class PitEventGradingConfig(models.Model):
         max_length=20, default='single',
         choices=[('single', 'One team per student'), ('multiple', 'Multiple teams per student')],
     )
+    project_setup_policy = models.CharField(max_length=12, default='continue',
+        choices=[('continue', 'Existing projects allowed'), ('new', 'New projects required')])
     concept_config = models.JSONField(blank=True, default=dict,
         validators=[validate_concept_config])
     archive_file_template = models.CharField(

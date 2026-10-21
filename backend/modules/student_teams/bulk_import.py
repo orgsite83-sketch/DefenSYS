@@ -789,7 +789,10 @@ def preview_bulk_teams(
         preview_rows.append({
             'row': index,
             'sheet_row': index + 1,
-            'team_name': result['team_name'],
+            'team_name': result['team_name'] or f'Unnamed team {index}',
+            'group_key': row_data.get('group_key', ''),
+            'needs_name': not bool(row_data.get('team_name')),
+            'needs_project': not bool(row_data.get('project_title')),
             'adviser_id': result['adviser_id'],
             'adviser_status': result['adviser_status'],
             'adviser_name': result['adviser_name'],
@@ -832,7 +835,7 @@ def preview_bulk_teams(
             same_program = ('PIT' in data.get('level', '').upper()) == ('PIT' in other.get('level', '').upper())
             same_context = not event or not other_event or event == other_event
             multiple = event and event == other_event and multiple_events[event]
-            duplicate_name = data['team_name'].strip().casefold() == other['team_name'].strip().casefold() and data.get('level') == other.get('level')
+            duplicate_name = bool(data['team_name'].strip()) and data['team_name'].strip().casefold() == other['team_name'].strip().casefold() and data.get('level') == other.get('level')
             if duplicate_name or (same_program and same_context and members.intersection(other_members) and not multiple):
                 for current, conflict in ((row_index, other_index), (other_index, row_index)):
                     preview_rows[current]['batch_conflict'] = True
@@ -881,9 +884,10 @@ def build_team_payload_from_row(result, user=None):
     adviser = result['adviser']
     pit_row = is_pit_bulk_row(data, user)
 
+    from uuid import uuid4
     return {
-        'name': data['team_name'],
-        'project_title': data.get('project_title') or data['team_name'],
+        'name': data['team_name'] or f'Unnamed team {uuid4().hex}',
+        'project_title': data.get('project_title') or '',
         'level': data['level'],
         'year_level': data.get('year_level') or '',
         'section': data.get('section') or '',

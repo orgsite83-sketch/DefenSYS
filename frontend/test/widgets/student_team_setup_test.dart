@@ -27,6 +27,33 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(resetApiHttpClientForTesting);
 
+  testWidgets('leader confirms event-specific details without repeating initial setup', (tester) async {
+    var confirmed = false;
+    http.Request? saved;
+    setApiHttpClientForTesting(MockClient((request) async {
+      if (request.method == 'PATCH') {
+        saved = request; confirmed = true;
+        return http.Response('{"event_teams":[]}', 200);
+      }
+      return http.Response(jsonEncode({'teams': [], 'section_tasks': [], 'event_teams': confirmed ? [] : [{
+        'id': 7, 'event_id': 11, 'event_name': 'PIT Expo', 'name': 'Team Sining',
+        'section': 'BSIT-2A', 'year_level': '2nd Year', 'scope': 'pit', 'revision': 2,
+        'needs_details': true, 'concept_enabled': false, 'project_title': 'Continuing project', 'concept_tasks': [],
+      }]}), 200);
+    }));
+    await pumpDefensysWidget(tester, const StudentTeamSetupTasks(),
+      overrides: [authProvider.overrideWith(_StudentAuth.new)]);
+    expect(find.text('Choose team name'), findsNothing);
+    await tester.tap(find.text('Confirm event team details')); await tester.pumpAndSettle();
+    expect(find.text('Continuing project'), findsOneWidget);
+    await tester.enterText(find.byType(EditableText).first, 'Team Sining Expo');
+    await tester.tap(find.text('Confirm details')); await tester.pumpAndSettle();
+    expect(saved!.url.path, endsWith('/7/events/11/setup/'));
+    expect(jsonDecode(saved!.body), {'name': 'Team Sining Expo', 'project_title': 'Continuing project', 'revision': 2});
+    expect(find.text('Confirm event team details'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'leader sees configured concept count and can choose a team name',
     (tester) async {

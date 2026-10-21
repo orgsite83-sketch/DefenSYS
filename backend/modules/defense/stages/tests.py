@@ -116,6 +116,8 @@ class DefenseStageApiTests(APITestCase):
 
     def test_update_stage_label_order_and_active_status(self):
         stage = DefenseStage.objects.get(label='Final Defense')
+        original_id = stage.pk
+        original_count = DefenseStage.objects.count()
 
         response = self.client.patch(
             f'/api/defense/stages/{stage.id}/',
@@ -130,6 +132,8 @@ class DefenseStageApiTests(APITestCase):
         stage.refresh_from_db()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(stage.label, 'Final Oral Defense')
+        self.assertEqual(response.data['stage']['id'], original_id)
+        self.assertEqual(DefenseStage.objects.count(), original_count)
         self.assertEqual(stage.code, 'final-oral-defense')
         self.assertFalse(stage.is_active)
         self.assertEqual(response.data['counts']['active'], 2)

@@ -112,6 +112,7 @@ def upsert_pit_event_config(
     semester,
     event_name,
     year_level,
+    config_id=None,
     event_code=None,
     panel_rubric=None,
     peer_rubric=None,
@@ -121,6 +122,7 @@ def upsert_pit_event_config(
     deliverables=None,
     peer_grading_enabled=None,
     concept_config=None,
+    project_setup_policy=None,
     user=None,
     request=None,
 ):
@@ -144,14 +146,30 @@ def upsert_pit_event_config(
             except ApiValidationError as exc:
                 raise ValidationError({'deliverables': str(exc.detail)}) from exc
 
-    existing_config = PitEventGradingConfig.objects.select_for_update().filter(
-        semester=semester, event_name__iexact=event_name
-    ).first()
+    configs = PitEventGradingConfig.objects.select_for_update().filter(semester=semester)
+    if config_id is not None:
+        # Names are editable. An explicit ID must resolve to the original event
+        # and must never fall back to creating (or updating) a different event.
+        if isinstance(config_id, bool) or not str(config_id).isdigit():
+            raise ValidationError({'config_id': 'Choose a valid PIT event to edit.'})
+        config_id = int(config_id)
+        if not 0 < config_id <= 9223372036854775807:
+            raise ValidationError({'config_id': 'Choose a valid PIT event to edit.'})
+        existing_config = configs.filter(pk=config_id).first()
+        if existing_config is None:
+            raise ValidationError({'config_id': 'This PIT event no longer exists in the selected semester.'})
+    else:
+        # Retain the name-based upsert used by existing rubric clients.
+        existing_config = configs.filter(event_name__iexact=event_name).first()
     if existing_config and existing_config.year_level != year_level:
         raise ValidationError({'year_level': 'This event belongs to a different or unclassified PIT year level.'})
     if user is not None:
         from types import SimpleNamespace
         require_event_management(user, existing_config or SimpleNamespace(year_level=year_level))
+    if configs.filter(event_name__iexact=event_name).exclude(
+        pk=existing_config.pk if existing_config else None
+    ).exists():
+        raise ValidationError({'event_name': 'A PIT event with this name already exists in the selected semester.'})
     for rubric in (panel_rubric, peer_rubric):
         owner_year = getattr(getattr(rubric, 'created_by', None), 'pit_lead_year', '')
         if owner_year and owner_year != year_level:
@@ -159,6 +177,16 @@ def upsert_pit_event_config(
         if rubric and rubric.semester_id != semester.pk:
             raise ValidationError({'rubric': 'Selected rubric belongs to a different semester.'})
     old_values = pit_event_audit_values(existing_config) if existing_config else {}
+    if project_setup_policy is not None and project_setup_policy not in ('continue', 'new'):
+        raise ValidationError({'project_setup_policy': 'Choose existing projects allowed or new projects required.'})
+    if existing_config and project_setup_policy is not None and project_setup_policy != existing_config.project_setup_policy:
+        from student_teams.pit_rosters import event_in_use
+        sections = set(existing_config.section_rosters.values_list('section', flat=True))
+        from student_teams.models import StudentTeam
+        sections.update(StudentTeam.objects.filter(semester=semester, year_level=year_level,
+            level__icontains='PIT').values_list('section', flat=True))
+        if existing_config.is_officially_complete or any(event_in_use(existing_config, section) for section in sections):
+            raise ValidationError('Project requirements cannot change after event setup or activity begins.')
     from defense.document_policy import validate_concept_config, validate_file_policy, with_concept_papers
     concept_config = validate_concept_config(
         concept_config if concept_config is not None else getattr(existing_config, 'concept_config', {}))
@@ -184,7 +212,7 @@ def upsert_pit_event_config(
     # Rubric Exclusivity Check
     if panel_rubric:
         other = PitEventGradingConfig.objects.filter(semester=semester).exclude(
-            event_name__iexact=event_name
+            pk=existing_config.pk if existing_config else None
         ).filter(
             Q(panel_rubric=panel_rubric) | Q(peer_rubric=panel_rubric)
         ).first()
@@ -195,7 +223,7 @@ def upsert_pit_event_config(
 
     if peer_rubric:
         other = PitEventGradingConfig.objects.filter(semester=semester).exclude(
-            event_name__iexact=event_name
+            pk=existing_config.pk if existing_config else None
         ).filter(
             Q(panel_rubric=peer_rubric) | Q(peer_rubric=peer_rubric)
         ).first()
@@ -219,7 +247,8 @@ def upsert_pit_event_config(
             changing_code = (
                 event_code is not None and (existing_config.event_code or '').strip() != event_code.strip()
             )
-            if changing_rubrics or changing_weights or changing_code or existing_config.concept_config != concept_config:
+            changing_name = existing_config.event_name != event_name
+            if changing_name or changing_rubrics or changing_weights or changing_code or existing_config.concept_config != concept_config:
                 raise ValidationError(f"Cannot update configuration parameters: {lock_reason}")
 
             if deliverables is not None:
@@ -255,6 +284,8 @@ def upsert_pit_event_config(
         'panel_weight': panel_weight,
         'peer_weight': peer_weight,
     }
+    if project_setup_policy is not None:
+        defaults['project_setup_policy'] = project_setup_policy
     if event_code is not None:
         defaults['event_code'] = event_code.strip()
     if archive_file_template is not None:
@@ -273,11 +304,21 @@ def upsert_pit_event_config(
         defaults['peer_grading_enabled'] = True
 
     with transaction.atomic():
-        config, _created = PitEventGradingConfig.objects.update_or_create(
-            semester=semester,
-            event_name=existing_config.event_name if existing_config else event_name,
-            defaults=defaults,
-        )
+        if existing_config:
+            old_name = existing_config.event_name
+            config = existing_config
+            config.event_name = event_name
+            for field, value in defaults.items():
+                setattr(config, field, value)
+            config.save()
+            _created = False
+            if old_name != event_name:
+                _rename_pit_event_references(config, old_name)
+        else:
+            config = PitEventGradingConfig.objects.create(
+                semester=semester, event_name=event_name, **defaults,
+            )
+            _created = True
         if deliverables is not None:
             # Reconcile deliverables by primary key ID or deliverable_id
             existing_by_id = {d.id: d for d in config.deliverables.all()}
@@ -378,6 +419,42 @@ def upsert_pit_event_config(
     return config
 
 
+def _rename_pit_event_references(config, old_name):
+    """Keep current workflow labels attached to an event renamed before defense.
+
+    Scheduled/completed events are locked above. Bulk updates preserve uploaded
+    files, review timestamps and historical project snapshots.
+    """
+    from django.db.models import Q
+    from grading.grades.models import TeamGrade
+    from repository.deliverables.models import DeliverableSubmission
+    from student_teams.models import StudentTeam
+
+    legacy = Q(pit_event_config__isnull=True, stage_label__iexact=old_name)
+    TeamGrade.objects.filter(
+        Q(pit_event_config=config) | legacy,
+        semester=config.semester, scope=TeamGrade.SCOPE_PIT,
+        team__year_level=config.year_level,
+    ).update(pit_event_config=config, stage_label=config.event_name,
+             panel_weight=config.panel_weight, peer_weight=config.peer_weight)
+    DeliverableSubmission.objects.filter(
+        Q(pit_event_config=config) | legacy,
+        team__semester=config.semester, team__year_level=config.year_level,
+        team__level__icontains='PIT',
+    ).update(pit_event_config=config, stage_label=config.event_name)
+    teams = StudentTeam.objects.filter(
+        semester=config.semester, year_level=config.year_level, level__icontains='PIT',
+    )
+    for field in ('current_defense_stage', 'ready_for_stage'):
+        teams.filter(**{f'{field}__iexact': old_name}).update(**{field: config.event_name})
+    for team in teams.exclude(unlocked_stages=[]).only('pk', 'unlocked_stages'):
+        renamed = [config.event_name + value[len(old_name):]
+                   if value == old_name or value.startswith(f'{old_name}:') else value
+                   for value in team.unlocked_stages]
+        if renamed != team.unlocked_stages:
+            StudentTeam.objects.filter(pk=team.pk).update(unlocked_stages=renamed)
+
+
 def pit_event_audit_values(config):
     values = pit_event_config_payload(config)
     return {**values, 'scope': 'pit', 'year_level': config.year_level,
@@ -425,6 +502,8 @@ def pit_event_config_payload(config):
         'peer_grading_enabled': config.peer_grading_enabled,
         'concept_config': config.concept_config,
         'team_membership_policy': config.team_membership_policy,
+        'project_setup_policy': config.project_setup_policy,
+        'roster_setup_opened': config.section_rosters.filter(started_at__isnull=False).exists(),
         'archive_file_template': config.archive_file_template,
         'is_locked': is_locked,
         'lock_reason': lock_reason,

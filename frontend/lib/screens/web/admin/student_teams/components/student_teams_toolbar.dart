@@ -108,6 +108,7 @@ class StudentTeamsHeaderActions extends StatelessWidget {
     required this.onCreateTeam,
     this.onRefresh,
     this.importLabel = 'Import teams',
+    this.onRoster,
   });
 
   final bool isPitInstructor;
@@ -117,9 +118,18 @@ class StudentTeamsHeaderActions extends StatelessWidget {
   final VoidCallback? onCreateTeam;
   final VoidCallback? onRefresh;
   final String importLabel;
+  final VoidCallback? onRoster;
 
   @override
   Widget build(BuildContext context) {
+    if (onRoster != null) {
+      return OutlinedButton.icon(
+        onPressed: canTapActions ? onRoster : null,
+        style: DefensysButtonStyles.secondary(context),
+        icon: const Icon(Icons.groups_outlined, size: 16),
+        label: const Text('Team roster'),
+      );
+    }
     if (isPitInstructor) {
       return Row(
         mainAxisSize: MainAxisSize.min,

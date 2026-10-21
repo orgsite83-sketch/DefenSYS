@@ -53,7 +53,7 @@ void main() {
     final parsed = parseTeamBulkCsv(csvText);
     expect(parsed.rows, hasLength(16));
     expect(parsed.systemName, 'Hospital Management System');
-    expect(parsed.projectManager, 'Juan Dela Cruz');
+    expect(parsed.projectManager, 'Elena Abad');
     expect(parsed.section, contains('BSIT-4A'));
     expect(parsed.section, contains('BSIT-4B'));
 
@@ -71,7 +71,7 @@ void main() {
     expect(parsed.rows[8]['team_name'], 'Team MedRecord');
     expect(parsed.rows[8]['section'], 'BSIT-4B');
     expect(parsed.rows[8]['adviser_name'], 'Prof. Roberto Gomez');
-    expect(parsed.rows[8]['project_manager'], 'Juan Dela Cruz');
+    expect(parsed.rows[8]['project_manager'], 'Elena Abad');
 
     // Check second adviser in 4B
     expect(parsed.rows[12]['team_name'], 'Team MedTriage');
@@ -84,7 +84,7 @@ void main() {
     expect(bytes, isNotEmpty);
 
     final excel = Excel.decodeBytes(bytes);
-    final sheet = excel['defensys_pit_team_roster_template'];
+    final sheet = excel['defensys_pit_roster_template'];
     expect(sheet.spannedItems, isNotEmpty);
     expect(sheet.spannedItems, contains('D5:D36'));
     expect(sheet.spannedItems, contains('E5:E36'));
@@ -126,7 +126,7 @@ void main() {
     final parsed = parseTeamBulkCsv(csvText);
     expect(parsed.rows, hasLength(16));
     expect(parsed.systemName, 'Societree');
-    expect(parsed.projectManager, 'Juan Dela Cruz');
+    expect(parsed.projectManager, 'Elena Abad');
     expect(parsed.section, contains('BSIT-2A'));
     expect(parsed.section, contains('BSIT-2B'));
   });

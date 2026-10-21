@@ -316,13 +316,13 @@ class PitEventConfigLookupView(APIView):
 
         try:
             require_pit_year(pit_year)
-            existing = get_pit_event_config(semester, event_name)
-            if existing:
-                require_event_management(request.user, existing)
+            if 'config_id' in request.data and request.data['config_id'] is None:
+                raise ValidationError({'config_id': 'Choose a valid PIT event to edit.'})
             config = upsert_pit_event_config(
                 semester=semester,
                 event_name=event_name,
                 year_level=pit_year,
+                config_id=request.data.get('config_id'),
                 user=request.user,
                 request=request,
                 event_code=event_code,
@@ -334,6 +334,7 @@ class PitEventConfigLookupView(APIView):
                 deliverables=deliverables,
                 peer_grading_enabled=peer_grading_enabled,
                 concept_config=request.data.get('concept_config'),
+                project_setup_policy=request.data.get('project_setup_policy'),
             )
             return Response({'config': pit_event_config_payload(config)}, status=status.HTTP_200_OK)
         except ValidationError as e:

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/utils/export/team_roster_excel_generator.dart';
 
 class TemplateBlueprint {
   const TemplateBlueprint({
@@ -116,125 +117,30 @@ Schedule(s),M 1:00 PM - 3:00 PM,,,,,,,
 // Team Grouping Blueprints (Student Teams) - Single Unified Source of Truth
 // ---------------------------------------------------------------------------
 
-final List<TemplateBlueprint> teamGroupingBlueprints = [
-  const TemplateBlueprint(
-    id: 'official_team_roster_unified',
-    title: 'Official Team Roster (Unified Cohort Template)',
-    shortLabel: 'Team Roster',
-    icon: Icons.hub_outlined,
-    filename: 'defensys_team_roster_template.csv',
-    badgeText: 'Unified Cohort (Different & Shared)',
-    badgeBg: Color(0xFFEFF6FF),
-    badgeFg: Color(0xFF1D4ED8),
-    description:
-        'Official department standard unified template. Formatted side-by-side exactly like the blueprint spreadsheet: Columns A–E for Different Systems (BSIT-4A), Column F blank divider, and Columns G–K for Single Shared System (BSIT-4B) with System Name and PM metadata.',
-    highlights: [
-      'Side-by-side unified template matching the sheet blueprint layout',
-      'Columns A–E: Different Systems (BSIT-4A) with independent projects',
-      'Column F: Blank divider column',
-      'Columns G–K: Shared System (BSIT-4B) with System Name, PM, and modules',
-      'Supports importing both cohorts together in one sheet or separately',
-    ],
-    category: 'team',
-    rawCsv: '''Team Name,Capstone Project,Section,Adviser,Team Members,,System Name,Hospital Management System,,,
-Team SkyLedger,Alumni Career Tracker,BSIT-4A,Prof. Alex Santos,Marcus Villar,,Project Manager,Juan Dela Cruz,,,
-,,,,Patricia Ong,,Team Name,Module,Section,Adviser,Team Members
-,,,,Ethan Salazar,,Team MedRecord,Patient Records,BSIT-4B,Prof. Roberto Gomez,Juan Dela Cruz
-,,,,Zoe Castillo,,,,,,Maria Santos
-Team BioPulse,AI-Powered Vital Triage & Disease Predictor,BSIT-4A,Prof. Alex Santos,Ryan Torres,,,,,,Mark Reyes
-,,,,Nina Villanueva,,,,,,Anna Garcia
-,,,,Diego Garcia,,Team MedBilling,Billing,BSIT-4B,Prof. Roberto Gomez,David Aquino
-,,,,Patricia Ramos,,,,,,Sarah Ocampo
-Team SafeCity,Smart City IoT Infrastructure & Asset Sentinel,BSIT-4A,Prof. Alex Santos,Carlos Bautista,,,,,,Daniel Rivera
-,,,,Sophia Santos,,,,,,Jasmine Morales
-,,,,Miguel Cruz,,Team MedSchedule,Appointments,BSIT-4B,Prof. Roberto Gomez,Carlo Ramos
-,,,,Isabella Alcantara,,,,,,Nicole Bautista
-Team CodeLearners,Campus Event Hub,BSIT-4A,Prof. Alex Santos,David Aquino,,,,,,John Mendoza
-,,,,Sarah Ocampo,,,,,,Patricia Cruz
-,,,,Daniel Rivera,,Team MedPharma,Pharmacy,BSIT-4B,Prof. Roberto Gomez,Kevin Villanueva
-,,,,Jasmine Morales,,,,,,Bea Castro
-Team CyberGuard,Automated Penetration Testing & Threat Hunter,BSIT-4A,Prof. Elena Ramos,Gabriel Mendoza,,,,,,Christian Lim
-,,,,Bea Castro,,,,,,Joshua Navarro
-,,,,Christian Lim,,Team MedTriage,Triage,BSIT-4B,Prof. Cynthia Morales,Cedric Valdez
-,,,,Joshua Navarro,,,,,,Leila Soriano
-Team AgriSense,Smart Agriculture Crop & Soil Monitoring,BSIT-4A,Prof. Elena Ramos,Adrian Valdez,,,,,,Paolo Ramos
-,,,,Stephanie Yap,,,,,,Diana Cruz
-,,,,Jerome De Leon,,Team MedLab,Laboratory,BSIT-4B,Prof. Cynthia Morales,Anthony Lim
-,,,,Camille Roxas,,,,,,Katrina Santos
-Team EduTrack,Student Performance Analytics & Early Warning,BSIT-4A,Prof. Elena Ramos,Carlo Ramos,,,,,,Justin Ocampo
-,,,,Nicole Bautista,,,,,,Bianca Reyes
-,,,,John Mendoza,,Team MedInventory,Inventory,BSIT-4B,Prof. Cynthia Morales,Patrick Mendoza
-,,,,Patricia Cruz,,,,,,Christine Torres
-Team EcoRoute,Intelligent Fleet Logistics & Route Optimizer,BSIT-4A,Prof. Elena Ramos,Miguel Torres,,,,,,Bea Bautista
-,,,,Angela Flores,,,,,,Danica Sotto
-,,,,Francis Dizon,,Team MedWards,Wards,BSIT-4B,Prof. Cynthia Morales,Kenneth Salazar
-,,,,Rhea Salazar,,,,,,Nicole Dizon
-,,,,,,,,,,Jerome Navarro
-,,,,,,,,,,Alyssa Castillo
-''',
-  ),
-];
+TemplateBlueprint _teamBlueprint(bool capstone) => TemplateBlueprint(
+  id: capstone ? 'official_team_roster_unified' : 'pit_team_roster_unified',
+  title: capstone ? 'Official Capstone Team Sheet' : 'Official PIT Team Sheet',
+  shortLabel: capstone ? 'Team Roster' : 'PIT Roster',
+  icon: Icons.hub_outlined,
+  filename: capstone
+      ? 'defensys_team_roster_template.csv'
+      : 'defensys_pit_team_roster_template.csv',
+  badgeText: 'Different & Shared Systems',
+  badgeBg: const Color(0xFFEFF6FF),
+  badgeFg: const Color(0xFF1D4ED8),
+  description:
+      'Different systems in B–F; shared system in H–L. System Name and Project Manager values begin in column I.',
+  highlights: const [
+    'Separate teams with a blank row.',
+    'List the leader first in Team Members.',
+  ],
+  rawCsv: officialTeamRosterCsv(isCapstone: capstone),
+  category: 'team',
+);
 
-// ---------------------------------------------------------------------------
-// PIT Team Grouping Blueprints (Single Unified Source of Truth)
-// ---------------------------------------------------------------------------
-
+final List<TemplateBlueprint> teamGroupingBlueprints = [_teamBlueprint(true)];
 final List<TemplateBlueprint> pitTeamGroupingBlueprints = [
-  const TemplateBlueprint(
-    id: 'pit_team_roster_unified',
-    title: 'Official PIT Team Roster (Unified Cohort Template)',
-    shortLabel: 'PIT Roster',
-    icon: Icons.hub_outlined,
-    filename: 'defensys_pit_team_roster_template.csv',
-    badgeText: 'Unified PIT Cohort',
-    badgeBg: Color(0xFFEFF6FF),
-    badgeFg: Color(0xFF1D4ED8),
-    description:
-        'Official PIT standard unified template formatted side-by-side: Columns A–E for Different Systems (BSIT-2A), Column F blank divider, and Columns G–K for Societree Shared System (BSIT-2B).',
-    highlights: [
-      'Side-by-side unified template matching the sheet blueprint layout',
-      'Columns A–E: Different Systems (BSIT-2A) with independent projects',
-      'Column F: Blank divider column',
-      'Columns G–K: Societree Shared System (BSIT-2B) with modules',
-      'Supports importing both cohorts together in one sheet or separately',
-    ],
-    category: 'team',
-    rawCsv: '''Team Name,PIT Project,Section,Instructor,Team Members,,System Name,Societree,,,
-Group 1,Smart Campus Navigation System,BSIT-2A,Prof. Alex Santos,Juan Dela Cruz,,Project Manager,Juan Dela Cruz,,,
-,,,,Maria Santos,,Team Name,Module,Section,Instructor,Team Members
-,,,,Mark Reyes,,Group 1,Site Module,BSIT-2B,Prof. Alex Santos,Juan Dela Cruz
-,,,,Anna Garcia,,,,,,Maria Santos
-Group 2,Automated Library Portal,BSIT-2A,Prof. Alex Santos,David Aquino,,,,,,Mark Reyes
-,,,,Sarah Ocampo,,,,,,Anna Garcia
-,,,,Daniel Rivera,,Group 2,Arcu Module,BSIT-2B,Prof. Alex Santos,David Aquino
-,,,,Jasmine Morales,,,,,,Sarah Ocampo
-Group 3,Alumni Career Tracker,BSIT-2A,Prof. Alex Santos,Carlo Ramos,,,,,,Daniel Rivera
-,,,,Nicole Bautista,,,,,,Jasmine Morales
-,,,,John Mendoza,,Group 3,Events Module,BSIT-2B,Prof. Alex Santos,Carlo Ramos
-,,,,Patricia Cruz,,,,,,Nicole Bautista
-Group 4,Event Booking System,BSIT-2A,Prof. Alex Santos,Kevin Villanueva,,,,,,John Mendoza
-,,,,Bea Castro,,,,,,Patricia Cruz
-,,,,Christian Lim,,Group 4,Membership Module,BSIT-2B,Prof. Alex Santos,Kevin Villanueva
-,,,,Joshua Navarro,,,,,,Bea Castro
-Group 5,Hostel Reservation Portal,BSIT-2A,Prof. Alex Santos,Cedric Valdez,,,,,,Christian Lim
-,,,,Leila Soriano,,,,,,Joshua Navarro
-,,,,Paolo Ramos,,Group 5,Finance Module,BSIT-2B,Prof. Alex Santos,Cedric Valdez
-,,,,Diana Cruz,,,,,,Leila Soriano
-Group 6,Campus Lost & Found Sentinel,BSIT-2A,Prof. Alex Santos,Anthony Lim,,,,,,Paolo Ramos
-,,,,Katrina Santos,,,,,,Diana Cruz
-,,,,Justin Ocampo,,Group 6,Elections Module,BSIT-2B,Prof. Alex Santos,Anthony Lim
-,,,,Bianca Reyes,,,,,,Katrina Santos
-Group 7,Student Tutoring Exchange,BSIT-2A,Prof. Alex Santos,Patrick Mendoza,,,,,,Justin Ocampo
-,,,,Christine Torres,,,,,,Bianca Reyes
-Group 8,Green Campus Energy Tracker,BSIT-2A,Prof. Alex Santos,Kenneth Salazar,,Group 7,Publication Module,BSIT-2B,Prof. Alex Santos,Patrick Mendoza
-,,,,Nicole Dizon,,,,,,Christine Torres
-,,,,Jerome Navarro,,,,,,Bea Bautista
-,,,,Alyssa Castillo,,Group 8,Certificates Module,BSIT-2B,Prof. Alex Santos,Kenneth Salazar
-,,,,,,,,,,Nicole Dizon
-,,,,,,,,,,Jerome Navarro
-,,,,,,,,,,Alyssa Castillo
-''',
-  ),
+  _teamBlueprint(false),
 ];
 
 List<TemplateBlueprint> teamGroupingBlueprintsFor({required bool isCapstone}) =>
@@ -261,7 +167,9 @@ class SampleBlueprintTeamItem {
       isCapstone ? section : section.replaceAll('4', '2');
 
   String effectiveSharedModule({required bool isCapstone}) =>
-      (!isCapstone && pitSharedModule.isNotEmpty) ? pitSharedModule : sharedModule;
+      (!isCapstone && pitSharedModule.isNotEmpty)
+      ? pitSharedModule
+      : sharedModule;
 }
 
 final List<SampleBlueprintTeamItem> sampleAdviser1Teams = [
@@ -276,7 +184,12 @@ final List<SampleBlueprintTeamItem> sampleAdviser1Teams = [
   const SampleBlueprintTeamItem(
     teamName: 'Group 2',
     section: 'BSIT-4A',
-    members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
+    members: [
+      'David Aquino',
+      'Sarah Ocampo',
+      'Daniel Rivera',
+      'Jasmine Morales',
+    ],
     independentProject: 'Automated Library Portal',
     sharedModule: 'Billing',
     pitSharedModule: 'Arcu Module',
@@ -284,7 +197,12 @@ final List<SampleBlueprintTeamItem> sampleAdviser1Teams = [
   const SampleBlueprintTeamItem(
     teamName: 'Group 3',
     section: 'BSIT-4A',
-    members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
+    members: [
+      'Carlo Ramos',
+      'Nicole Bautista',
+      'John Mendoza',
+      'Patricia Cruz',
+    ],
     independentProject: 'Alumni Career Tracker',
     sharedModule: 'Appointments',
     pitSharedModule: 'Events Module',
@@ -292,7 +210,12 @@ final List<SampleBlueprintTeamItem> sampleAdviser1Teams = [
   const SampleBlueprintTeamItem(
     teamName: 'Group 4',
     section: 'BSIT-4A',
-    members: ['Kevin Villanueva', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
+    members: [
+      'Kevin Villanueva',
+      'Bea Castro',
+      'Christian Lim',
+      'Joshua Navarro',
+    ],
     independentProject: 'Event Booking System',
     sharedModule: 'Triage',
     pitSharedModule: 'Membership Module',
@@ -303,7 +226,12 @@ final List<SampleBlueprintTeamItem> sampleAdviser2Teams = [
   const SampleBlueprintTeamItem(
     teamName: 'Group 1',
     section: 'BSIT-4B',
-    members: ['Miguel Torres', 'Angela Flores', 'Francis Dizon', 'Rhea Salazar'],
+    members: [
+      'Miguel Torres',
+      'Angela Flores',
+      'Francis Dizon',
+      'Rhea Salazar',
+    ],
     independentProject: 'Hospital Inventory System',
     sharedModule: 'Pharmacy',
     pitSharedModule: 'Finance Module',
@@ -311,7 +239,12 @@ final List<SampleBlueprintTeamItem> sampleAdviser2Teams = [
   const SampleBlueprintTeamItem(
     teamName: 'Group 2',
     section: 'BSIT-4B',
-    members: ['Gabriel Tan', 'Chloe Soriano', 'Pauline Mercado', 'Rafael Pascual'],
+    members: [
+      'Gabriel Tan',
+      'Chloe Soriano',
+      'Pauline Mercado',
+      'Rafael Pascual',
+    ],
     independentProject: 'Laboratory Management Portal',
     sharedModule: 'Laboratory',
     pitSharedModule: 'Elections Module',
@@ -319,7 +252,12 @@ final List<SampleBlueprintTeamItem> sampleAdviser2Teams = [
   const SampleBlueprintTeamItem(
     teamName: 'Group 3',
     section: 'BSIT-4B',
-    members: ['Adrian Valdez', 'Stephanie Yap', 'Jerome De Leon', 'Camille Roxas'],
+    members: [
+      'Adrian Valdez',
+      'Stephanie Yap',
+      'Jerome De Leon',
+      'Camille Roxas',
+    ],
     independentProject: 'Security Clearance System',
     sharedModule: 'Inventory',
     pitSharedModule: 'Publication Module',
@@ -327,10 +265,14 @@ final List<SampleBlueprintTeamItem> sampleAdviser2Teams = [
   const SampleBlueprintTeamItem(
     teamName: 'Group 4',
     section: 'BSIT-4B',
-    members: ['Bryan Castillo', 'Karen Tolentino', 'Vincent Miranda', 'Alyssa Fernandez'],
+    members: [
+      'Bryan Castillo',
+      'Karen Tolentino',
+      'Vincent Miranda',
+      'Alyssa Fernandez',
+    ],
     independentProject: 'Dormitory Management System',
     sharedModule: 'Wards',
     pitSharedModule: 'Certificates Module',
   ),
 ];
-

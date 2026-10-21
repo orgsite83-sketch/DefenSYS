@@ -92,6 +92,23 @@ class TeamMemberSerializer(serializers.ModelSerializer):
 
 
 class StudentTeamSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        result = super().to_representation(instance)
+        if instance.is_pit:
+            from .roster_workspace import display_for
+            from defense.scheduler.models import PitEventGradingConfig
+            request = self.context.get('request')
+            params = request.query_params if request else {}
+            label = params.get('event_name') or params.get('stage') or params.get('selected_stage')
+            cache = self.context.setdefault('_roster_events', {})
+            key = (instance.semester_id, instance.year_level, label)
+            if key not in cache:
+                cache[key] = PitEventGradingConfig.objects.filter(semester_id=instance.semester_id,
+                    year_level=instance.year_level, event_name__iexact=label).first() if label else None
+            event = cache[key]
+            result.update(display_for(instance, event))
+        return result
+
     leader_id = serializers.IntegerField(source='leader.id', read_only=True)
     leader_username = serializers.CharField(source='leader.username', read_only=True)
     leader_name = serializers.SerializerMethodField()
@@ -657,7 +674,8 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
 
 class BulkTeamRowSerializer(serializers.Serializer):
-    team_name = serializers.CharField(max_length=120)
+    team_name = serializers.CharField(required=False, default='', allow_blank=True, max_length=120)
+    group_key = serializers.CharField(required=False, allow_blank=True, max_length=255)
     project_title = serializers.CharField(required=False, allow_blank=True, max_length=255)
     current_defense_stage = serializers.CharField(required=False, allow_blank=True, max_length=120)
     level = serializers.CharField(required=False, allow_blank=True, max_length=30)

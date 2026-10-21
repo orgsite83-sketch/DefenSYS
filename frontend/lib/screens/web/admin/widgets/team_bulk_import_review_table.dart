@@ -11,11 +11,7 @@ class _AdviserCandidate {
   final String? id;
   final String subtitle;
 
-  const _AdviserCandidate({
-    required this.name,
-    this.id,
-    this.subtitle = '',
-  });
+  const _AdviserCandidate({required this.name, this.id, this.subtitle = ''});
 }
 
 class _StudentCandidate {
@@ -23,11 +19,7 @@ class _StudentCandidate {
   final String? id;
   final String subtitle;
 
-  const _StudentCandidate({
-    required this.name,
-    this.id,
-    this.subtitle = '',
-  });
+  const _StudentCandidate({required this.name, this.id, this.subtitle = ''});
 }
 
 /// Elevated Preflight Review Table for Student Teams Bulk Import.
@@ -53,6 +45,7 @@ class TeamBulkImportReviewTable extends StatefulWidget {
     this.studentOptions,
     this.onSectionAdded,
     this.onOpenExistingTeam,
+    this.lockAssignments = false,
   });
 
   final List<Map<String, dynamic>> rows;
@@ -72,18 +65,28 @@ class TeamBulkImportReviewTable extends StatefulWidget {
   final List<dynamic>? studentOptions;
   final void Function(String newSection)? onSectionAdded;
   final ValueChanged<int>? onOpenExistingTeam;
+  final bool lockAssignments;
 
   @override
-  State<TeamBulkImportReviewTable> createState() => _TeamBulkImportReviewTableState();
+  State<TeamBulkImportReviewTable> createState() =>
+      _TeamBulkImportReviewTableState();
 }
 
 class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
-  Color get _ink => DefensysTokens.isDark(context) ? const Color(0xFFFAFAFA) : const Color(0xFF18181B);
+  Color get _ink => DefensysTokens.isDark(context)
+      ? const Color(0xFFFAFAFA)
+      : const Color(0xFF18181B);
   Color get _surface => DefensysTokens.surfaceOf(context);
-  Color get _panel => DefensysTokens.isDark(context) ? const Color(0xFF27272A) : const Color(0xFFFAFAFA);
-  Color get _muted => DefensysTokens.isDark(context) ? const Color(0xFFA1A1AA) : const Color(0xFF71717A);
+  Color get _panel => DefensysTokens.isDark(context)
+      ? const Color(0xFF27272A)
+      : const Color(0xFFFAFAFA);
+  Color get _muted => DefensysTokens.isDark(context)
+      ? const Color(0xFFA1A1AA)
+      : const Color(0xFF71717A);
   static const _maroon = DefensysUi.primaryMaroon;
-  Color get _line => DefensysTokens.isDark(context) ? const Color(0xFF3F3F46) : const Color(0xFFE4E4E7);
+  Color get _line => DefensysTokens.isDark(context)
+      ? const Color(0xFF3F3F46)
+      : const Color(0xFFE4E4E7);
   static const _green = Color(0xFF15803D);
   static const _red = Color(0xFFB91C1C);
   static const _redBg = Color(0xFFFEF2F2);
@@ -92,20 +95,36 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
   static const _amberBg = Color(0xFFFFFBEB);
   static const _amberBorder = Color(0xFFFDE68A);
 
-  int _pageSize = 5; // Default limit 5 teams per page to prevent long vertical scrolling
+  int _pageSize =
+      5; // Default limit 5 teams per page to prevent long vertical scrolling
   int _currentPage = 0;
   final Set<String> _customSections = {};
 
   @override
-  Widget build(BuildContext context) => DefensysShadcnScope(child: Builder(builder: _buildReview));
+  Widget build(BuildContext context) =>
+      DefensysShadcnScope(child: Builder(builder: _buildReview));
 
-  String _facultyValue(Map<String, dynamic> row, [Map<String, dynamic>? preview]) {
+  String _facultyValue(
+    Map<String, dynamic> row, [
+    Map<String, dynamic>? preview,
+  ]) {
     final pit =
-        !widget.isCapstoneAdmin || (row['level'] ?? preview?['level'] ?? '').toString().toUpperCase().contains('PIT');
+        !widget.isCapstoneAdmin ||
+        (row['level'] ?? preview?['level'] ?? '')
+            .toString()
+            .toUpperCase()
+            .contains('PIT');
     if (pit) {
-      return (row['instructor_name'] ?? preview?['instructor_name'] ?? '').toString().trim();
+      return (row['instructor_name'] ?? preview?['instructor_name'] ?? '')
+          .toString()
+          .trim();
     }
-    return (row['adviser_name'] ?? row['adviser_id'] ?? preview?['adviser_name'] ?? '').toString().trim();
+    return (row['adviser_name'] ??
+            row['adviser_id'] ??
+            preview?['adviser_name'] ??
+            '')
+        .toString()
+        .trim();
   }
 
   Widget _contextBadge(String label, {IconData? icon}) => ShadBadge.outline(
@@ -117,13 +136,20 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (icon != null) ...[Icon(icon, size: 12, color: _muted), const SizedBox(width: 5)],
+        if (icon != null) ...[
+          Icon(icon, size: 12, color: _muted),
+          const SizedBox(width: 5),
+        ],
         Flexible(
           child: Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: _ink),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: _ink,
+            ),
           ),
         ),
       ],
@@ -146,8 +172,12 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       }
 
       // Section filter
-      if (widget.sectionFilter != null && widget.sectionFilter!.isNotEmpty && widget.sectionFilter != 'all') {
-        final sec = (row['section'] ?? preview?['section'] ?? '').toString().trim();
+      if (widget.sectionFilter != null &&
+          widget.sectionFilter!.isNotEmpty &&
+          widget.sectionFilter != 'all') {
+        final sec = (row['section'] ?? preview?['section'] ?? '')
+            .toString()
+            .trim();
         if (widget.sectionFilter == '_none_') {
           if (sec.isNotEmpty) return false;
         } else if (sec.toLowerCase() != widget.sectionFilter!.toLowerCase()) {
@@ -156,7 +186,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       }
 
       // Adviser filter
-      if (widget.adviserFilter != null && widget.adviserFilter!.isNotEmpty && widget.adviserFilter != 'all') {
+      if (widget.adviserFilter != null &&
+          widget.adviserFilter!.isNotEmpty &&
+          widget.adviserFilter != 'all') {
         final adv = _facultyValue(row, preview);
         if (widget.adviserFilter == 'with_adviser') {
           if (adv.isEmpty) return false;
@@ -172,12 +204,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       if (query.isNotEmpty) {
         final teamName = (row['team_name'] ?? '').toString().toLowerCase();
         final project = (row['project_title'] ?? '').toString().toLowerCase();
-        final section = (row['section'] ?? preview?['section'] ?? '').toString().toLowerCase();
+        final section = (row['section'] ?? preview?['section'] ?? '')
+            .toString()
+            .toLowerCase();
         final adviser = _facultyValue(row, preview).toLowerCase();
         final members = (row['member_ids'] is List)
             ? (row['member_ids'] as List).join(' ').toLowerCase()
             : (row['member_ids'] ?? '').toString().toLowerCase();
-        final matches = teamName.contains(query) ||
+        final matches =
+            teamName.contains(query) ||
             project.contains(query) ||
             section.contains(query) ||
             adviser.contains(query) ||
@@ -242,14 +277,19 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           : visible;
       final groups = <String, List<MapEntry<int, Map<String, dynamic>>>>{};
       for (final item in pagedVisible) {
-        final sec = (item.value['section'] ?? _previewForRow(item.key + 1)?['section'] ?? '')
-            .toString()
-            .trim();
+        final sec =
+            (item.value['section'] ??
+                    _previewForRow(item.key + 1)?['section'] ??
+                    '')
+                .toString()
+                .trim();
         final groupKey = sec.isNotEmpty ? 'Section $sec' : 'Unassigned Section';
         groups.putIfAbsent(groupKey, () => []).add(item);
       }
       for (final grp in groups.entries) {
-        final readyInGroup = grp.value.where((e) => _previewForRow(e.key + 1)?['ready'] == true).length;
+        final readyInGroup = grp.value
+            .where((e) => _previewForRow(e.key + 1)?['ready'] == true)
+            .length;
         bodyContent.add(
           _buildGroupHeader(
             icon: Icons.meeting_room_outlined,
@@ -259,7 +299,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             color: _muted,
           ),
         );
-        bodyContent.addAll(grp.value.map((entry) => _rowCard(context, entry.key, entry.value)));
+        bodyContent.addAll(
+          grp.value.map((entry) => _rowCard(context, entry.key, entry.value)),
+        );
       }
     } else if (widget.groupBy == 'adviser') {
       final pagedVisible = _pageSize > 0 && totalItems > 0
@@ -273,7 +315,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         groups.putIfAbsent(groupKey, () => []).add(item);
       }
       for (final grp in groups.entries) {
-        final readyInGroup = grp.value.where((e) => _previewForRow(e.key + 1)?['ready'] == true).length;
+        final readyInGroup = grp.value
+            .where((e) => _previewForRow(e.key + 1)?['ready'] == true)
+            .length;
         bodyContent.add(
           _buildGroupHeader(
             icon: Icons.supervisor_account_outlined,
@@ -283,7 +327,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             color: _muted,
           ),
         );
-        bodyContent.addAll(grp.value.map((entry) => _rowCard(context, entry.key, entry.value)));
+        bodyContent.addAll(
+          grp.value.map((entry) => _rowCard(context, entry.key, entry.value)),
+        );
       }
     } else {
       visible.sort((a, b) {
@@ -295,7 +341,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       final pagedVisible = _pageSize > 0 && totalItems > 0
           ? visible.sublist(startIndex, endIndex)
           : visible;
-      bodyContent.addAll(pagedVisible.map((entry) => _rowCard(context, entry.key, entry.value)));
+      bodyContent.addAll(
+        pagedVisible.map((entry) => _rowCard(context, entry.key, entry.value)),
+      );
     }
 
     return Column(
@@ -349,7 +397,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w800,
-              color: _ink),
+              color: _ink,
+            ),
           ),
           const SizedBox(width: 10),
           Container(
@@ -364,7 +413,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: _muted),
+                color: _muted,
+              ),
             ),
           ),
           const Spacer(),
@@ -375,7 +425,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
-              color: readyCount == count ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+              color: readyCount == count
+                  ? const Color(0xFF16A34A)
+                  : const Color(0xFFD97706),
             ),
           ),
         ],
@@ -404,12 +456,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         .toList();
 
     final membersList = (row['member_ids'] is List)
-        ? (row['member_ids'] as List).map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
+        ? (row['member_ids'] as List)
+              .map((e) => e.toString().trim())
+              .where((e) => e.isNotEmpty)
+              .toList()
         : (row['member_ids']?.toString() ?? '')
-            .split('|')
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
-            .toList();
+              .split('|')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
 
     final leaderId = (row['leader_id']?.toString() ?? '').trim();
 
@@ -417,30 +472,36 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     final capstoneProgram = programLabel.isNotEmpty
         ? programLabel
         : (row['level']?.toString().isNotEmpty == true
-            ? row['level'].toString()
-            : (row['year_level']?.toString().isNotEmpty == true
-                ? row['year_level'].toString()
-                : ''));
+              ? row['level'].toString()
+              : (row['year_level']?.toString().isNotEmpty == true
+                    ? row['year_level'].toString()
+                    : ''));
 
     final currentProgram = widget.isCapstoneAdmin
         ? (capstoneProgram.isNotEmpty ? capstoneProgram : 'Capstone')
         : (widget.pitLeadYear != null && widget.pitLeadYear!.isNotEmpty
-            ? (programLabel.isNotEmpty ? programLabel : '${widget.pitLeadYear} PIT')
-            : 'PIT');
+              ? (programLabel.isNotEmpty
+                    ? programLabel
+                    : '${widget.pitLeadYear} PIT')
+              : 'PIT');
 
     final teamTitle = row['team_name']?.toString().trim() ?? '';
     final projectTitle = row['project_title']?.toString().trim() ?? '';
-    final sectionValue = (row['section'] ?? preview?['section'] ?? '').toString().trim();
-    final rowIsPit = !widget.isCapstoneAdmin || currentProgram.toUpperCase().contains('PIT');
+    final sectionValue = (row['section'] ?? preview?['section'] ?? '')
+        .toString()
+        .trim();
+    final rowIsPit =
+        !widget.isCapstoneAdmin || currentProgram.toUpperCase().contains('PIT');
     final adviserValue = _facultyValue(row, preview);
-    final rowHash = '${teamTitle}_${projectTitle}_${sectionValue}_${adviserValue}_${leaderId}_${membersList.join(',')}';
 
     final borderColor = ready
         ? const Color(0xFF10B981)
-        : (issues.isNotEmpty ? const Color(0xFFEF4444) : const Color(0xFFCBD5E1));
+        : (issues.isNotEmpty
+              ? const Color(0xFFEF4444)
+              : const Color(0xFFCBD5E1));
 
     return Container(
-      key: ValueKey('bulk_import_row_${index}_$rowHash'),
+      key: ValueKey('bulk_import_row_${row['group_key'] ?? index}'),
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: _surface,
@@ -457,28 +518,29 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
             decoration: BoxDecoration(
               color: _surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
-              border: Border(
-                bottom: BorderSide(
-                  color: _line),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(9),
               ),
+              border: Border(bottom: BorderSide(color: _line)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+              children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                    children: [
                       Text(
-                          teamTitle.isNotEmpty ? teamTitle : 'Untitled Team',
+                        teamTitle.isNotEmpty
+                            ? teamTitle
+                            : 'Unnamed team $rowNumber',
                         style: TextStyle(
-                            color: _ink,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.2,
-                          ),
+                          color: _ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.2,
                         ),
+                      ),
                       const SizedBox(height: 9),
                       Wrap(
                         spacing: 6,
@@ -486,22 +548,30 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           _contextBadge('Row $rowNumber'),
+                          if (teamTitle.isEmpty || projectTitle.isEmpty)
+                            _contextBadge(
+                              'Leader completes: ${[if (teamTitle.isEmpty) 'team name', if (projectTitle.isEmpty) 'project setup'].join(' + ')}',
+                              icon: Icons.pending_actions_outlined,
+                            ),
                           _contextBadge(
                             '${(preview?['concept_requirement'] as Map?)?['label'] ?? (projectTitle.isEmpty ? 'Topic unassigned · Stage default concepts' : 'Assigned project/module · 1 concept')}',
                             icon: Icons.description_outlined,
                           ),
                           if (sectionValue.isNotEmpty)
-                            _contextBadge('Sec: $sectionValue', icon: Icons.meeting_room_outlined),
+                            _contextBadge(
+                              'Sec: $sectionValue',
+                              icon: Icons.meeting_room_outlined,
+                            ),
                           if (adviserValue.isNotEmpty)
                             _contextBadge(
                               '${rowIsPit ? 'Instructor' : 'Adviser'}: $adviserValue',
                               icon: Icons.person_outline,
                             ),
-                          if (currentProgram.isNotEmpty) _contextBadge(currentProgram, icon: Icons.school_outlined),
-                      Text('Sheet row ${rowNumber + 1}',
-                        style: TextStyle(
-                          color: _muted,
-                          fontSize: 11)),
+                          if (currentProgram.isNotEmpty)
+                            _contextBadge(
+                              currentProgram,
+                              icon: Icons.school_outlined,
+                            ),
                         ],
                       ),
                     ],
@@ -514,7 +584,10 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                   tooltip: 'Delete team row',
                   onPressed: () => widget.onDeleteRow(index),
                   icon: Icon(Icons.delete_outline, size: 17, color: _muted),
-                  constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                  constraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
                   padding: const EdgeInsets.all(6),
                 ),
               ],
@@ -536,7 +609,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.error_outline_rounded, size: 15, color: _red),
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        size: 15,
+                        color: _red,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         '${issues.length} issue${issues.length == 1 ? ' requires' : 's require'} correction:',
@@ -580,7 +657,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.warning_amber_rounded, size: 15, color: _amber),
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        size: 15,
+                        color: _amber,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         '${warnings.length} warning${warnings.length == 1 ? '' : 's'}:',
@@ -610,14 +691,26 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               ),
             ),
 
-          if (widget.onOpenExistingTeam != null && (preview?['membership_conflicts'] as List? ?? []).isNotEmpty)
-            Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              child: Wrap(spacing: 8, runSpacing: 6, children: [
-                for (final team in (preview!['membership_conflicts'] as List).whereType<Map>())
-                  TextButton.icon(onPressed: () => widget.onOpenExistingTeam!(team['id'] as int),
-                    icon: const Icon(Icons.open_in_new, size: 14),
-                    label: Text('Review ${team['name']}')),
-              ])),
+          if (widget.onOpenExistingTeam != null &&
+              (preview?['membership_conflicts'] as List? ?? []).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  for (final team
+                      in (preview!['membership_conflicts'] as List)
+                          .whereType<Map>())
+                    TextButton.icon(
+                      onPressed: () =>
+                          widget.onOpenExistingTeam!(team['id'] as int),
+                      icon: const Icon(Icons.open_in_new, size: 14),
+                      label: Text('Review ${team['name']}'),
+                    ),
+                ],
+              ),
+            ),
 
           // 3. Form Fields Body
           Padding(
@@ -639,21 +732,25 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                             child: _field(
                               label: 'Team Name',
                               icon: Icons.groups_2_outlined,
-                              isRequired: true,
+                              isRequired: false,
                               value: row['team_name']?.toString() ?? '',
                               hintText: 'e.g. Team SkyLedger',
                               onChanged: (v) {
                                 row['team_name'] = v;
                                 widget.onRowChanged(index);
                               },
-                              key: ValueKey('field_name_${rowNumber}_${row['team_name']}'),
+                              key: ValueKey(
+                                'field_name_${row['group_key'] ?? rowNumber}',
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             flex: 4,
                             child: _field(
-                              label: widget.isCapstoneAdmin ? 'Capstone Project Title' : 'PIT Project Title',
+                              label: widget.isCapstoneAdmin
+                                  ? 'Capstone Project Title'
+                                  : 'PIT Project Title',
                               icon: Icons.lightbulb_outline_rounded,
                               isRequired: false,
                               value: row['project_title']?.toString() ?? '',
@@ -662,7 +759,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                 row['project_title'] = v;
                                 widget.onRowChanged(index);
                               },
-                              key: ValueKey('field_proj_${rowNumber}_${row['project_title']}'),
+                              key: ValueKey(
+                                'field_proj_${row['group_key'] ?? rowNumber}',
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -696,18 +795,22 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                           _field(
                             label: 'Team Name',
                             icon: Icons.groups_2_outlined,
-                            isRequired: true,
+                            isRequired: false,
                             value: row['team_name']?.toString() ?? '',
                             hintText: 'e.g. Team SkyLedger',
                             onChanged: (v) {
                               row['team_name'] = v;
                               widget.onRowChanged(index);
                             },
-                            key: ValueKey('field_name_${rowNumber}_${row['team_name']}'),
+                            key: ValueKey(
+                              'field_name_${row['group_key'] ?? rowNumber}',
+                            ),
                           ),
                           const SizedBox(height: 12),
                           _field(
-                            label: widget.isCapstoneAdmin ? 'Capstone Project Title' : 'PIT Project Title',
+                            label: widget.isCapstoneAdmin
+                                ? 'Capstone Project Title'
+                                : 'PIT Project Title',
                             icon: Icons.lightbulb_outline_rounded,
                             isRequired: false,
                             value: row['project_title']?.toString() ?? '',
@@ -716,7 +819,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                               row['project_title'] = v;
                               widget.onRowChanged(index);
                             },
-                            key: ValueKey('field_proj_${rowNumber}_${row['project_title']}'),
+                            key: ValueKey(
+                              'field_proj_${row['group_key'] ?? rowNumber}',
+                            ),
                           ),
                           const SizedBox(height: 12),
                           _buildSectionSelector(
@@ -774,7 +879,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     required String teamTitle,
   }) {
     final cleanLeader = leaderId.trim().toLowerCase();
-    final hasLeader = cleanLeader.isNotEmpty &&
+    final hasLeader =
+        cleanLeader.isNotEmpty &&
         membersList.any((m) => m.trim().toLowerCase() == cleanLeader);
     final isMaxCapacity = membersList.length >= 4;
 
@@ -809,26 +915,32 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               const SizedBox(width: 8),
               // Capacity Indicator: 4/4 (Max) or count
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 1.5,
+                ),
                 decoration: BoxDecoration(
                   color: _surface,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _line),
+                  border: Border.all(color: _line),
                 ),
                 child: Text(
                   isMaxCapacity ? '4/4 (Max)' : '${membersList.length}/4',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
-                    color: _muted),
+                    color: _muted,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
               // Leadership designation status pill
               if (hasLeader) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2.5,
+                  ),
                   decoration: BoxDecoration(
                     color: _surface,
                     borderRadius: BorderRadius.circular(6),
@@ -841,13 +953,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
-                        'Leader: $leaderId',
+                          'Leader: $leaderId',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: _ink),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: _ink,
+                          ),
                         ),
                       ),
                     ],
@@ -857,7 +970,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.info_outline_rounded, size: 13, color: Color(0xFFD97706)),
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      size: 13,
+                      color: Color(0xFFD97706),
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       membersList.isEmpty
@@ -883,7 +1000,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               ...membersList.map((member) {
-                final isLeader = cleanLeader.isNotEmpty &&
+                final isLeader =
+                    cleanLeader.isNotEmpty &&
                     member.trim().toLowerCase() == cleanLeader;
 
                 return _buildMemberCard(
@@ -916,23 +1034,34 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                   ),
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: _surface,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: _line, style: BorderStyle.solid),
+                      border: Border.all(
+                        color: _line,
+                        style: BorderStyle.solid,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.person_add_alt_rounded, size: 14, color: _ink),
+                        Icon(
+                          Icons.person_add_alt_rounded,
+                          size: 14,
+                          color: _ink,
+                        ),
                         SizedBox(width: 5),
                         Text(
                           'Add Member',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: _ink),
+                            color: _ink,
+                          ),
                         ),
                       ],
                     ),
@@ -974,7 +1103,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Tooltip(
-            message: isLeader ? 'Current Team Leader' : 'Click star to designate as Leader',
+            message: isLeader
+                ? 'Current Team Leader'
+                : 'Click star to designate as Leader',
             child: InkWell(
               onTap: isLeader ? null : onDesignateLeader,
               borderRadius: BorderRadius.circular(4),
@@ -991,13 +1122,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           const SizedBox(width: 5),
           Flexible(
             child: Text(
-            member,
+              member,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: isLeader ? FontWeight.w800 : FontWeight.w600,
-              color: _ink),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: isLeader ? FontWeight.w800 : FontWeight.w600,
+                color: _ink,
+              ),
             ),
           ),
           if (isLeader) ...[
@@ -1055,12 +1187,20 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Row(
           children: [
-            Icon(Icons.person_remove_outlined, color: Color(0xFFDC2626), size: 20),
+            Icon(
+              Icons.person_remove_outlined,
+              color: Color(0xFFDC2626),
+              size: 20,
+            ),
             SizedBox(width: 8),
             Expanded(
               child: Text(
                 'Remove Team Member',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _ink),
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: _ink,
+                ),
               ),
             ),
           ],
@@ -1083,15 +1223,26 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFDC2626),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () => Navigator.of(dialogCtx).pop(true),
-            child: const Text('Remove Member', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: const Text(
+              'Remove Member',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -1101,9 +1252,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       setState(() {
         final updated = List<String>.from(currentMembers)..remove(member);
         widget.rows[index]['member_ids'] = updated;
-        final currentLeader = (widget.rows[index]['leader_id']?.toString() ?? '').trim().toLowerCase();
+        final currentLeader =
+            (widget.rows[index]['leader_id']?.toString() ?? '')
+                .trim()
+                .toLowerCase();
         if (currentLeader == member.trim().toLowerCase()) {
-          widget.rows[index]['leader_id'] = updated.isNotEmpty ? updated.first : '';
+          widget.rows[index]['leader_id'] = updated.isNotEmpty
+              ? updated.first
+              : '';
         }
       });
       widget.onRowChanged(index);
@@ -1123,7 +1279,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       for (final st in widget.studentOptions!) {
         if (st is Map<String, dynamic>) {
           final name = (st['name'] ?? st['full_name'] ?? '').toString().trim();
-          final id = (st['student_id'] ?? st['username'] ?? '').toString().trim();
+          final id = (st['student_id'] ?? st['username'] ?? '')
+              .toString()
+              .trim();
           final sec = (st['section'] ?? '').toString().trim();
           if (name.isNotEmpty) {
             candidatesMap[name.toLowerCase()] = _StudentCandidate(
@@ -1139,8 +1297,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     // Also include students from current import batch
     for (final r in widget.rows) {
       final list = (r['member_ids'] is List)
-          ? (r['member_ids'] as List).map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList()
-          : (r['member_ids']?.toString() ?? '').split('|').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+          ? (r['member_ids'] as List)
+                .map((e) => e.toString().trim())
+                .where((e) => e.isNotEmpty)
+                .toList()
+          : (r['member_ids']?.toString() ?? '')
+                .split('|')
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty)
+                .toList();
       for (final m in list) {
         if (!candidatesMap.containsKey(m.toLowerCase())) {
           candidatesMap[m.toLowerCase()] = _StudentCandidate(
@@ -1152,11 +1317,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     }
 
     // Exclude students already on this team
-    final existingLower = currentMembers.map((e) => e.trim().toLowerCase()).toSet();
-    final available = candidatesMap.values
-        .where((c) => !existingLower.contains(c.name.toLowerCase()))
-        .toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+    final existingLower = currentMembers
+        .map((e) => e.trim().toLowerCase())
+        .toSet();
+    final available =
+        candidatesMap.values
+            .where((c) => !existingLower.contains(c.name.toLowerCase()))
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
 
     String filter = '';
 
@@ -1172,13 +1340,20 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                   c.subtitle.toLowerCase().contains(q);
             }).toList();
 
-            final hasExactMatch = available.any((c) => c.name.toLowerCase() == q);
+            final hasExactMatch = available.any(
+              (c) => c.name.toLowerCase() == q,
+            );
 
             return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               surfaceTintColor: Colors.transparent,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440, maxHeight: 520),
+                constraints: const BoxConstraints(
+                  maxWidth: 440,
+                  maxHeight: 520,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -1187,19 +1362,34 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.person_add_alt_1_rounded, color: _maroon, size: 20),
+                          const Icon(
+                            Icons.person_add_alt_1_rounded,
+                            color: _maroon,
+                            size: 20,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'Add Member (${currentMembers.length}/4)',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: _ink,
+                              ),
                             ),
                           ),
                           IconButton(
-                            icon: Icon(Icons.close_rounded, size: 18, color: _muted),
+                            icon: Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: _muted,
+                            ),
                             onPressed: () => Navigator.of(dialogCtx).pop(),
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                           ),
                         ],
                       ),
@@ -1208,14 +1398,33 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                         autofocus: true,
                         decoration: InputDecoration(
                           hintText: 'Search imported students by name...',
-                          prefixIcon: Icon(Icons.search_rounded, size: 18, color: _muted),
+                          prefixIcon: Icon(
+                            Icons.search_rounded,
+                            size: 18,
+                            color: _muted,
+                          ),
                           isDense: true,
                           filled: true,
                           fillColor: const Color(0xFFF8FAFC),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _line)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _line)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _maroon, width: 1.5)),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: _line),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: _line),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: _maroon,
+                              width: 1.5,
+                            ),
+                          ),
                         ),
                         onChanged: (val) => setModalState(() => filter = val),
                       ),
@@ -1229,23 +1438,45 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                 leading: const CircleAvatar(
                                   radius: 14,
                                   backgroundColor: Color(0xFFFEF2F2),
-                                  child: Icon(Icons.add_rounded, size: 16, color: _maroon),
+                                  child: Icon(
+                                    Icons.add_rounded,
+                                    size: 16,
+                                    color: _maroon,
+                                  ),
                                 ),
                                 title: Text(
                                   'Add "$filter"',
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _maroon),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: _maroon,
+                                  ),
                                 ),
-                                subtitle: Text('Add as new member name', style: TextStyle(fontSize: 11, color: _muted)),
+                                subtitle: Text(
+                                  'Add as new member name',
+                                  style: TextStyle(fontSize: 11, color: _muted),
+                                ),
                                 onTap: () {
-                                  _addStudentToTeam(index, currentMembers, filter.trim());
+                                  _addStudentToTeam(
+                                    index,
+                                    currentMembers,
+                                    filter.trim(),
+                                  );
                                   Navigator.of(dialogCtx).pop();
                                 },
                               ),
-                            if (filtered.isEmpty && (q.isEmpty || hasExactMatch))
+                            if (filtered.isEmpty &&
+                                (q.isEmpty || hasExactMatch))
                               Padding(
                                 padding: EdgeInsets.symmetric(vertical: 32),
                                 child: Center(
-                                  child: Text('No available students found.', style: TextStyle(fontSize: 12.5, color: _muted)),
+                                  child: Text(
+                                    'No available students found.',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      color: _muted,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ...filtered.map((st) {
@@ -1255,17 +1486,44 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                   radius: 14,
                                   backgroundColor: const Color(0xFFF1F5F9),
                                   child: Text(
-                                    st.name.isNotEmpty ? st.name[0].toUpperCase() : '?',
-                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _muted),
+                                    st.name.isNotEmpty
+                                        ? st.name[0].toUpperCase()
+                                        : '?',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: _muted,
+                                    ),
                                   ),
                                 ),
-                                title: Text(st.name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ink)),
+                                title: Text(
+                                  st.name,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: _ink,
+                                  ),
+                                ),
                                 subtitle: st.subtitle.isNotEmpty
-                                    ? Text(st.subtitle, style: TextStyle(fontSize: 11, color: _muted))
+                                    ? Text(
+                                        st.subtitle,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: _muted,
+                                        ),
+                                      )
                                     : null,
-                                trailing: const Icon(Icons.add_circle_outline_rounded, size: 18, color: _maroon),
+                                trailing: const Icon(
+                                  Icons.add_circle_outline_rounded,
+                                  size: 18,
+                                  color: _maroon,
+                                ),
                                 onTap: () {
-                                  _addStudentToTeam(index, currentMembers, st.name);
+                                  _addStudentToTeam(
+                                    index,
+                                    currentMembers,
+                                    st.name,
+                                  );
                                   Navigator.of(dialogCtx).pop();
                                 },
                               );
@@ -1284,7 +1542,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     );
   }
 
-  void _addStudentToTeam(int index, List<String> currentMembers, String studentName) {
+  void _addStudentToTeam(
+    int index,
+    List<String> currentMembers,
+    String studentName,
+  ) {
     if (studentName.isEmpty) return;
     if (currentMembers.length >= 4) return;
 
@@ -1293,7 +1555,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       final updated = List<String>.from(currentMembers)..add(studentName);
       setState(() {
         widget.rows[index]['member_ids'] = updated;
-        final currentLeader = (widget.rows[index]['leader_id']?.toString() ?? '').trim();
+        final currentLeader =
+            (widget.rows[index]['leader_id']?.toString() ?? '').trim();
         if (currentLeader.isEmpty) {
           widget.rows[index]['leader_id'] = studentName;
         }
@@ -1311,6 +1574,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     required String adviserValue,
     bool isInstructor = false,
   }) {
+    if (widget.lockAssignments) {
+      return _contextBadge(
+        'Instructor: ${adviserValue.isEmpty ? 'Assigned section instructor' : adviserValue}',
+      );
+    }
     final hasAdviser = adviserValue.isNotEmpty;
     final role = isInstructor ? 'Instructor' : 'Adviser';
 
@@ -1319,7 +1587,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       children: [
         Row(
           children: [
-            Icon(Icons.supervisor_account_outlined, size: 13, color: Color(0xFF64748B)),
+            Icon(
+              Icons.supervisor_account_outlined,
+              size: 13,
+              color: Color(0xFF64748B),
+            ),
             SizedBox(width: 5),
             Text(
               '$role (Optional)',
@@ -1333,8 +1605,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         ),
         const SizedBox(height: 6),
         InkWell(
-          key: ValueKey('${isInstructor ? 'instructor' : 'adviser'}_selector_$rowNumber'),
-          onTap: () => _showAdviserSearchDialog(context, index, adviserValue, isInstructor: isInstructor),
+          key: ValueKey(
+            '${isInstructor ? 'instructor' : 'adviser'}_selector_$rowNumber',
+          ),
+          onTap: () => _showAdviserSearchDialog(
+            context,
+            index,
+            adviserValue,
+            isInstructor: isInstructor,
+          ),
           borderRadius: BorderRadius.circular(8),
           child: Container(
             width: double.infinity,
@@ -1354,11 +1633,17 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                     style: TextStyle(
                       color: hasAdviser ? _ink : const Color(0xFF94A3B8),
                       fontSize: 13,
-                      fontWeight: hasAdviser ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight: hasAdviser
+                          ? FontWeight.w600
+                          : FontWeight.normal,
                     ),
                   ),
                 ),
-                const Icon(Icons.arrow_drop_down_rounded, size: 20, color: Color(0xFF64748B)),
+                const Icon(
+                  Icons.arrow_drop_down_rounded,
+                  size: 20,
+                  color: Color(0xFF64748B),
+                ),
               ],
             ),
           ),
@@ -1381,7 +1666,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     if (widget.adviserOptions != null) {
       for (final adv in widget.adviserOptions!) {
         if (adv is Map<String, dynamic>) {
-          final name = (adv['name'] ?? adv['full_name'] ?? '').toString().trim();
+          final name = (adv['name'] ?? adv['full_name'] ?? '')
+              .toString()
+              .trim();
           final username = (adv['username'] ?? '').toString().trim();
           final id = adv['id']?.toString();
           if (name.isNotEmpty) {
@@ -1426,10 +1713,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             }).toList();
 
             return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               surfaceTintColor: Colors.transparent,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440, maxHeight: 520),
+                constraints: const BoxConstraints(
+                  maxWidth: 440,
+                  maxHeight: 520,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -1438,19 +1730,34 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.supervisor_account_outlined, color: _maroon, size: 20),
+                          const Icon(
+                            Icons.supervisor_account_outlined,
+                            color: _maroon,
+                            size: 20,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'Assign Faculty $role',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: _ink,
+                              ),
                             ),
                           ),
                           IconButton(
-                            icon: Icon(Icons.close_rounded, size: 18, color: _muted),
+                            icon: Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: _muted,
+                            ),
                             onPressed: () => Navigator.of(dialogCtx).pop(),
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                           ),
                         ],
                       ),
@@ -1458,15 +1765,35 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                       TextField(
                         autofocus: true,
                         decoration: InputDecoration(
-                          hintText: 'Search faculty ${role.toLowerCase()} name...',
-                          prefixIcon: Icon(Icons.search_rounded, size: 18, color: _muted),
+                          hintText:
+                              'Search faculty ${role.toLowerCase()} name...',
+                          prefixIcon: Icon(
+                            Icons.search_rounded,
+                            size: 18,
+                            color: _muted,
+                          ),
                           isDense: true,
                           filled: true,
                           fillColor: const Color(0xFFF8FAFC),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _line)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _line)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _maroon, width: 1.5)),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: _line),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: _line),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: _maroon,
+                              width: 1.5,
+                            ),
+                          ),
                         ),
                         onChanged: (val) => setModalState(() => filter = val),
                       ),
@@ -1477,15 +1804,33 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                         leading: CircleAvatar(
                           radius: 14,
                           backgroundColor: Color(0xFFF1F5F9),
-                          child: Icon(Icons.person_off_outlined, size: 15, color: _muted),
+                          child: Icon(
+                            Icons.person_off_outlined,
+                            size: 15,
+                            color: _muted,
+                          ),
                         ),
                         title: Text(
-                          'Unassigned / No $role', style: TextStyle(fontSize: 13, color: _muted, fontWeight: FontWeight.w600)),
-                        trailing: currentAdviser.isEmpty ? const Icon(Icons.check_rounded, color: _green, size: 18) : null,
+                          'Unassigned / No $role',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _muted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        trailing: currentAdviser.isEmpty
+                            ? const Icon(
+                                Icons.check_rounded,
+                                color: _green,
+                                size: 18,
+                              )
+                            : null,
                         onTap: () {
                           setState(() {
                             widget.rows[index][field] = '';
-                            if (!isInstructor) widget.rows[index]['adviser_id'] = '';
+                            if (!isInstructor) {
+                              widget.rows[index]['adviser_id'] = '';
+                            }
                           });
                           widget.onRowChanged(index);
                           Navigator.of(dialogCtx).pop();
@@ -1498,39 +1843,70 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                             ? Padding(
                                 padding: EdgeInsets.symmetric(vertical: 32),
                                 child: Center(
-                                  child: Text('No faculty advisers match the search.', style: TextStyle(fontSize: 12.5, color: _muted)),
+                                  child: Text(
+                                    'No faculty advisers match the search.',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      color: _muted,
+                                    ),
+                                  ),
                                 ),
                               )
                             : ListView.builder(
                                 itemCount: filtered.length,
                                 itemBuilder: (ctx, i) {
                                   final adv = filtered[i];
-                                  final isSelected = adv.name.toLowerCase() == currentAdviser.trim().toLowerCase();
+                                  final isSelected =
+                                      adv.name.toLowerCase() ==
+                                      currentAdviser.trim().toLowerCase();
 
                                   return ListTile(
                                     dense: true,
                                     leading: CircleAvatar(
                                       radius: 14,
-                                      backgroundColor: isSelected ? _maroon.withValues(alpha: 0.12) : const Color(0xFFF1F5F9),
-                                      child: Icon(Icons.person_outline_rounded, size: 16, color: isSelected ? _maroon : const Color(0xFF64748B)),
+                                      backgroundColor: isSelected
+                                          ? _maroon.withValues(alpha: 0.12)
+                                          : const Color(0xFFF1F5F9),
+                                      child: Icon(
+                                        Icons.person_outline_rounded,
+                                        size: 16,
+                                        color: isSelected
+                                            ? _maroon
+                                            : const Color(0xFF64748B),
+                                      ),
                                     ),
                                     title: Text(
                                       adv.name,
                                       style: TextStyle(
                                         fontSize: 13,
-                                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w800
+                                            : FontWeight.w600,
                                         color: isSelected ? _maroon : _ink,
                                       ),
                                     ),
                                     subtitle: adv.subtitle.isNotEmpty
-                                        ? Text(adv.subtitle, style: TextStyle(fontSize: 11, color: _muted))
+                                        ? Text(
+                                            adv.subtitle,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: _muted,
+                                            ),
+                                          )
                                         : null,
-                                    trailing: isSelected ? const Icon(Icons.check_circle_rounded, color: _maroon, size: 18) : null,
+                                    trailing: isSelected
+                                        ? const Icon(
+                                            Icons.check_circle_rounded,
+                                            color: _maroon,
+                                            size: 18,
+                                          )
+                                        : null,
                                     onTap: () {
                                       setState(() {
                                         widget.rows[index][field] = adv.name;
                                         if (!isInstructor) {
-                                          widget.rows[index]['adviser_id'] = adv.id ?? adv.name;
+                                          widget.rows[index]['adviser_id'] =
+                                              adv.id ?? adv.name;
                                         }
                                       });
                                       widget.onRowChanged(index);
@@ -1558,6 +1934,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     required Map<String, dynamic> row,
     required String sectionValue,
   }) {
+    if (widget.lockAssignments) {
+      return _contextBadge('Section: $sectionValue');
+    }
     final Set<String> distinctSections = {};
     if (widget.sectionOptions != null) {
       for (final s in widget.sectionOptions!) {
@@ -1579,7 +1958,10 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     final items = <DropdownMenuItem<String>>[
       DropdownMenuItem(
         value: '',
-        child: Text('Unassigned', style: TextStyle(color: _muted, fontWeight: FontWeight.normal)),
+        child: Text(
+          'Unassigned',
+          style: TextStyle(color: _muted, fontWeight: FontWeight.normal),
+        ),
       ),
       ...sortedSections.map(
         (sec) => DropdownMenuItem(
@@ -1594,7 +1976,10 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           children: [
             Icon(Icons.add_rounded, size: 14, color: _maroon),
             SizedBox(width: 6),
-            Text('+ Add Section...', style: TextStyle(color: _maroon, fontWeight: FontWeight.w700)),
+            Text(
+              '+ Add Section...',
+              style: TextStyle(color: _maroon, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
       ),
@@ -1662,7 +2047,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         builder: (ctx, setModalState) {
           return AlertDialog(
             surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             title: Row(
               children: [
                 Icon(Icons.add_business_outlined, color: _maroon, size: 20),
@@ -1670,7 +2057,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 Expanded(
                   child: Text(
                     'Add Class Section',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: _ink,
+                    ),
                   ),
                 ),
               ],
@@ -1708,7 +2099,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                   onSubmitted: (val) {
                     final trimmed = val.trim();
                     if (trimmed.isEmpty) {
-                      setModalState(() => errorText = 'Section name cannot be empty');
+                      setModalState(
+                        () => errorText = 'Section name cannot be empty',
+                      );
                     } else {
                       Navigator.of(dialogCtx).pop(trimmed);
                     }
@@ -1719,23 +2112,36 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogCtx).pop(),
-                child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
               FilledButton(
                 key: const ValueKey('submit_add_section_btn'),
                 style: FilledButton.styleFrom(
                   backgroundColor: _maroon,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 onPressed: () {
                   final trimmed = textCtrl.text.trim();
                   if (trimmed.isEmpty) {
-                    setModalState(() => errorText = 'Section name cannot be empty');
+                    setModalState(
+                      () => errorText = 'Section name cannot be empty',
+                    );
                   } else {
                     Navigator.of(dialogCtx).pop(trimmed);
                   }
                 },
-                child: const Text('Add & Assign', style: TextStyle(fontWeight: FontWeight.w700)),
+                child: const Text(
+                  'Add & Assign',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           );
@@ -1755,13 +2161,17 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
 
   Widget _statusBadge(bool ready, int issueCount, int warningCount) {
     final label = ready
-        ? warningCount > 0 ? 'Ready · $warningCount warning${warningCount == 1 ? '' : 's'}' : 'Ready'
+        ? warningCount > 0
+              ? 'Ready · $warningCount warning${warningCount == 1 ? '' : 's'}'
+              : 'Ready'
         : issueCount > 0
         ? '$issueCount issue${issueCount == 1 ? '' : 's'}'
         : warningCount > 0
         ? '$warningCount warning${warningCount == 1 ? '' : 's'}'
         : 'Pending Review';
-    final color = ready && warningCount > 0 ? _amber : ready
+    final color = ready && warningCount > 0
+        ? _amber
+        : ready
         ? (DefensysTokens.isDark(context) ? const Color(0xFF86EFAC) : _green)
         : issueCount > 0
         ? _red
@@ -1774,23 +2184,26 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         side: BorderSide(color: _line),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Icon(
             ready
                 ? Icons.check_circle_outline
                 : issueCount > 0
                 ? Icons.error_outline
-                : Icons.info_outline, size: 13, color: color,
+                : Icons.info_outline,
+            size: 13,
+            color: color,
           ),
           const SizedBox(width: 5),
-            Text(
+          Text(
             label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -1827,13 +2240,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               const SizedBox(width: 3),
               const Text(
                 '*',
-                style: TextStyle(color: _maroon, fontSize: 12, fontWeight: FontWeight.w900),
+                style: TextStyle(
+                  color: _maroon,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
-            if (labelTrailing != null) ...[
-              const Spacer(),
-              labelTrailing,
-            ],
+            if (labelTrailing != null) ...[const Spacer(), labelTrailing],
           ],
         ),
         const SizedBox(height: 6),
@@ -1845,7 +2259,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           onChanged: onChanged,
           isExpanded: true,
           style: TextStyle(
-            color: _ink, fontFamily: 'Inter',
+            color: _ink,
+            fontFamily: 'Inter',
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -1853,7 +2268,10 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             isDense: true,
             hintText: hintText,
             hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 8,
+            ),
             filled: true,
             fillColor: _surface,
             border: OutlineInputBorder(
@@ -1902,7 +2320,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               const SizedBox(width: 3),
               const Text(
                 '*',
-                style: TextStyle(color: _maroon, fontSize: 12, fontWeight: FontWeight.w900),
+                style: TextStyle(
+                  color: _maroon,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
           ],
@@ -1914,8 +2336,12 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           style: TextStyle(
             color: _ink,
             fontSize: 13,
-            fontWeight: FontWeight.w500),
-          placeholder: Text(hintText, style: TextStyle(fontSize: 12, color: _muted)),
+            fontWeight: FontWeight.w500,
+          ),
+          placeholder: Text(
+            hintText,
+            style: TextStyle(fontSize: 12, color: _muted),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           onChanged: onChanged,
         ),
@@ -1949,7 +2375,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: _ink),
+              color: _ink,
+            ),
           );
 
           final controlsWidget = Row(
@@ -1957,7 +2384,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             children: [
               Text(
                 'Per page: ',
-                style: TextStyle(fontSize: 11.5, color: _muted, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: _muted,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(width: 4),
               Container(
@@ -1974,7 +2405,12 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                     key: ValueKey(isTop ? 'page_size_top' : 'page_size_bottom'),
                     value: _pageSize,
                     isDense: true,
-                    style: TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w800, color: _ink),
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: _ink,
+                    ),
                     items: const [
                       DropdownMenuItem(value: 5, child: Text('5')),
                       DropdownMenuItem(value: 10, child: Text('10')),
@@ -2000,22 +2436,36 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                       ? () => setState(() => _currentPage--)
                       : null,
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                     minimumSize: const Size(0, 28),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.chevron_left_rounded, size: 16),
-                      Text('Prev', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                      Text(
+                        'Prev',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: _surface,
                     borderRadius: BorderRadius.circular(6),
@@ -2023,7 +2473,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                   ),
                   child: Text(
                     '${_currentPage + 1} / $totalPages',
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _ink),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: _ink,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -2033,15 +2487,26 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                       ? () => setState(() => _currentPage++)
                       : null,
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                     minimumSize: const Size(0, 28),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Next', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                      Text(
+                        'Next',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       Icon(Icons.chevron_right_rounded, size: 16),
                     ],
                   ),
@@ -2053,21 +2518,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           if (isNarrow) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                infoWidget,
-                const SizedBox(height: 8),
-                controlsWidget,
-              ],
+              children: [infoWidget, const SizedBox(height: 8), controlsWidget],
             );
           }
 
-          return Row(
-            children: [
-              infoWidget,
-              const Spacer(),
-              controlsWidget,
-            ],
-          );
+          return Row(children: [infoWidget, const Spacer(), controlsWidget]);
         },
       ),
     );

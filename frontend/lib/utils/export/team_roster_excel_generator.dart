@@ -1,9 +1,29 @@
 import 'package:excel/excel.dart';
+import '../import/team_bulk_import_file.dart';
 
-List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String? assignedSection, String? instructorName}) {
+String officialTeamRosterCsv({
+  required bool isCapstone,
+  String? assignedSection,
+  String? instructorName,
+}) => teamXlsxToCsv(
+  generateOfficialTeamRosterExcelBytes(
+    isCapstone: isCapstone,
+    assignedSection: assignedSection,
+    instructorName: instructorName,
+  ),
+  preserveTeamGroups: false,
+);
+
+List<int> generateOfficialTeamRosterExcelBytes({
+  required bool isCapstone,
+  String? assignedSection,
+  String? instructorName,
+}) {
   final excel = Excel.createExcel();
-  final sheetName = isCapstone ? 'defensys_team_roster_template' : 'defensys_pit_team_roster_template';
-  
+  final sheetName = isCapstone
+      ? 'defensys_team_roster_template'
+      : 'defensys_pit_roster_template';
+
   // Set default sheet name
   final defaultSheet = excel.getDefaultSheet();
   if (defaultSheet != null && defaultSheet != sheetName) {
@@ -60,18 +80,18 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String
   );
 
   // Set column widths matching Excel layout (Col A is margin, Col G is spacer)
-  sheet.setColumnWidth(0, 4.0);  // Col A: Margin
+  sheet.setColumnWidth(0, 4.0); // Col A: Margin
   sheet.setColumnWidth(1, 24.0); // Col B: Team Name
   sheet.setColumnWidth(2, 46.0); // Col C: Project / Module
   sheet.setColumnWidth(3, 14.0); // Col D: Section
   sheet.setColumnWidth(4, 24.0); // Col E: Adviser / Instructor
   sheet.setColumnWidth(5, 24.0); // Col F: Team Members
-  sheet.setColumnWidth(6, 4.0);  // Col G: Separator spacer
+  sheet.setColumnWidth(6, 4.0); // Col G: Separator spacer
   sheet.setColumnWidth(7, 24.0); // Col H: Team Name / Meta Label
   sheet.setColumnWidth(8, 30.0); // Col I: Module / Meta Value
   sheet.setColumnWidth(9, 14.0); // Col J: Section
-  sheet.setColumnWidth(10, 24.0);// Col K: Adviser / Instructor
-  sheet.setColumnWidth(11, 24.0);// Col L: Team Members
+  sheet.setColumnWidth(10, 24.0); // Col K: Adviser / Instructor
+  sheet.setColumnWidth(11, 24.0); // Col L: Team Members
 
   // Data definitions
   final leftTeams = isCapstone ? _capstone4ATeams : _pit2ATeams;
@@ -81,13 +101,15 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String
   final rightSection = assignedSection ?? (isCapstone ? 'BSIT-4B' : 'BSIT-2B');
 
   final systemName = isCapstone ? 'Hospital Management System' : 'Societree';
-  final projectManager = 'Juan Dela Cruz';
+  final projectManager = _sharedMembers.first.first;
 
-  final projectColTitle = isCapstone ? 'Capstone Project (optional)' : 'PIT Project (optional)';
+  final projectColTitle = isCapstone ? 'Capstone Project' : 'PIT Project';
   final adviserColTitle = isCapstone ? 'Adviser' : 'Instructor';
 
   void setCell(int col, int row, String text, CellStyle style) {
-    final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row));
+    final cell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row),
+    );
     cell.value = TextCellValue(text);
     cell.cellStyle = style;
   }
@@ -111,6 +133,12 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String
         bottomBorder: r == endRow ? thinBorder : noBorder,
       );
       setCell(col, r, r == startRow ? text : '', cellStyle);
+    }
+    if (col == 1 || col == 7) {
+      sheet.merge(
+        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: startRow),
+        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: endRow),
+      );
     }
   }
 
@@ -158,7 +186,7 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String
   // --- ROW 6 (row index 5 in 0-indexed) ---
   // Right: Table 2 Headers (Cols H to L, index 7 to 11)
   setCell(7, 5, 'Team Name', headerStyle);
-  setCell(8, 5, 'Module (optional)', headerStyle);
+  setCell(8, 5, 'Module', headerStyle);
   setCell(9, 5, 'Section', headerCenterStyle);
   setCell(10, 5, adviserColTitle, headerCenterStyle);
   setCell(11, 5, 'Team Members', headerStyle);
@@ -218,7 +246,9 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String
         topBorder: r == startRow ? thinBorder : noBorder,
         bottomBorder: r == endRow ? thinBorder : noBorder,
       );
-      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: r));
+      final cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: r),
+      );
       if (r == startRow) {
         cell.value = TextCellValue(text);
       }
@@ -227,12 +257,7 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String
   }
 
   // Section column for left cohort (Row index 4 to 35: 32 rows merged)
-  setMergedColumn(
-    col: 3,
-    startRow: 4,
-    endRow: 35,
-    text: leftSection,
-  );
+  setMergedColumn(col: 3, startRow: 4, endRow: 35, text: leftSection);
 
   // Adviser column for left cohort
   if (isCapstone) {
@@ -288,17 +313,12 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String
       col: 11,
       startRow: startR,
       endRow: startR + 3,
-      members: team.members,
+      members: _sharedMembers[t],
     );
   }
 
   // Section column for right cohort (Row index 6 to 37: 32 rows merged)
-  setMergedColumn(
-    col: 9,
-    startRow: 6,
-    endRow: 37,
-    text: rightSection,
-  );
+  setMergedColumn(col: 9, startRow: 6, endRow: 37, text: rightSection);
 
   // Adviser column for right cohort
   if (isCapstone) {
@@ -327,7 +347,6 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String
     );
   }
 
-  setCell(1, 0, 'Project / Module is optional. Omit its column for the stage default (normally 3 proposals); enter an assigned title for one concept.', metaLabelStyle);
   // save() starts its own browser download named FlutterExcel.xlsx. This
   // generator only returns bytes; the caller owns the single named download.
   final bytes = excel.encode();
@@ -343,37 +362,72 @@ const _capstone4ATeams = [
   (
     team: 'Team BioPulse',
     item: 'AI-Powered Vital Triage & Disease Predictor',
-    members: ['Ryan Torres', 'Nina Villanueva', 'Diego Garcia', 'Patricia Ramos'],
+    members: [
+      'Ryan Torres',
+      'Nina Villanueva',
+      'Diego Garcia',
+      'Patricia Ramos',
+    ],
   ),
   (
     team: 'Team SafeCity',
     item: 'Smart City IoT Infrastructure & Asset Sentinel',
-    members: ['Carlos Bautista', 'Sophia Santos', 'Miguel Cruz', 'Isabella Alcantara'],
+    members: [
+      'Carlos Bautista',
+      'Sophia Santos',
+      'Miguel Cruz',
+      'Isabella Alcantara',
+    ],
   ),
   (
     team: 'Team CodeLearners',
     item: 'Campus Event Hub',
-    members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
+    members: [
+      'David Aquino',
+      'Sarah Ocampo',
+      'Daniel Rivera',
+      'Jasmine Morales',
+    ],
   ),
   (
     team: 'Team CyberGuard',
     item: 'Automated Penetration Testing & Threat Hunter',
-    members: ['Gabriel Mendoza', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
+    members: [
+      'Gabriel Mendoza',
+      'Bea Castro',
+      'Christian Lim',
+      'Joshua Navarro',
+    ],
   ),
   (
     team: 'Team AgriSense',
     item: 'Smart Agriculture Crop & Soil Monitoring',
-    members: ['Adrian Valdez', 'Stephanie Yap', 'Jerome De Leon', 'Camille Roxas'],
+    members: [
+      'Adrian Valdez',
+      'Stephanie Yap',
+      'Jerome De Leon',
+      'Camille Roxas',
+    ],
   ),
   (
     team: 'Team EduTrack',
     item: 'Student Performance Analytics & Early Warning',
-    members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
+    members: [
+      'Carlo Ramos',
+      'Nicole Bautista',
+      'John Mendoza',
+      'Patricia Cruz',
+    ],
   ),
   (
     team: 'Team EcoRoute',
     item: 'Intelligent Fleet Logistics & Route Optimizer',
-    members: ['Miguel Torres', 'Angela Flores', 'Francis Dizon', 'Rhea Salazar'],
+    members: [
+      'Miguel Torres',
+      'Angela Flores',
+      'Francis Dizon',
+      'Rhea Salazar',
+    ],
   ),
 ];
 
@@ -386,17 +440,32 @@ const _capstone4BTeams = [
   (
     team: 'Team MedBilling',
     item: 'Billing',
-    members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
+    members: [
+      'David Aquino',
+      'Sarah Ocampo',
+      'Daniel Rivera',
+      'Jasmine Morales',
+    ],
   ),
   (
     team: 'Team MedSchedule',
     item: 'Appointments',
-    members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
+    members: [
+      'Carlo Ramos',
+      'Nicole Bautista',
+      'John Mendoza',
+      'Patricia Cruz',
+    ],
   ),
   (
     team: 'Team MedPharma',
     item: 'Pharmacy',
-    members: ['Kevin Villanueva', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
+    members: [
+      'Kevin Villanueva',
+      'Bea Castro',
+      'Christian Lim',
+      'Joshua Navarro',
+    ],
   ),
   (
     team: 'Team MedTriage',
@@ -411,12 +480,22 @@ const _capstone4BTeams = [
   (
     team: 'Team MedInventory',
     item: 'Inventory',
-    members: ['Patrick Mendoza', 'Christine Torres', 'Bea Bautista', 'Danica Sotto'],
+    members: [
+      'Patrick Mendoza',
+      'Christine Torres',
+      'Bea Bautista',
+      'Danica Sotto',
+    ],
   ),
   (
     team: 'Team MedWards',
     item: 'Wards',
-    members: ['Kenneth Salazar', 'Nicole Dizon', 'Jerome Navarro', 'Alyssa Castillo'],
+    members: [
+      'Kenneth Salazar',
+      'Nicole Dizon',
+      'Jerome Navarro',
+      'Alyssa Castillo',
+    ],
   ),
 ];
 
@@ -429,17 +508,32 @@ const _pit2ATeams = [
   (
     team: 'Group 2',
     item: 'Automated Library Portal',
-    members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
+    members: [
+      'David Aquino',
+      'Sarah Ocampo',
+      'Daniel Rivera',
+      'Jasmine Morales',
+    ],
   ),
   (
     team: 'Group 3',
     item: 'Alumni Career Tracker',
-    members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
+    members: [
+      'Carlo Ramos',
+      'Nicole Bautista',
+      'John Mendoza',
+      'Patricia Cruz',
+    ],
   ),
   (
     team: 'Group 4',
     item: 'Event Booking System',
-    members: ['Kevin Villanueva', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
+    members: [
+      'Kevin Villanueva',
+      'Bea Castro',
+      'Christian Lim',
+      'Joshua Navarro',
+    ],
   ),
   (
     team: 'Group 5',
@@ -454,54 +548,102 @@ const _pit2ATeams = [
   (
     team: 'Group 7',
     item: 'Student Tutoring Exchange',
-    members: ['Patrick Mendoza', 'Christine Torres', 'Lorenzo Garcia', 'Bea Bautista'],
+    members: [
+      'Patrick Mendoza',
+      'Christine Torres',
+      'Lorenzo Garcia',
+      'Bea Bautista',
+    ],
   ),
   (
     team: 'Group 8',
     item: 'Green Campus Energy Tracker',
-    members: ['Kenneth Salazar', 'Nicole Dizon', 'Jerome Navarro', 'Alyssa Castillo'],
+    members: [
+      'Kenneth Salazar',
+      'Nicole Dizon',
+      'Jerome Navarro',
+      'Alyssa Castillo',
+    ],
   ),
 ];
 
 const _pit2BTeams = [
   (
-    team: 'Group 1',
+    team: 'Group 9',
     item: 'Site Module',
     members: ['Juan Dela Cruz', 'Maria Santos', 'Mark Reyes', 'Anna Garcia'],
   ),
   (
-    team: 'Group 2',
+    team: 'Group 10',
     item: 'Arcu Module',
-    members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
+    members: [
+      'David Aquino',
+      'Sarah Ocampo',
+      'Daniel Rivera',
+      'Jasmine Morales',
+    ],
   ),
   (
-    team: 'Group 3',
+    team: 'Group 11',
     item: 'Events Module',
-    members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
+    members: [
+      'Carlo Ramos',
+      'Nicole Bautista',
+      'John Mendoza',
+      'Patricia Cruz',
+    ],
   ),
   (
-    team: 'Group 4',
+    team: 'Group 12',
     item: 'Membership Module',
-    members: ['Kevin Villanueva', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
+    members: [
+      'Kevin Villanueva',
+      'Bea Castro',
+      'Christian Lim',
+      'Joshua Navarro',
+    ],
   ),
   (
-    team: 'Group 5',
+    team: 'Group 13',
     item: 'Finance Module',
     members: ['Cedric Valdez', 'Leila Soriano', 'Paolo Ramos', 'Diana Cruz'],
   ),
   (
-    team: 'Group 6',
+    team: 'Group 14',
     item: 'Elections Module',
     members: ['Anthony Lim', 'Katrina Santos', 'Justin Ocampo', 'Bianca Reyes'],
   ),
   (
-    team: 'Group 7',
+    team: 'Group 15',
     item: 'Publication Module',
-    members: ['Patrick Mendoza', 'Christine Torres', 'Lorenzo Garcia', 'Bea Bautista'],
+    members: [
+      'Patrick Mendoza',
+      'Christine Torres',
+      'Lorenzo Garcia',
+      'Bea Bautista',
+    ],
   ),
   (
-    team: 'Group 8',
+    team: 'Group 16',
     item: 'Certificates Module',
-    members: ['Kenneth Salazar', 'Nicole Dizon', 'Jerome Navarro', 'Alyssa Castillo'],
+    members: [
+      'Kenneth Salazar',
+      'Nicole Dizon',
+      'Jerome Navarro',
+      'Alyssa Castillo',
+    ],
   ),
+];
+
+// Distinct students across the independent and shared examples, even when both
+// tables are downloaded for one assigned section.
+const _sharedMembers = [
+  ['Elena Abad', 'Luis Agustin', 'Mia Alonzo', 'Noel Angeles'],
+  ['Rosa Aragon', 'Ivan Arellano', 'Clara Austria', 'Leo Balagtas'],
+  ['Nora Bernardo', 'Adan Blanco', 'Ella Bonifacio', 'Rico Cabrera'],
+  ['Lara Calderon', 'Omar Canlas', 'Celia Carreon', 'Nico Chua'],
+  ['Rina Concepcion', 'Luis David', 'Alma De Vera', 'Eric Delos Reyes'],
+  ['Lena Domingo', 'Ramon Enriquez', 'Iris Escobar', 'Enzo Espino'],
+  ['Pia Estrella', 'Hugo Evangelista', 'Mara Fajardo', 'Emil Ferrer'],
+  ['Dina Francisco', 'Arlo Galang', 'Cora Gonzales', 'Raul Guevara'],
 ];

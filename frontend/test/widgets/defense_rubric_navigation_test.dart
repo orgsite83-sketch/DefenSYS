@@ -39,6 +39,7 @@ const _stage = <String, dynamic>{
 class _Stages extends DefenseStagesNotifier {
   int adds = 0;
   Map<String, dynamic>? savedUpdate;
+  int? savedStageId;
   bool gradingSucceeds = true;
   bool locked = false;
   @override
@@ -69,6 +70,7 @@ class _Stages extends DefenseStagesNotifier {
 
   @override
   Future<bool> updateStage(int stageId, Map<String, dynamic> payload) async {
+    savedStageId = stageId;
     savedUpdate = Map<String, dynamic>.from(payload);
     return true;
   }
@@ -365,6 +367,29 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  for (final tab in [0, 1, 2]) {
+    testWidgets('capstone rename updates original stage from step ${tab + 1}', (tester) async {
+      final router = await pumpWorkspace(tester,
+        initialLocation: AdminRoutes.defenseStageEdit(7));
+      final stages = ProviderScope.containerOf(
+        tester.element(find.byType(DefenseStageEditorScreen)),
+      ).read(defenseStagesProvider.notifier) as _Stages;
+      await tester.enterText(find.byType(TextField).first, 'Updated Concept Proposal');
+      if (tab > 0) {
+        await tester.tap(find.text(tab == 1 ? '2. Grading & Rubrics' : '3. Deliverables'));
+        await tester.pumpAndSettle();
+      }
+      await tester.ensureVisible(find.text('Save changes'));
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+      expect(stages.savedStageId, 7);
+      expect(stages.savedUpdate?['label'], 'Updated Concept Proposal');
+      expect(stages.adds, 0);
+      expect(router.routeInformationProvider.value.uri.path, AdminRoutes.defenseStages);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('new stage starts with signed minutes required', (tester) async {
     await pumpWorkspace(tester);

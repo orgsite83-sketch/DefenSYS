@@ -331,11 +331,16 @@ def _team_payload(team):
     active_stage = current_stage_for_team(team) if team else None
     has_capstone_stages = not team.is_capstone or active_stage is not None
     from repository.section_concepts.services import team_display
+    from student_teams.roster_workspace import display_for
+    from defense.scheduler.models import PitEventGradingConfig
+    event = PitEventGradingConfig.objects.filter(semester_id=team.semester_id, year_level=team.year_level,
+        event_name__iexact=active_stage).first() if team.is_pit and active_stage else None
+    roster_display = display_for(team, event) if team.is_pit else {'name': team.name, 'project_title': team.project_title}
     return {
         **team_display(team, active_stage),
         'id': team.id,
-        'name': team.name,
-        'projectTitle': team.project_title,
+        'name': roster_display['name'],
+        'projectTitle': roster_display['project_title'],
         'setup_pending': team.setup_pending,
         'project_pending': team.project_pending,
         'project_version': team.project_version,

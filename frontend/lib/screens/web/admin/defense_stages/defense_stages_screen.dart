@@ -2601,8 +2601,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 ),
-                              )
-                            else
+                              ),
+                            if (activeTab < 2 && editing) const SizedBox(width: 10),
+                            if (editing || activeTab == 2)
                               ElevatedButton.icon(
                                 onPressed: savingDraft ? null : () async {
                                   final stageName = label.text.trim();

@@ -106,6 +106,123 @@ class PitYearIsolationTests(APITestCase):
         self.assertEqual(self.client.delete(f'{CONFIG}?config_id={self.event.pk}').status_code, 200)
         self.assertTrue(SystemAuditLog.objects.filter(action='pit_event.delete', old_values__year_level='1st Year').exists())
 
+    def test_rename_by_id_keeps_event_rubrics_and_checklist(self):
+        self.client.force_authenticate(self.first)
+        item = PitEventDeliverable.objects.create(
+            pit_event_config=self.event, deliverable_id='PAPER', label='Concept paper')
+        response = self.client.post(CONFIG, self.data(
+            config_id=self.event.pk, event_name='IT Innovation Poster Showcase',
+            event_code=self.event.event_code,
+            deliverables=[{'id': item.pk, 'deliverable_id': 'PAPER', 'label': item.label}],
+        ), format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.event.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(PitEventGradingConfig.objects.count(), 1)
+        self.assertEqual(response.data['config']['id'], self.event.pk)
+        self.assertEqual(self.event.event_name, 'IT Innovation Poster Showcase')
+        self.assertEqual(self.event.event_code, 'it-innovation-poster-showcase')
+        self.assertEqual((self.event.panel_rubric_id, self.event.peer_rubric_id),
+                         (self.panel.pk, self.peer.pk))
+        self.assertEqual(item.pit_event_config_id, self.event.pk)
+        self.assertEqual(response.data['config']['deliverables'][0]['id'], item.pk)
+        log = SystemAuditLog.objects.get(action='pit_event.update')
+        self.assertEqual(log.old_values['event_name'], 'System Concept Pitching')
+        self.assertEqual(log.new_values['event_name'], self.event.event_name)
+        self.assertFalse(SystemAuditLog.objects.filter(action='pit_event.create').exists())
+
+    def test_rename_preserves_current_submissions_pending_grades_and_team_access(self):
+        from repository.deliverables.models import DeliverableSubmission
+
+        self.client.force_authenticate(self.first)
+        old_name = self.event.event_name
+        team = self.teams[0]
+        StudentTeam.objects.filter(pk=team.pk).update(
+            current_defense_stage=old_name, ready_for_stage=old_name,
+            unlocked_stages=[old_name, f'{old_name}:pre', 'Another event:all'])
+        submission = DeliverableSubmission.objects.create(
+            team=team, stage_label=old_name, pit_event_config=self.event,
+            deliverable_id='PAPER', label='Concept paper', deliverable_type='pre',
+            file_name='paper.pdf', status=DeliverableSubmission.STATUS_ACCEPTED)
+        uploaded_at = submission.uploaded_at
+        grade = TeamGrade.objects.create(team=team, semester=self.semester, scope='pit',
+            pit_event_config=self.event, panel_weight=80, peer_weight=20, adviser_weight=0)
+        # Legacy pending grades may have only the event's previous label.
+        TeamGrade.objects.filter(pk=grade.pk).update(pit_event_config=None)
+        response = self.client.post(CONFIG, self.data(
+            config_id=self.event.pk, event_name='Poster Showcase',
+            panel_weight=70, peer_weight=30), format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        team.refresh_from_db()
+        submission.refresh_from_db()
+        grade.refresh_from_db()
+        self.assertEqual(submission.stage_label, 'Poster Showcase')
+        self.assertEqual(submission.pit_event_config_id, self.event.pk)
+        self.assertEqual(submission.uploaded_at, uploaded_at)
+        self.assertEqual(submission.status, DeliverableSubmission.STATUS_ACCEPTED)
+        self.assertEqual(grade.stage_label, 'Poster Showcase')
+        self.assertEqual(grade.pit_event_config_id, self.event.pk)
+        self.assertEqual((grade.panel_weight, grade.peer_weight), (70, 30))
+        self.assertEqual(team.current_defense_stage, 'Poster Showcase')
+        self.assertEqual(team.ready_for_stage, 'Poster Showcase')
+        self.assertEqual(team.unlocked_stages,
+                         ['Poster Showcase', 'Poster Showcase:pre', 'Another event:all'])
+        self.teams[1].refresh_from_db()
+        self.assertIsNone(self.teams[1].current_defense_stage)
+
+    def test_invalid_or_wrong_semester_edit_id_never_creates_an_event(self):
+        self.client.force_authenticate(self.first)
+        other_semester = Semester.objects.create(school_year=self.semester.school_year, label=Semester.SECOND)
+        other = PitEventGradingConfig.objects.create(semester=other_semester,
+            year_level='1st Year', event_name='Other semester event')
+        for config_id in (None, 999999, 'invalid', True, 0, 1.5, 10**30, other.pk):
+            with self.subTest(config_id=config_id):
+                response = self.client.post(CONFIG, self.data(
+                    config_id=config_id, event_name='New name'), format='json')
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertEqual(PitEventGradingConfig.objects.count(), 2)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.event_name, 'System Concept Pitching')
+
+    def test_rename_cannot_overwrite_another_event_even_with_case_change(self):
+        self.client.force_authenticate(self.first)
+        for year in ('1st Year', '2nd Year'):
+            other = PitEventGradingConfig.objects.create(
+                semester=self.semester, year_level=year, event_name=f'{year} Other event')
+            response = self.client.post(CONFIG, self.data(
+                config_id=self.event.pk, event_name=other.event_name.upper()), format='json')
+            self.assertEqual(response.status_code, 400, response.data)
+            self.event.refresh_from_db()
+            self.assertEqual(self.event.event_name, 'System Concept Pitching')
+            other.refresh_from_db()
+            self.assertIsNone(other.panel_rubric_id)
+
+    def test_edit_by_id_cannot_rename_another_years_event_or_a_locked_event(self):
+        response = self.client.post(CONFIG, self.data(
+            config_id=self.event.pk, event_name='Claimed event',
+            panel_rubric_id=None, peer_rubric_id=None), format='json')
+        self.assertIn(response.status_code, (400, 403), response.data)
+        self.client.force_authenticate(self.first)
+        self.event.is_officially_complete = True
+        self.event.save()
+        response = self.client.post(CONFIG, self.data(
+            config_id=self.event.pk, event_name='Renamed locked event'), format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.event_name, 'System Concept Pitching')
+        self.assertEqual(PitEventGradingConfig.objects.count(), 1)
+
+    def test_rename_rolls_back_when_audit_fails(self):
+        self.client.force_authenticate(self.first)
+        with patch('authentication_access_control.models.SystemAuditLog.objects.create',
+                   side_effect=RuntimeError('audit unavailable')):
+            response = self.client.post(CONFIG, self.data(
+                config_id=self.event.pk, event_name='Rejected rename'), format='json')
+        self.assertEqual(response.status_code, 500)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.event_name, 'System Concept Pitching')
+        self.assertEqual(PitEventGradingConfig.objects.count(), 1)
+
     def test_capstone_settings_reject_pit_lead_for_all_updates(self):
         for changes in ({'peer_grading_enabled': True}, {'is_officially_complete': False}, {'is_officially_complete': True}):
             response = self.client.patch(GROUP, {'scope': 'capstone', 'defense_stage_id': self.stage.pk, **changes}, format='json')

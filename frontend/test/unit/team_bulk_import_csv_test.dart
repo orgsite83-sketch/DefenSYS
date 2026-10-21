@@ -636,14 +636,14 @@ V.O.I.D.,Xian Salac,Security,Redcrew,Earl John Parami,Billing,TECH4CE,Baguingco,
       expect(result.rows[5]['member_ids'], ['Baguingco', 'Igoy']);
     });
 
-    test('parses 11-column side-by-side unified capstone blueprint template (left to right)', () {
+    test('parses 12-column side-by-side unified capstone blueprint template (left to right)', () {
       final bp = teamGroupingBlueprints.first;
       final result = parseTeamBulkCsv(bp.rawCsv);
 
       // Total 16 teams: 8 teams from BSIT-4A and 8 teams from BSIT-4B
       expect(result.rows, hasLength(16));
       expect(result.systemName, 'Hospital Management System');
-      expect(result.projectManager, 'Juan Dela Cruz');
+      expect(result.projectManager, 'Elena Abad');
       expect(result.section, contains('BSIT-4A'));
       expect(result.section, contains('BSIT-4B'));
 
@@ -665,10 +665,10 @@ V.O.I.D.,Xian Salac,Security,Redcrew,Earl John Parami,Billing,TECH4CE,Baguingco,
       expect(result.rows[8]['project_title'], 'Patient Records');
       expect(result.rows[8]['section'], 'BSIT-4B');
       expect(result.rows[8]['adviser_name'], 'Prof. Roberto Gomez');
-      expect(result.rows[8]['project_manager'], 'Juan Dela Cruz');
+      expect(result.rows[8]['project_manager'], 'Elena Abad');
       expect(result.rows[8]['system_name'], 'Hospital Management System');
-      expect(result.rows[8]['member_ids'], ['Juan Dela Cruz', 'Maria Santos', 'Mark Reyes', 'Anna Garcia']);
-      expect(result.rows[8]['leader_id'], 'Juan Dela Cruz');
+      expect(result.rows[8]['member_ids'], ['Elena Abad', 'Luis Agustin', 'Mia Alonzo', 'Noel Angeles']);
+      expect(result.rows[8]['leader_id'], 'Elena Abad');
 
       // Check 4B team under second adviser (Prof. Cynthia Morales)
       expect(result.rows[12]['team_name'], 'Team MedTriage');
@@ -676,13 +676,13 @@ V.O.I.D.,Xian Salac,Security,Redcrew,Earl John Parami,Billing,TECH4CE,Baguingco,
       expect(result.rows[12]['adviser_name'], 'Prof. Cynthia Morales');
     });
 
-    test('parses 11-column side-by-side unified PIT blueprint template (left to right)', () {
+    test('parses 12-column side-by-side unified PIT blueprint template (left to right)', () {
       final bp = pitTeamGroupingBlueprints.first;
       final result = parseTeamBulkCsv(bp.rawCsv);
 
       expect(result.rows, hasLength(16));
       expect(result.systemName, 'Societree');
-      expect(result.projectManager, 'Juan Dela Cruz');
+      expect(result.projectManager, 'Elena Abad');
       expect(result.section, contains('BSIT-2A'));
       expect(result.section, contains('BSIT-2B'));
 
@@ -693,7 +693,7 @@ V.O.I.D.,Xian Salac,Security,Redcrew,Earl John Parami,Billing,TECH4CE,Baguingco,
       expect(result.rows[0]['instructor_name'], 'Prof. Alex Santos');
 
       // Check Group 1 in 2B
-      expect(result.rows[8]['team_name'], 'Group 1');
+      expect(result.rows[8]['team_name'], 'Group 9');
       expect(result.rows[8]['project_title'], 'Site Module');
       expect(result.rows[8]['section'], 'BSIT-2B');
       expect(result.rows[8]['instructor_name'], 'Prof. Alex Santos');

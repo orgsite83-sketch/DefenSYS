@@ -22,6 +22,7 @@ import '../../admin/defense_stages/widgets/stage_deliverable_choices.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_overview.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_presets_bar.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_presets.dart';
+import '../../admin/defense_stages/widgets/stage_setup_actions.dart';
 
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
   const PitEventsManagementScreen({super.key});
@@ -1259,6 +1260,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   int _peerWeight = 20;
   bool _peerGradingEnabled = true;
   Map<String, dynamic> _conceptConfig = {};
+  String _projectSetupPolicy = 'continue';
 
   List<Map<String, dynamic>> _deliverables = [];
   Map<String, dynamic>? _selectedDeliverable;
@@ -1287,6 +1289,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     if (_peerWeight != initialPeerWeight) return true;
     if (_peerGradingEnabled != normInitialPeerGrading) return true;
     if (jsonEncode(_conceptConfig) != jsonEncode(widget.config?['concept_config'] ?? {})) return true;
+    if (_projectSetupPolicy != (widget.config?['project_setup_policy'] ?? 'continue')) return true;
 
     if (_deliverables.length != initialDelList.length) return true;
 
@@ -1360,6 +1363,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       final initialPeerGrading = widget.config!['peer_grading_enabled'];
       _peerGradingEnabled = initialPeerGrading is bool ? initialPeerGrading : true;
       _conceptConfig = Map<String, dynamic>.from(widget.config!['concept_config'] as Map? ?? {});
+      _projectSetupPolicy = widget.config!['project_setup_policy']?.toString() ?? 'continue';
 
       final delList = widget.config!['deliverables'] as List? ?? [];
       _deliverables = delList.map((item) {
@@ -1497,6 +1501,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
 
   Future<void> _save() async {
+    if (ref.read(defenseSchedulerProvider).isSaving || widget.config?['is_locked'] == true) return;
     final eventName = _eventNameController.text.trim();
     if (eventName.isEmpty) {
       setState(() => _activeTab = 0);
@@ -1550,6 +1555,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     }).toList();
 
     final payload = {
+      if (widget.config != null) 'config_id': widget.config!['id'],
       'semester_id': semesterId,
       'year_level': widget.config?['year_level'] ?? ref.read(dashboardProvider('faculty')).data?['pit_lead_year'],
       'event_name': eventName,
@@ -1560,11 +1566,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'peer_weight': _peerWeight,
       'peer_grading_enabled': _peerGradingEnabled,
       'concept_config': _conceptConfig,
+      'project_setup_policy': _projectSetupPolicy,
       'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': deliverablesPayload,
     };
 
     final success = await ref.read(defenseSchedulerProvider.notifier).savePitEventConfig(payload);
+    if (!mounted) return;
     if (success) {
       setState(() {
         _isDirty = false;
@@ -3001,6 +3009,19 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                 _markDirty();
                               },
                             ),
+                            const SizedBox(height: 16),
+                            DropdownButtonFormField<String>(
+                              initialValue: _projectSetupPolicy,
+                              decoration: const InputDecoration(labelText: 'Project requirement'),
+                              items: const [
+                                DropdownMenuItem(value: 'continue', child: Text('Existing projects allowed')),
+                                DropdownMenuItem(value: 'new', child: Text('New projects required')),
+                              ],
+                              onChanged: isLocked || widget.config?['roster_setup_opened'] == true ? null : (value) {
+                                setState(() => _projectSetupPolicy = value ?? 'continue');
+                                _markDirty();
+                              },
+                            ),
                           ],
                         ),
 
@@ -3469,10 +3490,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                     color: Color(0xFFF8FAFC),
                     border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
                   ),
-                  child: Row(
+                  child: StageSetupActions(
                     children: [
                       TextButton(
-                        onPressed: _handleClose,
+                        onPressed: state.isSaving ? null : _handleClose,
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFF64748B),
                           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily),
@@ -3497,7 +3518,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         ),
                         const SizedBox(width: 10),
                       ],
-                      if (_activeTab < 2)
+                      if (_activeTab < 2) ...[
                         ElevatedButton.icon(
                           onPressed: () {
                             if (_activeTab == 0 && _eventNameController.text.trim().isEmpty) {
@@ -3519,8 +3540,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                             textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
-                        )
-                      else if (isLocked)
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      if (isLocked && _activeTab == 2)
                         ElevatedButton.icon(
                           onPressed: null,
                           icon: const Icon(Icons.lock_outline_rounded, size: 16, color: Colors.white),
@@ -3532,7 +3555,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                         )
-                      else
+                      else if (!isLocked && (widget.config != null || _activeTab == 2))
                         DefensysSaveButton(
                           height: 40,
                           onPressed: _save,

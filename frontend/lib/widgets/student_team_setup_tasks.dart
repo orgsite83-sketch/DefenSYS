@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/academic/team_formation_service.dart';
+import '../services/academic/team_roster_service.dart';
+import 'shadcn/defensys_shadcn_scope.dart';
+import 'shadcn/defensys_workflow_widgets.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import '../services/academic/student_team_selection_provider.dart';
 import '../services/auth/auth_provider.dart';
 import '../services/capstone_deliverables_provider.dart';
@@ -28,6 +32,7 @@ class StudentTeamSetupTasks extends ConsumerStatefulWidget {
 class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
   List<Map<String, dynamic>> teams = [];
   List<Map<String, dynamic>> sectionTasks = [];
+  List<Map<String, dynamic>> eventTeams = [];
   String? error;
   bool busy = false;
   int _requestRevision = 0;
@@ -54,6 +59,8 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
       if (mounted && revision == _requestRevision) {
         setState(() {
           teams = _teams(result);
+          eventTeams = (result['event_teams'] as List? ?? []).whereType<Map>()
+              .map((t) => Map<String, dynamic>.from(t)).toList();
           sectionTasks = (result['section_tasks'] as List? ?? []).whereType<Map>()
               .map((t) => Map<String, dynamic>.from(t)).toList();
           error = null;
@@ -74,7 +81,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
   Future<void> nameTeam(Map<String, dynamic> team) async {
     final name = await showDialog<String>(
       context: context,
-      builder: (_) => _TeamNameDialog(initialName: team['name'].toString()),
+      builder: (_) => _TeamNameDialog(initialName: team['needs_name'] == true ? '' : team['name'].toString()),
     );
     if (name == null || !mounted) return;
     ++_requestRevision;
@@ -134,9 +141,19 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
     widget.onOpenRepository?.call();
   }
 
+  Future<void> confirmEventTeam(Map<String, dynamic> team) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => _EventTeamDetailsDialog(team: team),
+    );
+    if (saved != true || !mounted) return;
+    await load();
+    await widget.onRefresh?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (teams.isEmpty && sectionTasks.isEmpty && error == null) return const SizedBox.shrink();
+    if (teams.isEmpty && sectionTasks.isEmpty && eventTeams.isEmpty && error == null) return const SizedBox.shrink();
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -202,7 +219,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                               border: Border.all(color: DefensysTokens.borderOf(context)),
                             ),
                             child: Text(
-                              '${sectionTasks.length} Action',
+                              '${sectionTasks.length + teams.length + eventTeams.length} Action',
                               style: TextStyle(
                                 fontFamily: DefensysTokens.fontFamilyInter,
                                 fontSize: 10.5,
@@ -377,6 +394,64 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                           );
                         }(),
                       ],
+                      for (final team in eventTeams)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: DefensysShadcnScope(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${team['event_name']} · ${team['section']} · ${team['name']}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: DefensysTokens.textPrimaryOf(
+                                      context,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 7),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    if (team['needs_details'] == true)
+                                      ShadButton.outline(
+                                        height: 0,
+                                        enabled: !busy,
+                                        onPressed: () => confirmEventTeam(team),
+                                        leading: const Icon(
+                                          Icons.assignment_outlined,
+                                          size: 15,
+                                        ),
+                                        child: const Flexible(child: Text(
+                                          'Confirm event team details',
+                                          textAlign: TextAlign.center,
+                                        )),
+                                      ),
+                                    for (final task
+                                        in (team['concept_tasks'] as List? ??
+                                                [])
+                                            .whereType<Map>())
+                                      ShadButton(
+                                        height: 0,
+                                        enabled:
+                                            !busy &&
+                                            widget.onOpenRepository != null,
+                                        onPressed: () =>
+                                            openConcepts(team, task),
+                                        child: Flexible(child: Text(
+                                          'Complete ${task['required_count']} concept${task['required_count'] == 1 ? '' : 's'}',
+                                          textAlign: TextAlign.center,
+                                        )),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ...teams.map(
                         (team) {
                           final conceptTasks = (team['concept_tasks'] as List? ?? []).cast<Map>();
@@ -516,3 +591,126 @@ class _TeamNameDialogState extends State<TeamNameDialog> {
 }
 
 typedef _TeamNameDialog = TeamNameDialog;
+
+class _EventTeamDetailsDialog extends ConsumerStatefulWidget {
+  const _EventTeamDetailsDialog({required this.team});
+  final Map<String, dynamic> team;
+  @override
+  ConsumerState<_EventTeamDetailsDialog> createState() =>
+      _EventTeamDetailsDialogState();
+}
+
+class _EventTeamDetailsDialogState
+    extends ConsumerState<_EventTeamDetailsDialog> {
+  late final name = TextEditingController(text: widget.team['needs_name'] == true ? '' : '${widget.team['name']}');
+  late final project = TextEditingController(
+    text: '${widget.team['project_title'] ?? ''}',
+  );
+  bool saving = false;
+  String? error;
+  @override
+  void dispose() {
+    name.dispose();
+    project.dispose();
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    if (name.text.trim().isEmpty ||
+        widget.team['concept_enabled'] != true && project.text.trim().isEmpty) {
+      setState(
+        () => error = 'Enter your team name and the required project title.',
+      );
+      return;
+    }
+    setState(() {
+      saving = true;
+      error = null;
+    });
+    try {
+      await ref
+          .read(teamRosterServiceProvider)
+          .confirm(widget.team['id'] as int, widget.team['event_id'] as int, {
+            'name': name.text.trim(),
+            'project_title': project.text.trim(),
+            'revision': widget.team['revision'],
+          });
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) setState(() => error = '$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => DefensysShadcnScope(
+    child: ShadDialog(
+      title: const Text('Confirm event team details'),
+      description: Text(
+        '${widget.team['event_name']} · ${widget.team['section']}',
+      ),
+      constraints: const BoxConstraints(maxWidth: 520),
+      actions: [
+        ShadButton.outline(
+          enabled: !saving,
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ShadButton(
+          enabled: !saving,
+          onPressed: save,
+          child: Text(saving ? 'Confirming…' : 'Confirm details'),
+        ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (error != null)
+              WorkflowNotice(
+                title: 'Unable to confirm',
+                message: error!,
+                error: true,
+              ),
+            WorkflowField(
+              label: 'Team name for this event',
+              child: ShadInput(
+                controller: name,
+                enabled: !saving,
+                maxLength: 120,
+              ),
+            ),
+            if (widget.team['concept_enabled'] != true)
+              WorkflowField(
+                label: 'Project title',
+                helper:
+                    'This registers your project for this event. It does not imply concept approval.',
+                child: ShadInput(
+                  controller: project,
+                  enabled: !saving,
+                  maxLength: 255,
+                ),
+              )
+            else
+              WorkflowNotice(
+                title: 'Project concepts',
+                message: project.text.isNotEmpty
+                    ? 'Your project continues as: ${project.text}. Its papers and approval follow this event’s concept workflow.'
+                    : 'Complete your required titles in the existing concept workspace. Your roster members and leader stay the same.',
+              ),
+            Text(
+              'These details belong to this event. Earlier events keep their saved team information.',
+              style: TextStyle(
+                fontSize: 12,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}

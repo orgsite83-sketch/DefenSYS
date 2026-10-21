@@ -322,6 +322,7 @@ def team_queryset_for_user(user, *, include_pit_lead=True):
             'adviser',
         )
         .prefetch_related(
+            'roster_details',
             'memberships',
             'memberships__student',
             Prefetch('deliverable_submissions', queryset=DeliverableSubmission.objects.select_related(
@@ -1367,10 +1368,16 @@ def team_payload(team, selected_stage=None, evaluator=None):
             }
 
     effective_adviser_name = resolve_team_instructor_or_adviser_name(team)
+    roster_display = {'name': team.name, 'project_title': team.project_title}
+    if team.is_pit:
+        from student_teams.roster_workspace import display_for
+        from defense.scheduler.models import PitEventGradingConfig
+        event = PitEventGradingConfig.objects.filter(semester_id=team.semester_id,
+            year_level=team.year_level, event_name__iexact=selected).first()
+        roster_display = display_for(team, event)
     return {
         'id': team.id,
-        'name': team.name,
-        'project_title': team.project_title,
+        **roster_display,
         'setup_pending': team.setup_pending,
         'project_pending': team.project_pending,
         'project_version': team.project_version,

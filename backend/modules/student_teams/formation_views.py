@@ -95,13 +95,21 @@ def setup_tasks(user):
     from .concept_policy import contexts_for, resolve_policy
     from repository.deliverables.concepts import latest_round, titles_complete
     teams = StudentTeam.objects.filter(semester=get_active_semester(), leader=user,
-        memberships__student=user).distinct().order_by('name')
+        memberships__student=user).prefetch_related('roster_details').distinct().order_by('name')
     result = []
     for team in teams:
         if not (team.setup_pending or team.project_pending):
             continue
+        roster_backed = bool(team.roster_details.all())
+        if roster_backed:
+            # Current-roster naming is immediate; event project setup keeps
+            # its own opening, confirmation and revision rules.
+            from .pit_rosters import resolve
+            active_ids = resolve(team.semester_id, team.year_level).get(team.section, {}).get('team_ids', [])
+            if not team.setup_pending or team.current_defense_stage or team.pk not in active_ids:
+                continue
         tasks = []
-        for stage in contexts_for(team):
+        for stage in contexts_for(team) if team.project_pending and not roster_backed else []:
             if team.is_pit and team.current_defense_stage and stage.event_name != team.current_defense_stage:
                 continue
             policy = resolve_policy(team, stage)
@@ -112,7 +120,7 @@ def setup_tasks(user):
                               'mode': policy['mode'], 'shared_system': shared,
                               'section_project_id': policy.get('section_project_id')})
         if team.setup_pending or tasks:
-            result.append({'id': team.pk, 'name': team.name, 'section': team.section,
+            result.append({'id': team.pk, 'name': f'Unnamed team {team.pk}' if team.setup_pending else team.name, 'section': team.section,
                            'scope': 'pit' if team.is_pit else 'capstone', 'year_level': team.year_level,
                            'event_name': team.current_defense_stage or '',
                            'needs_name': team.setup_pending, 'concept_tasks': tasks})
@@ -124,7 +132,9 @@ class MyTeamSetupView(APIView):
 
     def get(self, request):
         from repository.section_concepts.services import task_payload
-        return Response({'teams': setup_tasks(request.user), 'section_tasks': task_payload(request.user)})
+        from .roster_workspace import setup_tasks as event_tasks
+        return Response({'teams': setup_tasks(request.user), 'section_tasks': task_payload(request.user),
+            'event_teams': event_tasks(request.user)})
 
 
 class TeamLeaderSetupView(APIView):
@@ -132,18 +142,35 @@ class TeamLeaderSetupView(APIView):
 
     @transaction.atomic
     def patch(self, request, team_id):
+        # Roster writes acquire the term before teams. Use the same lock order
+        # so naming cannot race a replacement or deadlock with event freezing.
+        semester = get_active_semester()
+        from academic_period_management.models import Semester
+        if semester:
+            Semester.objects.select_for_update().get(pk=semester.pk)
         team = get_object_or_404(StudentTeam.objects.select_for_update(), pk=team_id,
-            leader=request.user, memberships__student=request.user, semester=get_active_semester())
+            leader=request.user, memberships__student=request.user, semester=semester)
         if not team.setup_pending:
             raise ValidationError('Team setup is already complete. Ask your team manager for later name changes.')
         name = serializers.CharField(max_length=120).run_validation(request.data.get('name'))
         if StudentTeam.objects.filter(name=name, level=team.level).exclude(pk=team.pk).exists():
             raise ValidationError({'name': 'Another team already uses this name. Choose a different name.'})
+        from .pit_rosters import resolve
+        from .models import PITRosterTeamDetails
+        if team.roster_details.exists():
+            active_ids = resolve(team.semester_id, team.year_level).get(team.section, {}).get('team_ids', [])
+            if team.current_defense_stage or team.pk not in active_ids:
+                raise ValidationError('Complete naming through the active event setup task.')
+            # Freeze protected events before changing the current identity.
+            from .roster_workspace import freeze_events, lock_cohort
+            events = lock_cohort(team.semester, team.year_level)
+            freeze_events(team.semester, team.year_level, team.section, events)
         previous = team.name
         team.name, team.setup_pending = name, False
         try:
             with transaction.atomic():
                 team.save(update_fields=['name', 'setup_pending', 'updated_at'])
+                PITRosterTeamDetails.objects.filter(team=team, event__isnull=True).update(name=name)
         except (IntegrityError, ModelValidationError) as exc:
             raise ValidationError({'name': 'This team name is no longer available. Choose another name.'}) from exc
         log_high_impact_action(category=SystemAuditLog.CATEGORY_STUDENT_TEAMS,
