@@ -119,7 +119,7 @@ class _DefenseStageEditorScreenState
       'is_active': _isActive,
       'is_presentation_only': _isPresentationOnly,
       'minutes_required': _minutesRequired,
-      'concept_config': _conceptConfig,
+      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
       'minutes_deliverable_id': _minutesNumber.text,
       'minutes_deliverable_label': _minutesName.text,
       'deliverables': _deliverables,
@@ -556,7 +556,7 @@ class _DefenseStageEditorScreenState
             'is_active': _isActive,
             'is_presentation_only': _isPresentationOnly,
             'minutes_required': _minutesRequired,
-      'concept_config': _conceptConfig,
+      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
             'minutes_deliverable_id': _minutesNumber.text.trim(),
             'minutes_deliverable_label': _minutesName.text.trim(),
             'deliverables': _isPresentationOnly ? [] : _deliverables,
@@ -1375,7 +1375,7 @@ class _DefenseStageEditorScreenState
                                 ),
                                 _buildDeliverableSection(
                                   title: 'Pre-Defense Requirements',
-                                  subtitle: 'Choose which files clear scheduling and which are due closer to the defense.',
+                                  subtitle: 'Required files need faculty acceptance before endorsement and scheduling.',
                                   icon: Icons.folder_open_rounded,
                                   accentColor: const Color(0xFF0F172A),
                                   bgHeaderColor: const Color(0xFFF8FAFC),
@@ -1958,7 +1958,7 @@ class _DefenseStageEditorScreenState
                 child: _submissionModeCard(
                   title: 'Student file submissions',
                   description:
-                      'Set files due before endorsement, before defense, or afterward.',
+                      'Configure pre-defense requirements and post-defense submissions.',
                   icon: Icons.description_rounded,
                   selected: !_isPresentationOnly,
                   onTap: _isLocked
@@ -2697,12 +2697,11 @@ class _DefenseStageEditorScreenState
 
                     final hasAdvancedSettings = isPost
                         ? (item['is_restricted'] == true ||
-                            item['verdict_condition'] == 'revisions_only' ||
                             (item['archive_file_template'] != null &&
                                 item['archive_file_template'].toString().trim().isNotEmpty &&
                                 item['archive_file_template'] != '{project}' &&
                                 item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                        : (item['is_defense_material'] == true);
                     final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
 
                     final moreOptionsBtn = DefensysShadcnScope(
@@ -2768,22 +2767,17 @@ class _DefenseStageEditorScreenState
                   builder: (context) {
                     final hasAdvancedSettings = isPost
                         ? (item['is_restricted'] == true ||
-                            item['verdict_condition'] == 'revisions_only' ||
                             (item['archive_file_template'] != null &&
                                 item['archive_file_template'].toString().trim().isNotEmpty &&
                                 item['archive_file_template'] != '{project}' &&
                                 item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                        : (item['is_defense_material'] == true);
                     final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
 
                     if (!isAdvancedExpanded) {
                       final summaryText = isPost
-                          ? (item['verdict_condition'] == 'revisions_only'
-                              ? 'Required with revisions only${item['is_restricted'] == true ? ' • Restricted archive' : ''}'
-                              : 'Required for all passing teams${item['is_restricted'] == true ? ' • Restricted archive' : ''}')
-                          : (item['requirement_timing'] == 'defense'
-                              ? 'Due ${item['deadline_hours_before'] ?? 24}h before defense${item['is_defense_material'] == true ? ' • Panel material' : ''}'
-                              : 'Cleared before scheduling${item['is_defense_material'] == true ? ' • Panel material' : ''}');
+                          ? '${item['required'] == true ? 'Required' : 'Optional'} after defense${item['is_restricted'] == true ? ' · Restricted archive' : ''}'
+                          : 'Faculty review before scheduling${item['is_defense_material'] == true ? ' · Panel material' : ''}';
                       return Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Row(
@@ -2828,7 +2822,7 @@ class _DefenseStageEditorScreenState
                               Icon(Icons.tune_rounded, size: 14, color: _textSecondaryColor),
                               const SizedBox(width: 6),
                               Text(
-                                isPost ? 'Advanced Post-Defense Rules & Archiving' : 'Advanced Timing & Panel Access',
+                                isPost ? 'Post-defense options' : 'Panel access',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -2848,21 +2842,7 @@ class _DefenseStageEditorScreenState
                               },
                             ),
                             const SizedBox(height: 8),
-                            DeliverableTimingFields(
-                              timing: item['requirement_timing']?.toString() ?? 'scheduling',
-                              hoursBefore: _asInt(item['deadline_hours_before']) ?? 24,
-                              enabled: !_isLocked,
-                              showTimingChoices: true,
-                              isDefenseMaterial: item['is_defense_material'] == true,
-                              onTimingChanged: (value) {
-                                setState(() => item['requirement_timing'] = value);
-                                _markDirty();
-                              },
-                              onHoursChanged: (value) {
-                                setState(() => item['deadline_hours_before'] = value);
-                                _markDirty();
-                              },
-                            ),
+                            const DeliverableTimingFields(),
                           ],
                           if (isPost) ...[
                             Row(
@@ -2896,16 +2876,7 @@ class _DefenseStageEditorScreenState
                               ],
                             ),
                             const SizedBox(height: 10),
-                            StageVerdictConditionChoices(
-                              value: item['verdict_condition']?.toString() == 'revisions_only'
-                                  ? 'revisions_only'
-                                  : 'all_pass',
-                              enabled: !_isLocked,
-                              onChanged: (value) {
-                                setState(() => item['verdict_condition'] = value);
-                                _markDirty();
-                              },
-                            ),
+                            const StagePostDefenseReviewNotice(),
                             const SizedBox(height: 10),
                             RepositoryArchiveNamingPanel(
                               templateController: templateController,

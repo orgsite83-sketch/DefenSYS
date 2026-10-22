@@ -1542,8 +1542,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         'archive_file_template': tplCtrl != null ? tplCtrl.text.trim() : (d['archive_file_template'] ?? ''),
         'is_restricted': d['is_restricted'] == true,
         'is_defense_material': d['is_defense_material'] == true,
-        'requirement_timing': d['requirement_timing'] ?? 'scheduling',
-        'deadline_hours_before': d['deadline_hours_before'] ?? 24,
+        'requirement_timing': 'scheduling',
+        'deadline_hours_before': 24,
         'file_format': d['file_format'] ?? 'any',
         'file_policy': d['file_policy'] ?? {},
       };
@@ -1560,7 +1560,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'panel_weight': _panelWeight,
       'peer_weight': _peerWeight,
       'peer_grading_enabled': _peerGradingEnabled,
-      'concept_config': _conceptConfig,
+      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
       'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': deliverablesPayload,
     };
@@ -2258,7 +2258,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                 item['archive_file_template'].toString().trim().isNotEmpty &&
                                 item['archive_file_template'] != '{project}' &&
                                 item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                        : (item['is_defense_material'] == true);
                     final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
 
                     final moreOptionsBtn = DefensysShadcnScope(
@@ -2315,15 +2315,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                 item['archive_file_template'].toString().trim().isNotEmpty &&
                                 item['archive_file_template'] != '{project}' &&
                                 item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                        : (item['is_defense_material'] == true);
                     final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
 
                     if (!isAdvancedExpanded) {
                       final summaryText = isPost
-                          ? 'Archive deliverable${item['is_restricted'] == true ? ' • Restricted archive' : ''}'
-                          : (item['requirement_timing'] == 'defense'
-                              ? 'Due ${item['deadline_hours_before'] ?? 24}h before defense${item['is_defense_material'] == true ? ' • Panel material' : ''}'
-                              : 'Cleared before scheduling${item['is_defense_material'] == true ? ' • Panel material' : ''}');
+                          ? '${item['required'] == true ? 'Required' : 'Optional'} after defense${item['is_restricted'] == true ? ' · Restricted archive' : ''}'
+                          : 'Faculty review before scheduling${item['is_defense_material'] == true ? ' · Panel material' : ''}';
                       return Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Row(
@@ -2373,7 +2371,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               const Icon(Icons.tune_rounded, size: 14, color: Color(0xFF475569)),
                               const SizedBox(width: 6),
                               Text(
-                                isPost ? 'Post-Defense Rules & Archiving' : 'Submission Timing & Access Settings',
+                                isPost ? 'Post-Defense Rules & Archiving' : 'Panel access',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -2385,21 +2383,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           ),
                           const SizedBox(height: 10),
                           if (!isPost) ...[
-                            DeliverableTimingFields(
-                              timing: item['requirement_timing']?.toString() ?? 'scheduling',
-                              hoursBefore: int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24,
-                              enabled: !isLocked,
-                              showTimingChoices: true,
-                              isDefenseMaterial: item['is_defense_material'] == true,
-                              onTimingChanged: (value) {
-                                setState(() => item['requirement_timing'] = value);
-                                _markDirty();
-                              },
-                              onHoursChanged: (value) {
-                                setState(() => item['deadline_hours_before'] = value);
-                                _markDirty();
-                              },
-                            ),
+                            const DeliverableTimingFields(),
                             const SizedBox(height: 10),
                             const Divider(height: 1, color: Color(0xFFE2E8F0)),
                             const SizedBox(height: 10),
@@ -3439,7 +3423,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                             ),
                             _buildDeliverableSection(
                               title: 'Pre-Defense Requirements',
-                              subtitle: 'Choose which files clear scheduling and which are due closer to the defense.',
+                              subtitle: 'Required files need faculty acceptance before endorsement and scheduling.',
                               icon: Icons.folder_open_rounded,
                               accentColor: const Color(0xFF0F172A),
                               bgHeaderColor: const Color(0xFFF8FAFC),

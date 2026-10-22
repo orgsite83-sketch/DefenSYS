@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
-import '../shadcn/defensys_workflow_widgets.dart';
 
 class DefenseMaterialToggle extends StatelessWidget {
   const DefenseMaterialToggle({
@@ -20,8 +18,12 @@ class DefenseMaterialToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B);
-    final secondaryColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final primaryColor = isDark
+        ? const Color(0xFFF1F5F9)
+        : const Color(0xFF1E293B);
+    final secondaryColor = isDark
+        ? const Color(0xFF94A3B8)
+        : const Color(0xFF64748B);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -46,7 +48,7 @@ class DefenseMaterialToggle extends StatelessWidget {
         const SizedBox(width: 4),
         Tooltip(
           message:
-              'Panelists use this file during oral defense. Marking it as defense material does not change its due time.',
+              'Panelists use this file during oral defense. Required files still need faculty acceptance before endorsement.',
           constraints: const BoxConstraints(maxWidth: 240),
           child: Icon(
             Icons.help_outline_rounded,
@@ -59,14 +61,15 @@ class DefenseMaterialToggle extends StatelessWidget {
   }
 }
 
-/// Timing is independent of required status and visibility to panelists.
+/// One review rule for all pre-defense files. Retired arguments are accepted
+/// for existing callers; they never enable another timing option.
 class DeliverableTimingFields extends StatelessWidget {
   const DeliverableTimingFields({
     super.key,
-    required this.timing,
-    required this.hoursBefore,
-    required this.onTimingChanged,
-    required this.onHoursChanged,
+    this.timing = 'scheduling',
+    this.hoursBefore = 24,
+    this.onTimingChanged,
+    this.onHoursChanged,
     this.enabled = true,
     this.showTimingChoices = false,
     this.isDefenseMaterial = false,
@@ -74,394 +77,16 @@ class DeliverableTimingFields extends StatelessWidget {
 
   final String timing;
   final int hoursBefore;
+  final ValueChanged<String>? onTimingChanged;
+  final ValueChanged<int>? onHoursChanged;
   final bool enabled;
   final bool showTimingChoices;
   final bool isDefenseMaterial;
-  final ValueChanged<String> onTimingChanged;
-  final ValueChanged<int> onHoursChanged;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B);
-    final secondaryColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
-
-    return DefensysShadcnScope(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: EdgeInsets.zero,
-        decoration: null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (showTimingChoices) ...[
-              Text(
-                'When should students submit this file?',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                  color: primaryColor,
-                ),
-              ),
-              const SizedBox(height: 8),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final schedulingChoice = _timingChoice(
-                    context,
-                    value: 'scheduling',
-                    title: 'Before endorsement',
-                    description:
-                        'If required, this file must be cleared before scheduling.',
-                    icon: Icons.fact_check_outlined,
-                  );
-                  final defenseChoice = _timingChoice(
-                    context,
-                    value: 'defense',
-                    title: 'Before scheduled defense',
-                    description:
-                        'Does not block endorsement or scheduling. Students can upload it before the defense deadline.',
-                    icon: Icons.event_outlined,
-                  );
-                  return constraints.maxWidth < 540
-                      ? Column(
-                          children: [
-                            schedulingChoice,
-                            const SizedBox(height: 6),
-                            defenseChoice,
-                          ],
-                        )
-                      : Row(
-                          children: [
-                            Expanded(child: schedulingChoice),
-                            const SizedBox(width: 8),
-                            Expanded(child: defenseChoice),
-                          ],
-                        );
-                },
-              ),
-            ] else
-              WorkflowSelect(
-                label: 'Needed by',
-                value: timing,
-                enabled: enabled,
-                searchable: false,
-                options: const {
-                  'scheduling': 'Before endorsement / scheduling',
-                  'defense': 'Before scheduled defense',
-                },
-                onChanged: onTimingChanged,
-              ),
-            if (timing == 'defense') ...[
-              if (showTimingChoices) const SizedBox(height: 10),
-              if (showTimingChoices)
-                _StageDeadlineChoices(
-                  hoursBefore: hoursBefore,
-                  enabled: enabled,
-                  onChanged: onHoursChanged,
-                )
-              else
-                WorkflowSelect(
-                  label: 'Submission deadline',
-                  value: hoursBefore.toString(),
-                  enabled: enabled,
-                  searchable: false,
-                  options: {
-                    for (final hours in {
-                      0,
-                      1,
-                      6,
-                      12,
-                      24,
-                      48,
-                      72,
-                      168,
-                      hoursBefore,
-                    }.toList()..sort())
-                      hours.toString(): hours == 0
-                          ? 'At defense start'
-                          : '$hours hours before defense',
-                  },
-                  onChanged: (value) => onHoursChanged(int.parse(value)),
-                ),
-              const SizedBox(height: 4),
-              Text(
-                'Students can upload and replace this file after endorsement until its deadline. '
-                'It does not block scheduling.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 11,
-                  color: secondaryColor,
-                ),
-              ),
-            ] else if (!showTimingChoices)
-              Text(
-                'Required items must be cleared before endorsement. Approved files lock when the team is endorsed.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 11,
-                  color: secondaryColor,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _timingChoice(
-    BuildContext context, {
-    required String value,
-    required String title,
-    required String description,
-    required IconData icon,
-  }) {
-    final selected = timing == value;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: InkWell(
-        onTap: enabled ? () => onTimingChanged(value) : null,
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          constraints: const BoxConstraints(minHeight: 46),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            color: selected
-                ? (isDark ? const Color(0xFF1E293B) : Colors.white)
-                : (isDark ? const Color(0xFF0F172A) : const Color(0xFFFAFAFA)),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected
-                  ? const Color(0xFF0F172A)
-                  : const Color(0xFFE2E8F0),
-              width: selected ? 1.5 : 1,
-            ),
-            boxShadow: selected
-                ? const [
-                    BoxShadow(
-                      color: Color(0x0A000000),
-                      blurRadius: 3,
-                      offset: Offset(0, 1),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected
-                        ? const Color(0xFF0F172A)
-                        : const Color(0xFFCBD5E1),
-                    width: 1.5,
-                  ),
-                ),
-                child: selected
-                    ? Center(
-                        child: Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                icon,
-                size: 15,
-                color: selected
-                    ? const Color(0xFF0F172A)
-                    : const Color(0xFF64748B),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: selected
-                            ? const Color(0xFF0F172A)
-                            : const Color(0xFF334155),
-                      ),
-                    ),
-                    const SizedBox(height: 1.5),
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        color: Color(0xFF64748B),
-                        height: 1.25,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StageDeadlineChoices extends StatefulWidget {
-  const _StageDeadlineChoices({
-    required this.hoursBefore,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  final int hoursBefore;
-  final bool enabled;
-  final ValueChanged<int> onChanged;
-
-  @override
-  State<_StageDeadlineChoices> createState() => _StageDeadlineChoicesState();
-}
-
-class _StageDeadlineChoicesState extends State<_StageDeadlineChoices> {
-  static const _presets = [12, 24, 48];
-  late final TextEditingController _customHours;
-  late bool _customSelected;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _customSelected = !_presets.contains(widget.hoursBefore);
-    _customHours = TextEditingController(text: widget.hoursBefore.toString());
-  }
-
-  @override
-  void didUpdateWidget(covariant _StageDeadlineChoices oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.hoursBefore != widget.hoursBefore &&
-        int.tryParse(_customHours.text) != widget.hoursBefore) {
-      _customHours.text = widget.hoursBefore.toString();
-      _customSelected = !_presets.contains(widget.hoursBefore);
-      _error = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _customHours.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'How long before defense?',
-          style: theme.textTheme.labelMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final hours in _presets)
-              _option(
-                context,
-                label: '$hours hours',
-                selected: !_customSelected && widget.hoursBefore == hours,
-                onPressed: () {
-                  setState(() {
-                    _customSelected = false;
-                    _error = null;
-                  });
-                  widget.onChanged(hours);
-                },
-              ),
-            _option(
-              context,
-              label: 'Custom',
-              selected: _customSelected,
-              onPressed: () => setState(() {
-                _customSelected = true;
-                _customHours.text = widget.hoursBefore.toString();
-              }),
-            ),
-          ],
-        ),
-        if (_customSelected) ...[
-          const SizedBox(height: 8),
-          SizedBox(
-            width: 180,
-            child: ShadInput(
-              key: const ValueKey('stage-custom-deadline-hours'),
-              controller: _customHours,
-              enabled: widget.enabled,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              placeholder: const Text('Hours before defense'),
-              onChanged: (value) {
-                final hours = int.tryParse(value);
-                setState(() {
-                  _error = hours == null || hours < 0 || hours > 720
-                      ? 'Enter 0 to 720 hours.'
-                      : null;
-                });
-                if (_error == null) widget.onChanged(hours!);
-              },
-            ),
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                _error!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ),
-        ],
-      ],
-    );
-  }
-
-  Widget _option(
-    BuildContext context, {
-    required String label,
-    required bool selected,
-    required VoidCallback onPressed,
-  }) {
-    return selected
-        ? ShadButton(
-            size: ShadButtonSize.sm,
-            enabled: widget.enabled,
-            onPressed: onPressed,
-            child: Text(label),
-          )
-        : ShadButton.outline(
-            size: ShadButtonSize.sm,
-            enabled: widget.enabled,
-            onPressed: onPressed,
-            child: Text(label),
-          );
-  }
+  Widget build(BuildContext context) => Text(
+    'Required pre-defense files need adviser/instructor acceptance before '
+    'endorsement and scheduling.',
+    style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
+  );
 }

@@ -3,6 +3,167 @@ import 'package:defensys/navigation/workspace_access.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('phone-width browser workspaces', () {
+    const panelist = {
+      'role': 'faculty',
+      'is_panelist': true,
+      'is_pit_lead': true,
+      'has_staff_workspace': true,
+    };
+    const documenter = {'role': 'faculty', 'is_documenter': true};
+
+    test('uses logical width with a 600px breakpoint', () {
+      for (final width in [320.0, 390.0, 500.0, 599.0, 600.0, 900.0, 1440.0]) {
+        for (final (user, phoneHome) in [
+          (panelist, AppRoutes.panelist),
+          (documenter, AppRoutes.documenter),
+          ({'role': 'admin', 'is_panelist': true}, AppRoutes.panelist),
+          ({'role': 'admin', 'is_documenter': true}, AppRoutes.documenter),
+        ]) {
+          expect(
+            WorkspaceAccess.home(user, isWeb: true, viewportWidth: width),
+            width < 600
+                ? phoneHome
+                : user['role'] == 'admin'
+                ? AdminRoutes.overview
+                : FacultyRoutes.dashboard,
+          );
+        }
+      }
+    });
+
+    test('only eligible roles enter mobile workspaces', () {
+      for (final (user, home) in [
+        ({'role': 'faculty', 'is_pit_lead': true}, FacultyRoutes.dashboard),
+        ({'role': 'admin'}, AdminRoutes.overview),
+        ({'role': 'student', 'is_panelist': true}, AppRoutes.student),
+        ({'role': 'guest_panelist'}, AppRoutes.guestDefenses),
+      ]) {
+        expect(
+          WorkspaceAccess.home(user, isWeb: true, viewportWidth: 390),
+          home,
+        );
+      }
+    });
+
+    test(
+      'dual roles default to panel and keep an explicit documenter choice',
+      () {
+        const dual = {...panelist, 'is_documenter': true};
+        expect(
+          WorkspaceAccess.home(dual, isWeb: true, viewportWidth: 390),
+          AppRoutes.panelist,
+        );
+        expect(
+          WorkspaceAccess.home(
+            dual,
+            isWeb: true,
+            viewportWidth: 390,
+            preferredWorkspace: AppRoutes.documenter,
+          ),
+          AppRoutes.documenter,
+        );
+        expect(
+          WorkspaceAccess.home(
+            {...dual, 'is_documenter': false},
+            isWeb: true,
+            viewportWidth: 390,
+            preferredWorkspace: AppRoutes.documenter,
+          ),
+          AppRoutes.panelist,
+        );
+      },
+    );
+
+    test(
+      'adapts staff landing pages while preserving forms and deep links',
+      () {
+        for (final route in [
+          AppRoutes.login,
+          '/',
+          '/faculty',
+          FacultyRoutes.dashboard,
+        ]) {
+          expect(
+            WorkspaceAccess.redirect(
+              panelist,
+              route,
+              isWeb: true,
+              viewportWidth: 390,
+            ),
+            AppRoutes.panelist,
+          );
+        }
+        for (final route in [
+          FacultyRoutes.profile,
+          FacultyRoutes.defenseScheduleBulkImport,
+          '/faculty/defense-scheduler/12',
+          AppRoutes.panelist,
+          AppRoutes.settings,
+          AppRoutes.terms,
+        ]) {
+          expect(
+            WorkspaceAccess.redirect(
+              panelist,
+              route,
+              isWeb: true,
+              viewportWidth: 390,
+            ),
+            isNull,
+          );
+        }
+        expect(
+          WorkspaceAccess.redirect(
+            documenter,
+            '/documenter/minutes/42',
+            isWeb: true,
+            viewportWidth: 390,
+          ),
+          isNull,
+        );
+        expect(
+          WorkspaceAccess.redirect(
+            documenter,
+            FacultyRoutes.dashboard,
+            isWeb: true,
+            viewportWidth: 390,
+          ),
+          AppRoutes.documenter,
+        );
+      },
+    );
+
+    test(
+      'explicit staff choice remains accessible without a redirect loop',
+      () {
+        for (final (user, route) in [
+          (panelist, FacultyRoutes.dashboard),
+          ({'role': 'admin', 'is_documenter': true}, AdminRoutes.overview),
+        ]) {
+          expect(
+            WorkspaceAccess.home(
+              user,
+              isWeb: true,
+              viewportWidth: 390,
+              preferredWorkspace: route,
+            ),
+            route,
+          );
+          expect(
+            WorkspaceAccess.redirect(
+              user,
+              route,
+              isWeb: true,
+              viewportWidth: 390,
+              preferredWorkspace: route,
+            ),
+            isNull,
+          );
+        }
+      },
+    );
+  });
+
   test('curriculum analytics route belongs to an assigned PIT Lead', () {
     const lead = {'role': 'faculty', 'is_pit_lead': true, 'pit_lead_year': '2nd Year'};
     expect(WorkspaceAccess.redirect(lead, FacultyRoutes.curriculumAnalytics, isWeb: true), isNull);

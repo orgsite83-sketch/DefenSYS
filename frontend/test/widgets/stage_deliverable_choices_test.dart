@@ -35,29 +35,22 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('post-defense rule exposes both stored values', (tester) async {
-    var rule = 'all_pass';
+  testWidgets('post-defense files have no verdict exemption selector', (
+    tester,
+  ) async {
     await pumpDefensysWidget(
       tester,
       StatefulBuilder(
         builder: (context, update) => Padding(
           padding: const EdgeInsets.all(16),
-          child: StageVerdictConditionChoices(
-            value: rule,
-            onChanged: (value) => update(() => rule = value),
-          ),
+          child: const StagePostDefenseReviewNotice(),
         ),
       ),
     );
 
-    expect(find.text('All passing teams'), findsOneWidget);
-    expect(find.text('Approved with revisions only'), findsOneWidget);
-    await tester.tap(find.text('Approved with revisions only'));
-    await tester.pumpAndSettle();
-    expect(rule, 'revisions_only');
-    await tester.tap(find.text('All passing teams'));
-    await tester.pumpAndSettle();
-    expect(rule, 'all_pass');
+    expect(find.text('All passing teams'), findsNothing);
+    expect(find.text('Approved with revisions only'), findsNothing);
+    expect(find.textContaining('faculty acceptance'), findsOneWidget);
   });
 
   testWidgets('locked rule and minutes fields cannot change', (tester) async {
@@ -65,7 +58,6 @@ void main() {
     final name = TextEditingController(text: 'Signed Minutes');
     addTearDown(number.dispose);
     addTearDown(name.dispose);
-    var rule = 'all_pass';
     var expanded = false;
     await pumpDefensysWidget(
       tester,
@@ -73,11 +65,7 @@ void main() {
         builder: (context, update) => SingleChildScrollView(
           child: Column(
             children: [
-              StageVerdictConditionChoices(
-                value: rule,
-                enabled: false,
-                onChanged: (value) => update(() => rule = value),
-              ),
+              const StagePostDefenseReviewNotice(),
               StageMinutesDeliverableCard(
                 number: number,
                 name: name,
@@ -93,9 +81,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Approved with revisions only'));
-    await tester.pumpAndSettle();
-    expect(rule, 'all_pass');
+    expect(find.text('Approved with revisions only'), findsNothing);
     expect(
       find.byKey(const ValueKey('minutes-deliverable-number')),
       findsNothing,

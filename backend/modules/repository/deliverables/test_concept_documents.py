@@ -12,7 +12,7 @@ from . import concepts
 
 
 class ConceptDocumentTests(APITestCase):
-    setUp = fixtures.SubmissionTimingTests.setUp
+    setUp = fixtures.faculty_review_setup
 
     def configure(self, mode='concepts', **extra):
         self.stage.concept_config = {'enabled': True, 'required_count': 3} if mode == 'concepts' else {}
@@ -159,12 +159,13 @@ class ConceptDocumentTests(APITestCase):
         self.assertFalse(row.is_current)
         self.assertFalse(required_complete(self.team, self.stage.label))
 
-    def test_defense_timed_upload_does_not_invalidate_concept_endorsement(self):
+    def test_pre_defense_file_cannot_bypass_endorsement_lock(self):
         self.configure()
         self.complete_set()
         endorse_team(self.team, self.stage.label, self.adviser)
-        upsert_submission(self.team, self.stage.label, 'DECK', 'pitch.pptx', '10 B', self.student,
-            file=SimpleUploadedFile('pitch.pptx', b'deck test content'))
+        with self.assertRaises(PermissionError):
+            upsert_submission(self.team, self.stage.label, 'DECK', 'pitch.pptx', '10 B', self.student,
+                file=SimpleUploadedFile('pitch.pptx', b'deck test content'))
         self.assertTrue(concepts.clearance_valid(self.team, self.stage))
         self.assertTrue(is_stage_ready(self.team, self.stage))
 

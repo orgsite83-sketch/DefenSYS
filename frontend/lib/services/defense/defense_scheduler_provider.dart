@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -273,6 +274,7 @@ class DefenseSchedulerState {
 
 class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
   static String get baseUrl => ApiConfig.defenseSchedulesUrl;
+  static const importRequestTimeout = Duration(seconds: 30);
 
   @override
   DefenseSchedulerState build() {
@@ -291,9 +293,13 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
   /// Import validation needs every active appointment, including those hidden
   /// by the board's search, scope or status filters. Do not change those filters.
   Future<List<Map<String, dynamic>>> fetchImportConflictSchedules() async {
-    final response = await _client.get(
-      Uri.parse(baseUrl).replace(queryParameters: {'status': 'scheduled'}),
-    );
+    final response = await _client
+        .get(
+          Uri.parse(
+            baseUrl,
+          ).replace(queryParameters: {'view': 'import-conflicts'}),
+        )
+        .timeout(importRequestTimeout);
     if (response.statusCode != 200) {
       throw Exception(_errorFromResponse(response));
     }
@@ -518,8 +524,9 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
   }
 
   Future<Map<String, dynamic>> importSchedules(
-    List<Map<String, dynamic>> payloads,
-  ) async {
+    List<Map<String, dynamic>> payloads, {
+    void Function(int completed, int total)? onProgress,
+  }) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -529,13 +536,18 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     var created = 0;
     final errors = <String>[];
     final importedIndices = <int>[];
+    onProgress?.call(0, payloads.length);
 
     for (var index = 0; index < payloads.length; index++) {
       try {
-        final response = await _client.post(
-          Uri.parse('$baseUrl/'),
-          body: jsonEncode(payloads[index]),
-        );
+        final response = await _client
+            .post(
+              Uri.parse(
+                '$baseUrl/',
+              ).replace(queryParameters: {'response': 'compact'}),
+              body: jsonEncode(payloads[index]),
+            )
+            .timeout(importRequestTimeout);
         if (response.statusCode == 201) {
           created++;
           importedIndices.add(index);
@@ -543,15 +555,26 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
           errors.add('Row ${index + 1}: ${_errorFromResponse(response)}');
         }
       } catch (e) {
-        errors.add('Row ${index + 1}: Connection error: $e');
+        // A lost response does not prove the write failed. Stop here and let
+        // the review recheck appointments before offering the remaining draft.
+        errors.add(
+          'Row ${index + 1}: ${e is TimeoutException ? 'The server took too long to respond.' : 'Connection error: $e'} '
+          'Import stopped. This slot may already be saved; check the Defense Board before retrying.',
+        );
+        break;
       }
+      onProgress?.call(index + 1, payloads.length);
     }
 
-    await fetchSchedules();
-    _markDependentDataChanged();
-
-    if (errors.isNotEmpty && created == 0) {
-      state = state.copyWith(error: errors.first);
+    if (ref.mounted) {
+      state = state.copyWith(
+        isSaving: false,
+        error: errors.isNotEmpty ? errors.first : null,
+      );
+      _markDependentDataChanged();
+      // Saving is complete once POSTs are acknowledged. A slow/failing board
+      // read must not hold the import open or turn saved slots into failures.
+      unawaited(fetchSchedules());
     }
 
     return {

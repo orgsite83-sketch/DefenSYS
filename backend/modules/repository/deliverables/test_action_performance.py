@@ -15,7 +15,7 @@ from . import test_submission_timing as timing_tests
 
 
 class DeliverableActionPerformanceTests(APITestCase):
-    setUp = timing_tests.SubmissionTimingTests.setUp
+    setUp = timing_tests.faculty_review_setup
     upload = timing_tests.SubmissionTimingTests.upload
 
     def configure_pit(self):
@@ -66,6 +66,19 @@ class DeliverableActionPerformanceTests(APITestCase):
                 semester=self.semester, leader=self.student, adviser=self.team.adviser,
                 status=StudentTeam.STATUS_APPROVED,
             )
+        if self.team.is_pit:
+            # The first review pins the event roster. Expand the test fixture's
+            # explicit rosters too, rather than benchmarking seven invisible teams.
+            from student_teams.models import PITSectionRoster, PITEventRoster
+            cohort = StudentTeam.objects.filter(semester=self.semester, year_level=self.team.year_level,
+                                                 section=self.team.section)
+            current, _ = PITSectionRoster.objects.get_or_create(semester=self.semester,
+                year_level=self.team.year_level, section=self.team.section)
+            current.teams.set(cohort)
+            event = PitEventGradingConfig.objects.get(semester=self.semester,
+                year_level=self.team.year_level, event_name=self.stage.label)
+            roster, _ = PITEventRoster.objects.get_or_create(event=event, section=self.team.section)
+            roster.teams.set(cohort)
         partial, many_queries, partial_seconds = self.action()
         self.assertNotIn('teams', partial)
         self.assertLessEqual(many_queries, single_queries + 2)

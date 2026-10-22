@@ -15,7 +15,7 @@ from . import test_submission_timing as fixtures
 
 
 class AssignedConceptTests(APITestCase):
-    setUp = fixtures.SubmissionTimingTests.setUp
+    setUp = fixtures.faculty_review_setup
 
     def configure(self, *, assigned=True):
         self.stage.concept_config = {'enabled': True, 'required_count': 3}
@@ -159,13 +159,13 @@ class AssignedConceptTests(APITestCase):
         serializer = DefenseStageWriteSerializer(self.stage, data={'concept_config': {'enabled': True}}, partial=True)
         self.assertTrue(serializer.is_valid(), serializer.errors)
         serializer.save()
-        paper = self.stage.deliverables.get()
+        paper = self.stage.deliverables.get(file_policy__mode='concepts')
         self.assertEqual((paper.label, paper.file_format, paper.required, paper.is_defense_material),
                          ('Concept Papers', 'pdf', True, True))
         serializer = DefenseStageWriteSerializer(self.stage, data={'concept_config': {'enabled': True}}, partial=True)
         self.assertTrue(serializer.is_valid(), serializer.errors)
         serializer.save()
-        self.assertEqual(self.stage.deliverables.get().pk, paper.pk)
+        self.assertEqual(self.stage.deliverables.get(file_policy__mode='concepts').pk, paper.pk)
         serializer = DefenseStageWriteSerializer(self.stage, data={'concept_config': {'enabled': False}}, partial=True)
         self.assertTrue(serializer.is_valid(), serializer.errors)
         serializer.save()

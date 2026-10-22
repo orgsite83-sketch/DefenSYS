@@ -349,28 +349,6 @@ class ConceptSettings extends StatelessWidget {
                           width: fieldWidth,
                           child: policyField(
                             isPit
-                                ? 'Instructor clearance before re-defense'
-                                : 'Adviser clearance before re-defense',
-                            WorkflowChoice(
-                              value:
-                                  value['review_policy']?.toString() ??
-                                  'replacement',
-                              enabled: enabled,
-                              options: const {
-                                'replacement': 'When concepts are replaced',
-                                'always': 'Every re-defense',
-                                'panel_requested':
-                                    'Not required unless the panel requests it',
-                              },
-                              onChanged: (v) =>
-                                  onChanged({...value, 'review_policy': v}),
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          width: fieldWidth,
-                          child: policyField(
-                            isPit
                                 ? 'Peer scores on repeat attempts'
                                 : 'Adviser and peer scores on repeat attempts',
                             WorkflowChoice(

@@ -81,6 +81,23 @@ class CurriculumExplorerTests(APITestCase):
         self.assertNotIn('project_analytics', response.data)
         self.assertEqual(response.data['score_unit'], 'teams')
 
+    def test_application_area_reaches_collection_and_source_evidence_without_writes(self):
+        source = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+            deliverable_id='AREA', label='Project proposal', deliverable_type='pre',
+            extracted_text='Objectives\nCloudSync provides a document library of approved handbooks and version dates.')
+        before = (source.category, source.classification)
+        response = self.get(view='projects', project_status='all', academic_year=self.year.label)
+        row = next(p for p in response.data['projects'] if p['team_id'] == self.a.pk)
+        self.assertEqual(row['application_area'], 'Information & Document Services')
+        detail = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+                                {'scope': 'capstone', 'academic_year': self.year.label})
+        classification = detail.data['classification']
+        self.assertEqual(classification['application_area'], row['application_area'])
+        self.assertTrue(all(e['document_id'] == f'submission:{source.pk}'
+                            for e in classification['application_area_evidence']))
+        source.refresh_from_db()
+        self.assertEqual((source.category, source.classification), before)
+
     def test_workspace_year_reveals_stages_and_assessment_reveals_only_its_components(self):
         response = self.get(view='year', academic_year=self.year.label)
         self.assertEqual(response.status_code, 200, response.data)
@@ -243,6 +260,9 @@ class CurriculumExplorerTests(APITestCase):
         StudentAcademicRecord.objects.create(student=self.student, semester=old_sem, year_level='1st Year')
         team = self.team('Comparison PIT', StudentTeam.LEVEL_1_PIT, '1st Year')
         for sem, name, score in [(old_sem, ' Programming EXPO ', 80), (self.sem, 'Programming Expo', 90)]:
+            # Capture each grade while the team belongs to that period's roster.
+            StudentTeam.objects.filter(pk=team.pk).update(semester=sem)
+            team.refresh_from_db()
             event = PitEventGradingConfig.objects.create(semester=sem, year_level='1st Year', event_name=name)
             grade = TeamGrade.objects.create(team=team, semester=sem, scope='pit', pit_event_config=event,
                 panel_weight=80, peer_weight=20, adviser_weight=0)

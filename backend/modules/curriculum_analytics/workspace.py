@@ -156,6 +156,7 @@ def _project_collection(explorer):
                 'team_name': project['team'].name, 'project_title': project['title'],
                 'project_version': project['version'], 'academic_year': year,
                 'category': classification['label'], 'domain': classification['domain'],
+                'application_area': classification.get('application_area', 'Unresolved application area'),
                 'technologies': [t['name'] for t in classification['technologies']],
                 'classification_status': classification['status'], 'classification_reason': classification['reason'],
                 'classification_reason_code': classification['reason_code']})

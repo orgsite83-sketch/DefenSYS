@@ -48,6 +48,7 @@ from .serializers import (
     DefenseScheduleStatusSerializer,
     DefenseSchedulePatchSerializer,
     DefenseScheduleWriteSerializer,
+    ScheduleImportConflictSerializer,
     GenerateSchedulePlanSerializer,
     active_semester,
     schedule_options_payload,
@@ -131,7 +132,15 @@ class DefenseScheduleListCreateView(APIView):
         return [CanManageModule()]
 
     def get(self, request):
-        base = schedule_queryset(workspace_schedules_for(request.user, request.query_params.get('workspace')))
+        scoped = workspace_schedules_for(request.user, request.query_params.get('workspace'))
+        if request.query_params.get('view') == 'import-conflicts':
+            # Keep the same visibility rules, without loading grades, materials,
+            # teams and picker options just to check appointment collisions.
+            appointments = scoped.select_related(None).prefetch_related(None).select_related('team').prefetch_related(
+                'panel_assignments',
+            ).filter(status=DefenseSchedule.STATUS_SCHEDULED)
+            return Response({'schedules': ScheduleImportConflictSerializer(appointments, many=True).data})
+        base = schedule_queryset(scoped)
         can_manage = CanManageModule().has_permission(request, self)
         return Response(
             list_payload(
@@ -146,6 +155,10 @@ class DefenseScheduleListCreateView(APIView):
         serializer = DefenseScheduleWriteSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         schedule = serializer.save()
+        if request.query_params.get('response') == 'compact':
+            # Imports acknowledge each committed slot; the client refreshes
+            # the board once after the loop instead of rebuilding it per slot.
+            return Response({'schedule_id': schedule.pk}, status=status.HTTP_201_CREATED)
         base = manageable_schedules_for(request.user)
         schedule = base.get(pk=schedule.pk)
         return Response(

@@ -169,6 +169,44 @@ void main() {
   setUpAll(() => loadPreviewFonts(force: true));
 
   for (final pit in [false, true]) {
+    testWidgets(
+      '${pit ? 'PIT' : 'Capstone'} required deck needs faculty acceptance before endorsement',
+      (tester) async {
+        tester.view.physicalSize = const Size(1500, 1200);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final notifier = _ReviewNotifier();
+        final stage = _stage(accepted: true);
+        stage['required_complete'] = false;
+        stage['required_total'] = 2;
+        final deck = (stage['pre'] as List).last as Map<String, dynamic>;
+        deck['requirement_timing'] = 'scheduling';
+        deck.remove('materials_submitted');
+        await _pumpWorkspace(
+          tester,
+          stage: stage,
+          notifier: notifier,
+          pit: pit,
+        );
+        expect(find.text('1 needs review'), findsWidgets);
+        expect(
+          tester.widget<ElevatedButton>(_endorseButton()).onPressed,
+          isNull,
+        );
+        expect(find.text('Accept'), findsOneWidget);
+        await tester.tap(find.text('Accept'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Accept Requirement'));
+        await tester.pumpAndSettle();
+        expect(notifier.correction?['id'], 'DECK');
+        expect(notifier.correction?['status'], 'accepted');
+        expect(notifier.endorsed, isNull);
+      },
+    );
+  }
+
+  for (final pit in [false, true]) {
     for (final dark in [false, true]) {
       testWidgets(
         '${pit ? 'PIT' : 'Capstone'} shares badge labels and colors in ${dark ? 'dark' : 'light'} mode',

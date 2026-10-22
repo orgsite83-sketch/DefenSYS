@@ -1598,7 +1598,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       children: [
                         Text(
                           isWaived
-                              ? 'Status: Approved with no revisions'
+                              ? 'Status: Recorded historical exemption'
                               : isDefenseUploaded ? 'Status: Uploaded'
                               : (isAccepted
                                   ? (isPost ? 'Status: Archived' : 'Status: Accepted for Oral Defense')

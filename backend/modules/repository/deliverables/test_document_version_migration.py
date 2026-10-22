@@ -9,7 +9,7 @@ from .models import DeliverableSubmission, DeliverableSubmissionFile
 
 
 class DocumentVersionMigrationTests(APITestCase):
-    setUp = fixtures.SubmissionTimingTests.setUp
+    setUp = fixtures.faculty_review_setup
 
     def test_existing_reviewed_uploads_can_be_initialized_before_index_creation(self):
         self.assertTrue(connection.settings_dict['NAME'].startswith('test_'))

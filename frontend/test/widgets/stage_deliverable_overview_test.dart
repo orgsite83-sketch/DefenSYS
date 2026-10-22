@@ -5,68 +5,67 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/capture_preview.dart';
 
 void main() {
-  testWidgets('groups files by timing and opens only the selected editor', (
-    tester,
-  ) async {
-    final items = <Map<String, dynamic>>[
-      {
-        'label': 'Adviser Acceptance Form',
-        'deliverable_type': 'pre',
-        'requirement_timing': 'scheduling',
-        'file_format': 'pdf',
-        'required': true,
-      },
-      {
-        'label': 'Pitch Deck',
-        'deliverable_type': 'pre',
-        'requirement_timing': 'defense',
-        'deadline_hours_before': 24,
-        'file_format': 'presentation',
-        'required': true,
-        'is_defense_material': true,
-      },
-    ];
-    Map<String, dynamic>? selected;
+  testWidgets(
+    'groups pre-defense files together and opens only the selected editor',
+    (tester) async {
+      final items = <Map<String, dynamic>>[
+        {
+          'label': 'Adviser Acceptance Form',
+          'deliverable_type': 'pre',
+          'requirement_timing': 'scheduling',
+          'file_format': 'pdf',
+          'required': true,
+        },
+        {
+          'label': 'Pitch Deck',
+          'deliverable_type': 'pre',
+          'requirement_timing': 'defense',
+          'deadline_hours_before': 24,
+          'file_format': 'presentation',
+          'required': true,
+          'is_defense_material': true,
+        },
+      ];
+      Map<String, dynamic>? selected;
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: StatefulBuilder(
-            builder: (context, update) => StageDeliverableOverview(
-              items: items,
-              isPost: false,
-              selectedItem: selected,
-              onSelect: (item) => update(() => selected = item),
-              buildEditor: (item, _) =>
-                  TextField(key: ValueKey('editor-${item['label']}')),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, update) => StageDeliverableOverview(
+                items: items,
+                isPost: false,
+                selectedItem: selected,
+                onSelect: (item) => update(() => selected = item),
+                buildEditor: (item, _) =>
+                    TextField(key: ValueKey('editor-${item['label']}')),
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('Before endorsement / scheduling (1)'), findsOneWidget);
-    expect(find.text('Before scheduled defense (1)'), findsOneWidget);
-    expect(
-      find.text(
-        'Slides · Required · 24 hours before defense · Panelist material',
-      ),
-      findsOneWidget,
-    );
-    expect(find.byType(TextField), findsNothing);
+      expect(find.text('Pre-defense files (2)'), findsOneWidget);
+      expect(find.text('Before scheduled defense (1)'), findsNothing);
+      expect(
+        find.text('Slides · Required · Panelist material'),
+        findsOneWidget,
+      );
+      expect(find.byType(TextField), findsNothing);
 
-    await tester.tap(find.text('Pitch Deck'));
-    await tester.pump();
-    expect(find.byKey(const ValueKey('editor-Pitch Deck')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('editor-Adviser Acceptance Form')),
-      findsNothing,
-    );
+      await tester.tap(find.text('Pitch Deck'));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('editor-Pitch Deck')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('editor-Adviser Acceptance Form')),
+        findsNothing,
+      );
 
-    await tester.tap(find.text('Done editing'));
-    await tester.pump();
-    expect(find.byType(TextField), findsNothing);
-  });
+      await tester.tap(find.text('Done editing'));
+      await tester.pump();
+      expect(find.byType(TextField), findsNothing);
+    },
+  );
 
   testWidgets('presentation-only confirmation explains the removal', (
     tester,
@@ -181,9 +180,9 @@ void main() {
       ),
     );
 
-    expect(find.text('Before endorsement: 4'), findsOneWidget);
-    expect(find.text('Before defense: 1'), findsOneWidget);
-    expect(find.text('After defense: 1'), findsOneWidget);
+    expect(find.text('Pre-defense: 5'), findsOneWidget);
+    expect(find.text('Before defense: 1'), findsNothing);
+    expect(find.text('Post-defense: 1'), findsOneWidget);
     expect(find.text('Final Manuscript'), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(tester.takeException(), isNull);

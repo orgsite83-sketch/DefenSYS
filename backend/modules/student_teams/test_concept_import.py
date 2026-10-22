@@ -17,6 +17,37 @@ class ConceptImportTests(APITestCase):
              'system_name': 'Hospital Management System', 'level': StudentTeam.LEVEL_3_CAPSTONE,
              'section': 'BSIT-3A', 'member_ids': ['Maria Santos'], 'leader_id': 'Maria Santos'}]
 
+    def test_normalized_file_upload_headers_work_in_preview_and_commit(self):
+        self._activate_capstone_intake_semester()
+        # readTeamImportFiles normalizes CSV and XLSX to this row-based schema.
+        data = {'teams': [self.rows()[1]], 'csv_columns': [
+            'team_name', 'project_title', 'level', 'year_level', 'member_ids', 'leader_id',
+            'adviser_name', 'instructor_name', 'section', 'system_name', 'project_manager', 'group_key']}
+        preview = self.client.post('/api/teams/bulk-import/preview/', data, format='json')
+        self.assertTrue(preview.data['rows'][0]['ready'], preview.data)
+        self.assertFalse(StudentTeam.objects.exists())
+        imported = self.client.post('/api/teams/bulk-import/', data, format='json')
+        self.assertEqual(imported.data['created_count'], 1, imported.data)
+
+    def test_supported_member_header_aliases_are_accepted_by_backend(self):
+        self._activate_capstone_intake_semester()
+        for member_header in ('Team Members', 'Members', 'Names', 'Student Name',
+                              'student_name', 'Student Names', 'Student', 'Students'):
+            with self.subTest(header=member_header):
+                preview = self.client.post('/api/teams/bulk-import/preview/', {
+                    'teams': [self.rows()[1]],
+                    'csv_columns': ['Team Name:', 'Capstone Project', 'Section', 'Adviser', member_header],
+                }, format='json')
+                self.assertTrue(preview.data['rows'][0]['ready'], preview.data)
+
+    def test_unrecognized_grouping_headers_still_block_preview_and_commit(self):
+        self._activate_capstone_intake_semester()
+        data = {'teams': [self.rows()[1]], 'csv_columns': ['Title', 'Students']}
+        preview = self.client.post('/api/teams/bulk-import/preview/', data, format='json')
+        self.assertFalse(preview.data['rows'][0]['ready'])
+        imported = self.client.post('/api/teams/bulk-import/', data, format='json')
+        self.assertEqual(imported.data['created_count'], 0, imported.data)
+
     def test_preview_and_import_keep_assignment_intent_for_mixed_section(self):
         self._activate_capstone_intake_semester()
         stage = DefenseStage.objects.first()
@@ -46,6 +77,41 @@ class ConceptImportTests(APITestCase):
         self.assertEqual(imported.status_code, 201, imported.data)
         self.assertEqual(imported.data['created_count'], 2, imported.data)
         self.assertEqual(set(StudentTeam.objects.values_list('concept_assignment__mode', flat=True)), {'proposals'})
+
+    def test_missing_project_import_prompts_leader_for_three_concepts(self):
+        from repository.deliverables import concepts
+        self._activate_capstone_intake_semester()
+        # The feature flag, not a fixed stage name, provides the concept task.
+        stage = DefenseStage.objects.first()
+        stage.label = 'Research Idea Hearing'
+        stage.concept_config = {'enabled': True, 'required_count': 3}
+        stage.save()
+        for title_fields in ({}, {'project_title': ''}):
+            with self.subTest(project_column_present=bool(title_fields)):
+                row = {**self.rows()[0], **title_fields}
+                data = {'teams': [row], 'csv_columns': [
+                    'team_name', 'level', 'year_level', 'member_ids', 'leader_id',
+                    'adviser_name', 'instructor_name', 'section', 'group_key', *title_fields]}
+                preview = self.client.post('/api/teams/bulk-import/preview/', data, format='json')
+                self.assertTrue(preview.data['rows'][0]['ready'], preview.data)
+                self.assertEqual(preview.data['rows'][0]['concept_requirement']['required_count'], 3)
+                self.assertFalse(StudentTeam.objects.exists())
+                imported = self.client.post('/api/teams/bulk-import/', data, format='json')
+                self.assertEqual(imported.data['created_count'], 1, imported.data)
+                team = StudentTeam.objects.get()
+                self.assertTrue(team.project_pending)
+                self.assertEqual(team.project_title, '')
+                self.client.force_authenticate(self.student_1)
+                tasks = self.client.get('/api/teams/my-setup/').data['teams']
+                task = next(t for t in tasks if t['id'] == team.pk)
+                self.assertFalse(task['needs_name'])
+                self.assertEqual(task['concept_tasks'][0]['stage_label'], stage.label)
+                self.assertEqual(task['concept_tasks'][0]['required_count'], 3)
+                current = concepts.get_round(team, stage)
+                self.assertEqual(len(current.concepts), 3)
+                self.assertTrue(all(c['title'] == '' for c in current.concepts))
+                StudentTeam.objects.all().delete()
+                self.client.force_authenticate(self.admin)
 
     def test_assigned_section_rejects_future_imports_without_a_team_title(self):
         from .models import SectionAssignment

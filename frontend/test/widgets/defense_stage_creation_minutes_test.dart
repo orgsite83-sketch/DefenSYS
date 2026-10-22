@@ -195,11 +195,7 @@ void main() {
             await tester.pumpAndSettle();
             await tester.tap(find.text('Defense material for panelists'));
             await tester.pumpAndSettle();
-            await tester.tap(find.text('Before scheduled defense').last);
-            await tester.pumpAndSettle();
-            await tester.ensureVisible(find.text('48 hours'));
-            await tester.tap(find.text('48 hours'));
-            await tester.pumpAndSettle();
+            expect(find.text('Before scheduled defense'), findsNothing);
             await tester.ensureVisible(find.text('Required').last);
             await tester.tap(find.text('Required').last);
             await tester.pumpAndSettle();
@@ -218,8 +214,7 @@ void main() {
             );
             await tester.tap(find.text('More options'));
             await tester.pumpAndSettle();
-            await tester.tap(find.text('Approved with revisions only'));
-            await tester.pumpAndSettle();
+            expect(find.text('Approved with revisions only'), findsNothing);
             await capturePreview(
               tester,
               find.byKey(const ValueKey('stage-dialog-preview')),
@@ -242,12 +237,12 @@ void main() {
             final files = (stages.saved?['deliverables'] as List).cast<Map>();
             expect(files.length, 2);
             expect(files[0]['label'], 'Panel Deck');
-            expect(files[0]['requirement_timing'], 'defense');
-            expect(files[0]['deadline_hours_before'], 48);
+            expect(files[0]['requirement_timing'], 'scheduling');
+            expect(files[0]['deadline_hours_before'], 24);
             expect(files[0]['is_defense_material'], true);
             expect(files[0]['required'], false);
             expect(files[1]['label'], 'Revision Matrix');
-            expect(files[1]['verdict_condition'], 'revisions_only');
+            expect(files[1]['verdict_condition'], 'all_pass');
             expect(files[1]['required'], true);
           } else {
             expect(stages.saved?['deliverables'], isEmpty);

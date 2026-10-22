@@ -185,13 +185,16 @@ def sync_overdue_notifications(actor=None):
         deliverables__required=True).values('event_name')
     schedules = schedules.filter(materials_notice_key='', scheduled_date__lte=timezone.localdate() + timedelta(days=30)).filter(
         Q(scope='capstone', defense_stage__deliverables__requirement_timing='defense', defense_stage__deliverables__required=True) |
-        Q(scope='pit', event_name__in=timed_events))
+        Q(scope='pit', event_name__in=timed_events) |
+        ~Q(legacy_deliverable_policy={}))
     from repository.deliverables.services import get_deliverable_definitions_for_team
     definitions = {}
     count = 0
     now = timezone.now()
     for schedule in schedules.select_related('team', 'defense_stage').distinct():
-        key = (schedule.scope, schedule.semester_id if schedule.scope == 'pit' else None, schedule.stage_label)
+        key = (schedule.scope, schedule.semester_id if schedule.scope == 'pit' else None,
+               schedule.team.year_level if schedule.scope == 'pit' else None, schedule.stage_label,
+               schedule.pk if schedule.legacy_deliverable_policy else None)
         if key not in definitions:
             definitions[key] = [item for item in get_deliverable_definitions_for_team(schedule.team, schedule.stage_label)
                                 if item.get('required') and due_before_defense(item)]

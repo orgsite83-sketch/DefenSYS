@@ -336,6 +336,13 @@ class _CurriculumEvidenceDialogState
                       );
               },
             ),
+            if (classification['application_area'] != null) ...[
+              const SizedBox(height: 16),
+              _overviewFact(
+                'Application area',
+                '${classification['application_area']}',
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               classification['decision_method'] == 'concept_functions'
@@ -702,6 +709,10 @@ class _CurriculumEvidenceDialogState
         classification['domain_evidence'],
       ).any((e) => e['document_id'] == id))
         'domain',
+      if (explorerRows(
+        classification['application_area_evidence'],
+      ).any((e) => e['document_id'] == id))
+        'application area',
       if (explorerRows(profile['platforms']).any((p) => p['document_id'] == id))
         'platform',
       if (explorerRows(
@@ -937,6 +948,11 @@ class _CurriculumEvidenceDialogState
         'Application domain: ${classification['domain'] ?? 'Unresolved domain'}',
         style: _muted,
       ),
+      if (classification['application_area'] != null)
+        Text(
+          'Application area: ${classification['application_area']}',
+          style: _muted,
+        ),
       const SizedBox(height: 8),
       Text('${classification['reason'] ?? ''}', style: _muted),
       ShadAccordion<String>(
@@ -1035,6 +1051,10 @@ class _CurriculumEvidenceDialogState
         },
       for (final hit in explorerRows(classification['domain_evidence']))
         {...hit, 'dimension': 'Application domain'},
+      for (final hit in explorerRows(
+        classification['application_area_evidence'],
+      ))
+        {...hit, 'dimension': 'Application area'},
       for (final technology in explorerRows(classification['technologies']))
         for (final hit in explorerRows(technology['evidence']))
           {

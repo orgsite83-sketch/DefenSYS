@@ -181,6 +181,7 @@ class PitLeadCurriculumTests(APITestCase):
         team = self.teams['3']
         StudentAcademicRecord.objects.create(student=team.leader, semester=self.sem, year_level='3rd Year')
         StudentTeam.objects.filter(pk=team.pk).update(semester=self.second)
+        team.refresh_from_db()
         event = PitEventGradingConfig.objects.create(semester=self.second, year_level='3rd Year', event_name='Invalid PIT')
         TeamGrade.objects.create(team=team, semester=self.second, scope='pit', pit_event_config=event,
                                  panel_weight=80, peer_weight=20, adviser_weight=0)

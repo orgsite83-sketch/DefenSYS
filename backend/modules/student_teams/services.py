@@ -105,6 +105,9 @@ def is_stage_ready(team, stage):
     from repository.deliverables.concepts import clearance_blocker
     if clearance_blocker(team, stage):
         return False
+    from repository.deliverables.services import required_complete, get_deliverable_definitions_for_team
+    if get_deliverable_definitions_for_team(team, stage.label) and not required_complete(team, stage.label):
+        return False
     if grade and getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
         return not grade.redefense_verification_required or bool(grade.redefense_verified_at)
     if grade and grade.verdict in ('failed', 'project_rejected'):

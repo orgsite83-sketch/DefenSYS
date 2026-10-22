@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from grading.rubrics.models import Rubric
 
 from .models import PitEventGradingConfig, PitEventDeliverable
-from defense.deliverable_timing import TIMING_DEFENSE, validate_timing
+from defense.deliverable_timing import validate_timing
 
 
 DEFAULT_PIT_PANEL_WEIGHT = 80
@@ -45,7 +45,7 @@ def pit_endorsement_required(config):
     return bool(config and config.deliverables.filter(
         deliverable_type=PitEventDeliverable.TYPE_PRE,
         required=True,
-    ).exclude(requirement_timing=TIMING_DEFENSE).exists())
+    ).exists())
 
 
 def weights_for_pit_event(semester, event_name, *, year_level=None):

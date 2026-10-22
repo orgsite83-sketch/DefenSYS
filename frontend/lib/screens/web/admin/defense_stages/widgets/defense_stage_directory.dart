@@ -1152,7 +1152,6 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   String _requirementMetadata(Map<String, dynamic> row) => [
     if (row['file_format'] != null && row['file_format'] != 'any')
       row['file_format'].toString().toUpperCase(),
-    if (row['verdict_condition'] == 'revisions_only') 'Revisions verdict only',
     if (row['is_defense_material'] == true) 'Visible to panelists',
     if (row['is_restricted'] == true) 'Private archive',
   ].join(' · ');

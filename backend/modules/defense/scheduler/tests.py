@@ -215,6 +215,116 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertIn(self.adviser_rubric.id, rubric_ids)
         self.assertIn(self.peer_rubric.id, rubric_ids)
 
+    def test_import_compact_save_acknowledges_without_rebuilding_board(self):
+        from unittest.mock import patch
+
+        with patch('defense.scheduler.views.list_payload', side_effect=AssertionError('Unexpected board rebuild')):
+            response = self.client.post(
+                '/api/defense/schedules/?response=compact',
+                self.schedule_payload(team_id=self.team.pk), format='json',
+            )
+        self.assertEqual(response.status_code, 201, response.data)
+        schedule = DefenseSchedule.objects.get(pk=response.data['schedule_id'])
+        self.assertEqual(set(response.data), {'schedule_id'})
+        self.assertEqual(schedule.panel_assignments.count(), 2)
+        self.assertTrue(schedule.grade_records.exists())
+        self.assertEqual(
+            TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage).status,
+            TeamStageProgress.STATUS_SCHEDULED,
+        )
+        # Compact responses do not bypass duplicate/endorsement validation.
+        duplicate = self.client.post(
+            '/api/defense/schedules/?response=compact',
+            self.schedule_payload(team_id=self.team.pk), format='json',
+        )
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertEqual(DefenseSchedule.objects.count(), 1)
+
+    def test_import_compact_save_retains_management_permissions(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.post(
+            '/api/defense/schedules/?response=compact',
+            self.schedule_payload(team_id=self.team.pk), format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(DefenseSchedule.objects.exists())
+
+    def test_import_retry_rechecks_duplicates_after_validation(self):
+        from rest_framework import serializers
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from .serializers import DefenseScheduleWriteSerializer
+
+        request = APIRequestFactory().post('/api/defense/schedules/')
+        force_authenticate(request, user=self.admin)
+        request.user = self.admin
+        first = DefenseScheduleWriteSerializer(
+            data=self.schedule_payload(team_id=self.team.pk), context={'request': request},
+        )
+        retry = DefenseScheduleWriteSerializer(
+            data=self.schedule_payload(team_id=self.team.pk), context={'request': request},
+        )
+        first.is_valid(raise_exception=True)
+        retry.is_valid(raise_exception=True)
+        first.save()
+        with self.assertRaises(serializers.ValidationError):
+            retry.save()
+        self.assertEqual(DefenseSchedule.objects.count(), 1)
+
+    def test_import_conflict_read_has_constant_queries_and_preserves_visibility(self):
+        from time import perf_counter
+        from unittest.mock import patch
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        first = self.create_scheduled_defense()
+        documenter = User.objects.create_user(username='import-documenter', role='faculty', is_documenter=True)
+        first.documenter = documenter
+        first.save(update_fields=['documenter'])
+        url = '/api/defense/schedules/?view=import-conflicts'
+        with patch('defense.scheduler.views.list_payload', side_effect=AssertionError('Unexpected board rebuild')):
+            with CaptureQueriesContext(connection) as one_queries:
+                one = self.client.get(url)
+            teams = StudentTeam.objects.bulk_create([
+                StudentTeam(name=f'Import conflict {index}', semester=self.semester,
+                            level=self.team.level, year_level=self.team.year_level,
+                            leader=self.student, adviser=self.adviser)
+                for index in range(15)
+            ])
+            schedules = DefenseSchedule.objects.bulk_create([
+                DefenseSchedule(scope='capstone', semester=self.semester, team=team,
+                                defense_stage=self.stage, scheduled_date='2026-05-16',
+                                start_time='08:00', slot_duration=30, room=f'Room {index}')
+                for index, team in enumerate(teams)
+            ])
+            SchedulePanelist.objects.bulk_create([
+                SchedulePanelist(schedule=schedule, panelist=self.panelist, order=0)
+                for schedule in schedules
+            ])
+            started = perf_counter()
+            with CaptureQueriesContext(connection) as many_queries:
+                many = self.client.get(url)
+            elapsed = perf_counter() - started
+        self.assertEqual(one.status_code, 200)
+        self.assertEqual(many.status_code, 200)
+        self.assertEqual(len(many.data['schedules']), 16)
+        self.assertEqual(len(one_queries), len(many_queries))
+        self.assertLessEqual(len(many_queries), 4)
+        row = next(item for item in many.data['schedules'] if item['id'] == first.pk)
+        self.assertEqual(row['adviser_id'], self.adviser.pk)
+        self.assertEqual(row['documenter'], documenter.pk)
+        self.assertEqual(row['defense_stage_id'], self.stage.pk)
+        self.assertEqual({item['id'] for item in row['panelists']}, {self.panelist.pk, self.second_panelist.pk})
+        self.assertEqual(set(many.data), {'schedules'})
+        print(f'16-slot import conflict check: {len(many_queries)} queries, {elapsed:.3f}s')
+
+        # A faculty participant sees only assigned defenses through this view.
+        self.client.force_authenticate(self.second_panelist)
+        restricted = self.client.get(url)
+        self.assertEqual([item['id'] for item in restricted.data['schedules']], [first.pk])
+        first.status = DefenseSchedule.STATUS_CANCELLED
+        first.save(update_fields=['status'])
+        self.assertEqual(self.client.get(url).data['schedules'], [])
+
     def test_generate_plan_returns_ready_capstone_teams(self):
         response = self.client.post(
             '/api/defense/schedules/generate-plan/',
@@ -2129,6 +2239,13 @@ class PitEventGradingConfigTests(APITestCase):
         self.team.save()
 
         response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        from repository.deliverables.models import DeliverableSubmission
+        DeliverableSubmission.objects.create(team=self.team, stage_label=config.event_name,
+            deliverable_id='PROPOSAL_PDF', label='Proposal PDF', deliverable_type='pre', required=True,
+            status='accepted', file_name='reviewed-proposal.pdf')
+
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
         self.assertEqual(response.status_code, 201)
 
     def test_scheduling_allowed_if_no_pre_defense_deliverables(self):
@@ -2147,7 +2264,7 @@ class PitEventGradingConfigTests(APITestCase):
         response = self.client.post('/api/defense/schedules/', payload, format='json')
         self.assertEqual(response.status_code, 201)
 
-    def test_pit_defense_timed_and_optional_files_do_not_require_endorsement(self):
+    def test_pit_required_material_needs_acceptance_while_optional_files_remain_optional(self):
         from .models import PitEventDeliverable
         from repository.deliverables.services import stage_payload
 
@@ -2173,18 +2290,24 @@ class PitEventGradingConfigTests(APITestCase):
         self.team.save(update_fields=['ready_for_stage'])
 
         stage = stage_payload(self.team, event_name)
-        self.assertFalse(stage['endorsement_required'])
-        self.assertTrue(stage['required_complete'])
-        self.assertEqual(stage['stage_status_detail'], 'scheduling_eligible')
-        self.assertEqual(stage['materials_readiness']['required_total'], 1)
+        self.assertTrue(stage['endorsement_required'])
+        self.assertFalse(stage['required_complete'])
+        self.assertEqual(stage['materials_readiness']['required_total'], 0)
 
         payload = self.pit_payload(event_name=event_name, team_id=self.team.id)
         response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        from repository.deliverables.models import DeliverableSubmission
+        from repository.deliverables.services import endorse_team
+        DeliverableSubmission.objects.create(team=self.team, stage_label=event_name, deliverable_id='DECK',
+            label='Pitch deck', deliverable_type='pre', required=True, status='accepted', file_name='reviewed-deck.pptx')
+        endorse_team(self.team, event_name, self.admin)
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
         self.assertEqual(response.status_code, 201, response.data)
         self.team.refresh_from_db()
-        self.assertFalse(self.team.ready_for_stage)
+        self.assertEqual(self.team.ready_for_stage, event_name)
 
-    def test_pit_auto_eligible_team_is_in_schedule_plan(self):
+    def test_pit_plan_requires_acceptance_and_endorsement_of_required_material(self):
         from .models import PitEventDeliverable
 
         event_name = '2nd Year PIT Expo Plan Eligible'
@@ -2207,6 +2330,15 @@ class PitEventGradingConfigTests(APITestCase):
         payload = self.pit_payload(event_name=event_name)
         preview = self.client.post('/api/defense/schedules/generate-plan/', payload, format='json')
         self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertNotIn(self.team.id, {slot['team_id'] for slot in preview.data['slots']})
+
+        from repository.deliverables.models import DeliverableSubmission
+        from repository.deliverables.services import endorse_team
+        DeliverableSubmission.objects.create(team=self.team, stage_label=event_name, deliverable_id='DECK',
+            label='Pitch deck', deliverable_type='pre', required=True, status='accepted', file_name='reviewed-deck.pptx')
+        endorse_team(self.team, event_name, self.admin)
+        preview = self.client.post('/api/defense/schedules/generate-plan/', payload, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
         self.assertIn(self.team.id, {slot['team_id'] for slot in preview.data['slots']})
 
         confirm = self.client.post('/api/defense/schedules/confirm-plan/', {
@@ -2214,7 +2346,7 @@ class PitEventGradingConfigTests(APITestCase):
         }, format='json')
         self.assertEqual(confirm.status_code, 201, confirm.data)
         self.team.refresh_from_db()
-        self.assertFalse(self.team.ready_for_stage)
+        self.assertEqual(self.team.ready_for_stage, event_name)
 
     def test_retroactive_pit_weights_sync(self):
         from grading.grades.models import TeamGrade

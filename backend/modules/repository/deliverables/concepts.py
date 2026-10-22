@@ -113,6 +113,8 @@ def module_review_token(team, stage):
 
 def clearance_valid(team, stage, current=None):
     current = current or latest_round(team, stage)
+    if current and not current.schedule_id and not current.review_required:
+        return False
     return bool(current and current.endorsed_at and
         fingerprint(current.endorsement_snapshot) == fingerprint(documents_snapshot(team, stage, clearance_only=True)))
 
@@ -127,15 +129,14 @@ def clearance_blocker(team, stage):
     shared_blocker = scheduling_blocker(team, stage, current)
     if shared_blocker:
         return shared_blocker
-    if current.review_required and not clearance_valid(team, stage, current):
+    if (not current.schedule_id or current.review_required) and not clearance_valid(team, stage, current):
         return f'The current concept set needs {reviewer_name(stage)} review and endorsement before scheduling.'
     from .services import get_deliverable_definitions_for_team, submissions_for
     submitted = submissions_for(team, stage.label)
     for d in get_deliverable_definitions_for_team(team, stage.label):
         if d.get('source') == 'defense_minutes' or not d['required'] or d['type'] != 'pre' or d.get('requirement_timing') == 'defense':
             continue
-        override = bool(current.override_reason and clearance_valid(team, stage, current))
-        if not completeness(submitted.get(d['id']), d, accepted=current.review_required and not override, stage=stage):
+        if not completeness(submitted.get(d['id']), d, accepted=True, stage=stage):
             return 'Complete the required concept documents before scheduling.'
     return ''
 
@@ -185,8 +186,9 @@ def endorse(team, stage, actor):
     if shared_blocker:
         raise ValueError(shared_blocker)
     current.endorsed_at, current.endorsed_by = timezone.now(), actor
+    current.review_required = True
     current.endorsement_snapshot = documents_snapshot(team, stage, clearance_only=True)
-    current.save(update_fields=['endorsed_at', 'endorsed_by', 'endorsement_snapshot'])
+    current.save(update_fields=['endorsed_at', 'endorsed_by', 'endorsement_snapshot', 'review_required'])
     from grading.grades.models import TeamGrade
     if actor:
         TeamGrade.objects.filter(team=team, **context_fields(stage), semester=team.semester,
@@ -283,8 +285,7 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
     if outcome != 'for_redefense':
         return
     snapshot = resolve_policy(grade.team, stage, current=current)
-    policy = stage.concept_config.get('review_policy', 'replacement')
-    review = policy == 'always' or (policy == 'replacement' and replacement_required) or verification_required
+    review = True
     replacement_key = current.section_round.selected_key if current.section_round_id else ''
     next_concepts = [{**c, 'title': '' if replacement_required and (not replacement_key or c['key'] == replacement_key) else c['title'],
         **({'faculty_confirmed': False} if current.section_round_id and replacement_required and (
@@ -308,10 +309,6 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
     if grade.team.ready_for_stage == stage.label:
         grade.team.ready_for_stage = None
         grade.team.save(update_fields=['ready_for_stage', 'updated_at'])
-    if not review:
-        next_round.endorsed_at, next_round.endorsed_by = timezone.now(), actor
-        next_round.endorsement_snapshot = documents_snapshot(grade.team, stage, clearance_only=True)
-        next_round.save()
 
 
 @transaction.atomic
@@ -368,7 +365,7 @@ def save_titles(team, stage, concepts, *, actor=None):
 @transaction.atomic
 def override_clearance(team, stage, actor, reason):
     from student_teams.models import StudentTeam
-    from .services import get_deliverable_definitions_for_team, submissions_for
+    from .services import get_deliverable_definitions_for_team, submissions_for, required_complete
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
     if not (actor.is_superuser or actor.role == 'admin'):
         raise PermissionError('Only an administrator can override adviser clearance.')
@@ -377,6 +374,8 @@ def override_clearance(team, stage, actor, reason):
     current = get_round(team, stage)
     if current.schedule_id or not titles_complete(current):
         raise ValueError('Complete an unscheduled concept set before overriding clearance.')
+    if not required_complete(team, stage.label):
+        raise ValueError('Accept every required pre-defense file before endorsing the team.')
     submitted = submissions_for(team, stage.label)
     for d in get_deliverable_definitions_for_team(team, stage.label):
         if d['required'] and d['type'] == 'pre' and d.get('requirement_timing') != 'defense' and not completeness(submitted.get(d['id']), d, stage=stage):

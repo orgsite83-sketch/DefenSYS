@@ -263,9 +263,9 @@ void main() {
       await tester.tap(find.text('Concept selection'));
       await tester.pumpAndSettle();
       expect(config['enabled'], isTrue);
-      expect(find.text('Adviser clearance before re-defense'), findsOneWidget);
+      expect(find.text('Adviser clearance before re-defense'), findsNothing);
       expect(find.text('Require fresh assessments'), findsOneWidget);
-      expect(find.byType(ShadSelect<String>), findsNWidgets(3));
+      expect(find.byType(ShadSelect<String>), findsNWidgets(2));
       await tester.tap(find.byType(ShadSelect<String>).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Custom count…').last);
@@ -278,10 +278,11 @@ void main() {
       await tester.tap(find.byType(ShadSelect<String>).at(1));
       await tester.pumpAndSettle();
       await tester.tap(
-        find.text('Not required unless the panel requests it').last,
+        find.text('Retain adviser and peer scores').last,
       );
       await tester.pumpAndSettle();
-      expect(config['review_policy'], 'panel_requested');
+      expect(config['score_carryover'], 'retain');
+      expect(find.text('Not required unless the panel requests it'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );

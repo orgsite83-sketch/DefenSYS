@@ -115,163 +115,40 @@ class _MaterialsNotifier extends CapstoneDeliverablesNotifier {
 }
 
 void main() {
-  testWidgets(
-    'defense material highlights timing without changing the due rule',
-    (tester) async {
-      tester.view.physicalSize = const Size(420, 950);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await loadPreviewFonts();
-      var timing = 'scheduling';
-      var material = false;
-      var hours = 24;
-      await pumpDefensysWidget(
-        tester,
-        StatefulBuilder(
-          builder: (context, update) => RepaintBoundary(
-            key: const ValueKey('defense-material-timing-preview'),
-            child: ColoredBox(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DefenseMaterialToggle(
-                      value: material,
-                      onChanged: (value) => update(() => material = value),
-                    ),
-                    const SizedBox(height: 8),
-                    DeliverableTimingFields(
-                      timing: timing,
-                      hoursBefore: hours,
-                      showTimingChoices: true,
-                      isDefenseMaterial: material,
-                      onTimingChanged: (value) => update(() => timing = value),
-                      onHoursChanged: (value) => update(() => hours = value),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-
-      expect(find.text('Before endorsement'), findsOneWidget);
-      expect(find.text('Before scheduled defense'), findsOneWidget);
-      expect(find.text('Submission deadline'), findsNothing);
-      expect(
-        find.byTooltip(
-          'Panelists use this file during oral defense. Marking it as defense material does not change its due time.',
-        ),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Defense material for panelists'));
-      await tester.pumpAndSettle();
-      expect(material, true);
-      expect(timing, 'scheduling');
-
-      await tester.tap(find.text('Before scheduled defense'));
-      await tester.pumpAndSettle();
-      expect(timing, 'defense');
-      expect(material, true);
-      expect(find.text('How long before defense?'), findsOneWidget);
-      await tester.tap(find.text('48 hours'));
-      await tester.pumpAndSettle();
-      expect(hours, 48);
-      await tester.tap(find.text('Custom'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('stage-custom-deadline-hours')),
-        '36',
-      );
-      await tester.pumpAndSettle();
-      expect(hours, 36);
-      await capturePreview(
-        tester,
-        find.byKey(const ValueKey('defense-material-timing-preview')),
-        'defense-material-timing-choices',
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('stage-custom-deadline-hours')),
-        '721',
-      );
-      await tester.pumpAndSettle();
-      expect(hours, 36);
-      expect(find.text('Enter 0 to 720 hours.'), findsOneWidget);
-
-      await tester.tap(find.text('Defense material for panelists'));
-      await tester.pumpAndSettle();
-      expect(material, false);
-      final ex = tester.takeException();
-      if (ex is FlutterError) {
-        FlutterError.dumpErrorToConsole(
-          FlutterErrorDetails(
-            exception: ex,
-            stack: StackTrace.current,
-          ),
-        );
-      }
-      expect(ex, isNull);
-    },
-  );
-
-  testWidgets(
-    'admin can move a required deliverable to a later defense deadline',
-    (tester) async {
-      var timing = 'scheduling';
-      var hours = 24;
-      await pumpDefensysWidget(
-        tester,
-        StatefulBuilder(
-          builder: (context, update) => Padding(
-            padding: const EdgeInsets.all(16),
-            child: DeliverableTimingFields(
-              timing: timing,
-              hoursBefore: hours,
-              onTimingChanged: (value) => update(() => timing = value),
-              onHoursChanged: (value) => update(() => hours = value),
-            ),
-          ),
-        ),
-      );
-      expect(find.text('Submission deadline'), findsNothing);
-      await tester.tap(find.text('Before endorsement / scheduling'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Before scheduled defense').last);
-      await tester.pumpAndSettle();
-      expect(timing, 'defense');
-      expect(find.text('Submission deadline'), findsOneWidget);
-      await tester.tap(find.text('24 hours before defense'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('48 hours before defense').last);
-      await tester.pumpAndSettle();
-      expect(hours, 48);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets('locked timing remains visible but cannot be changed', (
+  testWidgets('retired timing values cannot enable a scheduling bypass', (
     tester,
   ) async {
-    var timing = 'scheduling';
+    var material = false;
+    var timing = 'defense';
     await pumpDefensysWidget(
       tester,
-      DeliverableTimingFields(
-        timing: timing,
-        hoursBefore: 24,
-        enabled: false,
-        showTimingChoices: true,
-        onTimingChanged: (value) => timing = value,
-        onHoursChanged: (_) {},
+      StatefulBuilder(
+        builder: (context, update) => Column(
+          children: [
+            DefenseMaterialToggle(
+              value: material,
+              onChanged: (value) => update(() => material = value),
+            ),
+            DeliverableTimingFields(
+              timing: timing,
+              hoursBefore: 72,
+              showTimingChoices: true,
+              onTimingChanged: (value) => timing = value,
+            ),
+          ],
+        ),
       ),
     );
-    expect(find.text('Before scheduled defense'), findsOneWidget);
-    await tester.tap(find.text('Before scheduled defense'));
+    expect(find.text('Before endorsement'), findsNothing);
+    expect(find.text('Before scheduled defense'), findsNothing);
+    expect(
+      find.textContaining('adviser/instructor acceptance'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Defense material for panelists'));
     await tester.pumpAndSettle();
-    expect(timing, 'scheduling');
+    expect(material, true);
+    expect(timing, 'defense');
     expect(tester.takeException(), isNull);
   });
 
@@ -465,7 +342,10 @@ void main() {
         ),
       );
       expect(find.textContaining('Late-upload window active'), findsOneWidget);
-      expect(find.textContaining('Late-upload window open until'), findsOneWidget);
+      expect(
+        find.textContaining('Late-upload window open until'),
+        findsOneWidget,
+      );
       expect(find.text('Edit deadline'), findsOneWidget);
 
       await tester.tap(find.text('Edit deadline'));

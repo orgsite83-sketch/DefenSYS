@@ -614,6 +614,7 @@ class CurriculumExplorer:
                        if t not in {'project', 'system', 'application', 'and', 'the'}) >= 2]
 
     def _classify_documents(self, project, cache_key, docs, readable, related):
+        from .application_areas import application_area
         usable = [d for d in related if d['classification']['status'] == 'estimated' and
                   (d['classification'].get('decision_method') == 'concept_functions' or
                    (d['classification']['confidence_score'] or 0) >= getattr(settings, 'CURRICULUM_ML_MIN_SCORE', MIN_MODEL_SCORE))]
@@ -645,6 +646,7 @@ class CurriculumExplorer:
                       'reason_code': code, 'reason': reason, 'model_score': None,
                       'candidates': candidates[0]['classification']['top_3'] if candidates else [],
                       'evidence': candidates[0]['classification']['evidence'] if candidates else []}
+            result.update(application_area(related))
             self._classification_cache[cache_key] = result
             return result
         # Duplicate files cannot outvote a project: use one primary document.
@@ -665,6 +667,7 @@ class CurriculumExplorer:
         if prediction['domain'] != 'Unresolved domain':
             result['domain_evidence'] = [{**hit, **_source_reference(primary)}
                                          for hit in prediction['domain_evidence']]
+        result.update(application_area(related, primary['id']))
         self._classification_cache[cache_key] = result
         return result
 
@@ -679,6 +682,7 @@ class CurriculumExplorer:
         return {'id': project['key'], 'team_id': project['team'].pk, 'team_name': project['team'].name,
                 'project_title': project['title'], 'project_version': project['version'],
                 'category': classification['label'], 'domain': classification['domain'],
+                'application_area': classification.get('application_area', 'Unresolved application area'),
                 'technologies': [t['name'] for t in classification['technologies']],
                 'classification_status': classification['status'],
                 'classification_reason': classification['reason'],

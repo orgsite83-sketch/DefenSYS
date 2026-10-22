@@ -28,7 +28,7 @@ SUGGESTED_DELIVERABLE_TEMPLATES = {
         {'id': 'D9', 'label': 'D9 - Chapter 3', 'required': True, 'type': 'pre'},
         {'id': 'D11', 'label': 'D11 - Approved Proposal Defense Form', 'required': True, 'type': 'pre'},
         {'id': 'D12', 'label': 'D12 - Signed Minutes (Proposal)', 'required': True, 'type': 'pre'},
-        {'id': 'D13', 'label': 'D13 - Signed Matrix of Revision', 'required': True, 'type': 'pre'},
+        {'id': 'D13', 'label': 'D13 - Signed Matrix of Revision', 'required': True, 'type': 'post'},
         {
             'id': 'D10',
             'label': 'D10 - Chapters 1-3 (Complete)',

@@ -78,14 +78,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     }
     if ((location == AppRoutes.login || location == '/') &&
-        WorkspaceAccess.canDocument(auth.user!) &&
+        (WorkspaceAccess.canEvaluate(auth.user!) ||
+            WorkspaceAccess.canDocument(auth.user!)) &&
         ref.read(workspacePreferenceProvider).isLoading) {
       return null;
     }
+    final preference = ref.read(workspacePreferenceProvider);
     return WorkspaceAccess.redirect(
       auth.user!,
       location,
-      preferredWorkspace: ref.read(workspacePreferenceProvider).value,
+      viewportWidth: preference.isLoading
+          ? null
+          : MediaQuery.sizeOf(context).width,
+      preferredWorkspace: preference.value,
     );
   }
 
@@ -120,17 +125,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/',
-        redirect: (context, state) {
-          final auth = ref.read(authProvider);
-          if (auth.isRestoring) return null;
-          if (auth.token == null || auth.user == null) {
-            return AppRoutes.login;
-          }
-          return WorkspaceAccess.home(
-            auth.user!,
-            preferredWorkspace: ref.read(workspacePreferenceProvider).value,
-          );
-        },
+        builder: (_, __) =>
+            const Scaffold(body: Center(child: CircularProgressIndicator())),
       ),
       GoRoute(
         path: AppRoutes.login,
@@ -277,7 +273,7 @@ Future<void> navigateToHomeAfterAuthWithRouter(
 }) async {
   // Terms gate handled by caller; this only routes to home.
   if (!context.mounted) return;
-  context.go(homeRouteForUser(userData));
+  context.go('/');
 }
 
 String? _redirectAdminParentOnly(GoRouterState state) {

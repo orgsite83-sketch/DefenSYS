@@ -4,6 +4,13 @@ import 'admin_route_paths.dart';
 
 /// Chooses workspaces from server supplied roles. API permissions remain authoritative.
 abstract final class WorkspaceAccess {
+  static const phoneBreakpoint = 600.0;
+
+  static bool isPhoneWidth(double? viewportWidth) =>
+      viewportWidth != null &&
+      viewportWidth > 0 &&
+      viewportWidth < phoneBreakpoint;
+
   static bool canEvaluate(Map<String, dynamic> user) =>
       (user['role'] == 'faculty' || user['role'] == 'admin') &&
       user['is_panelist'] == true;
@@ -28,6 +35,7 @@ abstract final class WorkspaceAccess {
   static String home(
     Map<String, dynamic> user, {
     bool isWeb = kIsWeb,
+    double? viewportWidth,
     String? preferredWorkspace,
   }) {
     final role = user['role'];
@@ -39,6 +47,17 @@ abstract final class WorkspaceAccess {
     }
     if (preferredWorkspace == AppRoutes.panelist && canEvaluate(user)) {
       return AppRoutes.panelist;
+    }
+    if (isWeb && isPhoneWidth(viewportWidth)) {
+      final staffHome = role == 'admin'
+          ? AdminRoutes.overview
+          : FacultyRoutes.dashboard;
+      // Keep an explicit switch back to staff available on a phone browser.
+      if (preferredWorkspace == staffHome && hasStaffWorkspace(user)) {
+        return staffHome;
+      }
+      if (canEvaluate(user)) return AppRoutes.panelist;
+      if (canDocument(user)) return AppRoutes.documenter;
     }
     if (isWeb) {
       if (role == 'admin') return AdminRoutes.overview;
@@ -58,11 +77,13 @@ abstract final class WorkspaceAccess {
     Map<String, dynamic> user,
     String location, {
     bool isWeb = kIsWeb,
+    double? viewportWidth,
     String? preferredWorkspace,
   }) {
     final destination = home(
       user,
       isWeb: isWeb,
+      viewportWidth: viewportWidth,
       preferredWorkspace: preferredWorkspace,
     );
     if (user['role'] == 'guest_panelist') {
@@ -73,6 +94,22 @@ abstract final class WorkspaceAccess {
       return null;
     }
     if (location == AppRoutes.guestDefenses) return AppRoutes.guestEntry;
+    // Adapt only staff landing pages on resize; leave open forms and deep links
+    // in place so changing the window size cannot interrupt work.
+    if (isWeb &&
+        isPhoneWidth(viewportWidth) &&
+        (destination == AppRoutes.panelist ||
+            destination == AppRoutes.documenter) &&
+        const {
+          '/admin',
+          '/admin/',
+          AdminRoutes.overview,
+          '/faculty',
+          '/faculty/',
+          FacultyRoutes.dashboard,
+        }.contains(location)) {
+      return destination;
+    }
     final canManageDefenses =
         user['is_pit_lead'] == true || user['is_superuser'] == true;
     final allowed = switch (location) {

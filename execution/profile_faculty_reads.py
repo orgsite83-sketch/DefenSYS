@@ -37,6 +37,7 @@ def main():
     parser.add_argument('--workspace', action='store_true', help='Measure progressive overview and project views.')
     parser.add_argument('--archive', action='store_true', help='Measure each level of the project archive browser.')
     parser.add_argument('--admin', action='store_true', help='Profile an existing administrator instead of PIT Leads.')
+    parser.add_argument('--schedule-import', action='store_true', help='Compare full schedule reads with import conflict checks.')
     args = parser.parse_args()
     sys.path.insert(0, str(ROOT / 'backend'))
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
@@ -67,6 +68,9 @@ def main():
             continue
         found = True
         reads = READS
+        if args.schedule_import:
+            reads = ['/api/defense/schedules/?status=scheduled',
+                     '/api/defense/schedules/?view=import-conflicts']
         if args.curriculum:
             base = '/api/curriculum-analytics/explorer/'
             reads = [base + '?initial=true' if args.initial else base]

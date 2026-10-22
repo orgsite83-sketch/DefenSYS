@@ -8,6 +8,10 @@ from defense.deliverable_timing import validate_timing
 
 
 class StageDeliverableSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        from defense.deliverable_policy import faculty_review_definition
+        return faculty_review_definition(super().to_representation(instance))
+
     class Meta:
         model = StageDeliverable
         fields = [

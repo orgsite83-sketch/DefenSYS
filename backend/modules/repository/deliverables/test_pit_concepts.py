@@ -278,12 +278,14 @@ class PitConceptTests(APITestCase):
         self.assertEqual(response.status_code, 400, response.data)
         self.assertFalse(DefenseSchedule.objects.filter(team=self.teams[1]).exists())
 
-    def test_replacement_policy_can_allow_uploaded_papers_without_new_endorsement(self):
+    def test_retired_policy_cannot_skip_review_of_replacement_papers(self):
         self.configure(review_policy='panel_requested')
         self.prepare()
         first = self.schedule()
         self.assertEqual(self.verdict(first).status_code, 200)
         self.prepare(accepted=False)
+        self.assertFalse(concepts.pit_ready(self.team, self.event))
+        self.prepare(accepted=True)
         self.assertTrue(concepts.pit_ready(self.team, self.event))
         self.assertEqual(self.schedule(day=1).concept_round.number, 2)
 

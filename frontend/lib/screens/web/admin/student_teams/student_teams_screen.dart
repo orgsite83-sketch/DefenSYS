@@ -613,6 +613,11 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       'team members',
       'team_members',
       'members',
+      'student name',
+      'student_name',
+      'student names',
+      'student',
+      'students',
       'section',
       'class section',
       'class_section',
@@ -650,33 +655,23 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         (cleanCols.contains('team members') ||
             cleanCols.contains('team_members') ||
             cleanCols.contains('members') ||
-            cleanCols.contains('names'));
+            cleanCols.contains('names') ||
+            cleanCols.contains('student name') ||
+            cleanCols.contains('student_name') ||
+            cleanCols.contains('student names') ||
+            cleanCols.contains('student') ||
+            cleanCols.contains('students'));
+    final isRowTemplate =
+        cleanCols.contains('team_name') &&
+        cleanCols.contains('member_ids') &&
+        cleanCols.contains('leader_id');
 
     if (unrecognized.isNotEmpty) {
       warning =
           'Wrong template? Unrecognized column(s) detected: ${unrecognized.join(", ")}. Please use the correct CSV template.';
-    } else if (!_isCapstoneAdmin) {
-      if (!isClientTemplate) {
-        if (cleanCols.contains('adviser_id') ||
-            cleanCols.contains('adviser_name') ||
-            cleanCols.contains('year_level')) {
-          warning =
-              'Wrong template? PIT import templates should not contain "adviser_name" or "year_level" columns. These will be ignored or cleared.';
-        } else if (!cleanCols.contains('member_ids') ||
-            !cleanCols.contains('leader_id')) {
-          warning =
-              'Wrong template? PIT import templates must contain "team_name", "project_title", "member_ids", and "leader_id" columns (or "Team Name" and "Team Members" for multi-row format).';
-        }
-      }
-    } else {
-      if (!isClientTemplate) {
-        if ((!cleanCols.contains('adviser_id') &&
-                !cleanCols.contains('adviser_name')) ||
-            !cleanCols.contains('year_level')) {
-          warning =
-              'Wrong template? Capstone import templates should contain "year_level" and "adviser_name" columns (or "Team Name" and "Team Members" for client format).';
-        }
-      }
+    } else if (!isClientTemplate && !isRowTemplate) {
+      warning =
+          'Include "Team Name" and "Team Members", or "team_name", "member_ids", and "leader_id" for row-based imports. Project/Module is optional.';
     }
 
     setState(() {

@@ -103,4 +103,4 @@ def validate_concept_config(value):
         raise ValidationError('Choose a valid re-defense review policy.')
     if value.get('score_carryover', 'reassess') not in ('reassess', 'retain'):
         raise ValidationError('Choose whether repeat attempts require fresh adviser and peer assessments.')
-    return {'required_count': 3, **value} if value.get('enabled') else value
+    return {'required_count': 3, **value, 'review_policy': 'always'} if value.get('enabled') else value

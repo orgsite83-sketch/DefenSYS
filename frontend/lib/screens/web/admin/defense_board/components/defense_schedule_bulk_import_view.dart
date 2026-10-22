@@ -89,6 +89,7 @@ class _DefenseScheduleBulkImportViewState
 
   bool _rubricLoading = false;
   bool _importBusy = false;
+  String? _importProgressLabel;
   bool _awaitingImportConfirmation = false;
   List<String> _importErrors = [];
 
@@ -965,6 +966,7 @@ class _DefenseScheduleBulkImportViewState
       if (!mounted) return;
       setState(() {
         _importBusy = true;
+        _importProgressLabel = 'Checking schedule...';
         _importErrors = [];
         _importResultMessage = null;
       });
@@ -984,7 +986,17 @@ class _DefenseScheduleBulkImportViewState
       }
       final result = await ref
           .read(defenseSchedulerProvider.notifier)
-          .importSchedules(readyRows.map((row) => row.toPayload()).toList());
+          .importSchedules(
+            readyRows.map((row) => row.toPayload()).toList(),
+            onProgress: (completed, total) {
+              if (mounted) {
+                setState(
+                  () => _importProgressLabel =
+                      'Importing slots $completed/$total...',
+                );
+              }
+            },
+          );
       if (!mounted) return;
       final created = result['created'] as int? ?? 0;
       final errors =
@@ -2259,6 +2271,7 @@ class _DefenseScheduleBulkImportViewState
             totalCount: previewRows.length,
             readyCount: previewRows.where((row) => row.ready).length,
             busy: _busy,
+            busyLabel: _importProgressLabel,
             validating: _rubricLoading || _conflictLoading,
             validationFailed: _conflictCheckError != null,
             onSave: () => _persistDraft(showToast: true),

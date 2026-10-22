@@ -215,7 +215,7 @@ class StageDeliverablePresetManager {
         'archive_file_template': '{project}_{deliverable}',
         'is_restricted': false,
         'is_defense_material': false,
-        'verdict_condition': 'revisions_only',
+        'verdict_condition': 'all_pass',
         'file_format': 'pdf',
       },
     ],
@@ -310,7 +310,7 @@ class StageDeliverablePresetManager {
         'archive_file_template': '{project}_{deliverable}',
         'is_restricted': false,
         'is_defense_material': false,
-        'verdict_condition': 'revisions_only',
+        'verdict_condition': 'all_pass',
         'file_format': 'pdf',
       },
       {
@@ -344,6 +344,9 @@ class StageDeliverablePresetManager {
       final item = Map<String, dynamic>.from(raw);
       item['deliverable_id'] = 'D${i + 1}';
       item['display_order'] = i + 1;
+      item['requirement_timing'] = 'scheduling';
+      item['deadline_hours_before'] = 24;
+      item['verdict_condition'] = 'all_pass';
       // Remove any attached UI controllers so fresh ones can attach
       item.remove('_labelController');
       item.remove('_templateController');

@@ -23,7 +23,13 @@ Future<void> navigateToHomeAfterAuth(
 
     final preferred = await readRememberedWorkspace(userData['id']);
     if (!context.mounted) return;
-    context.go(WorkspaceAccess.home(userData, preferredWorkspace: preferred));
+    context.go(
+      WorkspaceAccess.home(
+        userData,
+        viewportWidth: MediaQuery.sizeOf(context).width,
+        preferredWorkspace: preferred,
+      ),
+    );
 
     return;
   }

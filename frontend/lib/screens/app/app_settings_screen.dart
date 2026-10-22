@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/app_distribution_config.dart';
 import '../../navigation/workspace_access.dart';
+import '../../navigation/workspace_preference.dart';
 import '../../services/auth_provider.dart';
 import '../../services/installation/app_installation.dart';
 import '../../services/theme_provider.dart';
@@ -33,7 +34,15 @@ class AppSettingsScreen extends ConsumerWidget {
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go(WorkspaceAccess.home(user));
+              context.go(
+                WorkspaceAccess.home(
+                  user,
+                  viewportWidth: MediaQuery.sizeOf(context).width,
+                  preferredWorkspace: ref
+                      .read(workspacePreferenceProvider)
+                      .value,
+                ),
+              );
             }
           },
         ),

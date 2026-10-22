@@ -176,7 +176,7 @@ class SharedHearingFlowTests(APITestCase):
 
 
 class CapstoneSharedHearingFlowTests(APITestCase):
-    setUp = timing_fixtures.SubmissionTimingTests.setUp
+    setUp = timing_fixtures.faculty_review_setup
 
     def prepare_hearing(self):
         from django.contrib.auth import get_user_model

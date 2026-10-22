@@ -43,19 +43,8 @@ class StageDeliverableCounts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheduling = deliverables
-        .where(
-          (item) =>
-              item['deliverable_type'] == 'pre' &&
-              item['requirement_timing'] != 'defense',
-        )
-        .length;
-    final defense = deliverables
-        .where(
-          (item) =>
-              item['deliverable_type'] == 'pre' &&
-              item['requirement_timing'] == 'defense',
-        )
+    final pre = deliverables
+        .where((item) => item['deliverable_type'] == 'pre')
         .length;
     final post = deliverables
         .where((item) => item['deliverable_type'] == 'post')
@@ -67,9 +56,8 @@ class StageDeliverableCounts extends StatelessWidget {
         spacing: 8,
         runSpacing: 8,
         children: [
-          _count(theme, 'Before endorsement', scheduling),
-          _count(theme, 'Before defense', defense),
-          _count(theme, 'After defense', post),
+          _count(theme, 'Pre-defense', pre),
+          _count(theme, 'Post-defense', post),
           if (minutesRequired) _count(theme, 'Signed minutes', 1),
         ],
       ),
@@ -123,22 +111,9 @@ class StageDeliverableOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final groups = isPost
-        ? <(String, List<Map<String, dynamic>>)>[('After defense', items)]
-        : <(String, List<Map<String, dynamic>>)>[
-            (
-              'Before endorsement / scheduling',
-              items
-                  .where((item) => item['requirement_timing'] != 'defense')
-                  .toList(),
-            ),
-            (
-              'Before scheduled defense',
-              items
-                  .where((item) => item['requirement_timing'] == 'defense')
-                  .toList(),
-            ),
-          ];
+    final groups = <(String, List<Map<String, dynamic>>)>[
+      (isPost ? 'Post-defense files' : 'Pre-defense files', items),
+    ];
     final theme = Theme.of(context);
 
     return Column(
@@ -159,9 +134,7 @@ class StageDeliverableOverview extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
               child: Text(
-                title == 'Before scheduled defense'
-                    ? 'These files can be submitted after endorsement. They do not block scheduling.'
-                    : 'Required files here must be cleared before endorsement and scheduling.',
+                'Required files need faculty acceptance before endorsement and scheduling.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: const Color(0xFF64748B),
                 ),
@@ -241,18 +214,8 @@ class _DeliverableSummaryRow extends StatelessWidget {
       _format,
       item['required'] == true ? 'Required' : 'Optional',
     ];
-    if (!isPost && item['requirement_timing'] == 'defense') {
-      final hours =
-          int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24;
-      parts.add(
-        hours == 0 ? 'At defense start' : '$hours hours before defense',
-      );
-    }
     if (!isPost && item['is_defense_material'] == true) {
       parts.add('Panelist material');
-    }
-    if (isPost && item['verdict_condition'] == 'revisions_only') {
-      parts.add('Approved with revisions only');
     }
     if (isPost && item['is_restricted'] == true) {
       parts.add('Restricted archive');

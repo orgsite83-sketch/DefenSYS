@@ -401,7 +401,7 @@ class CurriculumProjectMix extends StatefulWidget {
 
 class _CurriculumProjectMixState extends State<CurriculumProjectMix> {
   String get _dimension => widget.dimension;
-  bool _other = false, _allTechnologies = false;
+  bool _allGroups = false, _allTechnologies = false;
   @override
   Widget build(BuildContext context) {
     final projects = explorerRows(widget.data['projects']);
@@ -409,7 +409,7 @@ class _CurriculumProjectMixState extends State<CurriculumProjectMix> {
     final groups = <String, int>{}, technologies = <String, int>{};
     for (final p in projects) {
       groups.update(
-        '${p[_dimension] ?? 'Unclassified'}',
+        '${p[_dimension] ?? (_dimension == 'application_area' ? 'Unresolved application area' : 'Unclassified')}',
         (n) => n + 1,
         ifAbsent: () => 1,
       );
@@ -423,23 +423,6 @@ class _CurriculumProjectMixState extends State<CurriculumProjectMix> {
           return n == 0 ? a.key.compareTo(b.key) : n;
         });
     final ranks = ordered(groups), stack = ordered(technologies);
-    final slices = <Map<String, dynamic>>[
-      for (final e in ranks.take(2)) {'label': e.key, 'count': e.value},
-      if (ranks.length > 2)
-        {
-          'label': 'Other',
-          'count': ranks.skip(2).fold(0, (sum, e) => sum + e.value),
-          'other': true,
-        },
-    ];
-    void slice(Map<String, dynamic> r) {
-      if (r['other'] == true) {
-        setState(() => _other = !_other);
-      } else {
-        widget.onGroup(_dimension, '${r['label']}');
-      }
-    }
-
     final coverage = widget.data['project_analytics'] is Map
         ? widget.data['project_analytics']['coverage'] as Map? ?? {}
         : {};
@@ -512,78 +495,126 @@ class _CurriculumProjectMixState extends State<CurriculumProjectMix> {
             _panel(
               context,
               'Project mix',
-              'One primary computing focus or application domain per project.',
+              _dimension == 'application_area'
+                  ? 'Document-based project purposes. Each project counts once.'
+                  : _dimension == 'category'
+                  ? 'Broad computing focus. Different project purposes can share a focus.'
+                  : 'Broad application domain. Campus projects can share the Education domain.',
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ShadTabs<String>(
-                    key: const ValueKey('project-mix-tabs'),
-                    value: _dimension,
-                    gap: 0,
-                    scrollable: false,
-                    onChanged: (v) => setState(() {
-                      widget.onDimension(v);
-                      _other = false;
-                    }),
-                    tabs: const [
-                      ShadTab(
-                        value: 'category',
-                        child: Flexible(child: Text('Project focus')),
+                  LayoutBuilder(
+                    builder: (_, constraints) {
+                      if (constraints.maxWidth < 400) {
+                        return ShadSelect<String>(
+                          key: ValueKey('project-mix-dimension-$_dimension'),
+                          initialValue: _dimension,
+                          minWidth: constraints.maxWidth,
+                          maxWidth: constraints.maxWidth,
+                          options: const [
+                            ShadOption(
+                              value: 'application_area',
+                              child: Text('Application area'),
+                            ),
+                            ShadOption(
+                              value: 'category',
+                              child: Text('Project focus'),
+                            ),
+                            ShadOption(value: 'domain', child: Text('Domain')),
+                          ],
+                          selectedOptionBuilder: (_, value) => Text(
+                            value == 'application_area'
+                                ? 'Application area'
+                                : value == 'category'
+                                ? 'Project focus'
+                                : 'Domain',
+                          ),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() {
+                              _allGroups = false;
+                              widget.onDimension(value);
+                            });
+                          },
+                        );
+                      }
+                      return ShadTabs<String>(
+                        key: const ValueKey('project-mix-tabs'),
+                        value: _dimension,
+                        gap: 0,
+                        scrollable: false,
+                        onChanged: (v) => setState(() {
+                          widget.onDimension(v);
+                          _allGroups = false;
+                        }),
+                        tabs: const [
+                          ShadTab(
+                            value: 'application_area',
+                            child: Flexible(child: Text('Application area')),
+                          ),
+                          ShadTab(
+                            value: 'category',
+                            child: Flexible(child: Text('Project focus')),
+                          ),
+                          ShadTab(
+                            value: 'domain',
+                            child: Flexible(child: Text('Domain')),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  if (ranks.length == 1) ...[
+                    Text(
+                      ranks.single.key.startsWith('Unresolved') ||
+                              ranks.single.key == 'Unclassified'
+                          ? '${total == 1 ? 'The project needs' : 'All $total projects need'} more evidence for this grouping.'
+                          : 'All $total projects share this ${_dimension == 'category'
+                                ? 'computing focus'
+                                : _dimension == 'domain'
+                                ? 'domain'
+                                : 'application area'}.',
+                      key: const ValueKey('project-mix-single-group'),
+                      style: _muted(context),
+                    ),
+                    if (_dimension != 'application_area')
+                      Text(
+                        'Choose Application area to compare their documented purposes.',
+                        style: _muted(context),
                       ),
-                      ShadTab(
-                        value: 'domain',
-                        child: Flexible(child: Text('Domain')),
-                      ),
+                    const SizedBox(height: 8),
+                  ],
+                  Column(
+                    key: const ValueKey('project-mix-bars'),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final e in ranks.take(_allGroups ? ranks.length : 6))
+                        _groupRow(
+                          context,
+                          e.key,
+                          e.value,
+                          total,
+                          e.key.startsWith('Unresolved') ||
+                                  e.key == 'Unclassified'
+                              ? CurriculumChartPalette.neutral(context)
+                              : CurriculumChartPalette.primary(context),
+                          () => widget.onGroup(_dimension, e.key),
+                          bar: true,
+                        ),
                     ],
                   ),
-                  SizedBox(
-                    height: 260,
-                    child: SfCircularChart(
-                      key: const ValueKey('project-mix-pie'),
-                      margin: EdgeInsets.zero,
-                      tooltipBehavior: TooltipBehavior(enable: true),
-                      series: <CircularSeries<Map<String, dynamic>, String>>[
-                        DoughnutSeries<Map<String, dynamic>, String>(
-                          dataSource: slices,
-                          xValueMapper: (r, _) => '${r['label']}',
-                          yValueMapper: (r, _) => r['count'] as num,
-                          pointColorMapper: (_, i) =>
-                              CurriculumChartPalette.slice(context, i),
-                          animationDuration: 0,
-                          innerRadius: '65%',
-                          dataLabelMapper: (r, _) =>
-                              '${((r['count'] as num) / total * 100).toStringAsFixed(0)}%',
-                          dataLabelSettings: const DataLabelSettings(
-                            isVisible: false,
-                          ),
-                          onPointTap: (d) {
-                            if (d.pointIndex != null) {
-                              slice(slices[d.pointIndex!]);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  for (var i = 0; i < slices.length; i++)
-                    _groupRow(
-                      context,
-                      '${slices[i]['label']}',
-                      slices[i]['count'] as int,
-                      total,
-                      CurriculumChartPalette.slice(context, i),
-                      () => slice(slices[i]),
-                    ),
-                  if (_other)
-                    for (final e in ranks.skip(2))
-                      _groupRow(
-                        context,
-                        e.key,
-                        e.value,
-                        total,
-                        CurriculumChartPalette.neutral(context),
-                        () => widget.onGroup(_dimension, e.key),
+                  if (ranks.length > 6)
+                    ShadButton.link(
+                      key: const ValueKey('show-project-groups'),
+                      size: ShadButtonSize.sm,
+                      onPressed: () => setState(() => _allGroups = !_allGroups),
+                      child: Text(
+                        _allGroups
+                            ? 'Show leading areas'
+                            : 'Show all ${ranks.length} groups',
                       ),
+                    ),
                 ],
               ),
             ),
@@ -596,7 +627,7 @@ class _CurriculumProjectMixState extends State<CurriculumProjectMix> {
                 children: [
                   if (stack.isEmpty)
                     Text(
-                      'No documented technologies in the eligible sources. Tentative choices are excluded.',
+                      'No technologies specified in the eligible documents. Concept papers can leave the stack undecided; technologies are not inferred.',
                       style: _muted(context),
                     ),
                   for (final e in stack.take(
@@ -610,6 +641,7 @@ class _CurriculumProjectMixState extends State<CurriculumProjectMix> {
                       CurriculumChartPalette.primary(context),
                       () => widget.onGroup('technology', e.key),
                       bar: true,
+                      field: 'technology',
                     ),
                   if (stack.length > 8)
                     ShadButton.link(
@@ -639,7 +671,7 @@ class _CurriculumProjectMixState extends State<CurriculumProjectMix> {
               value: 'counting',
               title: const Text('Counting and evidence'),
               child: Text(
-                '${widget.data['completion_policy'] ?? ''} Focus, domain and technology estimates use eligible documents from the assigned project year. Missing evidence stays explicit.',
+                '${widget.data['completion_policy'] ?? ''} Application areas describe the service or purpose supported by source passages; they do not imply a platform or technology. Focus, domain and technology estimates use eligible documents from the assigned project year. Estimates are not faculty-reviewed. Missing evidence stays explicit.',
                 style: _muted(context),
               ),
             ),
@@ -657,10 +689,11 @@ class _CurriculumProjectMixState extends State<CurriculumProjectMix> {
     Color color,
     VoidCallback onTap, {
     bool bar = false,
+    String? field,
   }) => ShadButton.ghost(
-    key: ValueKey('project-group-$_dimension-$name'),
+    key: ValueKey('project-group-${field ?? _dimension}-$name'),
     width: double.infinity,
-    height: bar ? 76 : 54,
+    height: bar ? 72 : 60,
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
     onPressed: onTap,
     child: Expanded(
@@ -670,8 +703,10 @@ class _CurriculumProjectMixState extends State<CurriculumProjectMix> {
         children: [
           Row(
             children: [
-              Container(width: 8, height: 8, color: color),
-              const SizedBox(width: 10),
+              if (!bar) ...[
+                Container(width: 8, height: 8, color: color),
+                const SizedBox(width: 10),
+              ],
               Expanded(
                 child: Text(
                   name,

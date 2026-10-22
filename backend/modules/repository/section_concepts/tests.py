@@ -641,7 +641,7 @@ class SharedSystemGenerationTests(APITestCase):
 
 class SharedCapstoneConceptTests(APITestCase):
     from repository.deliverables import test_submission_timing as timing_fixtures
-    setUp = timing_fixtures.SubmissionTimingTests.setUp
+    setUp = timing_fixtures.faculty_review_setup
 
     def project(self):
         self.team.section = 'BSIT-3A'

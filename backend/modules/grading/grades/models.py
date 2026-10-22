@@ -133,6 +133,7 @@ class TeamGrade(models.Model):
     adviser_weight = models.PositiveSmallIntegerField(default=30)
     peer_weight = models.PositiveSmallIntegerField(default=20)
     attempt_count = models.PositiveSmallIntegerField(default=1)
+    legacy_deliverable_policy = models.JSONField(default=dict, blank=True, editable=False)
     verdict = models.CharField(max_length=30, choices=VERDICT_CHOICES, blank=True)
     verdict_remarks = models.TextField(blank=True)
     verdict_by = models.ForeignKey(

@@ -13,7 +13,7 @@ from . import test_submission_timing as timing_tests
 
 
 class ReviewEndorsementTests(APITestCase):
-    setUp = timing_tests.SubmissionTimingTests.setUp
+    setUp = timing_tests.faculty_review_setup
     upload = timing_tests.SubmissionTimingTests.upload
 
     def review(self):
@@ -32,7 +32,7 @@ class ReviewEndorsementTests(APITestCase):
         self.adviser.save()
         event = PitEventGradingConfig.objects.create(year_level='1st Year', semester=self.semester, event_name=self.stage.label)
         PitEventDeliverable.objects.create(pit_event_config=event, deliverable_id='PAPER', label='Concept paper', required=True)
-        PitEventDeliverable.objects.create(pit_event_config=event, deliverable_id='DECK', label='Pitch deck', required=True,
+        PitEventDeliverable.objects.create(pit_event_config=event, deliverable_id='DECK', label='Pitch deck', required=False,
                                           requirement_timing='defense', file_format='presentation')
 
     def assert_separate_review_and_endorsement(self):
@@ -254,15 +254,21 @@ class ReviewEndorsementTests(APITestCase):
         config.save()
         self.assertFalse(self.review()['can_review_and_endorse'])
 
-    def test_defense_corrections_do_not_change_endorsement_and_resubmission_needs_no_acceptance(self):
+    def test_pre_defense_corrections_require_fresh_acceptance(self):
+        self.deck.required = True
+        self.deck.save()
         self.upload('PAPER', 'paper.docx')
+        deck = self.upload()
         self.endorse()
         self.team.refresh_from_db()
-        deck = self.upload()
+        from .services import unendorse_team
+        unendorse_team(self.team, self.stage.label)
         review_submission(self.team, self.stage.label, 'DECK', 'rejected', 'Add the demo flow', self.adviser)
         self.team.refresh_from_db()
-        self.assertEqual(self.team.ready_for_stage, self.stage.label)
+        self.assertIsNone(self.team.ready_for_stage)
         self.upload(name='corrected.pptx')
         deck.refresh_from_db()
         self.assertEqual(deck.status, 'pending')
-        self.assertTrue(stage_payload(self.team, self.stage.label)['materials_readiness']['items'][0]['materials_submitted'])
+        self.assertFalse(required_complete(self.team, self.stage.label))
+        review_submission(self.team, self.stage.label, 'DECK', 'accepted', '', self.adviser)
+        self.assertTrue(required_complete(self.team, self.stage.label))

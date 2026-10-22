@@ -311,30 +311,17 @@ def prepare_bulk_row(
         # Use explicit CSV columns when available; fall back to row keys for backwards compat
         columns_to_check = set(csv_columns) if csv_columns else set(row.keys())
         normalized_columns = _normalize_csv_columns(columns_to_check)
-        pit_template = {'team_name', 'member_ids', 'leader_id'}
-        if is_pit_lead or (is_admin and is_pit_section_import):
-            if normalized_columns & {'adviser_id', 'year_level'}:
-                return None, [
-                    "Wrong Template: PIT import templates should not contain 'adviser_id' or 'year_level' columns."
-                ]
-            is_pit_legacy = pit_template.issubset(normalized_columns)
-            is_pit_client = ('team_name' in normalized_columns or 'team name' in normalized_columns) and (
-                'team_members' in normalized_columns or 'members' in normalized_columns or 'team members' in normalized_columns
-            )
-            if not (is_pit_legacy or is_pit_client):
-                return None, [
-                    "Wrong Template: PIT import templates must contain 'team_name', 'member_ids', and 'leader_id' columns (or 'Team Name' and 'Team Members' for multi-row format). Project/Module is optional."
-                ]
-        elif is_admin:
-            is_client_template = ('team_name' in normalized_columns or 'team name' in normalized_columns) and (
-                'team_members' in normalized_columns or 'members' in normalized_columns or 'team members' in normalized_columns
-            )
-            is_defensys_template = 'adviser_id' in normalized_columns and 'year_level' in normalized_columns
-            is_direct_api_payload = not csv_columns and {'team_name', 'member_ids', 'leader_id'}.issubset(normalized_columns)
-            if not (is_client_template or is_defensys_template or is_direct_api_payload):
-                return None, [
-                    "Wrong Template: Capstone import templates must contain 'year_level' and 'adviser_id' columns (or 'Team Name' and 'Team Members' for client format)."
-                ]
+        # CSV/XLSX uploads are normalized to row-based records by the client.
+        # Optional metadata columns do not determine the team's program scope;
+        # enrollment, role and row validation enforce that separately.
+        row_template = {'team_name', 'member_ids', 'leader_id'}.issubset(normalized_columns)
+        client_template = 'team_name' in normalized_columns and bool(normalized_columns & {
+            'team_members', 'members', 'names', 'student_name', 'student_names', 'student', 'students'})
+        if (is_admin or is_pit_lead) and not (row_template or client_template):
+            return None, [
+                "Wrong Template: Include 'Team Name' and 'Team Members' (or 'team_name', "
+                "'member_ids', and 'leader_id' for row-based imports). Project/Module is optional."
+            ]
 
     if section_import and is_admin:
         if is_pit_section_import:

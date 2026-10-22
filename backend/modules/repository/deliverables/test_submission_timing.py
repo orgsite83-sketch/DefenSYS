@@ -67,11 +67,16 @@ class SubmissionTimingTests(APITestCase):
     def clear_and_endorse(self):
         self.upload('PAPER', 'paper.docx')
         review_submission(self.team, self.stage.label, 'PAPER', 'accepted', '', self.adviser)
-        endorse_team(self.team, self.stage.label)
+        if self.deck.required:
+            # Simulate a clearance already recorded before unified review.
+            from student_teams.services import mark_stage_ready
+            mark_stage_ready(self.team, self.stage, self.adviser)
+        else:
+            endorse_team(self.team, self.stage.label)
 
     def schedule(self):
         self.clear_and_endorse()
-        return DefenseSchedule.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
+        return create_legacy_schedule(team=self.team, semester=self.semester, defense_stage=self.stage,
             scheduled_date=self.date, start_time=time(9), room='Room 201', created_by=self.admin)
 
     def extension(self, schedule, deadline, **extra):
@@ -80,20 +85,17 @@ class SubmissionTimingTests(APITestCase):
             'deadline': deadline.isoformat(), 'reason': 'Approved a late presentation upload.',
             'revision': schedule.revision, **extra}, format='json')
 
-    def test_clearance_requires_approval_but_missing_deck_does_not_block_endorsement(self):
-        self.assertFalse(required_complete(self.team, self.stage.label))
+    def test_all_required_pre_defense_files_need_acceptance(self):
         self.upload('PAPER', 'paper.docx')
+        review_submission(self.team, self.stage.label, 'PAPER', 'accepted', '', self.adviser)
+        self.assertFalse(required_complete(self.team, self.stage.label))
         with self.assertRaises(ValueError):
             endorse_team(self.team, self.stage.label)
-        review_submission(self.team, self.stage.label, 'PAPER', 'accepted', '', self.adviser)
-        self.assertTrue(required_complete(self.team, self.stage.label))
+        self.upload('DECK', 'pitch.pptx')
+        self.assertFalse(required_complete(self.team, self.stage.label))
+        review_submission(self.team, self.stage.label, 'DECK', 'accepted', '', self.adviser)
         endorse_team(self.team, self.stage.label)
-        self.team.refresh_from_db()
-        self.assertEqual(self.team.ready_for_stage, self.stage.label)
-        payload = stage_payload(self.team, self.stage.label)
-        self.assertEqual(payload['required_total'], 1)
-        self.assertEqual(payload['materials_readiness']['status'], 'awaiting_schedule')
-        self.assertEqual(payload['materials_readiness']['required_total'], 1)
+        self.assertTrue(required_complete(self.team, self.stage.label))
 
     def test_endorsed_team_can_upload_and_update_deck_without_reendorsing(self):
         schedule = self.schedule()
@@ -124,7 +126,7 @@ class SubmissionTimingTests(APITestCase):
         schedule.refresh_from_db()
         self.assertEqual(schedule.status, 'scheduled')
 
-    def test_schedule_and_upload_api_follow_the_new_flow(self):
+    def test_new_schedule_rechecks_legacy_endorsement_missing_required_deck(self):
         self.clear_and_endorse()
         rubric = Rubric.objects.create(name='Timing Panel Rubric', scope='capstone', semester=self.semester,
             defense_stage=self.stage, evaluation_type='panel', status='published', created_by=self.admin)
@@ -143,17 +145,7 @@ class SubmissionTimingTests(APITestCase):
             'defense_stage_id': self.stage.pk, 'rubric_id': rubric.pk, 'panelist_ids': [panelist.pk],
             'chair_panelist_id': panelist.pk, 'scheduled_date': self.date.isoformat(),
             'start_time': '09:00', 'room': 'Room 201', 'slot_duration': 60}, format='json')
-        self.assertEqual(response.status_code, 201, response.data)
-        schedule = DefenseSchedule.objects.get(team=self.team)
-        self.assertEqual(DefenseScheduleSerializer(schedule).data['materials_readiness']['status'], 'pending')
-        self.assertEqual(Notification.objects.filter(title='Defense materials due', recipient=self.student).count(), 1)
-        self.client.force_authenticate(self.student)
-        response = self.client.post('/api/repository/deliverables/upload/', {
-            'team_id': self.team.pk, 'stage_label': self.stage.label, 'deliverable_id': 'DECK',
-            'file_name': 'pitch.pptx', 'file_size': '20 B',
-            'file': SimpleUploadedFile('pitch.pptx', b'actual presentation')}, format='multipart')
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(materials_readiness(schedule)['status'], 'ready')
+        self.assertEqual(response.status_code, 400, response.data)
 
     def test_grace_audit_failure_rolls_back_the_deadline_revision_and_notifications(self):
         schedule = self.schedule()
@@ -281,9 +273,11 @@ class SubmissionTimingTests(APITestCase):
         event = PitEventGradingConfig.objects.create(year_level='3rd Year', semester=self.semester, event_name='3rd Year PIT Expo')
         PitEventDeliverable.objects.create(pit_event_config=event, deliverable_id='DECK', label='PIT pitch deck',
             required=True, requirement_timing='defense', deadline_hours_before=12)
-        self.assertTrue(required_complete(self.team, event.event_name))
-        endorse_team(self.team, event.event_name)
-        schedule = DefenseSchedule.objects.create(team=self.team, semester=self.semester, scope='pit', event_name=event.event_name,
+        self.assertFalse(required_complete(self.team, event.event_name))
+        # Preserve an endorsement made under the former deadline-only rule.
+        from student_teams.pit_rosters import set_endorsed
+        set_endorsed(self.team, event.event_name, True)
+        schedule = create_legacy_schedule(team=self.team, semester=self.semester, scope='pit', event_name=event.event_name,
             scheduled_date=self.date, start_time=time(9), room='PIT Hall')
         payload = stage_payload(self.team, event.event_name)
         self.assertEqual(payload['required_total'], 0)
@@ -300,7 +294,7 @@ class SubmissionTimingTests(APITestCase):
     def test_late_upload_window_allows_missing_materials_and_sets_is_late(self):
         self.clear_and_endorse()
         past_date = timezone.localdate(self.now) - timedelta(days=1)
-        schedule = DefenseSchedule.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
+        schedule = create_legacy_schedule(team=self.team, semester=self.semester, defense_stage=self.stage,
             scheduled_date=past_date, start_time=time(9), room='Room 201', created_by=self.admin)
 
         future_window = timezone.now() + timedelta(hours=6)
@@ -321,10 +315,10 @@ class SubmissionTimingTests(APITestCase):
         self.assertEqual(sub.file_name, 'late_pitch.pptx')
 
     def test_late_upload_window_blocks_replacement_of_existing_submissions(self):
-        self.clear_and_endorse()
         self.upload('DECK', 'initial_deck.pptx')
+        self.clear_and_endorse()
         past_date = timezone.localdate(self.now) - timedelta(days=1)
-        schedule = DefenseSchedule.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
+        schedule = create_legacy_schedule(team=self.team, semester=self.semester, defense_stage=self.stage,
             scheduled_date=past_date, start_time=time(9), room='Room 201', created_by=self.admin)
 
         future_window = timezone.now() + timedelta(hours=6)
@@ -345,7 +339,7 @@ class SubmissionTimingTests(APITestCase):
         panelist = get_user_model().objects.create(username='test_eval_panelist', role='faculty', is_panelist=True)
         self.clear_and_endorse()
         past_date = timezone.localdate(self.now) - timedelta(days=1)
-        schedule = DefenseSchedule.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
+        schedule = create_legacy_schedule(team=self.team, semester=self.semester, defense_stage=self.stage,
             scheduled_date=past_date, start_time=time(9), room='Room 201', created_by=self.admin)
         team_grade = TeamGrade.objects.create(
             team=self.team, semester=self.semester, schedule=schedule,
@@ -369,3 +363,25 @@ class SubmissionTimingTests(APITestCase):
         eval_sub.refresh_from_db()
         self.assertFalse(eval_sub.is_void)
         self.assertEqual(eval_sub.remarks, 'Strong presentation')
+
+
+def faculty_review_setup(case):
+    """General document fixtures do not need an unrelated required deck."""
+    SubmissionTimingTests.setUp(case)
+    case.deck.required = False
+    case.deck.save(update_fields=['required'])
+
+
+def create_legacy_schedule(**kwargs):
+    """Model a hearing scheduled before the Phase 1 data migration."""
+    stage = kwargs.get('defense_stage')
+    if stage:
+        files = stage.deliverables.all()
+    else:
+        team = kwargs['team']
+        config = PitEventGradingConfig.objects.filter(semester=kwargs.get('semester'),
+            year_level=team.year_level, event_name__iexact=kwargs.get('event_name', '')).first()
+        files = config.deliverables.all() if config else []
+    timings = {d.deliverable_id: {'requirement_timing': 'defense', 'deadline_hours_before': d.deadline_hours_before}
+               for d in files if d.deliverable_type == 'pre' and d.requirement_timing == 'defense'}
+    return DefenseSchedule.objects.create(legacy_deliverable_policy={'timings': timings, 'waived_ids': []}, **kwargs)

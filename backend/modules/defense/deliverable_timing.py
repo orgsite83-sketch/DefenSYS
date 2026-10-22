@@ -18,4 +18,7 @@ def validate_timing(data):
         data.get('deadline_hours_before', 24))
     if data.get('deliverable_type', 'pre') != 'pre' and timing == TIMING_DEFENSE:
         raise serializers.ValidationError('Only pre-defense deliverables can use a defense deadline.')
-    return {'requirement_timing': timing, 'deadline_hours_before': hours}
+    # Retain validation for legacy payloads, but all new configuration follows
+    # the same faculty-review gate. Old schedule deadlines live on the hearing.
+    return {'requirement_timing': TIMING_SCHEDULING, 'deadline_hours_before': 24,
+            'verdict_condition': 'all_pass'}

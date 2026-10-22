@@ -613,6 +613,8 @@ class ScheduleOperationsTests(APITestCase):
         from defense.stages.models import StageDeliverable
         StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='LATE_DECK',
             label='Pitch deck', required=True, requirement_timing='defense')
+        schedule.legacy_deliverable_policy = {'timings': {'LATE_DECK': {
+            'requirement_timing': 'defense', 'deadline_hours_before': 24}}}
         schedule.status = 'done'
         schedule.save()
         target_deadline = timezone.now() + timedelta(days=2)
@@ -632,6 +634,8 @@ class ScheduleOperationsTests(APITestCase):
         from defense.stages.models import StageDeliverable
         StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='LATE_DECK',
             label='Pitch deck', required=True, requirement_timing='defense')
+        schedule.legacy_deliverable_policy = {'timings': {'LATE_DECK': {
+            'requirement_timing': 'defense', 'deadline_hours_before': 24}}}
         schedule.scheduled_date = timezone.localdate() - timedelta(days=2)
         schedule.save()
         target_deadline = timezone.now() + timedelta(days=1)

@@ -68,6 +68,7 @@ class DefenseSchedule(models.Model):
     revision = models.PositiveIntegerField(default=1)
     project_version = models.PositiveIntegerField(default=1)
     project_title_snapshot = models.CharField(max_length=255, blank=True)
+    legacy_deliverable_policy = models.JSONField(default=dict, blank=True, editable=False)
     operation_state = models.CharField(max_length=20, default='normal', choices=[
         ('normal', 'Normal'), ('paused', 'Interrupted'),
         ('postponed', 'Postponed'), ('no_show', 'No-show'),

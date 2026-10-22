@@ -27,6 +27,9 @@ Future<void> rememberWorkspace(WidgetRef ref, String route) async {
       route,
     );
     ref.invalidate(workspacePreferenceProvider);
+    // Navigation immediately after a switch must see the new choice rather
+    // than briefly applying the automatic phone default.
+    await ref.read(workspacePreferenceProvider.future);
   } catch (_) {
     /* The workspace stays available without local preferences. */
   }

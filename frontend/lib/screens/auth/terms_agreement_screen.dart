@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../navigation/app_router.dart';
 import '../../services/auth_provider.dart';
 import '../../theme/app_theme.dart';
 
@@ -286,12 +285,7 @@ class _TermsAgreementScreenState extends ConsumerState<TermsAgreementScreen> {
                                       .read(authProvider.notifier)
                                       .acceptCurrentTerms();
                                   if (!context.mounted) return;
-                                  context.go(
-                                    homeRouteForUser(
-                                      widget.userData ??
-                                          {'role': widget.role.toLowerCase()},
-                                    ),
-                                  );
+                                  context.go('/');
                                 }
                               : null,
                           style: ElevatedButton.styleFrom(

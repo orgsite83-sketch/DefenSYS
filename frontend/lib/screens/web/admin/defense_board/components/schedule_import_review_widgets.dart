@@ -230,6 +230,7 @@ class ScheduleImportActionBar extends StatelessWidget {
     required this.totalCount,
     required this.readyCount,
     required this.busy,
+    this.busyLabel,
     required this.onSave,
     required this.onImport,
     required this.onDiscard,
@@ -242,6 +243,7 @@ class ScheduleImportActionBar extends StatelessWidget {
   final int totalCount;
   final int readyCount;
   final bool busy;
+  final String? busyLabel;
   final bool validating;
   final bool validationFailed;
   final bool showDraftOptions;
@@ -260,7 +262,9 @@ class ScheduleImportActionBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            validating
+            busy && busyLabel != null
+                ? busyLabel!
+                : validating
                 ? 'Checking schedule…'
                 : validationFailed
                 ? 'Schedule validation unavailable'
@@ -348,7 +352,7 @@ class ScheduleImportActionBar extends StatelessWidget {
             validating && !busy
                 ? 'Checking schedule...'
                 : busy
-                ? 'Importing slots...'
+                ? busyLabel ?? 'Importing slots...'
                 : 'Import $readyCount ${readyCount == 1 ? 'slot' : 'slots'}',
           ),
         ),

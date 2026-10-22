@@ -163,6 +163,8 @@ def materials_readiness(schedule, *, definitions=None, submitted=None, now=None)
 
     if definitions is None:
         definitions = get_deliverable_definitions_for_scope(schedule.scope, schedule.semester_id, schedule.stage_label, year_level=schedule.team.year_level) if schedule else []
+    from defense.deliverable_policy import apply_hearing_policy
+    definitions = apply_hearing_policy(definitions, schedule)
     if submitted is None:
         from .models import DeliverableSubmission
         submitted = {item.deliverable_id: item for item in DeliverableSubmission.all_objects.filter(

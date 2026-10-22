@@ -118,16 +118,23 @@ class ConceptHearingWorkflowTests(APITestCase):
         self.prepare(accepted=False)
         with self.assertRaises(ValueError):
             concepts.override_clearance(self.capstone_team, self.stage, self.admin, '')
+        with self.assertRaises(ValueError):
+            concepts.override_clearance(self.capstone_team, self.stage, self.admin, 'Committee authorized urgent review.')
+        self.prepare(accepted=True)
         concepts.override_clearance(self.capstone_team, self.stage, self.admin, 'Committee authorized urgent review.')
         self.assertTrue(is_stage_ready(self.capstone_team, self.stage))
         from authentication_access_control.models import SystemAuditLog
         self.assertTrue(SystemAuditLog.objects.filter(action='repository.concept_clearance_override').exists())
 
-    def test_panel_requested_policy_allows_scheduling_after_replacement_uploads(self):
+    def test_retired_panel_requested_policy_cannot_skip_repeat_review(self):
         self.stage.concept_config['review_policy'] = 'panel_requested'
         self.stage.save()
         self.assertEqual(self.verdict().status_code, 200)
         self.prepare(accepted=False)
+        self.assertFalse(is_stage_ready(self.capstone_team, self.stage))
+        self.prepare(accepted=True)
+        self.assertFalse(is_stage_ready(self.capstone_team, self.stage))
+        endorse_team(self.capstone_team, self.stage.label, self.adviser)
         self.assertTrue(is_stage_ready(self.capstone_team, self.stage))
 
     def test_adviser_endorsement_satisfies_requested_concept_verification(self):

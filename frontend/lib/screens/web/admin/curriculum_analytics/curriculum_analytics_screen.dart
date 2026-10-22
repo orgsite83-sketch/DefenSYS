@@ -25,7 +25,7 @@ class _CurriculumAnalyticsScreenState
     extends ConsumerState<CurriculumAnalyticsScreen> {
   String? _criterionId, _teamCategory, _projectGroup;
   String _filter = 'all', _projectField = 'category';
-  String _projectMixDimension = 'category';
+  String _projectMixDimension = 'application_area';
   bool _strongestFirst = false;
   int _page = 0;
   final _reference = TextEditingController(text: '75');

@@ -206,7 +206,7 @@ void main() {
       await _mount(tester, startAtAssessment: false);
       await tester.tap(find.text('Project insights'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('project-mix-pie')), findsOneWidget);
+      expect(find.byKey(const ValueKey('project-mix-bars')), findsOneWidget);
       expect(find.text('Documented technologies'), findsOneWidget);
       expect(find.byType(SfCartesianChart), findsNothing);
       await _capture(tester, 'workspace-project-mix');
@@ -219,9 +219,9 @@ void main() {
       expect(find.byType(SfCircularChart), findsNothing);
       await tester.tap(find.byKey(const ValueKey('year-2026-2027')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('project-mix-pie')), findsOneWidget);
+      expect(find.byKey(const ValueKey('project-mix-bars')), findsOneWidget);
       await tester.tap(
-        find.byKey(const ValueKey('project-group-category-React')),
+        find.byKey(const ValueKey('project-group-technology-React')),
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('project-1:1')), findsOneWidget);
@@ -301,6 +301,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('project-1:1')));
       await tester.pumpAndSettle();
+      expect(find.text('Application area'), findsOneWidget);
+      expect(find.text('Information & Document Services'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('overview-source-doc1')),
         findsOneWidget,
@@ -326,6 +328,7 @@ void main() {
         find.text('We implement a web application using React.'),
         findsOneWidget,
       );
+      expect(find.text('Application area · Objectives'), findsOneWidget);
       await _capture(tester, 'project-classification-evidence');
       expect(tester.takeException(), isNull);
     },
@@ -363,7 +366,9 @@ void main() {
       expect(find.text('Used in this overview'), findsOneWidget);
       expect(find.text('Additional documents'), findsOneWidget);
       expect(
-        find.text('Used for: computing focus, domain and platform.'),
+        find.text(
+          'Used for: computing focus, domain, application area and platform.',
+        ),
         findsOneWidget,
       );
       expect(find.text('Used for: background.'), findsOneWidget);
@@ -842,6 +847,9 @@ class _FakeExplorer extends CurriculumExplorerNotifier {
         'project_title': '$name project',
         'project_version': 1,
         'category': !unclassified && i < 3 ? 'Web Development' : 'Unclassified',
+        'application_area': i < 3
+            ? 'Information & Document Services'
+            : 'Unresolved application area',
         'domain': i == 1
             ? 'Healthcare'
             : i == 2
@@ -872,6 +880,18 @@ class _FakeExplorer extends CurriculumExplorerNotifier {
           ? 'No readable project evidence is available.'
           : 'Estimated from project documents.',
       'domain': 'Healthcare',
+      if (!unclassified) 'application_area': 'Information & Document Services',
+      if (!unclassified)
+        'application_area_evidence': [
+          {
+            'term': 'document library',
+            'section': 'Objectives',
+            'excerpt':
+                'The document library provides approved forms with version dates.',
+            'document_id': 'doc1',
+            'source_label': 'D1 · Project proposal',
+          },
+        ],
       'evidence': [
         {
           'term': 'web application',

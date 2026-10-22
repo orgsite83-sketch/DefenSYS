@@ -42,6 +42,19 @@ class PitImportInstructorTests(APITestCase):
         self.instructor.refresh_from_db()
         self.assertFalse(self.instructor.is_adviser)
 
+    def test_normalized_file_headers_allow_pit_preview_and_import(self):
+        body = {'teams': [self.row], 'csv_columns': [
+            'team_name', 'project_title', 'level', 'year_level', 'member_ids', 'leader_id',
+            'adviser_name', 'instructor_name', 'section', 'system_name', 'project_manager', 'group_key']}
+        preview = self.client.post('/api/teams/bulk-import/preview/', body, format='json')
+        self.assertTrue(preview.data['rows'][0]['ready'], preview.data)
+        self.assertFalse(StudentTeam.objects.exists())
+        self.assertFalse(SectionInstructorAssignment.objects.exists())
+        imported = self.client.post('/api/teams/bulk-import/', body, format='json')
+        self.assertEqual(imported.data['created_count'], 1, imported.data)
+        self.assertEqual(SectionInstructorAssignment.objects.get().faculty, self.instructor)
+        self.assertIsNone(StudentTeam.objects.get().adviser)
+
     def test_import_saves_section_instructor_without_adviser(self):
         response = self.post_rows()
         self.assertEqual(response.data['created_count'], 1, response.data)

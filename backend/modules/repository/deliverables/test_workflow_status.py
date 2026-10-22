@@ -19,7 +19,7 @@ from .services import post_defense_ready, stage_payload
 
 
 class DeliverableWorkflowStatusTests(APITestCase):
-    setUp = fixtures.SubmissionTimingTests.setUp
+    setUp = fixtures.faculty_review_setup
     upload = fixtures.SubmissionTimingTests.upload
     clear_and_endorse = fixtures.SubmissionTimingTests.clear_and_endorse
     schedule = fixtures.SubmissionTimingTests.schedule

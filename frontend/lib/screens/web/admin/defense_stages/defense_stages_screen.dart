@@ -779,7 +779,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 child: _submissionModeCard(
                   title: 'Student file submissions',
                   description:
-                      'Set files due before endorsement, before defense, or afterward.',
+                      'Configure pre-defense requirements and post-defense submissions.',
                   icon: Icons.description_rounded,
                   selected: !isPresentationOnly,
                   onTap: () => onChanged(false),
@@ -1319,12 +1319,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
                     final hasAdvancedSettings = isPost
                         ? (item['is_restricted'] == true ||
-                            item['verdict_condition'] == 'revisions_only' ||
                             (item['archive_file_template'] != null &&
                                 item['archive_file_template'].toString().trim().isNotEmpty &&
                                 item['archive_file_template'] != '{project}' &&
                                 item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                        : (item['is_defense_material'] == true);
                     final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
 
                     final moreOptionsBtn = DefensysShadcnScope(
@@ -1377,22 +1376,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   builder: (context) {
                     final hasAdvancedSettings = isPost
                         ? (item['is_restricted'] == true ||
-                            item['verdict_condition'] == 'revisions_only' ||
                             (item['archive_file_template'] != null &&
                                 item['archive_file_template'].toString().trim().isNotEmpty &&
                                 item['archive_file_template'] != '{project}' &&
                                 item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                        : (item['is_defense_material'] == true);
                     final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
 
                     if (!isAdvancedExpanded) {
                       final summaryText = isPost
-                          ? (item['verdict_condition'] == 'revisions_only'
-                              ? 'Required with revisions only${item['is_restricted'] == true ? ' • Restricted archive' : ''}'
-                              : 'Required for all passing teams${item['is_restricted'] == true ? ' • Restricted archive' : ''}')
-                          : (item['requirement_timing'] == 'defense'
-                              ? 'Due ${item['deadline_hours_before'] ?? 24}h before defense${item['is_defense_material'] == true ? ' • Panel material' : ''}'
-                              : 'Cleared before scheduling${item['is_defense_material'] == true ? ' • Panel material' : ''}');
+                          ? '${item['required'] == true ? 'Required' : 'Optional'} after defense${item['is_restricted'] == true ? ' · Restricted archive' : ''}'
+                          : 'Faculty review before scheduling${item['is_defense_material'] == true ? ' · Panel material' : ''}';
                       return Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Row(
@@ -1437,7 +1431,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               const Icon(Icons.tune_rounded, size: 14, color: Color(0xFF475569)),
                               const SizedBox(width: 6),
                               Text(
-                                isPost ? 'Post-Defense Rules & Archiving' : 'Submission Timing & Access Settings',
+                                isPost ? 'Post-Defense Rules & Archiving' : 'Panel access',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -1448,14 +1442,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                           ),
                           const SizedBox(height: 10),
                           if (!isPost) ...[
-                            DeliverableTimingFields(
-                              timing: item['requirement_timing']?.toString() ?? 'scheduling',
-                              hoursBefore: int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24,
-                              showTimingChoices: true,
-                              isDefenseMaterial: item['is_defense_material'] == true,
-                              onTimingChanged: (value) => setDialogState(() => item['requirement_timing'] = value),
-                              onHoursChanged: (value) => setDialogState(() => item['deadline_hours_before'] = value),
-                            ),
+                            const DeliverableTimingFields(),
                             const SizedBox(height: 10),
                             const Divider(height: 1, color: Color(0xFFE2E8F0)),
                             const SizedBox(height: 10),
@@ -1478,14 +1465,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             ),
                           ],
                           if (isPost) ...[
-                            StageVerdictConditionChoices(
-                              value: item['verdict_condition']?.toString() == 'revisions_only'
-                                  ? 'revisions_only'
-                                  : 'all_pass',
-                              onChanged: (value) => setDialogState(() {
-                                item['verdict_condition'] = value;
-                              }),
-                            ),
+                            const StagePostDefenseReviewNotice(),
                             const SizedBox(height: 10),
                             const Divider(height: 1, color: Color(0xFFE2E8F0)),
                             const SizedBox(height: 10),
@@ -1708,7 +1688,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         'is_active': isActive,
         'is_presentation_only': isPresentationOnly,
         'minutes_required': minutesRequired,
-        'concept_config': conceptConfig,
+        'concept_config': {...conceptConfig, if (conceptConfig['enabled'] == true) 'review_policy': 'always'},
         'minutes_deliverable_id': minutesNumber.text,
         'minutes_deliverable_label': minutesName.text,
         'deliverables': deliverables,
@@ -2417,7 +2397,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     // Pre-Defense Gatekeepers
                                     _buildDeliverableSection(
                                       title: 'Pre-Defense Requirements',
-                                      subtitle: 'Choose which files clear scheduling and which are due closer to the defense.',
+                                      subtitle: 'Required files need faculty acceptance before endorsement and scheduling.',
                                       icon: Icons.folder_open_rounded,
                                       accentColor: const Color(0xFF0F172A),
                                       bgHeaderColor: const Color(0xFFF8FAFC),
@@ -2722,7 +2702,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       'is_active': isActive,
       'is_presentation_only': isPresentationOnly,
       'minutes_required': minutesRequired,
-      'concept_config': conceptConfig,
+      'concept_config': {...conceptConfig, if (conceptConfig['enabled'] == true) 'review_policy': 'always'},
       'minutes_deliverable_id': minutesNumber.text.trim(),
       'minutes_deliverable_label': minutesName.text.trim(),
       'deliverables': isPresentationOnly ? [] : deliverables,

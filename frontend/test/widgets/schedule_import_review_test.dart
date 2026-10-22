@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -67,6 +68,8 @@ class _Scheduler extends DefenseSchedulerNotifier {
   final bool validationFailure;
   var conflictReads = 0;
   final imports = <List<Map<String, dynamic>>>[];
+  Completer<void>? pendingImport;
+  void Function(int completed, int total)? importProgress;
 
   @override
   DefenseSchedulerState build() => fixture;
@@ -80,9 +83,13 @@ class _Scheduler extends DefenseSchedulerNotifier {
 
   @override
   Future<Map<String, dynamic>> importSchedules(
-    List<Map<String, dynamic>> payloads,
-  ) async {
+    List<Map<String, dynamic>> payloads, {
+    void Function(int completed, int total)? onProgress,
+  }) async {
     imports.add(payloads);
+    importProgress = onProgress;
+    onProgress?.call(0, payloads.length);
+    if (pendingImport != null) await pendingImport!.future;
     final successes = [
       for (var i = 0; i < payloads.length; i++)
         if (i != failedIndex) i,
@@ -275,6 +282,43 @@ Future<void> _allDuration(
 }
 
 void main() {
+  testWidgets(
+    'pending import displays progress and prevents another confirmation',
+    (tester) async {
+      var returned = false;
+      final scheduler = await _pumpReview(
+        tester,
+        count: 2,
+        onBack: () => returned = true,
+      );
+      scheduler.pendingImport = Completer<void>();
+      final import = find.text('Import 2 slots');
+      await tester.ensureVisible(import);
+      await tester.pumpAndSettle();
+      await tester.tap(import);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Importing slots 0/2...'), findsNWidgets(2));
+      final disabled = find.ancestor(
+        of: find.text('Importing slots 0/2...').last,
+        matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
+      );
+      expect(tester.widget<ElevatedButton>(disabled).onPressed, isNull);
+      scheduler.importProgress!(1, 2);
+      await tester.pump();
+      expect(find.text('Importing slots 1/2...'), findsNWidgets(2));
+      expect(scheduler.imports.length, 1);
+      expect(returned, isFalse);
+      scheduler.pendingImport!.complete();
+      await tester.pumpAndSettle();
+      expect(returned, isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   testWidgets(
     'session count previews regrouping, closes without saving, and applies once',
     (tester) async {

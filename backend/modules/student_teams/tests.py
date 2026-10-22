@@ -910,7 +910,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(imported_team.adviser, jonathan)
 
 
-    def test_bulk_import_preview_rejects_pit_lead_wrong_template(self):
+    def test_bulk_import_preview_accepts_pit_metadata_and_ignores_adviser(self):
         self._activate_capstone_intake_semester()
         pit_lead = User.objects.create_user(
             username='pit-lead-preview-warn',
@@ -933,11 +933,12 @@ class StudentTeamApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         row = response.data['rows'][0]
-        self.assertFalse(row['ready'])
-        self.assertEqual(len(row['issues']), 1)
-        self.assertIn("Wrong Template: PIT import templates should not contain 'adviser_id'", row['issues'][0])
+        self.assertTrue(row['ready'], row['issues'])
+        self.assertEqual(row['issues'], [])
+        self.assertTrue(any('PIT teams do not have advisers' in w for w in row['warnings']))
+        self.assertEqual(row['adviser_name'], '')
 
-    def test_bulk_import_preview_rejects_admin_wrong_template(self):
+    def test_bulk_import_preview_accepts_admin_row_template_without_optional_metadata(self):
         self._activate_capstone_intake_semester()
         bad_row = {
             'team_name': 'Team Cap Bad',
@@ -956,9 +957,9 @@ class StudentTeamApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         row = response.data['rows'][0]
-        self.assertFalse(row['ready'])
-        self.assertEqual(len(row['issues']), 1)
-        self.assertIn("Wrong Template: Capstone import templates must contain 'year_level' and 'adviser_id'", row['issues'][0])
+        self.assertTrue(row['ready'], row['issues'])
+        self.assertEqual(row['issues'], [])
+        self.assertEqual(row['level'], StudentTeam.LEVEL_3_CAPSTONE)
 
     def test_bulk_import_preview_accepts_admin_client_template(self):
         self._activate_capstone_intake_semester()
@@ -1419,7 +1420,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([team['id'] for team in response.data['teams']], [team_a.id])
 
-    def test_pit_bulk_import_blocks_on_adviser_column(self):
+    def test_pit_bulk_import_accepts_metadata_without_assigning_adviser(self):
         pit_lead = User.objects.create_user(
             username='pit-lead-adviser-skip',
             password='pass12345',
@@ -1446,11 +1447,12 @@ class StudentTeamApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['created_count'], 0)
-        self.assertEqual(response.data['error_count'], 1)
-        self.assertFalse(StudentTeam.objects.filter(name='Team PIT No Adv').exists())
-        self.assertIn("Wrong Template", response.data['errors'][0]['errors'][0])
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['created_count'], 1)
+        self.assertEqual(response.data['error_count'], 0)
+        team = StudentTeam.objects.get(name='Team PIT No Adv')
+        self.assertIsNone(team.adviser)
+        self.assertEqual(team.year_level, pit_lead.pit_lead_year)
 
     def test_pit_bulk_import_correct_template_no_wrong_template_error(self):
         """PIT lead with csv_columns=['team_name','project_title','member_ids','leader_id']
@@ -2271,8 +2273,20 @@ class StudentTeamApiTests(APITestCase):
             'current_defense_stage': '1st Year Concept Pitch',
             'status': 'Pending',
         }, format='json')
-        self.assertEqual(res1.status_code, 201)
+        self.assertEqual(res1.status_code, 201, res1.data)
         self.assertEqual(res1.data['team']['pit_event_name'], '1st Year Concept Pitch')
+
+        # Explicitly separate the two event rosters. An unused event otherwise
+        # inherits the current section roster, including Event One's team.
+        from student_teams.models import PITEventRoster
+        first_team = StudentTeam.objects.get(pk=res1.data['team']['id'])
+        first_event = PitEventGradingConfig.objects.get(semester=self.first_semester, event_name='1st Year Concept Pitch')
+        second_event = PitEventGradingConfig.objects.get(semester=self.first_semester, event_name='1st Year Expo')
+        first_roster, _ = PITEventRoster.objects.get_or_create(event=first_event, section=first_team.section,
+            defaults={'source': 'custom'})
+        first_roster.teams.add(first_team)
+        second_roster, _ = PITEventRoster.objects.get_or_create(event=second_event, section=first_team.section,
+            defaults={'source': 'custom'})
 
         # 2. Create team for Event 2 with the SAME student_1 (allowed because different event!)
         res2 = self.client.post('/api/teams/', {
@@ -2285,8 +2299,9 @@ class StudentTeamApiTests(APITestCase):
             'current_defense_stage': '1st Year Expo',
             'status': 'Pending',
         }, format='json')
-        self.assertEqual(res2.status_code, 201)
+        self.assertEqual(res2.status_code, 201, res2.data)
         self.assertEqual(res2.data['team']['pit_event_name'], '1st Year Expo')
+        second_roster.teams.add(res2.data['team']['id'])
 
         # 3. Create another team for Event 1 with student_1 (blocked because student already in Event 1 team!)
         res3 = self.client.post('/api/teams/', {
