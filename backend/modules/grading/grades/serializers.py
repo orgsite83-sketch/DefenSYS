@@ -20,6 +20,8 @@ class GradeAttemptHistorySerializer(serializers.ModelSerializer):
             'revisions_cleared_at',
             'clearance_remarks',
             'schedule_id',
+            'assessment_policy',
+            'student_scores',
             'scheduled_date',
             'room',
             'panel_score',
@@ -293,11 +295,15 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def get_panel_evaluation_scores(self, obj):
         from .services import panelist_percentage_from_breakdowns
+        from .outcome_rules import policy_for, selected_key
         from .evaluator_identity import breakdown_identity
         legacy = self._legacy_panel_submissions(obj)
         groups = {}
         for row in self._active_breakdowns(obj):
             if row.evaluation_type == GradeBreakdown.EVAL_PANEL:
+                if policy_for(obj.schedule).get('per_concept') and (
+                    not row.source_submission_id or row.source_submission.concept_key != selected_key(obj.schedule)):
+                    continue
                 key = breakdown_identity(row, legacy)['panelist_key']
                 if key is None:
                     continue

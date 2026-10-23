@@ -3,6 +3,115 @@ import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('optional archive reviews do not make a completed stage incomplete', () {
+    final stage = {
+      'assessment_progress': {
+        'display_status': 'completed',
+        'is_completed': true,
+      },
+      'archive_complete': true,
+      'post': [
+        {
+          'type': 'post',
+          'required': false,
+          'submission': {'status': 'pending'},
+        },
+      ],
+    };
+    expect(TeamWorkflowStatus.archivePendingReviewCount(stage), 1);
+    expect(TeamWorkflowStatus.fromStage(stage).code, 'completed');
+  });
+  test('unrecorded panel outcomes never expose post-defense work', () {
+    for (final code in [
+      'awaiting_evaluation',
+      'evaluating',
+      'awaiting_verdict',
+      'awaiting_concept_selection',
+      'redefense_required',
+    ]) {
+      final stage = {
+        'has_done_schedule': true,
+        'is_defense_done': true,
+        'archive_complete': false,
+        'assessment_progress': {
+          'display_status': code,
+          'defense_approved': false,
+        },
+        'post': [
+          {'type': 'post', 'required': true, 'uploaded': false},
+        ],
+      };
+      expect(TeamWorkflowStatus.fromStage(stage).code, code);
+    }
+  });
+
+  test('repeat preparation follows current files and fresh endorsement', () {
+    final stage = <String, dynamic>{
+      'repeat_preparation': true,
+      'required_complete': false,
+      'endorsed': false,
+      'assessment_progress': {'display_status': 'redefense_required'},
+      'pre': [
+        {
+          'type': 'pre',
+          'required': true,
+          'uploaded': false,
+          'submission': {
+            'status': 'pending',
+            'files': [],
+            'file_history': [
+              {'status': 'accepted'},
+            ],
+          },
+        },
+      ],
+    };
+    expect(TeamWorkflowStatus.pendingReviewCount(stage), 0);
+    expect(TeamWorkflowStatus.fromStage(stage).code, 'awaiting_files');
+    stage['required_complete'] = true;
+    expect(TeamWorkflowStatus.fromStage(stage).code, 'awaiting_endorsement');
+    stage['endorsed'] = true;
+    expect(
+      TeamWorkflowStatus.fromStage(stage).code,
+      'ready_to_schedule_redefense',
+    );
+    expect(
+      DeliverablesTriageHelper.matchesFilter({
+        'selected_stage': stage,
+      }, TeamTriageFilter.readyRedefense),
+      isTrue,
+    );
+  });
+
+  test('an old locked optional file cannot hide the current outcome', () {
+    final stage = {
+      'assessment_progress': {'display_status': 'awaiting_concept_selection'},
+      'pre': [
+        {
+          'type': 'pre',
+          'required': false,
+          'can_faculty_review': false,
+          'submission': {
+            'status': 'pending',
+            'files': [
+              {'status': 'pending'},
+            ],
+          },
+        },
+      ],
+    };
+    expect(
+      TeamWorkflowStatus.fromStage(stage).code,
+      'awaiting_concept_selection',
+    );
+    expect(
+      DeliverablesTriageHelper.matchesFilter({
+        'selected_stage': stage,
+      }, TeamTriageFilter.awaitingVerdict),
+      isTrue,
+    );
+  });
+
   test('pending archive files never become an endorsement blocker', () {
     for (final scope in ['pit', 'capstone']) {
       final value = {
@@ -148,7 +257,7 @@ void main() {
         };
         expect(
           TeamWorkflowStatus.fromStage(value, scope: scope).label,
-          'Awaiting post-defense',
+          scope == 'pit' ? 'Awaiting post-defense' : 'Awaiting evaluation',
         );
         post['is_waived'] = true;
         expect(

@@ -58,6 +58,7 @@ class TeamData {
   bool isPosted;
   List<Map<String, dynamic>> submittedSubmissions;
   final List<Map<String, dynamic>> defenseMaterials;
+  final List<Map<String, dynamic>> assessmentConcepts;
 
   final bool isChair;
   String? verdict;
@@ -98,6 +99,7 @@ class TeamData {
     this.level = '',
     this.submittedSubmissions = const [],
     this.defenseMaterials = const [],
+    this.assessmentConcepts = const [],
     this.panelWeight = 50,
     this.peerWeight = 20,
     this.adviserWeight = 0,
@@ -138,6 +140,10 @@ class TeamData {
   Map<String, dynamic>? get conceptWorkflow {
     final raw = (workflowGrade?['workflow'] as Map? ?? {})['concept_workflow'];
     return raw is Map ? Map<String, dynamic>.from(raw) : null;
+  }
+  Map<String, dynamic>? get outcomeRule {
+    final value = (workflowGrade?['workflow'] as Map?)?['outcome_rule'];
+    return value is Map ? Map<String, dynamic>.from(value) : null;
   }
   bool get hasConceptWorkflow => conceptWorkflow != null;
   bool get hasPitConceptDecision =>
@@ -202,7 +208,7 @@ class TeamData {
 
   /// Counts valid answers for the configured target, including deliberate zero.
   /// Team criteria are counted once; individual criteria once per member.
-  EvaluationProgress progressFor(String? studentId) {
+  EvaluationProgress progressFor(String? studentId, {String? conceptKey}) {
     final definitions = (panelRubric?['criteria'] as List? ?? [])
         .whereType<Map>()
         .where((criterion) {
@@ -212,10 +218,15 @@ class TeamData {
           return target == (studentId == null ? 'team' : 'individual');
         })
         .toList();
+    if (assessmentConcepts.isNotEmpty && conceptKey == null) {
+      final results = assessmentConcepts.map((c) => progressFor(studentId, conceptKey: c['key'].toString()));
+      return EvaluationProgress(results.fold(0, (n, r) => n + r.entered), results.fold(0, (n, r) => n + r.required));
+    }
     final answers = isPosted ? submittedSubmissions : draftSubmissions;
     final scores = <String, num>{};
     for (final submission in answers) {
       if (submission['student_id']?.toString() != studentId) continue;
+      if (conceptKey != null && submission['concept_key'] != conceptKey) continue;
       for (final item
           in (submission['criteria_scores'] as List? ?? []).whereType<Map>()) {
         final score = item['score'];

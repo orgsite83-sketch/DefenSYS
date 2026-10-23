@@ -146,9 +146,7 @@ class AcademicProgressCard extends StatelessWidget {
   ) {
     final ink = DefensysTokens.textPrimaryOf(context);
     final muted = DefensysTokens.textSecondaryOf(context);
-    final finalized =
-        grade?['is_officially_complete'] == true ||
-        grade?['status'] == 'published';
+    final finalized = grade?['status'] == 'published';
     final score = asDouble(grade?['final_grade']);
     final verdict = grade?['verdict']?.toString() ?? '';
     final evaluated =

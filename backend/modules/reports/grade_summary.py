@@ -8,8 +8,10 @@ from grading.constants import PASS_GRADE_THRESHOLD
 
 GRADE_OUTCOME_NOTE = (
     "PIT pass/fail marks indicate event scores only and do not restrict participation or decide semester results. "
-    "Capstone outcome follows the recorded defense verdict. Without a verdict, the grade "
-    f"threshold is {PASS_GRADE_THRESHOLD:.0f}%. The average is for reference only. "
+    "Capstone outcome follows the recorded defense verdict. Configured hearings use the panel qualifying score; "
+    "academic totals do not approve a defense. For unconfigured legacy numeric results, the grade "
+    f"threshold is {PASS_GRADE_THRESHOLD:.0f}%. "
+    "The average is for reference only. "
     "A defense approval does not change the numeric grade."
 )
 
@@ -23,9 +25,25 @@ def grade_outcome_label(grade):
         )
     if grade.verdict:
         return grade.get_verdict_display()
+    if grade.uses_defense_verdict and grade.schedule_id and grade.schedule.assessment_policy.get('version') == 1:
+        return 'Awaiting defense decision'
     if grade.final_grade is None:
         return 'Pending grades'
     return 'Grade passed' if grade.result == 'passed' else 'Grade failed'
+
+
+def assessment_panel_submissions(grade, *, official=True):
+    """Never mix another hearing, void scores, or alternative concepts into a grade."""
+    rows = grade.panelist_submissions.filter(is_void=False)
+    if grade.schedule_id:
+        rows = rows.filter(schedule_id=grade.schedule_id)
+        from grading.grades.outcome_rules import policy_for, selected_key
+        if official and policy_for(grade.schedule).get('per_concept'):
+            key = selected_key(grade.schedule)
+            if key is None:
+                return rows.none()
+            rows = rows.filter(concept_key=key)
+    return rows.select_related('panelist', 'student').prefetch_related('criterion_scores')
 
 
 def summarize_grade_records(grade_records):

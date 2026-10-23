@@ -11,8 +11,8 @@ def stage_readiness_candidates(teams, stage=None):
     """Cheap superset; every candidate still goes through is_stage_ready.
 
     Never cache eligibility or replace progression, concept clearance, verdict,
-    or recovery checks. Include active schedules so their existing assessed
-    schedule reconciliation also runs, even when a team cannot be scheduled.
+    or recovery checks. Include active schedules so an assessed attempt can be
+    distinguished from an active presentation without rewriting its status.
     """
     from grading.grades.models import TeamGrade
     from defense.scheduler.models import DefenseSchedule
@@ -57,6 +57,11 @@ def stage_progression_blocker(team, stage):
         progress = get_stage_progress(team, previous)
         if not progress or progress.status not in (TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED):
             return f'{previous.label} must be completed, passed, and cleared before {stage.label}.'
+        from grading.grades.models import TeamGrade
+        from grading.grades.defense_workflow import passed_and_cleared, legacy_finalized_pass
+        grade = TeamGrade.objects.filter(team=team, semester=team.semester, defense_stage=previous).first()
+        if grade and (grade.status != TeamGrade.STATUS_PUBLISHED or not (passed_and_cleared(grade) or legacy_finalized_pass(grade))):
+            return f'{previous.label} must be completed, passed, and cleared before {stage.label}.'
         from repository.deliverables.services import post_deliverables_complete
         if not post_deliverables_complete(team, previous.label):
             return f'Post-defense deliverables for {previous.label} must be approved by the adviser before proceeding to {stage.label}.'
@@ -89,10 +94,9 @@ def is_stage_ready(team, stage):
     has_active = False
     for sched in active_scheds:
         sched_grade = sched.grade_records.first()
-        if sched_grade and sched_grade.verdict:
-            sched.status = DefenseSchedule.STATUS_DONE
-            sched.save(update_fields=['status', 'updated_at'])
-        else:
+        # Readiness is also used by GET serializers. An assessed attempt is not
+        # active, but status repair belongs to an explicit scheduling operation.
+        if not (sched_grade and sched_grade.verdict):
             has_active = True
     if has_active:
         return False
@@ -109,6 +113,13 @@ def is_stage_ready(team, stage):
     if get_deliverable_definitions_for_team(team, stage.label) and not required_complete(team, stage.label):
         return False
     if grade and getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
+        from grading.grades.outcome_rules import policy_for
+        if policy_for(grade.schedule).get('version') == 1:
+            progress = get_stage_progress(team, stage)
+            if not progress or progress.status != TeamStageProgress.STATUS_READY or not (
+                progress.ready_at and grade.verdict_at and progress.ready_at > grade.verdict_at):
+                return False
+            return True
         return not grade.redefense_verification_required or bool(grade.redefense_verified_at)
     if grade and grade.verdict in ('failed', 'project_rejected'):
         return bool(recovery_for(team, stage))
@@ -154,6 +165,12 @@ def was_stage_endorsed(team, stage):
         from .pit_rosters import endorsed
         return bool(stage and endorsed(team, stage.label))
     progress = get_stage_progress(team, stage)
+    if progress and progress.status == TeamStageProgress.STATUS_REDEFENSE:
+        from grading.grades.models import TeamGrade
+        from grading.grades.outcome_rules import policy_for
+        grade = TeamGrade.objects.filter(team=team, defense_stage=stage, semester=team.semester).first()
+        if grade and policy_for(grade.schedule).get('version') == 1:
+            return False
     return bool(progress and (progress.status in _ENDORSED_STATUSES or (
         progress.status == TeamStageProgress.STATUS_FAILED and progress.ready_at)))
 
@@ -196,7 +213,10 @@ def mark_stage_ready(team, stage, user=None):
         raise ValidationError('This defense is approved. Complete its required grading and revision clearance instead of re-endorsing it.')
     progress, _ = _progress_for(team, stage, user=user)
     progress.status = TeamStageProgress.STATUS_READY
-    progress.ready_at = progress.ready_at or timezone.now()
+    from grading.grades.outcome_rules import policy_for
+    needs_new_endorsement = bool(grade and grade.verdict == 'for_redefense'
+                                and policy_for(grade.schedule).get('version') == 1)
+    progress.ready_at = timezone.now() if needs_new_endorsement else progress.ready_at or timezone.now()
     progress.updated_by = user
     progress.save(update_fields=['status', 'ready_at', 'updated_by', 'updated_at'])
     _mirror_ready_stage(team, stage)
@@ -233,11 +253,11 @@ def mark_stage_result(grade, user=None):
 
     progress, _ = _progress_for(grade.team, grade.defense_stage, user=user)
     verdict = getattr(grade, 'verdict', '')
-    from grading.grades.defense_workflow import passed_and_cleared
+    from grading.grades.defense_workflow import passed_and_cleared, legacy_finalized_pass
     from repository.deliverables.services import post_deliverables_complete
     lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
     post_done = post_deliverables_complete(grade.team, lbl)
-    is_passed = grade.status == grade.STATUS_PUBLISHED and passed_and_cleared(grade) and post_done
+    is_passed = grade.status == grade.STATUS_PUBLISHED and (passed_and_cleared(grade) or legacy_finalized_pass(grade)) and post_done
 
     if is_passed:
         progress.status = TeamStageProgress.STATUS_PASSED

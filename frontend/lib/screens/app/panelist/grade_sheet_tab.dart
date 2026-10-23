@@ -77,6 +77,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   TextEditingController _verdictRemarksController = TextEditingController();
   TextEditingController _pitDecisionRemarksController = TextEditingController();
   String? _selectedVerdict;
+  String? _activeConceptKey;
+  String? _conceptOwner;
   DateTime? _revisionDeadline;
   bool _redefenseVerificationRequired = false;
   List<Map<String, dynamic>> _conceptDecisions = [];
@@ -156,6 +158,14 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     if (!identical(_lastTeam, team)) {
       _autoSaveTimer?.cancel();
       _lastTeam = team;
+      if (team.assessmentConcepts.isNotEmpty &&
+          (_conceptOwner != _identity(team) ||
+              !team.assessmentConcepts.any(
+                (c) => c['key'] == _activeConceptKey,
+              ))) {
+        _activeConceptKey = team.assessmentConcepts.first['key'].toString();
+      }
+      _conceptOwner = _identity(team);
       _formGeneration++;
       _selectedStudentIndex = 0;
       _draftSaveError = null;
@@ -174,11 +184,28 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       _verdictRemarksController = TextEditingController(
         text: team.verdictRemarks ?? '',
       );
-      _selectedVerdict = team.hasVerdict ? team.verdict : null;
-      _redefenseVerificationRequired = team.redefenseVerificationRequired;
-      final conceptWorkflow = (team.workflowGrade?['workflow'] as Map? ?? {})['concept_workflow'] as Map?;
+      _selectedVerdict = team.hasVerdict
+          ? team.verdict
+          : const [
+              'approved',
+              'for_redefense',
+            ].contains(team.outcomeRule?['outcome'])
+          ? team.outcomeRule!['outcome'] as String
+          : null;
+      _redefenseVerificationRequired =
+          team.outcomeRule == null && team.redefenseVerificationRequired;
+      final conceptWorkflow =
+          (team.workflowGrade?['workflow'] as Map? ?? {})['concept_workflow']
+              as Map?;
       _sectionProjectId = conceptWorkflow?['section_project_id'] as int?;
-      _conceptDecisions = ((conceptWorkflow?['hearing_concepts'] ?? conceptWorkflow?['concepts']) as List? ?? []).whereType<Map>().map((c) => Map<String, dynamic>.from(c)).toList();
+      _conceptDecisions =
+          ((conceptWorkflow?['hearing_concepts'] ??
+                          conceptWorkflow?['concepts'])
+                      as List? ??
+                  [])
+              .whereType<Map>()
+              .map((c) => Map<String, dynamic>.from(c))
+              .toList();
       _pitDecisionRemarksController.dispose();
       _pitDecisionRemarksController = TextEditingController(
         text: conceptWorkflow?['decision_remarks']?.toString() ?? '',
@@ -232,6 +259,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   void _hydrateSubmissions(List<Map<String, dynamic>> submissions) {
     for (final sub in submissions) {
+      if (_lastTeam?.assessmentConcepts.isNotEmpty == true &&
+          sub['concept_key'] != _activeConceptKey) {
+        continue;
+      }
       final rawStudentId = sub['student_id']?.toString();
       final remarks = (sub['remarks'] ?? '').toString();
       final scoresList = sub['criteria_scores'] as List? ?? [];
@@ -280,8 +311,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   ];
 
   bool _isComplete(TeamData team) {
-    final criteria = _requiredCriteria(team);
     if (team.targetType != 'team' && team.memberDetails.isEmpty) return false;
+    if (team.assessmentConcepts.isNotEmpty) {
+      return team.evaluationProgress.complete;
+    }
+    final criteria = _requiredCriteria(team);
     return criteria.isNotEmpty && criteria.every((c) => c.isScored);
   }
 
@@ -304,9 +338,14 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         if (c.isScored) {'criterion_id': c.id, 'score': c.score},
     ];
     return [
+      if (team.assessmentConcepts.isNotEmpty)
+        ...(team.isPosted ? team.submittedSubmissions : team.draftSubmissions)
+            .where((s) => s['concept_key'] != _activeConceptKey),
       if (_criteria.isNotEmpty)
         {
           'student_id': null,
+          if (team.assessmentConcepts.isNotEmpty)
+            'concept_key': _activeConceptKey,
           'criteria_scores': scores(_criteria),
           'remarks': _teamRemarksController.text,
         },
@@ -315,6 +354,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           if ((_studentCriteria[member.id] ?? []).isNotEmpty)
             {
               'student_id': int.tryParse(member.id) ?? member.id,
+              if (team.assessmentConcepts.isNotEmpty)
+                'concept_key': _activeConceptKey,
               'criteria_scores': scores(_studentCriteria[member.id]!),
               'remarks': _studentRemarksControllers[member.id]?.text ?? '',
             },
@@ -537,6 +578,46 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             _buildAvailabilityNotice(team),
             const SizedBox(height: 16),
           ],
+          if (team.assessmentConcepts.isNotEmpty) ...[
+            DropdownButtonFormField<String>(
+              key: ValueKey('concept-assessment-$_activeConceptKey'),
+              initialValue: _activeConceptKey,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Concept to assess',
+                border: OutlineInputBorder(),
+              ),
+              items: team.assessmentConcepts
+                  .map(
+                    (c) => DropdownMenuItem(
+                      value: c['key'].toString(),
+                      child: Text(
+                        c['title'].toString(),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _isSubmittingGrades || _isReviewingGrades
+                  ? null
+                  : (key) {
+                      if (key == null || key == _activeConceptKey) return;
+                      if (!team.isPosted && team.gradingAvailable) {
+                        _rememberDraft();
+                      }
+                      setState(() {
+                        _activeConceptKey = key;
+                        _lastTeam = null;
+                        _syncRubricForCurrentTeam();
+                      });
+                    },
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Score every concept separately. The selected concept contributes to the official academic grade once.',
+            ),
+            const SizedBox(height: 12),
+          ],
           if (unavailable)
             _buildRubricPreview(team)
           else if (!canScore)
@@ -550,7 +631,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             else
               _buildPanelistVerdictCard(team),
           ],
-          if (!team.usesDefenseVerdict && team.hasConceptWorkflow && !team.isLockedByDate) ...[
+          if (!team.usesDefenseVerdict &&
+              team.hasConceptWorkflow &&
+              !team.isLockedByDate) ...[
             const SizedBox(height: 14),
             if (team.isChair)
               _buildChairPitConceptCard(team)
@@ -753,7 +836,12 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Widget _buildEvaluationFooter(TeamData team) {
     final required = _requiredCriteria(team);
-    final entered = required.where((criterion) => criterion.isScored).length;
+    final entered = team.assessmentConcepts.isEmpty
+        ? required.where((criterion) => criterion.isScored).length
+        : team.evaluationProgress.entered;
+    final requiredCount = team.assessmentConcepts.isEmpty
+        ? required.length
+        : team.evaluationProgress.required;
     final complete = _isComplete(team);
     final panelPct = !complete
         ? null
@@ -809,8 +897,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     children: [
                       Text(
                         complete
-                            ? 'Your panel score ${panelPct!.toStringAsFixed(1)}%'
-                            : '$entered of ${required.length} scores entered',
+                            ? team.assessmentConcepts.isNotEmpty
+                                  ? 'All concept assessments complete'
+                                  : 'Your panel score ${panelPct!.toStringAsFixed(1)}%'
+                            : '$entered of $requiredCount scores entered',
                         key: const ValueKey('evaluation-progress'),
                         style: const TextStyle(
                           fontSize: 11,
@@ -822,7 +912,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                           liveRegion: true,
                           child: Text(
                             complete
-                                ? '$entered/${required.length} scored · $saveLabel'
+                                ? '$entered/$requiredCount scored · $saveLabel'
                                 : saveLabel,
                             key: const ValueKey('draft-save-state'),
                             maxLines: 1,
@@ -937,6 +1027,28 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }
 
   void _goToNextUnscored(TeamData team) {
+    if (team.assessmentConcepts.isNotEmpty &&
+        _requiredCriteria(team).every((c) => c.isScored)) {
+      _rememberDraft();
+      final missing = team.assessmentConcepts.where((concept) {
+        final key = concept['key'].toString();
+        if (!team.progressFor(null, conceptKey: key).complete &&
+            team.targetType != 'individual') {
+          return true;
+        }
+        return team.targetType != 'team' &&
+            team.memberDetails.any(
+              (m) => !team.progressFor(m.id, conceptKey: key).complete,
+            );
+      }).firstOrNull;
+      if (missing != null) {
+        setState(() {
+          _activeConceptKey = missing['key'].toString();
+          _lastTeam = null;
+          _syncRubricForCurrentTeam();
+        });
+      }
+    }
     Criterion? next;
     setState(() {
       if (_criteria.any((criterion) => !criterion.isScored)) {
@@ -1237,6 +1349,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             teamCriteria: _criteria,
             studentCriteria: Map.of(_studentCriteria),
             complete: _isComplete(team),
+            conceptSubmissions: team.assessmentConcepts.isEmpty
+                ? const []
+                : submissions,
           ),
         ),
       );
@@ -1568,6 +1683,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         : !team.isPosted
         ? 'Panel grading must be submitted before issuing a verdict.'
         : 'The official verdict is currently unavailable. Refresh this assignment for the latest status.';
+    final outcomeRule = team.outcomeRule;
+    bool allowed(String value) =>
+        outcomeRule == null ||
+        (outcomeRule['allowed_verdicts'] as List? ?? []).contains(value);
     final isForRedefense = _selectedVerdict == 'for_redefense';
     final isRevisions = _selectedVerdict == 'approved_with_revisions';
 
@@ -1722,22 +1841,44 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
               const SizedBox(height: 8),
 
+              if (outcomeRule != null) ...[
+                Text(
+                  'Panel qualifying score: ${outcomeRule['qualifying_score']}%. Outcome: ${outcomeRule['outcome'] == 'pending'
+                      ? 'Awaiting complete panel assessments'
+                      : outcomeRule['outcome'] == 'approved'
+                      ? 'Qualifies for approval'
+                      : 'Re-defense required'}.',
+                ),
+                const SizedBox(height: 12),
+              ],
               // Radio Options
               if (_conceptDecisions.isNotEmpty) ...[
                 if (_sectionProjectId != null)
-                  TextButton.icon(icon: const Icon(Icons.account_tree_outlined),
+                  TextButton.icon(
+                    icon: const Icon(Icons.account_tree_outlined),
                     label: const Text('Open section system proposals'),
                     onPressed: () async {
-                      await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
-                        SectionConceptWorkspace(projectId: _sectionProjectId!)));
+                      await Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => SectionConceptWorkspace(
+                            projectId: _sectionProjectId!,
+                          ),
+                        ),
+                      );
                       await widget.onRefresh?.call();
-                    }),
-                ConceptVerdictFields(concepts: _conceptDecisions, enabled: canEditVerdict,
-                  onChanged: (value) => setState(() => _conceptDecisions = value)),
+                    },
+                  ),
+                ConceptVerdictFields(
+                  concepts: _conceptDecisions,
+                  enabled: canEditVerdict,
+                  forRedefense: _selectedVerdict == 'for_redefense',
+                  onChanged: (value) =>
+                      setState(() => _conceptDecisions = value),
+                ),
                 const SizedBox(height: 14),
               ],
               _verdictRadioOption(
-                enabled: canEditVerdict,
+                enabled: canEditVerdict && allowed('approved'),
                 value: 'approved',
                 title: 'Approved',
                 description:
@@ -1747,7 +1888,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
               const SizedBox(height: 8),
               _verdictRadioOption(
-                enabled: canEditVerdict,
+                enabled: canEditVerdict && allowed('approved_with_revisions'),
                 value: 'approved_with_revisions',
                 title: 'Approved with Revisions',
                 description:
@@ -1757,18 +1898,18 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
               const SizedBox(height: 8),
               _verdictRadioOption(
-                enabled: canEditVerdict,
+                enabled: canEditVerdict && allowed('for_redefense'),
                 value: 'for_redefense',
                 title: 'For Re-defense',
                 description:
-                    _conceptDecisions.isNotEmpty ? 'A new concept hearing is required. The configured review and assessment policies apply.' : 'A new panel assessment is required. Retain adviser and peer grades and the prior endorsement.',
+                    'A new panel assessment is required. The configured assessment policy applies; required files need faculty review and endorsement.',
                 icon: Icons.replay_rounded,
                 color: const Color(0xFFEF4444),
               ),
 
               const SizedBox(height: 8),
               _verdictRadioOption(
-                enabled: canEditVerdict,
+                enabled: canEditVerdict && allowed('failed'),
                 value: 'failed',
                 title: 'Failed',
                 description:
@@ -1778,21 +1919,22 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
               const SizedBox(height: 8),
               _verdictRadioOption(
-                enabled: canEditVerdict,
+                enabled: canEditVerdict && allowed('project_rejected'),
                 value: 'project_rejected',
                 title: 'Project Rejected',
-                description:
-                    team.isCapstone
-                        ? 'The concept must be replaced after an admin records authorization. Keep the team and adviser.'
-                        : 'The project is rejected. Choose For Re-defense when replacement concepts may be submitted.',
+                description: team.isCapstone
+                    ? 'The concept must be replaced after an admin records authorization. Keep the team and adviser.'
+                    : 'The project is rejected. Choose For Re-defense when replacement concepts may be submitted.',
                 icon: Icons.block_outlined,
                 color: const Color(0xFFEF4444),
               ),
-              if (isForRedefense)
+              if (isForRedefense && outcomeRule == null)
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(
-                    team.isCapstone ? 'Require adviser verification of corrections' : 'Require instructor review before re-defense',
+                    team.isCapstone
+                        ? 'Require adviser verification of corrections'
+                        : 'Require instructor review before re-defense',
                   ),
                   subtitle: Text(
                     _conceptDecisions.isNotEmpty
@@ -2160,8 +2302,15 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         _isSubmittingVerdict) {
       return;
     }
-    final conceptError = conceptDecisionError(_conceptDecisions, _selectedVerdict!);
-    if (conceptError != null) { showValidationToast(context, conceptError); return; }
+    final conceptError = conceptDecisionError(
+      _conceptDecisions,
+      _selectedVerdict!,
+      requirePlan: true,
+    );
+    if (conceptError != null) {
+      showValidationToast(context, conceptError);
+      return;
+    }
     final directives = _verdictRemarksController.text.trim();
     if ([
           'for_redefense',
@@ -2180,8 +2329,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       final confirmed = await confirmDestructive(
         context,
         title: 'Issue Re-defense Verdict?',
-        message:
-            _conceptDecisions.isNotEmpty ? 'This records the current hearing and prepares the next concept attempt. Replacement papers follow the configured review policy.' : 'This attempt requires a new panel assessment. When the next attempt is scheduled, panel grades and the verdict reset; adviser and peer grades stay. ${_redefenseVerificationRequired ? 'The adviser must verify corrections before scheduling.' : 'No new adviser endorsement is required.'}',
+        message: team.outcomeRule != null
+            ? 'This records the hearing and prepares the next attempt. Submit the requested materials for faculty review and a fresh endorsement. Panel assessment is repeated; adviser and peer scores follow the stage policy.'
+            : _conceptDecisions.isNotEmpty
+            ? 'This records the current hearing and prepares the next concept attempt. Replacement papers follow the configured review policy.'
+            : 'This attempt requires a new panel assessment. When the next attempt is scheduled, panel grades and the verdict reset; adviser and peer grades stay. ${_redefenseVerificationRequired ? 'The adviser must verify corrections before scheduling.' : 'No new adviser endorsement is required.'}',
         confirmLabel: 'Issue Re-defense',
       );
       if (!confirmed || !mounted) return;
@@ -2222,8 +2374,12 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         'verdict': _selectedVerdict,
         'verdict_remarks': directives,
         'redefense_verification_required': _redefenseVerificationRequired,
-        if (_conceptDecisions.isNotEmpty) 'concept_decisions': _conceptDecisions,
-        'replacement_concepts_required': _conceptDecisions.isNotEmpty && _conceptDecisions.every((c) => c['decision'] == 'rejected'),
+        if (_conceptDecisions.isNotEmpty)
+          'concept_decisions': conceptDecisionsForOutcome(
+            _conceptDecisions,
+            _selectedVerdict!,
+          ),
+        'replacement_concepts_required': false,
         if (_revisionDeadline != null &&
             _selectedVerdict == 'approved_with_revisions')
           'revision_deadline': DateFormat(
@@ -2258,7 +2414,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         if (_selectedVerdict == 'for_redefense') {
           showSuccessToast(
             context,
-            _conceptDecisions.isNotEmpty
+            team.outcomeRule != null
+                ? 'Re-defense recorded. Submit the requested materials for faculty review and a fresh endorsement.'
+                : _conceptDecisions.isNotEmpty
                 ? 'Concept hearing recorded. Complete the required papers and clearance before scheduling the next attempt.'
                 : _redefenseVerificationRequired
                 ? 'Re-defense recorded. Adviser verification is required before scheduling.'
@@ -2294,7 +2452,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Widget _buildChairPitConceptCard(TeamData team) {
     final hasDecision = team.hasPitConceptDecision;
-    final canRecord = team.canRecordPitConceptDecision && !_isSubmittingPitDecision;
+    final canRecord =
+        team.canRecordPitConceptDecision && !_isSubmittingPitDecision;
     final unavailableReason = team.pitDecisionUnavailableReason.isNotEmpty
         ? team.pitDecisionUnavailableReason
         : team.gradingUnavailableReason.isNotEmpty
@@ -2304,8 +2463,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         : 'The concept decision is currently unavailable. Refresh this assignment for the latest status.';
 
     final bool isSharedSection = _sectionProjectId != null;
-    final bool isSingleProject = !isSharedSection && _conceptDecisions.length == 1;
-    final bool sectionSystemSelected = _conceptDecisions.any((c) => c['section_selected'] == true);
+    final bool isSingleProject =
+        !isSharedSection && _conceptDecisions.length == 1;
+    final bool sectionSystemSelected = _conceptDecisions.any(
+      (c) => c['section_selected'] == true,
+    );
 
     Color cardBorderColor;
     if (hasDecision) {
@@ -2344,7 +2506,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
-                    isSingleProject ? Icons.gavel_rounded : Icons.lightbulb_rounded,
+                    isSingleProject
+                        ? Icons.gavel_rounded
+                        : Icons.lightbulb_rounded,
                     size: 20,
                     color: DefensysTokens.maroonOf(context),
                   ),
@@ -2368,8 +2532,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                         isSingleProject
                             ? 'Issue the defense verdict for ${team.name}.'
                             : (isSharedSection
-                                ? 'Record the linked module outcome for ${team.name}.'
-                                : 'Select the approved project concept for ${team.name}.'),
+                                  ? 'Record the linked module outcome for ${team.name}.'
+                                  : 'Select the approved project concept for ${team.name}.'),
                         style: TextStyle(
                           fontSize: 12,
                           color: DefensysTokens.textSecondaryOf(context),
@@ -2398,7 +2562,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     if (team.pitSelectedTitle?.isNotEmpty == true) ...[
                       Row(
                         children: [
-                          Icon(Icons.check_circle_outline, size: 16, color: Colors.green.shade700),
+                          Icon(
+                            Icons.check_circle_outline,
+                            size: 16,
+                            color: Colors.green.shade700,
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
@@ -2416,16 +2584,28 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                       ),
                       const SizedBox(height: 6),
                     ],
-                    if (team.conceptWorkflow?['decided_by_name']?.toString().isNotEmpty == true)
+                    if (team.conceptWorkflow?['decided_by_name']
+                            ?.toString()
+                            .isNotEmpty ==
+                        true)
                       Text(
                         'Recorded by: ${team.conceptWorkflow!['decided_by_name']}',
-                        style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: DefensysTokens.textSecondaryOf(context),
+                        ),
                       ),
-                    if (team.conceptWorkflow?['decision_remarks']?.toString().isNotEmpty == true) ...[
+                    if (team.conceptWorkflow?['decision_remarks']
+                            ?.toString()
+                            .isNotEmpty ==
+                        true) ...[
                       const SizedBox(height: 6),
                       Text(
                         'Feedback / Directives: ${team.conceptWorkflow!['decision_remarks']}',
-                        style: TextStyle(fontSize: 12, color: DefensysTokens.textPrimaryOf(context)),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: DefensysTokens.textPrimaryOf(context),
+                        ),
                       ),
                     ],
                   ],
@@ -2463,16 +2643,30 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                           if (isSharedSection && !sectionSystemSelected) ...[
                             const SizedBox(height: 8),
                             TextButton.icon(
-                              icon: const Icon(Icons.account_tree_outlined, size: 16),
-                              label: const Text('Open Section System Proposals'),
+                              icon: const Icon(
+                                Icons.account_tree_outlined,
+                                size: 16,
+                              ),
+                              label: const Text(
+                                'Open Section System Proposals',
+                              ),
                               style: TextButton.styleFrom(
-                                foregroundColor: DefensysTokens.maroonOf(context),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                foregroundColor: DefensysTokens.maroonOf(
+                                  context,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
                               ),
                               onPressed: () async {
-                                await Navigator.of(context).push(MaterialPageRoute<void>(
-                                  builder: (_) => SectionConceptWorkspace(projectId: _sectionProjectId!),
-                                ));
+                                await Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => SectionConceptWorkspace(
+                                      projectId: _sectionProjectId!,
+                                    ),
+                                  ),
+                                );
                                 await widget.onRefresh?.call();
                               },
                             ),
@@ -2504,15 +2698,25 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     ),
                     TextButton.icon(
                       icon: const Icon(Icons.open_in_new, size: 14),
-                      label: const Text('Section Workspace', style: TextStyle(fontSize: 12)),
+                      label: const Text(
+                        'Section Workspace',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       style: TextButton.styleFrom(
                         foregroundColor: DefensysTokens.maroonOf(context),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                       ),
                       onPressed: () async {
-                        await Navigator.of(context).push(MaterialPageRoute<void>(
-                          builder: (_) => SectionConceptWorkspace(projectId: _sectionProjectId!),
-                        ));
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SectionConceptWorkspace(
+                              projectId: _sectionProjectId!,
+                            ),
+                          ),
+                        );
                         await widget.onRefresh?.call();
                       },
                     ),
@@ -2555,11 +2759,15 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   fillColor: DefensysTokens.surfaceHigherOf(context),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+                    borderSide: BorderSide(
+                      color: DefensysTokens.borderOf(context),
+                    ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+                    borderSide: BorderSide(
+                      color: DefensysTokens.borderOf(context),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -2577,8 +2785,12 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 child: TactileButton.primary(
                   key: const ValueKey('submit-pit-concept-decision-btn'),
                   label: _isSubmittingPitDecision
-                      ? (isSingleProject ? 'Submitting Verdict...' : 'Submitting Decision...')
-                      : (isSingleProject ? 'Submit Project Verdict' : 'Submit Concept Decision'),
+                      ? (isSingleProject
+                            ? 'Submitting Verdict...'
+                            : 'Submitting Decision...')
+                      : (isSingleProject
+                            ? 'Submit Project Verdict'
+                            : 'Submit Concept Decision'),
                   isLoading: _isSubmittingPitDecision,
                   onPressed: _isSubmittingPitDecision || !canRecord
                       ? null
@@ -2599,7 +2811,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Widget _buildPanelistPitConceptCard(TeamData team) {
     final bool isSharedSection = _sectionProjectId != null;
-    final bool isSingleProject = !isSharedSection && _conceptDecisions.length == 1;
+    final bool isSingleProject =
+        !isSharedSection && _conceptDecisions.length == 1;
 
     if (!team.hasPitConceptDecision) {
       return Card(
@@ -2610,14 +2823,21 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              Icon(Icons.info_outline, size: 20, color: DefensysTokens.textSecondaryOf(context)),
+              Icon(
+                Icons.info_outline,
+                size: 20,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   isSingleProject
                       ? 'The official project verdict will be submitted by the Panel Chair or PIT Lead.'
                       : 'The official concept decision will be selected by the Panel Chair or PIT Lead.',
-                  style: TextStyle(fontSize: 12, color: DefensysTokens.textPrimaryOf(context)),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
                 ),
               ),
             ],
@@ -2651,7 +2871,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             Row(
               children: [
                 Icon(
-                  isSingleProject ? Icons.gavel_rounded : Icons.lightbulb_rounded,
+                  isSingleProject
+                      ? Icons.gavel_rounded
+                      : Icons.lightbulb_rounded,
                   size: 18,
                   color: DefensysTokens.maroon,
                 ),
@@ -2677,17 +2899,30 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 isSingleProject
                     ? 'Project Proposal: ${team.pitSelectedTitle}'
                     : 'Selected Project: ${team.pitSelectedTitle}',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: DefensysTokens.textPrimaryOf(context)),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
               ),
             ],
-            if (team.conceptWorkflow?['decided_by_name']?.toString().isNotEmpty == true) ...[
+            if (team.conceptWorkflow?['decided_by_name']
+                    ?.toString()
+                    .isNotEmpty ==
+                true) ...[
               const SizedBox(height: 4),
               Text(
                 'Recorded by: ${team.conceptWorkflow!['decided_by_name']}',
-                style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
               ),
             ],
-            if (team.conceptWorkflow?['decision_remarks']?.toString().isNotEmpty == true) ...[
+            if (team.conceptWorkflow?['decision_remarks']
+                    ?.toString()
+                    .isNotEmpty ==
+                true) ...[
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
@@ -2699,7 +2934,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 ),
                 child: Text(
                   team.conceptWorkflow!['decision_remarks'].toString(),
-                  style: TextStyle(fontSize: 12, color: DefensysTokens.textPrimaryOf(context)),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
                 ),
               ),
             ],
@@ -2713,18 +2951,25 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     if (!team.canRecordPitConceptDecision || _isSubmittingPitDecision) return;
 
     final bool isSharedSection = _sectionProjectId != null;
-    final bool isSingleProject = !isSharedSection && _conceptDecisions.length == 1;
+    final bool isSingleProject =
+        !isSharedSection && _conceptDecisions.length == 1;
 
-    final selectedApproved = _conceptDecisions.where(
-      (c) => c['decision'] == 'approved' || c['decision'] == 'approved_with_revisions',
-    ).toList();
+    final selectedApproved = _conceptDecisions
+        .where(
+          (c) =>
+              c['decision'] == 'approved' ||
+              c['decision'] == 'approved_with_revisions',
+        )
+        .toList();
     if (!isSingleProject && selectedApproved.length > 1) {
       showValidationToast(context, 'Select only one approved concept.');
       return;
     }
-    final allHandled = _conceptDecisions.isNotEmpty && _conceptDecisions.every(
-      (c) => (c['decision']?.toString().isNotEmpty ?? false),
-    );
+    final allHandled =
+        _conceptDecisions.isNotEmpty &&
+        _conceptDecisions.every(
+          (c) => (c['decision']?.toString().isNotEmpty ?? false),
+        );
     if (!allHandled) {
       showValidationToast(
         context,
@@ -2735,7 +2980,18 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       return;
     }
 
-    final outcome = selectedApproved.isNotEmpty ? selectedApproved.first['decision'] : 'for_redefense';
+    final outcome = selectedApproved.isNotEmpty
+        ? selectedApproved.first['decision']
+        : 'for_redefense';
+    final planError = conceptDecisionError(
+      _conceptDecisions,
+      '$outcome',
+      requirePlan: true,
+    );
+    if (planError != null) {
+      showValidationToast(context, planError);
+      return;
+    }
     final remarks = _pitDecisionRemarksController.text.trim();
     if (outcome != 'approved' && remarks.isEmpty) {
       showValidationToast(
@@ -2749,7 +3005,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
     final confirmed = await confirmLock(
       context,
-      title: isSingleProject ? 'Confirm Project Verdict' : 'Confirm Concept Decision',
+      title: isSingleProject
+          ? 'Confirm Project Verdict'
+          : 'Confirm Concept Decision',
       message: isSingleProject
           ? '${team.name}: Submit official defense verdict for this project proposal?\n\nThis records the panel evaluation.'
           : '${team.name}: Submit official concept decision?\n\nThis records the approved project concept.',
@@ -2761,11 +3019,14 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }
 
   Future<void> _submitPitConceptDecision(TeamData team) async {
-    final bool isSingleProject = _sectionProjectId == null && _conceptDecisions.length == 1;
+    final bool isSingleProject =
+        _sectionProjectId == null && _conceptDecisions.length == 1;
     setState(() => _isSubmittingPitDecision = true);
     showInfoToast(
       context,
-      isSingleProject ? 'Recording project verdict...' : 'Recording concept decision...',
+      isSingleProject
+          ? 'Recording project verdict...'
+          : 'Recording concept decision...',
     );
 
     try {
@@ -2782,7 +3043,17 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         'action': 'pit_decision',
         'review_token': reviewToken,
         'reason': remarks,
-        'concepts': _conceptDecisions,
+        'concepts': conceptDecisionsForOutcome(
+          _conceptDecisions,
+          _conceptDecisions.any(
+                (c) => [
+                  'approved',
+                  'approved_with_revisions',
+                ].contains(c['decision']),
+              )
+              ? 'approved'
+              : 'for_redefense',
+        ),
       };
 
       final response = await httpClient.post(

@@ -23,8 +23,9 @@ def endorsement_blocker(team, stage_label):
         return 'Only teams in the active semester can be reviewed and endorsed.'
     from .concepts import stage_for
     stage = stage_for(team, stage_label)
+    from .redefense import preparing
     endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
-    if endorsed:
+    if endorsed and not preparing(team, stage):
         return 'This team is already endorsed.'
     schedules = DefenseSchedule.objects.filter(
         team=team, project_version=team.project_version, semester=team.semester,
@@ -34,6 +35,8 @@ def endorsement_blocker(team, stage_label):
     from .concepts import latest_round
     current = latest_round(team, stage)
     preparing_next = bool(current and current.number > 1 and not current.schedule_id)
+    if not current:
+        preparing_next = preparing(team, stage)
     if not preparing_next and (schedules.exists() or is_stage_defense_done(team, stage_label)):
         return 'This defense is already scheduled or complete.'
     config = (StageGradingConfig.objects.filter(defense_stage=stage, semester=team.semester)

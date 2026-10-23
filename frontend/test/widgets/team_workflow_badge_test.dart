@@ -19,6 +19,8 @@ void main() {
             'awaiting_evaluation',
             'evaluating',
             'awaiting_verdict',
+            'awaiting_concept_selection',
+            'ready_to_schedule_redefense',
             'grading_incomplete',
             'awaiting_completion',
             'pending_post_defense',

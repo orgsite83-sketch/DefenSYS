@@ -5,8 +5,9 @@ import 'document_policy_editor.dart';
 
 String? conceptDecisionError(
   List<Map<String, dynamic>> concepts,
-  String verdict,
-) {
+  String verdict, {
+  bool requirePlan = false,
+}) {
   if (concepts.isEmpty) return null;
   final shared = concepts.any((c) => c.containsKey('system_title'));
   final isSingle = !shared && concepts.length == 1;
@@ -35,6 +36,9 @@ String? conceptDecisionError(
           : 'Explain each rejected concept or required revision.';
     }
     if (decision == 'approved' || decision == 'approved_with_revisions') {
+      if (concept['qualifies'] == false) {
+        return 'Select a concept whose panel assessment meets the qualifying score.';
+      }
       selected.add(concept);
     }
   }
@@ -49,8 +53,37 @@ String? conceptDecisionError(
         ? 'An approved proposal requires an approval verdict for this hearing.'
         : 'An approved concept requires an approval verdict for this hearing.';
   }
+  if (requirePlan && verdict == 'for_redefense') {
+    final planned = conceptDecisionsForOutcome(concepts, verdict);
+    final requested = planned.where((c) => c['next_action'] != 'omit');
+    if (requested.isEmpty) {
+      return 'Request at least one concept for the next hearing.';
+    }
+    for (final concept in requested) {
+      if ('${concept['remarks'] ?? ''}'.trim().isEmpty) {
+        return 'Record the panel instructions for every requested concept.';
+      }
+      if (shared && concept['section_selected'] != true) {
+        return 'Request only the module linked to the selected shared system.';
+      }
+    }
+  }
   return null;
 }
+
+List<Map<String, dynamic>> conceptDecisionsForOutcome(
+  List<Map<String, dynamic>> concepts,
+  String verdict,
+) => [
+  for (final concept in concepts)
+    {
+      ...concept,
+      if (verdict == 'for_redefense')
+        'next_action':
+            concept['next_action'] ??
+            (concept['decision'] == 'revise' ? 'revise' : 'omit'),
+    },
+];
 
 class ConceptVerdictFields extends StatelessWidget {
   const ConceptVerdictFields({
@@ -59,16 +92,29 @@ class ConceptVerdictFields extends StatelessWidget {
     required this.onChanged,
     this.enabled = true,
     this.pit = false,
+    this.forRedefense = false,
   });
   final List<Map<String, dynamic>> concepts;
   final ValueChanged<List<Map<String, dynamic>>> onChanged;
   final bool enabled;
   final bool pit;
+  final bool forRedefense;
   @override
   Widget build(BuildContext context) {
     final shared = concepts.any((c) => c.containsKey('system_title'));
     final selected = concepts.indexWhere((c) => c['section_selected'] == true);
     final isSingle = !shared && concepts.length == 1;
+    final planning =
+        forRedefense ||
+        (pit &&
+            concepts.every(
+              (c) =>
+                  '${c['decision'] ?? ''}'.isNotEmpty &&
+                  ![
+                    'approved',
+                    'approved_with_revisions',
+                  ].contains(c['decision']),
+            ));
     List<Map<String, dynamic>> updatedConcepts() => [
       for (var i = 0; i < concepts.length; i++)
         if (shared && i != selected)
@@ -97,8 +143,8 @@ class ConceptVerdictFields extends StatelessWidget {
                 : isSingle
                 ? 'Evaluate this project defense: determine whether the proposal is approved, requires revisions, or needs re-defense.'
                 : pit
-                ? 'Select one concept to become the official project. Record a decision for every proposal. Reject all proposals to request a replacement set.'
-                : 'Select one approved concept for an approval verdict. If all are rejected, choose For re-defense to request replacement concepts.',
+                ? 'Select one concept to become the official project. For another hearing, specify which concepts to revise or replace.'
+                : 'Select one qualifying concept for approval. For re-defense, specify the concepts and corrections for the next hearing.',
           ),
           for (final i in List.generate(concepts.length, (i) => i))
             Padding(
@@ -111,6 +157,12 @@ class ConceptVerdictFields extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 6),
+                  if (concepts[i].containsKey('panel_score')) ...[
+                    Text(
+                      'Panel assessment: ${concepts[i]['panel_score'] ?? 'Pending'}% · ${concepts[i]['qualifies'] == true ? 'Qualifies' : 'Does not qualify yet'}',
+                    ),
+                    const SizedBox(height: 6),
+                  ],
                   if (!shared || i == selected)
                     WorkflowChoice(
                       value: '${concepts[i]['decision'] ?? ''}',
@@ -126,15 +178,17 @@ class ConceptVerdictFields extends StatelessWidget {
                             : isSingle
                             ? 'Choose project verdict'
                             : 'Choose concept decision',
-                        if (!concepts[i].containsKey('system_title') ||
-                            concepts[i]['section_selected'] == true)
+                        if (concepts[i]['qualifies'] != false &&
+                            (!concepts[i].containsKey('system_title') ||
+                                concepts[i]['section_selected'] == true))
                           'approved': shared
                               ? 'Approved module'
                               : isSingle
                               ? 'Approved'
                               : 'Approved concept',
-                        if (!concepts[i].containsKey('system_title') ||
-                            concepts[i]['section_selected'] == true)
+                        if (concepts[i]['qualifies'] != false &&
+                            (!concepts[i].containsKey('system_title') ||
+                                concepts[i]['section_selected'] == true))
                           'approved_with_revisions': 'Approved with revisions',
                         'rejected': shared ? 'Module rejected' : 'Rejected',
                         if (!shared && !isSingle)
@@ -162,6 +216,27 @@ class ConceptVerdictFields extends StatelessWidget {
                         onChanged(updated);
                       },
                     ),
+                  if (planning && (!shared || i == selected)) ...[
+                    const SizedBox(height: 10),
+                    const Text('Next hearing'),
+                    const SizedBox(height: 6),
+                    WorkflowChoice(
+                      key: ValueKey('${concepts[i]['key']}-next-hearing'),
+                      value:
+                          '${concepts[i]['next_action'] ?? (concepts[i]['decision'] == 'revise' ? 'revise' : 'omit')}',
+                      enabled: enabled,
+                      options: const {
+                        'omit': 'Not requested',
+                        'revise': 'Revise and present again',
+                        'replace': 'Submit a replacement concept',
+                      },
+                      onChanged: (value) {
+                        final updated = updatedConcepts();
+                        updated[i]['next_action'] = value;
+                        onChanged(updated);
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -167,7 +167,7 @@ def _complete_passing_grades(scope):
         final_grade__isnull=False,
     )
     if scope == TeamGrade.SCOPE_CAPSTONE:
-        grades = grades.filter(final_grade__gte=PASS_GRADE_THRESHOLD, status=TeamGrade.STATUS_PUBLISHED).filter(
+        grades = grades.filter(status=TeamGrade.STATUS_PUBLISHED).filter(
             Q(verdict=TeamGrade.VERDICT_APPROVED) | Q(
                 verdict=TeamGrade.VERDICT_APPROVED_WITH_REVISIONS, revisions_cleared_at__isnull=False)
         ).filter(Q(adviser_weight=0) | Q(adviser_score__isnull=False))
@@ -604,7 +604,9 @@ def capstone_upload_diagnostics(semester=None):
     )
     ready_for_archive = len(capstone_archive_upload_queue(semester=semester))
     unpublished_passed = capstone_grades.filter(
-        final_grade__gte=PASS_GRADE_THRESHOLD,
+        Q(verdict=TeamGrade.VERDICT_APPROVED) | Q(
+            verdict=TeamGrade.VERDICT_APPROVED_WITH_REVISIONS, revisions_cleared_at__isnull=False),
+        final_grade__isnull=False,
     ).exclude(
         status=TeamGrade.STATUS_PUBLISHED,
     ).count()

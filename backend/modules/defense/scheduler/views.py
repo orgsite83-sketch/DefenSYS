@@ -554,6 +554,7 @@ class PanelistAssignmentsView(APIView):
             for sub in subs:
                 submissions_data.append({
                     'student_id': sub.student_id,
+                    'concept_key': sub.concept_key,
                     'remarks': sub.remarks or '',
                     'criteria_scores': [
                         {
@@ -835,6 +836,7 @@ class PanelistGradeSubmissionView(APIView):
                         expected_context=request.data.get('evaluation_context'),
                         remarks=item_remarks,
                         student=student,
+                        concept_key=item.get('concept_key', ''),
                     )
 
             PanelistEvaluationDraft.objects.filter(schedule=schedule, panelist=panelist).delete()
@@ -868,7 +870,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     from grading.grades.serializers import TeamGradeSerializer
     from .progress import schedule_progress
     team = schedule.team
-    progress = schedule_progress(schedule)
+    progress = schedule_progress(schedule, reconcile_status=False)
     unavailable_reason = grading_unavailable_reason(schedule, team_grade)
     is_capstone = schedule.scope == DefenseSchedule.SCOPE_CAPSTONE
     uses_verdict = team_grade.uses_defense_verdict if team_grade else is_capstone
@@ -985,6 +987,8 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'room': schedule.room,
         'grade_weights': grade_weights,
         'panel_rubric': panel_rubric,
+        'assessment_policy': schedule.assessment_policy,
+        'assessment_concepts': hearing.concepts if hearing and schedule.assessment_policy.get('per_concept') else [],
         'is_posted': is_posted,
         'is_submitted': is_posted,
         'schedule_status': schedule.status,
@@ -1099,6 +1103,7 @@ class GuestPanelistAssignmentsView(APIView):
         for sub in subs:
             submissions_data.append({
                 'student_id': sub.student_id,
+                    'concept_key': sub.concept_key,
                 'remarks': sub.remarks or '',
                 'criteria_scores': [
                     {
@@ -1287,6 +1292,7 @@ class GuestPanelistGradeSubmissionView(APIView):
                         expected_context=request.data.get('evaluation_context'),
                         remarks=item_remarks,
                         student=student,
+                        concept_key=item.get('concept_key', ''),
                     )
 
             PanelistEvaluationDraft.objects.filter(schedule=schedule, guest_code_id=principal.guest_code_id).delete()

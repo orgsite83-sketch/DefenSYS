@@ -291,16 +291,17 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
   // ── Executive KPI Summary Strip ──
   Widget _buildKpiSummary(List<Map<String, dynamic>> teams) {
     final total = teams.length;
-    final avgScore = total > 0
-        ? (teams.fold<double>(
+    final scored = teams.where((row) => row['percentage'] is num).toList();
+    final avgScore = scored.isNotEmpty
+        ? (scored.fold<double>(
                 0.0,
                 (sum, r) =>
                     sum + ((r['percentage'] as num?)?.toDouble() ?? 0.0),
               ) /
-              total)
+              scored.length)
         : 0.0;
-    final topScore = teams.isNotEmpty
-        ? teams
+    final topScore = scored.isNotEmpty
+        ? scored
               .map((r) => (r['percentage'] as num?)?.toDouble() ?? 0.0)
               .reduce((a, b) => a > b ? a : b)
         : 0.0;
@@ -312,7 +313,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
           Expanded(
             child: _buildMetricTile(
               label: 'Panel average',
-              value: '${avgScore.toStringAsFixed(1)}%',
+              value: scored.isEmpty ? '—' : '${avgScore.toStringAsFixed(1)}%',
               icon: Icons.query_stats_rounded,
               iconColor: DefensysTokens.maroon,
               iconBg: DefensysTokens.maroon.withValues(alpha: 0.08),
@@ -322,7 +323,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
           Expanded(
             child: _buildMetricTile(
               label: 'Top Score',
-              value: '${topScore.toStringAsFixed(1)}%',
+              value: scored.isEmpty ? '—' : '${topScore.toStringAsFixed(1)}%',
               icon: Icons.emoji_events_rounded,
               iconColor: DefensysTokens.gold,
               iconBg: const Color(0xFFFEF3C7),
@@ -653,7 +654,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${pct.toStringAsFixed(1)}%',
+                      result['percentage'] == null ? '—' : '${pct.toStringAsFixed(1)}%',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 17,
@@ -769,6 +770,14 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
             ),
           ],
 
+          if ((result['concept_assessments'] as List? ?? []).isNotEmpty)
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const Text('Your concept assessments', style: TextStyle(fontWeight: FontWeight.w600)),
+                for (final concept in (result['concept_assessments'] as List).whereType<Map>())
+                  Padding(padding: const EdgeInsets.only(top: 8), child: Text(
+                    '${concept['title']}: ${concept['percentage'] ?? 'Pending'}%${concept['selected'] == true ? ' · Selected' : ''}')),
+              ])),
           // ── Panel Score Bar ──
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -797,7 +806,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                         ),
                       ),
                       Text(
-                        '${total.toStringAsFixed(1)} / ${max.toStringAsFixed(0)} pts',
+                        result['percentage'] == null ? 'No concept selected' : '${total.toStringAsFixed(1)} / ${max.toStringAsFixed(0)} pts',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,

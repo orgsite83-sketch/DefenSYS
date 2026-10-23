@@ -62,7 +62,8 @@ def generate_defense_schedule_pdf(semester, schedules, generated_by_user, signat
                 panelists.append(assign.panelist.get_full_name() or assign.panelist.username)
         panel_str = ", ".join(panelists) if panelists else "No panel assigned"
 
-        status_label = str(sched.status).upper() if getattr(sched, 'status', None) else "SCHEDULED"
+        from defense.scheduler.progress import schedule_progress
+        status_label = schedule_progress(sched, reconcile_status=False)['display_status'].replace('_', ' ').title()
 
         rows.append([
             time_str,

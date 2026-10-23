@@ -58,7 +58,7 @@ class ConceptHearingWorkflowTests(APITestCase):
         self.submit_panel()
         self.client.force_authenticate(self.admin)
         decisions = [{'key': f'c{i}', 'decision': 'approved' if approved and i == 2 else 'rejected',
-                      'remarks': 'Documented concept decision.'} for i in range(1, 4)]
+                      'remarks': 'Documented concept decision.', 'next_action': 'omit' if approved else 'replace'} for i in range(1, 4)]
         return self.client.patch(f'/api/defense/schedules/{self.capstone_schedule.pk}/verdict/', {
             'verdict': verdict or ('approved' if approved else 'for_redefense'),
             'verdict_remarks': 'Documented hearing outcome.', 'concept_decisions': decisions,

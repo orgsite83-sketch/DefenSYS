@@ -444,6 +444,7 @@ def run():
 
     # Track unique Capstone schedules encountered across all panelists for Verdict phase
     capstone_schedules: Dict[int, Dict[str, Any]] = {}
+    concept_schedule_ids = set()
 
     remarks_pool = [
         "Well-structured presentation and sound methodology.",
@@ -519,6 +520,8 @@ def run():
         for team_payload in filtered_teams:
             team_name = team_payload.get("name") or team_payload.get("team_name") or f"Team {team_payload.get('id')}"
             schedule_id = team_payload.get("schedule_id")
+            if team_payload.get('assessment_concepts'):
+                concept_schedule_ids.add(schedule_id)
             team_id = team_payload.get("id") or team_payload.get("team_id")
             is_posted = team_payload.get("is_posted", False)
             schedule_scope = team_payload.get("scope") or ("capstone" if team_payload.get("is_capstone") else "pit")
@@ -591,6 +594,15 @@ def run():
                             "remarks": f"Individual contribution: {m.get('name')}",
                         })
 
+            assessment_concepts = team_payload.get('assessment_concepts') or []
+            if assessment_concepts:
+                templates = submissions
+                submissions = [{**item, 'concept_key': concept['key'],
+                    'criteria_scores': generate_scores([
+                        criterion for criterion in criteria if criterion['id'] in {
+                            score['criterion_id'] for score in item['criteria_scores']}], min_s, max_s)}
+                    for concept in assessment_concepts for item in templates]
+
             payload = {
                 "team_id": team_id,
                 "schedule_id": schedule_id,
@@ -644,6 +656,10 @@ def run():
 
         for sched_id, sched_info in sorted(capstone_schedules.items()):
             t_name = sched_info["team_name"]
+            if sched_id in concept_schedule_ids:
+                print(f'  [-] {t_name}: Concept assessments saved. The chair must select a qualifying concept and record the outcome.')
+                total_verdicts_skipped += 1
+                continue
             existing_verdict = sched_info.get("verdict")
 
             if existing_verdict:

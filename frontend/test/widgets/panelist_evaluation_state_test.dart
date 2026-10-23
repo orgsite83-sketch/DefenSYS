@@ -38,8 +38,10 @@ TeamData _team({
   String id = '20',
   bool isCapstone = true,
   bool longNames = false,
+  bool canIssue = false,
   List<Map<String, dynamic>> drafts = const [],
   List<Map<String, dynamic>> materials = const [],
+  List<Map<String, dynamic>> concepts = const [],
 }) => TeamData(
   name: longNames
       ? 'Team Smart Agriculture and Crop Monitoring'
@@ -75,10 +77,11 @@ TeamData _team({
   criteria: [],
   isPosted: false,
   isChair: true,
-  serverCanIssueVerdict: false,
+  serverCanIssueVerdict: canIssue,
   evaluationContext: 'context-$id-$target',
   draftSubmissions: drafts,
   defenseMaterials: materials,
+  assessmentConcepts: concepts,
   draftSavedAt: drafts.isNotEmpty ? '2026-10-20T08:00:00+08:00' : null,
   panelRubric: {
     'id': 1,
@@ -178,6 +181,89 @@ Future<_HttpClient> _showSheet(
 }
 
 void main() {
+  testWidgets('configured re-defense confirmation requires fresh endorsement', (
+    tester,
+  ) async {
+    final team = _team(canIssue: true)..isPosted = true;
+    team.workflowGrade = {
+      'workflow': {
+        'assessment_policy': {'version': 1},
+        'outcome_rule': {
+          'outcome': 'for_redefense',
+          'qualifying_score': 75,
+          'allowed_verdicts': ['for_redefense'],
+        },
+      },
+    };
+    await _showSheet(tester, [team], start: false);
+    final instructions = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          (widget.decoration?.hintText ?? '').startsWith(
+            'Enter reasons for re-defense',
+          ),
+    );
+    await tester.ensureVisible(instructions);
+    await tester.enterText(
+      instructions,
+      'Revise the panel materials and present again.',
+    );
+    await _tapVisible(tester, find.text('Submit Verdict'));
+    expect(find.textContaining('a fresh endorsement'), findsOneWidget);
+    expect(find.textContaining('No new adviser endorsement'), findsNothing);
+    expect(
+      find.text('Require adviser verification of corrections'),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets(
+    'Concept assessments keep independent drafts, progress, and review',
+    (tester) async {
+      final team = _team(
+        concepts: [
+          {'key': 'c1', 'title': 'First concept'},
+          {'key': 'c2', 'title': 'Second concept'},
+          {'key': 'c3', 'title': 'Third concept'},
+        ],
+      );
+      await _showSheet(tester, [team]);
+      await _tapScore(tester, 'Clarity', '0');
+      expect(team.evaluationProgress.entered, 1);
+      expect(team.evaluationProgress.required, 3);
+      expect(team.evaluationProgress.complete, isFalse);
+      Future<void> select(String key, String title) async {
+        final selector = find.byWidgetPredicate(
+          (w) => w is DropdownButtonFormField<String>,
+        );
+        await _tapVisible(tester, selector);
+        await tester.tap(find.text(title).last);
+        await tester.pumpAndSettle();
+      }
+
+      await select('c2', 'Second concept');
+      expect(_value(tester, 'Clarity'), isNull);
+      await _tapScore(tester, 'Clarity', '10');
+      await select('c1', 'First concept');
+      expect(_value(tester, 'Clarity'), 0);
+      await select('c3', 'Third concept');
+      await _tapScore(tester, 'Clarity', '7');
+      expect(team.evaluationProgress.complete, isTrue);
+      expect(team.draftSubmissions.map((s) => s['concept_key']).toSet(), {
+        'c1',
+        'c2',
+        'c3',
+      });
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('review-evaluation')),
+      );
+      expect(find.text('First concept'), findsOneWidget);
+      expect(find.text('Second concept'), findsOneWidget);
+      expect(find.text('Third concept'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
   setUpAll(() async {
     registerFallbackValue(Uri.parse('https://example.test'));
     await loadPreviewFonts();

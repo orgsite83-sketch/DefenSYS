@@ -43,6 +43,8 @@ class PanelistEvaluationDraft(models.Model):
 
 
 class DefenseSchedule(models.Model):
+    assessment_policy = models.JSONField(default=dict, blank=True, editable=False)
+    documents_snapshot = models.JSONField(default=list, blank=True, editable=False)
     SCOPE_CAPSTONE = 'capstone'
     SCOPE_PIT = 'pit'
 
@@ -224,6 +226,8 @@ class DefenseSchedule(models.Model):
         material_deadlines_revalidated = kwargs.pop('material_deadlines_revalidated', False)
         is_new = self.pk is None
         if is_new:
+            from grading.grades.outcome_rules import capture_policy
+            self.assessment_policy = capture_policy(self)
             self.project_version = self.team.project_version
             self.project_title_snapshot = self.team.project_title
             if self.scope == self.SCOPE_CAPSTONE and self.defense_stage_id:

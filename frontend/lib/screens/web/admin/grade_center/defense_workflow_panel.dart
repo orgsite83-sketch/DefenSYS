@@ -231,16 +231,29 @@ class DefenseWorkflowPanel extends ConsumerWidget {
         grade['revisions_cleared_at'] == null;
     final redefense = verdict == 'for_redefense';
     final authorized = workflow['retake_authorized'] == true;
+    final published = grade['status'] == 'published';
+    final policy = workflow['assessment_policy'] as Map? ?? const {};
+    final progress = workflow['assessment_progress'] as Map?;
+    final configured = policy['version'] == 1;
     final verificationPending =
+        !configured &&
         grade['redefense_verification_required'] == true &&
         grade['redefense_verified_at'] == null;
-    final published = grade['status'] == 'published';
+    final filesPending = progress?['post_defense_complete'] == false;
+    final selectionPending =
+        progress?['display_status'] == 'awaiting_concept_selection';
     final heading = failed
         ? (authorized ? 'Another attempt authorized' : 'Progression blocked')
         : revisions
         ? 'Revision clearance pending'
         : redefense
-        ? (conceptWorkflow == null ? 'Graded re-defense required' : 'Concept re-defense · Attempt ${conceptWorkflow['round']}')
+        ? (conceptWorkflow == null
+              ? 'Graded re-defense required'
+              : 'Concept re-defense · Attempt ${conceptWorkflow['round']}')
+        : filesPending
+        ? 'Approved · post-defense files pending'
+        : selectionPending
+        ? 'Select a qualifying concept'
         : published
         ? 'Stage complete · eligible for this stage’s archiving'
         : workflow['passed_and_cleared'] == true
@@ -258,16 +271,22 @@ class DefenseWorkflowPanel extends ConsumerWidget {
               : 'Keep all grades and the existing adviser. Verify the corrections; schedule a compliance presentation if needed.'
         : redefense && conceptWorkflow != null
         ? '${conceptWorkflow['next_step']} Score carry-over follows the configured stage policy.'
+        : redefense && configured
+        ? 'Submit the requested materials for faculty review and obtain a fresh adviser endorsement before scheduling. Panel assessment is repeated; adviser and peer scores follow the configured stage policy.'
         : redefense
         ? verificationPending
               ? 'The panel requested adviser verification of corrections before scheduling. The existing endorsement is retained.'
               : 'Schedule the next attempt directly. Retain adviser endorsement, adviser grades, and peer grades; redo panel assessment and verdict.'
+        : filesPending
+        ? 'The defense outcome is approved. Every configured required post-defense deliverable still needs acceptance before this stage is complete.'
+        : selectionPending
+        ? 'The panel chair selects one concept that meets the qualifying score. Its assessment contributes to the official grade once.'
         : published
         ? 'Archive this stage’s project records. Next-stage preparation is available after a passed and cleared result.'
         : 'Schedule dates control grading availability. Submitted evaluations, approval, and clearance determine completion.';
-    final color = failed || redefense
+    final color = failed
         ? DefensysTokens.dangerText
-        : revisions
+        : revisions || redefense
         ? DefensysTokens.warningText
         : DefensysTokens.textPrimaryOf(context);
     Widget action(String label, String key) => OutlinedButton(
@@ -300,13 +319,28 @@ class DefenseWorkflowPanel extends ConsumerWidget {
             const SizedBox(height: 6),
             Text('Compliance review: ${grade['compliance_review_date']}'),
           ],
-          if (conceptWorkflow != null) DefensysShadcnScope(child: ConceptHistory(workflow: Map<String, dynamic>.from(conceptWorkflow))),
+          if (conceptWorkflow != null)
+            DefensysShadcnScope(
+              child: ConceptHistory(
+                workflow: Map<String, dynamic>.from(conceptWorkflow),
+              ),
+            ),
           if (conceptWorkflow?['section_project_id'] != null) ...[
             if (conceptWorkflow?['section_revisions_pending'] == true)
-              const Text('Shared system revisions are pending. The designated system reviewer must clear them before progression.'),
-            TextButton.icon(icon: const Icon(Icons.account_tree_outlined), label: const Text('Open section system and module decisions'),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
-                SectionConceptWorkspace(projectId: conceptWorkflow!['section_project_id'] as int)))),
+              const Text(
+                'Shared system revisions are pending. The designated system reviewer must clear them before progression.',
+              ),
+            TextButton.icon(
+              icon: const Icon(Icons.account_tree_outlined),
+              label: const Text('Open section system and module decisions'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SectionConceptWorkspace(
+                    projectId: conceptWorkflow!['section_project_id'] as int,
+                  ),
+                ),
+              ),
+            ),
           ],
           const SizedBox(height: 12),
           Wrap(
@@ -316,9 +350,15 @@ class DefenseWorkflowPanel extends ConsumerWidget {
               if (revisions && (chair || adviser) && !published) ...[
                 action('Verify and clear revisions', 'clear_revisions'),
                 if (grade['scope'] == 'capstone')
-                  action('Schedule compliance review', 'schedule_compliance_review'),
+                  action(
+                    'Schedule compliance review',
+                    'schedule_compliance_review',
+                  ),
               ],
-              if (redefense && verificationPending && adviser && conceptWorkflow == null)
+              if (redefense &&
+                  verificationPending &&
+                  adviser &&
+                  conceptWorkflow == null)
                 action('Verify required corrections', 'verify_redefense'),
               if (failed && admin && grade['scope'] == 'capstone') ...[
                 if (verdict == 'failed' && !authorized)
@@ -329,14 +369,24 @@ class DefenseWorkflowPanel extends ConsumerWidget {
                 ),
                 action('Keep failed / no further attempt', 'keep_blocked'),
               ],
-              if (admin && (authorized || redefense && !verificationPending && (conceptWorkflow == null || workflow['redefense_ready'] == true)))
+              if (admin &&
+                  (authorized ||
+                      redefense &&
+                          !verificationPending &&
+                          (!configured ||
+                              workflow['redefense_ready'] == true) &&
+                          (conceptWorkflow == null ||
+                              workflow['redefense_ready'] == true)))
                 FilledButton(
                   onPressed: busy
                       ? null
                       : () => context.go(AdminRoutes.defenseScheduler),
                   child: const Text('Open Defense Scheduler'),
                 ),
-              if (admin && published && workflow['passed_and_cleared'] == true)
+              if (admin &&
+                  published &&
+                  !filesPending &&
+                  workflow['passed_and_cleared'] == true)
                 OutlinedButton(
                   onPressed: () => context.go(AdminRoutes.projectArchive),
                   child: const Text('Open Project Archiving'),

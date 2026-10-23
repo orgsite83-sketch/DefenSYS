@@ -9,7 +9,7 @@ from django.utils import timezone
 from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from .models import ConceptRound, DeliverableSubmission
-from .documents import current_files, file_payload, completeness
+from .documents import completeness
 from student_teams.concept_policy import resolve_policy, initial_concepts
 
 
@@ -78,7 +78,7 @@ def get_round(team, stage):
 
 def documents_snapshot(team, stage, *, clearance_only=False):
     from .services import get_deliverable_definitions_for_team
-    from .documents import slots_for
+    from .documents import slots_for, snapshot_files
     definitions = {d['id']: d for d in get_deliverable_definitions_for_team(team, stage.label)}
     submissions = DeliverableSubmission.objects.filter(team=team, stage_label=stage.label).prefetch_related('files')
     if clearance_only:
@@ -89,7 +89,7 @@ def documents_snapshot(team, stage, *, clearance_only=False):
     return [{'deliverable_id': s.deliverable_id, 'label': s.label,
              'is_defense_material': definitions.get(s.deliverable_id, {}).get('is_defense_material', False),
              'document_labels': {slot['key']: slot['label'] for slot in slots_for(definitions.get(s.deliverable_id, {'label': s.label}), stage=stage)},
-             'files': [file_payload(f) for f in current_files(s)]}
+             'files': snapshot_files(s)}
             for s in submissions]
 
 
@@ -180,7 +180,7 @@ def endorse(team, stage, actor):
     if current.schedule_id:
         raise ValueError('This concept set is already attached to a defense.')
     if current.section_round_id and not all(c.get('faculty_confirmed') for c in current.concepts):
-        raise ValueError('Faculty must confirm all three module names and their system connections before endorsement.')
+        raise ValueError('Faculty must confirm the required module names and their system connections before endorsement.')
     from repository.section_concepts.services import module_blocker
     shared_blocker = module_blocker(team, stage, current)
     if shared_blocker:
@@ -237,6 +237,8 @@ def validate_decisions(current, decisions, verdict, replacement_required):
         if d['decision'] in ('rejected', 'revise', 'approved_with_revisions') and not remarks.strip():
             raise ValidationError('Explain concept rejection or required revisions.')
         c.update(decision=d['decision'], remarks=remarks.strip())
+        if 'next_action' in d:
+            c['next_action'] = d['next_action']
         if d['decision'] in ('approved', 'approved_with_revisions'):
             selected.append(c)
     if verdict in ('approved', 'approved_with_revisions'):
@@ -244,8 +246,6 @@ def validate_decisions(current, decisions, verdict, replacement_required):
             raise ValidationError('Select exactly one concept matching the hearing approval verdict.')
     elif selected:
         raise ValidationError('An approved concept requires an approval verdict for this hearing.')
-    if all(c['decision'] == 'rejected' for c in concepts) and verdict == 'for_redefense':
-        replacement_required = True
     if replacement_required and verdict != 'for_redefense':
         raise ValidationError('Replacement concepts for another hearing require a For re-defense verdict.')
     return concepts, replacement_required, selected
@@ -269,6 +269,21 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
     if latest_round(grade.team, stage).pk != current.pk:
         raise ValidationError('An earlier concept hearing is read-only after the next round has started.')
     concepts, replacement_required, selected = validate_decisions(current, decisions, outcome, replacement_required)
+    from .redefense import requested_set, refresh_files, snapshot_hearing
+    plan = requested_set(current, decisions, outcome, replacement_required)
+    if plan is not None:
+        replacement_required = any(item['action'] == 'replace' for item in plan)
+        actions = {item['key']: item['action'] for item in plan}
+        for concept in concepts:
+            concept['next_action'] = actions.get(concept['key'], 'omit')
+    from grading.grades.outcome_rules import outcome_payload
+    rule = outcome_payload(grade)
+    if rule and rule['per_concept']:
+        scores = {row['key']: row for row in rule['assessments']}
+        for concept in concepts:
+            concept.update(panel_score=scores[concept['key']]['score'],
+                           qualifies=scores[concept['key']]['qualifies'],
+                           qualifying_score=rule['qualifying_score'])
     from repository.section_concepts.services import validate_module_decision
     validate_module_decision(grade, current, concepts, outcome=outcome)
     current.concepts, current.verdict, current.remarks = concepts, outcome, remarks
@@ -277,6 +292,7 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
     current.documents_snapshot = documents_snapshot(grade.team, stage)
     current.save(update_fields=['concepts', 'verdict', 'remarks', 'replacement_required', 'documents_snapshot',
                                'decided_by', 'decided_at'])
+    snapshot_hearing(grade.schedule, grade.team, stage)
     if selected:
         grade.team.project_title = selected[0]['title']
         grade.team.project_pending = False
@@ -285,27 +301,28 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
     if outcome != 'for_redefense':
         return
     snapshot = resolve_policy(grade.team, stage, current=current)
-    review = True
-    replacement_key = current.section_round.selected_key if current.section_round_id else ''
-    next_concepts = [{**c, 'title': '' if replacement_required and (not replacement_key or c['key'] == replacement_key) else c['title'],
-        **({'faculty_confirmed': False} if current.section_round_id and replacement_required and (
-            not replacement_key or c['key'] == replacement_key) else {}), 'decision': '', 'remarks': ''} for c in concepts]
-    next_round = ConceptRound.objects.create(team=grade.team, **context_fields(stage),
-        project_version=grade.project_version, number=current.number + 1,
-        section_round_id=current.section_round_id, concepts=next_concepts, review_required=review,
-        policy_snapshot={**snapshot, **({'assigned_title': ''} if replacement_required else {})})
+    by_key = {c['key']: c for c in concepts}
+    next_concepts = []
+    for instruction in plan:
+        concept = deepcopy(by_key[instruction['key']])
+        for field in ('panel_score', 'qualifies', 'qualifying_score', 'next_action'):
+            concept.pop(field, None)
+        concept.update(decision='', remarks='', previous_title=concept['title'],
+                       requested_action=instruction['action'], panel_feedback=instruction['feedback'])
+        if instruction['action'] == 'replace':
+            concept['title'] = ''
+            if current.section_round_id:
+                concept['faculty_confirmed'] = False
+        next_concepts.append(concept)
+    snapshot.update(required_count=len(plan), concept_keys=[p['key'] for p in plan],
+                    redefense_plan={'source_round': current.number, 'concepts': plan})
     if replacement_required:
-        from .services import get_deliverable_definitions_for_team
-        from .documents import sync_submission
-        concept_ids = [d['id'] for d in get_deliverable_definitions_for_team(grade.team, stage.label)
-                       if (d.get('file_policy') or {}).get('mode') == 'concepts']
-        for submission in DeliverableSubmission.objects.filter(team=grade.team, stage_label=stage.label, deliverable_id__in=concept_ids):
-            files = submission.files.filter(is_current=True)
-            if replacement_key:
-                files = files.filter(slot_key__startswith=f'{replacement_key}:')
-            files.update(is_current=False)
-            definition = next(d for d in get_deliverable_definitions_for_team(grade.team, stage.label) if d['id'] == submission.deliverable_id)
-            sync_submission(submission, definition, stage)
+        snapshot['assigned_title'] = ''
+    ConceptRound.objects.create(team=grade.team, **context_fields(stage),
+        project_version=grade.project_version, number=current.number + 1,
+        section_round_id=current.section_round_id, concepts=next_concepts, review_required=True,
+        policy_snapshot=snapshot)
+    refresh_files(grade.team, stage)
     if grade.team.ready_for_stage == stage.label:
         grade.team.ready_for_stage = None
         grade.team.save(update_fields=['ready_for_stage', 'updated_at'])
@@ -459,6 +476,7 @@ def payload(team, stage, *, history=True, actor=None):
         'can_edit_titles': policy.get('mode') != 'assigned' and bool(team.semester.is_active and (not current or not current.schedule_id)),
         'clearance_valid': clearance_valid(team, stage, current),
         'review_required': current.review_required if current else True,
+        'redefense_plan': policy.get('redefense_plan'),
         'next_step': ('The administrator must assign the replacement project/module in Manage sections.'
             if policy.get('mode') == 'assigned' and not policy.get('assigned_title') else {
             'concepts_needed': 'Upload the paper for your assigned project/module.' if policy.get('mode') == 'assigned' else 'Enter concept titles and upload the required papers.',

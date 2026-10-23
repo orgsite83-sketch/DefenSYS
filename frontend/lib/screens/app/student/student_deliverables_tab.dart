@@ -8,7 +8,8 @@ import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:defensys/models/defense_workflow_labels.dart';
+import 'package:defensys/models/team_workflow_status.dart';
+import 'package:defensys/widgets/repository/workflow_status_style.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -281,51 +282,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     ),
                     Builder(
                       builder: (context) {
-                        final detail = selectedStage['stage_status_detail']?.toString();
-                        String label = endorsed
-                            ? 'Endorsed'
-                            : noEndorsementNeeded
-                                ? 'Ready to Schedule'
-                                : (isPresentationOnly ? 'Oral / Demo' : 'Awaiting Endorsement');
-                        Color bg = endorsed || noEndorsementNeeded
-                            ? Colors.green.shade600
-                            : (isPresentationOnly ? const Color(0xFF2563EB) : Colors.orange.shade600);
-
-                        if (['failed', 'project_rejected', 'for_redefense', 'revisions_pending'].contains(detail)) {
-                          label = defenseProgressLabel(detail!);
-                          bg = detail == 'revisions_pending' ? Colors.orange.shade700 : Colors.red.shade700;
-                        } else if (detail == 'passed') {
-                          label = 'Completed';
-                          bg = Colors.green.shade600;
-                        } else if (detail == 'pending_post_defense') {
-                          label = 'Pending Post-Defense';
-                          bg = Colors.purple.shade600;
-                        } else if (detail == 'defense_ongoing') {
-                          label = 'Defense Ongoing';
-                          bg = Colors.indigo.shade600;
-                        } else if (detail == 'defense_scheduled') {
-                          label = 'Defense Scheduled';
-                          bg = Colors.blue.shade600;
-                        } else if (detail == 'endorsed') {
-                          label = 'Endorsed';
-                          bg = Colors.green.shade600;
-                        }
-
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: bg,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            label,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        );
+                        return TeamWorkflowBadge(status: TeamWorkflowStatus.fromStage(
+                          selectedStage, scope: widget.isCapstone ? 'capstone' : 'pit'));
                       },
                     ),
                   ],
@@ -523,7 +481,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         _buildRequiredProgressBlock(pre.where((item) => item['requirement_timing'] != 'defense').toList()),
                         const SizedBox(height: 16),
                         _sectionTitle(
-                          noEndorsementNeeded ? 'Before scheduling' : 'Before endorsement',
+                          widget.isCapstone ? 'Pre-defense deliverables' : noEndorsementNeeded ? 'Before scheduling' : 'Before endorsement',
                           showRedDot: hasPendingScheduling,
                         ),
                         const SizedBox(height: 8),

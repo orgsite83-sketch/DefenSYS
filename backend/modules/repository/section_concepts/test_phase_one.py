@@ -70,13 +70,13 @@ class EndorsementPhaseOneTests(APITestCase):
         state = stage_payload(self.team, self.event.label)
         self.assertEqual(state['concept_workflow']['status'], 'module_confirmation_pending')
         self.assertFalse(state['endorsement_review']['can_review_and_endorse'])
-        self.assertIn('confirm all three', state['endorsement_review']['reason'])
+        self.assertIn('confirm the required', state['endorsement_review']['reason'])
         for key in services.KEYS:
             sub = upsert_submission(self.team, self.event.label, 'CONCEPTS', f'{key}.pdf', '10 B',
                 self.pm, file=SimpleUploadedFile(f'{key}.pdf', b'%PDF-1.4 module'), slot_key=f'{key}:paper')
             review_submission(self.team, self.event.label, 'CONCEPTS', 'accepted', '', self.first,
                 file_id=sub.files.get(is_current=True, slot_key=f'{key}:paper').pk)
-        with self.assertRaisesMessage(ValueError, 'confirm all three'):
+        with self.assertRaisesMessage(ValueError, 'confirm the required'):
             endorse_team(self.team, self.event.label, self.first)
 
     def test_sole_instructor_is_resolved_without_reviewer_input(self):

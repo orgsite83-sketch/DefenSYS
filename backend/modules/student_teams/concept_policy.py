@@ -80,5 +80,6 @@ def validate_override(value, *, team=False):
 
 
 def initial_concepts(policy):
-    return [{'key': f'c{i}', 'title': policy.get('assigned_title', '') if i == 1 else '',
-             'decision': '', 'remarks': ''} for i in range(1, policy['required_count'] + 1)]
+    keys = policy.get('concept_keys') or [f'c{i}' for i in range(1, policy['required_count'] + 1)]
+    return [{'key': key, 'title': policy.get('assigned_title', '') if i == 0 else '',
+             'decision': '', 'remarks': ''} for i, key in enumerate(keys)]

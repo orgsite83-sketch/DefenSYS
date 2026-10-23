@@ -65,7 +65,14 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
   String _evaluatorKey(Map<String, dynamic> row) =>
       '${row['evaluator_key'] ?? row['evaluator']}';
   String _studentKey(Map<String, dynamic> row) =>
-      '${row['student_id'] ?? row['student'] ?? 'Team'}';
+      '${row['concept_key'] ?? ''}:${row['student_id'] ?? row['student'] ?? 'Team'}';
+  String _conceptLabel(Map<String, dynamic> row) {
+    final key = row['concept_key']?.toString() ?? '';
+    return key.isEmpty ? '' : '${key.toUpperCase()} · ';
+  }
+
+  bool get _hasConcepts =>
+      _scores.any((row) => '${row['concept_key'] ?? ''}'.isNotEmpty);
   Map<String, String> get _evaluators => {
     for (final row in _scores)
       _evaluatorKey(
@@ -78,7 +85,7 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
     for (final row in _evaluatorRows)
       _studentKey(
         row,
-      ): '${row['student']}${_evaluatorRows.where((other) => other['student'] == row['student']).map(_studentKey).toSet().length > 1 ? ' · ${row['student_reference'] ?? 'Recorded student'}' : ''}',
+      ): '${_conceptLabel(row)}${row['student']}${_evaluatorRows.where((other) => other['student'] == row['student'] && other['concept_key'] == row['concept_key']).map(_studentKey).toSet().length > 1 ? ' · ${row['student_reference'] ?? 'Recorded student'}' : ''}',
   };
   List<Map<String, dynamic>> get _studentRows =>
       _evaluatorRows.where((row) => _studentKey(row) == _student).toList();
@@ -310,7 +317,7 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
           if (old['id'] == updated['id'] && old['score'] != updated['score'])
             WorkflowComparison(
               label:
-                  '${old['criterion']} · ${old['evaluator']}${old['student_name'] == 'Team' ? '' : ' · ${old['student_name']}'}',
+                  '${_conceptLabel(old)}${old['criterion']} · ${old['evaluator']}${old['student_name'] == 'Team' ? '' : ' · ${old['student_name']}'}',
               before: '${old['score']} / ${old['max_score']}',
               after: '${updated['score']} / ${updated['max_score']}',
             ),
@@ -476,10 +483,12 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
           ),
           if (_students.length > 1)
             WorkflowSelect(
-              label: 'Student',
+              label: _hasConcepts ? 'Assessment' : 'Student',
               value: _student,
               options: _students,
-              placeholder: 'Choose the student being graded',
+              placeholder: _hasConcepts
+                  ? 'Choose the concept assessment'
+                  : 'Choose the student being graded',
               enabled: !_busy,
               onChanged: (value) => setState(() => _pickStudent(value)),
             ),
@@ -489,7 +498,7 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
               value: _rowId,
               options: {
                 for (final row in _studentRows)
-                  '${row['id']}': '${row['criterion']}',
+                  '${row['id']}': '${_conceptLabel(row)}${row['criterion']}',
               },
               placeholder: _evaluator == null
                   ? 'Choose a panelist first'

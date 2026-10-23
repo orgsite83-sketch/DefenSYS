@@ -23,6 +23,7 @@ import 'widgets/pipeline_position_selector.dart';
 import 'widgets/defense_stage_directory.dart';
 import 'widgets/stage_setup_confirmation.dart';
 import 'widgets/stage_minutes_settings.dart';
+import 'widgets/stage_outcome_settings.dart';
 import 'widgets/stage_setup_draft_notice.dart';
 import 'widgets/stage_setup_actions.dart';
 import 'widgets/stage_deliverable_overview.dart';
@@ -1626,6 +1627,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final panelCtrl = TextEditingController(text: '50');
     final adviserCtrl = TextEditingController(text: '30');
     final peerCtrl = TextEditingController(text: '20');
+    final qualifyingScoreCtrl = TextEditingController(text: setup?['qualifying_score']?.toString() ?? '');
+    var scoreCarryover = setup?['score_carryover']?.toString() ?? (setup?['concept_config'] as Map?)?['score_carryover']?.toString() ?? 'reassess';
     var isActive = setup?['is_active'] == true;
     var isPresentationOnly = setup?['is_presentation_only'] == true;
     var conceptConfig = Map<String, dynamic>.from(setup?['concept_config'] as Map? ?? {});
@@ -1689,6 +1692,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         'is_presentation_only': isPresentationOnly,
         'minutes_required': minutesRequired,
         'concept_config': {...conceptConfig, if (conceptConfig['enabled'] == true) 'review_policy': 'always'},
+        'qualifying_score': double.tryParse(qualifyingScoreCtrl.text.trim()),
+        'score_carryover': scoreCarryover,
         'minutes_deliverable_id': minutesNumber.text,
         'minutes_deliverable_label': minutesName.text,
         'deliverables': deliverables,
@@ -1911,6 +1916,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                       // Scrollable Tab Content
                       Flexible(
                         child: SingleChildScrollView(
+                          key: ValueKey('stage-dialog-step-$activeTab'),
                           padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
                           child: IndexedStack(
                             index: activeTab,
@@ -2351,6 +2357,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                       );
                                     },
                                   ),
+                                  const SizedBox(height: 16),
+                                  StageOutcomeSettings(scoreController: qualifyingScoreCtrl,
+                                    scoreCarryover: scoreCarryover, conceptSelection: conceptConfig['enabled'] == true,
+                                    enabled: !stageIsLocked,
+                                    onChanged: () => setDialogState(() {}),
+                                    onCarryoverChanged: (v) => setDialogState(() => scoreCarryover = v)),
                                 ],
                               ),
 
@@ -2601,6 +2613,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                       return;
                                     }
                                   }
+                                  if (StageOutcomeSettings.validateScore(qualifyingScoreCtrl.text) != null) {
+                                    setDialogState(() => activeTab = 1);
+                                    showValidationToast(context, 'Set a qualifying panel score from 0 to 100%.');
+                                    return;
+                                  }
                                   if (!isPresentationOnly) {
                                     for (int i = 0; i < deliverables.length; i++) {
                                       final dLabel = deliverables[i]['label']?.toString().trim() ?? '';
@@ -2668,6 +2685,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         peerCtrl.dispose();
         minutesNumber.dispose();
         minutesName.dispose();
+        qualifyingScoreCtrl.dispose();
         for (final item in deliverables) {
           (item['_labelController'] as TextEditingController?)?.dispose();
           (item['_templateController'] as TextEditingController?)?.dispose();
@@ -2703,6 +2721,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       'is_presentation_only': isPresentationOnly,
       'minutes_required': minutesRequired,
       'concept_config': {...conceptConfig, if (conceptConfig['enabled'] == true) 'review_policy': 'always'},
+        'qualifying_score': double.tryParse(qualifyingScoreCtrl.text.trim()),
+        'score_carryover': scoreCarryover,
       'minutes_deliverable_id': minutesNumber.text.trim(),
       'minutes_deliverable_label': minutesName.text.trim(),
       'deliverables': isPresentationOnly ? [] : deliverables,
@@ -2787,6 +2807,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     peerCtrl.dispose();
     minutesNumber.dispose();
     minutesName.dispose();
+    qualifyingScoreCtrl.dispose();
     for (final item in deliverables) {
       (item['_labelController'] as TextEditingController?)?.dispose();
       (item['_templateController'] as TextEditingController?)?.dispose();

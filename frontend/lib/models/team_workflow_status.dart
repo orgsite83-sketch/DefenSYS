@@ -28,6 +28,8 @@ class TeamWorkflowStatus {
     'evaluating' => 'Panel evaluation is in progress.',
     'awaiting_verdict' =>
       'Panel evaluations are complete. Waiting for the defense decision.',
+    'awaiting_concept_selection' =>
+      'The panel chair needs to select one qualifying concept and record the decision.',
     'grading_incomplete' =>
       'Complete the remaining required grading components.',
     'awaiting_results' =>
@@ -97,6 +99,11 @@ class TeamWorkflowStatus {
       'Ready to schedule',
       WorkflowStatusTone.success,
     ),
+    'ready_to_schedule_redefense' => const TeamWorkflowStatus(
+      'ready_to_schedule_redefense',
+      'Ready to schedule re-defense',
+      WorkflowStatusTone.success,
+    ),
     'scheduled' || 'defense_scheduled' => const TeamWorkflowStatus(
       'scheduled',
       'Scheduled',
@@ -115,6 +122,11 @@ class TeamWorkflowStatus {
     'awaiting_verdict' => const TeamWorkflowStatus(
       'awaiting_verdict',
       'Awaiting verdict',
+      WorkflowStatusTone.neutral,
+    ),
+    'awaiting_concept_selection' => const TeamWorkflowStatus(
+      'awaiting_concept_selection',
+      'Awaiting concept selection',
       WorkflowStatusTone.neutral,
     ),
     'grading_incomplete' => const TeamWorkflowStatus(
@@ -223,6 +235,7 @@ class TeamWorkflowStatus {
   static int pendingFileReviewCount(Map item) {
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
     if ((!isPost && item['requirement_timing'] == 'defense') ||
+        item['can_faculty_review'] == false ||
         item['is_waived'] == true ||
         item['source'] == 'defense_minutes') {
       return 0;
@@ -230,6 +243,14 @@ class TeamWorkflowStatus {
     // `locked` controls student uploads, not whether a submitted file needs review.
     final submission = item['submission'];
     final files = submission is Map ? submission['files'] : null;
+    if (files is List &&
+        files.isEmpty &&
+        submission is Map &&
+        submission['file_history'] is List &&
+        (submission['file_history'] as List).isNotEmpty &&
+        submission['file_url'] == null) {
+      return 0;
+    }
     if (files is List && files.isNotEmpty) {
       return files
           .whereType<Map>()
@@ -354,16 +375,63 @@ class TeamWorkflowStatus {
         ? assessment['display_status']?.toString()
         : stage['stage_status_detail']?.toString() ??
               stage['status']?.toString();
-    final defenseDone =
-        stage['is_defense_done'] == true ||
-        stage['has_done_schedule'] == true ||
+    if (stage['repeat_preparation'] == true) {
+      if (stage['endorsed'] == true) {
+        return describe('ready_to_schedule_redefense');
+      }
+      if (items(stage).any(
+        (item) =>
+            item['type'] != 'post' &&
+            item['submission'] is Map &&
+            item['submission']['status'] == 'rejected',
+      )) {
+        return describe('changes_requested');
+      }
+      return describe(
+        stage['required_complete'] == true
+            ? 'awaiting_endorsement'
+            : 'awaiting_files',
+      );
+    }
+    final awaitingDecision =
+        scope == 'capstone' &&
+        assessment is Map &&
         const {
-          'awaiting_completion',
-          'completed',
-          'passed',
-          'pending_post_defense',
+          'scheduled',
+          'awaiting_evaluation',
+          'evaluating',
+          'awaiting_verdict',
+          'awaiting_concept_selection',
+          'for_redefense',
+          'redefense_required',
+          'failed',
+          'project_rejected',
         }.contains(recordedStatus);
-    final archiveReviews = archivePendingReviewCount(stage);
+    final defenseDone =
+        !awaitingDecision &&
+        (assessment is Map && assessment['defense_approved'] is bool
+            ? assessment['defense_approved'] == true
+            : stage['is_defense_done'] == true ||
+                  stage['has_done_schedule'] == true ||
+                  const {
+                    'awaiting_completion',
+                    'completed',
+                    'passed',
+                    'pending_post_defense',
+                  }.contains(recordedStatus));
+    final archiveReviews = recordedStatus == 'completed'
+        ? items(stage)
+              .where(
+                (item) =>
+                    (item['type'] == 'post' ||
+                        item['deliverable_type'] == 'post') &&
+                    item['required'] != false,
+              )
+              .fold<int>(
+                0,
+                (total, item) => total + pendingFileReviewCount(item),
+              )
+        : archivePendingReviewCount(stage);
     if (defenseDone &&
         archiveReviews > 0 &&
         !const {
@@ -440,6 +508,11 @@ class TeamWorkflowStatus {
       'evaluating',
       'awaiting_evaluation',
       'awaiting_verdict',
+      'awaiting_concept_selection',
+      'ready_to_schedule_redefense',
+      'awaiting_files',
+      'changes_requested',
+      'needs_review',
       'grading_incomplete',
       'awaiting_completion',
       'assessed',

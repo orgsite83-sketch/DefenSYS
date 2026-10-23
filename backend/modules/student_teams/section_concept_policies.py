@@ -68,6 +68,34 @@ def apply_policy_changes(team, teams, assignment, changes, *, confirmed=False):
         for member in teams:
             new = resolve_policy(member, stage, use_round=False, section_assignment=assignment)
             old = old_policies[member.pk]
+            current = concepts.latest_round(member, stage)
+            if current and (current.policy_snapshot or {}).get('redefense_plan'):
+                if member.pk in seen_teams:
+                    if (current.schedule_id or new.get('mode') != old.get('mode') or
+                            new.get('required_count') != old.get('required_count')):
+                        raise ValidationError('The panel-requested concept set is fixed for this hearing.')
+                    if new.get('assigned_title') != old.get('assigned_title'):
+                        if old.get('mode') != 'assigned' or not new.get('assigned_title'):
+                            raise ValidationError('Assign the requested replacement project/module title.')
+                        if len(current.concepts) != 1 or current.concepts[0].get('requested_action') != 'replace':
+                            raise ValidationError('Only the requested assigned replacement title can be changed here.')
+                        concept_ids = [d['id'] for d in get_deliverable_definitions_for_team(member, stage.label)
+                                       if (d.get('file_policy') or {}).get('mode') == 'concepts']
+                        has_current_papers = DeliverableSubmission.objects.filter(team=member,
+                            stage_label=stage.label, deliverable_id__in=concept_ids, files__is_current=True).exists()
+                        if has_current_papers and not confirmed:
+                            raise ValidationError(f'Review the assignment change for {member.name} and confirm it. Current papers will be kept in history and fresh concept papers required.')
+                        current.concepts = [{**current.concepts[0], 'title': new['assigned_title']}]
+                        current.policy_snapshot = {**current.policy_snapshot, 'assigned_title': new['assigned_title']}
+                        current.save(update_fields=['concepts', 'policy_snapshot'])
+                        if has_current_papers:
+                            from repository.deliverables.redefense import refresh_files
+                            refresh_files(member, stage)
+                        concepts.invalidate_clearance(member, stage.label)
+                # Section defaults apply to future initial hearings; a live chair
+                # request must not grow back to the initial count during edits.
+                member.save(update_fields=['concept_policies', 'updated_at'])
+                continue
             changed = any(old.get(k) != new.get(k) for k in ('mode', 'required_count', 'assigned_title'))
             if new['mode'] == 'assigned' and not new['assigned_title']:
                 raise ValidationError(f'Enter an assigned project/module title for {member.name} using a team exception.')

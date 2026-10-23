@@ -1,4 +1,5 @@
 import 'widgets/stage_minutes_settings.dart';
+import 'widgets/stage_outcome_settings.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -58,6 +59,8 @@ class _DefenseStageEditorScreenState
   final _minutesName = TextEditingController();
   bool _minutesRequired = false;
   Map<String, dynamic> _conceptConfig = {};
+  final _qualifyingScore = TextEditingController();
+  String _scoreCarryover = 'reassess';
   final _panel = TextEditingController(text: '50');
   final _adviser = TextEditingController(text: '30');
   final _peer = TextEditingController(text: '20');
@@ -120,6 +123,8 @@ class _DefenseStageEditorScreenState
       'is_presentation_only': _isPresentationOnly,
       'minutes_required': _minutesRequired,
       'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
+      'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
+      'score_carryover': _scoreCarryover,
       'minutes_deliverable_id': _minutesNumber.text,
       'minutes_deliverable_label': _minutesName.text,
       'deliverables': _deliverables,
@@ -302,6 +307,7 @@ class _DefenseStageEditorScreenState
     _description.dispose();
     _minutesNumber.dispose();
     _minutesName.dispose();
+    _qualifyingScore.dispose();
     _panel.dispose();
     _adviser.dispose();
     _peer.dispose();
@@ -411,6 +417,8 @@ class _DefenseStageEditorScreenState
     _isActive = stage['is_active'] != false;
     _isPresentationOnly = stage['is_presentation_only'] == true;
     _conceptConfig = Map<String, dynamic>.from(stage['concept_config'] as Map? ?? {});
+    _qualifyingScore.text = stage['qualifying_score']?.toString() ?? '';
+    _scoreCarryover = stage['score_carryover']?.toString() ?? _conceptConfig['score_carryover']?.toString() ?? 'reassess';
     _minutesRequired = stage['minutes_required'] == true;
     _minutesNumber.text = stage['minutes_deliverable_id']?.toString() ?? 'MINUTES';
     _minutesName.text = stage['minutes_deliverable_label']?.toString() ?? '';
@@ -482,8 +490,26 @@ class _DefenseStageEditorScreenState
     return options;
   }
 
+  Future<void> _saveOutcomePolicy() async {
+    if (StageOutcomeSettings.validateScore(_qualifyingScore.text) != null) {
+      setState(() => _error = 'Set a qualifying panel score from 0 to 100%.');
+      return;
+    }
+    setState(() { _saving = true; _error = null; });
+    final ok = await ref.read(defenseStagesProvider.notifier).updateStage(widget.stageId, {
+      'qualifying_score': double.parse(_qualifyingScore.text.trim()), 'score_carryover': _scoreCarryover,
+    });
+    if (!mounted) return;
+    setState(() { _saving = false; if (!ok) _error = ref.read(defenseStagesProvider).error; });
+    if (ok) { _clearDirty(); await _load(); }
+  }
+
   Future<void> _save() async {
     if (_isLocked) return;
+    if (StageOutcomeSettings.validateScore(_qualifyingScore.text) != null) {
+      setState(() { _activeTab = 1; _error = 'Set a qualifying panel score from 0 to 100%.'; });
+      return;
+    }
     if (_label.text.trim().isEmpty) {
       setState(() => _error = 'Stage name is required.');
       return;
@@ -557,6 +583,8 @@ class _DefenseStageEditorScreenState
             'is_presentation_only': _isPresentationOnly,
             'minutes_required': _minutesRequired,
       'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
+      'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
+      'score_carryover': _scoreCarryover,
             'minutes_deliverable_id': _minutesNumber.text.trim(),
             'minutes_deliverable_label': _minutesName.text.trim(),
             'deliverables': _isPresentationOnly ? [] : _deliverables,
@@ -817,6 +845,7 @@ class _DefenseStageEditorScreenState
       child: ColoredBox(
         color: _isDark ? DefensysTokens.mistBackground : const Color(0xFFF3F4F6),
         child: SingleChildScrollView(
+          key: ValueKey('stage-editor-step-$_activeTab'),
           padding: DefensysUi.contentPadding,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1344,6 +1373,18 @@ class _DefenseStageEditorScreenState
                                   );
                                 },
                               ),
+                              const SizedBox(height: 16),
+                              StageOutcomeSettings(scoreController: _qualifyingScore,
+                                scoreCarryover: _scoreCarryover, conceptSelection: _conceptConfig['enabled'] == true,
+                                enabled: !_saving,
+                                onChanged: () { setState(() {}); _markDirty(); },
+                                onCarryoverChanged: (v) { setState(() => _scoreCarryover = v); _markDirty(); }),
+                              if (_isLocked) ...[
+                                const SizedBox(height: 12),
+                                const Text('Outcome settings apply to new hearings. Existing hearings keep their recorded policy.'),
+                                TextButton(onPressed: _saving ? null : _saveOutcomePolicy,
+                                  child: const Text('Save outcome settings')),
+                              ],
                             ],
                           ),
 

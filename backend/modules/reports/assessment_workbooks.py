@@ -1,5 +1,5 @@
 """Compact report sheets for individual/team assessments and supporting records."""
-from reports.grade_summary import assessment_scope_label, grade_outcome_label, student_assessment_scores
+from reports.grade_summary import assessment_scope_label, grade_outcome_label, student_assessment_scores, assessment_panel_submissions
 
 
 def _name(user):
@@ -91,13 +91,15 @@ def assessment_document_sheets(records, *, student, team_rows, coverage):
         sheets.append({'name': name, 'title': title, 'subtitle': subtitle, 'metadata': metadata,
                        'section_title': section, 'columns': columns, 'rows': rows})
 
-        submissions = list(grade.panelist_submissions.all().select_related('panelist', 'student').prefetch_related('criterion_scores'))
+        submissions = list(assessment_panel_submissions(grade, official=False))
         if student:
             submissions = [item for item in submissions if item.student_id in (None, student.pk)]
         criteria, feedback = [], []
         for submission in submissions:
             evaluator = _name(submission.panelist) if submission.panelist else submission.guest_name or 'Guest panelist'
             candidate = _name(submission.student) if submission.student else 'Team assessment'
+            if submission.concept_key:
+                candidate = f'{submission.concept_key.upper()} | {candidate}'
             for score in submission.criterion_scores.all():
                 criteria.append({'evaluator': evaluator, 'candidate': candidate, 'criterion': score.criterion_name_snapshot,
                                  'score': score.score, 'max': score.max_score_snapshot, 'normalized': score.normalized_score})

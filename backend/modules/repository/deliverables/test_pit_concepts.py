@@ -96,7 +96,7 @@ class PitConceptTests(APITestCase):
             'review_token': review_token(ConceptRound.objects.get(schedule=schedule)),
             'reason': 'Panel hearing feedback recorded by the PIT Lead.',
             'concepts': [{'key': f'c{i}', 'decision': 'approved' if approved and i == 2 else 'rejected',
-                                  'remarks': 'Recorded panel feedback.'} for i in range(1, 4)],
+                                  'remarks': 'Recorded panel feedback.', 'next_action': 'omit' if approved else 'replace'} for i in range(1, 4)],
         }, format='json')
 
     def test_config_and_documents_are_persisted_in_assigned_event_only(self):

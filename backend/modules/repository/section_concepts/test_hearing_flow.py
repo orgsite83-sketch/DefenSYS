@@ -138,6 +138,29 @@ class SharedHearingFlowTests(APITestCase):
         review_submission(self.module_team, self.event.label, 'CHECKLIST', 'accepted', '', self.first)
         self.assertIsNone(concepts.latest_round(self.module_team, self.event).revisions_cleared_at)
 
+    def test_multiple_selected_module_attachments_clear_revisions_only_after_all_reviews(self):
+        from repository.deliverables.concept_completion import final_paper_complete
+        # Establish the fixture's authored policy before any hearing documents.
+        # Production setup edits remain locked once a shared project has begun.
+        definition = self.event.deliverables.get(deliverable_id='APPROVED_PAPER')
+        definition.file_policy = {'mode': 'multiple', 'min_files': 1, 'max_files': 3, 'purpose': 'approved_concept'}
+        definition.save()
+        self.finish()
+        team = self.module_team
+        sub = upsert_submission(team, self.event.label, 'APPROVED_PAPER', 'paper.pdf', '10 B', team.leader,
+            file=SimpleUploadedFile('paper.pdf', b'%PDF-1.4 final module'))
+        first = sub.files.get(is_current=True)
+        sub = upsert_submission(team, self.event.label, 'APPROVED_PAPER', 'appendix.pdf', '10 B', team.leader,
+            file=SimpleUploadedFile('appendix.pdf', b'%PDF-1.4 appendix'))
+        review_submission(team, self.event.label, 'APPROVED_PAPER', 'accepted', '', self.first, file_id=first.pk)
+        self.assertIsNone(concepts.latest_round(team, self.event).revisions_cleared_at)
+        self.assertFalse(final_paper_complete(team, self.event))
+        second = sub.files.filter(is_current=True).exclude(pk=first.pk).get()
+        review_submission(team, self.event.label, 'APPROVED_PAPER', 'accepted', '', self.first, file_id=second.pk)
+        self.assertIsNotNone(concepts.latest_round(team, self.event).revisions_cleared_at)
+        self.assertTrue(final_paper_complete(team, self.event))
+        self.assertIsNone(services.latest(self.project).revisions_cleared_at)
+
     def test_non_chair_cannot_start_or_decide_and_stale_batch_is_atomic(self):
         self.hearing()
         self.assertIn(self.action('start_presentation', self.unassigned).status_code, (403, 404))
@@ -177,6 +200,46 @@ class SharedHearingFlowTests(APITestCase):
 
 class CapstoneSharedHearingFlowTests(APITestCase):
     setUp = timing_fixtures.faculty_review_setup
+
+    def test_configured_module_outcome_uses_the_selected_systems_assessment(self):
+        from grading.grades.outcome_rules import outcome_payload
+        from grading.grades.defense_workflow import record_verdict
+        self.stage.qualifying_score = 75
+        self.stage.save()
+        project, schedule, grade, criterion = self.prepare_hearing()
+        services.start_presentation(project, self.chair)
+        for key, score in [('c1', 9), ('c2', 6), ('c3', 8)]:
+            submit_panelist_grade(schedule, grade, [{'criterion_id': criterion.pk, 'score': score}],
+                panelist=self.chair, concept_key=key)
+        self.assertEqual(outcome_payload(grade)['outcome'], 'pending')
+        services.decide(project, self.chair, [{'key': key,
+            'decision': 'approved' if key == 'c2' else 'not_selected'} for key in services.KEYS], 'approved', '')
+        self.assertEqual(outcome_payload(grade)['outcome'], 'for_redefense')
+        result = record_verdict(grade, actor=self.chair, verdict='for_redefense', remarks='Revise the selected module.',
+            concept_decisions=[{'key': key, 'decision': 'revise' if key == 'c2' else 'not_selected',
+                'remarks': 'Revise this module.' if key == 'c2' else ''} for key in services.KEYS])
+        self.assertEqual(result.verdict, 'for_redefense')
+        current = concepts.latest_round(self.team, self.stage)
+        self.assertEqual([c['key'] for c in current.concepts], ['c2'])
+        self.assertEqual(current.section_round_id, services.latest(project).pk)
+        self.assertEqual(services.latest(project).selected_key, 'c2')
+        self.assertEqual(services.latest(project).verdict, 'approved')
+        self.assertEqual(current.concepts[0]['panel_feedback'], 'Revise this module.')
+
+    def test_shared_system_denial_does_not_create_a_module_pass_from_qualifying_scores(self):
+        self.stage.qualifying_score = 75
+        self.stage.save()
+        project, schedule, grade, criterion = self.prepare_hearing()
+        services.start_presentation(project, self.chair)
+        for key in services.KEYS:
+            submit_panelist_grade(schedule, grade, [{'criterion_id': criterion.pk, 'score': 9}],
+                panelist=self.chair, concept_key=key)
+        services.decide(project, self.chair, [{'key': key, 'decision': 'rejected',
+            'remarks': 'Replace the shared system.'} for key in services.KEYS],
+            'for_redefense', 'Replace the shared system.')
+        grade.refresh_from_db()
+        self.assertEqual(grade.verdict, 'for_redefense')
+        self.assertFalse(archive_unlocked(self.team, self.stage.label))
 
     def prepare_hearing(self):
         from django.contrib.auth import get_user_model

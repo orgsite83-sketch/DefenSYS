@@ -209,6 +209,7 @@ class DeliverablesTriageHelper {
         resolveActiveStage(team) ?? {},
       ).code;
       return status == workflowFilter.$1 ||
+          filter == TeamTriageFilter.awaitingVerdict && status == 'awaiting_concept_selection' ||
           filter == TeamTriageFilter.completed && status == 'passed';
     }
     switch (filter) {
@@ -227,9 +228,7 @@ class DeliverablesTriageHelper {
               {})['status'],
         );
       case TeamTriageFilter.readyRedefense:
-        return (resolveActiveStage(team)?['concept_workflow'] as Map? ??
-                {})['status'] ==
-            'ready_to_schedule_redefense';
+        return TeamWorkflowStatus.fromStage(resolveActiveStage(team) ?? {}).code == 'ready_to_schedule_redefense';
       case TeamTriageFilter.redefenseScheduled:
         final workflow =
             resolveActiveStage(team)?['concept_workflow'] as Map? ?? {};

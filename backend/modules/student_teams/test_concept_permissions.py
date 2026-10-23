@@ -11,6 +11,11 @@ class ConceptPolicyPermissionsTests(APITestCase):
     def test_instructor_can_read_but_only_scoped_lead_can_change_concept_policy(self):
         event = PitEventGradingConfig.objects.create(semester=self.term, year_level='2nd Year',
             event_name='Concept Policy Hearing', concept_config={'enabled': True, 'required_count': 3})
+        # This section fixture deliberately has two different legacy event
+        # labels, so select a current roster before configuring its concepts.
+        from .models import PITSectionRoster
+        roster = PITSectionRoster.objects.create(semester=self.term, year_level='2nd Year', section='BSIT-2b')
+        roster.teams.set(self.teams)
         data = {'expected_section': 'BSIT-2b', 'section': 'BSIT-2b',
             'concept_policy_changes': [{'context_key': context_key(event),
                 'section_policy': {'mode': 'proposals', 'required_count': 2}}]}

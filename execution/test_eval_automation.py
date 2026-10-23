@@ -274,6 +274,23 @@ class EvaluationAutomationTests(unittest.TestCase):
         self.assertEqual([i['criteria_scores'][0]['score'] for i in items], [4, 80, 80])
         verdict.assert_not_called()
 
+    def test_configured_concept_assessments_keep_separate_scores_and_chair_selection(self):
+        rubric = {'target_type': 'both', 'criteria': [
+            {'id': 1, 'target_type': 'team', 'max_score': 10},
+            {'id': 2, 'target_type': 'individual', 'max_score': 5},
+        ]}
+        team = self.panelist_schedule_payload(panel_rubric=rubric,
+            assessment_concepts=[{'key': 'c1', 'title': 'One'}, {'key': 'c2', 'title': 'Two'}],
+            members=[{'id': 11, 'name': 'A'}, {'id': 12, 'name': 'B'}])
+        session, _, verdict, result, output = self.run_panel(teams=[team], args={'min_score': 8, 'max_score': 8})
+        rows = session.post.call_args.kwargs['json']['submissions']
+        self.assertEqual([(r['concept_key'], r['student_id']) for r in rows],
+            [('c1', None), ('c1', 11), ('c1', 12), ('c2', None), ('c2', 11), ('c2', 12)])
+        self.assertEqual([r['criteria_scores'][0]['score'] for r in rows], [8, 4, 4, 8, 4, 4])
+        verdict.assert_not_called()
+        self.assertEqual(result, 0)
+        self.assertIn('chair must select a qualifying concept', output)
+
     def test_invalid_cli_ranges_and_conflicting_modes_are_rejected_before_discovery(self):
         for flags in [
             ['--min-score', '-1'], ['--max-score', '11'], ['--min-score', 'nan'],

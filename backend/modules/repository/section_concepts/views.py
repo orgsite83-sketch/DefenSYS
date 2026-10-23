@@ -159,7 +159,7 @@ class SectionProjectDetailView(SectionAPIView):
                 from grading.grades.services import GradeContextService
                 grade, _, _ = GradeContextService.get_or_create_for_schedule(current.schedule)
             decisions = [{'key': k, 'decision': decision if k == round.selected_key else 'not_selected',
-                          'remarks': d['remarks'] if k == round.selected_key else ''} for k in services.KEYS]
+                          'remarks': d['remarks'] if k == round.selected_key else ''} for k in (c['key'] for c in current.concepts)]
             if action in ('module_decision', 'clear_module_revisions'):
                 if action == 'module_decision' and verdict not in ('approved', 'approved_with_revisions', 'for_redefense'):
                     raise serializers.ValidationError('Select the module or request another concept review.')

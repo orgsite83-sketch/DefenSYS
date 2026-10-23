@@ -134,7 +134,8 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     )
 
     # 4. Panelist Defense Feedback & Remarks
-    submissions = list(team_grade.panelist_submissions.all().select_related('panelist'))
+    from reports.grade_summary import assessment_panel_submissions
+    submissions = list(assessment_panel_submissions(team_grade))
     remarks_list = [s for s in submissions if s.remarks and s.remarks.strip()]
     if remarks_list:
         builder.add_section_header("Panelist Defense Feedback & Direct Observations")

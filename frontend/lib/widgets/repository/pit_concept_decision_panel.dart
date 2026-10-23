@@ -79,7 +79,11 @@ class _PitConceptDecisionPanelState
         ? 'Select exactly one concept.'
         : null;
     if (!clearRevisions) {
-      validation ??= conceptDecisionError(decisions, outcome);
+      validation ??= conceptDecisionError(
+        decisions,
+        outcome,
+        requirePlan: true,
+      );
       if (validation == null &&
           selected.isEmpty &&
           !decisions.any(
@@ -152,7 +156,9 @@ class _PitConceptDecisionPanelState
             widget.teamId,
             widget.stageLabel,
             clearRevisions ? 'clear_pit_revisions' : 'pit_decision',
-            concepts: clearRevisions ? null : decisions,
+            concepts: clearRevisions
+                ? null
+                : conceptDecisionsForOutcome(decisions, outcome),
             reason: notes.text.trim(),
             reviewToken: token,
           );
@@ -197,8 +203,12 @@ class _PitConceptDecisionPanelState
               Expanded(
                 child: Text(
                   recorded
-                      ? (isSingle ? 'Team project verdict' : 'Team concept decision')
-                      : (isSingle ? 'Team project verdict' : 'Select team concept'),
+                      ? (isSingle
+                            ? 'Team project verdict'
+                            : 'Team concept decision')
+                      : (isSingle
+                            ? 'Team project verdict'
+                            : 'Select team concept'),
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -223,7 +233,9 @@ class _PitConceptDecisionPanelState
               if (recorded) ...[
                 Text(
                   selectedTitle.isEmpty
-                      ? (isSingle ? 'Re-defense required' : 'Another concept review is required')
+                      ? (isSingle
+                            ? 'Re-defense required'
+                            : 'Another concept review is required')
                       : selectedTitle,
                   style: TextStyle(
                     fontSize: 16,
@@ -240,7 +252,9 @@ class _PitConceptDecisionPanelState
                             : 'Approved · Revisions pending'
                       : selectedTitle.isEmpty
                       ? 'Review the feedback in the concept history.'
-                      : (isSingle ? 'Official project verdict' : 'Selected concept'),
+                      : (isSingle
+                            ? 'Official project verdict'
+                            : 'Selected concept'),
                   style: TextStyle(fontSize: 13, color: secondary),
                 ),
                 if ('${workflow['decided_by_name'] ?? ''}'.isNotEmpty) ...[

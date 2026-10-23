@@ -6,7 +6,7 @@ from xml.sax.saxutils import escape
 
 from reports.pdf_builder import DefensysPdfReportBuilder
 from reports.pdf_styles import defensys_table_style
-from reports.grade_summary import assessment_scope_label, student_assessment_scores
+from reports.grade_summary import assessment_scope_label, student_assessment_scores, assessment_panel_submissions
 
 
 def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, include_signatures=False, builder=None, coverage_label=None):
@@ -96,7 +96,7 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
         hist_rows = [hist_headers]
         for h in histories:
             h_date = h.schedule.scheduled_date.strftime('%b %d, %Y') if h.schedule else "—"
-            h_verdict = dict(team_grade.VERDICT_CHOICES).get(h.verdict, h.verdict.replace('_', ' ').title()) if h.verdict else ("PASSED" if (h.final_grade and h.final_grade >= 75) else "FAILED")
+            h_verdict = dict(team_grade.VERDICT_CHOICES).get(h.verdict, h.verdict.replace('_', ' ').title()) if h.verdict else 'Not recorded'
             hist_rows.append([
                 Paragraph(f"#{h.attempt_number}", styles['TableCellCenter']),
                 Paragraph(h_date, styles['TableCellCenter']),
@@ -111,7 +111,7 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
         builder.add_spacer(0.07)
 
     # 3. Extract distinct panelists
-    submissions = list(team_grade.panelist_submissions.all().prefetch_related('criterion_scores', 'panelist'))
+    submissions = list(assessment_panel_submissions(team_grade))
     distinct_panelists = []
     seen_panelists = set()
 

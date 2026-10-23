@@ -130,6 +130,8 @@ class DefenseSchedulerApiTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
 
     def schedule_payload(self, **overrides):
+        # New scheduling requests require an explicit configured outcome rule.
+        DefenseStage.objects.filter(pk=self.stage.pk).update(qualifying_score=75)
         payload = {
             'scope': DefenseSchedule.SCOPE_CAPSTONE,
             'semester_id': self.semester.id,

@@ -20,11 +20,33 @@ class EvaluationReviewScreen extends StatelessWidget {
     required this.teamCriteria,
     required this.studentCriteria,
     required this.complete,
+    this.conceptSubmissions = const [],
   });
   final TeamData team;
   final List<Criterion> teamCriteria;
   final Map<String, List<Criterion>> studentCriteria;
   final bool complete;
+  final List<Map<String, dynamic>> conceptSubmissions;
+
+  List<Widget> _conceptSections(BuildContext context) {
+    final definitions = (team.panelRubric?['criteria'] as List? ?? []).whereType<Map>().toList();
+    return [for (final concept in team.assessmentConcepts)
+      Padding(padding: const EdgeInsets.only(top: 16), child: ShadCard(
+        padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(concept['title'].toString(), style: const TextStyle(fontWeight: FontWeight.w600)),
+          for (final submission in conceptSubmissions.where((s) => s['concept_key'] == concept['key'])) ...[
+            const SizedBox(height: 10),
+            Text(submission['student_id'] == null ? 'Team criteria' : team.memberDetails.firstWhere((m) => m.id == submission['student_id'].toString()).name),
+            for (final criterion in definitions.where((c) => team.targetType != 'both' || c['target_type'] == (submission['student_id'] == null ? 'team' : 'individual')))
+              Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Row(children: [
+                Expanded(child: Text(criterion['name'].toString())),
+                Text('${(submission['criteria_scores'] as List).whereType<Map>().where((s) => s['criterion_id'].toString() == criterion['id'].toString()).firstOrNull?['score'] ?? '—'} / ${criterion['max_score']}'),
+              ])),
+            if (submission['remarks']?.toString().isNotEmpty == true) Text(submission['remarks'].toString()),
+          ],
+        ]))),
+    ];
+  }
 
   Widget _section(
     BuildContext context,
@@ -135,9 +157,10 @@ class EvaluationReviewScreen extends StatelessWidget {
                   : 'Use Edit to finish the required criteria.',
             ),
           ),
-          if (teamCriteria.isNotEmpty)
+          if (conceptSubmissions.isNotEmpty) ..._conceptSections(context),
+          if (conceptSubmissions.isEmpty && teamCriteria.isNotEmpty)
             _section(context, 'Team criteria', teamCriteria, null),
-          for (final member in team.memberDetails)
+          for (final member in conceptSubmissions.isEmpty ? team.memberDetails : <TeamMember>[])
             if ((studentCriteria[member.id] ?? []).isNotEmpty)
               _section(
                 context,

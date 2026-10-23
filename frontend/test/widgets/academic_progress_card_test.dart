@@ -12,7 +12,7 @@ const _grades = <Map<String, dynamic>>[
     'stage_label': 'Concept Proposal',
     'display_semester': '1st Semester · 2026–2027',
     'final_grade': '89.25',
-    'status': 'pending',
+    'status': 'published',
     'is_officially_complete': true,
     'result': 'passed',
     'verdict': 'approved',
@@ -52,6 +52,26 @@ Widget _card({
 
 void main() {
   setUpAll(loadPreviewFonts);
+  testWidgets(
+    'a closed cohort does not finalize an individual pending assessment',
+    (tester) async {
+      await pumpDefensysWidget(
+        tester,
+        _card(
+          grades: [
+            {
+              ..._grades.first,
+              'status': 'pending',
+              'is_officially_complete': true,
+            },
+          ],
+        ),
+      );
+      expect(find.text('Finalized'), findsNothing);
+      expect(find.text('Provisional'), findsOneWidget);
+      expect(find.text('In progress'), findsOneWidget);
+    },
+  );
   testWidgets(
     'official results, provisional averages, and unevaluated stages remain distinct',
     (tester) async {

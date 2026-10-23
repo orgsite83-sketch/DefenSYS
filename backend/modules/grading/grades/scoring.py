@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 
 
-def evaluation_percentage(rows):
+def evaluation_percentage(rows, *, rounded=True):
     """Rows are (earned, maximum, weight). Null weights preserve pre-weighting records."""
     rows = list(rows)
     if not rows:
@@ -14,13 +14,15 @@ def evaluation_percentage(rows):
         maximum = sum((maximum for _, maximum, _ in rows), Decimal('0'))
         if maximum <= 0:
             return None
-        return (sum((earned for earned, _, _ in rows), Decimal('0')) / maximum * 100).quantize(Decimal('0.01'))
+        value = sum((earned for earned, _, _ in rows), Decimal('0')) / maximum * 100
+        return value.quantize(Decimal('0.01')) if rounded else value
     weight_total = sum((weight for _, _, weight in rows), Decimal('0'))
     if weight_total <= 0 or any(maximum <= 0 or weight <= 0 for _, maximum, weight in rows):
         raise ValidationError('The assigned rubric contains invalid criterion weights or maximum scores.')
     # Normalizing also supports old equal unit-weight rubrics and target-specific previews.
     total = sum((earned / maximum * weight for earned, maximum, weight in rows), Decimal('0'))
-    return (total / weight_total * 100).quantize(Decimal('0.01'))
+    value = total / weight_total * 100
+    return value.quantize(Decimal('0.01')) if rounded else value
 
 
 def rubric_score_rows(rubric, submitted, *, target_type=None, name_key='criterion_name'):

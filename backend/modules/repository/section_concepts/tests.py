@@ -333,7 +333,7 @@ class SharedSystemConceptTests(APITestCase):
         concepts.save_titles(self.team, self.event, self.titles('Module'), actor=self.pm)
         self.assertIn('shared system titles', concepts.clearance_blocker(self.team, self.event))
         self.prepare_shared()
-        self.assertIn('confirm all three', concepts.clearance_blocker(self.team, self.event))
+        self.assertIn('confirm the required', concepts.clearance_blocker(self.team, self.event))
 
     def test_shared_system_decision_can_precede_panel_assessments_but_final_uploads_stay_locked(self):
         self.hearing(evaluated=False)
@@ -457,16 +457,16 @@ class SharedSystemConceptTests(APITestCase):
                                remarks='Revise the module boundaries.')
         self.assertEqual(response.status_code, 200, response.data)
         current = concepts.latest_round(self.team, self.event)
-        titles = [{'key': c['key'], 'title': 'Unrelated change' if c['key'] == 'c1' else c['title']}
-                  for c in current.concepts]
-        with self.assertRaises(ValidationError):
+        self.assertEqual([c['key'] for c in current.concepts], ['c2'])
+        titles = [{'key': 'c1', 'title': 'Unrelated change'}]
+        with self.assertRaises(ValueError):
             concepts.save_titles(self.team, self.event, titles, actor=self.first)
         titles = [{'key': c['key'], 'title': 'Revised linked module' if c['key'] == 'c2' else c['title']}
                   for c in current.concepts]
         concepts.save_titles(self.team, self.event, titles, actor=self.first)
         current.refresh_from_db()
-        self.assertEqual(current.concepts[0]['title'], 'Module c1')
-        self.assertEqual(current.concepts[1]['title'], 'Revised linked module')
+        self.assertEqual(current.concepts[0]['title'], 'Revised linked module')
+        self.assertEqual(concepts.ConceptRound.objects.get(team=self.team, number=1).concepts[0]['title'], 'Module c1')
         self.assertEqual(services.latest(self.project).selected_key, 'c2')
         self.assertEqual(concepts.latest_round(self.module_team, self.event).number, 1)
 

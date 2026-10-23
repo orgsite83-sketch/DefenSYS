@@ -4,6 +4,8 @@
 def stage_setup_readiness(stage, config, semester):
     issues = []
     required_roles = []
+    if stage.qualifying_score is None:
+        issues.append('Set the minimum qualifying panel score for future hearings.')
     if semester is None:
         issues.append('Activate a semester to configure grading.')
     elif config is None:
@@ -17,7 +19,7 @@ def stage_setup_readiness(stage, config, semester):
             'peer': semester.capstone_peer_evaluation_enabled,
         }
         for role, is_enabled in enabled.items():
-            if not is_enabled or getattr(config, f'{role}_weight') <= 0:
+            if not is_enabled or (role != 'panel' and getattr(config, f'{role}_weight') <= 0):
                 continue
             required_roles.append(role)
             rubric = getattr(config, f'{role}_rubric')

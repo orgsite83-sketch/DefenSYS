@@ -142,6 +142,10 @@ void main() {
               'stage-setup-minutes-selector',
             );
           }
+          await tester.tap(find.text('2. Grading & Rubrics'));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.byKey(const ValueKey('minimum-qualifying-score')));
+          await tester.enterText(find.byKey(const ValueKey('minimum-qualifying-score')), '75');
           await tester.tap(find.text('3. Deliverables'));
           await tester.pumpAndSettle();
           if (presentationOnly) {

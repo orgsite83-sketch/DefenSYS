@@ -6,6 +6,26 @@ import 'package:defensys/screens/app/panelist/widgets/panelist_segmented_tabs.da
 import '../helpers/pump_app.dart';
 
 void main() {
+  testWidgets('Unselected concepts show separate assessments without an invented zero grade', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpDefensysWidget(tester, OverallResultsTab(results: [
+      {'teamName': 'Awaiting concept selection', 'projectTitle': 'Proposals',
+        'percentage': null, 'total': 0, 'max': 0, 'teamStatus': 'Pending',
+        'criteria': [], 'memberGrades': [],
+        'concept_assessments': [
+          {'key': 'c1', 'title': 'Concept Alpha', 'percentage': 80, 'selected': false},
+          {'key': 'c2', 'title': 'Concept Beta', 'percentage': 90, 'selected': false},
+        ]},
+    ]));
+    expect(find.text('No concept selected'), findsOneWidget);
+    expect(find.text('Concept Alpha: 80%'), findsOneWidget);
+    expect(find.text('Concept Beta: 90%'), findsOneWidget);
+    expect(find.text('0.0%'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   group('OverallResultsTab UI/UX Tests', () {
     final mockResults = [
       {

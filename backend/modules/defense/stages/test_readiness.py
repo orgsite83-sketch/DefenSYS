@@ -13,6 +13,7 @@ from grading.rubrics.models import Rubric
 class StageSetupReadinessTests(SimpleTestCase):
     def setUp(self):
         self.stage = SimpleNamespace(
+            qualifying_score=75,
             is_presentation_only=False,
             deliverables=Mock(),
         )

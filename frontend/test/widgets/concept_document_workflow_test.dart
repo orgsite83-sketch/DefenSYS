@@ -248,7 +248,7 @@ void main() {
   testWidgets(
     'concept settings use shadcn controls and preserve configuration',
     (tester) async {
-      var config = <String, dynamic>{};
+      var config = <String, dynamic>{'score_carryover': 'retain'};
       await pumpDefensysWidget(
         tester,
         StatefulBuilder(
@@ -264,8 +264,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(config['enabled'], isTrue);
       expect(find.text('Adviser clearance before re-defense'), findsNothing);
-      expect(find.text('Require fresh assessments'), findsOneWidget);
-      expect(find.byType(ShadSelect<String>), findsNWidgets(2));
+      // Repeat assessments now belong to the stage-wide grading settings.
+      expect(find.text('Require fresh assessments'), findsNothing);
+      expect(find.byType(ShadSelect<String>), findsOneWidget);
       await tester.tap(find.byType(ShadSelect<String>).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Custom count…').last);
@@ -275,12 +276,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(config['required_count'], 5);
       expect(find.text('5 concepts (custom)'), findsOneWidget);
-      await tester.tap(find.byType(ShadSelect<String>).at(1));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.text('Retain adviser and peer scores').last,
-      );
-      await tester.pumpAndSettle();
       expect(config['score_carryover'], 'retain');
       expect(find.text('Not required unless the panel requests it'), findsNothing);
       expect(tester.takeException(), isNull);

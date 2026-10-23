@@ -27,7 +27,7 @@ void ensureConceptPapers(
       item['deliverable_type'] = 'post';
       item['file_policy'] = {
         ...Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
-        'mode': 'single',
+        'mode': (item['file_policy'] as Map?)?['mode'] ?? 'single',
         'purpose': 'approved_concept',
       };
     }
@@ -345,7 +345,7 @@ class ConceptSettings extends StatelessWidget {
                             ),
                           ),
                         ),
-                        SizedBox(
+                        if (isPit) SizedBox(
                           width: fieldWidth,
                           child: policyField(
                             isPit
@@ -502,7 +502,6 @@ class DocumentPolicyEditor extends StatelessWidget {
         : 10;
 
     void selectMode(String newMode) {
-      if (value['purpose'] == 'approved_concept') return;
       final slotLabel = (deliverableLabel?.trim().isNotEmpty == true)
           ? deliverableLabel!.trim()
           : 'Concept paper';
@@ -510,6 +509,7 @@ class DocumentPolicyEditor extends StatelessWidget {
 
       onChanged({
         'mode': newMode,
+        if (value['purpose'] != null) 'purpose': value['purpose'],
         if (newMode == 'multiple') ...{
           'min_files': minFiles,
           'max_files': maxFiles < minFiles ? minFiles : maxFiles,
@@ -539,10 +539,11 @@ class DocumentPolicyEditor extends StatelessWidget {
                   width: isCompact ? double.infinity : 220,
                   child: WorkflowChoice(
                     value: mode == 'named' ? 'single' : mode,
-                    enabled: enabled && value['purpose'] != 'approved_concept',
+                    enabled: enabled,
                     options: {
                       'single': 'One file',
-                      if (allowConcepts || mode == 'concepts')
+                      if (value['purpose'] != 'approved_concept' &&
+                          (allowConcepts || mode == 'concepts'))
                         'concepts': 'Documents for each concept',
                       'multiple': 'Multiple attachments',
                     },

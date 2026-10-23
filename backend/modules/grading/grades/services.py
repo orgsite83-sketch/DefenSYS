@@ -101,11 +101,27 @@ def guest_panelist_remark_key(guest_name, guest_code):
 def breakdowns_for_panelist(team_grade, panelist_key):
     rows = team_grade.breakdowns.all()
     if 'breakdowns' not in getattr(team_grade, '_prefetched_objects_cache', {}):
-        rows = rows.select_related('student')
+        rows = rows.select_related('student', 'source_submission')
     return sorted((row for row in rows
         if row.evaluation_type == GradeBreakdown.EVAL_PANEL and not row.is_void
         and _panelist_key_from_breakdown_remarks(row.remarks) == panelist_key),
         key=lambda row: (row.display_order, row.id))
+
+
+def _concept_result_rows(schedule, rows, *, key_for_row, maximum_attr):
+    from .outcome_rules import policy_for, selected_key, hearing_concepts
+    from .scoring import panelist_overall_percentage
+    if not policy_for(schedule).get('per_concept'):
+        return rows, []
+    key = selected_key(schedule)
+    details = []
+    for concept in hearing_concepts(schedule):
+        scores = [row for row in rows if key_for_row(row) == concept['key']]
+        percentage = panelist_overall_percentage(scores, maximum_attr=maximum_attr)
+        details.append({'key': concept['key'], 'title': concept['title'],
+                        'percentage': float(percentage) if percentage is not None else None,
+                        'selected': concept['key'] == key})
+    return [row for row in rows if key_for_row(row) == key], details
 
 
 def panelist_result_payload(team_grade, panelist_key):
@@ -116,11 +132,13 @@ def panelist_result_payload(team_grade, panelist_key):
 
     team = team_grade.team
     from defense.scheduler.progress import schedule_progress
-    progress = schedule_progress(team_grade.schedule) if team_grade.schedule_id else {}
-    total_score = sum((row.score for row in rows), Decimal('0'))
-    total_max = sum((row.max_score for row in rows), Decimal('0'))
+    progress = schedule_progress(team_grade.schedule, reconcile_status=False) if team_grade.schedule_id else {}
+    official_rows, concept_results = _concept_result_rows(team_grade.schedule, rows,
+        key_for_row=lambda row: row.source_submission.concept_key if row.source_submission_id else '', maximum_attr='max_score')
+    total_score = sum((row.score for row in official_rows), Decimal('0'))
+    total_max = sum((row.max_score for row in official_rows), Decimal('0'))
     from .scoring import panelist_overall_percentage
-    percentage = panelist_overall_percentage(rows, maximum_attr='max_score') or Decimal('0')
+    percentage = panelist_overall_percentage(official_rows, maximum_attr='max_score')
 
     team_status = ('Approved' if team_grade.status == TeamGrade.STATUS_PUBLISHED and team_grade.result == 'passed'
                    else 'Failed' if team_grade.result == 'failed' else 'Pending')
@@ -169,7 +187,8 @@ def panelist_result_payload(team_grade, panelist_key):
     return {
         'teamName': team.name,
         'projectTitle': team.project_title or '',
-        'percentage': float(percentage),
+        'percentage': float(percentage) if percentage is not None else None,
+        'concept_assessments': concept_results,
         'total': float(total_score),
         'max': float(total_max),
         'teamStatus': team_status,
@@ -242,17 +261,20 @@ def previous_panel_attempt_results(submissions):
         scores = [score for row in rows for score in row.criterion_scores.all()]
         if not scores:
             continue
+        official_scores, concept_results = _concept_result_rows(schedule, scores,
+            key_for_row=lambda row: row.submission.concept_key, maximum_attr='max_score_snapshot')
         from .scoring import panelist_overall_percentage
-        percentage = panelist_overall_percentage(scores, maximum_attr='max_score_snapshot')
+        percentage = panelist_overall_percentage(official_scores, maximum_attr='max_score_snapshot')
         weights = ({'panel_weight': snapshot.panel_weight, 'peer_weight': snapshot.peer_weight,
                     'adviser_weight': snapshot.adviser_weight} if snapshot else weights_for_schedule(schedule))
         verdict = snapshot.verdict if snapshot else ''
         results.append({
             'teamName': schedule.team.name,
             'projectTitle': snapshot.project_title if snapshot else schedule.project_title_snapshot,
-            'percentage': float(percentage or 0),
-            'total': float(sum((score.score for score in scores), Decimal('0'))),
-            'max': float(sum((score.max_score_snapshot for score in scores), Decimal('0'))),
+            'percentage': float(percentage) if percentage is not None else None,
+            'concept_assessments': concept_results,
+            'total': float(sum((score.score for score in official_scores), Decimal('0'))),
+            'max': float(sum((score.max_score_snapshot for score in official_scores), Decimal('0'))),
             'teamStatus': 'Failed' if verdict in ('failed', 'project_rejected') else 'Pending',
             'level': schedule.team.year_level or '', 'stage': schedule.stage_label,
             'scope': schedule.scope, 'semester_id': schedule.semester_id,
@@ -265,7 +287,13 @@ def previous_panel_attempt_results(submissions):
                 'weight_snapshot': float(score.weight_snapshot) if score.weight_snapshot is not None else None,
                 'student_name': display_name(row.student) if row.student_id else None,
             } for row in rows for score in row.criterion_scores.all()],
-            'memberGrades': [],
+            'memberGrades': [{'name': item['name'], 'isLeader': False,
+                'panelContrib': float(Decimal(item['panel_score']) * weights['panel_weight'] / 100)
+                    if item['panel_score'] is not None else None,
+                'peerScore': float(item['peer_score']) if item['peer_score'] is not None else None,
+                'peerMax': 100 if item['peer_score'] is not None else None,
+                'finalGrade': float(item['final_grade']) if item['final_grade'] is not None else None}
+                for item in snapshot.student_scores] if snapshot else [],
             'weights': {'panel': weights['panel_weight'], 'peer': weights['peer_weight'],
                         **({'adviser': weights['adviser_weight']} if schedule.scope == 'capstone' else {})},
             'verdict': verdict,
@@ -285,6 +313,9 @@ def recompute_panel_score(team_grade):
     Set team_grade.panel_score to the arithmetic mean of each panelist's percentage.
     Also syncs and updates individual student stage grades if target_type is individual or both.
     """
+    from .outcome_rules import policy_for, recompute_configured_panel
+    if policy_for(team_grade.schedule).get('version') == 1:
+        return recompute_configured_panel(team_grade)
     if team_grade.panel_score_is_override:
         return team_grade.panel_score
 
@@ -655,7 +686,7 @@ def _submission_identity_kwargs(panelist=None, guest=None):
 
 
 @transaction.atomic
-def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks='', student=None, expected_context=None):
+def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks='', student=None, expected_context=None, concept_key=''):
     from defense.scheduler.models import DefenseSchedule
     from defense.scheduler.panelist_evaluation import grading_unavailable_reason, evaluation_context
     schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
@@ -678,13 +709,17 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
     if bool(panelist) == bool(guest):
         raise ValidationError({'panelist': 'Use either a panelist or a guest identity.'})
     identity_filter = {'panelist': panelist} if panelist else {'guest_code_id': str(guest.guest_code_id)}
-    if team_grade.panelist_submissions.filter(schedule=schedule, student=student, **identity_filter).exists():
+    from .outcome_rules import concept_keys
+    if concept_key not in concept_keys(schedule):
+        raise ValidationError('Choose a concept belonging to this hearing.')
+    if team_grade.panelist_submissions.filter(schedule=schedule, student=student, concept_key=concept_key, **identity_filter).exists():
         raise ValidationError('This evaluation has already been recorded. Request a correction instead of submitting again.')
     rows = _validated_panel_criterion_rows(schedule, criteria_scores, student=student)
     identity = _submission_identity_kwargs(panelist=panelist, guest=guest)
     
     lookup = identity['lookup'].copy()
     lookup['student'] = student
+    lookup['concept_key'] = concept_key
     defaults = identity['defaults'].copy()
     defaults['student'] = student
     defaults['remarks'] = remarks or ''
@@ -717,6 +752,7 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
         evaluation_type=GradeBreakdown.EVAL_PANEL,
         remarks__startswith=identity['remark_key'],
         is_void=False,
+        source_submission__concept_key=concept_key,
     ).delete()
     GradeBreakdown.objects.bulk_create([
         GradeBreakdown(
@@ -761,6 +797,8 @@ def weights_for_schedule(schedule):
     once created. See the save() method on StageGradingConfig/PitEventGradingConfig
     for retroactive pending sync.
     """
+    if schedule and (schedule.assessment_policy or {}).get('version') == 1:
+        return dict(schedule.assessment_policy['weights'])
     if schedule and schedule.scope == TeamGrade.SCOPE_CAPSTONE and schedule.defense_stage_id:
         from defense.stages.grading_config import weights_for_capstone_stage
 
@@ -1192,6 +1230,11 @@ def _snapshot_attempt(grade, user=None):
 
     return GradeAttemptHistory.objects.create(
         team_grade=grade,
+        assessment_policy=grade.schedule.assessment_policy if grade.schedule_id else {},
+        student_scores=[{'student_id': row.student_id, 'name': display_name(row.student),
+            **{field: str(getattr(row, field)) if getattr(row, field) is not None else None
+               for field in ('panel_score', 'adviser_score', 'peer_score', 'final_grade')}}
+            for row in grade.student_grades.select_related('student').order_by('student_id')],
         attempt_number=attempt_num,
         project_version=grade.project_version,
         project_title=grade.project_title_snapshot or grade.team.project_title,
@@ -1270,8 +1313,11 @@ class GradeContextService:
                 grade.panel_score_is_override = False
                 from repository.deliverables.concepts import stage_for, enabled
                 concept_context = stage_for(schedule.team, schedule.stage_label)
-                concept_reassessment = bool(enabled(concept_context)
-                    and concept_context.concept_config.get('score_carryover', 'reassess') == 'reassess')
+                concept_reassessment = bool(concept_context and (
+                    (schedule.scope == 'capstone' and (schedule.assessment_policy or {}).get(
+                        'score_carryover', getattr(concept_context, 'score_carryover', 'reassess')) == 'reassess')
+                    or (schedule.scope != 'capstone' and enabled(concept_context)
+                        and concept_context.concept_config.get('score_carryover', 'reassess') == 'reassess')))
                 if (grade.scope != TeamGrade.SCOPE_CAPSTONE and not enabled(concept_context)) or concept_reassessment:
                     grade.adviser_score = None
                     grade.adviser_score_is_override = False
@@ -1534,7 +1580,7 @@ class GradeContextService:
             final_grade__isnull=False,
         )
         if scope == TeamGrade.SCOPE_CAPSTONE:
-            grades = grades.filter(final_grade__gte=PASS_GRADE_THRESHOLD).filter(Q(verdict=TeamGrade.VERDICT_APPROVED) | Q(
+            grades = grades.filter(Q(verdict=TeamGrade.VERDICT_APPROVED) | Q(
                 verdict=TeamGrade.VERDICT_APPROVED_WITH_REVISIONS, revisions_cleared_at__isnull=False))
         if semester:
             grades = grades.filter(semester=semester)
@@ -1545,8 +1591,10 @@ class GradeContextService:
         elif stage_label:
             grades = grades.filter(stage_label=stage_label)
         from .defense_workflow import passed_and_cleared
+        from repository.deliverables.services import post_deliverables_complete
         return next((grade for grade in grades.order_by('-updated_at')
-                     if not grade.uses_defense_verdict or passed_and_cleared(grade)), None)
+                     if not grade.uses_defense_verdict or (
+                         passed_and_cleared(grade) and post_deliverables_complete(grade.team, grade.stage_label))), None)
 
 def _sync_grade_for_schedule(schedule, *, repair_placeholders=True):
     return GradeContextService.get_or_create_for_schedule(
@@ -2087,6 +2135,9 @@ def team_grading_readiness(grade, semester, scope, config=None):
         panel_complete = grade.panel_score is not None
     from .corrections import evaluator_completion
     completion = evaluator_completion(grade)
+    from .outcome_rules import policy_for
+    if policy_for(grade.schedule).get('version') == 1:
+        panel_complete = bool(completion['required'] and completion['submitted'] == completion['required'])
     if completion['required']:
         panel_complete = panel_complete and completion['submitted'] == completion['required']
 
@@ -2154,9 +2205,9 @@ def cohort_grading_teams_for_group(
                 missing.append('verdict')
             elif grade.verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
                 missing.append('redefense')
-            elif grade.verdict == TeamGrade.VERDICT_APPROVED_WITH_REVISIONS and not grade.revisions_cleared_at:
-                missing.append('clearance')
-            else:
+            elif grade.verdict in TeamGrade.PASSING_VERDICTS:
+                if grade.verdict == TeamGrade.VERDICT_APPROVED_WITH_REVISIONS and not grade.revisions_cleared_at:
+                    missing.append('clearance')
                 from repository.deliverables.services import post_deliverables_complete
                 lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
                 if not post_deliverables_complete(grade.team, lbl):

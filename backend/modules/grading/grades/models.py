@@ -238,6 +238,8 @@ class TeamGrade(models.Model):
                 return 'passed'
             if self.verdict == self.VERDICT_FOR_REDEFENSE:
                 return 'for_redefense'
+        if self.uses_defense_verdict and self.schedule_id and self.schedule.assessment_policy.get('version') == 1:
+            return 'pending'  # Academic totals do not record a defense decision.
         if self.final_grade is None:
             return 'pending'
         return 'passed' if self.final_grade >= PASS_GRADE_THRESHOLD else 'failed'
@@ -416,6 +418,7 @@ class GradeBreakdown(models.Model):
 
 
 class PanelistGradeSubmission(models.Model):
+    concept_key = models.CharField(max_length=40, blank=True, default='')
     is_void = models.BooleanField(default=False)
     void_reason = models.TextField(blank=True)
     voided_at = models.DateTimeField(null=True, blank=True)
@@ -456,22 +459,22 @@ class PanelistGradeSubmission(models.Model):
         ordering = ['-updated_at', '-id']
         constraints = [
             models.UniqueConstraint(
-                fields=['team_grade', 'schedule', 'panelist'],
+                fields=['team_grade', 'schedule', 'panelist', 'concept_key'],
                 condition=Q(panelist__isnull=False, student__isnull=True),
                 name='unique_panel_submission_per_panelist',
             ),
             models.UniqueConstraint(
-                fields=['team_grade', 'schedule', 'panelist', 'student'],
+                fields=['team_grade', 'schedule', 'panelist', 'student', 'concept_key'],
                 condition=Q(panelist__isnull=False, student__isnull=False),
                 name='unique_panel_submission_per_panelist_student',
             ),
             models.UniqueConstraint(
-                fields=['team_grade', 'schedule', 'guest_code_id'],
+                fields=['team_grade', 'schedule', 'guest_code_id', 'concept_key'],
                 condition=Q(guest_code_id__isnull=False, student__isnull=True),
                 name='unique_panel_submission_per_guest',
             ),
             models.UniqueConstraint(
-                fields=['team_grade', 'schedule', 'guest_code_id', 'student'],
+                fields=['team_grade', 'schedule', 'guest_code_id', 'student', 'concept_key'],
                 condition=Q(guest_code_id__isnull=False, student__isnull=False),
                 name='unique_panel_submission_per_guest_student',
             ),
@@ -652,6 +655,8 @@ class PeerEvaluationSubmission(models.Model):
 
 class GradeAttemptHistory(models.Model):
     """Immutable snapshot of scores and verdict from a completed defense attempt."""
+    assessment_policy = models.JSONField(default=dict, blank=True)
+    student_scores = models.JSONField(default=list, blank=True)
     team_grade = models.ForeignKey(
         TeamGrade,
         related_name='attempt_history',

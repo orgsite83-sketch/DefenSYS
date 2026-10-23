@@ -363,7 +363,7 @@ def module_blocker(team, context, current):
     if round.verdict == 'for_redefense':
         return 'The section needs replacement system concepts.'
     if not all(c.get('faculty_confirmed') for c in current.concepts):
-        return 'The instructor/adviser must confirm all three module names and system connections.'
+        return 'The instructor/adviser must confirm the required module names and system connections.'
     return ''
 
 
@@ -826,7 +826,7 @@ def decide(project, actor, decisions, verdict, remarks, *, team_outcomes=None):
         from grading.grades.defense_workflow import record_verdict
         for schedule in schedules:
             grade = schedule.grade_records.first()
-            decisions = [{'key': key, 'decision': 'rejected', 'remarks': remarks} for key in KEYS]
+            decisions = [{'key': key, 'decision': 'rejected', 'remarks': remarks, 'next_action': 'replace'} for key in KEYS]
             if project.pit_event_config_id:
                 from repository.deliverables.pit_decisions import record_decision, review_token
                 current = schedule.concept_round

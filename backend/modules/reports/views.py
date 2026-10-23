@@ -325,21 +325,23 @@ class DefenseScheduleReportView(ReportAPIView):
         )
         generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
         
-        confirmed_count = sum(1 for s in schedules if s.status == 'confirmed')
-        completed_count = sum(1 for s in schedules if s.status == 'completed')
+        from defense.scheduler.progress import schedule_progress
+        workflow = {s.pk: schedule_progress(s, reconcile_status=False) for s in schedules}
+        confirmed_count = sum(1 for s in schedules if s.status == 'scheduled' and not workflow[s.pk]['is_completed'])
+        completed_count = sum(1 for s in schedules if workflow[s.pk]['is_completed'])
         pending_count = len(schedules) - confirmed_count - completed_count
 
         summary_kpis = [
             {'label': 'Total Schedules', 'value': str(len(schedules))},
-            {'label': 'Completed Defenses', 'value': str(completed_count)},
-            {'label': 'Confirmed / Upcoming', 'value': str(confirmed_count)},
-            {'label': 'Pending Assignment', 'value': str(pending_count)},
+            {'label': 'Completed stages / events', 'value': str(completed_count)},
+            {'label': 'Scheduled hearings', 'value': str(confirmed_count)},
+            {'label': 'Other schedules', 'value': str(pending_count)},
         ]
 
         metadata = [
             {'label': 'Academic Period', 'value': f"{semester.school_year.label} — {semester.label}"},
             {'label': 'Total Events', 'value': str(len(schedules))},
-            {'label': 'Confirmed / Completed', 'value': f"{confirmed_count + completed_count} of {len(schedules)}"},
+            {'label': 'Scheduled / Completed', 'value': f"{confirmed_count + completed_count} of {len(schedules)}"},
         ]
 
         columns = [
@@ -382,7 +384,7 @@ class DefenseScheduleReportView(ReportAPIView):
                 'room': s.room or "TBA",
                 'panelists': ", ".join(panelists_list) if panelists_list else "None assigned",
                 'adviser': adv,
-                'status': s.status.upper() if s.status else "PENDING",
+                'status': workflow[s.pk]['display_status'].replace('_', ' ').title(),
             })
 
         sem_label_safe = "".join(c for c in semester.school_year.label if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')

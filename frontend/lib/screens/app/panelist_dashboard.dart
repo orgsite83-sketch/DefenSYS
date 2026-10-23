@@ -496,6 +496,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             isPosted: isPosted,
             submittedSubmissions: submissions,
             defenseMaterials: defenseMaterials,
+            assessmentConcepts: (team['assessment_concepts'] as List? ?? []).whereType<Map>().map((c) => Map<String, dynamic>.from(c)).toList(),
             panelWeight: (weights['panel'] as num?)?.toInt() ?? 0,
             peerWeight: (weights['peer'] as num?)?.toInt() ?? 0,
             adviserWeight: (weights['adviser'] as num?)?.toInt() ?? 0,

@@ -165,8 +165,13 @@ Map<String, dynamic> _after() => {
 };
 
 class _Grades extends GradeCenterNotifier {
-  _Grades({this.pending = false, this.empty = false, this.individual = false});
-  final bool pending, empty, individual;
+  _Grades({
+    this.pending = false,
+    this.empty = false,
+    this.individual = false,
+    this.concepts = false,
+  });
+  final bool pending, empty, individual, concepts;
   final List<Map<String, dynamic>> calls = [];
   @override
   GradeCenterState build() => const GradeCenterState();
@@ -191,6 +196,7 @@ class _Grades extends GradeCenterNotifier {
             {
               'id': 1,
               'submission_id': 1,
+              if (concepts) 'concept_key': 'c1',
               'evaluator': 'Jonathan Beltran',
               'evaluator_key': 'faculty:101',
               'evaluator_reference': 'jonathan.beltran',
@@ -201,6 +207,21 @@ class _Grades extends GradeCenterNotifier {
               'max_score': '10.00',
               'is_void': false,
             },
+            if (concepts)
+              {
+                'id': 2,
+                'submission_id': 2,
+                'concept_key': 'c2',
+                'evaluator': 'Jonathan Beltran',
+                'evaluator_key': 'faculty:101',
+                'evaluator_reference': 'jonathan.beltran',
+                'student_id': null,
+                'student': 'Team',
+                'criterion': 'Research methods',
+                'score': '3.00',
+                'max_score': '10.00',
+                'is_void': false,
+              },
             if (individual) ...[
               {
                 'id': 2,
@@ -538,6 +559,52 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('criterion corrections use the selected concept assessment', (
+    tester,
+  ) async {
+    final grades = _Grades(concepts: true);
+    await _pump(
+      tester,
+      const GradeCorrectionDialog(gradeId: 1),
+      grades: grades,
+    );
+    await _select(tester, 'Assessment', 'C2 · Team');
+    expect(find.text('3.00 / 10.00'), findsOneWidget);
+    expect(find.text('C2 · Research methods'), findsOneWidget);
+    await _input(tester, 'grade-correction-score', '8');
+    await _input(
+      tester,
+      'grade-correction-reason',
+      'Verified the second concept on the signed sheet',
+    );
+    await _tap(tester, 'Review correction');
+    expect(grades.calls.single['changes']['criterion']['id'], 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('voiding an evaluation uses the selected concept', (
+    tester,
+  ) async {
+    final grades = _Grades(concepts: true);
+    await _pump(
+      tester,
+      const GradeCorrectionDialog(gradeId: 1),
+      grades: grades,
+    );
+    await tester.tap(find.byIcon(LucideIcons.ellipsis));
+    await tester.pumpAndSettle();
+    await _tap(tester, 'Exclude an evaluation');
+    await _select(tester, 'Assessment', 'C2 · Team');
+    await _input(
+      tester,
+      'grade-correction-reason',
+      'The second concept evaluation was entered by mistake',
+    );
+    await _tap(tester, 'Review correction');
+    expect(grades.calls.single['changes']['void_submission'], 2);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('empty correction has no unnecessary form or save button', (
     tester,

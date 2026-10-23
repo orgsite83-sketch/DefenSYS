@@ -36,7 +36,7 @@ def evaluator_completion(grade):
     from defense.scheduler.panelist_evaluation import validate_evaluation_submissions
     complete = 0
     for pid, gid in expected:
-        submissions = [{'student_id': row.student_id,
+        submissions = [{'student_id': row.student_id, 'concept_key': row.concept_key,
                         'criteria_scores': [{'criterion_id': score.criterion_id, 'score': str(score.score)} for score in row.criterion_scores.all()],
                         'remarks': row.remarks}
                        for row in rows if row.panelist_id == pid and row.guest_code_id == gid]
@@ -52,6 +52,8 @@ def evaluator_completion(grade):
 
 def snapshot(grade):
     grade.refresh_from_db()
+    from .outcome_rules import policy_for
+
     fields = ('panel_score', 'adviser_score', 'peer_score', 'final_grade', 'status', 'verdict',
               'panel_score_is_override', 'adviser_score_is_override', 'peer_score_is_override')
     values = {name: str(getattr(grade, name)) if isinstance(getattr(grade, name), Decimal) else getattr(grade, name) for name in fields}
@@ -60,6 +62,7 @@ def snapshot(grade):
     values['team_name'] = grade.team.name
     values['stage_label'] = grade.stage_label
     values['scope'] = grade.scope
+    values['assessment_policy'] = policy_for(grade.schedule)
     values['adviser_grading_enabled'] = grade.scope == 'capstone' and grade.semester.capstone_adviser_grading_enabled
     values['individual_grading'] = bool(grade.schedule_id and grade.schedule.rubric and grade.schedule.rubric.target_type in ('individual', 'both'))
     values['attempt_count'] = grade.attempt_count
@@ -69,6 +72,7 @@ def snapshot(grade):
     values['team_status'] = grade.team.status
     values['criteria'] = [{'id': row.pk, 'submission_id': row.submission_id, 'score': str(row.score), 'max_score': str(row.max_score_snapshot),
                            'criterion': row.criterion_name_snapshot,
+                           'concept_key': row.submission.concept_key,
                            'weight_snapshot': str(row.weight_snapshot) if row.weight_snapshot is not None else None,
                            'student_id': row.submission.student_id,
                            'student_name': (row.submission.student.get_full_name() or row.submission.student.username) if row.submission.student else 'Team',
@@ -100,6 +104,7 @@ def correction_details(grade):
         evaluator = (submission.panelist.get_full_name() or submission.panelist.username) if submission.panelist else submission.guest_name
         for score in submission.criterion_scores.all():
             rows.append({'id': score.pk, 'submission_id': submission.pk, 'evaluator': evaluator,
+                         'concept_key': submission.concept_key,
                          'evaluator_key': f'faculty:{submission.panelist_id}' if submission.panelist_id else f'guest:{submission.guest_code_id}',
                          'evaluator_reference': submission.panelist.username if submission.panelist_id else guest_references.get(submission.guest_code_id, 'External evaluator'),
                          'student_id': submission.student_id,
@@ -202,6 +207,19 @@ def _perform_change(grade, changes):
         raise ValidationError('Unsupported correction type.')
     grade.refresh_from_db()
 
+    # A score correction must not silently invalidate an already recorded outcome.
+    from .outcome_rules import policy_for, validate_outcome
+    if grade.verdict and policy_for(grade.schedule).get('version') == 1:
+        from repository.deliverables.models import ConceptRound
+        hearing = ConceptRound.objects.filter(schedule_id=grade.schedule_id).first()
+        try:
+            validate_outcome(grade, grade.verdict, hearing.concepts if hearing else None)
+        except Exception as exc:
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            if not isinstance(exc, DjangoValidationError):
+                raise
+            raise ValidationError('This correction changes defense qualification. Reopen and reconcile the recorded outcome before applying it.') from exc
+
 
 def _change(grade, changes):
     from django.core.exceptions import ValidationError as DjangoValidationError
@@ -213,6 +231,10 @@ def _change(grade, changes):
 
 def _check_progression(before, after, protected):
     if not protected or before.get('scope') == TeamGrade.SCOPE_PIT:
+        return
+    # Configured outcomes are validated against panel qualification in _change.
+    # An academic total crossing 75 does not change that defense outcome.
+    if before.get('assessment_policy', {}).get('version') == 1:
         return
     def passed(value):
         from grading.constants import PASS_GRADE_THRESHOLD

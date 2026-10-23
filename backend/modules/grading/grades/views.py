@@ -10,6 +10,7 @@ from defensys_backend.read_projection import ReadAPIView as APIView
 
 from academic_period_management.serializers import SemesterSerializer
 from defense.stages.models import DefenseStage
+from grading.constants import PASS_GRADE_THRESHOLD
 from defense.stages.serializers import DefenseStageSerializer
 from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
@@ -88,6 +89,17 @@ def filter_grade_queryset(request, queryset):
 
 def counts_payload(base_queryset, current_queryset=None):
     current = current_queryset if current_queryset is not None else base_queryset
+    # Mirror TeamGrade.result: configured defenses use the recorded outcome;
+    # only PIT and historical defenses without an outcome use academic totals.
+    legacy_policy = (Q(schedule__isnull=True)
+                     | Q(schedule__assessment_policy__version__isnull=True)
+                     | ~Q(schedule__assessment_policy__version=1))
+    numeric_result = (Q(scope=TeamGrade.SCOPE_PIT)
+                      | (Q(scope=TeamGrade.SCOPE_CAPSTONE, verdict='') & legacy_policy))
+    approved_result = Q(scope=TeamGrade.SCOPE_CAPSTONE) & (
+        Q(verdict='approved')
+        | Q(verdict='approved_with_revisions', revisions_cleared_at__isnull=False))
+    failed_result = Q(scope=TeamGrade.SCOPE_CAPSTONE, verdict__in=('failed', 'project_rejected'))
     base_agg = base_queryset.aggregate(
         all=Count('pk'),
         total_capstone=Count('pk', filter=Q(scope=TeamGrade.SCOPE_CAPSTONE)),
@@ -98,8 +110,8 @@ def counts_payload(base_queryset, current_queryset=None):
         published=Count('pk', filter=Q(status=TeamGrade.STATUS_PUBLISHED)),
         pending=Count('pk', filter=Q(status=TeamGrade.STATUS_PENDING)),
         awaiting_peers=Count('pk', filter=Q(status=TeamGrade.STATUS_AWAITING_PEERS)),
-        passed=Count('pk', filter=Q(final_grade__gte=75)),
-        failed=Count('pk', filter=Q(final_grade__lt=75, final_grade__isnull=False)),
+        passed=Count('pk', filter=approved_result | (numeric_result & Q(final_grade__gte=PASS_GRADE_THRESHOLD))),
+        failed=Count('pk', filter=failed_result | (numeric_result & Q(final_grade__lt=PASS_GRADE_THRESHOLD))),
         capstone=Count('pk', filter=Q(scope=TeamGrade.SCOPE_CAPSTONE)),
         pit=Count('pk', filter=Q(scope=TeamGrade.SCOPE_PIT)),
     )

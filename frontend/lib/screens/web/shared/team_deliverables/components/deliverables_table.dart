@@ -3725,7 +3725,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               paperContent: papers,
             )
           else
-            papers,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                papers,
+                ConceptHistory(workflow: {'history': stage['hearing_history']}),
+              ],
+            ),
         ],
       ),
     );
@@ -3765,9 +3771,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         leading: Icon(
-          id.startsWith('p') ? Icons.account_tree_outlined : Icons.groups_2_outlined,
+          id.startsWith('p')
+              ? Icons.account_tree_outlined
+              : Icons.groups_2_outlined,
           size: 17,
-          color: selected ? Colors.white : DefensysTokens.textSecondaryOf(context),
+          color: selected
+              ? Colors.white
+              : DefensysTokens.textSecondaryOf(context),
         ),
         onPressed: onPressed,
         child: Flexible(

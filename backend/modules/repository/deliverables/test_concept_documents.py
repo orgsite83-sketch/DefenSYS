@@ -104,7 +104,7 @@ class ConceptDocumentTests(APITestCase):
         grade = TeamGrade(team=self.team, semester=self.semester, defense_stage=self.stage,
             scope='capstone', schedule=schedule, verdict='for_redefense', verdict_remarks='Prepare three new concepts.', verdict_by=self.admin)
         concepts.record_outcome(grade, [
-            {'key': f'c{i}', 'decision': 'rejected', 'remarks': 'Problem scope is not suitable.'} for i in range(1, 4)])
+            {'key': f'c{i}', 'decision': 'rejected', 'remarks': 'Problem scope is not suitable.', 'next_action': 'replace'} for i in range(1, 4)])
         rounds = list(ConceptRound.objects.filter(team=self.team))
         self.assertEqual(len(rounds), 2)
         self.assertTrue(rounds[0].replacement_required)

@@ -14,6 +14,8 @@ See [docs/AGENTS.md](../docs/AGENTS.md). Prefer extending existing scripts befor
 
 ### Panel evaluation automation
 
+Configured concept hearings submit separate scores for every concept and each rubric target. The tool does not select the official concept: it leaves that decision and the recorded outcome to the chair after grading. Other Capstone verdict requests remain subject to the server's configured panel cutoff; adviser/peer scores cannot override it.
+
 `auto_panelist_eval.py --all-panelists` includes faculty/admin panelists and assigned external invitations. `--panelists <usernames>` selects only those institutional accounts; `--external-only` selects only external invitations, and `--exclude-external` explicitly omits them. Existing evaluations are skipped.
 
 Start with `backend/venv/Scripts/python.exe execution/auto_panelist_eval.py --external-only --scope pit --stage "PIT System Prototype Showcase" --dry-run`. Remove `--dry-run` to save simulated evaluations. `--stage` accepts a Capstone stage label or PIT event name. Discovery and API submissions share a schedule allowlist; without an explicit team, session, or semester, only the active semester is eligible.

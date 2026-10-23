@@ -129,7 +129,8 @@ def _context(grade):
 
 
 def _team_rows(grade):
-    submissions = list(grade.panelist_submissions.all().select_related('panelist').prefetch_related('criterion_scores'))
+    from .grade_summary import assessment_panel_submissions
+    submissions = list(assessment_panel_submissions(grade))
     panelists = {}
     for submission in submissions:
         key = (submission.panelist_id, submission.guest_code_id)

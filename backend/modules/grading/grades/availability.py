@@ -94,8 +94,10 @@ def _peer_panel_unavailable_reason(grade):
         return 'Students can grade their teammates after their scheduled defense finishes.'
     from .corrections import evaluator_completion
     completion = evaluator_completion(grade)
+    from .outcome_rules import policy_for
+    waiting_selection = policy_for(grade.schedule).get('per_concept', False)
     if (not completion['required'] or completion['submitted'] != completion['required']
-            or grade.panel_score is None):
+            or (grade.panel_score is None and not waiting_selection)):
         return 'Peer evaluation opens after every assigned faculty and external panelist submits a complete evaluation.'
     return ''
 

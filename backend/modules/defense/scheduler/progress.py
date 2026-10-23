@@ -2,8 +2,9 @@
 from django.utils import timezone
 from grading.grades.models import TeamGrade, GradeAttemptHistory
 
-DISPLAY_STATUSES = ['scheduled', 'awaiting_evaluation', 'evaluating', 'awaiting_verdict',
+DISPLAY_STATUSES = ['scheduled', 'awaiting_evaluation', 'evaluating', 'awaiting_verdict', 'awaiting_concept_selection',
     'revisions_pending', 'redefense_required', 'grading_incomplete', 'awaiting_completion',
+    'pending_post_defense',
     'failed', 'project_rejected', 'assessed', 'completed', 'paused', 'postponed', 'no_show',
     'cancelled', 'archived']
 
@@ -37,6 +38,34 @@ def schedule_progress(schedule, *, reconcile_status=True):
               # grade_status lookup which can fall back to another stage attempt.
               'grade_status': grade.status if grade else None,
               'published_result': grade.result if grade and grade.status == TeamGrade.STATUS_PUBLISHED else None}
+    completed = False
+    if grade:
+        from grading.grades.services import team_grading_readiness
+        readiness = team_grading_readiness(grade, grade.semester, grade.scope)
+        from grading.grades.outcome_rules import outcome_payload
+        rule = outcome_payload(grade) if uses_verdict else None
+        from grading.grades.defense_workflow import legacy_finalized_pass
+        legacy_pass = legacy_finalized_pass(grade)
+        post_complete = None
+        approved = uses_verdict and verdict in TeamGrade.PASSING_VERDICTS
+        if approved or legacy_pass:
+            from repository.deliverables.services import post_deliverables_complete
+            post_complete = post_deliverables_complete(grade.team, grade.stage_label)
+        completed = grade.status == TeamGrade.STATUS_PUBLISHED
+        grading_complete = (readiness['ready'] and grade.is_complete) or (
+            not rule and completed and grade.final_grade is not None)
+        if uses_verdict:
+            from grading.grades.defense_workflow import passed_and_cleared
+            completed = (completed and (passed_and_cleared(grade) or legacy_pass) and post_complete is True
+                         and (not rule or readiness['ready'] and grade.is_complete))
+        result.update(panel_evaluators_submitted=readiness['panel_evaluators_submitted'],
+                      panel_evaluators_required=readiness['panel_evaluators_required'],
+                      panel_complete=readiness['panel_complete'],
+                      grading_complete=grading_complete,
+                      missing_components=[] if grading_complete else readiness['missing_components'],
+                      assessment_finalized=grade.status == TeamGrade.STATUS_PUBLISHED,
+                      defense_approved=approved if uses_verdict and not legacy_pass else None, post_defense_complete=post_complete,
+                      outcome_rule=rule)
     if schedule.status in ('cancelled', 'archived'):
         display = schedule.status
     elif history or schedule.project_version != schedule.team.project_version:
@@ -48,26 +77,23 @@ def schedule_progress(schedule, *, reconcile_status=True):
             from defense.scheduler.models import DefenseSchedule
             DefenseSchedule.objects.filter(pk=schedule.pk, status='scheduled').update(status=DefenseSchedule.STATUS_DONE)
             schedule.status = DefenseSchedule.STATUS_DONE
-        from grading.grades.services import team_grading_readiness
-        readiness = team_grading_readiness(grade, grade.semester, grade.scope)
-        result.update(panel_evaluators_submitted=readiness['panel_evaluators_submitted'],
-                      panel_evaluators_required=readiness['panel_evaluators_required'])
-        if grade.status == 'published' and (not uses_verdict or grade.result == 'passed'):
-            display = 'completed'
-        elif grade.status == 'published' and grade.result == 'failed':
-            display = 'failed'
-        elif verdict == 'for_redefense' or concept_retry:
+        if verdict == 'for_redefense' or concept_retry:
             display = 'redefense_required'
         elif verdict in ('failed', 'project_rejected'):
             display = verdict
+        elif completed:
+            display = 'completed'
         elif verdict == 'approved_with_revisions' and not grade.revisions_cleared_at:
             display = 'revisions_pending'
+        elif (approved or legacy_pass) and not post_complete:
+            display = 'pending_post_defense'
         elif verdict in TeamGrade.PASSING_VERDICTS:
-            display = 'awaiting_completion' if readiness['ready'] else 'grading_incomplete'
+            display = 'awaiting_completion' if readiness['ready'] and grade.is_complete else 'grading_incomplete'
         elif not uses_verdict and readiness['ready']:
             display = 'awaiting_completion'
         elif readiness['panel_complete']:
-            display = 'awaiting_verdict' if uses_verdict else 'grading_incomplete'
+            display = ('awaiting_concept_selection' if rule and rule['per_concept']
+                       and rule['outcome'] == 'approved' else 'awaiting_verdict') if uses_verdict else 'grading_incomplete'
         elif readiness['panel_evaluators_submitted'] or grade.panel_score is not None:
             display = 'evaluating'
         else:
@@ -77,7 +103,6 @@ def schedule_progress(schedule, *, reconcile_status=True):
     result['display_status'] = display
     # Preserve an explicitly completed defense when its schedule is archived.
     # A submitted score or assessed attempt is not completion.
-    result['is_completed'] = bool(grade and grade.status == TeamGrade.STATUS_PUBLISHED
-                                  and (not uses_verdict or grade.result == 'passed'))
+    result['is_completed'] = bool(completed)
     setattr(schedule, cache_key, result)
     return result

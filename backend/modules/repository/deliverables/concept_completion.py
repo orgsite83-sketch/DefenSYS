@@ -56,21 +56,28 @@ def assessment_blocker(current, *, selected_key=None):
 
 
 def final_paper_complete(team, stage, *, required=False):
-    """Only the selected hearing's approved final file can satisfy this purpose."""
+    """All configured final attachments must belong to this selected hearing."""
     from . import concepts
     from .services import get_deliverable_definitions_for_team, submissions_for
-    from .documents import current_files
+    from .documents import current_files, completeness
     definitions = [d for d in get_deliverable_definitions_for_team(team, stage.label) if is_approved_concept(d)]
     if not definitions:
         return not required  # Historical, locked definitions are not silently rewritten.
     current = concepts.latest_round(team, stage)
-    if not current or not current.schedule_id:
+    if not current or not current.schedule_id or current.verdict not in ('approved', 'approved_with_revisions'):
         return False
     selected = next((c['key'] for c in current.concepts if c.get('decision') in ('approved', 'approved_with_revisions')), '')
+    if not selected:
+        return False
     submissions = submissions_for(team, stage.label)
-    return bool(selected) and all(any(
-        f.file and f.status == 'accepted' and f.concept_round_id == current.pk and f.selected_concept_key == selected
-        for f in current_files(submissions.get(d['id']))) for d in definitions)
+    for definition in definitions:
+        submission = submissions.get(definition['id'])
+        files = current_files(submission)
+        if (not files or not completeness(submission, definition, accepted=True, stage=stage)
+                or any(not f.file or f.status != 'accepted' or f.concept_round_id != current.pk
+                       or f.selected_concept_key != selected for f in files)):
+            return False
+    return True
 
 
 def shared_final_complete(round):

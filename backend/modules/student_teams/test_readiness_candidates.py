@@ -87,7 +87,7 @@ class ReadinessCandidateTests(TestCase):
         self.assertNotIn(old.pk, candidates)
         self.assertNotIn(wrong_term.pk, candidates)
 
-    def test_active_schedules_still_reconcile_assessed_status(self):
+    def test_assessed_schedules_remain_ineligible_without_status_writes(self):
         team = self.team('Assessed active schedule')
         schedule = DefenseSchedule.objects.create(
             team=team, semester=self.semester, defense_stage=self.stage,
@@ -97,7 +97,7 @@ class ReadinessCandidateTests(TestCase):
         self.assertIn(team, stage_readiness_candidates(StudentTeam.objects.all(), self.stage))
         self.assertFalse(get_ready_teams(self.semester, self.stage).exists())
         schedule.refresh_from_db()
-        self.assertEqual(schedule.status, DefenseSchedule.STATUS_DONE)
+        self.assertEqual(schedule.status, DefenseSchedule.STATUS_SCHEDULED)
 
     def test_prerequisite_stages_still_block_later_endorsements(self):
         later = DefenseStage.objects.create(label='Later Defense', code='later-defense', display_order=2)

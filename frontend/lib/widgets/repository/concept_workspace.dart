@@ -7,6 +7,7 @@ import '../../services/capstone_deliverables_provider.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 import '../../theme/defensys_tokens.dart';
+import '../../models/defense_workflow_labels.dart';
 
 import 'pit_concept_decision_panel.dart';
 import 'shared_concept_review.dart';
@@ -203,6 +204,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             ],
           ),
           const SizedBox(height: 16),
+          repeatInstructions(),
           widget.paperContent!,
         ],
         if (busy) const LinearProgressIndicator(),
@@ -234,6 +236,36 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
           ),
         ConceptHistory(workflow: workflow),
       ],
+    );
+  }
+
+  Widget repeatInstructions() {
+    final requested = concepts.where(
+      (c) => '${c['panel_feedback'] ?? ''}'.trim().isNotEmpty,
+    );
+    if (requested.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final concept in requested) ...[
+            Text(
+              '${concept['requested_action'] == 'replace' ? 'Replace' : 'Revise'} · ${'${concept['title'] ?? ''}'.isEmpty ? concept['previous_title'] : concept['title']}',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${concept['panel_feedback']}',
+              style: TextStyle(color: DefensysTokens.textSecondaryOf(context)),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ],
+      ),
     );
   }
 
@@ -379,7 +411,11 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
 
   @override
   Widget build(BuildContext context) {
-    if (workflow['enabled'] != true) return const SizedBox.shrink();
+    if (workflow['enabled'] != true) {
+      return ConceptHistory(
+        workflow: {'history': widget.stage['hearing_history']},
+      );
+    }
     final user = ref.watch(authProvider).user ?? {};
     final admin = user['role'] == 'admin' || user['is_superuser'] == true;
     final faculty = admin || user['role'] == 'faculty';
@@ -412,6 +448,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ConceptHistory(workflow: workflow),
+          repeatInstructions(),
           if (workflow['decision_scope'] == 'pit')
             PitConceptDecisionPanel(
               teamId: widget.teamId,
@@ -495,7 +532,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                         c['system_title'] != null;
                     final slotBadge = isShared
                         ? 'System ${keyStr == 'c1' ? 'A' : (keyStr == 'c2' ? 'B' : 'C')}'
-                        : 'Concept ${keyStr == 'c1' ? '1' : (keyStr == 'c2' ? '2' : '3')}';
+                        : 'Concept ${keyStr.replaceFirst(RegExp(r'^c'), '')}';
 
                     final decision = c['decision']?.toString();
                     final hasDecision = decision != null && decision.isNotEmpty;
@@ -698,33 +735,36 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                                 style: const TextStyle(fontSize: 13),
                               ),
                             ),
-                          if (c['remarks'] != null &&
-                              '${c['remarks']}'.trim().isNotEmpty) ...[
+                          if ('${c['panel_feedback'] ?? c['remarks'] ?? ''}'
+                              .trim()
+                              .isNotEmpty) ...[
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFEF3C7),
+                                color: DefensysTokens.surfaceHigherOf(context),
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                  color: const Color(0xFFFDE68A),
+                                  color: DefensysTokens.borderOf(context),
                                 ),
                               ),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.info_outline,
                                     size: 14,
-                                    color: Color(0xFFD97706),
+                                    color: DefensysTokens.goldOf(context),
                                   ),
                                   const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
-                                      'Feedback: ${c['remarks']}',
-                                      style: const TextStyle(
+                                      '${c['requested_action'] == 'replace' ? 'Replacement requested' : 'Panel feedback'}: ${c['panel_feedback'] ?? c['remarks']}',
+                                      style: TextStyle(
                                         fontSize: 11.5,
-                                        color: Color(0xFF92400E),
+                                        color: DefensysTokens.textPrimaryOf(
+                                          context,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -850,55 +890,57 @@ class ConceptHistory extends StatelessWidget {
         .whereType<Map>()
         .toList();
     if (history.isEmpty) return const SizedBox.shrink();
-    return Column(
-      children: [
-        for (final round in history)
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: Text(
-              'Attempt ${round['round']} · ${'${round['verdict']}'.isEmpty ? 'Scheduled' : '${round['verdict']}'.replaceAll('_', ' ')}',
-            ),
-            children: [
-              if ('${round['remarks'] ?? ''}'.isNotEmpty)
-                ListTile(title: Text('${round['remarks']}')),
-              for (final c
-                  in (round['concepts'] as List? ?? []).whereType<Map>())
-                ListTile(
-                  title: Text('${c['title']}'),
-                  subtitle: Text(
-                    '${c['decision'] ?? ''}\n${c['remarks'] ?? ''}',
-                  ),
-                ),
-              for (final group
-                  in (round['documents'] as List? ?? []).whereType<Map>())
-                for (final file
-                    in (group['files'] as List? ?? []).whereType<Map>())
+    return DefensysShadcnScope(
+      child: Column(
+        children: [
+          for (final round in history)
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: Text(
+                'Attempt ${round['round']} · ${'${round['verdict'] ?? ''}'.isEmpty ? 'Scheduled' : defenseProgressLabel('${round['verdict']}')}',
+              ),
+              children: [
+                if ('${round['remarks'] ?? ''}'.isNotEmpty)
+                  ListTile(title: Text('${round['remarks']}')),
+                for (final c
+                    in (round['concepts'] as List? ?? []).whereType<Map>())
                   ListTile(
-                    dense: true,
-                    title: Text('${file['file_name']}'),
+                    title: Text('${c['title']}'),
                     subtitle: Text(
-                      'Revision ${file['revision']} · Presented at this hearing',
-                    ),
-                    trailing: ShadButton.ghost(
-                      size: ShadButtonSize.sm,
-                      onPressed: file['file_url'] == null
-                          ? null
-                          : () => viewFileInDialog(
-                              context: context,
-                              fileUrl: '${file['file_url']}',
-                              fileName: '${file['file_name']}',
-                            ),
-                      child: const Text('View'),
+                      '${c['decision'] ?? ''}${c.containsKey('panel_score') ? ' · Panel: ${c['panel_score']}%' : ''}\n${c['remarks'] ?? ''}${c['next_action'] == null ? '' : '\nNext hearing: ${c['next_action'] == 'omit' ? 'Not requested' : c['next_action']}'}',
                     ),
                   ),
-              if ('${round['override_reason'] ?? ''}'.isNotEmpty)
-                ListTile(
-                  title: const Text('Clearance exception'),
-                  subtitle: Text('${round['override_reason']}'),
-                ),
-            ],
-          ),
-      ],
+                for (final group
+                    in (round['documents'] as List? ?? []).whereType<Map>())
+                  for (final file
+                      in (group['files'] as List? ?? []).whereType<Map>())
+                    ListTile(
+                      dense: true,
+                      title: Text('${file['file_name']}'),
+                      subtitle: Text(
+                        'Revision ${file['revision']} · ${file['status'] == 'accepted' ? 'Faculty accepted' : '${file['status'] ?? 'Submitted'}'} · Presented at this hearing',
+                      ),
+                      trailing: ShadButton.ghost(
+                        size: ShadButtonSize.sm,
+                        onPressed: file['file_url'] == null
+                            ? null
+                            : () => viewFileInDialog(
+                                context: context,
+                                fileUrl: '${file['file_url']}',
+                                fileName: '${file['file_name']}',
+                              ),
+                        child: const Text('View'),
+                      ),
+                    ),
+                if ('${round['override_reason'] ?? ''}'.isNotEmpty)
+                  ListTile(
+                    title: const Text('Clearance exception'),
+                    subtitle: Text('${round['override_reason']}'),
+                  ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 }

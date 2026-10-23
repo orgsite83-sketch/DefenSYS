@@ -1,6 +1,5 @@
 import 'package:defensys/theme/program_colors.dart';
 import 'grade_correction_dialog.dart';
-import 'grade_group_completion_summary.dart';
 import 'incomplete_grading_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:defensys/widgets/repository/concept_workspace.dart';
@@ -200,23 +199,43 @@ String statusLabel(String status) {
   };
 }
 
-/// Workflow status or pass/fail outcome (75% threshold) when scores are complete.
+/// The server result is authoritative, including a pending defense decision.
+String gradeResult(Map<String, dynamic> grade) {
+  final result = grade['result']?.toString() ?? '';
+  if (result.isNotEmpty) return result;
+  final isPit = grade['scope'] == 'pit';
+  if (!isPit) {
+    final verdict = grade['verdict']?.toString() ?? '';
+    if (verdict == 'approved') return 'passed';
+    if (verdict == 'approved_with_revisions') {
+      return grade['revisions_cleared_at'] != null
+          ? 'passed'
+          : 'revisions_pending';
+    }
+    if (verdict == 'for_redefense') return 'for_redefense';
+    if (verdict == 'failed' || verdict == 'project_rejected') return 'failed';
+    final workflow = grade['workflow'];
+    final policy = workflow is Map ? workflow['assessment_policy'] : null;
+    if (policy is Map && policy['version'] == 1) return 'pending';
+  }
+  final finalGrade = asDouble(grade['final_grade']);
+  return finalGrade == null
+      ? 'pending'
+      : (finalGrade >= 75 ? 'passed' : 'failed');
+}
+
+/// Shows a recorded verdict, publication status, or the current result.
 String gradeDisplayStatus(Map<String, dynamic> grade) {
   final verdict = grade['verdict']?.toString() ?? '';
-  if (verdict.isNotEmpty) {
+  if (grade['scope'] != 'pit' && verdict.isNotEmpty) {
     return verdict;
   }
   final workflow = grade['status']?.toString() ?? '';
   if (workflow == 'published' || workflow == 'awaiting_peers') {
     return workflow;
   }
-  if (asDouble(grade['final_grade']) != null) {
-    final result = grade['result']?.toString() ?? '';
-    if (result == 'passed' || result == 'failed' || result == 'for_redefense') {
-      return result;
-    }
-    final finalGrade = asDouble(grade['final_grade'])!;
-    return finalGrade >= 75 ? 'passed' : 'failed';
+  if (asDouble(grade['final_grade']) != null || grade['result'] != null) {
+    return gradeResult(grade);
   }
   return workflow.isEmpty ? 'pending' : workflow;
 }
@@ -606,15 +625,22 @@ List<AggregatedCriterion> aggregateBreakdowns(
       final firstLine = lines.first.trim();
       final rest = lines.sublist(1).join('\n').trim();
 
-      String evaluatorName = publicEvaluationText(row['evaluator_name']?.toString() ?? '');
+      String evaluatorName = publicEvaluationText(
+        row['evaluator_name']?.toString() ?? '',
+      );
       if (evaluatorName.isEmpty && firstLine.startsWith('Panelist:')) {
         final key = firstLine.substring('Panelist:'.length).trim();
         evaluatorName =
             panelistMap[key] ??
             (key.isNotEmpty ? 'Panelist $key' : 'Panelist #$unnamedIndex');
-      } else if (evaluatorName.isEmpty && firstLine.startsWith('Guest panelist:')) {
-        evaluatorName = legacyExternalEvaluatorName(firstLine.substring('Guest panelist:'.length).trim());
-      } else if (evaluatorName.isEmpty && firstLine.isNotEmpty && rest.isEmpty) {
+      } else if (evaluatorName.isEmpty &&
+          firstLine.startsWith('Guest panelist:')) {
+        evaluatorName = legacyExternalEvaluatorName(
+          firstLine.substring('Guest panelist:'.length).trim(),
+        );
+      } else if (evaluatorName.isEmpty &&
+          firstLine.isNotEmpty &&
+          rest.isEmpty) {
         if (!firstLine.toLowerCase().startsWith('panelist:')) {
           evaluatorName = 'Evaluator #$unnamedIndex';
         }
@@ -1820,9 +1846,7 @@ Widget gradeCenterPeerMemberTile(
 
 Widget gradeCenterHeroSummaryCard({required Map<String, dynamic> grade}) {
   final finalGrade = asDouble(grade['final_grade']);
-  final result =
-      grade['result']?.toString() ??
-      (finalGrade != null && finalGrade >= 75 ? 'passed' : 'pending');
+  final result = gradeResult(grade);
   final status = gradeDisplayStatus(grade);
   final isPit = grade['scope'] == 'pit';
 
@@ -1973,9 +1997,15 @@ Widget gradeCenterHeroSummaryCard({required Map<String, dynamic> grade}) {
                         Icons.gavel_outlined,
                         '${panelistsList.length} Panelists Assigned',
                       ),
-                    _metaIconLabel(Icons.flag_outlined, 'Passing Mark: 75.00%'),
+                    _metaIconLabel(
+                      Icons.flag_outlined,
+                      'Academic passing mark: 75.00%',
+                    ),
                     if (isPit)
-                      _metaIconLabel(Icons.info_outline, 'Event score indicator only'),
+                      _metaIconLabel(
+                        Icons.info_outline,
+                        'Event score indicator only',
+                      ),
                   ],
                 ),
               ],
@@ -2327,7 +2357,10 @@ Widget _formulaPill({
 }
 
 Color gradeScopeAccentColor(String scope) {
-  return ProgramColors.resolve(dark: false, track: programTrack(scope: scope)).accent;
+  return ProgramColors.resolve(
+    dark: false,
+    track: programTrack(scope: scope),
+  ).accent;
 }
 
 /// KPI stat card aligned with Rubrics evaluation cards.
@@ -3406,11 +3439,25 @@ Future<bool> reviewGradeGroupCompletion(
   final unresolved = <Map<String, dynamic>>[
     ...readiness.incompleteTeams,
     for (final team in readiness.redefenseTeams)
-      if (!readiness.incompleteTeams.any((item) => item['team_id'] == team['team_id'] && item['team_name'] == team['team_name']))
-        {...team, 'missing_components': ['redefense']},
+      if (!readiness.incompleteTeams.any(
+        (item) =>
+            item['team_id'] == team['team_id'] &&
+            item['team_name'] == team['team_name'],
+      ))
+        {
+          ...team,
+          'missing_components': ['redefense'],
+        },
     for (final team in readiness.revisionTeams)
-      if (!readiness.incompleteTeams.any((item) => item['team_id'] == team['team_id'] && item['team_name'] == team['team_name']))
-        {...team, 'missing_components': ['clearance']},
+      if (!readiness.incompleteTeams.any(
+        (item) =>
+            item['team_id'] == team['team_id'] &&
+            item['team_name'] == team['team_name'],
+      ))
+        {
+          ...team,
+          'missing_components': ['clearance'],
+        },
   ];
   if (unresolved.isNotEmpty) {
     await showIncompleteGradingTeamsDialog(
@@ -3454,18 +3501,18 @@ Future<bool> reviewGradeGroupCompletion(
   final displayTeams = readiness.cohortTeams.isNotEmpty
       ? readiness.cohortTeams
       : (readiness.incompleteTeams.isNotEmpty
-          ? readiness.incompleteTeams
-          : [
-              for (int i = 0; i < readiness.totalTeams; i++)
-                {
-                  'team_name': 'Team ${i + 1}',
-                  'missing_components': <String>[],
-                  'panel_complete': true,
-                  'adviser_complete': true,
-                  'peer_complete': true,
-                  'post_defense_complete': true,
-                },
-            ]);
+            ? readiness.incompleteTeams
+            : [
+                for (int i = 0; i < readiness.totalTeams; i++)
+                  {
+                    'team_name': 'Team ${i + 1}',
+                    'missing_components': <String>[],
+                    'panel_complete': true,
+                    'adviser_complete': true,
+                    'peer_complete': true,
+                    'post_defense_complete': true,
+                  },
+              ]);
 
   final confirmed = await showIncompleteGradingTeamsDialog(
     context,
@@ -4532,6 +4579,7 @@ class GradeCenterActions {
   }
 
   static Widget _verdictRadioOption({
+    bool enabled = true,
     required String title,
     required String subtitle,
     required String value,
@@ -4541,7 +4589,7 @@ class GradeCenterActions {
   }) {
     final isSelected = value == groupValue;
     return InkWell(
-      onTap: () => onChanged(value),
+      onTap: enabled ? () => onChanged(value) : null,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -4557,12 +4605,17 @@ class GradeCenterActions {
         ),
         child: Row(
           children: [
-            Radio<String>(
-              value: value,
+            RadioGroup<String>(
               groupValue: groupValue,
-              onChanged: onChanged,
-              activeColor: color,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (value) {
+                if (enabled) onChanged(value);
+              },
+              child: Radio<String>(
+                value: value,
+                enabled: enabled,
+                activeColor: color,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -4602,11 +4655,30 @@ class GradeCenterActions {
     final gradeId = asInt(grade['id']);
     if (gradeId == null) return;
 
-    String selectedVerdict = grade['verdict']?.toString() ?? 'approved';
-    if (selectedVerdict.isEmpty) selectedVerdict = 'approved';
-    bool verificationRequired = grade['redefense_verification_required'] == true;
-    final conceptWorkflow = (grade['workflow'] as Map? ?? {})['concept_workflow'] as Map?;
-    var conceptDecisions = ((conceptWorkflow?['hearing_concepts'] ?? conceptWorkflow?['concepts']) as List? ?? []).whereType<Map>().map((c) => Map<String, dynamic>.from(c)).toList();
+    final policy =
+        (grade['workflow'] as Map? ?? {})['assessment_policy'] as Map?;
+    final configured = policy?['version'] == 1;
+    final rule = (grade['workflow'] as Map? ?? {})['outcome_rule'] as Map?;
+    final allowedVerdicts = rule?['allowed_verdicts'] as List? ?? const [];
+    bool allowed(String value) =>
+        !configured || allowedVerdicts.contains(value);
+    String selectedVerdict = grade['verdict']?.toString() ?? '';
+    if (selectedVerdict.isEmpty || !allowed(selectedVerdict)) {
+      selectedVerdict = configured
+          ? (allowedVerdicts.firstOrNull?.toString() ?? '')
+          : 'approved';
+    }
+    bool verificationRequired =
+        !configured && grade['redefense_verification_required'] == true;
+    final conceptWorkflow =
+        (grade['workflow'] as Map? ?? {})['concept_workflow'] as Map?;
+    var conceptDecisions =
+        ((conceptWorkflow?['hearing_concepts'] ?? conceptWorkflow?['concepts'])
+                    as List? ??
+                [])
+            .whereType<Map>()
+            .map((c) => Map<String, dynamic>.from(c))
+            .toList();
     final remarksController = TextEditingController(
       text: grade['verdict_remarks']?.toString() ?? '',
     );
@@ -4667,7 +4739,12 @@ class GradeCenterActions {
                     ),
                     const SizedBox(height: 16),
                     if (conceptDecisions.isNotEmpty) ...[
-                      ConceptVerdictFields(concepts: conceptDecisions, onChanged: (value) => setState(() => conceptDecisions = value)),
+                      ConceptVerdictFields(
+                        concepts: conceptDecisions,
+                        forRedefense: selectedVerdict == 'for_redefense',
+                        onChanged: (value) =>
+                            setState(() => conceptDecisions = value),
+                      ),
                       const SizedBox(height: 16),
                     ],
                     const Text(
@@ -4681,6 +4758,7 @@ class GradeCenterActions {
                     ),
                     const SizedBox(height: 8),
                     _verdictRadioOption(
+                      enabled: allowed('approved'),
                       title: 'Approved',
                       subtitle:
                           'The team successfully passed with no mandatory re-defense.',
@@ -4692,6 +4770,7 @@ class GradeCenterActions {
                     ),
                     const SizedBox(height: 8),
                     _verdictRadioOption(
+                      enabled: allowed('approved_with_revisions'),
                       title: 'Approved with Revisions',
                       subtitle:
                           'Passed, but required manuscript or system changes must be submitted by a deadline.',
@@ -4703,9 +4782,11 @@ class GradeCenterActions {
                     ),
                     const SizedBox(height: 8),
                     _verdictRadioOption(
+                      enabled: allowed('for_redefense'),
                       title: 'For Re-defense',
-                      subtitle:
-                          'Another graded presentation is needed before defense approval. Adviser and peer grades are retained.',
+                      subtitle: configured
+                          ? 'Submit the requested materials for review and a fresh endorsement. Assessments follow the stage policy.'
+                          : 'Another graded presentation is needed before defense approval. Adviser and peer grades are retained.',
                       value: 'for_redefense',
                       groupValue: selectedVerdict,
                       color: const Color(0xFFDC2626),
@@ -4754,27 +4835,45 @@ class GradeCenterActions {
                     ],
                     const SizedBox(height: 8),
                     _verdictRadioOption(
-                      title: 'Failed', subtitle: 'The team failed this stage. Another attempt requires an admin authorization.',
-                      value: 'failed', groupValue: selectedVerdict, color: DefensysTokens.dangerText,
-                      onChanged: (val) => setState(() => selectedVerdict = val!),
+                      enabled: allowed('failed'),
+                      title: 'Failed',
+                      subtitle:
+                          'The team failed this stage. Another attempt requires an admin authorization.',
+                      value: 'failed',
+                      groupValue: selectedVerdict,
+                      color: DefensysTokens.dangerText,
+                      onChanged: (val) =>
+                          setState(() => selectedVerdict = val!),
                     ),
                     const SizedBox(height: 8),
                     _verdictRadioOption(
-                      title: 'Project Rejected', subtitle: 'The concept cannot continue. An authorized replacement concept starts with fresh requirements and grades.',
-                      value: 'project_rejected', groupValue: selectedVerdict, color: DefensysTokens.dangerText,
-                      onChanged: (val) => setState(() => selectedVerdict = val!),
+                      enabled: allowed('project_rejected'),
+                      title: 'Project Rejected',
+                      subtitle:
+                          'The concept cannot continue. An authorized replacement concept starts with fresh requirements and grades.',
+                      value: 'project_rejected',
+                      groupValue: selectedVerdict,
+                      color: DefensysTokens.dangerText,
+                      onChanged: (val) =>
+                          setState(() => selectedVerdict = val!),
                     ),
-                    if (selectedVerdict == 'for_redefense')
+                    if (selectedVerdict == 'for_redefense' && !configured)
                       CheckboxListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: Text(grade['scope'] == 'pit'
-                            ? 'Require instructor review before re-defense'
-                            : 'Require adviser verification of corrections'),
-                        subtitle: Text(conceptWorkflow != null
-                            ? 'Require review and endorsement of the current concept set before the next hearing.'
-                            : 'Optional panel condition. Existing adviser assignment and endorsement are retained.'),
+                        title: Text(
+                          grade['scope'] == 'pit'
+                              ? 'Require instructor review before re-defense'
+                              : 'Require adviser verification of corrections',
+                        ),
+                        subtitle: Text(
+                          conceptWorkflow != null
+                              ? 'Require review and endorsement of the current concept set before the next hearing.'
+                              : 'Optional panel condition. Existing adviser assignment and endorsement are retained.',
+                        ),
                         value: verificationRequired,
-                        onChanged: (value) => setState(() => verificationRequired = value ?? false),
+                        onChanged: (value) => setState(
+                          () => verificationRequired = value ?? false,
+                        ),
                       ),
                     const SizedBox(height: 16),
                     const Text(
@@ -4810,11 +4909,20 @@ class GradeCenterActions {
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed: () {
-                  final error = conceptDecisionError(conceptDecisions, selectedVerdict);
-                  if (error != null) { showValidationToast(context, error); return; }
-                  Navigator.pop(dialogContext, true);
-                },
+                onPressed: !allowed(selectedVerdict)
+                    ? null
+                    : () {
+                        final error = conceptDecisionError(
+                          conceptDecisions,
+                          selectedVerdict,
+                          requirePlan: true,
+                        );
+                        if (error != null) {
+                          showValidationToast(context, error);
+                          return;
+                        }
+                        Navigator.pop(dialogContext, true);
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.maroon,
                   foregroundColor: Colors.white,
@@ -4848,8 +4956,10 @@ class GradeCenterActions {
           remarks: remarks,
           revisionDeadline: deadlineStr,
           redefenseVerificationRequired: verificationRequired,
-          conceptDecisions: conceptWorkflow == null ? null : conceptDecisions,
-          replacementConceptsRequired: conceptDecisions.isNotEmpty && conceptDecisions.every((c) => c['decision'] == 'rejected'),
+          conceptDecisions: conceptWorkflow == null
+              ? null
+              : conceptDecisionsForOutcome(conceptDecisions, selectedVerdict),
+          replacementConceptsRequired: false,
         );
   }
 
@@ -4889,7 +4999,10 @@ class GradeCenterActions {
 /// Hide credentials from previously cached display text as well as new responses.
 String publicEvaluationText(String value) => value
     .replaceAll(RegExp(r'\s*\(DEF-[A-Z0-9]+\)', caseSensitive: false), '')
-    .replaceAll(RegExp(r'\bDEF-[A-Z0-9]+\b', caseSensitive: false), '[redacted]');
+    .replaceAll(
+      RegExp(r'\bDEF-[A-Z0-9]+\b', caseSensitive: false),
+      '[redacted]',
+    );
 
 String legacyExternalEvaluatorName(String value) => publicEvaluationText(
   value.replaceFirst(RegExp(r'\s+\([^()]*\)$'), ''),
@@ -4901,26 +5014,39 @@ List<Map<String, String>> gradePanelistColumns(Map<String, dynamic> grade) {
   final columns = <String, String>{};
   for (final item in (grade['panelists'] as List? ?? const [])) {
     if (item is! Map) continue;
-    final key = (item['panelist_key'] ?? item['username'])?.toString().trim() ?? '';
+    final key =
+        (item['panelist_key'] ?? item['username'])?.toString().trim() ?? '';
     final name = publicEvaluationText(item['name']?.toString().trim() ?? '');
-    if (key.isNotEmpty) columns[key] = name.isEmpty ? publicEvaluationText(key) : name;
+    if (key.isNotEmpty) {
+      columns[key] = name.isEmpty ? publicEvaluationText(key) : name;
+    }
   }
   final scores = grade['panel_evaluation_scores'];
   if (scores is List) {
     for (final item in scores.whereType<Map>()) {
       final key = item['panelist_key']?.toString().trim() ?? '';
       if (key.isNotEmpty) {
-        columns.putIfAbsent(key, () => key.startsWith('guest:') || key.startsWith('legacy-guest:')
-            ? 'External evaluator' : publicEvaluationText('Panelist $key'));
+        columns.putIfAbsent(
+          key,
+          () => key.startsWith('guest:') || key.startsWith('legacy-guest:')
+              ? 'External evaluator'
+              : publicEvaluationText('Panelist $key'),
+        );
       }
     }
   } else {
     // Compatibility for older API responses without normalized evaluator keys.
-    for (final item in (grade['breakdowns'] as List? ?? const []).whereType<Map>()) {
+    for (final item
+        in (grade['breakdowns'] as List? ?? const []).whereType<Map>()) {
       if (item['evaluation_type'] != 'panel') continue;
       final recordedKey = item['panelist_key']?.toString() ?? '';
       if (recordedKey.isNotEmpty) {
-        columns.putIfAbsent(recordedKey, () => publicEvaluationText(item['evaluator_name']?.toString() ?? 'Evaluator'));
+        columns.putIfAbsent(
+          recordedKey,
+          () => publicEvaluationText(
+            item['evaluator_name']?.toString() ?? 'Evaluator',
+          ),
+        );
         continue;
       }
       final line = (item['remarks']?.toString() ?? '').split('\n').first.trim();
@@ -4928,11 +5054,17 @@ List<Map<String, String>> gradePanelistColumns(Map<String, dynamic> grade) {
         if (!line.startsWith(prefix)) continue;
         final key = line.substring(prefix.length).trim();
         if (key.isNotEmpty) {
-          columns.putIfAbsent(key, () => prefix == 'Panelist:'
-              ? publicEvaluationText('Panelist $key') : legacyExternalEvaluatorName(key));
+          columns.putIfAbsent(
+            key,
+            () => prefix == 'Panelist:'
+                ? publicEvaluationText('Panelist $key')
+                : legacyExternalEvaluatorName(key),
+          );
         }
       }
     }
   }
-  return columns.entries.map((entry) => {'key': entry.key, 'name': entry.value}).toList();
+  return columns.entries
+      .map((entry) => {'key': entry.key, 'name': entry.value})
+      .toList();
 }

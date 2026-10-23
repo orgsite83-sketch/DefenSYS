@@ -19,7 +19,9 @@ def with_concept_papers(items, config):
         final.update(required=True, deliverable_type='post')
         final.setdefault('requirement_timing', 'scheduling')
         final.setdefault('deadline_hours_before', 24)
-        final['file_policy'] = {**(final.get('file_policy') or {}), 'mode': 'single', 'purpose': 'approved_concept'}
+        policy = final.get('file_policy') or {}
+        final['file_policy'] = validate_file_policy({**policy, 'mode': policy.get('mode', 'single'),
+                                                    'purpose': 'approved_concept'})
     else:
         used = {d.get('deliverable_id') for d in items}
         number, suffix = 'APPROVED_CONCEPT', 1
@@ -59,8 +61,8 @@ def validate_file_policy(value):
     mode = value.get('mode', 'single')
     if value.get('purpose') not in (None, '', 'approved_concept'):
         raise ValidationError('Choose a supported document purpose.')
-    if value.get('purpose') == 'approved_concept' and mode != 'single':
-        raise ValidationError('The approved concept paper is one final paper for the selected concept.')
+    if value.get('purpose') == 'approved_concept' and mode not in ('single', 'multiple'):
+        raise ValidationError('Choose one file or multiple attachments for the selected concept.')
     if mode not in ('single', 'named', 'multiple', 'concepts'):
         raise ValidationError('Choose single, named, multiple, or concept documents.')
     slots = value.get('slots', [])

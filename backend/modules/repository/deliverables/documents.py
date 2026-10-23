@@ -20,8 +20,9 @@ def slots_for(definition, team=None, stage=None):
             from student_teams.concept_policy import resolve_policy
             policy = resolve_policy(team, stage)
         count = (policy or (stage.concept_config if stage else {}) or {}).get('required_count', 3)
-        return [{**s, 'key': f'c{i}:{s["key"]}', 'label': f'Concept {i} · {s["label"]}'}
-                for i in range(1, count + 1) for s in slots]
+        keys = (policy or {}).get('concept_keys') or [f'c{i}' for i in range(1, count + 1)]
+        return [{**s, 'key': f'{key}:{s["key"]}', 'label': f'Concept {key.removeprefix("c")} · {s["label"]}'}
+                for key in keys for s in slots]
     if mode == 'named':
         return slots
     if mode == 'single':
@@ -33,12 +34,18 @@ def slots_for(definition, team=None, stage=None):
 def completeness(submission, definition, *, accepted=False, stage=None):
     files = current_files(submission)
     if not (definition.get('file_policy') or {}):
+        if submission and not submission.file and not files and submission.files.exists():
+            return False
         # Legacy metadata fixtures and historical primary-file records retain their semantics.
         return bool(submission and (not accepted or submission.status == 'accepted'))
     valid = [f for f in files if f.file and (f.status == 'accepted' if accepted else f.status != 'rejected')]
     mode = definition['file_policy'].get('mode', 'single')
     if mode == 'multiple':
-        return len(valid) >= definition['file_policy'].get('min_files', 1)
+        policy = definition['file_policy']
+        within_limits = policy.get('min_files', 1) <= len(valid) <= policy.get('max_files', 10)
+        # Acceptance covers every submitted attachment, including extras beyond
+        # the minimum. One accepted file must not conceal unreviewed evidence.
+        return within_limits and (not accepted or len(valid) == len(files))
     present = {f.slot_key for f in valid}
     return all(s['key'] in present for s in slots_for(definition, stage=stage) if s.get('required', True))
 
@@ -50,6 +57,19 @@ def file_payload(f):
             'status': f.status, 'feedback': f.feedback,
             'concept_round_id': f.concept_round_id, 'selected_concept_key': f.selected_concept_key,
             'reviewed_at': f.reviewed_at.isoformat() if f.reviewed_at else None}
+
+
+def snapshot_files(submission):
+    files = [file_payload(f) for f in current_files(submission)]
+    if not files and submission.file and not submission.files.exists():
+        # Older uploads can exist only on the parent record. Preserve that real
+        # evidence in a hearing snapshot before the first version row is made.
+        return [{'id': None, 'slot_key': 'primary', 'revision': 1,
+            'is_current': True, 'file_name': submission.file_name, 'file_size': submission.file_size,
+            'file_url': submission.file.url, 'status': submission.status, 'feedback': submission.feedback,
+            'uploaded_at': submission.uploaded_at.isoformat(),
+            'reviewed_at': submission.reviewed_at.isoformat() if submission.reviewed_at else None}]
+    return files
 
 
 def sync_submission(submission, definition, stage=None):
@@ -110,6 +130,9 @@ def store_revision(submission, definition, *, file, file_name, file_size, slot_k
             extracted_text=row.extracted_text, topics=row.topics, summary=row.summary,
             category=row.category, category_confidence=row.category_confidence, classification=row.classification)
         archive.save()
+        # auto_now_add applies to the copy; its evidence belongs to the original
+        # upload, not the date on which an administrator replaced the file.
+        DeliverableSubmissionFile.objects.filter(pk=archive.pk).update(uploaded_at=row.uploaded_at)
         row.is_current, row.revision, row.uploaded_at = True, revision, timezone.now()
         row.file_name, row.file_size = file_name.strip(), (file_size or '').strip()
         row.extracted_text, row.topics, row.summary = '', [], ''

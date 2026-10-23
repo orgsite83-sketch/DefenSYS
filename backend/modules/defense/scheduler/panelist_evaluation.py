@@ -62,7 +62,8 @@ def assessment_unavailable_reason(schedule, grade=None, *, action='issuing a ver
         reason = ''
     if reason:
         return reason
-    if grade is None or grade.panel_score is None:
+    from grading.grades.outcome_rules import policy_for
+    if grade is None or (grade.panel_score is None and not policy_for(schedule).get('per_concept')):
         return f'Panel grading must be submitted before {action}.'
     from grading.grades.services import team_grading_readiness
     if not team_grading_readiness(grade, grade.semester, grade.scope)['panel_complete']:
@@ -77,6 +78,7 @@ from defensys_backend.read_projection import read_memoize
 def evaluation_context(schedule, grade=None):
     rubric = schedule.rubric
     context = {
+        'assessment_policy': schedule.assessment_policy,
         'schedule': schedule.pk,
         'revision': schedule.revision,
         'date': str(schedule.scheduled_date),
@@ -121,8 +123,11 @@ def validate_evaluation_submissions(schedule, submissions, *, partial=False):
             expected[None] = team_criteria
         if individual_criteria:
             expected.update({student_id: individual_criteria for student_id in members})
-    if not expected or (rubric.target_type == 'individual' and not members):
+    if not expected or (rubric.target_type in ('individual', 'both') and not members):
         raise ValidationError('This team has no members to grade.')
+    from grading.grades.outcome_rules import concept_keys
+    keys = concept_keys(schedule)
+    expected = {(key, student): criteria for key in keys for student, criteria in expected.items()}
     seen = set()
     result = []
     for submission in submissions:
@@ -133,12 +138,16 @@ def validate_evaluation_submissions(schedule, submissions, *, partial=False):
             student_id = int(raw_student_id) if raw_student_id not in (None, '') else None
         except (ValueError, TypeError) as exc:
             raise ValidationError('student_id must be an integer.') from exc
-        if student_id not in expected:
+        concept_key = submission.get('concept_key', '')
+        if not isinstance(concept_key, str):
+            raise ValidationError('concept_key must identify a concept in this hearing.')
+        identity = (concept_key, student_id)
+        if identity not in expected:
             raise ValidationError('The submission does not match this team and rubric target.')
-        if student_id in seen:
+        if identity in seen:
             raise ValidationError('Duplicate student or team submissions are not allowed.')
-        seen.add(student_id)
-        allowed = {c.pk: c for c in expected[student_id]}
+        seen.add(identity)
+        allowed = {c.pk: c for c in expected[identity]}
         scores = submission.get('criteria_scores', [])
         if not isinstance(scores, list):
             raise ValidationError('criteria_scores must be a list.')
@@ -146,7 +155,7 @@ def validate_evaluation_submissions(schedule, submissions, *, partial=False):
         if not partial and len(scores) == len(allowed) and all(
             isinstance(s, dict) and s.get('criterion_id', s.get('id')) is None for s in scores
         ):
-            scores = [dict(s, criterion_id=c.pk) for s, c in zip(scores, expected[student_id])]
+            scores = [dict(s, criterion_id=c.pk) for s, c in zip(scores, expected[identity])]
         scored = set()
         clean_scores = []
         for item in scores:
@@ -168,7 +177,7 @@ def validate_evaluation_submissions(schedule, submissions, *, partial=False):
         remarks = submission.get('remarks', '')
         if not isinstance(remarks, str):
             raise ValidationError('Remarks must be text.')
-        result.append({'student_id': student_id, 'criteria_scores': clean_scores, 'remarks': remarks})
+        result.append({'student_id': student_id, 'concept_key': concept_key, 'criteria_scores': clean_scores, 'remarks': remarks})
     if not partial and seen != set(expected):
         raise ValidationError('Complete the evaluation for every team member before submitting.')
     return result

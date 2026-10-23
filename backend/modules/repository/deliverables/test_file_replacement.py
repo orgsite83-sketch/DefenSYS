@@ -19,6 +19,17 @@ from student_teams.models import StudentTeam, TeamMembership, TeamStageProgress
 
 
 class ApprovedFileReplacementTests(APITestCase):
+    def test_preserved_file_history_keeps_its_original_upload_time(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        original_time = timezone.now() - timedelta(days=7)
+        DeliverableSubmissionFile.objects.filter(pk=self.sub_file.pk).update(uploaded_at=original_time)
+        self.assertEqual(self.unlock().status_code, 200)
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self.upload().status_code, 200)
+        historical = self.submission.files.get(is_current=False)
+        self.assertEqual(historical.uploaded_at, original_time)
+
     def setUp(self):
         media = TemporaryDirectory(prefix='defensys-replacement-test-')
         self.addCleanup(media.cleanup)

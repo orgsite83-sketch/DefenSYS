@@ -120,6 +120,11 @@ class StageDeliverable(models.Model):
 
 
 class DefenseStage(models.Model):
+    from django.core.validators import MinValueValidator, MaxValueValidator
+    qualifying_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)])
+    score_carryover = models.CharField(max_length=10, default='reassess',
+        choices=[('reassess', 'Require fresh assessments'), ('retain', 'Retain adviser and peer scores')])
     from defense.document_policy import validate_concept_config
     concept_config = models.JSONField(default=dict, blank=True, validators=[validate_concept_config])
     label = models.CharField(max_length=120, unique=True)
@@ -234,8 +239,10 @@ class StageGradingConfig(models.Model):
 
         TeamGrade.objects.filter(
             Q(defense_stage=self.defense_stage) | Q(semester=self.semester, scope=TeamGrade.SCOPE_CAPSTONE, stage_label__iexact=self.defense_stage.label),
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
             status=TeamGrade.STATUS_PENDING,
-        ).update(
+        ).exclude(schedule__assessment_policy__version=1).update(
             defense_stage=self.defense_stage,
             panel_weight=self.panel_weight,
             adviser_weight=self.adviser_weight,

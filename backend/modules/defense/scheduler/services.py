@@ -67,6 +67,15 @@ def transition_schedule_status(schedule, new_status, *, actor=None, reason='', r
     if new_status not in allowed:
         raise ValidationError({'status': f'Cannot change status from "{old_status}" to "{new_status}".'})
 
+    if new_status == DefenseSchedule.STATUS_ARCHIVED and schedule.scope == 'capstone':
+        from grading.grades.outcome_rules import policy_for
+        from defense.scheduler.progress import schedule_progress
+        grade = schedule.grade_records.first()
+        if (policy_for(schedule).get('version') == 1 and grade
+                and grade.verdict not in ('for_redefense', 'failed', 'project_rejected')
+                and not schedule_progress(schedule, reconcile_status=False)['is_completed']):
+            raise ValidationError('Complete grading, required post-defense files and revision clearance before archiving this attempt.')
+
     if new_status == DefenseSchedule.STATUS_DONE:
         from grading.grades.services import team_grading_readiness
         grade = schedule.grade_records.first()

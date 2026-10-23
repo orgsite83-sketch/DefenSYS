@@ -1350,7 +1350,7 @@ class RepositoryAuditApiTests(APITestCase):
         # PIT lead should not get capstone records
         self.assertNotIn('Capstone,', content)
 
-    def test_before_defense_deliverable_status_classification(self):
+    def test_required_pre_defense_files_keep_faculty_review_after_the_hearing(self):
         from defense.scheduler.models import DefenseSchedule
         from .payloads import capstone_entry_payload
 
@@ -1379,11 +1379,12 @@ class RepositoryAuditApiTests(APITestCase):
             uploaded_by=self.student,
         )
 
-        # 1. When defense is not yet done -> status is 'Uploaded'
+        # New requirements use unified faculty review even if an older author
+        # supplied the removed defense-timing field.
         payload = capstone_entry_payload(submission)[0]
-        self.assertEqual(payload['status'], 'Uploaded')
+        self.assertEqual(payload['status'], 'Pending Review')
 
-        # 2. When defense is completed (status == 'done') -> status is 'Approved'
+        # Completing a hearing never accepts a student's file on faculty's behalf.
         schedule = DefenseSchedule.objects.create(
             team=self.pit_team,
             semester=self.semester,
@@ -1396,7 +1397,7 @@ class RepositoryAuditApiTests(APITestCase):
             room='Room 101',
         )
         payload = capstone_entry_payload(submission)[0]
-        self.assertEqual(payload['status'], 'Approved')
+        self.assertEqual(payload['status'], 'Pending Review')
 
         # 3. When rejected / corrections requested -> status is 'Needs Revision'
         submission.status = DeliverableSubmission.STATUS_REJECTED

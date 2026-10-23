@@ -224,17 +224,29 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
 
     def get_completed_stages(self, obj):
         from grading.grades.models import TeamGrade
+        from .progress import schedule_progress
+        grades = [grade for grade in obj.grade_records.all() if grade.semester_id == obj.semester_id
+                  and grade.project_version == obj.project_version]
+        def complete(grade):
+            if grade.scope == TeamGrade.SCOPE_PIT:
+                return grade.status == TeamGrade.STATUS_PUBLISHED
+            if grade.schedule_id:
+                return schedule_progress(grade.schedule, reconcile_status=False)['is_completed']
+            from grading.grades.defense_workflow import passed_and_cleared, legacy_finalized_pass
+            from repository.deliverables.services import post_deliverables_complete
+            return (grade.status == TeamGrade.STATUS_PUBLISHED and (passed_and_cleared(grade) or legacy_finalized_pass(grade))
+                    and post_deliverables_complete(obj, grade.stage_label))
         completed = set()
         for prog in obj.stage_progress.all():
             if prog.semester_id != obj.semester_id or prog.project_version != obj.project_version:
                 continue
             if prog.status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED]:
                 if prog.defense_stage:
-                    completed.add(prog.defense_stage.label)
-        for grade in obj.grade_records.all():
-            if grade.semester_id != obj.semester_id:
-                continue
-            if grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed' and grade.defense_stage:
+                    current = next((g for g in grades if g.defense_stage_id == prog.defense_stage_id), None)
+                    if current is None or complete(current):
+                        completed.add(prog.defense_stage.label)
+        for grade in grades:
+            if grade.defense_stage and complete(grade):
                 completed.add(grade.defense_stage.label)
             elif (grade.scope == TeamGrade.SCOPE_PIT and grade.status == TeamGrade.STATUS_PUBLISHED
                     and grade.stage_label and (not grade.uses_defense_verdict or grade.result == 'passed')):
@@ -265,6 +277,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
 
     def get_stage_progress(self, obj):
         from .progress import schedule_progress
+        from grading.grades.models import TeamGrade
 
         # Endorsement remains historical evidence after an assessment. Display
         # the current attempt's workflow instead of falling back to that flag.
@@ -300,7 +313,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             if not label or label in seen:
                 continue
             seen.add(label)
-            workflow = schedule_progress(schedule)
+            workflow = schedule_progress(schedule, reconcile_status=False)
             result[label] = 'completed' if workflow['is_completed'] else workflow['display_status']
 
         completed = set(self.get_completed_stages(obj))
@@ -310,6 +323,15 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         for r in redefense:
             if r not in result:
                 result[r] = 'redefense_required'
+        if obj.is_capstone:
+            from grading.grades.outcome_rules import policy_for
+            from repository.deliverables.services import compute_stage_status_detail
+            for grade in obj.grade_records.all():
+                if (grade.semester_id == obj.semester_id and grade.project_version == obj.project_version
+                        and grade.defense_stage_id and grade.verdict == TeamGrade.VERDICT_FOR_REDEFENSE
+                        and policy_for(grade.schedule).get('version') == 1
+                        and not any(s.stage_label == grade.stage_label and s.status == 'scheduled' for s in schedules)):
+                    result[grade.stage_label] = compute_stage_status_detail(obj, grade.stage_label, True, False)
         if obj.ready_for_stage and obj.ready_for_stage not in result:
             result[obj.ready_for_stage] = 'ready'
         if obj.is_pit:
@@ -621,11 +643,11 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
 
     def get_display_status(self, obj):
         from .progress import schedule_progress
-        return schedule_progress(obj)['display_status']
+        return schedule_progress(obj, reconcile_status=False)['display_status']
 
     def get_assessment(self, obj):
         from .progress import schedule_progress
-        return schedule_progress(obj)
+        return schedule_progress(obj, reconcile_status=False)
 
     def get_project_title(self, obj):
         return obj.project_title_snapshot or obj.team.project_title
@@ -739,6 +761,9 @@ class ScheduleBaseSerializer(serializers.Serializer):
         return attrs
 
     def _validate_capstone_stage_setup(self, attrs):
+        if not self.instance and attrs['defense_stage'].qualifying_score is None:
+            raise serializers.ValidationError({'defense_stage_id':
+                'Set the stage minimum qualifying panel score before scheduling a new hearing.'})
         config = get_or_create_stage_grading_config(attrs['defense_stage'], attrs['semester'])
         if config is None:
             raise serializers.ValidationError({'defense_stage_id': 'Stage grading configuration is required.'})

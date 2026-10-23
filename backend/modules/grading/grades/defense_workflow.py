@@ -32,6 +32,15 @@ def passed_and_cleared(grade):
     return False
 
 
+def legacy_finalized_pass(grade):
+    """Retain already-published numeric results from before configured outcomes."""
+    from .outcome_rules import policy_for
+    return bool(grade.uses_defense_verdict and not grade.verdict
+                and grade.status == TeamGrade.STATUS_PUBLISHED
+                and policy_for(grade.schedule).get('version', 0) == 0
+                and grade.result == 'passed')
+
+
 def recovery_for(team, stage):
     return TeamRecoveryAuthorization.objects.filter(
         team=team, semester=team.semester, defense_stage=stage,
@@ -75,6 +84,8 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
         raise ValidationError('Select a valid defense verdict.')
     if grade.status == TeamGrade.STATUS_PUBLISHED:
         raise ValidationError('This grade is finalized. Use the correction process before changing its verdict.')
+    if grade.verdict == TeamGrade.VERDICT_FOR_REDEFENSE and grade.schedule_id and grade.schedule.documents_snapshot:
+        raise ValidationError('The next attempt has started. The previous hearing outcome is read-only.')
     from defense.scheduler.panelist_evaluation import verdict_unavailable_reason
     from .services import team_grading_readiness
     if grade.schedule_id:
@@ -85,6 +96,8 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
         raise ValidationError('Every required panel evaluation must be submitted before a verdict.')
     if verdict in (TeamGrade.VERDICT_FOR_REDEFENSE, TeamGrade.VERDICT_FAILED, TeamGrade.VERDICT_PROJECT_REJECTED) and not remarks.strip():
         raise ValidationError('Record the reason and required action for this outcome.')
+    from .outcome_rules import validate_outcome, policy_for
+    validate_outcome(grade, verdict, concept_decisions)
     grade.verdict = verdict
     grade.verdict_remarks = remarks.strip()
     grade.verdict_by = actor
@@ -94,11 +107,24 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
     grade.revisions_cleared_by = None
     grade.clearance_remarks = ''
     grade.compliance_review_date = None
-    grade.redefense_verification_required = bool(verification_required and verdict == TeamGrade.VERDICT_FOR_REDEFENSE)
+    # Configured attempts always require fresh file review and endorsement.
+    # The old optional verification gate must not add a second clearance step.
+    grade.redefense_verification_required = bool(verification_required
+        and policy_for(grade.schedule).get('version') != 1 and verdict == TeamGrade.VERDICT_FOR_REDEFENSE)
     grade.redefense_verified_at = None
     grade.redefense_verified_by = None
     from repository.deliverables.concepts import record_outcome
     record_outcome(grade, concept_decisions, replacement_required=replacement_concepts_required)
+    from repository.deliverables.concepts import enabled as concepts_enabled, context_for_grade
+    if (not concepts_enabled(context_for_grade(grade)) and policy_for(grade.schedule).get('version') == 1
+            and policy_for(grade.schedule).get('repeat_files_version') == 1):
+        from repository.deliverables.redefense import snapshot_hearing, refresh_files
+        snapshot_hearing(grade.schedule, grade.team, context_for_grade(grade))
+        if verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
+            refresh_files(grade.team, context_for_grade(grade))
+    if policy_for(grade.schedule).get('version') == 1:
+        from .services import recompute_panel_score
+        recompute_panel_score(grade)
     grade.save()
     if grade.schedule_id and grade.schedule.status == 'scheduled':
         from defense.scheduler.services import transition_schedule_status
@@ -106,6 +132,10 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
         grade.schedule.refresh_from_db()
     from .services import _apply_team_result_from_grade, maybe_auto_finalize_passed_grade
     _apply_team_result_from_grade(grade)
+    if verdict == TeamGrade.VERDICT_FOR_REDEFENSE and policy_for(grade.schedule).get('version') == 1:
+        if grade.team.ready_for_stage == grade.stage_label:
+            grade.team.ready_for_stage = None
+            grade.team.save(update_fields=['ready_for_stage', 'updated_at'])
     maybe_auto_finalize_passed_grade(grade, user=actor)
     audit(grade, actor, 'defense.verdict_submitted', verdict=verdict, verdict_remarks=remarks,
           verification_required=grade.redefense_verification_required)
@@ -113,6 +143,9 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
 
 
 def workflow_payload(grade, actor=None):
+    from .outcome_rules import outcome_payload, policy_for
+    from defense.scheduler.progress import schedule_progress
+    from student_teams.services import is_stage_ready
     from repository.deliverables.models import DeliverableSubmission
     from defense.scheduler.models import DefenseSchedule
     authorization = recovery_for(grade.team, grade.defense_stage) if grade.defense_stage_id else None
@@ -125,21 +158,32 @@ def workflow_payload(grade, actor=None):
         hearing = ConceptRound.objects.filter(schedule_id=grade.schedule_id).first()
         if hearing:
             concept_workflow['hearing_concepts'] = hearing.concepts
+            rule = outcome_payload(grade)
+            if rule and rule['per_concept']:
+                scores = {row['key']: row for row in rule['assessments']}
+                concept_workflow['hearing_concepts'] = [{**c, 'panel_score': scores[c['key']]['score'],
+                    'qualifies': scores[c['key']]['qualifies']} for c in hearing.concepts]
             if hearing.section_round_id:
                 systems = {s.key: s.title for s in hearing.section_round.systems.all()}
                 concept_workflow['hearing_concepts'] = [{**c, 'system_title': systems.get(c['key'], ''),
                     'section_selected': hearing.section_round.selected_key == c['key']}
-                    for c in hearing.concepts]
+                    for c in concept_workflow['hearing_concepts']]
             concept_workflow['hearing_round'] = hearing.number
     return {
         'concept_workflow': concept_workflow,
+        'outcome_rule': outcome_payload(grade),
+        'assessment_policy': policy_for(grade.schedule),
+        'assessment_progress': schedule_progress(grade.schedule, reconcile_status=False) if grade.schedule_id else None,
         'chair_id': grade.schedule.panel_assignments.filter(is_chair=True).values_list('panelist_id', flat=True).first() if grade.schedule_id else None,
         'adviser_id': grade.team.adviser_id,
         'passed_and_cleared': passed_and_cleared(grade),
         'revisions_pending': grade.verdict == 'approved_with_revisions' and not grade.revisions_cleared_at,
         'retake_authorized': bool(authorization),
-        'redefense_ready': not clearance_blocker(grade.team, concept_context) and (grade.verdict == 'for_redefense' or bool(authorization)) and (
-            not grade.redefense_verification_required or bool(grade.redefense_verified_at)),
+        'redefense_ready': (not clearance_blocker(grade.team, concept_context) and (grade.verdict == 'for_redefense' or bool(authorization)) and (
+            policy_for(grade.schedule).get('version') == 1 or
+            not grade.redefense_verification_required or bool(grade.redefense_verified_at)) and
+            (not grade.schedule_id or grade.schedule.assessment_policy.get('version') != 1 or
+             is_stage_ready(grade.team, concept_context))),
         'previous_projects': [{'version': g.project_version, 'title': g.project_title_snapshot,
                                'grade_id': g.pk, 'stage_label': g.stage_label, 'verdict': g.verdict}
                               for g in TeamGrade.all_objects.filter(team=grade.team).exclude(project_version=grade.team.project_version).order_by('project_version', 'id')],

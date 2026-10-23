@@ -122,6 +122,8 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'is_active',
             'is_presentation_only',
             'concept_config',
+            'qualifying_score',
+            'score_carryover',
             'minutes_required',
             'minutes_deliverable_id',
             'minutes_deliverable_label',
@@ -333,7 +335,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DefenseStage
-        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'deliverables']
+        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'qualifying_score', 'score_carryover', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'deliverables']
         extra_kwargs = {
             'code': {'required': False, 'allow_blank': True},
             'display_order': {'required': False},
@@ -391,6 +393,17 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         from defense.document_policy import validate_concept_config, with_concept_papers
+        if 'concept_config' in attrs and 'score_carryover' not in attrs:
+            carryover = attrs['concept_config'].get('score_carryover')
+            if carryover is not None:
+                attrs['score_carryover'] = carryover
+        cutoff = attrs.get('qualifying_score')
+        if cutoff is not None and (not cutoff.is_finite() or not 0 <= cutoff <= 100):
+            raise serializers.ValidationError({'qualifying_score': 'Enter a qualifying score between 0 and 100%.'})
+        if self.instance and set(self.initial_data).issubset({'qualifying_score', 'score_carryover'}):
+            # Future-hearing policy edits must not regenerate legacy deliverables
+            # or change any requirements attached to a locked historical stage.
+            return attrs
         config = attrs.get('concept_config', getattr(self.instance, 'concept_config', {}))
         try:
             config = validate_concept_config(config)
@@ -430,7 +443,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         semester = self.context.get('semester')
         locked, reason = check_stage_locked(instance, semester)
-        if locked:
+        if locked and not set(validated_data).issubset({'qualifying_score', 'score_carryover'}):
             raise serializers.ValidationError(
                 {'non_field_errors': [reason or 'This defense stage is locked and cannot be edited.']}
             )

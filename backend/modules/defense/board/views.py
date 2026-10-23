@@ -31,7 +31,7 @@ def counts_payload(base_queryset, current_queryset=None):
     current = current_queryset if current_queryset is not None else base_queryset
     from collections import Counter
     from defense.scheduler.progress import schedule_progress, DISPLAY_STATUSES
-    counts = Counter(schedule_progress(s)['display_status'] for s in current)
+    counts = Counter(schedule_progress(s, reconcile_status=False)['display_status'] for s in current)
     return {'all': base_queryset.count(), 'filtered': len(current),
             **{key: counts[key] for key in DISPLAY_STATUSES},
             'ongoing': counts['evaluating'], 'done': counts['completed']}
@@ -147,7 +147,7 @@ def filter_board_queryset(request, queryset):
     if status_filter:
         from defense.scheduler.progress import schedule_progress
         expected = {'ongoing': 'evaluating', 'done': 'completed'}.get(status_filter, status_filter)
-        ids = [s.pk for s in queryset if schedule_progress(s)['display_status'] == expected]
+        ids = [s.pk for s in queryset if schedule_progress(s, reconcile_status=False)['display_status'] == expected]
         queryset = queryset.filter(pk__in=ids)
     if scope:
         queryset = queryset.filter(scope=scope)

@@ -153,7 +153,9 @@ class DeliverableWorkflowStatusTests(APITestCase):
         self.grade(schedule, panel_score=80, peer_score=80, adviser_score=80,
             verdict='approved', status=TeamGrade.STATUS_PUBLISHED)
         payload = stage_payload(self.team, self.stage.label)
-        self.assertTrue(payload['assessment_progress']['is_completed'])
+        self.assertFalse(payload['assessment_progress']['is_completed'])
+        self.assertTrue(payload['assessment_progress']['assessment_finalized'])
+        self.assertEqual(payload['assessment_progress']['display_status'], 'pending_post_defense')
         self.assertTrue(payload['post_defense_ready'])
         self.assertFalse(payload['archive_complete'])
 
