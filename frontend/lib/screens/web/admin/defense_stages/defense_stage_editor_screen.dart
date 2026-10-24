@@ -21,6 +21,7 @@ import '../../../../widgets/widgets.dart';
 import '../../../../widgets/repository/repository_archive_naming_panel.dart';
 import '../../../../widgets/repository/deliverable_timing_fields.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import '../../../../widgets/grading/grading_setup_section.dart';
 import 'widgets/pipeline_position_selector.dart';
 import 'widgets/endorsed_stage_resolution_dialog.dart';
 import 'widgets/stage_setup_draft_notice.dart';
@@ -476,20 +477,6 @@ class _DefenseStageEditorScreenState
     return p + a + r;
   }
 
-  List<Map<String, dynamic>> _semesterOptions() {
-    final options = <Map<String, dynamic>>[];
-    for (final year in ref.read(academicPeriodProvider).schoolYears) {
-      final semesters = year['semesters'];
-      if (semesters is! List) continue;
-      for (final sem in semesters) {
-        if (sem is Map) {
-          options.add(Map<String, dynamic>.from(sem));
-        }
-      }
-    }
-    return options;
-  }
-
   Future<void> _saveOutcomePolicy() async {
     if (StageOutcomeSettings.validateScore(_qualifyingScore.text) != null) {
       setState(() => _error = 'Set a qualifying panel score from 0 to 100%.');
@@ -641,55 +628,7 @@ class _DefenseStageEditorScreenState
     }).toList();
   }
 
-  List<DropdownMenuItem<int>> _buildRubricDropdownItems(
-    String evaluationType,
-    int? currentId,
-    String? currentName,
-  ) {
-    final options = _getRubricOptions(evaluationType);
-    final items = options.map((r) {
-      final id = _asInt(r['id']);
-      return DropdownMenuItem<int>(
-        value: id,
-        child: Text(
-          r['name']?.toString() ?? '',
-          style: TextStyle(
-            color: _textPrimaryColor,
-          ),
-        ),
-      );
-    }).toList();
 
-    // If currentId is set but not in options, add fallback item
-    if (currentId != null && !items.any((item) => item.value == currentId)) {
-      items.add(DropdownMenuItem<int>(
-        value: currentId,
-        enabled: false,
-        child: Text(
-          currentName ?? 'Rubric #$currentId',
-          style: TextStyle(
-            color: _textPrimaryColor,
-          ),
-        ),
-      ));
-    }
-
-    // Always allow unselecting
-    items.insert(
-      0,
-      DropdownMenuItem<int>(
-        value: null,
-        child: Text(
-          'None (No Rubric)',
-          style: TextStyle(
-            color: _textSecondaryColor,
-          ),
-        ),
-      ),
-    );
-
-    return items;
-  }
 
   Widget _buildPositionSelector() {
     final allStages = ref.watch(defenseStagesProvider).stages;
@@ -809,15 +748,6 @@ class _DefenseStageEditorScreenState
         _scheduleRubricRefresh();
       }
     });
-    final semesters = _semesterOptions();
-    final activePeriod = ref.read(academicPeriodProvider).activeSemester;
-    final activeSemObj = semesters.firstWhere(
-      (s) => _asInt(s['id']) == _semesterId,
-      orElse: () => activePeriod ?? (semesters.isNotEmpty ? semesters.first : {}),
-    );
-    final activeSemesterName = activeSemObj['display_name']?.toString() ??
-        activeSemObj['label']?.toString() ??
-        (_semesterId != null ? 'Semester $_semesterId' : 'No Active Semester');
     final stageTitle = _stage?['label']?.toString() ?? 'Edit Defense Stage';
 
     if (_loading) {
@@ -983,7 +913,11 @@ class _DefenseStageEditorScreenState
                               Text('Enable only the workflows this stage uses.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: _textSecondaryColor)),
                               const SizedBox(height: 12),
                               ConceptSettings(value: _conceptConfig, enabled: !_isLocked, onChanged: (value) {
-                                setState(() => _conceptConfig = value); _markDirty();
+                                setState(() {
+                                  _conceptConfig = value;
+                                  ensureConceptPapers(_deliverables, value);
+                                });
+                                _markDirty();
                               }),
                               const SizedBox(height: 20),
                               StageMinutesSettings(
@@ -1037,343 +971,42 @@ class _DefenseStageEditorScreenState
                             ],
                           ),
 
-                          // TAB 1: Grading Composition & Evaluation Rubrics
+                          // TAB 1: Grading and rubrics
                           Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // 1. Role Score Distribution Card
-                              Container(
-                                padding: const EdgeInsets.all(18),
-                                decoration: BoxDecoration(
-                                  color: _panelBgColor,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: _borderColor),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.pie_chart_outline_rounded,
-                                          size: 18,
-                                          color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Role Weight Distribution',
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w800,
-                                            color: _textPrimaryColor,
-                                          ),
-                                        ),
-                                        const Spacer(),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: _inputFillColor,
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: _borderColor),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.calendar_today_rounded,
-                                                size: 12,
-                                                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
-                                              ),
-                                              const SizedBox(width: 5),
-                                              Text(
-                                                activeSemesterName,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      'How Panel, Adviser, and Peer scores combine for this defense milestone. Defaults are 50 / 30 / 20.',
-                                      style: TextStyle(fontSize: 13, color: _textSecondaryColor),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    _buildWeightDistributionBar(panelVal, adviserVal, peerVal),
-                                    const SizedBox(height: 16),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: TextField(
-                                            controller: _panel,
-                                            readOnly: _isLocked,
-                                            keyboardType: TextInputType.number,
-                                            style: TextStyle(color: _textPrimaryColor),
-                                            decoration: _inputDecoration(
-                                              labelText: 'Panel %',
-                                              hintText: '50',
-                                              prefixIcon: Icon(
-                                                Icons.gavel_rounded,
-                                                size: 16,
-                                                color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
-                                              ),
-                                            ),
-                                            onChanged: (_) => setState(() {}),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
-                                          child: TextField(
-                                            controller: _adviser,
-                                            readOnly: _isLocked,
-                                            keyboardType: TextInputType.number,
-                                            style: TextStyle(color: _textPrimaryColor),
-                                            decoration: _inputDecoration(
-                                              labelText: 'Adviser %',
-                                              hintText: '30',
-                                              prefixIcon: const Icon(Icons.school_rounded, size: 16, color: Color(0xFFD97706)),
-                                            ),
-                                            onChanged: (_) => setState(() {}),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
-                                          child: TextField(
-                                            controller: _peer,
-                                            readOnly: _isLocked,
-                                            keyboardType: TextInputType.number,
-                                            style: TextStyle(color: _textPrimaryColor),
-                                            decoration: _inputDecoration(
-                                              labelText: 'Peer %',
-                                              hintText: '20',
-                                              prefixIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFF0D9488)),
-                                            ),
-                                            onChanged: (_) => setState(() {}),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: TextButton.icon(
-                                        onPressed: _isLocked ? null : _resetWeights,
-                                        icon: const Icon(Icons.restore_rounded, size: 15),
-                                        label: const Text('Reset to standard 50 / 30 / 20'),
-                                        style: TextButton.styleFrom(
-                                          foregroundColor: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
-                                          textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              GradingSetupSection(
+                                enabled: !_saving && !_isLocked,
+                                canManageRubrics: !_saving && !_savingDraft,
+                                onManageRubrics: _openRubrics,
+                                resetLabel: 'Reset to 50 / 30 / 20',
+                                onReset: () { _resetWeights(); _markDirty(); },
+                                roles: [
+                                  GradingRoleSetup(role: 'panel', label: 'Panel', weightController: _panel,
+                                    rubrics: _getRubricOptions('panel'), rubricId: _panelRubricId, rubricName: _panelRubricName,
+                                    onWeightChanged: (_) { setState(() {}); _markDirty(); },
+                                    onRubricChanged: (value) {
+                                      setState(() { _panelRubricId = value; _editedRubricRoles.add('panel'); });
+                                      _markDirty();
+                                    }),
+                                  GradingRoleSetup(role: 'adviser', label: 'Adviser', weightController: _adviser,
+                                    rubrics: _getRubricOptions('adviser'), rubricId: _adviserRubricId, rubricName: _adviserRubricName,
+                                    onWeightChanged: (_) { setState(() {}); _markDirty(); },
+                                    onRubricChanged: (value) {
+                                      setState(() { _adviserRubricId = value; _editedRubricRoles.add('adviser'); });
+                                      _markDirty();
+                                    }),
+                                  GradingRoleSetup(role: 'peer', label: 'Peer', weightController: _peer,
+                                    rubrics: _getRubricOptions('peer'), rubricId: _peerRubricId, rubricName: _peerRubricName,
+                                    onWeightChanged: (_) { setState(() {}); _markDirty(); },
+                                    onRubricChanged: (value) {
+                                      setState(() { _peerRubricId = value; _editedRubricRoles.add('peer'); });
+                                      _markDirty();
+                                    }),
+                                ],
                               ),
-                              const SizedBox(height: 16),
-
-                              // 2. Evaluation Rubrics Attachment Card
-                              Builder(
-                                builder: (context) {
-                                  final panelOpts = _getRubricOptions('panel');
-                                  final adviserOpts = _getRubricOptions('adviser');
-                                  final peerOpts = _getRubricOptions('peer');
-                                  final hasNoRubricsAtAll = panelOpts.isEmpty &&
-                                      adviserOpts.isEmpty &&
-                                      peerOpts.isEmpty;
-
-                                  return Container(
-                                    padding: const EdgeInsets.all(18),
-                                    decoration: BoxDecoration(
-                                      color: _panelBgColor,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: _borderColor),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.assignment_outlined,
-                                              size: 18,
-                                              color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              'Evaluation Rubrics Attachment',
-                                              style: TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w800,
-                                                color: _textPrimaryColor,
-                                              ),
-                                            ),
-                                            const Spacer(),
-                                            OutlinedButton.icon(
-                                              onPressed: _savingDraft ? null : _openRubrics,
-                                              icon: const Icon(Icons.open_in_new_rounded, size: 14),
-                                              label: const Text('Manage Evaluation Rubrics'),
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
-                                                side: BorderSide(
-                                                  color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
-                                                ),
-                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                ),
-                                                textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Assign published Capstone rubrics to evaluate each role (optional; can attach later before defense scheduling).',
-                                          style: TextStyle(fontSize: 12.5, color: _textSecondaryColor),
-                                        ),
-                                        if (hasNoRubricsAtAll) ...[
-                                          const SizedBox(height: 12),
-                                          Container(
-                                            padding: const EdgeInsets.all(12),
-                                            decoration: BoxDecoration(
-                                              color: _isDark
-                                                  ? const Color(0xFF78350F).withValues(alpha: 0.25)
-                                                  : const Color(0xFFFFFBEB),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: _isDark
-                                                    ? const Color(0xFFD97706).withValues(alpha: 0.4)
-                                                    : const Color(0xFFFDE68A),
-                                              ),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.warning_amber_rounded,
-                                                  size: 18,
-                                                  color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309),
-                                                ),
-                                                const SizedBox(width: 10),
-                                                Expanded(
-                                                  child: Text(
-                                                    'No available published Capstone rubrics for this stage. Create and publish rubrics in Evaluation Rubrics so they can be attached here.',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E),
-                                                      fontWeight: FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 10),
-                                                ElevatedButton.icon(
-                                                  onPressed: _savingDraft ? null : _openRubrics,
-                                                  icon: const Icon(Icons.add_rounded, size: 14),
-                                                  label: const Text('Create Rubrics'),
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor: const Color(0xFFB45309),
-                                                    foregroundColor: Colors.white,
-                                                    elevation: 0,
-                                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                                    textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius: BorderRadius.circular(6),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                        const SizedBox(height: 16),
-                                        DropdownButtonFormField<int>(
-                                          key: ValueKey('panel-rubric-$_panelRubricId'),
-                                          initialValue: _panelRubricId,
-                                          dropdownColor: _surfaceColor,
-                                          style: TextStyle(color: _textPrimaryColor, fontSize: 13),
-                                          decoration: _inputDecoration(
-                                            labelText: 'Panel Rubric',
-                                            prefixIcon: Icon(
-                                              Icons.gavel_rounded,
-                                              size: 16,
-                                              color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
-                                            ),
-                                          ),
-                                          items: _buildRubricDropdownItems(
-                                            'panel',
-                                            _panelRubricId,
-                                            _panelRubricName,
-                                          ),
-                                          onChanged: (_saving || _isLocked)
-                                              ? null
-                                              : (value) {
-                                                  setState(() {
-                                                    _panelRubricId = value;
-                                                    _editedRubricRoles.add('panel');
-                                                  });
-                                                  _markDirty();
-                                                },
-                                        ),
-                                        const SizedBox(height: 14),
-                                        DropdownButtonFormField<int>(
-                                          key: ValueKey('adviser-rubric-$_adviserRubricId'),
-                                          initialValue: _adviserRubricId,
-                                          dropdownColor: _surfaceColor,
-                                          style: TextStyle(color: _textPrimaryColor, fontSize: 13),
-                                          decoration: _inputDecoration(
-                                            labelText: 'Adviser Rubric',
-                                            prefixIcon: const Icon(Icons.school_rounded, size: 16, color: Color(0xFFD97706)),
-                                          ),
-                                          items: _buildRubricDropdownItems(
-                                            'adviser',
-                                            _adviserRubricId,
-                                            _adviserRubricName,
-                                          ),
-                                          onChanged: (_saving || _isLocked)
-                                              ? null
-                                              : (value) {
-                                                  setState(() {
-                                                    _adviserRubricId = value;
-                                                    _editedRubricRoles.add('adviser');
-                                                  });
-                                                  _markDirty();
-                                                },
-                                        ),
-                                        const SizedBox(height: 14),
-                                        DropdownButtonFormField<int>(
-                                          key: ValueKey('peer-rubric-$_peerRubricId'),
-                                          initialValue: _peerRubricId,
-                                          dropdownColor: _surfaceColor,
-                                          style: TextStyle(color: _textPrimaryColor, fontSize: 13),
-                                          decoration: _inputDecoration(
-                                            labelText: 'Peer Rubric',
-                                            prefixIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFF0D9488)),
-                                          ),
-                                          items: _buildRubricDropdownItems(
-                                            'peer',
-                                            _peerRubricId,
-                                            _peerRubricName,
-                                          ),
-                                          onChanged: (_saving || _isLocked)
-                                              ? null
-                                              : (value) {
-                                                  setState(() {
-                                                    _peerRubricId = value;
-                                                    _editedRubricRoles.add('peer');
-                                                  });
-                                                  _markDirty();
-                                                },
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 16),
+                              Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+                                child: Divider(height: 1, color: _borderColor)),
                               StageOutcomeSettings(scoreController: _qualifyingScore,
                                 scoreCarryover: _scoreCarryover, conceptSelection: _conceptConfig['enabled'] == true,
                                 enabled: !_saving,
@@ -1381,9 +1014,10 @@ class _DefenseStageEditorScreenState
                                 onCarryoverChanged: (v) { setState(() => _scoreCarryover = v); _markDirty(); }),
                               if (_isLocked) ...[
                                 const SizedBox(height: 12),
-                                const Text('Outcome settings apply to new hearings. Existing hearings keep their recorded policy.'),
-                                TextButton(onPressed: _saving ? null : _saveOutcomePolicy,
-                                  child: const Text('Save outcome settings')),
+                                Text('Applies to new hearings only.', style: TextStyle(fontSize: 12, color: _textSecondaryColor)),
+                                DefensysShadcnScope(child: Align(alignment: Alignment.centerLeft,
+                                  child: ShadButton.outline(size: ShadButtonSize.sm, enabled: !_saving,
+                                    onPressed: _saving ? null : _saveOutcomePolicy, child: const Text('Save outcome settings')))),
                               ],
                             ],
                           ),
@@ -1806,152 +1440,7 @@ class _DefenseStageEditorScreenState
     );
   }
 
-  Widget _buildWeightDistributionBar(int panel, int adviser, int peer) {
-    final total = panel + adviser + peer;
-    final isValid = total == 100;
 
-    final pFlex = (panel > 0) ? panel : 0;
-    final aFlex = (adviser > 0) ? adviser : 0;
-    final peFlex = (peer > 0) ? peer : 0;
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isValid
-            ? (_isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC))
-            : (_isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.25) : const Color(0xFFFEF2F2)),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isValid
-              ? _borderColor
-              : (_isDark ? const Color(0xFFEF4444).withValues(alpha: 0.4) : const Color(0xFFFECACA)),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    isValid ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
-                    size: 15,
-                    color: isValid
-                        ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
-                        : (_isDark ? const Color(0xFFF87171) : AppColors.danger),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    isValid ? 'Balanced Allocation (100%)' : 'Allocation Error: Must Total 100%',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: isValid
-                          ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
-                          : (_isDark ? const Color(0xFFF87171) : AppColors.danger),
-                    ),
-                  ),
-                ],
-              ),
-              Text(
-                'Total: $total%',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                  color: isValid
-                      ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
-                      : (_isDark ? const Color(0xFFF87171) : AppColors.danger),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-              height: 10,
-              width: double.infinity,
-              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
-              child: (total > 0)
-                  ? Row(
-                      children: [
-                        if (pFlex > 0)
-                          Flexible(
-                            flex: pFlex,
-                            child: Container(
-                              color: AppColors.maroon,
-                              height: double.infinity,
-                            ),
-                          ),
-                        if (aFlex > 0)
-                          Flexible(
-                            flex: aFlex,
-                            child: Container(
-                              color: const Color(0xFFD97706),
-                              height: double.infinity,
-                            ),
-                          ),
-                        if (peFlex > 0)
-                          Flexible(
-                            flex: peFlex,
-                            child: Container(
-                              color: const Color(0xFF0D9488),
-                              height: double.infinity,
-                            ),
-                          ),
-                      ],
-                    )
-                  : null,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildLegendItem('Panel', '$panel%', AppColors.maroon),
-              _buildLegendItem('Adviser', '$adviser%', const Color(0xFFD97706)),
-              _buildLegendItem('Peer', '$peer%', const Color(0xFF0D9488)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLegendItem(String label, String value, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2.5),
-          ),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          '$label: ',
-          style: TextStyle(
-            fontSize: 11.5,
-            color: _textSecondaryColor,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 11.5,
-            color: _textPrimaryColor,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildSubmissionModeSelector() {
     return Container(

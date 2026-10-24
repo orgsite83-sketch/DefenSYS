@@ -65,49 +65,173 @@ class _Filters extends CapstoneDeliverablesNotifier {
 void main() {
   setUpAll(() => loadPreviewFonts(force: true));
 
-  testWidgets('the grouped status panel is bounded and closes with Escape', (tester) async {
-    tester.view.physicalSize = const Size(1280, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    const previewKey = ValueKey('status-panel-preview');
-    await tester.pumpWidget(RepaintBoundary(
-      key: previewKey,
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.theme,
-        home: Scaffold(body: Align(
-          alignment: Alignment.topRight,
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: SizedBox(width: 280, child: DeliverablesStatusFilter(
-              value: TeamTriageFilter.all,
-              counts: DeliverablesTriageHelper.computeCounts([_team(1, 'scheduled')]),
-              isPit: false,
-              onChanged: (_) {},
-            )),
+  testWidgets(
+    'the short status menu hides empty groups and closes with Escape',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const previewKey = ValueKey('status-panel-preview');
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: previewKey,
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.theme,
+            home: Scaffold(
+              body: Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: SizedBox(
+                    width: 280,
+                    child: DeliverablesStatusFilter(
+                      value: TeamTriageFilter.all,
+                      counts: DeliverablesTriageHelper.computeCounts([
+                        _team(1, 'scheduled'),
+                      ]),
+                      isPit: false,
+                      onChanged: (_) {},
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
-        )),
-      ),
-    ));
-    await tester.pumpAndSettle();
-    final picker = find.byType(ShadSelect<TeamTriageFilter>);
-    final options = tester.widget<ShadSelect<TeamTriageFilter>>(picker).options!
-      .whereType<ShadOption<TeamTriageFilter>>().map((option) => option.value).toList();
-    expect(options.toSet(), TeamTriageFilter.values.toSet());
-    expect(options.length, TeamTriageFilter.values.length);
-    await tester.tap(picker);
-    await tester.pumpAndSettle();
-    await capturePreview(tester, find.byKey(previewKey), 'team-status-panel');
-    await tester.enterText(find.byType(EditableText).last, 'archive');
-    await tester.pumpAndSettle();
-    expect(find.text('Archive review (0)'), findsOneWidget);
-    expect(find.text('Archived (0)'), findsOneWidget);
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
-    expect(find.text('Archive review (0)'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+        ),
+      );
+      await tester.pumpAndSettle();
+      final picker = find.byType(ShadSelect<TeamTriageFilter>);
+      final options = tester
+          .widget<ShadSelect<TeamTriageFilter>>(picker)
+          .options!
+          .whereType<ShadOption<TeamTriageFilter>>()
+          .map((option) => option.value)
+          .toList();
+      expect(options, [TeamTriageFilter.all, TeamTriageFilter.inProgress]);
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      await capturePreview(tester, find.byKey(previewKey), 'team-status-panel');
+      expect(find.byType(EditableText), findsNothing);
+      expect(find.text('In progress (1)'), findsOneWidget);
+      expect(find.text('Requirements'), findsNothing);
+      expect(find.text('Not configured (0)'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('In progress (1)'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  test(
+    'summary groups partition the selected-stage workflow, including closed failures',
+    () {
+      final teams = [
+        _team(1, 'awaiting_files'),
+        _team(2, 'changes_requested'),
+        _team(3, 'for_redefense'),
+        _team(4, 'revisions_pending'),
+        _team(5, 'postponed'),
+        _team(6, 'no_show'),
+        _team(7, 'needs_review'),
+        _team(8, 'pending', stage: {'required_complete': true}),
+        _team(9, 'ready', stage: {'endorsed': true}),
+        _team(10, 'ready_to_schedule_redefense'),
+        _team(11, 'scheduled'),
+        _team(12, 'awaiting_verdict'),
+        _team(13, 'grading_incomplete'),
+        _team(14, 'pending_post_defense'),
+        _team(15, 'completed'),
+        _team(16, 'passed'),
+        _team(17, 'failed'),
+        _team(18, 'cancelled'),
+        _team(19, 'archived'),
+        {'id': 20},
+      ];
+      final counts = DeliverablesTriageHelper.computeCounts(teams);
+      expect(counts[TeamTriageFilter.needsAttention], 6);
+      expect(counts[TeamTriageFilter.forReview], 2);
+      expect(counts[TeamTriageFilter.readyToSchedule], 2);
+      expect(counts[TeamTriageFilter.inProgress], 4);
+      expect(counts[TeamTriageFilter.closed], 5);
+      expect(counts[TeamTriageFilter.notConfigured], 1);
+      for (final team in teams) {
+        expect(
+          DeliverablesTriageHelper.summaryFilters.keys
+              .where(
+                (filter) =>
+                    filter != TeamTriageFilter.all &&
+                    DeliverablesTriageHelper.matchesFilter(team, filter),
+              )
+              .length,
+          1,
+          reason: 'Team ${team['id']} must appear in exactly one group',
+        );
+      }
+    },
+  );
+
+  test(
+    'PIT groups use event readiness and concept review rather than Capstone defaults',
+    () {
+      final presentation = _team(
+        1,
+        'pending',
+        stage: {'is_presentation_only': true, 'endorsement_required': false},
+      );
+      final concept = _team(
+        2,
+        'pending',
+        stage: {
+          'concept_workflow': {
+            'enabled': true,
+            'can_edit': true,
+            'status': 'module_confirmation_pending',
+          },
+        },
+      );
+      expect(
+        DeliverablesTriageHelper.summaryFilter(presentation, scope: 'pit'),
+        TeamTriageFilter.readyToSchedule,
+      );
+      expect(
+        DeliverablesTriageHelper.summaryFilter(presentation),
+        TeamTriageFilter.needsAttention,
+      );
+      expect(
+        DeliverablesTriageHelper.summaryFilter(concept, scope: 'pit'),
+        TeamTriageFilter.forReview,
+      );
+    },
+  );
+
+  testWidgets(
+    'an exact review shortcut stays selectable even after its count reaches zero',
+    (tester) async {
+      await pumpDefensysWidget(
+        tester,
+        SizedBox(
+          width: 240,
+          child: DeliverablesStatusFilter(
+            value: TeamTriageFilter.needsReview,
+            counts: DeliverablesTriageHelper.computeCounts([
+              _team(1, 'completed'),
+            ]),
+            isPit: false,
+            onChanged: (_) {},
+          ),
+        ),
+      );
+      final picker = find.byType(ShadSelect<TeamTriageFilter>);
+      expect(find.text('Needs review (0)'), findsOneWidget);
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      expect(find.text('Closed (1)'), findsOneWidget);
+      expect(find.text('Needs review (0)'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test(
     'lifecycle filters use the selected stage and include later workflow states',
@@ -194,6 +318,9 @@ void main() {
       expect(counts[TeamTriageFilter.pendingPostDefense], 1);
       expect(counts[TeamTriageFilter.archiveReviewPending], 1);
       expect(counts[TeamTriageFilter.completed], 0);
+      expect(counts[TeamTriageFilter.forReview], 2);
+      expect(counts[TeamTriageFilter.inProgress], 1);
+      expect(counts[TeamTriageFilter.closed], 0);
     },
   );
 
@@ -212,7 +339,7 @@ void main() {
           CapstoneDeliverablesState(
             selectedStage: 'Concept Proposal',
             stageOptions: const ['Concept Proposal', 'Final Defense'],
-            teams: [_team(1, 'scheduled'), _team(2, 'awaiting_verdict')],
+            teams: [_team(1, 'needs_review'), _team(2, 'awaiting_verdict')],
           ),
         );
         var selected = TeamTriageFilter.all;
@@ -250,40 +377,30 @@ void main() {
         final picker = find.byType(ShadSelect<TeamTriageFilter>);
         expect(
           tester.widget<ShadSelect<TeamTriageFilter>>(picker).maxHeight,
-          400,
+          320,
         );
         await tester.ensureVisible(picker);
         await tester.tap(picker);
         await tester.pumpAndSettle();
-        expect(find.text('Requirements'), findsOneWidget);
-        await tester.enterText(find.byType(EditableText).last, 'scheduled');
+        expect(find.text('Requirements'), findsNothing);
+        expect(find.byType(EditableText), findsOneWidget); // Team search only.
+        await tester.tap(find.text('For review (1)'));
         await tester.pumpAndSettle();
-        expect(find.text('Defense'), findsOneWidget);
-        await tester.tap(find.text('Scheduled (1)'));
-        await tester.pumpAndSettle();
-        expect(selected, TeamTriageFilter.scheduled);
+        expect(selected, TeamTriageFilter.forReview);
 
         notifier.replaceTeams([
           _team(1, 'completed'),
           _team(2, 'awaiting_verdict'),
         ]);
         await tester.pumpAndSettle();
-        expect(find.text('Scheduled (0)'), findsOneWidget);
-        expect(find.text('Completed / Passed (1)'), findsNothing);
+        expect(find.text('For review (0)'), findsOneWidget);
+        expect(find.text('Closed (1)'), findsNothing);
         await tester.tap(picker);
         await tester.pumpAndSettle();
-        await tester.enterText(
-          find.byType(EditableText).last,
-          'unrecognized status',
-        );
+        expect(find.text('For review (0)'), findsNWidgets(2));
+        await tester.tap(find.text('Closed (1)'));
         await tester.pumpAndSettle();
-        expect(find.text('No matching statuses'), findsOneWidget);
-        await tester.enterText(find.byType(EditableText).last, 'completed');
-        await tester.pumpAndSettle();
-        expect(find.text('Post-defense / Outcomes'), findsOneWidget);
-        await tester.tap(find.text('Completed / Passed (1)'));
-        await tester.pumpAndSettle();
-        expect(selected, TeamTriageFilter.completed);
+        expect(selected, TeamTriageFilter.closed);
         await capturePreview(
           tester,
           find.byKey(previewKey),

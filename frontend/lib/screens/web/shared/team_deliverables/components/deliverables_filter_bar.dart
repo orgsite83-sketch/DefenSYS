@@ -283,7 +283,12 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
 
     final statusFilter = DeliverablesStatusFilter(
       value: widget.activeTriageFilter,
-      counts: widget.triageCounts ?? DeliverablesTriageHelper.computeCounts(widget.state.teams),
+      counts:
+          widget.triageCounts ??
+          DeliverablesTriageHelper.computeCounts(
+            widget.state.teams,
+            scope: widget.state.scope,
+          ),
       isPit: widget.state.scope == 'pit',
       onChanged: widget.onTriageFilterChanged,
     );

@@ -11,13 +11,13 @@ import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/widgets.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import '../../../../widgets/grading/grading_setup_section.dart';
+import '../../../../widgets/setup/setup_requirement_panels.dart';
 import '../../../../widgets/repository/repository_archive_naming_panel.dart';
 import '../../../../widgets/repository/deliverable_timing_fields.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../services/dashboard_provider.dart';
 import '../../../../utils/unsaved_changes.dart';
-import '../../admin/widgets/defensys_admin_shell.dart';
-import '../../admin/grade_center/grade_center_shared.dart' show showPeerGradingHelpDialog;
 import '../../admin/defense_stages/widgets/stage_deliverable_choices.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_overview.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_presets_bar.dart';
@@ -37,7 +37,6 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
   List<Map<String, dynamic>> get _configs =>
       ref.read(defenseSchedulerProvider).pitEvents;
   bool _isLoadingConfigs = true;
-  bool _isMatrixView = false;
   final Set<int> _expandedConfigIds = {};
 
   Color get _muted => DefensysTokens.textSecondaryOf(context);
@@ -157,7 +156,10 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
         onRefresh: _loadData,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: DefensysUi.contentPadding,
+          padding: EdgeInsets.symmetric(
+            horizontal: MediaQuery.sizeOf(context).width < 650 ? 16 : 24,
+            vertical: 24,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -169,10 +171,8 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
               const SizedBox(height: 16),
               if (_configs.isEmpty)
                 _buildEmptyState()
-              else if (!_isMatrixView)
-                _buildShowcaseCardsView()
               else
-                _buildEventMatrixView(),
+                _buildShowcaseCardsView(),
             ],
           ),
         ),
@@ -188,43 +188,13 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
         final titleBlock = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.maroonTextOf(context).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: DefensysTokens.maroonTextOf(context).withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Icon(
-                    LucideIcons.calendarCheck2,
-                    color: DefensysTokens.maroonTextOf(context),
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'PIT Event Operations & Setup',
-                    style: TextStyle(
-                      color: _ink,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.4,
-                      fontFamily: DefensysTokens.fontFamilyInter,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            Text(
+              'PIT Event Operations & Setup',
+              style: DefensysTokens.pageTitle.copyWith(fontSize: 26, color: _ink),
             ),
             const SizedBox(height: 6),
             Text(
-              'Configure discrete academic exhibition events, evaluation weight ratios (Panel vs Peer), rubrics, and deliverable checklists for $activeSemLabel.',
+              'Configure PIT events, evaluation rubrics and deliverable checklists for $activeSemLabel.',
               style: TextStyle(
                 color: _muted,
                 fontSize: 13,
@@ -250,7 +220,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             ShadButton(
               enabled: !isSaving,
               backgroundColor: DefensysTokens.maroonTextOf(context),
-              hoverBackgroundColor: const Color(0xFF1D4ED8),
+              hoverBackgroundColor: DefensysTokens.maroonDark,
               foregroundColor: Colors.white,
               leading: const Icon(LucideIcons.plus, size: 16),
               onPressed: () => _showEventDialog(),
@@ -401,61 +371,30 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     );
   }
 
-  Widget _buildSectionHeader() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 700;
-        final title = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'PIT events',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: _ink,
-                fontFamily: DefensysTokens.fontFamilyInter,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'Each event is independent. Numbers identify entries; they do not set an order.',
-              style: TextStyle(
-                fontSize: 12,
-                color: _muted,
-                fontFamily: DefensysTokens.fontFamilyInter,
-              ),
-            ),
-          ],
-        );
-        final toggle = SizedBox(
-          width: 250,
-          child: ShadTabs<String>(
-            scrollable: true,
-            value: _isMatrixView ? 'matrix' : 'cards',
-            onChanged: (val) => setState(() => _isMatrixView = val == 'matrix'),
-            tabs: const [
-              ShadTab(value: 'cards', child: Text('Events')),
-              ShadTab(value: 'matrix', child: Text('Table')),
-            ],
-          ),
-        );
-        return compact
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [title, const SizedBox(height: 12), toggle],
-              )
-            : Row(
-                children: [
-                  Expanded(child: title),
-                  const SizedBox(width: 20),
-                  toggle,
-                ],
-              );
-      },
-    );
-  }
+  Widget _buildSectionHeader() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'PIT events',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: _ink,
+          fontFamily: DefensysTokens.fontFamilyInter,
+          letterSpacing: -0.3,
+        ),
+      ),
+      const SizedBox(height: 2),
+      Text(
+        'Manage each event independently, with its own rubrics and requirements.',
+        style: TextStyle(
+          fontSize: 12,
+          color: _muted,
+          fontFamily: DefensysTokens.fontFamilyInter,
+        ),
+      ),
+    ],
+  );
 
   Widget _buildEmptyState() {
     return ShadCard(
@@ -478,677 +417,385 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
   }
 
   Widget _buildShowcaseCardsView() {
-    final state = ref.watch(defenseSchedulerProvider);
-    final rubricList = state.rubrics;
-    final peerRubricList = state.peerRubrics;
-
-    String rubricName(dynamic id) {
-      if (id == null) return 'Not Selected';
-      final r = rubricList.firstWhere(
-        (item) => item['id']?.toString() == id.toString(),
-        orElse: () => const {},
-      );
-      return r['name']?.toString() ?? 'Unknown Rubric';
-    }
-
-    String peerRubricName(dynamic id) {
-      if (id == null) return 'Not Selected';
-      final r = peerRubricList.firstWhere(
-        (item) => item['id']?.toString() == id.toString(),
-        orElse: () => const {},
-      );
-      return r['name']?.toString() ?? 'Unknown Peer Rubric';
-    }
-
-    return Column(
-      children: [
-        for (var index = 0; index < _configs.length; index++) ...[
-          Builder(
-            builder: (context) {
-            final config = _configs[index];
-            final configId = int.tryParse(config['id']?.toString() ?? '') ?? index;
-            final isExpanded = _expandedConfigIds.contains(configId);
-            final delivs = config['deliverables'] as List? ?? [];
-            final preCount = delivs.where((d) => d['deliverable_type'] == 'pre').length;
-            final postCount = delivs.where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault').length;
-            final isLocked = config['is_locked'] == true;
-            final lockReason = config['lock_reason']?.toString() ?? 'Event is secured & locked';
-            final panelWeight = int.tryParse(config['panel_weight']?.toString() ?? '') ?? 80;
-            final peerWeight = int.tryParse(config['peer_weight']?.toString() ?? '') ?? 20;
-
-              final missingRubrics = <String>[
-                if (config['panel_rubric_id'] == null) 'panel',
-                if (peerWeight > 0 && config['peer_rubric_id'] == null) 'peer',
-              ];
-              final rubricStatus = Tooltip(
-                key: ValueKey('pit-event-rubric-status-$configId'),
-                triggerMode: TooltipTriggerMode.tap,
-                message: missingRubrics.isEmpty
-                    ? 'All required evaluation rubrics are linked.'
-                    : 'Attach ${missingRubrics.join(' and ')} evaluation rubric${missingRubrics.length == 1 ? '' : 's'}.',
-                child: missingRubrics.isEmpty
-                    ? const StatusBadge.success(label: 'Rubrics linked')
-                    : const StatusBadge.warning(label: 'Rubrics missing'),
-              );
-
-            final eventName = config['event_name']?.toString() ?? '';
-            final eventCode = config['event_code']?.toString() ?? '';
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    key: ValueKey('pit-event-number-$index'),
-                    width: 44,
-                    height: 40,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: _fill,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _border),
-                    ),
-                    child: Text(
-                      (index + 1).toString().padLeft(2, '0'),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _ink,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: ShadCard(
-                      key: ValueKey('pit-event-card-$configId'),
-              width: double.infinity,
-              backgroundColor: _surface,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Card Header Row: Title, Code, Status & Actions
-                  LayoutBuilder(
-                    builder: (context, constraints) => Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    eventName,
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: _ink,
-                                      fontFamily: DefensysTokens.fontFamilyInter,
-                                      letterSpacing: -0.2,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (eventCode.isNotEmpty) ...[
-                                  const SizedBox(width: 6),
-                                  Flexible(
-                                    child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: _fill,
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: _border),
-                                    ),
-                                    child: Text(
-                                      eventCode,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: _muted,
-                                        fontSize: 10.5,
-                                        fontFamily: 'monospace',
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                if (isLocked)
-                                  Tooltip(
-                                    message: lockReason,
-                                    child: ShadBadge.secondary(
-                                      backgroundColor: const Color(0xFFFEF3C7),
-                                      foregroundColor: const Color(0xFF92400E),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(LucideIcons.lock, size: 10),
-                                          SizedBox(width: 4),
-                                          Text('Audit Locked'),
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  ShadBadge.secondary(
-                                    backgroundColor: _fill,
-                                    foregroundColor: _muted,
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(LucideIcons.checkCircle2, size: 10, color: Color(0xFF10B981)),
-                                        SizedBox(width: 4),
-                                        Text('Active Showcase'),
-                                      ],
-                                    ),
-                                  ),
-                                if (peerWeight > 0)
-                                  ShadBadge.outline(
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          config['peer_grading_enabled'] == true ? LucideIcons.check : LucideIcons.pause,
-                                          size: 10,
-                                          color: config['peer_grading_enabled'] == true ? const Color(0xFF10B981) : _muted,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(config['peer_grading_enabled'] == true ? 'Peer Open' : 'Peer Closed'),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (constraints.maxWidth < 640)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            rubricStatus,
-                            const SizedBox(height: 6),
-                            _eventActions(config),
-                          ],
-                        )
-                      else ...[
-                        rubricStatus,
-                        const SizedBox(width: 8),
-                        _eventActions(config),
-                      ],
-                    ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  // Dual Evaluation Weight Gauge Bar
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Container(width: 6, height: 6, decoration: BoxDecoration(color: DefensysTokens.maroonTextOf(context), shape: BoxShape.circle)),
-                              const SizedBox(width: 5),
-                              Text(
-                                'Panel: $panelWeight%',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: DefensysTokens.maroonTextOf(context),
-                                  fontFamily: DefensysTokens.fontFamilyInter,
-                                  fontFeatures: const [FontFeature.tabularFigures()],
-                                ),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFFF59E0B), shape: BoxShape.circle)),
-                              const SizedBox(width: 5),
-                              Text(
-                                'Peer: $peerWeight%',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFFB45309),
-                                  fontFamily: DefensysTokens.fontFamilyInter,
-                                  fontFeatures: const [FontFeature.tabularFigures()],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: SizedBox(
-                          height: 6,
-                          child: Row(
-                            children: [
-                              if (panelWeight > 0)
-                                Expanded(
-                                  flex: panelWeight,
-                                  child: Container(color: DefensysTokens.maroonTextOf(context)),
-                                ),
-                              if (peerWeight > 0)
-                                Expanded(
-                                  flex: peerWeight,
-                                  child: Container(color: const Color(0xFFF59E0B)),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Rubric Micro-cards Row
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildMicroRubricCard(
-                          icon: LucideIcons.fileCheck,
-                          label: 'Panel Rubric',
-                          value: rubricName(config['panel_rubric_id']),
-                          accentColor: DefensysTokens.maroonTextOf(context),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _buildMicroRubricCard(
-                          icon: LucideIcons.users,
-                          label: 'Peer Rubric',
-                          value: peerRubricName(config['peer_rubric_id']),
-                          accentColor: const Color(0xFFD97706),
-                        ),
-                      ),
-                    ],
-                  ),
-                          const SizedBox(height: 10),
-                  // Expandable Deliverable Checklist Drawer
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        if (isExpanded) {
-                          _expandedConfigIds.remove(configId);
-                        } else {
-                          _expandedConfigIds.add(configId);
-                        }
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: _fill,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _border),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(LucideIcons.folder, size: 14, color: _muted),
-                              const SizedBox(width: 7),
-                              Text(
-                                'Deliverable Checklist ($preCount Pre, $postCount Post)',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: _ink,
-                                  fontFamily: DefensysTokens.fontFamilyInter,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Icon(
-                            isExpanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
-                            size: 14,
-                            color: _muted,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (isExpanded) ...[
-                    const SizedBox(height: 6),
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 110),
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: _surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _border),
-                      ),
-                      child: delivs.isEmpty
-                          ? Text(
-                              'No deliverable templates configured for this event.',
-                              style: TextStyle(fontSize: 11, color: _muted, fontFamily: DefensysTokens.fontFamilyInter),
-                            )
-                          : SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: delivs.map<Widget>((d) {
-                                  final isPost = d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault';
-                                  final isReq = d['required'] == true;
-
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 4),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          isPost ? LucideIcons.archive : LucideIcons.fileText,
-                                          size: 12,
-                                          color: _muted,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            d['label']?.toString() ?? 'Deliverable',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w500,
-                                              color: _ink,
-                                              fontFamily: DefensysTokens.fontFamilyInter,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        if (isReq)
-                                          Container(
-                                            margin: const EdgeInsets.only(left: 4),
-                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                            decoration: BoxDecoration(
-                                              color: DefensysTokens.maroonTextOf(context).withValues(alpha: 0.1),
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: DefensysTokens.maroonTextOf(context).withValues(alpha: 0.2)),
-                                            ),
-                                            child: Text(
-                                              'Req',
-                                              style: TextStyle(
-                                                fontSize: 9.5,
-                                                fontWeight: FontWeight.w600,
-                                                color: DefensysTokens.maroonTextOf(context),
-                                                fontFamily: DefensysTokens.fontFamilyInter,
-                                              ),
-                                            ),
-                                          ),
-                                        if (!isPost && d['is_defense_material'] == true) ...[
-                                          const SizedBox(width: 4),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                            decoration: BoxDecoration(
-                                              color: _fill,
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: _border),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(LucideIcons.eye, size: 9.5, color: _muted),
-                                                const SizedBox(width: 3),
-                                                Text(
-                                                  'Panel View',
-                                                  style: TextStyle(
-                                                    fontSize: 9.5,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: _muted,
-                                                    fontFamily: DefensysTokens.fontFamilyInter,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
-                            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 650;
+        final inlineNumber = compact || MediaQuery.sizeOf(context).width < 1000;
+        return Column(
+          children: [
+            for (var index = 0; index < _configs.length; index++) ...[
+              if (inlineNumber)
+                _buildEventCard(
+                  _configs[index],
+                  index,
+                  compact,
+                  inlineNumber: true,
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildEventNumber(index),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: _buildEventCard(_configs[index], index, compact),
                     ),
                   ],
-                ],
-              ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          if (index < _configs.length - 1) const SizedBox(height: 14),
-        ],
-      ],
+                ),
+              if (index < _configs.length - 1) const SizedBox(height: 14),
+            ],
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildMicroRubricCard({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color accentColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+  Widget _buildEventNumber(int index, {double size = 44}) => Semantics(
+    label: 'Event ${index + 1}',
+    child: Container(
+      key: ValueKey('pit-event-number-$index'),
+      width: size,
+      height: size,
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: _fill,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: _border),
       ),
-      child: Row(
-        children: [
-          Icon(icon, size: 14, color: _muted),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    color: _muted,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: DefensysTokens.fontFamilyInter,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: _ink,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: DefensysTokens.fontFamilyInter,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEventMatrixView() {
-    final state = ref.watch(defenseSchedulerProvider);
-    final rubricList = state.rubrics;
-    final peerRubricList = state.peerRubrics;
-
-    String rubricName(dynamic id) {
-      if (id == null) return 'None (No Rubric)';
-      final r = rubricList.firstWhere(
-        (item) => item['id']?.toString() == id.toString(),
-        orElse: () => const {},
-      );
-      return r['name']?.toString() ?? 'Unknown Rubric';
-    }
-
-    String peerRubricName(dynamic id) {
-      if (id == null) return 'None (No Rubric)';
-      final r = peerRubricList.firstWhere(
-        (item) => item['id']?.toString() == id.toString(),
-        orElse: () => const {},
-      );
-      return r['name']?.toString() ?? 'Unknown Peer Rubric';
-    }
-
-    return ShadCard(
-      width: double.infinity,
-      backgroundColor: _surface,
-      padding: EdgeInsets.zero,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowColor: WidgetStateProperty.all(_fill),
-            dataRowMinHeight: 64,
-            dataRowMaxHeight: 68,
-          columns: [
-            DataColumn(label: Text('No.', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
-            DataColumn(label: Text('Event & Code', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
-            DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
-            DataColumn(label: Text('Weight Split', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
-            DataColumn(label: Text('Panel Rubric', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
-            DataColumn(label: Text('Peer Rubric', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
-            DataColumn(label: Text('Deliverables', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
-            DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
-          ],
-          rows: _configs.asMap().entries.map((entry) {
-            final index = entry.key;
-            final config = entry.value;
-            final delivs = config['deliverables'] as List? ?? [];
-            final preCount = delivs.where((d) => d['deliverable_type'] == 'pre').length;
-            final postCount = delivs.where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault').length;
-            final isLocked = config['is_locked'] == true;
-            final lockReason = config['lock_reason']?.toString() ?? 'Secured & locked';
-
-            return DataRow(
-              cells: [
-                DataCell(Text(
-                  (index + 1).toString().padLeft(2, '0'),
-                  style: TextStyle(color: _ink, fontWeight: FontWeight.w700, fontFeatures: const [FontFeature.tabularFigures()]),
-                )),
-                DataCell(
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        config['event_name']?.toString() ?? '',
-                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: _ink, fontFamily: DefensysTokens.fontFamilyInter),
-                      ),
-                      InkWell(
-                        onTap: () => context.go(Uri(path: '/faculty/student-teams', queryParameters: {'event': '${config['event_name']}'}).toString()),
-                        child: Text('${config['roster_summary'] ?? 'Uses current roster automatically'} · View roster',
-                          style: TextStyle(fontSize: 11, color: _muted)),
-                      ),
-                      if (config['event_code']?.toString().isNotEmpty == true)
-                        Text(
-                          config['event_code']?.toString() ?? '',
-                          style: TextStyle(fontSize: 11, color: _muted, fontFamily: 'monospace'),
-                        ),
-                    ],
-                  ),
-                ),
-                DataCell(
-                  isLocked
-                      ? Tooltip(
-                          message: lockReason,
-                          child: ShadBadge.secondary(
-                            backgroundColor: const Color(0xFFFEF3C7),
-                            foregroundColor: const Color(0xFF92400E),
-                            child: const Text('Locked'),
-                          ),
-                        )
-                      : ShadBadge.secondary(
-                          backgroundColor: _fill,
-                          foregroundColor: _muted,
-                          child: const Text('Active'),
-                        ),
-                ),
-                DataCell(
-                  Text(
-                    '${config['panel_weight']}% / ${config['peer_weight']}%',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: _ink,
-                      fontFamily: DefensysTokens.fontFamilyInter,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ),
-                DataCell(Text(rubricName(config['panel_rubric_id']), style: TextStyle(fontSize: 12, color: _ink, fontFamily: DefensysTokens.fontFamilyInter))),
-                DataCell(
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(peerRubricName(config['peer_rubric_id']), style: TextStyle(fontSize: 12, color: _ink, fontFamily: DefensysTokens.fontFamilyInter)),
-                      if ((config['peer_weight'] ?? 0) > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 5,
-                                height: 5,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: config['peer_grading_enabled'] == true ? const Color(0xFF10B981) : _muted,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                config['peer_grading_enabled'] == true ? 'Open' : 'Closed',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w500,
-                                  color: _muted,
-                                  fontFamily: DefensysTokens.fontFamilyInter,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                DataCell(Text('$preCount Pre, $postCount Post', style: TextStyle(fontSize: 12, color: _muted, fontFamily: DefensysTokens.fontFamilyInter))),
-                DataCell(
-                  _eventActions(config),
-                ),
-              ],
-            );
-          }).toList(),
+      child: Text(
+        (index + 1).toString().padLeft(2, '0'),
+        style: TextStyle(
+          fontSize: size >= 40 ? 14 : 12,
+          fontWeight: FontWeight.w700,
+          color: _ink,
+          fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),
     ),
   );
-}
+
+  Widget _buildEventCard(
+    Map<String, dynamic> config,
+    int index,
+    bool compact, {
+    bool inlineNumber = false,
+  }) {
+    final configId = int.tryParse(config['id']?.toString() ?? '') ?? index;
+    final expanded = _expandedConfigIds.contains(configId);
+    final deliverables = config['deliverables'] as List? ?? [];
+    final preCount = deliverables
+        .where((d) => d['deliverable_type'] == 'pre')
+        .length;
+    final postCount = deliverables
+        .where(
+          (d) =>
+              d['deliverable_type'] == 'post' ||
+              d['deliverable_type'] == 'vault',
+        )
+        .length;
+    final locked = config['is_locked'] == true;
+    final peerWeight =
+        int.tryParse(config['peer_weight']?.toString() ?? '') ?? 20;
+    final missingRubrics = <String>[
+      if (config['panel_rubric_id'] == null) 'panel',
+      if (peerWeight > 0 && config['peer_rubric_id'] == null) 'peer',
+    ];
+    final rubricCount = [
+      config['panel_rubric_id'],
+      config['peer_rubric_id'],
+    ].where((id) => id != null).length;
+    final rubricStatus = Tooltip(
+      key: ValueKey('pit-event-rubric-status-$configId'),
+      triggerMode: TooltipTriggerMode.tap,
+      message: missingRubrics.isEmpty
+          ? 'All required evaluation rubrics are linked.'
+          : 'Attach ${missingRubrics.join(' and ')} evaluation rubric${missingRubrics.length == 1 ? '' : 's'}.',
+      child: missingRubrics.isEmpty
+          ? const StatusBadge.success(label: 'Rubrics linked')
+          : const StatusBadge.warning(label: 'Rubrics missing'),
+    );
+    final eventCode = config['event_code']?.toString() ?? '';
+    final title = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (inlineNumber) ...[
+          _buildEventNumber(index, size: 38),
+          const SizedBox(width: 12),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                config['event_name']?.toString() ?? '',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: _ink,
+                ),
+              ),
+              if (eventCode.isNotEmpty) ...[
+                const SizedBox(height: 5),
+                Text(
+                  eventCode,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _muted,
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (!compact) ...[const SizedBox(width: 12), rubricStatus],
+      ],
+    );
+    return ShadCard(
+      key: ValueKey('pit-event-card-$configId'),
+      width: double.infinity,
+      backgroundColor: _surface,
+      padding: EdgeInsets.all(compact ? 16 : 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (compact)
+            title
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: title),
+                const SizedBox(width: 20),
+                _eventActions(config),
+              ],
+            ),
+          if (compact) ...[
+            const SizedBox(height: 10),
+            Align(alignment: Alignment.centerLeft, child: rubricStatus),
+          ],
+          const SizedBox(height: 14),
+          Wrap(
+            key: ValueKey('pit-event-metadata-$configId'),
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildEventMetadata(
+                LucideIcons.clipboardList,
+                '$rubricCount ${rubricCount == 1 ? 'rubric' : 'rubrics'} attached',
+              ),
+              _buildEventMetadata(
+                LucideIcons.folder,
+                '$preCount pre-defense · $postCount post-defense',
+              ),
+              if (peerWeight > 0)
+                _buildEventMetadata(
+                  config['peer_grading_enabled'] == true
+                      ? LucideIcons.users
+                      : LucideIcons.pause,
+                  config['peer_grading_enabled'] == true
+                      ? 'Peer Open'
+                      : 'Peer Closed',
+                ),
+            ],
+          ),
+          if (locked) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: _fill,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: _border),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(LucideIcons.lockKeyhole, size: 14, color: _muted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      config['lock_reason']?.toString() ??
+                          'Event is secured & locked',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.5,
+                        color: _muted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Divider(height: 1, color: _border),
+          const SizedBox(height: 10),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 16,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              ShadButton.ghost(
+                key: ValueKey('pit-event-requirements-$configId'),
+                size: ShadButtonSize.sm,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                trailing: Icon(
+                  expanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                  size: 15,
+                ),
+                onPressed: () => setState(
+                  () => expanded
+                      ? _expandedConfigIds.remove(configId)
+                      : _expandedConfigIds.add(configId),
+                ),
+                child: Text(
+                  expanded ? 'Hide requirements' : 'View requirements',
+                ),
+              ),
+              if (compact) _eventActions(config),
+            ],
+          ),
+          if (expanded) ...[
+            const SizedBox(height: 16),
+            _buildEventRequirements(config, compact),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventMetadata(IconData icon, String text) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: _fill,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: _border),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: _muted),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.5,
+              fontWeight: FontWeight.w500,
+              color: _ink,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildEventRequirements(Map<String, dynamic> config, bool compact) {
+    final state = ref.watch(defenseSchedulerProvider);
+    final peerWeight =
+        int.tryParse(config['peer_weight']?.toString() ?? '') ?? 20;
+    final rubricsReady =
+        config['panel_rubric_id'] != null &&
+        (peerWeight == 0 || config['peer_rubric_id'] != null);
+    String? rubricName(dynamic id, List<Map<String, dynamic>> rubrics) {
+      if (id == null) return null;
+      return rubrics
+              .firstWhere(
+                (rubric) => rubric['id']?.toString() == id.toString(),
+                orElse: () => const {},
+              )['name']
+              ?.toString() ??
+          'Unknown Rubric';
+    }
+
+    final rubrics = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(LucideIcons.clipboardCheck, size: 15, color: _ink),
+            const SizedBox(width: 6),
+            Text(
+              'Evaluation rubrics',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _ink,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SetupRubricCard(
+          role: 'panel',
+          name: rubricName(config['panel_rubric_id'], state.rubrics),
+          isRequired: true,
+          isReady: rubricsReady,
+        ),
+        SetupRubricCard(
+          role: 'peer',
+          name: rubricName(config['peer_rubric_id'], state.peerRubrics),
+          isRequired: peerWeight > 0,
+          isReady: rubricsReady,
+        ),
+      ],
+    );
+    final deliverables = List<Map<String, dynamic>>.from(
+      config['deliverables'] as List? ?? [],
+    );
+    final requirements = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SetupRequirementGroup(
+          title: 'Pre-defense requirements',
+          rows: deliverables
+              .where((d) => d['deliverable_type'] == 'pre')
+              .toList(),
+        ),
+        const SizedBox(height: 14),
+        SetupRequirementGroup(
+          title: 'Post-defense requirements',
+          rows: deliverables
+              .where(
+                (d) =>
+                    d['deliverable_type'] == 'post' ||
+                    d['deliverable_type'] == 'vault',
+              )
+              .toList(),
+        ),
+      ],
+    );
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _fill,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _border),
+      ),
+      child: compact || MediaQuery.sizeOf(context).width < 1000
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                rubrics,
+                Divider(height: 28, color: _border),
+                requirements,
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: rubrics),
+                const SizedBox(width: 24),
+                Expanded(flex: 2, child: requirements),
+              ],
+            ),
+    );
+  }
 }
 
 class _PitEventActionsMenu extends StatefulWidget {
@@ -1644,9 +1291,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       margin: const EdgeInsets.fromLTRB(24, 12, 24, 6),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Row(
         children: [
@@ -1686,7 +1333,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                     decoration: BoxDecoration(
                       color: activeTab == 2
                           ? Colors.white.withValues(alpha: 0.25)
-                          : const Color(0xFFE2E8F0),
+                          : DefensysTokens.borderOf(context),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -1694,7 +1341,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.bold,
-                        color: activeTab == 2 ? Colors.white : AppColors.textPrimary,
+                        color: activeTab == 2 ? Colors.white : DefensysTokens.textPrimaryOf(context),
                         fontFamily: DefensysTokens.fontFamily,
                       ),
                     ),
@@ -1742,7 +1389,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
               Icon(
                 icon,
                 size: 15,
-                color: isSelected ? Colors.white : const Color(0xFF64748B),
+                color: isSelected ? Colors.white : DefensysTokens.textSecondaryOf(context),
               ),
               const SizedBox(width: 6),
               Flexible(
@@ -1753,7 +1400,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? Colors.white : const Color(0xFF334155),
+                    color: isSelected ? Colors.white : DefensysTokens.textPrimaryOf(context),
                     fontFamily: DefensysTokens.fontFamily,
                   ),
                 ),
@@ -1769,136 +1416,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     );
   }
 
-  Widget _buildWeightDistributionBar(int panel, int peer) {
-    final total = panel + peer;
-    final isValid = total == 100;
 
-    final pFlex = (panel > 0) ? panel : 0;
-    final peFlex = (peer > 0) ? peer : 0;
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isValid ? const Color(0xFFF8FAFC) : const Color(0xFFFEF2F2),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isValid ? const Color(0xFFE2E8F0) : const Color(0xFFFECACA),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    isValid ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
-                    size: 15,
-                    color: isValid ? AppColors.success : AppColors.danger,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    isValid ? 'Balanced Allocation (100%)' : 'Allocation Error: Must Total 100%',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
-                      color: isValid ? AppColors.success : AppColors.danger,
-                      fontFamily: DefensysTokens.fontFamily,
-                    ),
-                  ),
-                ],
-              ),
-              Text(
-                'Total: $total%',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  color: isValid ? AppColors.success : AppColors.danger,
-                  fontFamily: DefensysTokens.fontFamily,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-              height: 10,
-              width: double.infinity,
-              color: const Color(0xFFE2E8F0),
-              child: (total > 0)
-                  ? Row(
-                      children: [
-                        if (pFlex > 0)
-                          Flexible(
-                            flex: pFlex,
-                            child: Container(
-                              color: DefensysTokens.maroon,
-                              height: double.infinity,
-                            ),
-                          ),
-                        if (peFlex > 0)
-                          Flexible(
-                            flex: peFlex,
-                            child: Container(
-                              color: const Color(0xFFD97706),
-                              height: double.infinity,
-                            ),
-                          ),
-                      ],
-                    )
-                  : null,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildLegendItem('Panel Evaluation', '$panel%', DefensysTokens.maroon),
-              _buildLegendItem('Peer Evaluation', '$peer%', const Color(0xFFD97706)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLegendItem(String label, String value, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2.5),
-          ),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          '$label: ',
-          style: const TextStyle(
-            fontSize: 11.5,
-            color: AppColors.textSecondary,
-            fontWeight: FontWeight.w500,
-            fontFamily: DefensysTokens.fontFamily,
-          ),
-        ),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 11.5,
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w800,
-            fontFamily: DefensysTokens.fontFamily,
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildDeliverableSection({
     required String title,
@@ -2508,174 +2026,35 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   }
 
   Widget _buildPeerGradingAccessCard(bool isLocked) {
-    final hasPeerRubric = _peerRubricId != null && _peerWeight > 0;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _peerGradingEnabled ? const Color(0xFFBAE6FD) : const Color(0xFFE2E8F0),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: _peerGradingEnabled ? const Color(0xFFF0F9FF) : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.how_to_vote_rounded,
-                  size: 18,
-                  color: _peerGradingEnabled ? const Color(0xFF0284C7) : const Color(0xFF64748B),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'Peer Evaluation Access',
-                          style: TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                            fontFamily: DefensysTokens.fontFamily,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _peerGradingEnabled ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: _peerGradingEnabled ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0)),
-                          ),
-                          child: Text(
-                            _peerGradingEnabled ? 'Enabled' : 'Closed',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: _peerGradingEnabled ? const Color(0xFF047857) : const Color(0xFF64748B),
-                              fontFamily: DefensysTokens.fontFamily,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _peerGradingEnabled
-                          ? 'Enabled — students can grade their teammates after their scheduled defense finishes.'
-                          : 'Closed — students cannot grade their teammates for this event.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _peerGradingEnabled ? const Color(0xFF0369A1) : Colors.grey.shade600,
-                        fontFamily: DefensysTokens.fontFamily,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Switch.adaptive(
-                value: _peerGradingEnabled,
-                activeTrackColor: DefensysTokens.maroon,
-                activeThumbColor: Colors.white,
-                onChanged: isLocked
-                    ? null
-                    : (val) {
-                        setState(() => _peerGradingEnabled = val);
-                        _markDirty();
-                      },
-              ),
+    final issue = _peerRubricId == null && _peerWeight <= 0
+        ? 'Select a peer rubric and set a weight above 0%.'
+        : _peerRubricId == null ? 'Select a peer rubric.'
+        : _peerWeight <= 0 ? 'Set a peer weight above 0%.' : null;
+    return DefensysShadcnScope(child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Allow peer evaluation', style: DefensysTokens.body.copyWith(fontWeight: FontWeight.w600, color: DefensysTokens.textPrimaryOf(context))),
+            if (_peerGradingEnabled) ...[
+              const SizedBox(height: 6),
+              Text('Opens after all panelists submit evaluations.',
+                      style: DefensysTokens.caption.copyWith(color: DefensysTokens.textSecondaryOf(context))),
             ],
-          ),
-          if (!hasPeerRubric && _peerGradingEnabled) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.info_outline, size: 14, color: Color(0xFFB45309)),
-                  SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Peer grading weight is 0% or no peer rubric is selected. Attach a rubric above to enable student peer scoring.',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF92400E),
-                        fontWeight: FontWeight.w600,
-                        fontFamily: DefensysTokens.fontFamily,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF4F46E5)),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Peer grading unlocks for each team after all assigned panelists finish evaluating its scheduled defense. Teams then await any remaining teammate grades.',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: Color(0xFF475569),
-                      fontWeight: FontWeight.w500,
-                      fontFamily: DefensysTokens.fontFamily,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () => showPeerGradingHelpDialog(context, isPit: true),
-                  icon: const Icon(Icons.help_outline_rounded, size: 13),
-                  label: const Text('Evaluation Guide'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF4F46E5),
-                    side: const BorderSide(color: Color(0xFFC7D2FE)),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: DefensysTokens.fontFamily,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ])),
+          const SizedBox(width: 16),
+          Semantics(label: 'Allow peer evaluation', child: ShadSwitch(
+            value: _peerGradingEnabled,
+            enabled: !isLocked && !ref.watch(defenseSchedulerProvider).isSaving,
+            onChanged: (value) { setState(() => _peerGradingEnabled = value); _markDirty(); },
+          )),
+        ]),
+        if (_peerGradingEnabled && issue != null) ...[
+          const SizedBox(height: 8),
+                Text(issue, style: DefensysTokens.caption.copyWith(color: DefensysTokens.textSecondaryOf(context))),
         ],
-      ),
-    );
+      ],
+    ));
   }
 
   @override
@@ -2724,7 +2103,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       },
       child: Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.white,
+        backgroundColor: DefensysTokens.surfaceOf(context),
         surfaceTintColor: Colors.transparent,
         clipBehavior: Clip.antiAlias,
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
@@ -2736,20 +2115,21 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
           child: Form(
             key: _formKey,
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // 1. Dialog Header
                 Container(
                   padding: const EdgeInsets.fromLTRB(24, 18, 16, 12),
-                  decoration: const BoxDecoration(
-                    border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+                  decoration: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
                   ),
                   child: Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                          color: DefensysTokens.surfaceHigherOf(context),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.event_note_rounded, size: 20, color: DefensysTokens.maroon),
@@ -2763,20 +2143,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               widget.config != null
                                   ? (isLocked ? 'View PIT Event (Secured)' : 'Edit PIT Event')
                                   : 'Add PIT Event',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w900,
-                                color: AppColors.textPrimary,
+                                color: DefensysTokens.textPrimaryOf(context),
                                 letterSpacing: -0.3,
-                                fontFamily: DefensysTokens.fontFamily,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            const Text(
-                              'Configure event details, role grading weights, and submission requirements.',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: AppColors.textSecondary,
                                 fontFamily: DefensysTokens.fontFamily,
                               ),
                             ),
@@ -2810,9 +2181,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 Flexible(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-                    child: IndexedStack(
-                      index: _activeTab,
-                      children: [
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
                         // TAB 0: Event Details
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3001,386 +2372,40 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           ],
                         ),
 
-                        // TAB 1: Grading Composition & Rubrics
+                        // TAB 1: Grading and rubrics
                         Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            // 1. Role Score Distribution Card
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.pie_chart_outline_rounded, size: 18, color: DefensysTokens.maroon),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        'Role Weight Distribution',
-                                        style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.textPrimary,
-                                          fontFamily: DefensysTokens.fontFamily,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFEFF6FF),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(color: const Color(0xFFBFDBFE)),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(Icons.calendar_today_rounded, size: 11, color: Color(0xFF1D4ED8)),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              activeSemesterName,
-                                              style: const TextStyle(
-                                                fontSize: 11.5,
-                                                fontWeight: FontWeight.w700,
-                                                color: Color(0xFF1D4ED8),
-                                                fontFamily: DefensysTokens.fontFamily,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  const Text(
-                                    'How Panel and Peer scores combine for this PIT event. Standard default is 80 / 20.',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: AppColors.textSecondary,
-                                      fontFamily: DefensysTokens.fontFamily,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  _buildWeightDistributionBar(_panelWeight, _peerWeight),
-                                  const SizedBox(height: 14),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: _panelWeightController,
-                                          readOnly: isLocked,
-                                          keyboardType: TextInputType.number,
-                                          decoration: _dialogInputDecoration(
-                                            labelText: 'Panel Weight (%)',
-                                            prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: DefensysTokens.maroon),
-                                          ),
-                                          style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
-                                          onChanged: _onPanelWeightChanged,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: _peerWeightController,
-                                          readOnly: isLocked,
-                                          keyboardType: TextInputType.number,
-                                          decoration: _dialogInputDecoration(
-                                            labelText: 'Peer Weight (%)',
-                                            prefixIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFFD97706)),
-                                          ),
-                                          style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
-                                          onChanged: _onPeerWeightChanged,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 14),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Slide or type to adjust weights:',
-                                        style: TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w500,
-                                          color: Colors.grey.shade600,
-                                          fontFamily: DefensysTokens.fontFamily,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  SliderTheme(
-                                    data: SliderThemeData(
-                                      activeTrackColor: DefensysTokens.maroon,
-                                      inactiveTrackColor: const Color(0xFFD97706),
-                                      thumbColor: DefensysTokens.maroon,
-                                      overlayColor: DefensysTokens.maroon.withValues(alpha: 0.12),
-                                      valueIndicatorColor: DefensysTokens.maroon,
-                                      valueIndicatorTextStyle: const TextStyle(color: Colors.white),
-                                      trackHeight: 6,
-                                    ),
-                                    child: Slider(
-                                      value: _panelWeight.clamp(0, 100).toDouble(),
-                                      min: 0,
-                                      max: 100,
-                                      divisions: 20,
-                                      label: 'Panel: $_panelWeight% / Peer: $_peerWeight%',
-                                      onChanged: isLocked
-                                          ? null
-                                          : (val) {
-                                              final panelVal = val.toInt();
-                                              final peerVal = 100 - panelVal;
-                                              setState(() {
-                                                _panelWeight = panelVal;
-                                                _peerWeight = peerVal;
-                                                _panelWeightController.text = panelVal.toString();
-                                                _peerWeightController.text = peerVal.toString();
-                                              });
-                                              _markDirty();
-                                            },
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: TextButton.icon(
-                                      onPressed: isLocked
-                                          ? null
-                                          : () {
-                                              setState(() {
-                                                _panelWeight = 80;
-                                                _peerWeight = 20;
-                                                _panelWeightController.text = '80';
-                                                _peerWeightController.text = '20';
-                                              });
-                                              _markDirty();
-                                            },
-                                      icon: const Icon(Icons.restore_rounded, size: 15),
-                                      label: const Text('Reset to standard 80 / 20'),
-                                      style: TextButton.styleFrom(
-                                        foregroundColor: const Color(0xFF475569),
-                                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-
-                            // 2. Evaluation Rubrics Assignment Card
-                            Builder(
-                              builder: (context) {
-                                final hasNoRubricsAtAll = panelRubrics.isEmpty && peerRubrics.isEmpty;
-
-                                return Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.assignment_outlined, size: 18, color: DefensysTokens.maroon),
-                                          const SizedBox(width: 8),
-                                          const Text(
-                                            'Evaluation Rubrics Attachment',
-                                            style: TextStyle(
-                                              fontSize: 14.5,
-                                              fontWeight: FontWeight.w800,
-                                              color: AppColors.textPrimary,
-                                              fontFamily: DefensysTokens.fontFamily,
-                                            ),
-                                          ),
-                                          const Spacer(),
-                                          OutlinedButton.icon(
-                                            onPressed: () {
-                                              Navigator.of(context).pop();
-                                              context.go(FacultyRoutes.rubrics);
-                                            },
-                                            icon: const Icon(Icons.open_in_new_rounded, size: 13),
-                                            label: const Text('Manage in Rubrics'),
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: DefensysTokens.maroon,
-                                              side: const BorderSide(color: Color(0xFFCBD5E1)),
-                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF0F9FF),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: const Color(0xFFBAE6FD)),
-                                        ),
-                                        child: const Row(
-                                          children: [
-                                            Icon(Icons.info_outline, size: 15, color: Color(0xFF0284C7)),
-                                            SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                'Assign published PIT rubrics to evaluate each role. You can leave as "None" and attach later before scheduling defenses.',
-                                                style: TextStyle(
-                                                  fontSize: 11.5,
-                                                  color: Color(0xFF0369A1),
-                                                  fontWeight: FontWeight.w500,
-                                                  fontFamily: DefensysTokens.fontFamily,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      if (hasNoRubricsAtAll) ...[
-                                        const SizedBox(height: 10),
-                                        Container(
-                                          padding: const EdgeInsets.all(10),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFFFFBEB),
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(color: const Color(0xFFFDE68A)),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFB45309)),
-                                              const SizedBox(width: 8),
-                                              const Expanded(
-                                                child: Text(
-                                                  'No available published PIT rubrics for this event. Create rubrics in Evaluation Rubrics to attach.',
-                                                  style: TextStyle(
-                                                    fontSize: 11.5,
-                                                    color: Color(0xFF92400E),
-                                                    fontWeight: FontWeight.w600,
-                                                    fontFamily: DefensysTokens.fontFamily,
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              ElevatedButton.icon(
-                                                onPressed: () {
-                                                  Navigator.of(context).pop();
-                                                  context.go(FacultyRoutes.rubrics);
-                                                },
-                                                icon: const Icon(Icons.add_rounded, size: 13),
-                                                label: const Text('Create Rubric'),
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: const Color(0xFFB45309),
-                                                  foregroundColor: Colors.white,
-                                                  elevation: 0,
-                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                  textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius: BorderRadius.circular(6),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                      const SizedBox(height: 14),
-                                      DropdownButtonFormField<int?>(
-                                        initialValue: _panelRubricId,
-                                        decoration: _dialogInputDecoration(
-                                          labelText: 'Panel Rubric',
-                                          helperText: panelRubrics.isEmpty ? 'No available published panel rubrics for this event' : null,
-                                          prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: DefensysTokens.maroon),
-                                        ),
-                                        style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 13.5, color: DefensysTokens.textPrimary),
-                                        items: () {
-                                          final list = <DropdownMenuItem<int?>>[
-                                            const DropdownMenuItem<int?>(
-                                              value: null,
-                                              child: Text('None (No Rubric)'),
-                                            ),
-                                          ];
-                                          list.addAll(panelRubrics.map((r) {
-                                            return DropdownMenuItem<int?>(
-                                              value: int.tryParse(r['id']?.toString() ?? ''),
-                                              child: Text(r['name']?.toString() ?? ''),
-                                            );
-                                          }));
-                                          if (_panelRubricId != null && !panelRubrics.any((r) => int.tryParse(r['id']?.toString() ?? '') == _panelRubricId)) {
-                                            final currentRubric = state.rubrics.firstWhere(
-                                              (r) => int.tryParse(r['id']?.toString() ?? '') == _panelRubricId,
-                                              orElse: () => const {},
-                                            );
-                                            list.add(DropdownMenuItem<int?>(
-                                              value: _panelRubricId,
-                                              enabled: false,
-                                              child: Text(currentRubric['name']?.toString() ?? 'Selected Rubric'),
-                                            ));
-                                          }
-                                          return list;
-                                        }(),
-                                        onChanged: isLocked ? null : (val) {
-                                          setState(() => _panelRubricId = val);
-                                          _markDirty();
-                                        },
-                                      ),
-                                      const SizedBox(height: 12),
-                                      DropdownButtonFormField<int?>(
-                                        initialValue: _peerRubricId,
-                                        decoration: _dialogInputDecoration(
-                                          labelText: 'Peer Rubric',
-                                          helperText: peerRubrics.isEmpty ? 'No available published peer rubrics for this event' : null,
-                                          prefixIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFFD97706)),
-                                        ),
-                                        style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 13.5, color: DefensysTokens.textPrimary),
-                                        items: () {
-                                          final list = <DropdownMenuItem<int?>>[
-                                            const DropdownMenuItem<int?>(
-                                              value: null,
-                                              child: Text('None (No Rubric)'),
-                                            ),
-                                          ];
-                                          list.addAll(peerRubrics.map((r) {
-                                            return DropdownMenuItem<int?>(
-                                              value: int.tryParse(r['id']?.toString() ?? ''),
-                                              child: Text(r['name']?.toString() ?? ''),
-                                            );
-                                          }));
-                                          if (_peerRubricId != null && !peerRubrics.any((r) => int.tryParse(r['id']?.toString() ?? '') == _peerRubricId)) {
-                                            final currentRubric = state.peerRubrics.firstWhere(
-                                              (r) => int.tryParse(r['id']?.toString() ?? '') == _peerRubricId,
-                                              orElse: () => const {},
-                                            );
-                                            list.add(DropdownMenuItem<int?>(
-                                              value: _peerRubricId,
-                                              enabled: false,
-                                              child: Text(currentRubric['name']?.toString() ?? 'Selected Rubric'),
-                                            ));
-                                          }
-                                          return list;
-                                        }(),
-                                        onChanged: isLocked ? null : (val) {
-                                          setState(() => _peerRubricId = val);
-                                          _markDirty();
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                );
+                            GradingSetupSection(
+                              enabled: !isLocked && !state.isSaving,
+                              canManageRubrics: !state.isSaving,
+                              onManageRubrics: () {
+                                Navigator.of(context).pop();
+                                context.go(FacultyRoutes.rubrics);
                               },
+                              resetLabel: 'Reset to 80 / 20',
+                              onReset: () {
+                                setState(() {
+                                  _panelWeight = 80; _peerWeight = 20;
+                                  _panelWeightController.text = '80'; _peerWeightController.text = '20';
+                                });
+                                _markDirty();
+                              },
+                              roles: [
+                                GradingRoleSetup(role: 'panel', label: 'Panel', weightController: _panelWeightController,
+                                  rubrics: panelRubrics, rubricId: _panelRubricId,
+                                  rubricName: state.rubrics.where((r) => int.tryParse('${r['id']}') == _panelRubricId).firstOrNull?['name']?.toString(),
+                                  onWeightChanged: _onPanelWeightChanged,
+                                  onRubricChanged: (value) { setState(() => _panelRubricId = value); _markDirty(); }),
+                                GradingRoleSetup(role: 'peer', label: 'Peer', weightController: _peerWeightController,
+                                  rubrics: peerRubrics, rubricId: _peerRubricId,
+                                  rubricName: state.peerRubrics.where((r) => int.tryParse('${r['id']}') == _peerRubricId).firstOrNull?['name']?.toString(),
+                                  onWeightChanged: _onPeerWeightChanged,
+                                  onRubricChanged: (value) { setState(() => _peerRubricId = value); _markDirty(); }),
+                              ],
                             ),
-                            const SizedBox(height: 16),
+                            Padding(padding: const EdgeInsets.symmetric(vertical: 24),
+                              child: Divider(height: 1, color: DefensysTokens.borderOf(context))),
                             _buildPeerGradingAccessCard(isLocked),
                           ],
                         ),
@@ -3456,7 +2481,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                             ),
                           ],
                         ),
-                      ],
+                      ].indexed.map((entry) => Offstage(
+                        offstage: entry.$1 != _activeTab,
+                        child: TickerMode(enabled: entry.$1 == _activeTab, child: entry.$2),
+                      )).toList(),
                     ),
                   ),
                 ),
@@ -3464,16 +2492,16 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 // 4. Footer Actions Bar
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF8FAFC),
-                    border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                  decoration: BoxDecoration(
+                    color: DefensysTokens.surfaceHigherOf(context),
+                    border: Border(top: BorderSide(color: DefensysTokens.borderOf(context))),
                   ),
                   child: StageSetupActions(
                     children: [
                       TextButton(
                         onPressed: state.isSaving ? null : _handleClose,
                         style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF64748B),
+                          foregroundColor: DefensysTokens.textSecondaryOf(context),
                           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily),
                         ),
                         child: Text(isLocked ? 'Close' : 'Cancel'),
@@ -3487,8 +2515,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           icon: const Icon(Icons.arrow_back_rounded, size: 16),
                           label: const Text('Back'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.textPrimary,
-                            side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            foregroundColor: DefensysTokens.textPrimaryOf(context),
+                            side: BorderSide(color: DefensysTokens.borderOf(context)),
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                             textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

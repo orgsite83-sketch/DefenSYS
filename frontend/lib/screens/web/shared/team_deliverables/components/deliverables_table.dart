@@ -5,6 +5,7 @@ import 'package:defensys/widgets/repository/requirement_summary.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 import 'package:defensys/widgets/repository/shared_concept_review.dart';
 import 'faculty_requirements_pane.dart';
+import 'faculty_team_choice_label.dart';
 import 'package:defensys/widgets/repository/deliverable_file_widgets.dart';
 import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'dart:async';
@@ -3742,6 +3743,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     required String label,
     required bool selected,
     required VoidCallback onPressed,
+    TeamWorkflowStatus? status,
   }) {
     final foreground = selected
         ? Colors.white
@@ -3753,7 +3755,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         key: ValueKey('faculty-team-choice-$id'),
         size: ShadButtonSize.sm,
         width: double.infinity,
-        height: 38,
+        height: status == null ? 38 : 62,
         mainAxisAlignment: MainAxisAlignment.start,
         foregroundColor: foreground,
         hoverForegroundColor: foreground,
@@ -3781,15 +3783,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         ),
         onPressed: onPressed,
         child: Flexible(
-          child: Text(
-            label,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: foreground,
-            ),
+          child: FacultyTeamChoiceLabel(
+            label: label,
+            status: status,
+            selected: selected,
           ),
         ),
       ),
@@ -3804,6 +3801,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             DeliverablesTriageHelper.matchesFilter(
               team,
               widget.activeTriageFilter,
+              scope: widget.state.scope,
             ),
       ),
     );
@@ -3862,6 +3860,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           'p${review['project_id']}': 'Shared systems · ${review['section']}',
       for (final team in teams) 't${team['id']}': '${team['name']}',
     };
+    final statuses = <String, TeamWorkflowStatus>{
+      for (final team in teams)
+        't${team['id']}': TeamWorkflowStatus.fromStage(
+          DeliverablesTriageHelper.resolveActiveStage(team) ?? {},
+          scope: widget.state.scope,
+        ),
+    };
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 780) {
@@ -3880,6 +3885,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ? selected
                       : null,
                   isExpanded: true,
+                  isDense: false,
                   decoration: const InputDecoration(
                     labelText: 'Choose team or review',
                   ),
@@ -3887,9 +3893,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     for (final entry in selections.entries)
                       DropdownMenuItem(
                         value: entry.key,
-                        child: Text(
-                          entry.value,
-                          overflow: TextOverflow.ellipsis,
+                        child: FacultyTeamChoiceLabel(
+                          label: entry.value,
+                          status: statuses[entry.key],
                         ),
                       ),
                   ],
@@ -3946,6 +3952,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                           _facultyTeamButton(
                             id: entry.key,
                             label: entry.value,
+                            status: statuses[entry.key],
                             selected:
                                 entry.key == 'p$_selectedSharedProjectId' &&
                                     widget.conceptReview ||
@@ -4055,6 +4062,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             (t) => DeliverablesTriageHelper.matchesFilter(
               t,
               widget.activeTriageFilter,
+              scope: widget.state.scope,
             ),
           ),
     );
@@ -4133,6 +4141,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             (t) => DeliverablesTriageHelper.matchesFilter(
               t,
               widget.activeTriageFilter,
+              scope: widget.state.scope,
             ),
           ),
     );

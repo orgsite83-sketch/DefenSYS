@@ -282,6 +282,14 @@ void main() {
       await loadPreviewFonts();
       await pumpEditor(tester, notifier, preview: 'light');
       expect(find.byType(ShadDialog), findsOneWidget);
+      expect(find.byType(ShadTabs<int>), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(ShadDialog),
+          matching: find.byType(TextButton),
+        ),
+        findsNothing,
+      );
       expect(find.textContaining('all 8 teams'), findsOneWidget);
       await tester.enterText(
         find.byKey(const Key('edit-section-name')),
@@ -571,7 +579,12 @@ void main() {
     final sections = _PitSectionNotifier();
     final assignments = _AssignmentNotifier(sections);
     await pumpPitManager(tester, sections, assignments: assignments);
-    expect(tester.widget<ShadButton>(find.byKey(const Key('save-section-details'))).enabled, isFalse);
+    expect(
+      tester
+          .widget<ShadButton>(find.byKey(const Key('save-section-details')))
+          .enabled,
+      isFalse,
+    );
     expect(
       tester
           .widget<ShadButton>(find.byKey(const Key('save-section-details')))
@@ -685,46 +698,55 @@ void main() {
     }
   }
 
-  testWidgets('PIT header exposes instructor details while collapsed', (
-    tester,
-  ) async {
-    await pumpDefensysWidget(
-      tester,
-      GroupedSectionView(
-        state: const StudentTeamsState(
-          teams: [
-            {
-              'id': 50,
-              'section': 'BSIT-3A',
-              'instructor_name': 'Elena Reyes',
-              'instructors': [
-                {
-                  'faculty_name': 'Elena Reyes',
-                  'faculty_email': 'elena@school.edu',
-                  'section': 'BSIT-3A',
-                  'year_level': '3rd Year',
-                  'semester_label': '1st Semester 2026-2027',
-                },
-              ],
-            },
-          ],
+  testWidgets(
+    'PIT instructor appears inside the expanded section information',
+    (tester) async {
+      await pumpDefensysWidget(
+        tester,
+        GroupedSectionView(
+          state: const StudentTeamsState(
+            teams: [
+              {
+                'id': 50,
+                'section': 'BSIT-3A',
+                'system_name': 'FreshStart',
+                'project_manager_name': 'Mateo Ilagan',
+                'instructor_name': 'Elena Reyes',
+                'instructors': [
+                  {
+                    'faculty_name': 'Elena Reyes',
+                    'faculty_email': 'elena@school.edu',
+                    'section': 'BSIT-3A',
+                    'year_level': '3rd Year',
+                    'semester_label': '1st Semester 2026-2027',
+                  },
+                ],
+              },
+            ],
+          ),
+          isPit: true,
+          searchQuery: '',
+          onOpenTeamDetail: (_) {},
         ),
-        isPit: true,
-        searchQuery: '',
-        onOpenTeamDetail: (_) {},
-      ),
-    );
-    expect(find.text('Instructor: Elena Reyes'), findsOneWidget);
-    await tester.tap(
-      find.byKey(const Key('section-instructor-details-BSIT-3A')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Instructor details'), findsOneWidget);
-    expect(find.text('elena@school.edu'), findsOneWidget);
-    expect(find.text('1st Semester 2026-2027'), findsOneWidget);
-    await tester.tap(find.byTooltip('Close instructor details'));
-    await tester.pumpAndSettle();
-    expect(find.text('Instructor details'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+      );
+      expect(find.text('Instructor: Elena Reyes'), findsNothing);
+      expect(find.text('View details'), findsNothing);
+      await tester.tap(find.text('BSIT-3A'));
+      await tester.pumpAndSettle();
+      expect(find.text('Instructor: Elena Reyes'), findsOneWidget);
+      expect(find.text('Shared system: FreshStart'), findsOneWidget);
+      expect(find.text('Project manager: Mateo Ilagan'), findsOneWidget);
+      expect(find.text('View details'), findsNothing);
+      await capturePreview(
+        tester,
+        find.byType(GroupedSectionView),
+        'section-instructor-inline',
+        viewport: true,
+      );
+      await tester.tap(find.text('BSIT-3A'));
+      await tester.pumpAndSettle();
+      expect(find.text('Instructor: Elena Reyes'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

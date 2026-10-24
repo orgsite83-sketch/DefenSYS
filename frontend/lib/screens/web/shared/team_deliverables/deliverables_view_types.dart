@@ -4,6 +4,11 @@ enum DeliverablesViewMode { dossier, matrix }
 
 enum TeamTriageFilter {
   all,
+  needsAttention,
+  forReview,
+  readyToSchedule,
+  inProgress,
+  closed,
   needsReview,
   awaitingEndorsement,
   readyForDefense,
@@ -40,6 +45,55 @@ enum TeamTriageFilter {
 }
 
 class DeliverablesTriageHelper {
+  /// The short menu groups detailed workflow states without changing them.
+  /// Each team belongs to exactly one group for the selected stage/event.
+  static const summaryFilters = <TeamTriageFilter, String>{
+    TeamTriageFilter.all: 'All teams',
+    TeamTriageFilter.needsAttention: 'Needs attention',
+    TeamTriageFilter.forReview: 'For review',
+    TeamTriageFilter.readyToSchedule: 'Ready to schedule',
+    TeamTriageFilter.inProgress: 'In progress',
+    TeamTriageFilter.closed: 'Closed',
+    TeamTriageFilter.notConfigured: 'Not configured',
+  };
+
+  static TeamTriageFilter summaryFilter(
+    Map<String, dynamic> team, {
+    String scope = 'capstone',
+  }) {
+    final status = TeamWorkflowStatus.fromStage(
+      resolveActiveStage(team) ?? {},
+      scope: scope,
+    );
+    return switch (status.code) {
+      'not_configured' => TeamTriageFilter.notConfigured,
+      'needs_review' ||
+      'concept_review_pending' ||
+      'module_confirmation_pending' ||
+      'shared_acknowledgment_pending' ||
+      'awaiting_endorsement' ||
+      'archive_review_pending' => TeamTriageFilter.forReview,
+      'ready_to_schedule' ||
+      'ready_to_schedule_redefense' => TeamTriageFilter.readyToSchedule,
+      'scheduled' ||
+      'awaiting_evaluation' ||
+      'evaluating' ||
+      'awaiting_verdict' ||
+      'awaiting_concept_selection' ||
+      'grading_incomplete' ||
+      'awaiting_results' ||
+      'awaiting_completion' ||
+      'pending_post_defense' => TeamTriageFilter.inProgress,
+      'completed' ||
+      'passed' ||
+      'failed' ||
+      'project_rejected' ||
+      'cancelled' ||
+      'archived' => TeamTriageFilter.closed,
+      _ => TeamTriageFilter.needsAttention,
+    };
+  }
+
   /// Use the workflow codes behind team badges, rather than the legacy
   /// four-option server dropdown. Counts follow the selected stage.
   static const workflowFilters = <TeamTriageFilter, (String, String)>{
@@ -115,7 +169,8 @@ class DeliverablesTriageHelper {
   }
 
   static Map<String, dynamic>? resolveActiveStage(Map<String, dynamic> team) {
-    final stages = (team['stages'] as List?)
+    final stages =
+        (team['stages'] as List?)
             ?.whereType<Map>()
             .map((s) => Map<String, dynamic>.from(s))
             .toList() ??
@@ -126,7 +181,9 @@ class DeliverablesTriageHelper {
         : null;
 
     Map<String, dynamic>? activeStage = selectedStageMap;
-    if (activeStage == null && currentStageLabel != null && currentStageLabel.isNotEmpty) {
+    if (activeStage == null &&
+        currentStageLabel != null &&
+        currentStageLabel.isNotEmpty) {
       activeStage = stages.firstWhere(
         (s) => s['stage_label']?.toString() == currentStageLabel,
         orElse: () => stages.isNotEmpty ? stages.first : <String, dynamic>{},
@@ -138,7 +195,8 @@ class DeliverablesTriageHelper {
     return activeStage != null && activeStage.isNotEmpty ? activeStage : null;
   }
 
-  static List<Map> items(Map<String, dynamic> stage) => TeamWorkflowStatus.items(stage);
+  static List<Map> items(Map<String, dynamic> stage) =>
+      TeamWorkflowStatus.items(stage);
 
   static bool isPending(Map item) {
     return TeamWorkflowStatus.isPendingReview(item);
@@ -149,11 +207,14 @@ class DeliverablesTriageHelper {
     return stage == null ? 0 : TeamWorkflowStatus.pendingReviewCount(stage);
   }
 
-  static bool hasPendingReview(Map<String, dynamic> team) => pendingReviewCount(team) > 0;
+  static bool hasPendingReview(Map<String, dynamic> team) =>
+      pendingReviewCount(team) > 0;
 
   // Stable partition: preserve API ordering within each group and never mutate
   // provider state. Selection is tracked separately by team ID.
-  static List<Map<String, dynamic>> reviewFirst(Iterable<Map<String, dynamic>> teams) {
+  static List<Map<String, dynamic>> reviewFirst(
+    Iterable<Map<String, dynamic>> teams,
+  ) {
     final pending = <Map<String, dynamic>>[];
     final other = <Map<String, dynamic>>[];
     for (final team in teams) {
@@ -176,7 +237,8 @@ class DeliverablesTriageHelper {
 
   static bool isAwaitingEndorsement(Map<String, dynamic> team) {
     final stage = resolveActiveStage(team);
-    return stage != null && TeamWorkflowStatus.fromStage(stage).code == 'awaiting_endorsement';
+    return stage != null &&
+        TeamWorkflowStatus.fromStage(stage).code == 'awaiting_endorsement';
   }
 
   static bool isOverdueOrMissing(Map<String, dynamic> team) {
@@ -186,30 +248,52 @@ class DeliverablesTriageHelper {
     final materials = activeStage['materials_readiness'];
     if (materials is Map) {
       final required = int.tryParse('${materials['required_total'] ?? 0}') ?? 0;
-      final submitted = int.tryParse('${materials['submitted_total'] ?? 0}') ?? 0;
+      final submitted =
+          int.tryParse('${materials['submitted_total'] ?? 0}') ?? 0;
       if (required > submitted) return true;
     }
 
-    final statusDetail = activeStage['stage_status_detail']?.toString() ?? activeStage['status']?.toString();
-    if (statusDetail == 'missing_requirements' || statusDetail == 'missing' || activeStage['required_complete'] == false) {
-      final pre = (activeStage['pre'] as List?)?.whereType<Map>().toList() ?? [];
-      final hasMissing = pre.any((d) => d['required'] == true && d['uploaded'] != true && d['is_waived'] != true);
-      if (hasMissing || statusDetail == 'missing' || statusDetail == 'missing_requirements') return true;
+    final statusDetail =
+        activeStage['stage_status_detail']?.toString() ??
+        activeStage['status']?.toString();
+    if (statusDetail == 'missing_requirements' ||
+        statusDetail == 'missing' ||
+        activeStage['required_complete'] == false) {
+      final pre =
+          (activeStage['pre'] as List?)?.whereType<Map>().toList() ?? [];
+      final hasMissing = pre.any(
+        (d) =>
+            d['required'] == true &&
+            d['uploaded'] != true &&
+            d['is_waived'] != true,
+      );
+      if (hasMissing ||
+          statusDetail == 'missing' ||
+          statusDetail == 'missing_requirements') {
+        return true;
+      }
     }
     return false;
   }
 
   static bool matchesFilter(
     Map<String, dynamic> team,
-    TeamTriageFilter filter,
-  ) {
+    TeamTriageFilter filter, {
+    String scope = 'capstone',
+  }) {
+    if (filter == TeamTriageFilter.all) return true;
+    if (summaryFilters.containsKey(filter)) {
+      return summaryFilter(team, scope: scope) == filter;
+    }
     final workflowFilter = workflowFilters[filter];
     if (workflowFilter != null) {
       final status = TeamWorkflowStatus.fromStage(
         resolveActiveStage(team) ?? {},
+        scope: scope,
       ).code;
       return status == workflowFilter.$1 ||
-          filter == TeamTriageFilter.awaitingVerdict && status == 'awaiting_concept_selection' ||
+          filter == TeamTriageFilter.awaitingVerdict &&
+              status == 'awaiting_concept_selection' ||
           filter == TeamTriageFilter.completed && status == 'passed';
     }
     switch (filter) {
@@ -228,7 +312,10 @@ class DeliverablesTriageHelper {
               {})['status'],
         );
       case TeamTriageFilter.readyRedefense:
-        return TeamWorkflowStatus.fromStage(resolveActiveStage(team) ?? {}).code == 'ready_to_schedule_redefense';
+        return TeamWorkflowStatus.fromStage(
+              resolveActiveStage(team) ?? {},
+            ).code ==
+            'ready_to_schedule_redefense';
       case TeamTriageFilter.redefenseScheduled:
         final workflow =
             resolveActiveStage(team)?['concept_workflow'] as Map? ?? {};
@@ -254,11 +341,14 @@ class DeliverablesTriageHelper {
   }
 
   static Map<TeamTriageFilter, int> computeCounts(
-    List<Map<String, dynamic>> teams,
-  ) {
+    List<Map<String, dynamic>> teams, {
+    String scope = 'capstone',
+  }) {
     return {
       for (final filter in TeamTriageFilter.values)
-        filter: teams.where((team) => matchesFilter(team, filter)).length,
+        filter: teams
+            .where((team) => matchesFilter(team, filter, scope: scope))
+            .length,
     };
   }
 }

@@ -1,3 +1,4 @@
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/l10n/app_localizations.dart';
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/navigation/app_router.dart';
@@ -35,6 +36,7 @@ const _stage = <String, dynamic>{
   'display_order': 1,
   'is_active': false,
   'is_locked': false,
+  'qualifying_score': 75,
 };
 
 class _Stages extends DefenseStagesNotifier {
@@ -242,7 +244,7 @@ void main() {
     return router;
   }
 
-  for (final shortcut in ['Create Rubric', 'Manage in Rubrics']) {
+  for (final shortcut in ['Create rubric']) {
     testWidgets(
       '$shortcut from Add Stage allows returning through the sidebar',
       (tester) async {
@@ -260,7 +262,7 @@ void main() {
           await tester.tap(find.text('Signed minutes required'));
           await tester.tap(find.text('2. Grading & Rubrics'));
           await tester.pumpAndSettle();
-          await tester.enterText(find.byType(TextField).first, '65');
+          await tester.enterText(find.byKey(const ValueKey('panel-weight')), '65');
           await tester.ensureVisible(find.text(shortcut));
           await tester.tap(find.text(shortcut));
           await tester.pumpAndSettle();
@@ -297,7 +299,7 @@ void main() {
     );
   }
 
-  for (final shortcut in ['Create Rubrics', 'Manage Evaluation Rubrics']) {
+  for (final shortcut in ['Create rubric']) {
     testWidgets(
       '$shortcut from stage editor restores the editor from the sidebar',
       (tester) async {
@@ -382,14 +384,10 @@ void main() {
       await tester.tap(find.text('2. Grading & Rubrics'));
       await tester.pumpAndSettle();
       for (final (index, role) in ['panel', 'adviser', 'peer'].indexed) {
-        final picker = find.byWidgetPredicate((widget) =>
-          widget is DropdownButtonFormField<int> &&
-          widget.decoration.labelText == '${role[0].toUpperCase()}${role.substring(1)} Rubric');
-        final items = tester.widget<DropdownButton<int>>(
-          find.descendant(of: picker, matching: find.byType(DropdownButton<int>)),
-        ).items!;
         final id = 10 + index * 10;
-        expect(items.map((item) => item.value), [null, if (!creating) id, id + 2]);
+        final picker = find.byKey(ValueKey('$role-rubric-${creating ? 0 : id}'));
+        final items = tester.widget<ShadSelect<int>>(picker).options!.whereType<ShadOption<int>>();
+        expect(items.map((item) => item.value), [0, if (!creating) id, id + 2]);
       }
       expect(tester.takeException(), isNull);
     });
@@ -407,10 +405,10 @@ void main() {
     await tester.ensureVisible(oldPanel);
     await tester.tap(oldPanel);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('None (No Rubric)').last);
+    await tester.tap(find.text('Select later').last);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Manage Evaluation Rubrics'));
-    await tester.tap(find.text('Manage Evaluation Rubrics'));
+    await tester.ensureVisible(find.text('Manage rubrics'));
+    await tester.tap(find.text('Manage rubrics'));
     await tester.pumpAndSettle();
     final newAssignments = {...assignedRubrics,
       'panel_rubric_id': 30, 'panel_rubric_name': 'New panel assignment'};
@@ -422,7 +420,7 @@ void main() {
     for (final role in ['panel', 'adviser', 'peer']) {
       final id = newAssignments['${role}_rubric_id'];
       final picker = find.byKey(ValueKey('$role-rubric-$id'));
-      expect(tester.widget<DropdownButtonFormField<int>>(picker).initialValue, id);
+      expect(tester.widget<ShadSelect<int>>(picker).initialValue, id);
       expect(find.text(newAssignments['${role}_rubric_name'] as String), findsOneWidget);
     }
     await tester.tap(find.text('1. Stage Details'));
@@ -475,7 +473,7 @@ void main() {
     await tester.ensureVisible(picker);
     await tester.tap(picker);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('None (No Rubric)').last);
+    await tester.tap(find.text('Select later').last);
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Save draft'));
     await tester.tap(find.text('Save draft'));
@@ -484,7 +482,7 @@ void main() {
     await tester.pumpAndSettle();
     await pumpWorkspace(tester, resetStorage: false,
       initialLocation: AdminRoutes.defenseStageEdit(7), gradingConfig: assignedRubrics);
-    expect(find.byKey(const ValueKey('panel-rubric-null')), findsOneWidget);
+    expect(find.byKey(const ValueKey('panel-rubric-0')), findsOneWidget);
     final stages = ProviderScope.containerOf(tester.element(find.byType(DefenseStageEditorScreen)))
         .read(defenseStagesProvider.notifier) as _Stages;
     await tester.ensureVisible(find.text('Save changes'));
@@ -581,14 +579,7 @@ void main() {
     );
     await tester.tap(find.text('Next: Grading & Rubrics'));
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<StageMinutesSettings>(
-            find.byType(StageMinutesSettings, skipOffstage: false),
-          )
-          .requiredMinutes,
-      isTrue,
-    );
+    await tester.enterText(find.byKey(const ValueKey('minimum-qualifying-score')), '75');
     await tester.tap(find.text('3. Deliverables'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add Stage'));
@@ -647,7 +638,7 @@ void main() {
   );
 
   testWidgets(
-    'Edit Stage draft preserves independent defense timing and visibility',
+    'Edit Stage draft preserves scheduling review and panel visibility',
     (tester) async {
       var router = await pumpWorkspace(tester);
       router.go(AdminRoutes.defenseStageEdit(7));
@@ -668,16 +659,6 @@ void main() {
       await tester.tap(find.text('More options'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Defense material for panelists'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Before scheduled defense').last);
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Custom'));
-      await tester.tap(find.text('Custom'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('stage-custom-deadline-hours')),
-        '36',
-      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Required').last);
       await tester.pumpAndSettle();
@@ -705,8 +686,8 @@ void main() {
       final files = (stages.savedUpdate?['deliverables'] as List).cast<Map>();
       expect(files.length, 1);
       expect(files.single['label'], 'Panel Deck');
-      expect(files.single['requirement_timing'], 'defense');
-      expect(files.single['deadline_hours_before'], 36);
+      expect(files.single['requirement_timing'], 'scheduling');
+      expect(files.single['deadline_hours_before'], 24);
       expect(files.single['is_defense_material'], true);
       expect(files.single['required'], false);
       expect(
@@ -735,8 +716,8 @@ void main() {
       await tester.tap(find.text('Minutes not required'));
       await tester.tap(find.text('2. Grading & Rubrics'));
       await tester.pumpAndSettle();
-      final panelPicker = find.byWidgetPredicate((widget) =>
-        widget is DropdownButtonFormField<int> && widget.decoration.labelText == 'Panel Rubric');
+      final panelPicker = find.byKey(const ValueKey('panel-rubric-0'));
+      await tester.enterText(find.byKey(const ValueKey('minimum-qualifying-score')), '75');
       await tester.ensureVisible(panelPicker);
       await tester.tap(panelPicker);
       await tester.pumpAndSettle();

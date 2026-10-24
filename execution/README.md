@@ -11,6 +11,7 @@ See [docs/AGENTS.md](../docs/AGENTS.md). Prefer extending existing scripts befor
 - `auto_panelist_eval.py`: Automated testing tool to simulate panelist evaluations for scheduled defenses via REST API.
 - `auto_adviser_eval.py`: Automated testing tool to simulate capstone adviser grading for advised teams via REST API.
 - `auto_documenter_minutes.py`: Automated testing tool to record realistic draft panelist comments for defense schedules requiring minutes via REST API.
+- `upload_deliverables.py`: Scan each team's own PIT/Capstone files in one batch. Use team-name folders and deliverable names, such as `Team Phoenix/Concept Paper.pdf`. `prepare --student-leaders` uses read-only discovery and real student identities. Post files use the API's recommended archive naming. See [the upload guide](UPLOAD_DELIVERABLES.md). Existing files are preserved; no chat or AI API is needed.
 
 ### Panel evaluation automation
 

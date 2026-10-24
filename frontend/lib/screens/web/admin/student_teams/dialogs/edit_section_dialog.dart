@@ -264,47 +264,56 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
             style: TextStyle(color: secondary, fontSize: 12),
           ),
           const SizedBox(height: 12),
-          for (final c in _conceptContexts)
-            ExpansionTile(
-              key: ValueKey('concept-policy-${c['key']}'),
-              tilePadding: EdgeInsets.zero,
-              expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-              title: Text('${c['label']}'),
-              children: [
-                WorkflowChoice(
-                  value: '${c['policy']['mode'] ?? 'auto'}',
-                  enabled: !_busy && _canManageConcepts,
-                  options: const {
-                    'auto': 'Automatic from import',
-                    'proposals': 'Require multiple proposals',
-                    'assigned': 'Use one assigned concept',
-                  },
-                  onChanged: (mode) => setState(
-                    () => c['policy'] = {
-                      'mode': mode,
-                      if (mode == 'proposals') 'required_count': 3,
-                    },
+          ShadAccordion<String>.multiple(
+            maintainState: true,
+            children: [
+              for (final c in _conceptContexts)
+                ShadAccordionItem<String>(
+                  key: ValueKey('concept-policy-${c['key']}'),
+                  value: '${c['key']}',
+                  title: Text('${c['label']}'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      WorkflowChoice(
+                        value: '${c['policy']['mode'] ?? 'auto'}',
+                        enabled: !_busy && _canManageConcepts,
+                        options: const {
+                          'auto': 'Automatic from import',
+                          'proposals': 'Require multiple proposals',
+                          'assigned': 'Use one assigned concept',
+                        },
+                        onChanged: (mode) => setState(
+                          () => c['policy'] = {
+                            'mode': mode,
+                            if (mode == 'proposals') 'required_count': 3,
+                          },
+                        ),
+                      ),
+                      if (c['policy']['mode'] == 'proposals') ...[
+                        const SizedBox(height: 8),
+                        WorkflowChoice(
+                          value: '${c['policy']['required_count'] ?? 3}',
+                          enabled: !_busy && _canManageConcepts,
+                          options: {
+                            for (var i = 1; i <= 10; i++)
+                              '$i': '$i concept${i == 1 ? '' : 's'}',
+                          },
+                          onChanged: (value) => setState(
+                            () => c['policy']['required_count'] = int.parse(
+                              value,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      for (final raw in c['teams'] as List)
+                        _teamConceptFields(c, raw as Map),
+                    ],
                   ),
                 ),
-                if (c['policy']['mode'] == 'proposals') ...[
-                  const SizedBox(height: 8),
-                  WorkflowChoice(
-                    value: '${c['policy']['required_count'] ?? 3}',
-                    enabled: !_busy && _canManageConcepts,
-                    options: {
-                      for (var i = 1; i <= 10; i++)
-                        '$i': '$i concept${i == 1 ? '' : 's'}',
-                    },
-                    onChanged: (value) => setState(
-                      () => c['policy']['required_count'] = int.parse(value),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                for (final raw in c['teams'] as List)
-                  _teamConceptFields(c, raw as Map),
-              ],
-            ),
+            ],
+          ),
         ],
       ),
     );
@@ -521,7 +530,7 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
     final secondary = DefensysTokens.textSecondaryOf(context);
     final matches = widget.sectionOptions
         .where(
-          (s) => '${s['section']} ${s['instructor_name'] ?? ''}'
+          (option) => '${option['section']} ${option['instructor_name'] ?? ''}'
               .toLowerCase()
               .contains(_sectionSearch),
         )
@@ -532,12 +541,12 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
       children: [
         Text(
           'Sections · ${widget.sectionOptions.length}',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
         ShadInput(
           key: const Key('section-search'),
-          leading: const Icon(Icons.search_rounded, size: 17),
+          leading: const Icon(LucideIcons.search, size: 16),
           placeholder: const Text('Search sections…'),
           onChanged: (value) =>
               setState(() => _sectionSearch = value.toLowerCase().trim()),
@@ -554,28 +563,32 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                 )
               : ListView.separated(
                   itemCount: matches.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 6),
+                  separatorBuilder: (_, _) => const SizedBox(height: 4),
                   itemBuilder: (_, index) {
                     final option = matches[index];
                     final selected = option['team_id'] == widget.teamId;
                     final name = '${option['instructor_name'] ?? ''}'.trim();
                     final pit = option['is_pit'] == true;
-                    return Material(
-                      color: selected
-                          ? DefensysTokens.maroonTextOf(
-                              context,
-                            ).withValues(alpha: 0.09)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                      child: InkWell(
+                    return LayoutBuilder(
+                      builder: (_, box) => ShadButton.ghost(
                         key: ValueKey('section-option-${option['team_id']}'),
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: _busy
+                        width: box.maxWidth,
+                        height: pit ? 100 : 72,
+                        padding: const EdgeInsets.all(12),
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        enabled: !_busy,
+                        backgroundColor: selected
+                            ? (DefensysTokens.isDark(context)
+                                  ? DefensysTokens.mistInputFill
+                                  : const Color(0xFFF4F4F5))
+                            : Colors.transparent,
+                        onPressed: _busy
                             ? null
                             : () => _chooseSection(option['team_id'] as int),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: box.maxWidth - 24,
                           child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
@@ -583,27 +596,15 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                                   Expanded(
                                     child: Text(
                                       '${option['section']}',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: selected
-                                            ? DefensysTokens.maroonTextOf(
-                                                context,
-                                              )
-                                            : DefensysTokens.textPrimaryOf(
-                                                context,
-                                              ),
+                                        textAlign: TextAlign.left,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
                                   if (selected)
-                                    Icon(
-                                      Icons.check_rounded,
-                                      size: 16,
-                                      color: DefensysTokens.maroonTextOf(
-                                        context,
-                                      ),
-                                    ),
+                                    const Icon(LucideIcons.check, size: 15),
                                 ],
                               ),
                               const SizedBox(height: 4),
@@ -622,9 +623,7 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: name.isEmpty
-                                        ? Theme.of(context).colorScheme.error
-                                        : secondary,
+                                    color: secondary,
                                   ),
                                 ),
                               ],
@@ -689,7 +688,9 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                 ),
               ),
               if (canManage)
-                TextButton(
+                ShadButton.ghost(
+                  size: ShadButtonSize.sm,
+                  enabled: !_busy && !renamed,
                   onPressed: _busy || renamed
                       ? null
                       : () => _chooseInstructor(),
@@ -732,7 +733,9 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                   ),
                 ),
                 if (canManage)
-                  TextButton(
+                  ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    enabled: !_busy && !renamed,
                     onPressed: _busy || renamed
                         ? null
                         : () => _chooseInstructor(instructor),
@@ -798,8 +801,6 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                           i['id'] == _instructorAssignmentId &&
                           i['faculty_id'] == _facultyId,
                     ),
-                backgroundColor: DefensysTokens.maroon,
-                foregroundColor: Colors.white,
                 onPressed:
                     _busy ||
                         _facultyId == null ||
@@ -1025,9 +1026,9 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
         for (final c in _conceptContexts.where(
           (c) => c['section_project_id'] != null,
         ))
-          TextButton.icon(
-            icon: const Icon(Icons.account_tree_outlined, size: 18),
-            label: Text('${c['label']} system proposals'),
+          ShadButton.ghost(
+            enabled: !_busy,
+            leading: const Icon(LucideIcons.network, size: 16),
             onPressed: _busy
                 ? null
                 : () async {
@@ -1041,6 +1042,7 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                     );
                     if (mounted) await _load();
                   },
+            child: Text('${c['label']} system proposals'),
           ),
         if (_details?['can_setup_shared_system'] == true) ...[
           ShadButton.outline(
@@ -1072,13 +1074,15 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
         if (narrow && widget.onSectionChanged != null)
           Align(
             alignment: Alignment.centerLeft,
-            child: TextButton.icon(
+            child: ShadButton.ghost(
               key: const Key('back-to-sections'),
+              enabled: !_busy,
+              size: ShadButtonSize.sm,
               onPressed: _busy
                   ? null
                   : () => setState(() => _showMobileSections = true),
-              icon: const Icon(Icons.arrow_back_rounded, size: 16),
-              label: const Text('Sections'),
+              leading: const Icon(LucideIcons.arrowLeft, size: 16),
+              child: const Text('Sections'),
             ),
           ),
         if (_details != null) ...[
@@ -1096,52 +1100,28 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
             style: TextStyle(fontSize: 12, color: secondary),
           ),
           const SizedBox(height: 18),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final (index, label) in [
-                  (0, 'Details'),
-                  (1, 'Roster'),
-                  (2, 'Project setup'),
-                ])
-                  Padding(
-                    padding: const EdgeInsets.only(right: 5),
-                    child: TextButton(
-                      key: ValueKey('section-tab-$index'),
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() => _activeTab = index),
-                      style: TextButton.styleFrom(
-                        foregroundColor: _activeTab == index
-                            ? DefensysTokens.maroonTextOf(context)
-                            : secondary,
-                        backgroundColor: _activeTab == index
-                            ? DefensysTokens.maroonTextOf(
-                                context,
-                              ).withValues(alpha: 0.08)
-                            : Colors.transparent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: _activeTab == index
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          ShadTabs<int>(
+            key: const Key('section-tabs'),
+            value: _activeTab,
+            gap: 0,
+            scrollable: narrow,
+            tabBarAlignment: Alignment.centerLeft,
+            onChanged: (index) {
+              if (!_busy) setState(() => _activeTab = index);
+            },
+            tabs: [
+              for (final (index, label) in [
+                (0, 'Details'),
+                (1, 'Roster'),
+                (2, 'Project setup'),
+              ])
+                ShadTab<int>(
+                  key: ValueKey('section-tab-$index'),
+                  value: index,
+                  enabled: !_busy,
+                  child: Text(label, style: const TextStyle(fontSize: 12.5)),
+                ),
+            ],
           ),
           const SizedBox(height: 8),
           Divider(height: 1, color: DefensysTokens.borderOf(context)),
@@ -1261,8 +1241,6 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                       key: const Key('save-section-details'),
                       width: narrow ? 136 : null,
                       enabled: !_busy && !_loading && _hasUnsavedChanges,
-                      backgroundColor: DefensysTokens.maroon,
-                      foregroundColor: Colors.white,
                       onPressed: _busy || _loading || !_hasUnsavedChanges
                           ? null
                           : _save,

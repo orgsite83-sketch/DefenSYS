@@ -259,7 +259,11 @@ class _TeamDeliverablesScreenState
 
     final filteredTeams = DeliverablesTriageHelper.reviewFirst(
       state.teams.where(
-        (t) => DeliverablesTriageHelper.matchesFilter(t, _triageFilter),
+        (t) => DeliverablesTriageHelper.matchesFilter(
+          t,
+          _triageFilter,
+          scope: state.scope,
+        ),
       ),
     );
 

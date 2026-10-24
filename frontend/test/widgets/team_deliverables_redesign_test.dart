@@ -166,12 +166,10 @@ void main() {
 
       await tester.tap(find.byType(ShadSelect<TeamTriageFilter>));
       await tester.pumpAndSettle();
-      expect(find.text('Requirements'), findsOneWidget);
-      await tester.enterText(find.byType(EditableText).last, 'needs review');
+      expect(find.text('Requirements'), findsNothing);
+      await tester.tap(find.text('For review (1)'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Needs review (1)'));
-      await tester.pumpAndSettle();
-      expect(selectedFilter, equals(TeamTriageFilter.needsReview));
+      expect(selectedFilter, equals(TeamTriageFilter.forReview));
 
       // Tap Cohort Matrix toggle
       await tester.tap(find.text('Cohort Matrix'));

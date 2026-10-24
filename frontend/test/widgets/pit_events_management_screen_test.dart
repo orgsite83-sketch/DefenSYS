@@ -11,6 +11,7 @@ import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
+import 'package:defensys/widgets/setup/setup_requirement_panels.dart';
 import '../helpers/capture_preview.dart';
 
 class _FakeScheduler extends DefenseSchedulerNotifier {
@@ -83,7 +84,8 @@ void main() {
     'panel_rubric_id': 10,
     'peer_rubric_id': 20,
     'deliverables': [
-      {'label': 'Concept Paper', 'deliverable_type': 'pre', 'required': true},
+      {'label': 'Concept Paper', 'deliverable_type': 'pre', 'required': true,
+        'file_format': 'pdf', 'is_defense_material': true},
       {'label': 'Pitch Deck', 'deliverable_type': 'pre', 'required': false},
       {
         'label': 'Post Reflection',
@@ -100,6 +102,7 @@ void main() {
     List<Map<String, dynamic>> additionalConfigs = const [],
     List<Map<String, dynamic>> rubrics = const [],
     List<Map<String, dynamic>> peerRubrics = const [],
+    bool dark = false,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -116,7 +119,7 @@ void main() {
         dashboardProvider('faculty').overrideWith(_FakeDashboard.new),
         defenseSchedulerProvider.overrideWith(() => scheduler),
       ],
-      child: MaterialApp(theme: AppTheme.theme,
+      child: MaterialApp(theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
         home: const Scaffold(body: PitEventsManagementScreen())),
     ));
     await tester.pumpAndSettle();
@@ -137,10 +140,33 @@ void main() {
       await tester.pumpAndSettle();
     }
     if (tab == 1) {
-      await tester.ensureVisible(find.text('Peer Evaluation Access'));
+      await tester.ensureVisible(find.text('Allow peer evaluation'));
       await tester.pumpAndSettle();
     }
     return scheduler;
+  }
+
+  for (final dark in [false, true]) {
+    testWidgets('PIT grading uses shared controls and saves balanced weights dark=$dark', (tester) async {
+      Map<String, dynamic> rubric(String role, int id) => {
+        'id': id, 'name': 'PIT $role rubric', 'scope': 'pit',
+        'evaluation_type': role, 'status': 'published', 'semester_id': 1,
+      };
+      final scheduler = await openPeerSetup(tester, config: sampleConfig, dark: dark,
+        size: const Size(1100, 1000), rubrics: [rubric('panel', 10)], peerRubrics: [rubric('peer', 20)]);
+      await capturePreview(tester, find.byType(Dialog), 'grading-pit-dialog-${dark ? 'dark' : 'light'}', viewport: true);
+      await tester.enterText(find.byKey(const ValueKey('panel-weight')), '70');
+      await tester.pumpAndSettle();
+      expect(tester.widget<ShadInput>(find.byKey(const ValueKey('peer-weight'))).controller!.text, '30');
+      expect(find.text('Total 100%'), findsOneWidget);
+      await tester.tap(find.text('Save Changes'));
+      await tester.pumpAndSettle();
+      expect(scheduler.saved?['panel_weight'], 70);
+      expect(scheduler.saved?['peer_weight'], 30);
+      expect(scheduler.saved?['panel_rubric_id'], 10);
+      expect(scheduler.saved?['peer_rubric_id'], 20);
+      expect(tester.takeException(), isNull);
+    });
   }
 
   for (final tab in [0, 1, 2]) {
@@ -202,8 +228,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('2. Grading & Rubrics'));
     await tester.pumpAndSettle();
-    final dropdowns = tester.widgetList<DropdownButtonFormField<int?>>(
-      find.byType(DropdownButtonFormField<int?>),
+    final dropdowns = tester.widgetList<ShadSelect<int>>(
+      find.byType(ShadSelect<int>),
     ).toList();
     expect(dropdowns.map((field) => field.initialValue), [10, 20]);
     await tester.tap(find.text('Save Changes'));
@@ -244,12 +270,10 @@ void main() {
         ],
         rubrics: choices('panel', 10), peerRubrics: choices('peer', 20),
       );
-      final pickers = find.byType(DropdownButtonFormField<int?>);
-      final fields = tester.widgetList<DropdownButton<int?>>(
-        find.descendant(of: pickers, matching: find.byType(DropdownButton<int?>)),
-      ).toList();
-      expect(fields[0].items!.map((item) => item.value), [null, if (!creating) 10, 12]);
-      expect(fields[1].items!.map((item) => item.value), [null, if (!creating) 20, 22]);
+      final pickers = find.byType(ShadSelect<int>);
+      final fields = tester.widgetList<ShadSelect<int>>(pickers).toList();
+      expect(fields[0].options!.whereType<ShadOption<int>>().map((item) => item.value), [0, if (!creating) 10, 12]);
+      expect(fields[1].options!.whereType<ShadOption<int>>().map((item) => item.value), [0, if (!creating) 20, 22]);
       for (final entry in [(pickers.first, 'panel'), (pickers.last, 'peer')]) {
         await tester.ensureVisible(entry.$1);
         await tester.tap(entry.$1);
@@ -286,10 +310,11 @@ void main() {
 
   testWidgets('new event keeps access enabled before rubrics are attached', (tester) async {
     final scheduler = await openPeerSetup(tester);
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
-    expect(find.text('Enabled'), findsOneWidget);
+    expect(tester.widget<ShadSwitch>(find.byType(ShadSwitch)).value, isTrue);
     expect(find.text('Open by Default'), findsNothing);
-    expect(find.text('Enabled — students can grade their teammates after their scheduled defense finishes.'), findsOneWidget);
+    expect(find.text('Opens after all panelists submit evaluations.'), findsOneWidget);
+    expect(find.text('Select a peer rubric.'), findsOneWidget);
+    expect(find.text('Evaluation Guide'), findsNothing);
     expect(find.textContaining('submit peer rubrics'), findsNothing);
     await tester.tap(find.text('3. Deliverables'));
     await tester.pumpAndSettle();
@@ -301,22 +326,16 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('closed event badge and evaluation guide explain the actual policy', (tester) async {
+  testWidgets('peer access toggles without redundant badges or guide', (tester) async {
     await openPeerSetup(tester, config: {...sampleConfig, 'peer_grading_enabled': false});
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
-    expect(find.text('Closed'), findsWidgets);
-    expect(find.text('Open by Default'), findsNothing);
-    expect(find.text('Closed — students cannot grade their teammates for this event.'), findsOneWidget);
-    await tester.tap(find.byType(Switch));
+    expect(tester.widget<ShadSwitch>(find.byType(ShadSwitch)).value, isFalse);
+    expect(find.text('Opens after all panelists submit evaluations.'), findsNothing);
+    expect(find.text('Evaluation Guide'), findsNothing);
+    await tester.tap(find.byType(ShadSwitch));
     await tester.pumpAndSettle();
-    expect(find.text('Enabled'), findsOneWidget);
-    await tester.ensureVisible(find.text('Evaluation Guide'));
-    await tester.tap(find.text('Evaluation Guide'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Scheduling alone does not unlock peer grading.'), findsOneWidget);
-    expect(find.textContaining('peer rubric is attached later'), findsOneWidget);
-    await tester.tap(find.text('Got it'));
-    await tester.pumpAndSettle();
+    expect(tester.widget<ShadSwitch>(find.byType(ShadSwitch)).value, isTrue);
+    expect(find.text('Opens after all panelists submit evaluations.'), findsOneWidget);
+    expect(find.text('Enabled'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -354,10 +373,6 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Concept selection'));
       await tester.pumpAndSettle();
-      expect(
-        find.text('Instructor clearance before re-defense'),
-        findsOneWidget,
-      );
       expect(find.text('Peer scores on repeat attempts'), findsOneWidget);
       await tester.tap(find.text('3. Deliverables'));
       await tester.pumpAndSettle();
@@ -372,7 +387,7 @@ void main() {
       await tester.tap(find.text('Save Changes'));
       await tester.pumpAndSettle();
       expect(scheduler.saved?['year_level'], '1st Year');
-      expect(scheduler.saved?['concept_config'], {'required_count': 3, 'enabled': true});
+      expect(scheduler.saved?['concept_config'], {'required_count': 3, 'enabled': true, 'review_policy': 'always'});
       expect(
         (scheduler.saved?['deliverables'] as List).where((d) => d['file_policy']['mode'] == 'concepts'),
         hasLength(1),
@@ -411,8 +426,165 @@ void main() {
     expect(find.byType(ShadCard), findsWidgets);
   });
 
+  testWidgets('PIT overview preserves zero-weight peer configuration', (tester) async {
+    await openPeerSetup(tester, config: {
+      ...sampleConfig, 'panel_weight': 100, 'peer_weight': 0,
+      'peer_rubric_id': null, 'peer_grading_enabled': true,
+    }, tab: 0);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    final metadata = find.byKey(const ValueKey('pit-event-metadata-1'));
+    expect(tester.widgetList<Text>(find.descendant(of: metadata, matching: find.byType(Text)))
+      .map((text) => text.data), ['1 rubric attached', '2 pre-defense · 1 post-defense']);
+    expect(find.text('Peer Open'), findsNothing);
+    expect(find.text('Peer Closed'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('pit-event-requirements-1')));
+    await tester.pumpAndSettle();
+    final peer = tester.widgetList<SetupRubricCard>(find.byType(SetupRubricCard))
+      .singleWhere((card) => card.role == 'peer');
+    expect(peer.isRequired, isFalse);
+    expect(find.text('Not required for current grading settings'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final width in [320.0, 640.0, 1440.0]) {
+    for (final dark in [false, true]) {
+      testWidgets('PIT event requirements fit $width wide dark=$dark', (
+        tester,
+      ) async {
+        tester.view.physicalSize = Size(width, 1200);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.runAsync(() => loadPreviewFonts(force: true));
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              authProvider.overrideWith(_FakeAuth.new),
+              dashboardProvider('faculty').overrideWith(_FakeDashboard.new),
+              defenseSchedulerProvider.overrideWith(
+                () => _FakeScheduler(
+                  rubrics: [
+                    {'id': 10, 'name': 'Pitch evaluation'},
+                  ],
+                  peerRubrics: [
+                    {'id': 20, 'name': 'Team collaboration'},
+                  ],
+                  configs: [
+                    {
+                      ...sampleConfig,
+                      'event_name':
+                          'System Concept Pitching and Academic Innovation Showcase',
+                      'deliverables': [
+                        ...sampleConfig['deliverables'] as List,
+                        {
+                          'label': 'Archived event portfolio',
+                          'deliverable_type': 'vault',
+                          'required': true,
+                        },
+                      ],
+                    },
+                    {
+                      ...sampleConfig,
+                      'id': 2,
+                      'event_name': 'Prototype Exhibit',
+                      'is_locked': true,
+                      'lock_reason': 'This PIT event has recorded evaluations.',
+                      'peer_grading_enabled': false,
+                      'panel_rubric_id': null,
+                      'peer_rubric_id': null,
+                      'deliverables': [],
+                    },
+                  ],
+                ),
+              ),
+            ],
+            child: MaterialApp(
+              theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+              home: const Scaffold(body: PitEventsManagementScreen()),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('01'), findsOneWidget);
+        expect(find.text('02'), findsOneWidget);
+        expect(find.text('Active Showcase'), findsNothing);
+        expect(find.text('2 pre-defense · 2 post-defense'), findsOneWidget);
+        expect(find.text('Peer Closed'), findsOneWidget);
+        expect(find.byKey(const ValueKey('pit-event-menu-2')), findsNothing);
+        expect(find.text('View'), findsOneWidget);
+        expect(
+          find.text('This PIT event has recorded evaluations.'),
+          findsOneWidget,
+        );
+        expect(find.text('Panel: 80%'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byType(Scaffold),
+          'pit-event-directory-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+
+        final requirements = find.byKey(
+          const ValueKey('pit-event-requirements-1'),
+        );
+        await tester.ensureVisible(requirements);
+        await tester.tap(requirements);
+        await tester.pumpAndSettle();
+        expect(find.text('Concept Paper'), findsOneWidget);
+        expect(find.text('Archived event portfolio'), findsOneWidget);
+        expect(find.text('Panel evaluation'), findsOneWidget);
+        expect(find.text('Pitch evaluation'), findsOneWidget);
+        expect(find.text('Team collaboration'), findsOneWidget);
+        expect(find.text('PDF · Visible to panelists'), findsOneWidget);
+        expect(
+          tester
+              .widgetList<SetupRubricCard>(find.byType(SetupRubricCard))
+              .map((card) => card.role),
+          ['panel', 'peer'],
+        );
+        expect(find.byType(SetupRequirementGroup), findsNWidgets(2));
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('pit-event-card-1')),
+        );
+        await tester.pumpAndSettle();
+        await capturePreview(
+          tester,
+          find.byType(Scaffold),
+          'pit-event-directory-expanded-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+
+        await tester.ensureVisible(requirements);
+        await tester.tap(requirements);
+        await tester.pumpAndSettle();
+        expect(find.text('Concept Paper'), findsNothing);
+        final lockedRequirements = find.byKey(
+          const ValueKey('pit-event-requirements-2'),
+        );
+        await tester.ensureVisible(lockedRequirements);
+        await tester.tap(lockedRequirements);
+        await tester.pumpAndSettle();
+        expect(find.text('Rubric required'), findsNWidgets(2));
+        expect(find.text('No requirements configured'), findsNWidgets(2));
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.byKey(const ValueKey('pit-event-card-2')));
+        await tester.pumpAndSettle();
+        await capturePreview(tester, find.byType(Scaffold),
+          'pit-event-directory-missing-${width.toInt()}-${dark ? 'dark' : 'light'}', viewport: true);
+        expect(find.text('Table'), findsNothing);
+        expect(find.text('Events'), findsNothing);
+        expect(find.byType(ShadTabs<String>), findsNothing);
+        expect(find.byType(DataTable), findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
   testWidgets(
-    'PIT events use independent numbered rows and retain the table view',
+    'PIT events use independent cards without view tabs or a table',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1;
@@ -462,9 +634,10 @@ void main() {
       expect(find.text('1 / 2'), findsOneWidget);
       expect(find.text('PIT Event Lifecycle'), findsNothing);
 
-      // View Switcher Tabs
-      expect(find.text('Events'), findsOneWidget);
-      expect(find.text('Table'), findsOneWidget);
+      expect(find.text('Events'), findsNothing);
+      expect(find.text('Table'), findsNothing);
+      expect(find.byType(ShadTabs<String>), findsNothing);
+      expect(find.byType(DataTable), findsNothing);
       expect(find.text('01'), findsOneWidget);
       expect(find.text('02'), findsOneWidget);
       expect(find.text('Prototype Exhibit'), findsOneWidget);
@@ -472,16 +645,21 @@ void main() {
       // Event Showcase Card details
       expect(find.text('System Concept Pitching'), findsOneWidget);
       expect(find.text('system-concept-pitching'), findsNWidgets(2));
-      expect(find.text('Active Showcase'), findsNWidgets(2));
+      expect(find.text('Active Showcase'), findsNothing);
       expect(find.text('Peer Open'), findsNWidgets(2));
-      expect(find.text('Panel: 80%'), findsNWidgets(2));
-      expect(find.text('Peer: 20%'), findsNWidgets(2));
-      expect(find.text('Panel Rubric'), findsNWidgets(2));
-      expect(find.text('Peer Rubric'), findsNWidgets(2));
-      expect(
-        find.text('Deliverable Checklist (2 Pre, 1 Post)'),
-        findsNWidgets(2),
-      );
+      expect(find.text('Panel: 80%'), findsNothing);
+      expect(find.text('Peer: 20%'), findsNothing);
+      expect(find.text('Panel Rubric'), findsNothing);
+      expect(find.text('Peer Rubric'), findsNothing);
+      expect(find.text('2 rubrics attached'), findsOneWidget);
+      expect(find.text('1 rubric attached'), findsOneWidget);
+      expect(find.text('2 pre-defense · 1 post-defense'), findsNWidgets(2));
+      expect(find.text('View requirements'), findsNWidgets(2));
+      final firstMetadata = find.byKey(const ValueKey('pit-event-metadata-1'));
+      final tiles = find.descendant(of: firstMetadata, matching: find.byType(Text));
+      expect(tester.widgetList<Text>(tiles).map((text) => text.data), [
+        '2 rubrics attached', '2 pre-defense · 1 post-defense', 'Peer Open',
+      ]);
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('pit-event-rubric-status-1')),
@@ -496,13 +674,29 @@ void main() {
       await capturePreview(
         tester,
         find.byKey(const ValueKey('pit-event-setup-preview')),
-        'pit-event-setup-numbered',
+        'pit-event-setup-cards',
       );
       await tester.tap(find.text('Rubrics missing'));
       await tester.pumpAndSettle();
       expect(find.text('Attach panel evaluation rubric.'), findsOneWidget);
       await tester.tap(find.text('Prototype Exhibit'));
       await tester.pumpAndSettle();
+
+      final requirements = find.byKey(const ValueKey('pit-event-requirements-1'));
+      await tester.tap(requirements);
+      await tester.pumpAndSettle();
+      expect(find.text('Panel evaluation'), findsOneWidget);
+      expect(find.text('Peer evaluation'), findsOneWidget);
+      expect(find.text('Concept Paper'), findsOneWidget);
+      expect(find.text('Pitch Deck'), findsOneWidget);
+      expect(find.text('Post Reflection'), findsOneWidget);
+      expect(find.text('Required'), findsNWidgets(2));
+      expect(find.text('Optional'), findsOneWidget);
+      await capturePreview(tester, find.byKey(const ValueKey('pit-event-setup-preview')),
+        'pit-event-setup-expanded');
+      await tester.tap(requirements);
+      await tester.pumpAndSettle();
+      expect(find.text('Concept Paper'), findsNothing);
 
       final firstEventMenu = find.byKey(const ValueKey('pit-event-menu-1'));
       await tester.tap(firstEventMenu);
@@ -543,19 +737,6 @@ void main() {
       await tester.tap(find.text('Cancel').last);
       await tester.pumpAndSettle();
 
-      // Switch to Event Matrix
-      await tester.tap(find.text('Table'));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(DataTable), findsOneWidget);
-      expect(find.text('80% / 20%'), findsNWidgets(2));
-      expect(find.byIcon(LucideIcons.trash2), findsNothing);
-      await tester.ensureVisible(firstEventMenu);
-      await tester.pumpAndSettle();
-      await tester.tap(firstEventMenu);
-      await tester.pumpAndSettle();
-      expect(find.text('Edit event'), findsOneWidget);
-      expect(find.text('Delete event'), findsOneWidget);
     },
   );
 }

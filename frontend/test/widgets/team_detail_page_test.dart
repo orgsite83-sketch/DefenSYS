@@ -115,6 +115,8 @@ void main() {
     expect(find.text('Deliverables'), findsOneWidget);
     expect(find.text('Weekly Reports'), findsNothing);
     expect(find.text('Team Documents'), findsNothing);
+    expect(find.text('Elena Reyes'), findsOneWidget);
+    expect(find.text('View instructor details'), findsNothing);
   });
 
   testWidgets(
@@ -279,6 +281,7 @@ class _FakePitTeamDetailNotifier extends TeamDetailNotifier {
         'project_title': 'Smart Campus Navigator',
         'year_level': '3rd Year',
         'level': '3rd Year PIT',
+        'instructor_name': 'Elena Reyes',
         'status': 'Approved',
         'member_ids': [10, 11],
         'leader_id': 10,

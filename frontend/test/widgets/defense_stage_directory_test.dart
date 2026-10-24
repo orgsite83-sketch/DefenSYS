@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
+import 'package:defensys/widgets/setup/setup_requirement_panels.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/screens/web/admin/defense_stages/widgets/defense_stage_directory.dart';
@@ -146,6 +147,9 @@ void main() {
       expect(find.text('Proposal manuscript'), findsOneWidget);
       expect(find.text('Concept evaluation'), findsOneWidget);
       expect(find.text('Signed Minutes - Concept Proposal'), findsOneWidget);
+      expect(tester.widgetList<SetupRubricCard>(find.byType(SetupRubricCard))
+        .map((card) => card.role), ['panel', 'adviser', 'peer']);
+      expect(find.byType(SetupRequirementGroup), findsNWidgets(3));
       await tester.tap(find.byKey(const ValueKey('stage-requirements-1')));
       await tester.pumpAndSettle();
       expect(find.text('Proposal manuscript'), findsNothing);
@@ -214,7 +218,7 @@ void main() {
   for (final width in [420.0, 800.0, 1100.0, 1440.0]) {
     for (final dark in [false, true]) {
       testWidgets(
-        'sequence and table fit width $width in ${dark ? 'dark' : 'light'} theme',
+        'sequence fits width $width in ${dark ? 'dark' : 'light'} theme without view tabs',
         (tester) async {
           final longName = {
             ...stages.first,
@@ -228,11 +232,11 @@ void main() {
             state: DefenseStagesState(stages: [longName, stages[1]]),
           );
           expect(tester.takeException(), isNull);
-          await tester.tap(find.text('Table'));
-          await tester.pumpAndSettle();
-          expect(tester.takeException(), isNull);
-          await tester.tap(find.text('Sequence'));
-          await tester.pumpAndSettle();
+          expect(find.text('Table'), findsNothing);
+          expect(find.text('Sequence'), findsNothing);
+          expect(find.byType(ShadTabs<String>), findsNothing);
+          expect(find.byType(Table), findsNothing);
+          expect(find.text('Stage sequence'), findsOneWidget);
           await tester.tap(find.byKey(const ValueKey('stage-requirements-1')));
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);

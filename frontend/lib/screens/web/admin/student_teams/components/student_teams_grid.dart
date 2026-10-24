@@ -8,7 +8,7 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
 import 'package:defensys/widgets/table/table.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
-import 'package:defensys/widgets/pit/section_instructor_details.dart';
+import 'package:defensys/utils/section_instructors.dart';
 
 import 'student_teams_stage_summary.dart';
 import 'historical_team_dialog.dart';
@@ -646,50 +646,6 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                 color: DefensysUi.primaryMaroon,
                 size: 20,
               ),
-              subtitle: isPit
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 3),
-                      child: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8,
-                        children: [
-                          Text(
-                            instructors.isEmpty
-                                ? 'No instructor assigned'
-                                : 'Instructor: ${instructors.map((i) => i['faculty_name']).join(', ')}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _textSecondary,
-                            ),
-                          ),
-                          if (instructors.isNotEmpty)
-                            TextButton(
-                              key: ValueKey(
-                                'section-instructor-details-$section',
-                              ),
-                              onPressed: () => showSectionInstructorDetails(
-                                context,
-                                instructors,
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: DefensysTokens.maroonTextOf(
-                                  context,
-                                ),
-                                minimumSize: const Size(0, 32),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: const Text(
-                                'View details',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                            ),
-                        ],
-                      ),
-                    )
-                  : null,
               title: Wrap(
                 crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: 10,
@@ -754,7 +710,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                             .toList(),
                       ),
                     ),
-                if (systemName.isNotEmpty || managerName.isNotEmpty)
+                if (isPit || systemName.isNotEmpty || managerName.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                     child: Align(
@@ -763,6 +719,16 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                         spacing: 24,
                         runSpacing: 8,
                         children: [
+                          if (isPit)
+                            Text(
+                              instructors.isEmpty
+                                  ? 'Instructor: Unassigned'
+                                  : 'Instructor: ${instructors.map((i) => i['faculty_name']).join(', ')}',
+                              style: TextStyle(
+                                color: _textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
                           if (systemName.isNotEmpty)
                             Text(
                               'Shared system: $systemName',

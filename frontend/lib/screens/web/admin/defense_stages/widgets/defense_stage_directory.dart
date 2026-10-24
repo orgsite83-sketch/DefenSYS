@@ -6,6 +6,7 @@ import '../../../../../theme/defensys_tokens.dart';
 import '../../../../../widgets/feedback/defensys_skeleton.dart';
 import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../../../widgets/status_badge.dart';
+import '../../../../../widgets/setup/setup_requirement_panels.dart';
 
 bool stageSetupLocked(Map<String, dynamic> stage) =>
     stage['is_locked'] == true || stage['status'] == 'locked';
@@ -61,7 +62,7 @@ class DefenseStageDirectory extends StatefulWidget {
 }
 
 class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
-  bool _table = false, _refreshing = false, _adding = false;
+  bool _refreshing = false, _adding = false;
   final Set<Object> _expanded = {};
   bool get _busy =>
       widget.state.isSaving || widget.state.isLoading || _refreshing || _adding;
@@ -155,21 +156,18 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
                     else
                       const SizedBox.shrink()
                   else ...[
-                    _directoryHeader(compact),
+                    _directoryHeader(),
                     const SizedBox(height: 16),
-                    if (_table)
-                      _tableView()
-                    else
-                      for (var i = 0; i < widget.state.stages.length; i++) ...[
-                        _stageItemWithSpine(
-                          stage: widget.state.stages[i],
-                          index: i,
-                          isLast: i == widget.state.stages.length - 1,
-                          compact: compact,
-                        ),
-                        if (i < widget.state.stages.length - 1)
-                          _timelineConnectorSpacer(compact),
-                      ],
+                    for (var i = 0; i < widget.state.stages.length; i++) ...[
+                      _stageItemWithSpine(
+                        stage: widget.state.stages[i],
+                        index: i,
+                        isLast: i == widget.state.stages.length - 1,
+                        compact: compact,
+                      ),
+                      if (i < widget.state.stages.length - 1)
+                        _timelineConnectorSpacer(compact),
+                    ],
                   ],
                 ],
               ],
@@ -310,50 +308,24 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     ],
   );
 
-  Widget _directoryHeader(bool compact) {
-    final title = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Stage sequence',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: _ink,
-          ),
+  Widget _directoryHeader() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Stage sequence',
+        style: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+          color: _ink,
         ),
-        const SizedBox(height: 4),
-        Text(
-          'Setup readiness describes configuration. Team progress is tracked in Defense Operations.',
-          style: _small.copyWith(fontSize: 12),
-        ),
-      ],
-    );
-    final toggle = SizedBox(
-      width: 250,
-      child: ShadTabs<String>(
-        scrollable: true,
-        value: _table ? 'table' : 'sequence',
-        onChanged: (value) => setState(() => _table = value == 'table'),
-        tabs: const [
-          ShadTab(value: 'sequence', child: Text('Sequence')),
-          ShadTab(value: 'table', child: Text('Table')),
-        ],
       ),
-    );
-    return compact
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [title, const SizedBox(height: 12), toggle],
-          )
-        : Row(
-            children: [
-              Expanded(child: title),
-              const SizedBox(width: 20),
-              toggle,
-            ],
-          );
-  }
+      const SizedBox(height: 4),
+      Text(
+        'Setup readiness describes configuration. Team progress is tracked in Defense Operations.',
+        style: _small.copyWith(fontSize: 12),
+      ),
+    ],
+  );
 
   Widget _publication(Map<String, dynamic> stage) {
     final published = stagePublished(stage);
@@ -533,12 +505,11 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
               ),
             ),
           ),
-          if (cornerBadge != null)
-            Positioned(
-              top: -3,
-              right: -3,
-              child: cornerBadge,
-            ),
+          Positioned(
+            top: -3,
+            right: -3,
+            child: cornerBadge,
+          ),
         ],
       ),
     );
@@ -752,15 +723,6 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     ),
   );
 
-  Widget _metadata(IconData icon, String text) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(icon, size: 15, color: _muted),
-      const SizedBox(width: 7),
-      Flexible(child: Text(text, style: _small)),
-    ],
-  );
-
   Widget _actions(Map<String, dynamic> stage, int index) => Wrap(
     spacing: 6,
     runSpacing: 6,
@@ -825,7 +787,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
         ),
         const SizedBox(height: 10),
         for (final role in ['panel', 'adviser', 'peer'])
-          _rubricCard(
+          SetupRubricCard(
             role: role,
             name: info['${role}_rubric_name']?.toString(),
             isRequired: roles.contains(role),
@@ -885,15 +847,15 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
             ),
           )
         else ...[
-          _requirementGroup('Pre-defense requirements', pre),
+          SetupRequirementGroup(title: 'Pre-defense requirements', rows: pre),
           const SizedBox(height: 14),
-          _requirementGroup('Post-defense requirements', post),
+          SetupRequirementGroup(title: 'Post-defense requirements', rows: post),
         ],
         if (_rows(stage['system_deliverables']).isNotEmpty) ...[
           const SizedBox(height: 14),
-          _requirementGroup(
-            'Documenter requirements',
-            _rows(stage['system_deliverables']),
+          SetupRequirementGroup(
+            title: 'Documenter requirements',
+            rows: _rows(stage['system_deliverables']),
             system: true,
           ),
         ],
@@ -923,373 +885,6 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
                 Expanded(flex: 2, child: requirements),
               ],
             ),
-    );
-  }
-
-  Widget _rubricCard({
-    required String role,
-    required String? name,
-    required bool isRequired,
-    required bool isReady,
-  }) {
-    final hasRubric = name != null && name.trim().isNotEmpty;
-    final roleLabel = '${role[0].toUpperCase()}${role.substring(1)} evaluation';
-    final fallbackText = isRequired
-        ? 'Rubric required'
-        : (isReady
-            ? 'Not required for current grading settings'
-            : 'Not attached');
-
-    IconData roleIcon;
-    Color roleColor;
-    switch (role) {
-      case 'panel':
-        roleIcon = LucideIcons.graduationCap;
-        roleColor = DefensysTokens.maroonOf(context);
-        break;
-      case 'adviser':
-        roleIcon = LucideIcons.userCheck;
-        roleColor = const Color(0xFF0284C7);
-        break;
-      default:
-        roleIcon = LucideIcons.users;
-        roleColor = const Color(0xFF7C3AED);
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: roleColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(roleIcon, size: 16, color: roleColor),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  roleLabel,
-                  style: _small.copyWith(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: _muted,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  hasRubric ? name : fallbackText,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: hasRubric ? _ink : _muted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (hasRubric)
-            Icon(LucideIcons.check, size: 15, color: _success)
-          else if (isRequired)
-            ShadBadge.outline(
-              backgroundColor: _dark
-                  ? DefensysTokens.goldOf(context).withValues(alpha: 0.1)
-                  : const Color(0xFFFEF3C7),
-              foregroundColor: _warning,
-              child: const Text('Required'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _requirementGroup(
-    String title,
-    List<Map<String, dynamic>> rows, {
-    bool system = false,
-  }) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Row(
-        children: [
-          Icon(
-            system
-                ? LucideIcons.stamp
-                : (title.contains('Pre') ? LucideIcons.fileUp : LucideIcons.fileCheck),
-            size: 15,
-            color: _ink,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: _ink,
-              ),
-            ),
-          ),
-          if (rows.isNotEmpty) ...[
-            const SizedBox(width: 6),
-            ShadBadge.secondary(
-              child: Text('${rows.length}'),
-            ),
-          ],
-        ],
-      ),
-      const SizedBox(height: 8),
-      if (rows.isEmpty)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: _surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: _border),
-          ),
-          child: Text('No requirements configured', style: _small),
-        )
-      else
-        for (final row in rows)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      system ? LucideIcons.fileCheck : LucideIcons.fileText,
-                      size: 16,
-                      color: system ? DefensysTokens.maroonOf(context) : _muted,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        row['label']?.toString() ?? 'Deliverable',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: _ink,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ShadBadge.outline(
-                      backgroundColor: row['required'] == true
-                          ? (_dark
-                              ? DefensysTokens.maroonOf(context).withValues(alpha: 0.15)
-                              : const Color(0xFFFEE2E2))
-                          : null,
-                      foregroundColor: row['required'] == true
-                          ? DefensysTokens.maroonOf(context)
-                          : _muted,
-                      child: Text(
-                        row['required'] == true ? 'Required' : 'Optional',
-                      ),
-                    ),
-                  ],
-                ),
-                if (system) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Assigned documenter · All required signatures completed',
-                    style: _small.copyWith(fontSize: 12),
-                  ),
-                ] else if (_requirementMetadata(row).isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    _requirementMetadata(row),
-                    style: _small.copyWith(fontSize: 12),
-                  ),
-                ],
-                if ((row['archive_file_template'] ?? '').toString().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _fill,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: _border),
-                    ),
-                    child: Text(
-                      'Archive filename: ${row['archive_file_template']}',
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 11,
-                        color: _muted,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-    ],
-  );
-
-  String _requirementMetadata(Map<String, dynamic> row) => [
-    if (row['file_format'] != null && row['file_format'] != 'any')
-      row['file_format'].toString().toUpperCase(),
-    if (row['is_defense_material'] == true) 'Visible to panelists',
-    if (row['is_restricted'] == true) 'Private archive',
-  ].join(' · ');
-
-  Widget _tableView() => LayoutBuilder(
-    builder: (context, constraints) => SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SizedBox(
-        width: constraints.maxWidth < 1100 ? 1100 : constraints.maxWidth,
-        child: ShadCard(
-          width: double.infinity,
-          padding: EdgeInsets.zero,
-          backgroundColor: _surface,
-          child: Table(
-            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-            columnWidths: const {
-              0: FixedColumnWidth(64),
-              1: FlexColumnWidth(3),
-              2: FlexColumnWidth(2),
-              3: FlexColumnWidth(2),
-              4: FixedColumnWidth(225),
-            },
-            children: [
-              TableRow(
-                decoration: BoxDecoration(color: _fill),
-                children: [
-                  for (final label in [
-                    'Order',
-                    'Stage',
-                    'Requirements',
-                    'Setup status',
-                    'Actions',
-                  ])
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 14,
-                      ),
-                      child: Text(
-                        label,
-                        style: _small.copyWith(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              for (var i = 0; i < widget.state.stages.length; i++)
-                _tableRow(widget.state.stages[i], i),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-
-  TableRow _tableRow(Map<String, dynamic> stage, int index) {
-    final info = stage['rubric_info'] is Map ? stage['rubric_info'] as Map : {};
-    final pre = _rows(
-      stage['deliverables'],
-    ).where((d) => (d['deliverable_type'] ?? d['type']) == 'pre').length;
-    final post = _rows(stage['deliverables']).length - pre;
-    return TableRow(
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: _border)),
-      ),
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Text((index + 1).toString().padLeft(2, '0'), style: _small),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                stage['label']?.toString() ?? 'Stage',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: _ink,
-                ),
-              ),
-              const SizedBox(height: 6),
-              _publication(stage),
-              const SizedBox(height: 6),
-              Text(
-                index == 0
-                    ? 'First stage'
-                    : 'Requires ${stage['previous_stage_label'] ?? widget.state.stages[index - 1]['label']}',
-                style: _small.copyWith(fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${info['count'] ?? stage['rubrics_count'] ?? 0} rubrics attached',
-                style: _small,
-              ),
-              Text(
-                stage['is_presentation_only'] == true
-                    ? 'Presentation only'
-                    : '$pre pre-defense · $post post-defense',
-                style: _small.copyWith(fontSize: 12),
-              ),
-              if (_rows(stage['system_deliverables']).isNotEmpty)
-                Text(
-                  'Signed minutes required',
-                  style: _small.copyWith(fontSize: 12),
-                ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _readiness(stage),
-              if (stageSetupLocked(stage)) ...[
-                const SizedBox(height: 8),
-                _lockNotice(stage),
-              ],
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: _actions(stage, index),
-        ),
-      ],
     );
   }
 
