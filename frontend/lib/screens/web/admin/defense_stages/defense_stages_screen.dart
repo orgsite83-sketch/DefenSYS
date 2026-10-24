@@ -1918,9 +1918,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         child: SingleChildScrollView(
                           key: ValueKey('stage-dialog-step-$activeTab'),
                           padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-                          child: IndexedStack(
-                            index: activeTab,
-                            children: [
+                          child: <Widget>[
                               // TAB 0: Stage Identity & Pipeline Flow
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2054,9 +2052,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   Container(
                                     padding: const EdgeInsets.all(14),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
+                                      color: DefensysTokens.surfaceHigherOf(context),
                                       borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                      border: Border.all(color: DefensysTokens.borderOf(context)),
                                     ),
                                     child: PipelinePositionSelector(
                                       selectedPosition: selectedPosition,
@@ -2520,8 +2518,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   ],
                                 ],
                               ),
-                            ],
-                          ),
+                            ][activeTab],
                         ),
                       ),
 

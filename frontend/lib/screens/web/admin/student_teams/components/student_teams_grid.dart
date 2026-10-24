@@ -8,8 +8,10 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
 import 'package:defensys/widgets/table/table.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
+import 'package:defensys/widgets/pit/section_instructor_details.dart';
 
 import 'student_teams_stage_summary.dart';
+import 'historical_team_dialog.dart';
 
 int? _asInt(dynamic value) {
   if (value is int) return value;
@@ -226,8 +228,14 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
         .whereType<Map>()
         .where((s) => '${s['title'] ?? ''}'.trim().isNotEmpty);
     final names = systems
-        .map((s) =>
-            '${s['key'] == 'c1' ? 'A' : s['key'] == 'c2' ? 'B' : 'C'}. ${s['title']}')
+        .map(
+          (s) =>
+              '${s['key'] == 'c1'
+                  ? 'A'
+                  : s['key'] == 'c2'
+                  ? 'B'
+                  : 'C'}. ${s['title']}',
+        )
         .join('\n');
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -238,15 +246,32 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           borderRadius: BorderRadius.circular(8),
         ),
         child: ListTile(
-          leading: Icon(Icons.account_tree_outlined, size: 20,
-              color: DefensysTokens.maroonTextOf(context)),
-          title: Text('Shared system proposals · ${workflow['stage_label']}',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-          subtitle: Text(names.isEmpty ? 'No proposed system titles yet.' : names,
-              style: TextStyle(fontSize: 12, height: 1.6, color: _textSecondary)),
+          leading: Icon(
+            Icons.account_tree_outlined,
+            size: 20,
+            color: DefensysTokens.maroonTextOf(context),
+          ),
+          title: Text(
+            'Shared system proposals · ${workflow['stage_label']}',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            names.isEmpty ? 'No proposed system titles yet.' : names,
+            style: TextStyle(fontSize: 12, height: 1.6, color: _textSecondary),
+          ),
         ),
       ),
     );
+  }
+
+  void _openTeam(Map<String, dynamic> team) {
+    if (team['participation_id'] != null &&
+        team['term_status'] == 'historical') {
+      showHistoricalTeam(context, team);
+      return;
+    }
+    final id = _asInt(team['id']);
+    if (id != null) widget.onOpenTeamDetail(id);
   }
 
   Widget _buildTeamTitleCell(Map<String, dynamic> team, {required bool isPit}) {
@@ -275,6 +300,33 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           ),
         ),
         const SizedBox(height: 2),
+        if (team['capstone_phase'] == 'extended')
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: DefensysTokens.surfaceHigherOf(context),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                'Extended',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.maroonTextOf(context),
+                ),
+              ),
+            ),
+          ),
+        if (team['term_status'] == 'historical')
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 4),
+            child: Text(
+              '${team['display_semester']} · ${team['status']}',
+              style: TextStyle(fontSize: 11, color: _textSecondary),
+            ),
+          ),
         Tooltip(
           message: proposals
               .map((c) => '${c['key']}: ${c['title']}')
@@ -535,6 +587,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
             sectionTeams.first['system_name']?.toString().trim() ?? '';
         final managerName =
             sectionTeams.first['project_manager_name']?.toString().trim() ?? '';
+        final instructors = sectionInstructorsForTeam(sectionTeams.first);
         final sharedWorkflows = <int, Map>{};
         for (final team in sectionTeams) {
           final defense = team['defense_context'];
@@ -593,6 +646,50 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                 color: DefensysUi.primaryMaroon,
                 size: 20,
               ),
+              subtitle: isPit
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        children: [
+                          Text(
+                            instructors.isEmpty
+                                ? 'No instructor assigned'
+                                : 'Instructor: ${instructors.map((i) => i['faculty_name']).join(', ')}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _textSecondary,
+                            ),
+                          ),
+                          if (instructors.isNotEmpty)
+                            TextButton(
+                              key: ValueKey(
+                                'section-instructor-details-$section',
+                              ),
+                              onPressed: () => showSectionInstructorDetails(
+                                context,
+                                instructors,
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: DefensysTokens.maroonTextOf(
+                                  context,
+                                ),
+                                minimumSize: const Size(0, 32),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text(
+                                'View details',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                        ],
+                      ),
+                    )
+                  : null,
               title: Wrap(
                 crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: 10,
@@ -643,19 +740,20 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                   if (widget.sharedProposalNamesOnly)
                     _sharedProposalNames(entry.value)
                   else
-                  Consumer(
-                    builder: (context, ref, _) => SectionConceptOverview(
-                      key: ValueKey('section-system-${entry.key}'),
-                      projectId: entry.key,
-                      stageLabel: '${entry.value['stage_label']}',
-                      onChanged: () =>
-                          ref.read(studentTeamsProvider.notifier).fetchTeams(),
-                      systems: (entry.value['system_concepts'] as List? ?? [])
-                          .whereType<Map>()
-                          .map((s) => Map<String, dynamic>.from(s))
-                          .toList(),
+                    Consumer(
+                      builder: (context, ref, _) => SectionConceptOverview(
+                        key: ValueKey('section-system-${entry.key}'),
+                        projectId: entry.key,
+                        stageLabel: '${entry.value['stage_label']}',
+                        onChanged: () => ref
+                            .read(studentTeamsProvider.notifier)
+                            .fetchTeams(),
+                        systems: (entry.value['system_concepts'] as List? ?? [])
+                            .whereType<Map>()
+                            .map((s) => Map<String, dynamic>.from(s))
+                            .toList(),
+                      ),
                     ),
-                  ),
                 if (systemName.isNotEmpty || managerName.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -936,7 +1034,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                         rowMinHeight: DefensysTableTokens.rowHeightMultiline,
                         onRowTap: (team) {
                           final teamId = _asInt(team['id']);
-                          if (teamId != null) widget.onOpenTeamDetail(teamId);
+                          if (teamId != null) _openTeam(team);
                         },
                         emptyState: const Padding(
                           padding: EdgeInsets.symmetric(
@@ -996,8 +1094,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                     InkWell(
                                       onTap: teamId == null
                                           ? null
-                                          : () =>
-                                                widget.onOpenTeamDetail(teamId),
+                                          : () => _openTeam(team),
                                       borderRadius: BorderRadius.circular(4),
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(
@@ -1073,7 +1170,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                               return TextButton.icon(
                                 onPressed: teamId == null
                                     ? null
-                                    : () => widget.onOpenTeamDetail(teamId),
+                                    : () => _openTeam(team),
                                 icon: const Icon(
                                   Icons.arrow_forward_rounded,
                                   size: 15,

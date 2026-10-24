@@ -123,11 +123,13 @@ class StudentTeamsHeaderActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (onRoster != null) {
-      return OutlinedButton.icon(
-        onPressed: canTapActions ? onRoster : null,
-        style: DefensysButtonStyles.secondary(context),
-        icon: const Icon(Icons.groups_outlined, size: 16),
-        label: const Text('Team roster'),
+      return DefensysShadcnScope(
+        child: ShadButton.outline(
+          enabled: canTapActions,
+          onPressed: onRoster,
+          leading: const Icon(LucideIcons.users, size: 16),
+          child: const Text('Team roster'),
+        ),
       );
     }
     if (isPitInstructor) {

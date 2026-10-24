@@ -92,6 +92,8 @@ class GeneralRepeatFilesTests(APITestCase):
             file_policy={'mode': 'multiple', 'min_files': 1, 'max_files': 3})
         StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='GENERAL', label='General form',
             required=True, file_policy={'mode': 'single'})
+        from student_teams.capstone_lifecycle import capture_participation, configured_requirements
+        capture_participation(self.capstone_team, requirements=configured_requirements())
         for identifier in ('MATERIAL', 'GENERAL'):
             submission = DeliverableSubmission.objects.create(team=self.capstone_team, stage_label=self.stage.label,
                 deliverable_id=identifier, label=identifier, required=True, deliverable_type='pre', status='accepted',
@@ -155,6 +157,8 @@ class GeneralRepeatFilesTests(APITestCase):
     def test_new_endorsement_also_closes_an_earlier_optional_correction_request(self):
         self.material.required = False
         self.material.save(update_fields=['required'])
+        from student_teams.capstone_lifecycle import capture_participation, configured_requirements
+        capture_participation(self.capstone_team, requirements=configured_requirements())
         upsert_submission(self.capstone_team, self.stage.label, 'MATERIAL', 'optional.pdf', '10 B', self.student,
             file=SimpleUploadedFile('optional.pdf', b'optional evidence'))
         review_submission(self.capstone_team, self.stage.label, 'MATERIAL', 'rejected', 'Clarify this optional attachment.', self.adviser)

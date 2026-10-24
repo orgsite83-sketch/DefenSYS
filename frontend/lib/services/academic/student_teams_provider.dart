@@ -136,6 +136,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
   static String get baseUrl => ApiConfig.teamsUrl;
   int _previewRequestRevision = 0;
   int _fetchVersion = 0;
+  String _listScope = 'active';
 
   @override
   StudentTeamsState build() {
@@ -157,6 +158,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? successMessage,
   }) async {
     final version = ++_fetchVersion;
+    _listScope = scope ?? _listScope;
     final nextWorkspace = workspace ?? state.workspace;
     if (nextWorkspace != state.workspace) {
       state = StudentTeamsState(workspace: nextWorkspace);
@@ -199,7 +201,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
           if (nextLevel.isNotEmpty) 'level': nextLevel,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
-          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          'scope': _listScope,
           if (nextYearLevel != null && nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
           if (nextSection != null && nextSection.isNotEmpty) 'section': nextSection,
           if (nextEventName != null && nextEventName.isNotEmpty) 'event_name': nextEventName,

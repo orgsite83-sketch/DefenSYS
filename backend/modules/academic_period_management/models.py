@@ -99,6 +99,9 @@ class Semester(models.Model):
 
 
 class SemesterTransitionLog(models.Model):
+    operation = models.CharField(max_length=12, default='activation', choices=[('activation', 'Activation'), ('returning', 'Returning teams')])
+    request_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    preview_revision = models.CharField(max_length=64, blank=True)
     from_semester = models.ForeignKey(
         Semester,
         related_name='transition_logs_from',

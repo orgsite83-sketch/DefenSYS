@@ -121,6 +121,14 @@ List<int> generateOfficialTeamRosterExcelBytes({
     required String text,
     HorizontalAlign align = HorizontalAlign.Left,
   }) {
+    final mergeBlock = col == 1 || col == 7;
+    if (mergeBlock) {
+      // Merging removes the covered cells, so apply perimeter styles afterward.
+      sheet.merge(
+        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: startRow),
+        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: endRow),
+      );
+    }
     for (var r = startRow; r <= endRow; r++) {
       final cellStyle = CellStyle(
         bold: false,
@@ -132,13 +140,14 @@ List<int> generateOfficialTeamRosterExcelBytes({
         topBorder: r == startRow ? thinBorder : noBorder,
         bottomBorder: r == endRow ? thinBorder : noBorder,
       );
-      setCell(col, r, r == startRow ? text : '', cellStyle);
-    }
-    if (col == 1 || col == 7) {
-      sheet.merge(
-        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: startRow),
-        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: endRow),
+      final cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: r),
       );
+      // Values written inside a merge are redirected to its first cell.
+      if (r == startRow || !mergeBlock) {
+        cell.value = TextCellValue(r == startRow ? text : '');
+      }
+      cell.cellStyle = cellStyle;
     }
   }
 

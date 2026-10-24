@@ -17,6 +17,9 @@ from student_teams.concept_policy import resolve_policy, initial_concepts
 def stage_for(team, label):
     from defense.stages.models import DefenseStage
     if team.is_capstone:
+        requirement = getattr(team, '_capstone_requirement', None)
+        if requirement:
+            return DefenseStage.objects.filter(pk=requirement['id']).first()
         return DefenseStage.objects.filter(label=label).first()
     from defense.scheduler.event_scope import pit_events_for_team
     return pit_events_for_team(team).filter(event_name__iexact=label).first()

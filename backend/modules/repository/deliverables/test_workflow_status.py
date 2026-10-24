@@ -7,7 +7,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from academic_period_management.models import Semester
+from academic_period_management.models import SchoolYear, Semester
 from defense.scheduler.models import DefenseSchedule, PitEventDeliverable, PitEventGradingConfig, SchedulePanelist
 from defense.scheduler.progress import schedule_progress
 from defense.stages.models import StageDeliverable
@@ -61,6 +61,8 @@ class DeliverableWorkflowStatusTests(APITestCase):
         schedule = self.schedule()
         StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='FINAL',
             label='Final paper', deliverable_type='post', required=True)
+        from student_teams.capstone_lifecycle import capture_participation, configured_requirements
+        capture_participation(self.team, requirements=configured_requirements())
         grade = self.grade(schedule, panel_score=80)
         for verdict in TeamGrade.PASSING_VERDICTS:
             with self.subTest(verdict=verdict):
@@ -80,6 +82,43 @@ class DeliverableWorkflowStatusTests(APITestCase):
                 grade.verdict = verdict
                 grade.save(update_fields=['verdict'])
                 self.assertFalse(post_defense_ready(self.team, self.stage.label))
+
+    def test_prior_term_clearance_uses_its_defense_context_after_normal_rollover(self):
+        from student_teams.capstone_lifecycle import capture_participation
+        from student_teams.models import TeamStageProgress
+        from .models import DeliverableSubmission
+        from .services import latest_stage_grade, review_submission
+        StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='LATE-FINAL',
+            label='Final paper', deliverable_type='post', required=True)
+        schedule = self.schedule()
+        grade = self.grade(schedule, panel_score=80, adviser_score=80, peer_score=80,
+            verdict='approved', status=TeamGrade.STATUS_PUBLISHED)
+        self.assertTrue(post_defense_ready(self.team, self.stage.label))
+        source = capture_participation(self.team)
+        original_title, original_year = self.team.project_title, self.team.year_level
+        year = SchoolYear.objects.create(label='2035-2036')
+        target = Semester.objects.create(school_year=year, label=Semester.FIRST)
+        # The transition service is covered separately; exercise a moved team
+        # against the original hearing and immutable source participation.
+        StudentTeam.objects.filter(pk=self.team.pk).update(semester=target,
+            year_level='4th Year', project_title='Current working title',
+            current_defense_stage='Next checkpoint')
+        self.team.refresh_from_db()
+        self.assertEqual(latest_stage_grade(self.team, self.stage.label).pk, grade.pk)
+        self.assertTrue(post_defense_ready(self.team, self.stage.label))
+        submission = DeliverableSubmission.objects.create(team=self.team,
+            stage_label=self.stage.label, deliverable_id='LATE-FINAL',
+            label='Final paper', deliverable_type='post', file_name='final.pdf',
+            file='test-evidence/final.pdf', extracted_text='Final evidence')
+        self.assertEqual(submission.archive_semester_id, source.semester_id)
+        self.assertEqual(submission.archive_project_title, original_title)
+        self.assertEqual(submission.archive_year_level, original_year)
+        review_submission(self.team, self.stage.label, 'LATE-FINAL', 'accepted', '', self.admin)
+        self.assertEqual(TeamStageProgress.objects.get(team=self.team, semester=self.semester,
+            defense_stage=self.stage).status, 'passed')
+        self.team.refresh_from_db()
+        self.assertEqual(self.team.semester_id, target.pk)
+        self.assertEqual(self.team.current_defense_stage, 'Next checkpoint')
 
     def test_every_assigned_panelist_must_submit_a_complete_evaluation(self):
         schedule = self.schedule()
@@ -150,6 +189,8 @@ class DeliverableWorkflowStatusTests(APITestCase):
         schedule = self.schedule()
         StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='FINAL',
             label='Final paper', deliverable_type='post', required=True)
+        from student_teams.capstone_lifecycle import capture_participation, configured_requirements
+        capture_participation(self.team, requirements=configured_requirements())
         self.grade(schedule, panel_score=80, peer_score=80, adviser_score=80,
             verdict='approved', status=TeamGrade.STATUS_PUBLISHED)
         payload = stage_payload(self.team, self.stage.label)

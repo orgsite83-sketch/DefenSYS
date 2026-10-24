@@ -93,6 +93,9 @@ class GradeCenterApiTests(APITestCase):
             label=Semester.FIRST,
         )
         self.stage = DefenseStage.objects.get(label='Project Proposal')
+        # These fixtures exercise one stage. Cross-stage official clearance is
+        # covered by the lifecycle/progression integration fixtures.
+        DefenseStage.objects.filter(display_order__lt=self.stage.display_order).update(is_active=False)
         self.capstone_team = StudentTeam.objects.create(
             name='Team VaultSync',
             project_title='Cloud File Sync',

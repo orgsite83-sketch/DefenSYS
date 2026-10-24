@@ -690,6 +690,9 @@ class StageGradingConfigApiTests(APITestCase):
             display_order=5,
             is_presentation_only=True,
         )
+        for previous in DefenseStage.objects.filter(is_active=True, display_order__lt=stage.display_order):
+            previous.is_presentation_only = True
+            previous.save()
 
         student = User.objects.create_user(
             username='student-innovator',
@@ -713,6 +716,9 @@ class StageGradingConfigApiTests(APITestCase):
         for previous in DefenseStage.objects.filter(is_active=True, display_order__lt=stage.display_order):
             TeamStageProgress.objects.create(team=team, semester=self.semester,
                 defense_stage=previous, status=TeamStageProgress.STATUS_PASSED)
+            from grading.grades.models import TeamGrade
+            TeamGrade.objects.create(team=team, semester=self.semester, defense_stage=previous, scope='capstone',
+                status='published', verdict='approved', panel_score=85, adviser_score=85, peer_score=85)
 
         # Endorsement should succeed with 0 deliverables
         endorsed_team = endorse_team(team, stage.label)

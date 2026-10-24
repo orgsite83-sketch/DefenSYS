@@ -10,10 +10,7 @@ class RosterWorkspaceView(ReadAPIView):
     permission_classes = [CanFormTeams]
 
     def get(self, request):
-        result = service.context(request.user, request.query_params)
-        term, year, section, _ = service.scope(request.user, request.query_params)
-        result['fingerprint'] = service.fingerprint(term, year, section)
-        return Response(result)
+        return Response(service.context(request.user, request.query_params))
 
 
 class RosterPreviewView(APIView):

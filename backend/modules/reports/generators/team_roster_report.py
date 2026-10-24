@@ -38,6 +38,7 @@ def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=Non
         "Project Leader",
         "Project Adviser",
         "Registered Members",
+        "Academic Period",
     ]
 
     rows = []
@@ -52,6 +53,11 @@ def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=Non
             if mship.student:
                 members.append(mship.student.get_full_name() or mship.student.username)
         members_str = ", ".join(members) if members else "No members"
+        if hasattr(team, '_recorded_term'):
+            frozen = team._recorded_term.snapshot
+            leader_name = frozen.get('leader_name') or 'Unassigned'
+            adviser_name = frozen.get('adviser_name') or 'Unassigned'
+            members_str = ', '.join(member.get('name') or member.get('username') or '' for member in frozen.get('members', [])) or 'No members'
 
         rows.append([
             team_info,
@@ -60,13 +66,14 @@ def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=Non
             leader_name,
             adviser_name,
             members_str,
+            team.semester.display_name,
         ])
 
     builder.add_table(
         headers=headers,
         rows=rows,
-        col_widths=[builder.usable_width * ratio for ratio in (.23, .10, .12, .14, .14, .27)],
-        alignments=['left', 'center', 'center', 'left', 'left', 'left'],
+        col_widths=[builder.usable_width * ratio for ratio in (.20, .08, .10, .12, .12, .24, .14)],
+        alignments=['left', 'center', 'center', 'left', 'left', 'left', 'left'],
         repeat_headers=True,
         bold_cols=[],
     )

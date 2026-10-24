@@ -1276,6 +1276,11 @@ class GradeContextService:
     def get_or_create_for_schedule(schedule, *, repair_placeholders=True):
         # Serialize attempt replacement with recovery and verdict changes.
         StudentTeam.objects.select_for_update().get(pk=schedule.team_id)
+        from student_teams.models import TeamTermParticipation
+        if schedule.scope == 'capstone' and TeamTermParticipation.objects.filter(
+                team_id=schedule.team_id, semester_id=schedule.semester_id, closed_at__isnull=False).exists():
+            grade, _identity = _lookup_grade_for_schedule(schedule, schedule.stage_label)
+            return grade, False, False
         from repository.deliverables.concepts import bind_schedule
         bind_schedule(schedule)
         stage_label = schedule.stage_label or 'Defense'
@@ -1381,6 +1386,12 @@ class GradeContextService:
             from defense.stages.models import DefenseStage
 
             defense_stage = DefenseStage.objects.filter(label=stage_label).first()
+            if defense_stage:
+                from student_teams.capstone_lifecycle import latest_stage_assessment, requirement_for_label, stage_cleared
+                prior = latest_stage_assessment(team, defense_stage.pk)
+                requirement = requirement_for_label(team, stage_label)
+                if prior and prior.semester_id != team.semester_id and requirement and stage_cleared(team, requirement, prior):
+                    return None, False
         lookup = {
             'team': team,
             'semester': team.semester,

@@ -114,6 +114,8 @@ class ConfiguredOutcomeTests(APITestCase):
         from repository.deliverables.services import endorse_team
         from student_teams.services import is_stage_ready, was_stage_endorsed
         StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='P3PRE', label='Manuscript', required=True)
+        from student_teams.capstone_lifecycle import capture_participation, configured_requirements
+        capture_participation(self.capstone_team, requirements=configured_requirements())
         DeliverableSubmission.objects.create(team=self.capstone_team, stage_label=self.stage.label,
             deliverable_id='P3PRE', label='Manuscript', deliverable_type='pre', file_name='manuscript.pdf', status='accepted')
         self.submit(6)

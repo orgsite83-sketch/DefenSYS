@@ -4,7 +4,7 @@ from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from defensys_backend.read_projection import ReadAPIView as APIView
 
 from user_management.permissions import IsSystemAdmin
 
@@ -16,6 +16,7 @@ from .serializers import (
     SchoolYearUpdateSerializer,
     SemesterCreateSerializer,
     SemesterSerializer,
+    SemesterActivationSerializer,
 )
 from .services import build_semester_transition_preview, switch_active_semester, active_semester
 
@@ -139,7 +140,9 @@ class SemesterStatusView(APIView):
                 raise ValidationError({
                     'is_active': 'Choose another semester to activate instead of deactivating the active semester directly.',
                 })
-            switch_active_semester(semester, request.user)
+            activation = SemesterActivationSerializer(data=request.data)
+            activation.is_valid(raise_exception=True)
+            switch_active_semester(semester, request.user, **activation.validated_data)
             semester.refresh_from_db()
             return Response({
                 'semester': semester_payload(
@@ -240,14 +243,12 @@ class SemesterActivateView(APIView):
 
     def post(self, request, semester_id):
         semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
-        force = request.data.get('force', False)
-        if isinstance(force, str):
-            force = force.lower() in ['1', 'true', 'yes', 'on']
+        activation = SemesterActivationSerializer(data=request.data)
+        activation.is_valid(raise_exception=True)
         preview, log = switch_active_semester(
             semester,
             request.user,
-            force=bool(force),
-            reason=request.data.get('reason', ''),
+            **activation.validated_data,
         )
         semester.refresh_from_db()
         return Response({
@@ -259,3 +260,25 @@ class SemesterActivateView(APIView):
             'transition_preview': preview,
             'transition_log_id': log.id if log else None,
         })
+
+
+class ReturningTeamsView(APIView):
+    permission_classes = [IsAuthenticated, IsSystemAdmin]
+
+    def get(self, request, semester_id):
+        from student_teams.capstone_lifecycle import build_capstone_review, returning_source
+        target = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id, is_active=True)
+        review = build_capstone_review(returning_source(target), target, late=True)
+        return Response({'capstone_review': review, 'preview_revision': review['revision'],
+                         'target_semester': SemesterSerializer(target).data,
+                         'issues': [], 'blocking_reasons': [], 'can_switch': True, 'late': True})
+
+    def post(self, request, semester_id):
+        from student_teams.capstone_lifecycle import confirm_returning_teams
+        target = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
+        serializer = SemesterActivationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        applied = confirm_returning_teams(target, actor=request.user, decisions=data['decisions'],
+            preview_revision=data['preview_revision'], reason=data['reason'], request_id=data.get('request_id'))
+        return Response({'applied_team_ids': applied, 'active_semester': active_semester_payload()})

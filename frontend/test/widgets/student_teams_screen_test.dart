@@ -41,7 +41,9 @@ class _FakeStudentTeamsNotifier extends StudentTeamsNotifier {
 
   @override
   Future<Map<String, dynamic>> fetchSectionDetails(int teamId) async => {
-    'section': initial.teams.firstWhere((team) => team['id'] == teamId)['section'],
+    'section': initial.teams.firstWhere(
+      (team) => team['id'] == teamId,
+    )['section'],
     'year_level': '4th Year',
     'semester_label': '1st Semester 2026-2027',
     'system_name': '',
@@ -55,9 +57,7 @@ class _FakeAdminDashboardNotifier extends DashboardNotifier {
 
   @override
   DashboardState build() {
-    return DashboardState(
-      data: {'active_semester': '2026-2027'},
-    );
+    return DashboardState(data: {'active_semester': '2026-2027'});
   }
 
   @override
@@ -72,10 +72,7 @@ class _FakeFacultyPitLeadDashboardNotifier extends DashboardNotifier {
     return DashboardState(
       data: {
         'pit_lead_year': '3rd Year',
-        'roles': {
-          'pit_lead': true,
-          'pit_lead_year': '3rd Year',
-        },
+        'roles': {'pit_lead': true, 'pit_lead_year': '3rd Year'},
       },
     );
   }
@@ -154,15 +151,33 @@ void main() {
   });
 
   testWidgets('team toolbar opens centralized section editing', (tester) async {
-    await pumpTeamsScreen(tester, mode: TeamListMode.capstoneAdmin, overrides: [
-      studentTeamsProvider.overrideWith(() => _FakeStudentTeamsNotifier(
-        const StudentTeamsState(level: 'Capstone', teams: [
-          {'id': 1, 'section': 'BSIT-4A', 'level': 'Capstone', 'is_editable': true},
-        ]),
-      )),
-      dashboardProvider('admin').overrideWith(_FakeAdminDashboardNotifier.new),
-      dashboardProvider('faculty').overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
-    ]);
+    await pumpTeamsScreen(
+      tester,
+      mode: TeamListMode.capstoneAdmin,
+      overrides: [
+        studentTeamsProvider.overrideWith(
+          () => _FakeStudentTeamsNotifier(
+            const StudentTeamsState(
+              level: 'Capstone',
+              teams: [
+                {
+                  'id': 1,
+                  'section': 'BSIT-4A',
+                  'level': 'Capstone',
+                  'is_editable': true,
+                },
+              ],
+            ),
+          ),
+        ),
+        dashboardProvider(
+          'admin',
+        ).overrideWith(_FakeAdminDashboardNotifier.new),
+        dashboardProvider(
+          'faculty',
+        ).overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
+      ],
+    );
     expect(find.text('Edit section'), findsNothing);
     await tester.tap(find.byKey(const Key('manage-sections')));
     await tester.pumpAndSettle();
@@ -173,17 +188,39 @@ void main() {
   });
 
   for (final audit in [false, true]) {
-    testWidgets('section management is disabled ${audit ? 'in PIT audit mode' : 'during save'}', (tester) async {
-      await pumpTeamsScreen(tester, mode: TeamListMode.pitLead, overrides: [
-        studentTeamsProvider.overrideWith(() => _FakeStudentTeamsNotifier(
-          StudentTeamsState(level: 'PIT', isSaving: !audit, operatingMode: audit ? 'audit' : 'active'),
-        )),
-        dashboardProvider('faculty').overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
-        dashboardProvider('admin').overrideWith(_FakeAdminDashboardNotifier.new),
-      ]);
-      expect(tester.widget<ShadButton>(find.byKey(const Key('manage-sections'))).enabled, isFalse);
-      expect(tester.takeException(), isNull);
-    });
+    testWidgets(
+      'section management is disabled ${audit ? 'in PIT audit mode' : 'during save'}',
+      (tester) async {
+        await pumpTeamsScreen(
+          tester,
+          mode: TeamListMode.pitLead,
+          overrides: [
+            studentTeamsProvider.overrideWith(
+              () => _FakeStudentTeamsNotifier(
+                StudentTeamsState(
+                  level: 'PIT',
+                  isSaving: !audit,
+                  operatingMode: audit ? 'audit' : 'active',
+                ),
+              ),
+            ),
+            dashboardProvider(
+              'faculty',
+            ).overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
+            dashboardProvider(
+              'admin',
+            ).overrideWith(_FakeAdminDashboardNotifier.new),
+          ],
+        );
+        expect(
+          tester
+              .widget<ShadButton>(find.byKey(const Key('manage-sections')))
+              .enabled,
+          isFalse,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
 
   testWidgets('current stage progress takes precedence over team result', (
@@ -293,7 +330,9 @@ void main() {
             ),
           ),
         ),
-        dashboardProvider('admin').overrideWith(_FakeAdminDashboardNotifier.new),
+        dashboardProvider(
+          'admin',
+        ).overrideWith(_FakeAdminDashboardNotifier.new),
       ],
     );
 
@@ -328,10 +367,12 @@ void main() {
             ),
           ),
         ),
-        dashboardProvider('faculty').overrideWith(
-          _FakeFacultyPitLeadDashboardNotifier.new,
-        ),
-        dashboardProvider('admin').overrideWith(_FakeAdminDashboardNotifier.new),
+        dashboardProvider(
+          'faculty',
+        ).overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
+        dashboardProvider(
+          'admin',
+        ).overrideWith(_FakeAdminDashboardNotifier.new),
       ],
     );
 
@@ -348,38 +389,37 @@ void main() {
     expect(find.text('PIT EVENT'), findsOneWidget);
   });
 
-  testWidgets(
-    'PIT lead mode opens create flow even when capstone window is closed',
-    (tester) async {
-      await pumpTeamsScreen(
-        tester,
-        mode: TeamListMode.pitLead,
-        overrides: [
-          studentTeamsProvider.overrideWith(
-            () => _FakeStudentTeamsNotifier(
-              const StudentTeamsState(
-                canCreateCapstoneTeams: false,
-                capstoneModeMessage:
-                    'Capstone team creation is not open for this term.',
-              ),
+  testWidgets('PIT lead retains roster access when capstone window is closed', (
+    tester,
+  ) async {
+    await pumpTeamsScreen(
+      tester,
+      mode: TeamListMode.pitLead,
+      overrides: [
+        studentTeamsProvider.overrideWith(
+          () => _FakeStudentTeamsNotifier(
+            const StudentTeamsState(
+              canCreateCapstoneTeams: false,
+              capstoneModeMessage:
+                  'Capstone team creation is not open for this term.',
             ),
           ),
-          dashboardProvider('faculty').overrideWith(
-            _FakeFacultyPitLeadDashboardNotifier.new,
-          ),
-          dashboardProvider('admin').overrideWith(
-            _FakeAdminDashboardNotifier.new,
-          ),
-        ],
-      );
+        ),
+        dashboardProvider(
+          'faculty',
+        ).overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
+        dashboardProvider(
+          'admin',
+        ).overrideWith(_FakeAdminDashboardNotifier.new),
+      ],
+    );
 
-      await tester.tap(find.text('Create New Team'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Capstone team creation closed'), findsNothing);
-      expect(find.text('Create New Team'), findsWidgets);
-    },
-  );
+    expect(find.text('Capstone team creation closed'), findsNothing);
+    final roster = find.widgetWithText(ShadButton, 'Team roster');
+    expect(roster, findsOneWidget);
+    expect(tester.widget<ShadButton>(roster).enabled, isTrue);
+    expect(find.text('Import teams'), findsNothing);
+  });
 
   testWidgets(
     'Admin in PIT mode displays Year Level and PIT Event dropdown filters and event badge',
@@ -414,7 +454,9 @@ void main() {
                     'section': 'CS-1A',
                     'leader_id': 1,
                     'leader_name': 'Juan Cruz',
-                    'members': [{'id': 1, 'name': 'Juan Cruz', 'is_enrolled': true}],
+                    'members': [
+                      {'id': 1, 'name': 'Juan Cruz', 'is_enrolled': true},
+                    ],
                     'member_count': 1,
                     'pit_event_name': '1st Year Concept Pitch',
                     'current_defense_stage': '1st Year Concept Pitch',
@@ -424,12 +466,12 @@ void main() {
               ),
             ),
           ),
-          dashboardProvider('faculty').overrideWith(
-            _FakeFacultyPitLeadDashboardNotifier.new,
-          ),
-          dashboardProvider('admin').overrideWith(
-            _FakeAdminDashboardNotifier.new,
-          ),
+          dashboardProvider(
+            'faculty',
+          ).overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
+          dashboardProvider(
+            'admin',
+          ).overrideWith(_FakeAdminDashboardNotifier.new),
         ],
       );
 
@@ -488,12 +530,12 @@ void main() {
               ),
             ),
           ),
-          dashboardProvider('faculty').overrideWith(
-            _FakeFacultyPitLeadDashboardNotifier.new,
-          ),
-          dashboardProvider('admin').overrideWith(
-            _FakeAdminDashboardNotifier.new,
-          ),
+          dashboardProvider(
+            'faculty',
+          ).overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
+          dashboardProvider(
+            'admin',
+          ).overrideWith(_FakeAdminDashboardNotifier.new),
         ],
       );
 

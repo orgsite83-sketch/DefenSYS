@@ -26,7 +26,9 @@ def _key(value):
         # an earlier projection. Reading deferred fields here would issue SQL.
         fields = tuple((field.attname, _key(value.__dict__[field.attname]))
                        for field in value._meta.concrete_fields if field.attname in value.__dict__)
-        return (value._meta.label_lower, value._state.db, value.pk, fields)
+        return (value._meta.label_lower, value._state.db, value.pk, fields,
+                _key(value.__dict__.get('_projection_context')),
+                value.__dict__.get('_assessment_semester_id'))
     if isinstance(value, dict):
         return tuple(sorted((key, _key(item)) for key, item in value.items()))
     if isinstance(value, (list, tuple)):

@@ -59,6 +59,32 @@ class SectionEditorTests(APITestCase):
         self.assertEqual(response.data['system_name'], 'Original system')
         self.assertEqual({student['id'] for student in response.data['students']}, {s.pk for s in self.students})
 
+    def test_section_instructor_details_and_management_options_are_scoped(self):
+        self.instructor.email = 'instructor@school.edu'
+        self.instructor.save(update_fields=['email'])
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['student_count'], 3)
+        self.assertTrue(response.data['can_manage_instructors'])
+        self.assertEqual(response.data['instructors'][0]['id'], self.instructor_assignment.pk)
+        self.assertEqual(response.data['instructors'][0]['faculty_email'], 'instructor@school.edu')
+        self.assertIn(self.instructor.pk, {f['id'] for f in response.data['instructor_options']})
+        self.client.force_authenticate(self.instructor)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['can_manage_instructors'])
+        self.assertEqual(response.data['instructor_options'], [])
+        self.assertEqual(response.data['instructors'][0]['faculty_id'], self.instructor.pk)
+
+    def test_instructor_details_exclude_inactive_and_other_term_assignments(self):
+        SectionInstructorAssignment.objects.create(faculty=self.lead, semester=self.history,
+            year_level='2nd Year', section='BSIT-2b')
+        self.instructor.is_active = False
+        self.instructor.save(update_fields=['is_active'])
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['instructors'], [])
+
     def test_rename_updates_whole_current_section_and_preserves_history(self):
         historic_record = StudentAcademicRecord.objects.create(
             student=self.students[0], semester=self.history, year_level='2nd Year', section='BSIT-2b',

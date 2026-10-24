@@ -8,7 +8,7 @@ from defense.scheduler.models import DefenseSchedule
 from defense.stages.models import DefenseStage
 from grading.grades.models import TeamGrade
 from .models import StudentTeam, TeamRecoveryAuthorization, TeamStageProgress
-from .services import get_ready_teams, is_stage_ready, stage_readiness_candidates
+from .services import get_ready_teams, is_stage_ready, stage_readiness_candidates, mark_stage_ready
 
 
 class ReadinessCandidateTests(TestCase):
@@ -61,11 +61,15 @@ class ReadinessCandidateTests(TestCase):
         retake = self.team('Authorized failed attempt')
         self.grade(retake, 'failed')
         self.authorization(retake)
+        self.assertFalse(is_stage_ready(retake, self.stage))
+        mark_stage_ready(retake, self.stage)
         consumed = self.team('Consumed recovery')
         self.grade(consumed, 'failed')
         self.authorization(consumed, consumed_at=timezone.now())
         replacement = self.team('Replacement concept', project_version=2)
         self.authorization(replacement, action='new_concept', replacement_project_version=2)
+        self.assertFalse(is_stage_ready(replacement, self.stage))
+        mark_stage_ready(replacement, self.stage)
         old = self.team('Previous project endorsement', project_version=2)
         progress = TeamStageProgress.objects.create(
             team=old, semester=self.semester, defense_stage=self.stage, status='ready',

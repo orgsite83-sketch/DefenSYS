@@ -111,18 +111,8 @@ def advance_capstone_teams(target, selected_sources):
         roster = {membership.student_id for membership in team.memberships.all()} | {team.leader_id}
         if not roster.issubset(enrolled):
             continue
-        team.semester = target
-        if team.year_level == StudentAcademicRecord.THIRD_YEAR:
-            team.year_level = StudentAcademicRecord.FOURTH_YEAR
-            team.level = StudentTeam.LEVEL_4_CAPSTONE
-            team.capstone_phase = StudentTeam.PHASE_ACTIVE
-        elif team.year_level == StudentAcademicRecord.FOURTH_YEAR:
-            team.capstone_phase = StudentTeam.PHASE_EXTENDED
-            team.status = StudentTeam.STATUS_DELAYED
-        else:
-            continue
-        team.save()
-        updates += 1
+        from student_teams.capstone_lifecycle import continue_enrolled_normal_team
+        updates += int(continue_enrolled_normal_team(team, target))
     sync_capstone_flags_after_rollover(target, updates)
     return updates
 
@@ -130,6 +120,7 @@ def advance_capstone_teams(target, selected_sources):
 @transaction.atomic
 def confirm_rollover(actions, default_semester):
     """Validate and save the whole batch together, including accounts and teams."""
+    list(Semester.objects.select_for_update().order_by('pk'))
     User = get_user_model()
     records = {record.pk: record for record in StudentAcademicRecord.objects.filter(
         pk__in=[item['record_id'] for item in actions if item.get('record_id')],

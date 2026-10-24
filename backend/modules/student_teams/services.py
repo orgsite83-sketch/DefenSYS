@@ -52,6 +52,16 @@ def get_ready_teams(semester, stage):
 
 def stage_progression_blocker(team, stage):
     """Require prior stages to be officially passed and cleared on this project."""
+    if team.is_capstone:
+        from .capstone_lifecycle import requirements_for, stage_cleared
+        required = requirements_for(team)
+        position = next((i for i, item in enumerate(required) if item['id'] == stage.pk), None)
+        if position is None:
+            return 'This stage is not part of the project\'s applicable sequence.'
+        for previous in required[:position]:
+            if not stage_cleared(team, previous):
+                return f'{previous["label"]} must be completed, passed, and cleared before {stage.label}.'
+        return ''
     from defense.stages.models import DefenseStage
     for previous in DefenseStage.objects.filter(is_active=True, display_order__lt=stage.display_order):
         progress = get_stage_progress(team, previous)
@@ -106,6 +116,9 @@ def is_stage_ready(team, stage):
         semester=team.semester,
         defense_stage=stage,
     ).first()
+    if team.is_capstone:
+        from .capstone_lifecycle import latest_stage_assessment
+        grade = latest_stage_assessment(team, stage.pk)
     from repository.deliverables.concepts import clearance_blocker
     if clearance_blocker(team, stage):
         return False
@@ -122,12 +135,18 @@ def is_stage_ready(team, stage):
             return True
         return not grade.redefense_verification_required or bool(grade.redefense_verified_at)
     if grade and grade.verdict in ('failed', 'project_rejected'):
-        return bool(recovery_for(team, stage))
+        authorization = recovery_for(team, stage)
+        progress = get_stage_progress(team, stage)
+        return bool(authorization and progress and progress.status == TeamStageProgress.STATUS_READY
+            and progress.ready_at and progress.ready_at >= authorization.authorized_at)
     if grade and grade.verdict in TeamGrade.PASSING_VERDICTS:
         return False
-    if replacement_for(team, stage):
+    replacement = replacement_for(team, stage)
+    if replacement:
         from repository.deliverables.services import required_complete
-        return required_complete(team, stage.label)
+        progress = get_stage_progress(team, stage)
+        return bool(progress and progress.status == TeamStageProgress.STATUS_READY and progress.ready_at
+            and progress.ready_at >= replacement.authorized_at and required_complete(team, stage.label))
 
     progress = get_stage_progress(team, stage)
     if not progress:
@@ -175,11 +194,12 @@ def was_stage_endorsed(team, stage):
         progress.status == TeamStageProgress.STATUS_FAILED and progress.ready_at)))
 
 
-def _progress_for(team, stage, user=None):
-    progress, created = TeamStageProgress.objects.get_or_create(
+def _progress_for(team, stage, user=None, *, semester=None, project_version=None):
+    progress, created = TeamStageProgress.all_objects.get_or_create(
         team=team,
-        semester=team.semester,
+        semester=semester or team.semester,
         defense_stage=stage,
+        project_version=project_version or team.project_version,
         defaults={'created_by': user},
     )
     return progress, created
@@ -206,16 +226,22 @@ def mark_stage_ready(team, stage, user=None):
         raise ValidationError(blocker)
     from grading.grades.models import TeamGrade
     from grading.grades.defense_workflow import recovery_for
-    grade = TeamGrade.objects.filter(team=team, defense_stage=stage, semester=team.semester).first()
+    from .capstone_lifecycle import latest_stage_assessment
+    grade = latest_stage_assessment(team, stage.pk)
     if grade and grade.verdict in ('failed', 'project_rejected') and not recovery_for(team, stage):
         raise ValidationError('An authorized recovery decision is required before scheduling another attempt.')
     if grade and grade.verdict in TeamGrade.PASSING_VERDICTS:
         raise ValidationError('This defense is approved. Complete its required grading and revision clearance instead of re-endorsing it.')
+    if team.is_capstone:
+        from .capstone_lifecycle import capture_participation
+        capture_participation(team)
     progress, _ = _progress_for(team, stage, user=user)
     progress.status = TeamStageProgress.STATUS_READY
     from grading.grades.outcome_rules import policy_for
     needs_new_endorsement = bool(grade and grade.verdict == 'for_redefense'
                                 and policy_for(grade.schedule).get('version') == 1)
+    from grading.grades.defense_workflow import replacement_for
+    needs_new_endorsement = needs_new_endorsement or bool(recovery_for(team, stage) or replacement_for(team, stage))
     progress.ready_at = timezone.now() if needs_new_endorsement else progress.ready_at or timezone.now()
     progress.updated_by = user
     progress.save(update_fields=['status', 'ready_at', 'updated_by', 'updated_at'])
@@ -251,23 +277,29 @@ def mark_stage_result(grade, user=None):
     if not grade or grade.scope != grade.SCOPE_CAPSTONE or not grade.defense_stage_id:
         return None
 
-    progress, _ = _progress_for(grade.team, grade.defense_stage, user=user)
+    if grade.project_version != grade.team.project_version:
+        return None
+    progress, _ = _progress_for(grade.team, grade.defense_stage, user=user,
+        semester=grade.semester, project_version=grade.project_version)
     verdict = getattr(grade, 'verdict', '')
     from grading.grades.defense_workflow import passed_and_cleared, legacy_finalized_pass
     from repository.deliverables.services import post_deliverables_complete
     lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
-    post_done = post_deliverables_complete(grade.team, lbl)
+    from .capstone_lifecycle import evidence_team, requirements_for
+    requirement = next((r for r in requirements_for(grade.team) if r['id'] == grade.defense_stage_id), None)
+    post_done = post_deliverables_complete(evidence_team(grade.team, grade, requirement), grade.stage_label or lbl)
     is_passed = grade.status == grade.STATUS_PUBLISHED and (passed_and_cleared(grade) or legacy_finalized_pass(grade)) and post_done
 
     if is_passed:
         progress.status = TeamStageProgress.STATUS_PASSED
         team_status = StudentTeam.STATUS_APPROVED
-        grade.team.current_defense_stage = grade.defense_stage.label
-        team_update_fields = ['current_defense_stage', 'updated_at']
-        if grade.team.ready_for_stage == grade.defense_stage.label:
-            grade.team.ready_for_stage = None
-            team_update_fields.append('ready_for_stage')
-        grade.team.save(update_fields=team_update_fields)
+        if grade.semester_id == grade.team.semester_id:
+            grade.team.current_defense_stage = grade.defense_stage.label
+            team_update_fields = ['current_defense_stage', 'updated_at']
+            if grade.team.ready_for_stage == grade.defense_stage.label:
+                grade.team.ready_for_stage = None
+                team_update_fields.append('ready_for_stage')
+            grade.team.save(update_fields=team_update_fields)
     else:
         if verdict == 'for_redefense':
             progress.status = TeamStageProgress.STATUS_REDEFENSE
@@ -286,5 +318,6 @@ def mark_stage_result(grade, user=None):
     progress.graded_at = progress.graded_at or timezone.now()
     progress.updated_by = user
     progress.save(update_fields=['status', 'grade', 'graded_at', 'updated_by', 'updated_at'])
-    _mirror_team_status(grade.team, team_status)
+    if grade.semester_id == grade.team.semester_id:
+        _mirror_team_status(grade.team, team_status)
     return progress

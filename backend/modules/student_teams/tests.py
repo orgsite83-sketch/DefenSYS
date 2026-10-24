@@ -3,6 +3,7 @@ from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
 from defense.stages.models import DefenseStage
+from grading.grades.models import TeamGrade
 from user_management.academic_records.models import StudentAcademicRecord
 from user_management.models import SectionInstructorAssignment
 from .models import StudentTeam, TeamAdviserAssignment, TeamMembership, TeamStageProgress
@@ -86,6 +87,9 @@ class StudentTeamApiTests(APITestCase):
             )
 
     def test_team_stage_progress_keeps_independent_stage_statuses(self):
+        concept = DefenseStage.objects.get(label='Concept Proposal')
+        concept.is_presentation_only = True
+        concept.save()
         team = StudentTeam.objects.create(
             name='Team Stage Ledger',
             project_title='Stage Ledger',
@@ -103,6 +107,8 @@ class StudentTeamApiTests(APITestCase):
             defense_stage=concept,
             status=TeamStageProgress.STATUS_PASSED,
         )
+        TeamGrade.objects.create(team=team, semester=self.second_semester, defense_stage=concept,
+            scope='capstone', status='published', verdict='approved', panel_score=85, adviser_score=85, peer_score=85)
 
         mark_stage_ready(team, project, user=self.adviser)
 
@@ -117,6 +123,8 @@ class StudentTeamApiTests(APITestCase):
 
     def test_team_list_reports_current_stage_progress_after_prior_stage_passed(self):
         concept = DefenseStage.objects.get(label='Concept Proposal')
+        concept.is_presentation_only = True
+        concept.save()
         project = DefenseStage.objects.get(label='Project Proposal')
         team = StudentTeam.objects.create(
             name='Team Next Stage',
@@ -134,6 +142,8 @@ class StudentTeamApiTests(APITestCase):
             defense_stage=concept,
             status=TeamStageProgress.STATUS_PASSED,
         )
+        TeamGrade.objects.create(team=team, semester=self.first_semester, defense_stage=concept,
+            scope='capstone', status='published', verdict='approved', panel_score=85, adviser_score=85, peer_score=85)
         mark_stage_ready(team, project, user=self.adviser)
 
         response = self.client.get('/api/teams/?level=Capstone')

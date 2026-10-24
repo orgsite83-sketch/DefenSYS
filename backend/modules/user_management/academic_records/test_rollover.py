@@ -173,6 +173,8 @@ class RolloverRegressionTests(APITestCase):
         self.assertEqual(latest_records_by_student()[0].pk, current.pk)
 
     def test_selected_fully_enrolled_team_advances_once_and_unselected_team_stays(self):
+        self.next_first.is_active = True
+        self.next_first.save()
         source = self.record(semester=self.second, year='3rd Year')
         selected = self.team()
         other = User.objects.create_user(username='unselected-student', role='student')
@@ -192,6 +194,8 @@ class RolloverRegressionTests(APITestCase):
         self.assertEqual(repeat.data['team_updates'], 0)
 
     def test_partial_roster_waits_until_every_member_is_enrolled_in_fourth_year(self):
+        self.next_first.is_active = True
+        self.next_first.save()
         team = self.team()
         member = User.objects.create_user(username='pending-member', role='student')
         TeamMembership.objects.create(team=team, student=member)
@@ -204,7 +208,7 @@ class RolloverRegressionTests(APITestCase):
         last = self.confirm({'record_id': member_record.pk, 'action': 'promote', 'target_semester_id': self.next_first.pk})
         self.assertEqual(last.data['team_updates'], 1)
 
-    def test_retained_third_year_team_stays_and_fourth_year_team_extends(self):
+    def test_enrollment_alone_never_grants_a_fourth_year_extension(self):
         source = self.record(semester=self.second, year='3rd Year')
         retained = self.team()
         response = self.confirm({'record_id': source.pk, 'action': 'retain', 'target_semester_id': self.next_first.pk})
@@ -216,10 +220,10 @@ class RolloverRegressionTests(APITestCase):
         team = self.team(name='Extended team', student=fourth, year='4th Year')
         record = self.record(student=fourth, semester=self.second, year='4th Year')
         response = self.confirm({'record_id': record.pk, 'action': 'retain', 'target_semester_id': self.next_first.pk})
-        self.assertEqual(response.data['team_updates'], 1)
+        self.assertEqual(response.data['team_updates'], 0)
         team.refresh_from_db()
-        self.assertEqual((team.semester_id, team.status, team.capstone_phase),
-                         (self.next_first.pk, StudentTeam.STATUS_DELAYED, StudentTeam.PHASE_EXTENDED))
+        self.assertEqual(team.semester_id, self.second.pk)
+        self.assertNotEqual(team.capstone_phase, StudentTeam.PHASE_EXTENDED)
 
     def test_duplicate_or_mismatched_student_selections_are_rejected_atomically(self):
         source = self.record()
@@ -231,6 +235,8 @@ class RolloverRegressionTests(APITestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_team_save_failure_rolls_back_enrollment(self):
+        self.next_first.is_active = True
+        self.next_first.save()
         source = self.record(semester=self.second, year='3rd Year')
         team = self.team()
         with patch.object(StudentTeam, 'save', side_effect=ValidationError('Conflicting team.')):

@@ -28,6 +28,89 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/capture_preview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:riverpod/misc.dart' show Override;
+import 'package:defensys/screens/web/faculty/team_roster_screen.dart';
+import 'package:defensys/screens/web/faculty/pit_lead/pit_lead_cohort_screen.dart';
+import 'package:defensys/services/academic/team_roster_service.dart';
+import 'package:defensys/services/academic/student_academic_records_provider.dart';
+import 'package:defensys/services/pit_lead_cohort_provider.dart';
+import 'package:defensys/services/pit_instructor_provider.dart';
+import 'package:defensys/services/user_management_provider.dart';
+
+class _PitRoster extends Fake implements TeamRosterService {
+  bool sectionsAvailable = false;
+  int loads = 0;
+  @override
+  Future<Map<String, dynamic>> load(Map<String, dynamic> scope) async {
+    loads++;
+    return {
+      'semester': '1st Semester, A.Y. 2026-2027',
+      'year_level': '3rd Year',
+      'section': sectionsAvailable ? 'BSIT-3A' : null,
+      'scope_options': sectionsAvailable
+          ? [
+              {'year_level': '3rd Year', 'section': 'BSIT-3A'},
+            ]
+          : [],
+      'can_import_sections': true,
+      'can_generate': false,
+      'rosters': sectionsAvailable
+          ? [
+              {
+                'id': null,
+                'name': 'Current roster',
+                'status': 'Default for upcoming events',
+                'teams': [],
+                'team_count': 0,
+                'student_count': 0,
+                'ready_count': 0,
+              },
+            ]
+          : [],
+    };
+  }
+}
+
+class _PitCohort extends PitLeadCohortNotifier {
+  @override
+  PitLeadCohortState build() => PitLeadCohortState(pitLeadYear: '3rd Year');
+  @override
+  Future<void> fetchCohort({
+    String? search,
+    String? teamStatusFilter,
+    String? scope,
+  }) async {}
+}
+
+class _PitInstructors extends PitInstructorNotifier {
+  @override
+  PitInstructorState build() => const PitInstructorState(yearLevel: '3rd Year');
+  @override
+  Future<void> fetchAssignments() async {}
+}
+
+class _Records extends StudentAcademicRecordsNotifier {
+  @override
+  StudentAcademicRecordsState build() => const StudentAcademicRecordsState();
+  @override
+  Future<void> fetchRecords({
+    String? search,
+    String? schoolYear,
+    String? semester,
+    String? successMessage,
+  }) async {}
+}
+
+class _Users extends UserManagementNotifier {
+  @override
+  UserManagementState build() => const UserManagementState();
+  @override
+  Future<void> fetchUsers({
+    String? search,
+    String? role,
+    String? successMessage,
+  }) async {}
+}
 
 class _Board extends DefenseBoardNotifier {
   int loads = 0;
@@ -254,6 +337,7 @@ void main() {
     bool faculty = false,
     double width = 1600,
     AuthenticatedHttpClient? client,
+    List<Override> overrides = const [],
   }) async {
     await loadPreviewFonts(force: true);
     SharedPreferences.setMockInitialValues({});
@@ -276,6 +360,7 @@ void main() {
         studentTeamsProvider.overrideWith(_Teams.new),
         teamDetailProvider(1).overrideWith(_Team.new),
         gradeCenterProvider.overrideWith(_Grades.new),
+        ...overrides,
       ],
     );
     addTearDown(container.dispose);
@@ -300,6 +385,72 @@ void main() {
     await tester.pumpAndSettle();
     return container;
   }
+
+  testWidgets(
+    'PIT Assign instructors opens the managed tab and leaves sidebar navigation usable',
+    (tester) async {
+      final roster = _PitRoster();
+      final container = await pumpWorkspace(
+        tester,
+        '/faculty/student-teams',
+        faculty: true,
+        overrides: [
+          teamRosterServiceProvider.overrideWithValue(roster),
+          pitLeadCohortProvider.overrideWith(_PitCohort.new),
+          pitInstructorProvider.overrideWith(_PitInstructors.new),
+          studentAcademicRecordsProvider.overrideWith(_Records.new),
+          userManagementProvider.overrideWith(_Users.new),
+        ],
+      );
+      final router = container.read(appRouterProvider);
+      await tester.tap(find.text('Team roster'));
+      await tester.pumpAndSettle();
+      final rosterState = tester.state(find.byType(TeamRosterScreen));
+      expect(find.text('Assign instructors'), findsOneWidget);
+      for (var visit = 0; visit < 2; visit++) {
+        await tester.tap(find.text('Assign instructors'));
+        await tester.pumpAndSettle();
+        expect(find.byType(PitLeadCohortScreen), findsOneWidget);
+        expect(router.state.uri.path, '/faculty/cohort');
+        expect(router.state.uri.queryParameters['tab'], 'instructors');
+        expect(find.text('Batch Enrollment'), findsNothing);
+        await tester.tap(find.text('Students & Enrollment'));
+        await tester.pumpAndSettle();
+        expect(find.text('Batch Enrollment'), findsOneWidget);
+        expect(router.state.uri.queryParameters['tab'], 'students');
+        // Browser history sends route information for the previous/next URL.
+        await router.routeInformationProvider.didPushRouteInformation(
+          RouteInformation(uri: Uri.parse('/faculty/cohort?tab=instructors')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Batch Enrollment'), findsNothing);
+        await router.routeInformationProvider.didPushRouteInformation(
+          RouteInformation(uri: Uri.parse('/faculty/cohort?tab=students')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Batch Enrollment'), findsOneWidget);
+        await tester.tap(find.text('Section Instructors'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.queryParameters['tab'], 'instructors');
+        expect(find.text('Batch Enrollment'), findsNothing);
+        await tester.tap(find.text('Student Teams').first);
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '/faculty/student-teams/roster');
+        expect(tester.state(find.byType(TeamRosterScreen)), same(rosterState));
+        expect(router.state.uri.queryParameters['year'], '3rd Year');
+      }
+      roster.sectionsAvailable = true;
+      await tester.tap(find.text('Assign instructors'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Student Teams').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Import teams or assign instructors'), findsNothing);
+      expect(find.text('BSIT-3A · 3rd Year'), findsOneWidget);
+      expect(find.text('Import teams'), findsOneWidget);
+      expect(roster.loads, greaterThanOrEqualTo(4));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('request deep link opens its record in the actual admin router', (
     tester,
@@ -462,7 +613,10 @@ void main() {
       find.text('No weekly progress reports submitted yet.'),
       findsOneWidget,
     );
-    expect(teams.loads, 2); // Revalidate quick returns while retaining the page.
+    expect(
+      teams.loads,
+      2,
+    ); // Revalidate quick returns while retaining the page.
     expect((container.read(teamDetailProvider(1).notifier) as _Team).loads, 1);
 
     router.pop();
@@ -713,9 +867,14 @@ void main() {
         expect(tester.state(find.byType(DefenseBoardScreen)), same(boardState));
         expect(find.byType(DefenseScheduleBulkImportView), findsNothing);
         expect(board.loads, 2);
-        container.read(dataRefreshProvider.notifier).markChanged(const [DataArea.defenseBoard]);
+        container.read(dataRefreshProvider.notifier).markChanged(const [
+          DataArea.defenseBoard,
+        ]);
         await tester.pumpAndSettle();
-        expect(board.loads, 3); // Visible retained branches consume changes now.
+        expect(
+          board.loads,
+          3,
+        ); // Visible retained branches consume changes now.
         expect(tester.state(find.byType(DefenseBoardScreen)), same(boardState));
       },
     );
@@ -757,7 +916,10 @@ void main() {
         );
         final grades = container.read(gradeCenterProvider.notifier) as _Grades;
         expect(grades.detailLoads, 1);
-        expect(grades.loads, 2); // Refresh the retained list without remounting detail.
+        expect(
+          grades.loads,
+          2,
+        ); // Refresh the retained list without remounting detail.
         // Detail uses its own segmented control, so verify that the master table
         // content is absent while the individual rubric view is still displayed.
         expect(find.text('Master Student Grade Sheet'), findsNothing);

@@ -7,10 +7,12 @@ from .views import (
     SemesterCreateView,
     SemesterStatusView,
     SemesterTransitionPreviewView,
+    ReturningTeamsView,
 )
 
 
 urlpatterns = [
+    path('semesters/<int:semester_id>/returning-teams/', ReturningTeamsView.as_view(), name='academic_period_returning_teams'),
     path('', AcademicPeriodListCreateView.as_view(), name='academic_periods'),
     path('<int:school_year_id>/', SchoolYearDetailView.as_view(), name='academic_period_detail'),
     path('<int:school_year_id>/semesters/', SemesterCreateView.as_view(), name='academic_period_semesters'),

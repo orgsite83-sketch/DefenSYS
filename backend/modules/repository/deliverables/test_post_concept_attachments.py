@@ -44,7 +44,7 @@ class ApprovedConceptPolicyTests(SimpleTestCase):
 class PostConceptAttachmentTests(APITestCase):
     setUp = fixtures.faculty_review_setup
 
-    def prepare(self, verdict='approved_with_revisions', *, minimum=2):
+    def prepare(self, verdict='approved_with_revisions', *, minimum=2, mode='multiple'):
         self.stage.concept_config = {'enabled': True, 'required_count': 1}
         self.stage.save()
         self.paper.file_policy = {'mode': 'concepts'}
@@ -52,7 +52,8 @@ class PostConceptAttachmentTests(APITestCase):
         self.paper.save()
         self.final = StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='FINAL',
             label='Selected concept documents', deliverable_type='post', required=True, file_format='pdf',
-            file_policy={'mode': 'multiple', 'min_files': minimum, 'max_files': 3, 'purpose': 'approved_concept'})
+            file_policy=({'mode': 'multiple', 'min_files': minimum, 'max_files': 3, 'purpose': 'approved_concept'}
+                         if mode == 'multiple' else {'mode': mode, 'purpose': 'approved_concept'}))
         concepts.save_titles(self.team, self.stage, [{'key': 'c1', 'title': 'Selected project'}])
         initial = upsert_submission(self.team, self.stage.label, 'PAPER', 'proposal.pdf', '10 B', self.student,
             file=SimpleUploadedFile('proposal.pdf', b'%PDF-1.4 proposal'), slot_key='c1:paper')
@@ -129,11 +130,11 @@ class PostConceptAttachmentTests(APITestCase):
         self.accept(sub)
         self.assertTrue(final_paper_complete(self.team, self.stage))
 
-    def test_plain_approval_requires_other_post_groups_and_rechecks_saved_acceptance(self):
-        self.prepare('approved')
+    def test_plain_approval_requires_other_post_groups_and_preserves_captured_limits(self):
         matrix = StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='MATRIX',
             label='Revision Matrix', deliverable_type='post', required=True, file_format='pdf',
             file_policy={'mode': 'multiple', 'min_files': 2, 'max_files': 3})
+        self.prepare('approved')
         sub = self.upload_final()
         self.accept(sub)
         sub = self.upload_final('support.pdf')
@@ -147,8 +148,8 @@ class PostConceptAttachmentTests(APITestCase):
         self.assertTrue(post_deliverables_complete(self.team, self.stage.label))
         matrix.file_policy['min_files'] = 3
         matrix.save()
-        self.assertFalse(post_deliverables_complete(self.team, self.stage.label))
-        self.assertFalse(stage_payload(self.team, self.stage.label)['archive_complete'])
+        self.assertTrue(post_deliverables_complete(self.team, self.stage.label))
+        self.assertTrue(stage_payload(self.team, self.stage.label)['archive_complete'])
         self.grade.refresh_from_db()
         self.assertEqual(self.grade.verdict, 'approved')
 
@@ -183,9 +184,7 @@ class PostConceptAttachmentTests(APITestCase):
         self.assertEqual(final.file_policy, policy)
 
     def test_single_file_configuration_remains_compatible(self):
-        self.prepare()
-        self.final.file_policy = {'mode': 'single', 'purpose': 'approved_concept'}
-        self.final.save()
+        self.prepare(mode='single')
         sub = self.upload_final()
         self.accept(sub)
         self.assertTrue(final_paper_complete(self.team, self.stage))

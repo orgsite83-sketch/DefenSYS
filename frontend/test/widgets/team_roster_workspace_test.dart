@@ -4,6 +4,7 @@ import 'package:defensys/services/academic/team_roster_service.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/widgets/shadcn/defensys_workflow_widgets.dart';
 import '../helpers/pump_app.dart';
@@ -31,6 +32,8 @@ Map<String, dynamic> _team(int id, String name) => {
 
 class _Service extends Fake implements TeamRosterService {
   bool canGenerate = true;
+  bool noSections = false;
+  final loads = <Map<String, dynamic>>[];
   Map<String, dynamic>? submitted;
   String? applied;
   Map<String, dynamic>? pending;
@@ -77,16 +80,33 @@ class _Service extends Fake implements TeamRosterService {
     },
   ];
   @override
-  Future<Map<String, dynamic>> load(Map<String, dynamic> scope) async => {
-    'year_level': '1st Year',
-    'section': 'BSIT-1B',
-    'fingerprint': 'review-state',
-    'scope_options': [
-      {'year_level': '1st Year', 'section': 'BSIT-1B'},
-    ],
-    'can_generate': canGenerate,
-    'rosters': jsonDecode(jsonEncode(rosters)),
-  };
+  Future<Map<String, dynamic>> load(Map<String, dynamic> scope) async {
+    loads.add(Map<String, dynamic>.from(scope));
+    if (noSections) {
+      return {
+        'semester': '1st Semester, A.Y. 2026-2027',
+        'year_level': '1st Year',
+        'section': null,
+        'fingerprint': null,
+        'scope_options': [],
+        'can_generate': false,
+        'can_import_sections': scope['workspace'] == 'operations',
+        'rosters': [],
+      };
+    }
+    return {
+      'year_level': '1st Year',
+      'section': 'BSIT-1B',
+      'fingerprint': 'review-state',
+      'scope_options': [
+        {'year_level': '1st Year', 'section': 'BSIT-1B'},
+      ],
+      'can_generate': canGenerate,
+      'can_import_sections': scope['workspace'] == 'operations',
+      'rosters': jsonDecode(jsonEncode(rosters)),
+    };
+  }
+
   @override
   Future<Map<String, dynamic>> preview(Map<String, dynamic> data) async {
     submitted = data;
@@ -174,6 +194,132 @@ class _Service extends Fake implements TeamRosterService {
 }
 
 void main() {
+  testWidgets(
+    'unsectioned PIT cohort shows setup guidance and recovers after refresh',
+    (tester) async {
+      final service = _Service()..noSections = true;
+      await loadPreviewFonts();
+      await pumpDefensysWidget(
+        tester,
+        const TeamRosterScreen(
+          initialYear: '1st Year',
+          initialEvent: '1st Year Expo',
+        ),
+        overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+      );
+      expect(find.text('Import teams or assign instructors'), findsOneWidget);
+      expect(find.text('Import teams'), findsOneWidget);
+      expect(find.text('Assign instructors'), findsOneWidget);
+      expect(
+        find.textContaining('1st Semester, A.Y. 2026-2027'),
+        findsOneWidget,
+      );
+      expect(find.text('Unable to complete this action'), findsNothing);
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Import teams'), findsOneWidget);
+      expect(find.text('Generate teams'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await capturePreview(
+        tester,
+        find.byType(TeamRosterScreen),
+        'team-roster-no-sections',
+        viewport: true,
+      );
+
+      service.noSections = false;
+      await tester.tap(find.text('Refresh sections'));
+      await tester.pumpAndSettle();
+      expect(find.text('Import teams or assign instructors'), findsNothing);
+      expect(find.text('1st Year Expo'), findsWidgets);
+      expect(find.text('Import teams'), findsOneWidget);
+      expect(service.loads, hasLength(2));
+      expect(service.loads.last['year_level'], '1st Year');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('empty cohort navigates to the User Management instructor tab', (
+    tester,
+  ) async {
+    final service = _Service()..noSections = true;
+    final router = GoRouter(
+      initialLocation: '/faculty/student-teams/roster',
+      routes: [
+        GoRoute(
+          path: '/faculty/student-teams/roster',
+          builder: (_, _) =>
+              const Scaffold(body: TeamRosterScreen(initialYear: '1st Year')),
+        ),
+        GoRoute(
+          path: '/faculty/cohort',
+          builder: (_, state) => Scaffold(
+            body: Text('User Management: ${state.uri.queryParameters['tab']}'),
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await pumpDefensysWidget(
+      tester,
+      MaterialApp.router(routerConfig: router),
+      overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+    );
+    await tester.tap(find.text('Assign instructors'));
+    await tester.pumpAndSettle();
+    expect(find.text('User Management: instructors'), findsOneWidget);
+    service.noSections = false;
+    router.go('/faculty/student-teams/roster');
+    await tester.pumpAndSettle();
+    expect(find.text('Import teams'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('PIT lead can import all sections before a section exists', (
+    tester,
+  ) async {
+    final service = _Service()..noSections = true;
+    Uri? importedContext;
+    final router = GoRouter(
+      initialLocation: '/faculty/student-teams/roster',
+      routes: [
+        GoRoute(
+          path: '/faculty/student-teams/roster',
+          builder: (_, _) => const Scaffold(
+            body: TeamRosterScreen(
+              initialYear: '1st Year',
+              initialEvent: '1st Year Expo',
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/faculty/student-teams/creation',
+          builder: (_, state) {
+            importedContext = state.uri;
+            return const Scaffold(body: Text('All section team import'));
+          },
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await pumpDefensysWidget(
+      tester,
+      MaterialApp.router(routerConfig: router),
+      overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+    );
+    await tester.tap(find.text('Import teams'));
+    await tester.pumpAndSettle();
+    expect(find.text('All section team import'), findsOneWidget);
+    expect(importedContext?.queryParameters['tab'], 'import');
+    expect(importedContext?.queryParameters['level'], '1st Year PIT');
+    expect(importedContext?.queryParameters['event'], '1st Year Expo');
+    expect(importedContext?.queryParameters.containsKey('section'), isFalse);
+    service.noSections = false;
+    router.pop(true);
+    await tester.pumpAndSettle();
+    expect(find.text('Import teams'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('copy is reviewed for the selected event before applying', (
     tester,
   ) async {
@@ -202,6 +348,123 @@ void main() {
     expect(service.applied, 'signed-review');
   });
 
+  testWidgets(
+    'top toolbar exposes both Lead import scopes and compact status help',
+    (tester) async {
+      tester.view.physicalSize = const Size(1440, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await loadPreviewFonts();
+      await pumpDefensysWidget(
+        tester,
+        const TeamRosterScreen(),
+        overrides: [teamRosterServiceProvider.overrideWithValue(_Service())],
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('roster-actions'))).dy,
+        lessThan(
+          tester.getTopLeft(find.byKey(const ValueKey('roster-status'))).dy,
+        ),
+      );
+      expect(
+        find.widgetWithText(WorkflowNotice, 'Default for upcoming events'),
+        findsNothing,
+      );
+      expect(find.text('Default for upcoming events'), findsOneWidget);
+      await capturePreview(
+        tester,
+        find.byType(TeamRosterScreen),
+        'team-roster-toolbar-lead',
+        viewport: true,
+      );
+      await tester.tap(find.byKey(const ValueKey('roster-status')));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(
+          'Ongoing, completed and custom event rosters keep their saved teams.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Team roster').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Import teams'));
+      await tester.pumpAndSettle();
+      expect(find.text('All sections with instructors'), findsOneWidget);
+      await tester.tap(find.text('Selected section · BSIT-1B'));
+      await tester.pumpAndSettle();
+      expect(find.text('Import a roster'), findsOneWidget);
+      expect(find.text('Target: Current roster · BSIT-1B'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('instructor import opens only its selected section', (
+    tester,
+  ) async {
+    await pumpDefensysWidget(
+      tester,
+      const TeamRosterScreen(instructor: true, initialEvent: '1st Year Expo'),
+      overrides: [teamRosterServiceProvider.overrideWithValue(_Service())],
+    );
+    expect(find.byKey(const ValueKey('roster-import-menu')), findsNothing);
+    await tester.tap(find.text('Import teams'));
+    await tester.pumpAndSettle();
+    expect(find.text('All sections with instructors'), findsNothing);
+    expect(find.text('Target: 1st Year Expo · BSIT-1B'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Lead all-section import follows the selected Current roster', (
+    tester,
+  ) async {
+    Uri? importContext;
+    final router = GoRouter(
+      initialLocation: '/faculty/student-teams/roster',
+      routes: [
+        GoRoute(
+          path: '/faculty/student-teams/roster',
+          builder: (_, _) => const Scaffold(
+            body: TeamRosterScreen(initialEvent: '1st Year Expo'),
+          ),
+        ),
+        GoRoute(
+          path: '/faculty/student-teams/creation',
+          builder: (_, state) {
+            importContext = state.uri;
+            return const Scaffold(body: Text('All sections import'));
+          },
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await pumpDefensysWidget(
+      tester,
+      MaterialApp.router(routerConfig: router),
+      overrides: [teamRosterServiceProvider.overrideWithValue(_Service())],
+    );
+    final rosterSelect = find.byWidgetPredicate(
+      (widget) => widget is WorkflowSelect && widget.label == 'Roster',
+    );
+    await tester.tap(
+      find.descendant(
+        of: rosterSelect,
+        matching: find.byType(ShadSelect<String>),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Current roster').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Import teams'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All sections with instructors'));
+    await tester.pumpAndSettle();
+    expect(find.text('All sections import'), findsOneWidget);
+    expect(importContext?.queryParameters['level'], '1st Year PIT');
+    expect(importContext?.queryParameters.containsKey('section'), isFalse);
+    expect(importContext?.queryParameters.containsKey('event'), isFalse);
+  });
+
   testWidgets('completed roster exposes export but no replacement or setup', (
     tester,
   ) async {
@@ -212,7 +475,7 @@ void main() {
       overrides: [teamRosterServiceProvider.overrideWithValue(service)],
     );
     expect(find.text('Copy roster'), findsNothing);
-    expect(find.text('Import roster'), findsNothing);
+    expect(find.text('Import teams'), findsNothing);
     expect(find.text('Generate teams'), findsNothing);
     expect(find.text('Project setup'), findsNothing);
     expect(find.text('Export roster'), findsOneWidget);
@@ -303,14 +566,11 @@ void main() {
       await tester.ensureVisible(find.text('Project options'));
       await tester.tap(find.text('Project options'));
       await tester.pumpAndSettle();
-      final choice = find.descendant(
-        of: find.byKey(const ValueKey('project-choice-1')),
-        matching: find.byType(ShadSelect<String>),
-      );
+      final choice = find.byKey(const ValueKey('project-choice-1'));
       await tester.ensureVisible(choice);
-      await tester.tap(choice);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Start new project').last);
+      await tester.tap(
+        find.descendant(of: choice, matching: find.text('Start new')),
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(
         find.widgetWithText(ShadButton, 'Review project choices'),
@@ -328,11 +588,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester
-            .widget<WorkflowSelect>(
+            .widget<SegmentedButton<String>>(
               find.byKey(const ValueKey('project-choice-1')),
             )
-            .value,
-        'new',
+            .selected,
+        {'new'},
       );
       expect(service.applied, isNull);
     },
@@ -358,45 +618,90 @@ void main() {
     expect(find.byKey(const ValueKey('project-choice-1')), findsNothing);
     expect(find.text('New project required'), findsNWidgets(2));
     await tester.ensureVisible(
-      find.widgetWithText(ShadButton, 'Review project choices'),
+      find.byKey(const ValueKey('project-bulk-continue')),
     );
-    await tester.tap(find.widgetWithText(ShadButton, 'Review project choices'));
-    await tester.pumpAndSettle();
-    expect(service.submitted?['team_modes'], {'1': 'new', '2': 'new'});
-  });
-
-  testWidgets('bulk project action reviews current-roster scope', (
-    tester,
-  ) async {
-    final service = _Service();
-    await pumpDefensysWidget(
-      tester,
-      const TeamRosterScreen(),
-      overrides: [teamRosterServiceProvider.overrideWithValue(service)],
-    );
-    await tester.ensureVisible(find.text('Project setup'));
-    await tester.tap(find.text('Project setup'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Choose a bulk action'));
-    await tester.tap(find.text('Choose a bulk action'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Start new projects').last);
+    await tester.tap(find.byKey(const ValueKey('project-bulk-continue')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(
       find.widgetWithText(ShadButton, 'Review project choices'),
     );
     await tester.tap(find.widgetWithText(ShadButton, 'Review project choices'));
     await tester.pumpAndSettle();
-    expect(service.submitted?['event_id'], isNull);
     expect(service.submitted?['team_modes'], {'1': 'new', '2': 'new'});
-    expect(
-      find.text('Apply project choices to Current roster'),
-      findsOneWidget,
-    );
-    expect(service.applied, isNull);
   });
 
-  testWidgets('locked and shared teams cannot use the new-project dropdown', (
+  testWidgets(
+    'bulk buttons change only selected teams before current-roster review',
+    (tester) async {
+      final service = _Service();
+      await pumpDefensysWidget(
+        tester,
+        const TeamRosterScreen(),
+        overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+      );
+      await tester.ensureVisible(find.text('Project setup'));
+      await tester.tap(find.text('Project setup'));
+      await tester.pumpAndSettle();
+      final first = find.descendant(
+        of: find.byKey(const ValueKey('project-team-1')),
+        matching: find.text('Team FreshStart'),
+      );
+      final second = find.descendant(
+        of: find.byKey(const ValueKey('project-team-2')),
+        matching: find.text('Team Portal'),
+      );
+      await tester.ensureVisible(first);
+      await tester.tap(first);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SegmentedButton<String>>(
+              find.byKey(const ValueKey('project-choice-1')),
+            )
+            .onSelectionChanged,
+        isNull,
+      );
+      await tester.ensureVisible(second);
+      await tester.tap(second);
+      await tester.pumpAndSettle();
+      expect(find.text('0 selected'), findsOneWidget);
+      for (final mode in ['continue', 'new']) {
+        expect(
+          tester
+              .widget<ShadButton>(find.byKey(ValueKey('project-bulk-$mode')))
+              .enabled,
+          isFalse,
+        );
+      }
+      await tester.tap(second);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('project-bulk-new')),
+      );
+      await tester.tap(find.byKey(const ValueKey('project-bulk-new')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(first);
+      await tester.tap(first);
+      await tester.pumpAndSettle();
+      expect(find.text('1 keeping existing · 1 starting new'), findsOneWidget);
+      await tester.ensureVisible(
+        find.widgetWithText(ShadButton, 'Review project choices'),
+      );
+      await tester.tap(
+        find.widgetWithText(ShadButton, 'Review project choices'),
+      );
+      await tester.pumpAndSettle();
+      expect(service.submitted?['event_id'], isNull);
+      expect(service.submitted?['team_modes'], {'1': 'continue', '2': 'new'});
+      expect(
+        find.text('Apply project choices to Current roster'),
+        findsOneWidget,
+      );
+      expect(service.applied, isNull);
+    },
+  );
+
+  testWidgets('locked and shared teams cannot change project choices', (
     tester,
   ) async {
     final service = _Service();
@@ -413,6 +718,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('project-choice-1')), findsNothing);
     expect(find.byKey(const ValueKey('project-choice-2')), findsNothing);
+    for (final mode in ['continue', 'new']) {
+      expect(
+        tester
+            .widget<ShadButton>(find.byKey(ValueKey('project-bulk-$mode')))
+            .enabled,
+        isFalse,
+      );
+    }
     expect(
       tester
           .widget<ShadCheckbox>(find.byKey(const ValueKey('project-team-1')))
@@ -498,21 +811,18 @@ void main() {
           viewport: true,
         );
         expect(tester.takeException(), isNull);
-        final choice = find.descendant(
-          of: find.byKey(const ValueKey('project-choice-1')),
-          matching: find.byType(ShadSelect<String>),
-        );
+        final choice = find.byKey(const ValueKey('project-choice-1'));
         await tester.ensureVisible(choice);
-        await tester.tap(choice);
+        await tester.tap(
+          find.descendant(of: choice, matching: find.text('Start new')),
+        );
         await tester.pumpAndSettle();
         await capturePreview(
           tester,
           find.byType(TeamRosterScreen),
-          'team-roster-project-dropdown-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          'team-roster-project-selected-${width.toInt()}-${dark ? 'dark' : 'light'}',
           viewport: true,
         );
-        await tester.tap(find.text('Start new project').last);
-        await tester.pumpAndSettle();
         await tester.ensureVisible(
           find.widgetWithText(ShadButton, 'Review project choices'),
         );

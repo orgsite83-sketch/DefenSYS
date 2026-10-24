@@ -35,6 +35,10 @@ class ConceptHearingWorkflowTests(APITestCase):
         self.paper = StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='CONCEPTS',
             label='Concept papers', required=True, is_defense_material=True,
             file_policy={'mode': 'concepts'})
+        # Finish configuring this fixture before its first paper/review. The
+        # shared grading fixture has already allocated a provisional schedule.
+        from student_teams.capstone_lifecycle import capture_participation, configured_requirements
+        capture_participation(self.capstone_team, requirements=configured_requirements())
         TeamStageProgress.objects.filter(team=self.capstone_team, defense_stage=self.stage).delete()
         extraction = patch('repository.deliverables.pdf_processor.extract_pdf_from_file_object',
                            return_value={'text': 'Concept paper fixture'})

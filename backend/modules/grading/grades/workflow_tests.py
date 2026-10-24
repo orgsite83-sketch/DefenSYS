@@ -107,6 +107,8 @@ class DefenseWorkflowTests(APITestCase):
         with self.assertRaises(PermissionError):
             apply_workflow_action(self.grade, actor=self.adviser, action='authorize_retake', reason='Approved retake decision.')
         apply_workflow_action(self.grade, actor=self.admin, action='authorize_retake', reason='Institution authorized another attempt in this stage.')
+        self.assertFalse(is_stage_ready(self.capstone_team, self.stage))
+        mark_stage_ready(self.capstone_team, self.stage, user=self.adviser)
         self.assertTrue(is_stage_ready(self.capstone_team, self.stage))
         apply_workflow_action(self.grade, actor=self.admin, action='keep_blocked', reason='Authorization withdrawn by the institution.')
         self.assertFalse(is_stage_ready(self.capstone_team, self.stage))
@@ -133,6 +135,8 @@ class DefenseWorkflowTests(APITestCase):
         self.assertEqual(new_grade.attempt_count, 1)
         DeliverableSubmission.objects.create(team=team, stage_label=first.label, deliverable_id='WF01',
             label='Replacement document', deliverable_type='pre', status='accepted', file_name='new.pdf')
+        self.assertFalse(is_stage_ready(team, first))
+        mark_stage_ready(team, first, user=self.adviser)
         self.assertTrue(is_stage_ready(team, first))
         self.assertEqual(TeamRecoveryAuthorization.objects.get(team=team).replacement_project_version, 2)
 

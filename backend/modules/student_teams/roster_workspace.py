@@ -25,6 +25,7 @@ from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from defense.scheduler.models import PitEventGradingConfig
 from user_management.academic_records.models import StudentAcademicRecord
+from user_management.models import SectionInstructorAssignment
 from .formation_access import instructor_sections, require_generation_scope
 from .models import StudentTeam, TeamMembership, PITSectionRoster, PITEventRoster, PITRosterTeamDetails, SectionAssignment
 from .pit_rosters import resolve, event_in_use, pin
@@ -39,8 +40,8 @@ def text(value):
     return ' '.join(str(value or '').split())
 
 
-def require_roster_scope(user, term, year, section, workspace=None):
-    if year not in YEARS or is_capstone_scope(year, term) or not section:
+def require_roster_scope(user, term, year, section, workspace=None, *, allow_empty_section=False):
+    if year not in YEARS or is_capstone_scope(year, term) or (not section and not allow_empty_section):
         raise ValidationError('Choose an active PIT year and section.')
     if workspace not in (None, '', 'instructor', 'operations'):
         raise PermissionDenied('Choose an instructor or PIT management workspace.')
@@ -59,17 +60,23 @@ def choices(user, term, workspace):
     if workspace != 'instructor' and (user_is_admin(user) or user_is_pit_lead_only(user)):
         records = StudentAcademicRecord.objects.filter(semester=term)
         teams = StudentTeam.objects.filter(semester=term, level__icontains='PIT')
+        sections = SectionAssignment.objects.filter(semester=term)
+        instructors = SectionInstructorAssignment.objects.filter(semester=term, is_active=True)
         if not user_is_admin(user):
             records = records.filter(year_level=user.pit_lead_year)
             teams = teams.filter(year_level=user.pit_lead_year)
+            sections = sections.filter(year_level=user.pit_lead_year)
+            instructors = instructors.filter(year_level=user.pit_lead_year)
             result = {r for r in result if r[0] == user.pit_lead_year}
         result.update(records.values_list('year_level', 'section'))
         result.update(teams.values_list('year_level', 'section'))
+        result.update(sections.values_list('year_level', 'section'))
+        result.update(instructors.values_list('year_level', 'section'))
     return [{'year_level': y, 'section': s} for y, s in sorted(result)
         if y in YEARS and not is_capstone_scope(y, term) and s and s.upper() != 'BSIT']
 
 
-def scope(user, data):
+def scope(user, data, *, allow_empty_section=False):
     term = get_active_semester()
     if not term:
         raise ValidationError('No active semester is configured.')
@@ -78,9 +85,11 @@ def scope(user, data):
     year, section = text(data.get('year_level')), text(data.get('section'))
     if not year and available:
         year = available[0]['year_level']
+    if not year and user_is_pit_lead_only(user) and workspace != 'instructor':
+        year = text(user.pit_lead_year)
     if not section:
         section = next((c['section'] for c in available if c['year_level'] == year), '')
-    require_roster_scope(user, term, year, section, workspace)
+    require_roster_scope(user, term, year, section, workspace, allow_empty_section=allow_empty_section)
     return term, year, section, available
 
 
@@ -232,12 +241,16 @@ def roster_payload(term, year, section, event=None):
 
 
 def context(user, data):
-    term, year, section, available = scope(user, data)
+    # Browsing an unsectioned cohort is valid; preview/apply still need a section.
+    term, year, section, available = scope(user, data, allow_empty_section=True)
     events = list(PitEventGradingConfig.objects.filter(semester=term, year_level=year).order_by('pk'))
     can_generate = user.role == 'faculty' and instructor_sections(user, term, year).filter(section=section).exists()
-    return {'semester_id': term.pk, 'semester': str(term), 'year_level': year, 'section': section,
+    return {'semester_id': term.pk, 'semester': str(term), 'year_level': year, 'section': section or None,
         'scope_options': available, 'can_generate': can_generate,
-        'rosters': [roster_payload(term, year, section)] + [roster_payload(term, year, section, e) for e in events]}
+        'can_import_sections': user_is_pit_lead_only(user) and data.get('workspace') != 'instructor',
+        'fingerprint': fingerprint(term, year, section) if section else None,
+        'rosters': ([roster_payload(term, year, section)] + [roster_payload(term, year, section, e) for e in events])
+            if section else []}
 
 
 def fingerprint(term, year, section):
@@ -251,7 +264,7 @@ def fingerprint(term, year, section):
     return sha256(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def validate_rows(term, year, section, rows, event):
+def validate_rows(term, year, section, rows, event, *, allow_unassigned=False):
     if not isinstance(rows, list) or not 0 < len(rows) <= 500:
         raise ValidationError('Prepare between 1 and 500 teams.')
     names, members = [], []
@@ -273,7 +286,11 @@ def validate_rows(term, year, section, rows, event):
         members.extend(ids)
     if len(names) != len(set(names)) or (not event or event.team_membership_policy != 'multiple') and len(members) != len(set(members)):
         raise ValidationError('Resolve repeated team names and students before applying this complete roster.')
-    enrolled = set(StudentAcademicRecord.objects.filter(semester=term, year_level=year, section=section,
+    enrollment_sections = Q(section=section)
+    if allow_unassigned:
+        # A reviewed import can establish a class section; other operations cannot.
+        enrollment_sections |= Q(section='') | Q(section__iexact='BSIT')
+    enrolled = set(StudentAcademicRecord.objects.filter(enrollment_sections, semester=term, year_level=year,
         student__is_active=True, student__role='student', student_id__in=members).values_list('student_id', flat=True))
     if enrolled != set(members):
         raise PermissionDenied('Every member must be an active student enrolled in this section, year and semester.')
@@ -315,10 +332,9 @@ def imported_rows(term, year, section, raw):
     return rows
 
 
-def imported_sheet_details(user, term, year, section, raw):
+def imported_sheet_details(user, term, year, section, raw, *, member_ids=(), workspace=None):
     """Validate shared-system sheet details without writes during file review."""
-    from .bulk_import import resolve_user_by_full_name
-    from .section_access import require_section_write
+    from .bulk_import import resolve_user_by_full_name, validate_bulk_section_metadata
     systems = {text(row.get('system_name')) for row in raw if text(row.get('system_name'))}
     managers = {text(row.get('project_manager')) for row in raw if text(row.get('project_manager'))}
     if len(systems) > 1 or len(managers) > 1:
@@ -326,14 +342,21 @@ def imported_sheet_details(user, term, year, section, raw):
     system = next(iter(systems), '')
     if len(system) > 255:
         raise ValidationError('System Name must be at most 255 characters.')
-    manager = None
-    if managers:
-        manager, error = resolve_user_by_full_name(next(iter(managers)), role='student', field_label='Project Manager')
+    instructor_ids = set()
+    for reference in {text(row.get('instructor_name')) for row in raw if text(row.get('instructor_name'))}:
+        instructor, error = resolve_user_by_full_name(reference, role=['faculty', 'admin'], field_label='Instructor')
         if error:
             raise ValidationError(error)
-    if system or manager:
-        require_section_write(user, term, year, section, manager)
-    return {'system_name': system, 'project_manager_id': manager.pk if manager else None}
+        if not instructor or not instructor.is_active:
+            raise ValidationError('Choose an active section instructor.')
+        if (workspace == 'instructor' or not (user_is_admin(user) or user_is_pit_lead_only(user))) and instructor.pk != user.pk:
+            raise PermissionDenied('An instructor import cannot assign another instructor.')
+        instructor_ids.add(instructor.pk)
+    manager = validate_bulk_section_metadata({
+        'system_name': system, 'project_manager': next(iter(managers), ''), 'issues': [],
+    }, user, term, year, section, member_ids=member_ids) if system or managers else None
+    return {'system_name': system, 'project_manager_id': manager.pk if manager else None,
+        'instructor_ids': sorted(instructor_ids)}
 
 
 def project_selection(rows, data):
@@ -468,7 +491,7 @@ def prepare(user, data):
         row['project_mode'] = 'continue' if row['project_title'] else 'new'
         if row['project_mode'] == 'new':
             row['source_event_id'] = None
-    validate_rows(term, year, section, rows, event)
+    validate_rows(term, year, section, rows, event, allow_unassigned=operation == 'import')
     if operation == 'import':
         from .bulk_import import imported_concept_requirement
         for row in rows:
@@ -487,7 +510,8 @@ def prepare(user, data):
         r = resolve(term.pk, year, e.pk).get(section, {})
         (affected if not event and not event_in_use(e, section) and r.get('source') == 'current' and not
             PITEventRoster.objects.filter(event=e, section=section).exists() else preserved).append(e.event_name)
-    sheet_details = imported_sheet_details(user, term, year, section, data['teams']) if operation == 'import' else {}
+    sheet_details = imported_sheet_details(user, term, year, section, data['teams'], member_ids=used,
+        workspace=data.get('workspace')) if operation == 'import' else {}
     state = {'actor': user.pk, 'sheet_details': sheet_details, 'data': {'year_level': year, 'section': section, 'workspace': data.get('workspace'),
         'event_id': event.pk if event else None, 'operation': operation}, 'rows': rows,
         'fingerprint': fingerprint(term, year, section), 'nonce': uuid4().hex}
@@ -500,6 +524,9 @@ def prepare(user, data):
         'target': event.event_name if event else 'Current roster', 'previous_team_count': len(existing),
         'team_count': len(rows), 'student_count': len(used), 'omitted_student_count': len(enrolled - used),
         'affected_events': affected, 'preserved_events': preserved,
+        'section_assignment_count': StudentAcademicRecord.objects.filter(
+            Q(section='') | Q(section__iexact='BSIT'), semester=term, year_level=year,
+            student_id__in=used).count() if operation == 'import' else 0,
         'confirmation': f'Apply to {event.event_name}' if event else 'Set as current roster for upcoming events'}
 
 
@@ -545,6 +572,8 @@ def apply(request, token):
     term, year, section, _ = scope(request.user, state['data'])
     events = lock_cohort(term, year)
     list(get_user_model().objects.select_for_update().filter(pk=request.user.pk))
+    list(instructor_sections(request.user, term, year).filter(section=section).select_for_update())
+    require_roster_scope(request.user, term, year, section, state['data'].get('workspace'))
     receipt_key = sha256(token.encode()).hexdigest()
     project_setup = state['data']['operation'] == 'projects' and state['data'].get('event_id')
     action = 'teams.roster_setup_open' if project_setup else 'teams.roster_replace'
@@ -564,7 +593,18 @@ def apply(request, token):
         return apply_event_projects(request, state, term, year, section, event, receipt_key)
     if event and event_in_use(event, section):
         raise ValidationError('This event roster is locked. Prepare projects in a future roster.')
-    validate_rows(term, year, section, state['rows'], event)
+    importing = state['data']['operation'] == 'import'
+    validate_rows(term, year, section, state['rows'], event, allow_unassigned=importing)
+    sheet_details = state.get('sheet_details', {})
+    instructor_ids = sheet_details.get('instructor_ids', [])
+    instructors = list(get_user_model().objects.select_for_update().filter(pk__in=instructor_ids))
+    if len(instructors) != len(instructor_ids) or any(not u.is_active or u.role not in ('faculty', 'admin') for u in instructors):
+        raise ValidationError('An instructor account changed. Review the roster again.')
+    if (state['data'].get('workspace') == 'instructor' or not (user_is_admin(request.user) or user_is_pit_lead_only(request.user))) and any(i != request.user.pk for i in instructor_ids):
+        raise PermissionDenied('An instructor import cannot assign another instructor.')
+    if importing:
+        StudentAcademicRecord.objects.filter(Q(section='') | Q(section__iexact='BSIT'),
+            semester=term, year_level=year, student_id__in=ids).update(section=section)
     freeze_events(term, year, section, events)
     # Establish the old default before new unassigned teams can affect inference.
     from .pit_rosters import ensure_current
@@ -601,7 +641,6 @@ def apply(request, token):
     binding.teams.set(created)
     binding.revision += 1
     binding.save()
-    sheet_details = state.get('sheet_details', {})
     if sheet_details.get('system_name') or sheet_details.get('project_manager_id'):
         from .section_access import require_section_write, audit_section
         manager = get_user_model().objects.filter(pk=sheet_details.get('project_manager_id')).first()
@@ -612,6 +651,11 @@ def apply(request, token):
             'year_level': year, 'system_name': sheet_details.get('system_name') or (existing.system_name if existing else ''),
             'project_manager': manager or (existing.project_manager if existing else None)})
         audit_section(request, assignment, 'section_assignment.create' if created_assignment else 'section_assignment.update', old)
+    if state['data'].get('workspace') != 'instructor' and (user_is_admin(request.user) or user_is_pit_lead_only(request.user)):
+        for instructor_id in instructor_ids:
+            SectionInstructorAssignment.objects.update_or_create(faculty_id=instructor_id,
+                semester=term, year_level=year, section=section,
+                defaults={'assigned_by': request.user, 'is_active': True})
     result = {'team_ids': [t.pk for t in created], 'created_count': len(created), 'preview_id': receipt_key,
         'event_id': event.pk if event else None, 'section': section, 'operation': state['data']['operation']}
     audit(request, 'teams.roster_replace', binding, result)

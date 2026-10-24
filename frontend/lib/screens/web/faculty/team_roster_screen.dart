@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import '../../../navigation/admin_route_paths.dart';
 import '../../../services/academic/team_roster_service.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../utils/csv_file_io.dart';
@@ -15,6 +16,7 @@ import '../../../utils/import/team_bulk_import_csv.dart';
 import '../../../widgets/shadcn/defensys_action_menu.dart';
 import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../widgets/shadcn/defensys_workflow_widgets.dart';
+import '../admin/student_teams/team_creation_page.dart';
 
 Future<bool?> openTeamRoster(
   BuildContext context, {
@@ -81,9 +83,10 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
   Map<String, dynamic>? data, review;
   String? year, section, action, error, message, fileName;
   String selected = 'current', source = 'current', method = 'alphabetical';
-  String? bulkProjectMode;
   int groupSize = 4, requestVersion = 0;
   StreamSubscription? _dropSubscription;
+  final _statusTooltip = ShadTooltipController();
+  bool _wasVisible = true;
   bool dragging = false;
   bool busy = false, changed = false, carryProjects = true, missingOnly = false;
   List<Map<String, dynamic>> importRows = [];
@@ -124,9 +127,22 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = TickerMode.of(context);
+    if (visible && !_wasVisible && !busy) {
+      Future.microtask(() {
+        if (mounted) load(initial: rosters.isEmpty);
+      });
+    }
+    _wasVisible = visible;
+  }
+
+  @override
   void dispose() {
     requestVersion++;
     _dropSubscription?.cancel();
+    _statusTooltip.dispose();
     super.dispose();
   }
 
@@ -145,7 +161,7 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
         data = result;
         year = result['year_level'];
         section = result['section'];
-        if (initial && widget.initialEvent != null) {
+        if (initial && widget.initialEvent != null && rosters.isNotEmpty) {
           selected = keyFor(
             rosters.firstWhere(
               (r) => r['name'] == widget.initialEvent,
@@ -204,7 +220,6 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
         ),
       );
       if (next == 'copy') carryProjects = true;
-      bulkProjectMode = null;
       projectModes
         ..clear()
         ..addEntries(
@@ -295,6 +310,22 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
       );
     }
   });
+
+  Future<void> importSections() async {
+    final imported = await openTeamCreation(
+      context,
+      importTab: true,
+      level: '$year PIT',
+      event: roster == null
+          ? widget.initialEvent
+          : selected != 'current'
+          ? roster!['name']
+          : null,
+    );
+    if (!mounted) return;
+    changed = changed || imported == true;
+    await load(initial: true);
+  }
 
   Future<void> export(String format) => run(() async {
     final result = await ref.read(teamRosterServiceProvider).export(target);
@@ -458,7 +489,9 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${r['status']}',
+                          selected == keyFor(r)
+                              ? '${r['team_count']} teams'
+                              : '${r['status']}',
                           style: TextStyle(
                             fontSize: 11,
                             color: DefensysTokens.textSecondaryOf(context),
@@ -489,7 +522,33 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
             '${roster?['name']}',
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
-          badge('${roster?['status']}'),
+          ShadTooltip(
+            controller: _statusTooltip,
+            builder: (context) => SizedBox(
+              width: MediaQuery.sizeOf(context).width.clamp(0.0, 360.0) - 64,
+              child: Text(
+                locked
+                    ? 'This event keeps its saved teams, leaders and members. You can export it or copy it into another roster.'
+                    : selected == 'current'
+                    ? 'New and upcoming events follow this roster. Ongoing, completed and custom event rosters keep their saved teams.'
+                    : roster?['source'] == 'custom'
+                    ? 'This roster applies only to this event and $section.'
+                    : 'This event uses the current teams until you apply a replacement or open team setup.',
+              ),
+            ),
+            child: ShadBadge.outline(
+              key: const ValueKey('roster-status'),
+              onPressed: _statusTooltip.show,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(child: Text('${roster?['status']}')),
+                  const SizedBox(width: 6),
+                  const Icon(LucideIcons.info, size: 13),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
       const SizedBox(height: 6),
@@ -501,33 +560,23 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
         ),
       ),
       const SizedBox(height: 16),
-      WorkflowNotice(
-        title: locked
-            ? 'Roster locked'
-            : selected == 'current'
-            ? 'Default for upcoming events'
-            : 'Event roster',
-        message: locked
-            ? 'This event keeps its saved teams, leaders and members. You can export this roster or copy it into another roster.'
-            : selected == 'current'
-            ? 'New and upcoming events using the current roster follow this default. Ongoing, completed and custom event rosters keep their saved teams.'
-            : roster?['source'] == 'custom'
-            ? 'This roster applies only to this event and $section.'
-            : 'This event uses your current teams until you apply a replacement or open team setup.',
-      ),
-      if (selected == 'current') ...[
-        if (rosters.any((r) => r['locked'] == true))
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: Text(
-              'Saved events stay unchanged: ${rosters.where((r) => r['locked'] == true).map((r) => r['name']).join(', ')}.',
-              style: TextStyle(
-                fontSize: 12,
-                color: DefensysTokens.textSecondaryOf(context),
+      if (locked)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(LucideIcons.lock, size: 14),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'This event roster is locked. Export it or copy it to Current roster.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
               ),
             ),
-          ),
-      ],
+          ],
+        ),
     ],
   );
 
@@ -551,61 +600,95 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
     ],
   );
 
+  Widget importMenu() {
+    if (data?['can_import_sections'] != true || widget.instructor) {
+      return ShadButton(
+        key: const ValueKey('roster-import-section'),
+        height: 0,
+        enabled: !busy,
+        onPressed: () => begin('import'),
+        leading: const Icon(LucideIcons.upload, size: 16),
+        child: const Flexible(child: Text('Import teams')),
+      );
+    }
+    return DefensysActionMenu(
+      key: const ValueKey('roster-import-menu'),
+      label: 'Choose team import scope',
+      triggerLabel: 'Import teams',
+      triggerIcon: LucideIcons.chevronDown,
+      primary: true,
+      wrapLabel: true,
+      enabled: !busy,
+      items: [
+        DefensysMenuItem(
+          label: 'All sections with instructors',
+          icon: LucideIcons.users,
+          onPressed: importSections,
+        ),
+        DefensysMenuItem(
+          label: 'Selected section · $section',
+          icon: LucideIcons.upload,
+          onPressed: () => begin('import'),
+        ),
+      ],
+    );
+  }
+
+  Widget rosterActions({double? buttonWidth}) => Wrap(
+    key: const ValueKey('roster-actions'),
+    spacing: 8,
+    runSpacing: 8,
+    children:
+        [
+              if (locked && selected != 'current')
+                secondary('Copy to Current roster', Icons.copy_outlined, () {
+                  final sourceKey = selected;
+                  setState(() {
+                    selected = 'current';
+                    action = 'copy';
+                    source = sourceKey;
+                    review = null;
+                    carryProjects = true;
+                    error = null;
+                    message = null;
+                  });
+                }),
+              if (!locked) ...[
+                secondary(
+                  'Copy roster',
+                  Icons.copy_outlined,
+                  () => begin('copy'),
+                  enabled: rosters.length > 1,
+                ),
+                importMenu(),
+                if (data?['can_generate'] == true)
+                  secondary(
+                    'Generate teams',
+                    Icons.groups_outlined,
+                    () => begin('generate'),
+                  ),
+              ],
+              if (roster?['can_request_setup'] == true)
+                secondary(
+                  'Project setup',
+                  Icons.assignment_outlined,
+                  () => begin('projects'),
+                ),
+              exportMenu(),
+            ]
+            .map(
+              (button) => buttonWidth == null
+                  ? button
+                  : SizedBox(width: buttonWidth, height: 44, child: button),
+            )
+            .toList(),
+  );
+
   Widget browse() => panel(
     Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         rosterHeading(),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            if (locked && selected != 'current')
-              secondary('Copy to Current roster', Icons.copy_outlined, () {
-                final sourceKey = selected;
-                setState(() {
-                  selected = 'current';
-                  action = 'copy';
-                  source = sourceKey;
-                  review = null;
-                  carryProjects = true;
-                  error = null;
-                  message = null;
-                });
-              }),
-            if (!locked) ...[
-              secondary(
-                'Copy roster',
-                Icons.copy_outlined,
-                () => begin('copy'),
-                enabled: rosters.length > 1,
-              ),
-              secondary(
-                'Import roster',
-                Icons.upload_file_outlined,
-                () => begin('import'),
-              ),
-              if (data?['can_generate'] == true)
-                ShadButton(
-                  height: 0,
-                  enabled: !busy,
-                  onPressed: () => begin('generate'),
-                  leading: const Icon(Icons.groups_outlined, size: 16),
-                  child: const Flexible(
-                    child: Text('Generate teams', textAlign: TextAlign.center),
-                  ),
-                ),
-            ],
-            if (roster?['can_request_setup'] == true)
-              secondary(
-                'Project setup',
-                Icons.assignment_outlined,
-                () => begin('projects'),
-              ),
-            exportMenu(),
-          ],
-        ),
-        const SizedBox(height: 20),
         Wrap(
           spacing: 12,
           runSpacing: 8,
@@ -647,6 +730,85 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
         ),
       ],
     ),
+  );
+
+  Widget rosterToolbar() => LayoutBuilder(
+    builder: (context, constraints) {
+      final options = _maps(data?['scope_options']);
+      final years = {
+        for (final option in options)
+          '${option['year_level']}': '${option['year_level']}',
+      };
+      final sections = {
+        for (final option in options.where((o) => o['year_level'] == year))
+          '${option['section']}': '${option['section']}',
+      };
+      return Wrap(
+        key: const ValueKey('roster-toolbar'),
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.end,
+        spacing: 20,
+        children: [
+          Wrap(
+            spacing: 12,
+            children: [
+              if (years.length > 1)
+                SizedBox(
+                  width: constraints.maxWidth < 500
+                      ? constraints.maxWidth
+                      : 200,
+                  child: WorkflowSelect(
+                    label: 'PIT year',
+                    value: year,
+                    options: years,
+                    enabled: !busy,
+                    searchable: false,
+                    onChanged: (value) {
+                      setState(() {
+                        year = value;
+                        section = null;
+                        action = null;
+                        review = null;
+                      });
+                      load();
+                    },
+                  ),
+                ),
+              if (sections.isNotEmpty)
+                SizedBox(
+                  width: constraints.maxWidth < 500
+                      ? constraints.maxWidth
+                      : 220,
+                  child: WorkflowSelect(
+                    label: 'Section',
+                    value: section,
+                    options: sections,
+                    enabled: !busy && sections.length > 1,
+                    searchable: false,
+                    onChanged: (value) {
+                      setState(() {
+                        section = value;
+                        action = null;
+                        review = null;
+                      });
+                      load();
+                    },
+                  ),
+                ),
+            ],
+          ),
+          if (roster != null && action == null && review == null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: rosterActions(
+                buttonWidth: constraints.maxWidth < 500
+                    ? (constraints.maxWidth - 8) / 2
+                    : null,
+              ),
+            ),
+        ],
+      );
+    },
   );
 
   Widget teamTable(List<Map<String, dynamic>> rows, {bool preview = false}) {
@@ -864,6 +1026,195 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
     ],
   );
 
+  void applySelectedProjectMode(String mode) {
+    setState(() {
+      for (final team in teams.where(
+        (team) =>
+            setupTeams.contains(team['id']) &&
+            team['project_locked'] != true &&
+            team['shared_project'] != true,
+      )) {
+        projectModes[team['id'] as int] =
+            mode == 'continue' && existingProject(team).isEmpty ? 'new' : mode;
+      }
+    });
+  }
+
+  Widget projectChoicesToolbar() {
+    final canApply =
+        !busy &&
+        teams.any(
+          (team) =>
+              setupTeams.contains(team['id']) &&
+              team['project_locked'] != true &&
+              team['shared_project'] != true,
+        );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 10,
+        children: [
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              '${setupTeams.length} selected',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final mode in const {
+                'continue': 'Keep existing',
+                'new': 'Start new',
+              }.entries)
+                ShadButton.outline(
+                  key: ValueKey('project-bulk-${mode.key}'),
+                  enabled: canApply,
+                  height: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  onPressed: () => applySelectedProjectMode(mode.key),
+                  child: Text(mode.value, style: const TextStyle(fontSize: 12)),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget projectTeamRow(Map<String, dynamic> team) {
+    final id = team['id'] as int;
+    final title = existingProject(team);
+    final details = ShadCheckbox(
+      key: ValueKey('project-team-$id'),
+      value: setupTeams.contains(id),
+      enabled: !busy && team['project_locked'] != true,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      onChanged: (value) => setState(() {
+        value ? setupTeams.add(id) : setupTeams.remove(id);
+      }),
+      label: Text(
+        '${team['name']}',
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+      ),
+      sublabel: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          title.isEmpty ? 'No existing project' : title,
+          style: TextStyle(
+            fontSize: 12,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+      ),
+    );
+    final Widget choice;
+    if (team['project_locked'] == true || team['shared_project'] == true) {
+      choice = Text(
+        team['project_locked'] == true
+            ? 'Work has started. Use the existing review or revision workflow.'
+            : 'Managed through the shared concept workflow.',
+        style: TextStyle(
+          fontSize: 12,
+          color: DefensysTokens.textSecondaryOf(context),
+        ),
+      );
+    } else if (title.isEmpty) {
+      choice = const Text(
+        'New project required',
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      );
+    } else {
+      choice = Semantics(
+        label: 'Project choice for ${team['name']}',
+        child: SegmentedButton<String>(
+          key: ValueKey('project-choice-$id'),
+          segments: const [
+            ButtonSegment(value: 'continue', label: Text('Keep existing')),
+            ButtonSegment(value: 'new', label: Text('Start new')),
+          ],
+          selected: {projectModes[id] ?? defaultProjectMode(team)},
+          showSelectedIcon: false,
+          expandedInsets: EdgeInsets.zero,
+          style: SegmentedButton.styleFrom(
+            foregroundColor: DefensysTokens.textPrimaryOf(context),
+            backgroundColor: DefensysTokens.surfaceOf(context),
+            selectedForegroundColor: Colors.white,
+            selectedBackgroundColor: DefensysTokens.maroonOf(context),
+            disabledForegroundColor: DefensysTokens.textSecondaryOf(context),
+            disabledBackgroundColor: DefensysTokens.surfaceHigherOf(context),
+            side: BorderSide(color: DefensysTokens.borderOf(context)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
+            textStyle: const TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            minimumSize: const Size(0, 44),
+            visualDensity: VisualDensity.compact,
+          ),
+          onSelectionChanged: !busy && setupTeams.contains(id)
+              ? (values) => setState(() => projectModes[id] = values.single)
+              : null,
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) => constraints.maxWidth >= 640
+            ? Row(
+                children: [
+                  Expanded(child: details),
+                  const SizedBox(width: 20),
+                  SizedBox(width: 240, child: choice),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [details, const SizedBox(height: 10), choice],
+              ),
+      ),
+    );
+  }
+
+  Widget projectChoicesSummary() {
+    final selected = teams.where((team) => setupTeams.contains(team['id']));
+    final keeping = selected
+        .where(
+          (team) =>
+              (projectModes[team['id']] ?? defaultProjectMode(team)) ==
+              'continue',
+        )
+        .length;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 16),
+      child: Semantics(
+        liveRegion: true,
+        child: Text(
+          '$keeping keeping existing · ${selected.length - keeping} starting new',
+          style: TextStyle(
+            fontSize: 12,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget configure() => panel(
     Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1031,30 +1382,6 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
           ),
         ],
         if (action == 'projects') ...[
-          WorkflowSelect(
-            label: 'Apply to selected teams',
-            value: bulkProjectMode,
-            placeholder: 'Choose a bulk action',
-            enabled: !busy && setupTeams.isNotEmpty,
-            options: const {
-              'continue': 'Keep existing projects',
-              'new': 'Start new projects',
-            },
-            searchable: false,
-            onChanged: (v) => setState(() {
-              bulkProjectMode = v;
-              for (final team in teams.where(
-                (t) =>
-                    setupTeams.contains(t['id']) && t['shared_project'] != true,
-              )) {
-                final id = team['id'] as int;
-                projectModes[id] =
-                    v == 'continue' && existingProject(team).isEmpty
-                    ? 'new'
-                    : v;
-              }
-            }),
-          ),
           WorkflowNotice(
             title: selected == 'current'
                 ? 'Projects for upcoming events'
@@ -1071,97 +1398,9 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
               message:
                   'This event previously requested new projects. That preference is shown below for teams whose setup has not opened. You can review and change each choice here.',
             ),
-          const Text(
-            'Team projects',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          for (final t in teams)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ShadCheckbox(
-                    key: ValueKey('project-team-${t['id']}'),
-                    value: setupTeams.contains(t['id']),
-                    enabled: !busy && t['project_locked'] != true,
-                    onChanged: (v) => setState(() {
-                      bulkProjectMode = null;
-                      v
-                          ? setupTeams.add(t['id'] as int)
-                          : setupTeams.remove(t['id']);
-                    }),
-                    label: Text(
-                      '${t['name']}',
-                      style: const TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 26, top: 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          existingProject(t).isEmpty
-                              ? 'No existing project'
-                              : existingProject(t),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: DefensysTokens.textSecondaryOf(context),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        if (t['project_locked'] == true)
-                          Text(
-                            'Work has started. Use the existing review or revision workflow.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: DefensysTokens.textSecondaryOf(context),
-                            ),
-                          )
-                        else if (t['shared_project'] == true)
-                          Text(
-                            'Managed through the shared concept workflow.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: DefensysTokens.textSecondaryOf(context),
-                            ),
-                          )
-                        else if (existingProject(t).isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 12),
-                            child: Text(
-                              'New project required',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          )
-                        else
-                          WorkflowSelect(
-                            key: ValueKey('project-choice-${t['id']}'),
-                            label: 'Project choice',
-                            value: projectModes[t['id']],
-                            enabled: !busy && setupTeams.contains(t['id']),
-                            searchable: false,
-                            options: {
-                              if (existingProject(t).isNotEmpty)
-                                'continue': 'Keep existing project',
-                              'new': 'Start new project',
-                            },
-                            onChanged: (v) => setState(() {
-                              bulkProjectMode = null;
-                              projectModes[t['id'] as int] = v;
-                            }),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          projectChoicesToolbar(),
+          for (final team in teams) projectTeamRow(team),
+          projectChoicesSummary(),
           WorkflowNotice(
             title: 'Review project choices',
             message: selected == 'current'
@@ -1205,6 +1444,53 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                   textAlign: TextAlign.center,
                 ),
               ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  Widget emptySections() => panel(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Import teams or assign instructors',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Text('No sections are available for $year in ${data!['semester']}.'),
+        const SizedBox(height: 8),
+        Text(
+          data!['can_import_sections'] == true
+              ? 'Import teams for all sections with their instructors in one upload, or assign instructors so they can import their own section. Existing students are linked and blank section assignments are filled from the roster.'
+              : 'Ask your PIT Lead to assign you a section, then import your section\'s team roster here.',
+        ),
+        const SizedBox(height: 20),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            if (data!['can_import_sections'] == true)
+              ShadButton(
+                enabled: !busy,
+                onPressed: importSections,
+                child: const Text('Import teams'),
+              ),
+            if (data!['can_import_sections'] == true)
+              secondary('Assign instructors', Icons.person_add_alt, () {
+                context.go(
+                  Uri(
+                    path: FacultyRoutes.cohort,
+                    queryParameters: {'tab': 'instructors'},
+                  ).toString(),
+                );
+              }),
+            secondary(
+              'Refresh sections',
+              Icons.refresh,
+              () => load(initial: true),
             ),
           ],
         ),
@@ -1331,6 +1617,15 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                   ),
                 ],
               ),
+              if ((review!['section_assignment_count'] as num? ?? 0) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: WorkflowNotice(
+                    title: 'Assign unsectioned students',
+                    message:
+                        '${review!['section_assignment_count']} enrolled students with no class section will be assigned to $section when this roster is applied.',
+                  ),
+                ),
               if ((review!['omitted_student_count'] as num? ?? 0) > 0)
                 const Padding(
                   padding: EdgeInsets.only(top: 12),
@@ -1458,103 +1753,58 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                   ),
                 if (!busy) secondary('Try again', Icons.refresh, load),
               ] else ...[
-                if (_maps(data!['scope_options']).length > 1)
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final options = _maps(data!['scope_options']);
-                      return Wrap(
-                        spacing: 12,
-                        children: [
-                          if (options
-                                  .map((v) => v['year_level'])
-                                  .toSet()
-                                  .length >
-                              1)
-                            SizedBox(
-                              width: constraints.maxWidth < 500
-                                  ? constraints.maxWidth
-                                  : 200,
-                              child: WorkflowSelect(
-                                label: 'PIT year',
-                                value: year,
-                                enabled: !busy,
-                                searchable: false,
-                                options: {
-                                  for (final o in options)
-                                    '${o['year_level']}': '${o['year_level']}',
-                                },
-                                onChanged: (v) {
-                                  setState(() {
-                                    year = v;
-                                    section = null;
-                                    action = null;
-                                    review = null;
-                                  });
-                                  load();
-                                },
-                              ),
-                            ),
-                          SizedBox(
-                            width: constraints.maxWidth < 500
-                                ? constraints.maxWidth
-                                : 220,
-                            child: WorkflowSelect(
-                              label: 'Section',
-                              value: section,
-                              enabled: !busy,
-                              searchable: false,
-                              options: {
-                                for (final o in options.where(
-                                  (o) => o['year_level'] == year,
-                                ))
-                                  '${o['section']}': '${o['section']}',
-                              },
-                              onChanged: (v) {
-                                setState(() {
-                                  section = v;
-                                  action = null;
-                                  review = null;
-                                });
-                                load();
-                              },
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                rosterToolbar(),
                 if (busy)
                   const Padding(
                     padding: EdgeInsets.only(bottom: 14),
                     child: LinearProgressIndicator(),
                   ),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final content = review != null
-                        ? reviewPanel()
-                        : action != null
-                        ? configure()
-                        : browse();
-                    if (constraints.maxWidth < 820) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                if (section == null || rosters.isEmpty)
+                  emptySections()
+                else
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final content = review != null
+                          ? reviewPanel()
+                          : action != null
+                          ? configure()
+                          : browse();
+                      if (constraints.maxWidth < 820) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            WorkflowSelect(
+                              label: 'Roster',
+                              value: selected,
+                              options: {
+                                for (final r in rosters)
+                                  keyFor(r): '${r['name']}',
+                              },
+                              searchable: false,
+                              enabled: !busy && rosters.length > 1,
+                              onChanged: (value) => setState(() {
+                                selected = value;
+                                action = null;
+                                review = null;
+                                missingOnly = false;
+                                error = null;
+                                message = null;
+                              }),
+                            ),
+                            content,
+                          ],
+                        );
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          rosterList(),
-                          const SizedBox(height: 16),
-                          content,
+                          SizedBox(width: 220, child: rosterList()),
+                          const SizedBox(width: 20),
+                          Expanded(child: content),
                         ],
                       );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(width: 220, child: rosterList()),
-                        const SizedBox(width: 20),
-                        Expanded(child: content),
-                      ],
-                    );
-                  },
-                ),
+                    },
+                  ),
               ],
             ],
           ),

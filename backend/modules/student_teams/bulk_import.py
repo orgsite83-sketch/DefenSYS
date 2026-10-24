@@ -702,7 +702,10 @@ def preview_bulk_teams(
     *,
     section_import=False,
     import_section='',
+    section_metadata=None,
 ):
+    if section_metadata is None:
+        section_metadata = collect_bulk_section_metadata(rows, import_section=import_section)
     preview_rows = []
     checked_rows = []
     summary = {
@@ -844,6 +847,36 @@ def preview_bulk_teams(
                         + ('the team name is repeated in this file.' if duplicate_name else
                            'a student appears in both rosters. Resolve the roster or select distinct PIT events.'))
                     preview_rows[current]['ready'] = False
+    # Shared sheet headers affect every team in a section. Check them during
+    # review using the same authorization/enrollment rules as the transaction.
+    from rest_framework.exceptions import PermissionDenied, ValidationError
+    section_members = {}
+    for row_index, data, members in checked_rows:
+        if preview_rows[row_index]['ready']:
+            section_members.setdefault((data.get('section', ''), data.get('year_level', '')), set()).update(members)
+    metadata_results = {}
+    for row_index, data, members in checked_rows:
+        section = data.get('section', '')
+        meta = section_metadata.get(section)
+        if not meta:
+            continue
+        key = (section, data.get('year_level', ''))
+        if key not in metadata_results:
+            try:
+                manager = validate_bulk_section_metadata(meta, user, semester, key[1], section,
+                    member_ids=section_members.get(key, set()))
+                metadata_results[key] = (manager, [])
+            except (PermissionDenied, ValidationError) as exc:
+                metadata_results[key] = (None, format_bulk_import_errors(exc.detail))
+        manager, metadata_issues = metadata_results[key]
+        if metadata_issues:
+            preview_rows[row_index]['issues'].extend(metadata_issues)
+            preview_rows[row_index]['ready'] = False
+            preview_rows[row_index]['section_metadata_invalid'] = True
+        elif manager and manager.pk in members and preview_rows[row_index]['ready']:
+            # A manager may be joining this section in a later uploaded team.
+            # Commit that team first so subsequent rows see its real membership.
+            meta.setdefault('manager_member_rows', set()).add(row_index + 1)
     summary['ready'] = sum(row['ready'] for row in preview_rows)
     sections = {}
     for row in preview_rows:
@@ -855,10 +888,76 @@ def preview_bulk_teams(
     return preview_rows, summary
 
 
+def collect_bulk_section_metadata(rows, *, import_section='', system_name='', project_manager=''):
+    """Merge request/sheet headers once; conflicting headers must never win silently."""
+    sections = {}
+
+    def merge(section, system, manager):
+        section = ' '.join(section.split())
+        if not section or not (system or manager):
+            return
+        meta = sections.setdefault(section, {'system_name': '', 'project_manager': '', 'issues': []})
+        for field, value in (('system_name', system), ('project_manager', manager)):
+            if not value:
+                continue
+            if meta[field] and normalize_name(meta[field]) != normalize_name(value):
+                issue = f'Use one {"System Name" if field == "system_name" else "Project Manager"} for section {section}.'
+                if issue not in meta['issues']:
+                    meta['issues'].append(issue)
+            else:
+                meta[field] = value
+
+    merge(import_section, system_name, project_manager)
+    for row in rows:
+        if isinstance(row, dict):
+            merge((row.get('section') or import_section).strip(),
+                (row.get('system_name') or '').strip(), (row.get('project_manager') or '').strip())
+    return sections
+
+
+def validate_bulk_section_metadata(meta, user, semester, year, section, *, member_ids=()):
+    """Validate section writes without side effects, including a joining manager."""
+    from rest_framework.exceptions import ValidationError
+    from user_management.academic_records.models import StudentAcademicRecord
+    from .models import SectionAssignment
+    from .section_access import require_section_write
+
+    if meta.get('issues'):
+        raise ValidationError(meta['issues'])
+    if semester is None:
+        raise ValidationError('No active semester is configured.')
+    if len(meta['system_name']) > 255:
+        raise ValidationError({'system_name': 'System Name must be at most 255 characters.'})
+    existing = SectionAssignment.objects.filter(semester=semester, section=section).select_related('project_manager').first()
+    manager = existing.project_manager if existing else None
+    if meta['project_manager']:
+        manager, error = resolve_user_by_full_name(meta['project_manager'], role='student', field_label='Project Manager')
+        if error:
+            raise ValidationError({'project_manager': error})
+    if existing:
+        require_section_write(user, semester, existing.year_level, existing.section)
+    require_section_write(user, semester, year, section)
+    if manager:
+        # Saving a validated team establishes its membership and section in the
+        # same transaction. Allow that prospective membership only in this year.
+        joining = manager.pk in member_ids and StudentAcademicRecord.objects.filter(
+            student=manager, semester=semester, year_level=year).exists()
+        try:
+            require_section_write(user, semester, year, section, None if joining and manager.is_active else manager)
+        except ValidationError as exc:
+            if isinstance(exc.detail, dict) and 'project_manager_id' in exc.detail:
+                raise ValidationError({'project_manager':
+                    f'Project Manager "{display_name(manager)}" must be an active student enrolled in '
+                    f'{section}, {year}, in the active semester, or a member of a valid team being imported into this section. '
+                    'Choose an eligible manager or correct the enrollment before importing.'}) from exc
+            raise
+    return manager
+
+
 def format_bulk_import_errors(errors):
     """Turn serializer/API error payloads into human-readable strings."""
-    if isinstance(errors, list):
-        return [str(item) for item in errors]
+    if isinstance(errors, (list, tuple)):
+        return [line for item in errors for line in format_bulk_import_errors(item)]
     if isinstance(errors, dict):
         lines = []
         for field, messages in errors.items():

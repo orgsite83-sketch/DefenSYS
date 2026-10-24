@@ -63,6 +63,7 @@ def can_manage_concept_policies(user, team):
 
 def section_payload(team, teams, students, assignment, *, actor=None):
     from .section_concept_policies import policy_context_payload
+    from user_management.serializers import SectionInstructorAssignmentSerializer
     details = SectionAssignmentSerializer(assignment).data if assignment else {
         'section': team.section,
         'semester_id': team.semester_id,
@@ -90,11 +91,26 @@ def section_payload(team, teams, students, assignment, *, actor=None):
         from .pit_rosters import resolve
         resolved = resolve(team.semester_id, team.year_level)
         roster_info = resolved.get(team.section)
+    can_manage_instructors = bool(team.is_pit and actor and (
+        actor.is_superuser or actor.role == 'admin' or
+        (getattr(actor, 'is_pit_lead', False) and actor.pit_lead_year == team.year_level)))
+    instructors = SectionInstructorAssignment.objects.filter(
+        semester_id=team.semester_id, year_level=team.year_level, section=team.section,
+        is_active=True, faculty__is_active=True,
+    ).select_related('faculty', 'semester__school_year', 'assigned_by') if team.is_pit else []
     return {
         **details,
         'is_pit': team.is_pit,
         'semester_label': team.semester.display_name,
         'team_count': len(teams),
+        'student_count': len(students),
+        'instructors': list(SectionInstructorAssignmentSerializer(instructors, many=True).data),
+        'can_manage_instructors': can_manage_instructors,
+        'instructor_options': [
+            {'id': faculty.pk, 'name': display_name(faculty), 'email': faculty.email}
+            for faculty in get_user_model().objects.filter(is_active=True, role__in=['faculty', 'admin'])
+                .order_by('last_name', 'first_name', 'username')
+        ] if can_manage_instructors else [],
         'roster_info': roster_info,
         'concept_contexts': policy_context_payload(team, teams, assignment),
         'can_manage_concepts': can_manage_concept_policies(actor, team),

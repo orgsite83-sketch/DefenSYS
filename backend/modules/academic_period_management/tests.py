@@ -206,7 +206,8 @@ class AcademicPeriodApiTests(APITestCase):
         )
         forced = self.client.post(
             f'/api/academic-periods/semesters/{target.id}/activate/',
-            {'force': True, 'reason': 'Manual rollover approved.'},
+            {'force': True, 'reason': 'Manual rollover approved.',
+             'preview_revision': self.client.get(f'/api/academic-periods/semesters/{target.id}/transition-preview/').data['preview_revision']},
             format='json',
         )
 

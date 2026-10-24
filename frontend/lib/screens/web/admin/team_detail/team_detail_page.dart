@@ -1,4 +1,5 @@
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/widgets/pit/section_instructor_details.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -586,6 +587,22 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                   team['project_manager_name']?.toString() ?? '—',
                 ),
               ] else ...[
+                _buildInfoRow(
+                  Icons.person_outline,
+                  'Section instructor',
+                  team['instructor_name']?.toString().trim().isNotEmpty == true
+                      ? team['instructor_name'].toString()
+                      : 'No instructor assigned',
+                ),
+                if (sectionInstructorsForTeam(team).isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 38, top: 4),
+                    child: TextButton(
+                      onPressed: () => showSectionInstructorDetails(context, sectionInstructorsForTeam(team)),
+                      child: const Text('View instructor details'),
+                    ),
+                  ),
+                const SizedBox(height: 12),
                 _buildInfoRow(
                   Icons.computer_outlined,
                   'System Name',

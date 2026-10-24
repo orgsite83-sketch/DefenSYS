@@ -253,9 +253,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         .fetchTeams(
           workspace: _isPitInstructor ? 'instructor' : 'operations',
           level: initialLevel,
-          scope: (_isPitLeadManager || _isPitInstructor)
-              ? (scope ?? _teamListScope)
-              : null,
+          scope: scope ?? _teamListScope,
           yearLevel: widget.pitYearLevel,
           section: widget.pitSection,
           eventName: event,
@@ -1159,7 +1157,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             const SizedBox(height: 14),
             _notice(displayState.operatingMessage!, warning: _pitTermIsAudit),
           ],
-          if (_isPitLeadManager || _isPitInstructor) ...[
+          ...[
             const SizedBox(height: 14),
             PitTeamScopeToggle(
               teamListScope: _teamListScope,
@@ -1176,9 +1174,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                     .read(studentTeamsProvider.notifier)
                     .fetchTeams(
                       level: _isCapstoneAdmin ? 'Capstone' : '',
-                      scope: (_isPitLeadManager || _isPitInstructor)
-                          ? 'active'
-                          : null,
+                      scope: 'active',
                       search: '',
                     );
               },

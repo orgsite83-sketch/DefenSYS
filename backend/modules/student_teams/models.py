@@ -351,6 +351,8 @@ class TeamRecoveryAuthorization(models.Model):
     team = models.ForeignKey(StudentTeam, related_name='recovery_authorizations', on_delete=models.CASCADE)
     defense_stage = models.ForeignKey('defense.DefenseStage', on_delete=models.PROTECT)
     semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT)
+    source_grade = models.ForeignKey('grading.TeamGrade', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='recovery_authorizations')
     project_version = models.PositiveIntegerField()
     previous_project_title = models.CharField(max_length=255)
     action = models.CharField(max_length=20, choices=[(ACTION_RETAKE, 'Another attempt'), (ACTION_NEW_CONCEPT, 'Replacement concept')])
@@ -363,6 +365,38 @@ class TeamRecoveryAuthorization(models.Model):
 
     class Meta:
         ordering = ['-authorized_at', '-id']
+
+
+class CapstoneJourney(models.Model):
+    """Cohort identity and allowance, independent of the current team term."""
+    team = models.OneToOneField(StudentTeam, on_delete=models.CASCADE, related_name='capstone_journey')
+    intake_semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT)
+    normal_completion_year = models.CharField(max_length=9)
+    extension_end_year = models.CharField(max_length=9)
+    extension_policy = models.CharField(max_length=40, blank=True)
+    completed_project_version = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class TeamTermParticipation(models.Model):
+    """Durable source-term roster and outcome; never a duplicate team."""
+    team = models.ForeignKey(StudentTeam, on_delete=models.CASCADE, related_name='term_participations')
+    semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT,
+        related_name='team_participations')
+    project_version = models.PositiveIntegerField(default=1)
+    is_extended = models.BooleanField(default=False)
+    requirements = models.JSONField(default=list, blank=True)
+    snapshot = models.JSONField(default=dict, blank=True)
+    outcome = models.CharField(max_length=20, default='open', choices=[
+        ('open', 'Open'), ('completed', 'Completed'), ('failed', 'Failed'), ('needs_review', 'Needs review')])
+    closed_at = models.DateTimeField(null=True, blank=True)
+    transition = models.ForeignKey('academic_period_management.SemesterTransitionLog',
+        null=True, blank=True, on_delete=models.PROTECT, related_name='team_participations')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team', 'semester'], name='unique_team_term_participation')]
+        ordering = ['-semester_id', 'team_id']
 
 
 class TeamAdviserAssignment(models.Model):

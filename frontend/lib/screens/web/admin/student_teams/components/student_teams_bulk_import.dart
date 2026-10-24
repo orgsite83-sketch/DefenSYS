@@ -225,7 +225,7 @@ class _StudentTeamsBulkImportViewState
               title: 'Bulk Import Student Teams',
               subtitle: widget.isCapstoneAdmin
                   ? 'Upload team spreadsheets, validate member details and advisers inline, then import ready teams into the active capstone term.'
-                  : 'Upload PIT team spreadsheets, validate project and member details inline, then import ready teams.',
+                  : 'Import teams for all sections in your PIT year, including each section\'s instructor. Existing students are linked and blank section assignments are filled from the roster.',
               actions: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

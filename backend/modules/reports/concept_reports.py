@@ -39,7 +39,8 @@ def concept_teams(request):
         teams = teams.filter(level__icontains='PIT', year_level=request.user.pit_lead_year).exclude(year_level='3rd Year', semester__label='2nd Semester')
     selected = period(request)
     if selected:
-        teams = teams.filter(semester=selected)
+        from student_teams.capstone_lifecycle import teams_in_recorded_term
+        teams = teams_in_recorded_term(teams, selected)
     scope = request.query_params.get('scope', '')
     if scope not in ('', 'pit', 'capstone'):
         raise ValidationError({'scope': 'Choose PIT or Capstone.'})
@@ -52,7 +53,11 @@ def concept_teams(request):
         raise ValidationError('The year is incompatible with the selected academic scope.')
     for field in ('year_level', 'section'):
         if request.query_params.get(field):
-            teams = teams.filter(**{field: request.query_params[field]})
+            if selected:
+                from student_teams.capstone_lifecycle import filter_recorded_team_field
+                teams = filter_recorded_team_field(teams, selected, field, request.query_params[field])
+            else:
+                teams = teams.filter(**{field: request.query_params[field]})
     return teams.order_by('semester_id', 'section', 'name', 'pk')
 
 
@@ -93,6 +98,9 @@ def context_key(item):
 
 
 def decision_row(team, current, concept, grade, *, latest):
+    if grade and team.is_capstone:
+        from student_teams.capstone_lifecycle import recorded_team
+        team = recorded_team(team, grade.semester)
     decision = concept.get('decision') or 'awaiting_decision'
     if current.replacement_required or current.verdict == 'project_rejected':
         decision = 'replacement_required'
@@ -128,7 +136,7 @@ def decision_row(team, current, concept, grade, *, latest):
 
 
 def concept_projects(request):
-    from reports.catalog_reports import column, dataset
+    from reports.catalog_reports import column, dataset, period
     teams = concept_teams(request)
     context, teams = selected_context(request, teams)
     layout = request.query_params.get('layout', 'register') or 'register'
@@ -151,11 +159,15 @@ def concept_projects(request):
             raise ValidationError('Select a PIT event with concepts enabled.')
         if status or history in ('1', 'true'):
             raise ValidationError('The roster includes all source teams and only current eligible titles. Clear the decision/history filters.')
-    teams = list(teams)
-    rounds = ConceptRound.objects.filter(team__in=teams).select_related('defense_stage', 'pit_event_config', 'section_round').prefetch_related('section_round__systems').order_by('-number', '-pk')
+    selected_period = period(request)
+    from student_teams.capstone_lifecycle import recorded_team
+    teams = [recorded_team(team, selected_period) if selected_period else team for team in teams]
+    rounds = ConceptRound.objects.filter(team__in=teams).select_related('defense_stage', 'pit_event_config', 'section_round', 'schedule__semester').prefetch_related('section_round__systems').order_by('-number', '-pk')
     if context:
         rounds = rounds.filter(**{('pit_event_config' if isinstance(context, PitEventGradingConfig) else 'defense_stage'): context})
-    grades = {context_key(g): g for g in TeamGrade.all_objects.filter(team__in=teams).order_by('pk')}
+    if selected_period:
+        rounds = rounds.filter(Q(schedule__semester=selected_period) | Q(schedule__isnull=True))
+    grades = {(context_key(g), g.semester_id): g for g in TeamGrade.all_objects.filter(team__in=teams).order_by('pk')}
     by_team, seen = defaultdict(list), set()
     for current in rounds:
         key = context_key(current)
@@ -170,7 +182,8 @@ def concept_projects(request):
             if history not in ('1', 'true') and (not latest or current.project_version != team.project_version):
                 continue
             for concept in current.concepts:
-                team_rows.append(decision_row(team, current, concept, grades.get(context_key(current)), latest=latest))
+                source_term_id = current.schedule.semester_id if current.schedule_id else selected_period.pk if selected_period else team.semester_id
+                team_rows.append(decision_row(team, current, concept, grades.get((context_key(current), source_term_id)), latest=latest))
         if not team_rows:
             from student_teams.concept_policy import contexts_for
             configured = bool((context.concept_config or {}).get('enabled')) if context else contexts_for(team).exists()

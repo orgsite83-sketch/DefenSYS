@@ -92,6 +92,10 @@ class _ManageSectionsDialogState extends ConsumerState<ManageSectionsDialog> {
             'team_id': id,
             'section': section,
             'year_level': team['year_level']?.toString() ?? '',
+            'is_pit': '${team['level'] ?? widget.level}'.toLowerCase().contains(
+              'pit',
+            ),
+            'instructor_name': team['instructor_name']?.toString() ?? '',
             'team_count': 0,
           },
         );
@@ -130,11 +134,27 @@ class _ManageSectionsDialogState extends ConsumerState<ManageSectionsDialog> {
   Widget build(BuildContext context) {
     if (_selectedTeamId != null) {
       return EditSectionDialog(
-        key: ValueKey(_selectedTeamId),
         teamId: _selectedTeamId!,
         scope: widget.scope,
         sectionOptions: _sections,
         onSectionChanged: (id) => setState(() => _selectedTeamId = id),
+        onDetailsLoaded: (details) {
+          final option = _sections
+              .where((s) => s['team_id'] == _selectedTeamId)
+              .firstOrNull;
+          if (!mounted || option == null) return;
+          final instructors = (details['instructors'] as List? ?? [])
+              .whereType<Map>();
+          setState(() {
+            option['team_count'] =
+                details['team_count'] ?? option['team_count'];
+            option['instructor_name'] = instructors
+                .map((i) => i['faculty_name'])
+                .join(', ');
+            option['is_pit'] =
+                details['is_pit'] == true || option['is_pit'] == true;
+          });
+        },
         onImportSectionRoster: widget.onImportSectionRoster,
         onRosterUpdated: widget.onRosterUpdated,
       );

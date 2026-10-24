@@ -92,20 +92,23 @@ class TeamMemberSerializer(serializers.ModelSerializer):
 
 
 class StudentTeamSerializer(serializers.ModelSerializer):
+    def _selected_pit_event(self, team):
+        from defense.scheduler.models import PitEventGradingConfig
+        request = self.context.get('request')
+        params = request.query_params if request else {}
+        label = params.get('event_name') or params.get('stage') or params.get('selected_stage')
+        cache = self.context.setdefault('_roster_events', {})
+        key = (team.semester_id, team.year_level, label)
+        if key not in cache:
+            cache[key] = PitEventGradingConfig.objects.filter(semester_id=team.semester_id,
+                year_level=team.year_level, event_name__iexact=label).first() if label else None
+        return cache[key]
+
     def to_representation(self, instance):
         result = super().to_representation(instance)
         if instance.is_pit:
             from .roster_workspace import display_for
-            from defense.scheduler.models import PitEventGradingConfig
-            request = self.context.get('request')
-            params = request.query_params if request else {}
-            label = params.get('event_name') or params.get('stage') or params.get('selected_stage')
-            cache = self.context.setdefault('_roster_events', {})
-            key = (instance.semester_id, instance.year_level, label)
-            if key not in cache:
-                cache[key] = PitEventGradingConfig.objects.filter(semester_id=instance.semester_id,
-                    year_level=instance.year_level, event_name__iexact=label).first() if label else None
-            event = cache[key]
+            event = self._selected_pit_event(instance)
             result.update(display_for(instance, event))
         return result
 
@@ -128,6 +131,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
     term_status = serializers.SerializerMethodField()
     is_editable = serializers.SerializerMethodField()
     instructor_name = serializers.SerializerMethodField()
+    instructors = serializers.SerializerMethodField()
     system_name = serializers.SerializerMethodField()
     project_manager_name = serializers.SerializerMethodField()
     pit_event_name = serializers.SerializerMethodField()
@@ -156,6 +160,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             'adviser_username',
             'adviser_name',
             'instructor_name',
+            'instructors',
             'member_ids',
             'members',
             'member_count',
@@ -182,19 +187,24 @@ class StudentTeamSerializer(serializers.ModelSerializer):
         return display_name(obj.adviser)
 
     def get_instructor_name(self, obj):
+        instructors = self.get_instructors(obj)
+        return instructors[0]['faculty_name'] if instructors else None
+
+    def get_instructors(self, obj):
         if obj.is_capstone or not obj.section:
-            return None
+            return []
         from user_management.models import SectionInstructorAssignment
+        from user_management.serializers import SectionInstructorAssignmentSerializer
         from student_teams.team_levels import normalize_year_level
-        assignment = SectionInstructorAssignment.objects.filter(
-            semester=obj.semester,
-            year_level=normalize_year_level(obj.year_level),
-            section=obj.section,
-            is_active=True
-        ).first()
-        if assignment and assignment.faculty:
-            return display_name(assignment.faculty)
-        return None
+        key = (obj.semester_id, normalize_year_level(obj.year_level), obj.section)
+        cache = self.context.setdefault('_section_instructors', {})
+        if key not in cache:
+            assignments = SectionInstructorAssignment.objects.filter(
+                semester_id=key[0], year_level=key[1], section=key[2],
+                is_active=True, faculty__is_active=True,
+            ).select_related('faculty', 'semester__school_year', 'assigned_by')
+            cache[key] = list(SectionInstructorAssignmentSerializer(assignments, many=True).data)
+        return cache[key]
 
     def get_system_name(self, obj):
         if not obj.section:
@@ -286,6 +296,9 @@ class StudentTeamSerializer(serializers.ModelSerializer):
                 'stage_status': stage_status,
                 'deliverable_count': obj.deliverable_submissions.count(),
             }
+        event = self._selected_pit_event(obj)
+        if event:
+            return self._pit_event_defense_context(obj, event)
         schedule = (
             DefenseSchedule.objects.filter(
                 team=obj,
@@ -318,6 +331,41 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             'scheduled_date': '',
         }
 
+    def _pit_event_defense_context(self, team, event):
+        """Read event-specific counts using the scheduler's clearance rules."""
+        from defense.scheduler.pit_config import pit_endorsement_required
+        from repository.deliverables.concepts import enabled, pit_ready, summary
+        from repository.deliverables.services import required_complete
+        from .pit_rosters import endorsed
+
+        schedules = list(DefenseSchedule.objects.filter(
+            team=team, semester_id=team.semester_id, scope=DefenseSchedule.SCOPE_PIT,
+            project_version=team.project_version, event_name__iexact=event.event_name,
+            status__in=(DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE),
+        ).order_by('scheduled_date', 'start_time'))
+        scheduled = next((s for s in schedules if s.status == DefenseSchedule.STATUS_SCHEDULED), None)
+        concept_enabled = enabled(event)
+        if event.is_officially_complete:
+            status = 'completed'
+        elif scheduled:
+            status = 'scheduled'
+        elif concept_enabled:
+            status = 'ready' if pit_ready(team, event) else 'preparing'
+        elif schedules:
+            status = 'completed'
+        elif not pit_endorsement_required(event) or (
+                endorsed(team, event.event_name) and required_complete(team, event.event_name)):
+            status = 'ready'
+        else:
+            status = 'preparing'
+        return {
+            'is_pit': True,
+            'concept_workflow': summary(team, event),
+            'event_label': event.event_name,
+            'scheduling_status': status,
+            'scheduled_date': scheduled.scheduled_date.isoformat() if scheduled else '',
+        }
+
     def get_term_status(self, obj):
         return term_status_for_team(obj)
 
@@ -348,8 +396,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
     )
     capstone_phase = serializers.ChoiceField(
         choices=[choice[0] for choice in StudentTeam.PHASE_CHOICES],
-        required=False,
-        allow_null=True,
+        read_only=True,
     )
     ready_for_stage = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=80)
     current_defense_stage = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=80)
@@ -394,6 +441,16 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
         semester = self._resolve_semester(attrs)
         attrs['semester'] = semester
+
+        if 'Capstone' in attrs.get('level', getattr(self.instance, 'level', '')):
+            from .capstone_lifecycle import prior_capstone_team
+            additions = set(member_ids) | {attrs['leader_id']}
+            if self.instance:
+                additions -= set(self.instance.memberships.values_list('student_id', flat=True)) | {self.instance.leader_id}
+            previous = prior_capstone_team(additions, semester, exclude_team=self.instance.pk if self.instance else None)
+            if previous:
+                raise serializers.ValidationError({'member_ids':
+                    f'A student already belongs to the earlier Capstone team {previous.name}. Use continuation or returning-team review to preserve the original project history and allowance.'})
 
         user = self.context.get('assigned_by') or self.context.get('user')
         assert_active_semester_for_create(user, semester)
@@ -534,7 +591,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             leader=validated_data['leader'],
             adviser=validated_data.get('adviser'),
             status=validated_data.get('status', StudentTeam.STATUS_PENDING),
-            capstone_phase=validated_data.get('capstone_phase'),
+            capstone_phase=StudentTeam.PHASE_ACTIVE if 'Capstone' in validated_data['level'] else None,
             ready_for_stage=validated_data.get('ready_for_stage') or None,
             current_defense_stage=validated_data.get('current_defense_stage') or None,
         )
@@ -577,7 +634,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         instance.leader = validated_data['leader']
         instance.adviser = validated_data.get('adviser')
         instance.status = validated_data.get('status', instance.status)
-        instance.capstone_phase = validated_data.get('capstone_phase')
+        # Term participation/recovery owns this field. Roster edits preserve it.
         instance.ready_for_stage = validated_data.get('ready_for_stage') or None
         instance.current_defense_stage = validated_data.get('current_defense_stage') or None
         instance.save()

@@ -66,12 +66,12 @@ class FacultyReviewPolicyTests(APITestCase):
         self.assertFalse(is_stage_ready(self.team, self.stage))
 
     def test_plain_pass_never_waives_a_required_file_by_name_or_legacy_option(self):
-        hearing = self.hearing(status='done')
-        TeamGrade.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
-            schedule=hearing, panel_score=85, verdict='approved')
         document = StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='CUSTOM',
             label='A renamed compliance file', deliverable_type='post', required=True,
             verdict_condition='revisions_only')
+        hearing = self.hearing(status='done')
+        TeamGrade.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
+            schedule=hearing, panel_score=85, verdict='approved')
         self.assertFalse(post_deliverables_complete(self.team, self.stage.label))
         row = next(d for d in stage_payload(self.team, self.stage.label)['deliverables'] if d['id'] == 'CUSTOM')
         self.assertFalse(row['is_waived'])

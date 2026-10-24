@@ -8,12 +8,17 @@ String? teamCurrentStageStatus(Map<String, dynamic> team) {
   final context = team['defense_context'];
   if (context is! Map) return null;
   final workflow = context['concept_workflow'];
-  if (workflow is Map && workflow['enabled'] == true) return workflow['status']?.toString();
+  if (workflow is Map && workflow['enabled'] == true) {
+    return workflow['status']?.toString();
+  }
   final status = context['stage_status']?.toString().trim();
   return status == null || status.isEmpty ? null : status;
 }
 
 String _stageStatusLabel(String? status) => switch (status) {
+  'completed' => 'Capstone completed',
+  'needs_review' => 'Needs review',
+  'open' => 'Term closed',
   'locked' => 'Preparing',
   'ready' => 'Ready to schedule',
   'scheduled' => 'Scheduled',
@@ -64,7 +69,11 @@ Widget currentStageBadge(BuildContext context, Map<String, dynamic> team) {
   return Tooltip(
     message: status == null
         ? 'No progress update is recorded for this stage.'
-        : ((team['defense_context'] as Map? ?? {})['concept_workflow'] as Map? ?? {})['next_step']?.toString() ?? 'Progress for this team’s current defense stage.',
+        : ((team['defense_context'] as Map? ?? {})['concept_workflow']
+                          as Map? ??
+                      {})['next_step']
+                  ?.toString() ??
+              'Progress for this team’s current defense stage.',
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
@@ -102,15 +111,36 @@ class StudentTeamsSummaryCards extends StatelessWidget {
     final muted = isDark
         ? DefensysTokens.textSecondaryDark
         : DefensysUi.steelGrey;
-    final missingAdviser = state.teams.where((team) {
-      final adviser = team['adviser_name'] ?? team['adviser'];
-      return adviser == null || adviser.toString().trim().isEmpty;
+    final missingFaculty = state.teams.where((team) {
+      final faculty = isPitContext
+          ? team['instructor_name']
+          : team['adviser_name'] ?? team['adviser'];
+      return faculty == null || faculty.toString().trim().isEmpty;
     }).length;
+    final eventName = state.eventName?.trim() ?? '';
+    final hasSchedulingContext = !isPitContext || eventName.isNotEmpty;
+    String? schedulingStatus(Map<String, dynamic> team) {
+      if (!isPitContext) return teamCurrentStageStatus(team);
+      final context = team['defense_context'];
+      if (context is! Map ||
+          context['event_label']?.toString().trim().toLowerCase() !=
+              eventName.toLowerCase()) {
+        return null;
+      }
+      return context['scheduling_status']?.toString();
+    }
+
     final ready = state.teams
-        .where((team) => const {'ready', 'ready_to_schedule', 'ready_to_schedule_redefense'}.contains(teamCurrentStageStatus(team)))
+        .where(
+          (team) => const {
+            'ready',
+            'ready_to_schedule',
+            'ready_to_schedule_redefense',
+          }.contains(schedulingStatus(team)),
+        )
         .length;
     final scheduled = state.teams
-        .where((team) => teamCurrentStageStatus(team) == 'scheduled')
+        .where((team) => schedulingStatus(team) == 'scheduled')
         .length;
     final noStageUpdate = state.teams
         .where((team) => teamCurrentStageStatus(team) == null)
@@ -124,40 +154,44 @@ class StudentTeamsSummaryCards extends StatelessWidget {
         icon: Icons.groups_2_rounded,
         accent: DefensysUi.primaryMaroon,
       ),
-      if (!isPitContext) ...[
-        _TeamSummaryCard(
-          id: 'needs-adviser',
-          label: 'Needs adviser',
-          count: missingAdviser,
-          helper: 'No adviser assigned',
-          icon: Icons.person_add_alt_1_rounded,
-          accent: const Color(0xFFB45309),
-        ),
-        _TeamSummaryCard(
-          id: 'ready',
-          label: 'Ready to schedule',
-          count: ready,
-          helper: 'Current stage',
-          icon: Icons.event_available_rounded,
-          accent: const Color(0xFF2563EB),
-        ),
-        _TeamSummaryCard(
-          id: 'scheduled',
-          label: 'Scheduled',
-          count: scheduled,
-          helper: 'Current stage',
-          icon: Icons.calendar_month_rounded,
-          accent: const Color(0xFF047857),
-        ),
-      ],
+      _TeamSummaryCard(
+        id: isPitContext ? 'needs-instructor' : 'needs-adviser',
+        label: isPitContext ? 'Needs instructor' : 'Needs adviser',
+        count: missingFaculty,
+        helper: isPitContext ? 'No section instructor' : 'No adviser assigned',
+        icon: Icons.person_add_alt_1_rounded,
+        accent: const Color(0xFFB45309),
+      ),
+      _TeamSummaryCard(
+        id: 'ready',
+        label: 'Ready to schedule',
+        count: hasSchedulingContext ? ready : null,
+        helper: isPitContext
+            ? (hasSchedulingContext
+                  ? 'Selected PIT event'
+                  : 'Select a PIT event')
+            : 'Current stage',
+        icon: Icons.event_available_rounded,
+        accent: const Color(0xFF2563EB),
+      ),
+      _TeamSummaryCard(
+        id: 'scheduled',
+        label: 'Scheduled',
+        count: hasSchedulingContext ? scheduled : null,
+        helper: isPitContext
+            ? (hasSchedulingContext
+                  ? 'Selected PIT event'
+                  : 'Select a PIT event')
+            : 'Current stage',
+        icon: Icons.calendar_month_rounded,
+        accent: const Color(0xFF047857),
+      ),
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
         const gap = 12.0;
-        final columns = isPitContext
-            ? 1
-            : constraints.maxWidth >= 880
+        final columns = constraints.maxWidth >= 880
             ? 4
             : constraints.maxWidth >= 480
             ? 2
@@ -201,7 +235,7 @@ class _TeamSummaryCard extends StatelessWidget {
 
   final String id;
   final String label;
-  final int count;
+  final int? count;
   final String helper;
   final IconData icon;
   final Color accent;
@@ -259,7 +293,7 @@ class _TeamSummaryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  '$count',
+                  count?.toString() ?? '—',
                   style: TextStyle(
                     color: isDark
                         ? DefensysTokens.textPrimaryDark

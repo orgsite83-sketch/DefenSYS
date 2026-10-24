@@ -24,8 +24,13 @@ enum _SubView { none, studentBatchHub }
 
 class PitLeadCohortScreen extends ConsumerStatefulWidget {
   final VoidCallback? onCreateTeam;
+  final bool initialInstructors;
+  final ValueChanged<bool>? onInstructorTabChanged;
 
-  const PitLeadCohortScreen({super.key, this.onCreateTeam});
+  const PitLeadCohortScreen({
+    super.key, this.onCreateTeam, this.initialInstructors = false,
+    this.onInstructorTabChanged,
+  });
 
   @override
   ConsumerState<PitLeadCohortScreen> createState() =>
@@ -63,9 +68,23 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
   @override
   void initState() {
     super.initState();
+    _currentTab = widget.initialInstructors
+        ? _PitUserManagementTab.instructors
+        : _PitUserManagementTab.students;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshAllData();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant PitLeadCohortScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialInstructors != oldWidget.initialInstructors) {
+      _currentTab = widget.initialInstructors
+          ? _PitUserManagementTab.instructors
+          : _PitUserManagementTab.students;
+      _subView = _SubView.none;
+    }
   }
 
   @override
@@ -335,6 +354,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
             onChanged: (tab) {
               if (tab == _currentTab) return;
               setState(() => _currentTab = tab);
+              widget.onInstructorTabChanged?.call(tab == _PitUserManagementTab.instructors);
               _refreshAllData();
             },
           ),
@@ -1552,7 +1572,7 @@ class _AssignSectionInstructorDialogState
           : 'Faculty';
       return DropdownMenuItem<int>(
         value: id,
-        child: Text('$name ($role)'),
+        child: Text('$name ($role)', maxLines: 1, overflow: TextOverflow.ellipsis),
       );
     }).where((item) => item.value != null).toList();
 
@@ -1632,6 +1652,7 @@ class _AssignSectionInstructorDialogState
               const SizedBox(height: 6),
               DropdownButtonFormField<int>(
                 initialValue: _selectedFacultyId,
+                isExpanded: true,
                 decoration: InputDecoration(
                   hintText: 'Select faculty member...',
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

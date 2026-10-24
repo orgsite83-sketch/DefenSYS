@@ -65,6 +65,29 @@ class PitImportInstructorTests(APITestCase):
         self.instructor.refresh_from_db()
         self.assertFalse(self.instructor.is_adviser)
 
+    def test_lead_imports_all_sections_and_instructors_before_sections_exist(self):
+        StudentAcademicRecord.objects.filter(semester=self.semester).update(section='')
+        other = User.objects.create_user(username='second-instructor', role='faculty')
+        for username in ('1067', '1068'):
+            student = User.objects.create_user(username=username, role='student')
+            StudentAcademicRecord.objects.create(student=student, semester=self.semester,
+                year_level='1st Year', section='')
+        rows = [self.row, {**self.row, 'team_name': 'Second section team', 'section': 'BSIT-1B',
+            'member_ids': ['1067', '1068'], 'leader_id': '1067', 'instructor_name': other.username}]
+        preview = self.post_rows(preview=True, rows=rows)
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['summary']['ready'], 2, preview.data)
+        self.assertFalse(StudentTeam.objects.exists())
+        self.assertFalse(SectionInstructorAssignment.objects.exists())
+        self.assertEqual(StudentAcademicRecord.objects.filter(semester=self.semester, section='').count(), 4)
+        result = self.post_rows(rows=rows)
+        self.assertEqual(result.data['created_count'], 2, result.data)
+        self.assertEqual(dict(SectionInstructorAssignment.objects.values_list('section', 'faculty_id')),
+            {'BSIT-1A': self.instructor.pk, 'BSIT-1B': other.pk})
+        self.assertEqual(StudentAcademicRecord.objects.filter(semester=self.semester, section='BSIT-1A').count(), 2)
+        self.assertEqual(StudentAcademicRecord.objects.filter(semester=self.semester, section='BSIT-1B').count(), 2)
+        self.assertFalse(TeamAdviserAssignment.objects.exists())
+
     def test_existing_assignment_is_reused(self):
         SectionInstructorAssignment.objects.create(faculty=self.instructor, semester=self.semester, year_level='1st Year', section='BSIT-1A')
         response = self.post_rows()

@@ -30,6 +30,8 @@ class WorkflowCompletionTests(APITestCase):
         self.post = StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='P5FILES',
             label='Configured final attachments', deliverable_type='post', required=True,
             file_policy={'mode': 'multiple', 'min_files': 1, 'max_files': 3})
+        from student_teams.capstone_lifecycle import capture_participation, configured_requirements
+        capture_participation(self.capstone_team, requirements=configured_requirements())
 
     def approve(self, verdict='approved'):
         self.submit(8)
@@ -189,6 +191,8 @@ class WorkflowCompletionTests(APITestCase):
         next_stage = DefenseStage.objects.create(label='Custom follow-up', display_order=self.stage.display_order + 10)
         # Keep this scenario independent of seeded stage labels/order.
         DefenseStage.objects.exclude(pk__in=[self.stage.pk, next_stage.pk]).update(is_active=False)
+        from student_teams.capstone_lifecycle import capture_participation, configured_requirements
+        capture_participation(self.capstone_team, requirements=configured_requirements())
         progress = TeamStageProgress.objects.get(team=self.capstone_team, defense_stage=self.stage)
         progress.status = TeamStageProgress.STATUS_PASSED
         progress.save()

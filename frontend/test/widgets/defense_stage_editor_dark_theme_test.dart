@@ -58,10 +58,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Active Stage'), findsOneWidget);
-    expect(find.text('Project Proposal'), findsWidgets);
-    expect(find.text('Configuration locked'), findsOneWidget);
-    expect(find.text('Live Pipeline Flow:'), findsOneWidget);
+    expect(find.text('Position 2 of 3'), findsOneWidget);
+    expect(find.text('Manage the order on the main stage sequence.'), findsOneWidget);
+    final positionText = tester.widget<Text>(find.text('Position 2 of 3'));
+    expect(positionText.style?.color, DefensysTokens.mistTextPrimary);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('RepositoryArchiveNamingPanel renders with dark mode tokens and supports expansion', (tester) async {

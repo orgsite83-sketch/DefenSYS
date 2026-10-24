@@ -6,6 +6,7 @@ from .models import SchoolYear, Semester, SemesterTransitionLog
 class SemesterInline(admin.TabularInline):
     model = Semester
     extra = 0
+    readonly_fields = ('is_active', 'capstone_program_phase')
 
 
 @admin.register(SchoolYear)
@@ -20,6 +21,7 @@ class SchoolYearAdmin(admin.ModelAdmin):
 
 @admin.register(Semester)
 class SemesterAdmin(admin.ModelAdmin):
+    readonly_fields = ('is_active', 'capstone_program_phase')
     list_display = ('label', 'school_year', 'is_active', 'created_at')
     list_filter = ('is_active', 'label')
     search_fields = ('label', 'school_year__label')
@@ -37,6 +39,9 @@ class SemesterTransitionLogAdmin(admin.ModelAdmin):
         'changed_by__username',
     )
     readonly_fields = (
+        'operation',
+        'request_id',
+        'preview_revision',
         'from_semester',
         'to_semester',
         'changed_by',
@@ -45,3 +50,9 @@ class SemesterTransitionLogAdmin(admin.ModelAdmin):
         'impact_snapshot',
         'created_at',
     )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

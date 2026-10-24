@@ -104,6 +104,7 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
   Future<bool> assignInstructor({
     required int facultyId,
     required String section,
+    String? yearLevel,
   }) async {
     state = state.copyWith(
       isSaving: true,
@@ -114,7 +115,11 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        body: jsonEncode({'faculty_id': facultyId, 'section': section}),
+        body: jsonEncode({
+          'faculty_id': facultyId,
+          'section': section,
+          if (yearLevel != null) 'year_level': yearLevel,
+        }),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {

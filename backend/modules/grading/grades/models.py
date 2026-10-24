@@ -308,6 +308,9 @@ class TeamGrade(models.Model):
     @transaction.atomic
     def save(self, *args, clean=True, **kwargs):
         if not self.pk:
+            if self.scope == self.SCOPE_CAPSTONE and self.team_id:
+                from student_teams.models import StudentTeam
+                self.team = StudentTeam.objects.select_for_update().get(pk=self.team_id)
             self.project_version = self.team.project_version
             self.project_title_snapshot = self.team.project_title
         if self.scope == self.SCOPE_PIT:
@@ -317,7 +320,7 @@ class TeamGrade(models.Model):
                 self.stage_label = self.pit_event_config.event_name
         else:
             self.pit_event_config = None
-            if self.defense_stage_id:
+            if self.defense_stage_id and (not self.pk or not self.stage_label):
                 self.stage_label = self.defense_stage.label
         self.recalculate(keep_published=True)
         if clean and not kwargs.get('update_fields'):

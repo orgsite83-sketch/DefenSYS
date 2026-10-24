@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from rest_framework import status
+from rest_framework import status, serializers as drf_serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from defensys_backend.read_projection import ReadAPIView as APIView
@@ -25,10 +25,12 @@ from .bulk_import import (
     format_bulk_import_errors,
     ADVISER_FILTER_ALL,
     build_team_payload_from_row,
+    collect_bulk_section_metadata,
     preview_bulk_teams,
     prepare_bulk_row,
     resolve_user_by_full_name,
     validate_bulk_team_row,
+    validate_bulk_section_metadata,
 )
 from .team_levels import levels_for_user, user_is_admin, user_is_pit_lead_only
 from .term_scope import (
@@ -244,7 +246,37 @@ class StudentTeamListCreateView(APIView):
             return [IsAuthenticated()]
         return [CanManageTeams()]
 
-    def _serialize_teams(self, queryset, user):
+    def _serialize_teams(self, queryset, user, visible=None):
+        if self.request.query_params.get('scope') == 'history':
+            from .models import TeamTermParticipation
+            from .capstone_lifecycle import historical_payload
+            rows = TeamTermParticipation.objects.filter(team__in=visible, closed_at__isnull=False).select_related('semester__school_year')
+            active = active_semester()
+            if active:
+                rows = rows.exclude(semester=active)
+            covered = list(rows.values_list('team_id', flat=True))
+            params = self.request.query_params
+            if params.get('semester_id'):
+                rows = rows.filter(semester_id=drf_serializers.IntegerField(min_value=1).run_validation(params['semester_id']))
+            historical = []
+            for row in rows:
+                data = historical_payload(row)
+                if params.get('event_name') or params.get('level') == 'PIT':
+                    continue
+                if params.get('level') not in (None, '', 'Capstone', data['level']):
+                    continue
+                if any(params.get(key) and params[key] != str(data.get(key, '')) for key in ('year_level', 'section')):
+                    continue
+                if params.get('status') in ('Extended', StudentTeam.STATUS_DELAYED):
+                    if data.get('capstone_phase') != StudentTeam.PHASE_EXTENDED:
+                        continue
+                elif params.get('status') and params['status'] != data.get('status'):
+                    continue
+                if params.get('search') and params['search'].casefold() not in ' '.join(str(data.get(key, '')) for key in ('name', 'project_title', 'leader_name', 'adviser_name')).casefold():
+                    continue
+                historical.append(data)
+            legacy = queryset.exclude(pk__in=covered)
+            return list(StudentTeamSerializer(legacy, many=True, context={'user': user, 'request': self.request}).data) + historical
         return StudentTeamSerializer(
             queryset.prefetch_related('stage_progress__defense_stage', 'roster_details'),
             many=True,
@@ -276,7 +308,9 @@ class StudentTeamListCreateView(APIView):
             queryset = queryset.filter(level__icontains='PIT')
         elif level:
             queryset = queryset.filter(level=level)
-        if status_filter:
+        if status_filter in ('Extended', StudentTeam.STATUS_DELAYED):
+            queryset = queryset.filter(capstone_phase=StudentTeam.PHASE_EXTENDED)
+        elif status_filter:
             queryset = queryset.filter(status=status_filter)
 
         year_level = request.query_params.get('year_level', '').strip()
@@ -331,9 +365,15 @@ class StudentTeamListCreateView(APIView):
             from .pit_rosters import filter_teams
             stats_base = filter_teams(stats_base, event_name or None, current=not bool(event_name))
 
+        serialized = self._serialize_teams(queryset, request.user, visible=visible)
+        counts = counts_payload(queryset, stats_base=stats_base)
+        counts['filtered'] = len(serialized)
+        if scope == 'history':
+            for key, value in (('pending', 'Pending'), ('approved', 'Approved'), ('failed', 'Failed'), ('completed', 'Completed')):
+                counts[key] = sum(row.get('status') == value for row in serialized)
         return Response({
-            'teams': self._serialize_teams(queryset, request.user),
-            'counts': counts_payload(queryset, stats_base=stats_base),
+            'teams': serialized,
+            'counts': counts,
             'roster_context': roster_context,
             **options_payload(
                 team_level=team_level_filter if team_level_filter else None,
@@ -342,6 +382,7 @@ class StudentTeamListCreateView(APIView):
                 event_name=event_name or None,
                 workspace=request.query_params.get('workspace'),
             ),
+            **({'statuses': [choice[0] for choice in StudentTeam.STATUS_CHOICES] + ['Completed', 'Needs review']} if scope == 'history' else {}),
         })
 
     def post(self, request):
@@ -376,6 +417,12 @@ class StudentTeamDetailView(APIView):
     def get(self, request, team_id):
         """Get team details with available students for editing"""
         team = self.get_object(team_id)
+        if request.query_params.get('semester_id'):
+            from .models import TeamTermParticipation
+            from .capstone_lifecycle import historical_payload
+            row = get_object_or_404(TeamTermParticipation.objects.select_related('semester__school_year'),
+                team=team, semester_id=drf_serializers.IntegerField(min_value=1).run_validation(request.query_params['semester_id']), closed_at__isnull=False)
+            return Response({'team': historical_payload(row), 'students': [], 'advisers': [], 'read_only': True})
         return Response({
             'team': StudentTeamSerializer(team, context={'user': request.user}).data,
             **options_payload(team_id=team_id, team_level=team.level, user=request.user,
@@ -432,6 +479,9 @@ class StudentTeamDetailView(APIView):
         from grading.grades.models import TeamGrade
 
         assert_team_writable(request.user, team)
+
+        if team.term_participations.filter(closed_at__isnull=False).exists() or team.recovery_authorizations.exists():
+            return Response({'detail': 'This team has closed academic-period records. Preserve its history.'}, status=409)
 
         if team.is_pit and (team.pit_event_rosters.filter(started_at__isnull=False).exists()
                 or team.concept_rounds.exists() or team.deliverable_submissions.exists()):
@@ -558,6 +608,10 @@ class BulkImportTeamsPreviewView(APIView):
             csv_columns = None
         is_multi_section = ',' in section
         effective_section = '' if is_multi_section else section
+        system_name = request.data.get('system_name', '').strip()
+        pm_name = request.data.get('project_manager', '').strip()
+        section_meta = collect_bulk_section_metadata(rows, import_section=effective_section,
+            system_name=system_name, project_manager=pm_name)
         preview_rows, summary = preview_bulk_teams(
             rows,
             adviser_filter=adviser_filter,
@@ -565,10 +619,9 @@ class BulkImportTeamsPreviewView(APIView):
             csv_columns=csv_columns,
             section_import=bool(effective_section),
             import_section=effective_section,
+            section_metadata=section_meta,
         )
 
-        system_name = request.data.get('system_name', '').strip()
-        pm_name = request.data.get('project_manager', '').strip()
         section_assignment = None
 
         if effective_section:
@@ -576,11 +629,14 @@ class BulkImportTeamsPreviewView(APIView):
             pm_error = None
             if pm_name:
                 pm_user, pm_error = resolve_user_by_full_name(pm_name, role='student', field_label='Project Manager')
+            metadata_errors = [issue for row in preview_rows if row.get('section_metadata_invalid') for issue in row['issues']]
+            if metadata_errors:
+                pm_error = '; '.join(dict.fromkeys(metadata_errors))
             section_assignment = {
                 'section': effective_section,
                 'system_name': system_name,
                 'project_manager_name': pm_name,
-                'project_manager_valid': pm_user is not None if pm_name else True,
+                'project_manager_valid': not pm_error,
                 'project_manager_error': pm_error,
             }
 
@@ -613,21 +669,8 @@ class BulkImportTeamsView(APIView):
         is_multi_section = ',' in section
         effective_section = '' if is_multi_section else section
 
-        section_meta = {}
-        if effective_section and (system_name or pm_name):
-            section_meta[effective_section] = {'system_name': system_name, 'project_manager': pm_name}
-        for row in rows:
-            sec = (row.get('section') or '').strip()
-            row_sys = (row.get('system_name') or '').strip()
-            row_pm = (row.get('project_manager') or '').strip()
-            if sec and (row_sys or row_pm):
-                if sec not in section_meta:
-                    section_meta[sec] = {'system_name': row_sys, 'project_manager': row_pm}
-                else:
-                    if row_sys and not section_meta[sec]['system_name']:
-                        section_meta[sec]['system_name'] = row_sys
-                    if row_pm and not section_meta[sec]['project_manager']:
-                        section_meta[sec]['project_manager'] = row_pm
+        section_meta = collect_bulk_section_metadata(rows, import_section=effective_section,
+            system_name=system_name, project_manager=pm_name)
 
         adviser_filter = _normalize_adviser_filter(request.data.get('adviser_filter'))
         csv_columns = request.data.get('csv_columns')
@@ -640,10 +683,13 @@ class BulkImportTeamsView(APIView):
 
         preflight, _ = preview_bulk_teams(rows, adviser_filter=adviser_filter,
             user=request.user, csv_columns=csv_columns, section_import=bool(effective_section),
-            import_section=effective_section)
-        batch_conflicts = {r['row']: r['issues'] for r in preflight if r.get('batch_conflict')}
+            import_section=effective_section, section_metadata=section_meta)
+        batch_conflicts = {r['row']: r['issues'] for r in preflight
+            if r.get('batch_conflict') or r.get('section_metadata_invalid')}
+        manager_rows = {index for meta in section_meta.values() for index in meta.get('manager_member_rows', ())}
+        ordered_rows = sorted(enumerate(rows, start=1), key=lambda item: item[0] not in manager_rows)
 
-        for index, row in enumerate(rows, start=1):
+        for index, row in ordered_rows:
             team_name = (row.get('team_name') or '').strip()
             if index in batch_conflicts:
                 errors.append({'row': index, 'sheet_row': index + 1,
@@ -741,6 +787,11 @@ class BulkImportTeamsView(APIView):
                         user=request.user, csv_columns=csv_columns, section_import=bool(effective_section), import_section=effective_section)
                     if not result['ready']:
                         raise ValidationError(result['issues'] or 'The import context changed. Refresh the preview.')
+                    meta = section_meta.get(serializer.validated_data.get('section', ''))
+                    if meta:
+                        validate_bulk_section_metadata(meta, request.user, selected_semester,
+                            serializer.validated_data['year_level'], serializer.validated_data['section'],
+                            member_ids=result['member_ref_map'].values())
                     from .pit_rosters import ensure_current, register
                     if 'PIT' in serializer.validated_data['level'] and not serializer.validated_data.get('current_defense_stage'):
                         ensure_current(selected_semester.pk, serializer.validated_data['year_level'],
@@ -770,16 +821,9 @@ class BulkImportTeamsView(APIView):
                                 'opened_at': timezone.now() if team.setup_pending or team.project_pending else None})
                     meta = section_meta.get(team.section)
                     if meta:
-                        pm_user = None
-                        if meta['project_manager']:
-                            pm_user, pm_error = resolve_user_by_full_name(meta['project_manager'], role='student', field_label='Project Manager')
-                            if pm_error:
-                                raise ValidationError(pm_error)
+                        pm_user = validate_bulk_section_metadata(meta, request.user,
+                            team.semester, team.year_level, team.section)
                         existing = SectionAssignment.objects.select_for_update().filter(semester=team.semester, section=team.section).first()
-                        if existing:
-                            require_section_write(request.user, team.semester, existing.year_level, existing.section)
-                            pm_user = pm_user or existing.project_manager
-                        require_section_write(request.user, team.semester, team.year_level, team.section, pm_user)
                         old = SectionAssignmentSerializer(existing).data if existing else {}
                         assignment, new_section = SectionAssignment.objects.update_or_create(semester=team.semester, section=team.section,
                             defaults={'year_level': team.year_level,
@@ -795,11 +839,18 @@ class BulkImportTeamsView(APIView):
                             defaults={'assigned_by': request.user, 'is_active': True},
                         )
             except (PermissionDenied, ValidationError) as exc:
-                errors.append({'row': index, 'sheet_row': index + 1, 'team_name': team_name, 'errors': [str(exc.detail)]})
+                errors.append({'row': index, 'sheet_row': index + 1, 'team_name': team_name,
+                    'errors': format_bulk_import_errors(exc.detail)})
                 continue
             created.append(team)
             imported_rows.append(index)
 
+        # Dependency ordering is internal; API rows retain the uploaded order.
+        imported = sorted(zip(imported_rows, created), key=lambda item: item[0])
+        imported_rows = [index for index, _ in imported]
+        created = [team for _, team in imported]
+        errors.sort(key=lambda item: item['row'])
+        skipped.sort(key=lambda item: item['row'])
         return Response({
             'created': StudentTeamSerializer(created, many=True).data,
             'created_count': len(created),

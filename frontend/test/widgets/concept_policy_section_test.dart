@@ -85,6 +85,8 @@ void main() {
         );
         await tester.tap(find.text('Open section'));
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('section-tab-2')));
+        await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Concept Proposal'));
         await tester.tap(find.text('Concept Proposal'));
         await tester.pumpAndSettle();

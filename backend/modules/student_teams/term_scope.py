@@ -29,6 +29,8 @@ def term_status_for_team(team, active=None):
     if active is None:
         return TERM_HISTORICAL
     if team.semester_id == active.id:
+        if team.is_capstone and team.term_participations.filter(semester=active, closed_at__isnull=False).exists():
+            return TERM_HISTORICAL
         return TERM_ACTIVE
     return TERM_HISTORICAL
 
@@ -136,12 +138,17 @@ def apply_team_scope(queryset, scope='active', user=None):
 
     if normalized == 'history':
         if active:
-            return queryset.exclude(semester_id=active.id)
+            from django.db.models import Q
+            return queryset.filter(~Q(semester_id=active.id) |
+                Q(term_participations__closed_at__isnull=False, term_participations__semester_id__isnull=False)
+            ).distinct()
         return queryset
 
     if normalized == 'active':
         if active:
-            return queryset.filter(semester_id=active.id)
+            from .models import TeamTermParticipation
+            closed = TeamTermParticipation.objects.filter(semester=active, closed_at__isnull=False).values('team_id')
+            return queryset.filter(semester_id=active.id).exclude(pk__in=closed)
         return queryset.none()
 
     return queryset.none()

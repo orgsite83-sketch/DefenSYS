@@ -126,7 +126,9 @@ class SemesterGradesReportView(ReportAPIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
                 
-        base_queryset = grade_records_for(request.user).filter(semester=semester)
+        current_period = active_semester()
+        historical_period = current_period is None or current_period.pk != semester.pk
+        base_queryset = grade_records_for(request.user, include_previous_projects=historical_period).filter(semester=semester)
         
         search = request.query_params.get('search', '').strip()
         year_level = request.query_params.get('year_level', '').strip()
@@ -146,9 +148,13 @@ class SemesterGradesReportView(ReportAPIView):
                 | Q(team__adviser__username__icontains=search)
             ).distinct()
         if year_level:
-            queryset = queryset.filter(team__year_level=year_level)
+            from student_teams.capstone_lifecycle import filter_recorded_team_field
+            source_teams = filter_recorded_team_field(visible_teams_for(request.user), semester, 'year_level', year_level)
+            queryset = queryset.filter(team__in=source_teams)
         if request.query_params.get('section'):
-            queryset = queryset.filter(team__section=request.query_params['section'])
+            from student_teams.capstone_lifecycle import filter_recorded_team_field
+            source_teams = filter_recorded_team_field(visible_teams_for(request.user), semester, 'section', request.query_params['section'])
+            queryset = queryset.filter(team__in=source_teams)
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         if scope and scope != 'all':
@@ -167,6 +173,9 @@ class SemesterGradesReportView(ReportAPIView):
                 queryset = queryset.filter(stage_label__icontains=pit_event_filter)
             
         grade_records = list(queryset.select_related('team', 'team__adviser', 'team__leader'))
+        from student_teams.capstone_lifecycle import recorded_team
+        for record in grade_records:
+            record.team = recorded_team(record.team, semester)
         generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
         
         summary = summarize_grade_records(grade_records)
@@ -412,6 +421,8 @@ class TeamRosterReportView(ReportAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from student_teams.capstone_lifecycle import teams_in_recorded_term, filter_recorded_team_field, recorded_team
+        from student_teams.models import TeamTermParticipation
         semester_id = request.query_params.get('semester_id')
         export_format = request.query_params.get('export_format') or request.query_params.get('format')
         
@@ -427,8 +438,9 @@ class TeamRosterReportView(ReportAPIView):
             queryset = apply_team_scope(queryset, scope=term_context, user=request.user)
             if term_context in ('history', 'all') and not semester_id:
                 semester = None
+        history_base = queryset
         if semester:
-            queryset = queryset.filter(semester=semester)
+            queryset = teams_in_recorded_term(queryset, semester)
             
         level = (request.query_params.get('scope') or request.query_params.get('level', '')).strip()
         if level == 'all':
@@ -436,15 +448,24 @@ class TeamRosterReportView(ReportAPIView):
         year_level = request.query_params.get('year_level', '').strip()
         
         if level:
-            queryset = queryset.filter(level__icontains=level)
+            queryset = filter_recorded_team_field(queryset, semester, 'level', level, lookup='icontains') if semester else queryset.filter(level__icontains=level)
         if year_level:
-            queryset = queryset.filter(year_level=year_level)
+            queryset = filter_recorded_team_field(queryset, semester, 'year_level', year_level) if semester else queryset.filter(year_level=year_level)
         for key in ('section', 'status'):
             if request.query_params.get(key):
-                queryset = queryset.filter(**{key: request.query_params[key]})
+                queryset = filter_recorded_team_field(queryset, semester, key, request.query_params[key]) if semester else queryset.filter(**{key: request.query_params[key]})
         search = request.query_params.get('search', '').strip()
         if search:
-            queryset = queryset.filter(Q(name__icontains=search) | Q(project_title__icontains=search)
+            live_search = Q(name__icontains=search) | Q(project_title__icontains=search)
+            live_search |= (Q(leader__first_name__icontains=search) | Q(leader__last_name__icontains=search) | Q(leader__username__icontains=search)
+                | Q(adviser__first_name__icontains=search) | Q(adviser__last_name__icontains=search) | Q(adviser__username__icontains=search))
+            if semester:
+                recorded = TeamTermParticipation.objects.filter(semester=semester, closed_at__isnull=False)
+                matching = recorded.filter(Q(snapshot__name__icontains=search) | Q(snapshot__project_title__icontains=search)
+                    | Q(snapshot__leader_name__icontains=search) | Q(snapshot__adviser_name__icontains=search))
+                queryset = queryset.filter(Q(pk__in=matching.values('team_id')) | (live_search & ~Q(pk__in=recorded.values('team_id'))))
+            else:
+                queryset = queryset.filter(Q(name__icontains=search) | Q(project_title__icontains=search)
                 | Q(leader__first_name__icontains=search) | Q(leader__last_name__icontains=search) | Q(leader__username__icontains=search)
                 | Q(adviser__first_name__icontains=search) | Q(adviser__last_name__icontains=search) | Q(adviser__username__icontains=search))
         event = request.query_params.get('event_name') or request.query_params.get('pit_event')
@@ -460,9 +481,28 @@ class TeamRosterReportView(ReportAPIView):
             .prefetch_related('memberships', 'memberships__student')
             .order_by('name')
         )
+        if semester:
+            teams = [recorded_team(team, semester) for team in teams]
+        elif term_context in ('history', 'all'):
+            records = TeamTermParticipation.objects.filter(team__in=history_base, closed_at__isnull=False).select_related('team__semester__school_year', 'semester__school_year')
+            if term_context == 'history':
+                records = records.exclude(semester=active_semester())
+            covered = set(records.values_list('team_id', flat=True))
+            teams = [team for team in teams if team.pk not in covered or (term_context == 'all' and team.semester_id == getattr(active_semester(), 'pk', None))]
+            for record in records:
+                data = record.snapshot
+                if event or (level and level.casefold() not in data.get('level', '').casefold()):
+                    continue
+                if year_level and year_level != data.get('year_level'):
+                    continue
+                if any(request.query_params.get(key) and request.query_params[key] != data.get(key) for key in ('section', 'status')):
+                    continue
+                if search and search.casefold() not in ' '.join(str(data.get(key, '')) for key in ('name', 'project_title', 'leader_name', 'adviser_name')).casefold():
+                    continue
+                teams.append(recorded_team(record.team, record.semester))
         generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
         
-        total_members_count = sum(t.memberships.count() for t in teams)
+        total_members_count = sum(len(t._recorded_term.snapshot.get('members', [])) if hasattr(t, '_recorded_term') else t.memberships.count() for t in teams)
 
         summary_kpis = [
             {'label': 'Total Teams', 'value': str(len(teams))},
@@ -477,6 +517,7 @@ class TeamRosterReportView(ReportAPIView):
         ]
 
         columns = [
+            {'key': 'period', 'label': 'Academic Period', 'align': 'left'},
             {'key': 'scope', 'label': 'Scope', 'align': 'center'},
             {'key': 'team_name', 'label': 'Team Name', 'align': 'left'},
             {'key': 'project_title', 'label': 'Project Title', 'align': 'left'},
@@ -496,7 +537,13 @@ class TeamRosterReportView(ReportAPIView):
                 for m in t.memberships.all()
                 if m.student
             ]
+            if hasattr(t, '_recorded_term'):
+                frozen = t._recorded_term.snapshot
+                leader_name = frozen.get('leader_name') or 'Unassigned'
+                adviser_name = frozen.get('adviser_name') or 'Unassigned'
+                members = [member.get('name') or member.get('username') or '' for member in frozen.get('members', [])]
             rows.append({
+                'period': t.semester.display_name,
                 'scope': 'PIT' if t.is_pit else 'Capstone',
                 'team_name': t.name,
                 'project_title': t.project_title or 'N/A',

@@ -165,11 +165,18 @@ class DeliverableSubmission(models.Model):
         if not self.pk:
             self.project_version = self.team.project_version
         if self.team_id:
-            self.archive_semester = self.archive_semester or self.team.semester
-            self.archive_team_name = self.archive_team_name or self.team.name
-            self.archive_project_title = self.archive_project_title or self.team.project_title
-            self.archive_year_level = self.archive_year_level or self.team.year_level
-            self.archive_team_level = self.archive_team_level or self.team.level
+            archive_team = self.team
+            if self.team.is_capstone and self.deliverable_type == self.TYPE_POST and not self.archive_semester_id:
+                from .services import latest_stage_grade
+                from student_teams.capstone_lifecycle import evidence_team
+                grade = latest_stage_grade(self.team, self.stage_label)
+                if grade:
+                    archive_team = evidence_team(self.team, grade)
+            self.archive_semester = self.archive_semester or archive_team.semester
+            self.archive_team_name = self.archive_team_name or archive_team.name
+            self.archive_project_title = self.archive_project_title or archive_team.project_title
+            self.archive_year_level = self.archive_year_level or archive_team.year_level
+            self.archive_team_level = self.archive_team_level or archive_team.level
             is_pit = getattr(self.team, 'is_pit', False) or 'PIT' in (self.archive_team_level or '')
             if is_pit and not self.pit_event_config_id:
                 from defense.scheduler.models import PitEventGradingConfig

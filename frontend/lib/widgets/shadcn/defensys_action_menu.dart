@@ -15,6 +15,7 @@ class DefensysActionMenu extends StatefulWidget {
     this.triggerIcon,
     this.triggerForegroundColor,
     this.wrapLabel = false,
+    this.primary = false,
   });
   final String label;
   final List<Widget> items;
@@ -23,6 +24,7 @@ class DefensysActionMenu extends StatefulWidget {
   final IconData? triggerIcon;
   final Color? triggerForegroundColor;
   final bool wrapLabel;
+  final bool primary;
 
   @override
   State<DefensysActionMenu> createState() => _DefensysActionMenuState();
@@ -85,22 +87,45 @@ class _DefensysActionMenuState extends State<DefensysActionMenu> {
           child: Tooltip(
             message: widget.label,
             child: widget.triggerLabel != null
-                ? ShadButton.outline(
-                    enabled: widget.enabled,
-                    height: widget.wrapLabel ? 0 : 36,
-                    foregroundColor: widget.triggerForegroundColor,
-                    hoverForegroundColor: widget.triggerForegroundColor,
-                    hoverBackgroundColor: widget.triggerForegroundColor
-                        ?.withValues(alpha: .10),
-                    onPressed: widget.enabled ? _controller.toggle : null,
-                    trailing: Icon(
-                      widget.triggerIcon ?? LucideIcons.ellipsis,
-                      size: 16,
-                    ),
-                    child: widget.wrapLabel
-                        ? Flexible(child: Text(widget.triggerLabel!, textAlign: TextAlign.center))
-                        : Text(widget.triggerLabel!),
-                  )
+                ? widget.primary
+                      ? ShadButton(
+                          enabled: widget.enabled,
+                          height: widget.wrapLabel ? 0 : 36,
+                          onPressed: widget.enabled ? _controller.toggle : null,
+                          trailing: Icon(
+                            widget.triggerIcon ?? LucideIcons.chevronDown,
+                            size: 16,
+                          ),
+                          child: widget.wrapLabel
+                              ? Flexible(
+                                  child: Text(
+                                    widget.triggerLabel!,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                )
+                              : Text(widget.triggerLabel!),
+                        )
+                      : ShadButton.outline(
+                          enabled: widget.enabled,
+                          height: widget.wrapLabel ? 0 : 36,
+                          foregroundColor: widget.triggerForegroundColor,
+                          hoverForegroundColor: widget.triggerForegroundColor,
+                          hoverBackgroundColor: widget.triggerForegroundColor
+                              ?.withValues(alpha: .10),
+                          onPressed: widget.enabled ? _controller.toggle : null,
+                          trailing: Icon(
+                            widget.triggerIcon ?? LucideIcons.ellipsis,
+                            size: 16,
+                          ),
+                          child: widget.wrapLabel
+                              ? Flexible(
+                                  child: Text(
+                                    widget.triggerLabel!,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                )
+                              : Text(widget.triggerLabel!),
+                        )
                 : ShadButton.ghost(
                     enabled: widget.enabled,
                     width: 32,

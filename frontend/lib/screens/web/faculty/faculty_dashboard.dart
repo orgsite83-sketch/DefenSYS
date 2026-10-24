@@ -1813,6 +1813,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           color: DefensysTokens.surfaceOf(context),
           child: PitLeadCohortScreen(
             onCreateTeam: () => _goToSection('student_teams'),
+            initialInstructors: routerState.uri.queryParameters['tab'] == 'instructors',
+            onInstructorTabChanged: (instructors) => _goToSection('cohort',
+              queryParameters: {'tab': instructors ? 'instructors' : 'students'}),
           ),
         );
       case 'pit_student_import':

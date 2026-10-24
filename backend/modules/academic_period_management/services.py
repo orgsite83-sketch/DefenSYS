@@ -1,5 +1,7 @@
 from django.db import transaction
 from django.db.models import Q
+from hashlib import sha256
+import json
 from rest_framework.exceptions import ValidationError
 
 from authentication_access_control.audit import log_high_impact_action
@@ -39,6 +41,20 @@ def build_semester_transition_preview(target_semester):
         issue['message'] for issue in issues if issue.get('blocking')
     ]
 
+    from student_teams.capstone_lifecycle import build_capstone_review
+    review = build_capstone_review(current_semester, target_semester)
+    if review['kind'] == 'exceptional' and review['total']:
+        issues.append({'key': 'exceptional_transition', 'blocking': True,
+            'message': 'This is not a consecutive regular-term transition. No automatic team continuation will be applied.',
+            'action_label': 'Review teams', 'route': '/admin/student-teams'})
+    if review['kind'] == 'close_cycle' and review['counts']['needs_review']:
+        issues.append({'key': 'capstone_unresolved', 'blocking': True,
+            'count': review['counts']['needs_review'],
+            'message': 'Capstone teams still have unresolved grading, clearance, or cohort records.',
+            'action_label': 'Review grades', 'route': '/admin/grade-center'})
+    blocking_reasons = [issue['message'] for issue in issues if issue.get('blocking')]
+    revision = sha256(json.dumps({'capstone': review['revision'], 'counts': impact_counts,
+        'issues': issues}, sort_keys=True).encode()).hexdigest()
     return {
         'current_semester': _semester_summary(current_semester),
         'target_semester': _semester_summary(target_semester),
@@ -46,12 +62,50 @@ def build_semester_transition_preview(target_semester):
         'issues': issues,
         'blocking_reasons': blocking_reasons,
         'can_switch': not blocking_reasons,
+        'capstone_review': review,
+        'preview_revision': revision,
     }
 
 
-def switch_active_semester(target_semester, user, force=False, reason=''):
+@transaction.atomic
+def switch_active_semester(target_semester, user, force=False, reason='', *,
+                           decisions=None, preview_revision='', request_id=None):
     reason = (reason or '').strip()
+    if not (getattr(user, 'is_superuser', False) or getattr(user, 'role', None) == 'admin'):
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied('Only an administrator can activate a semester.')
+    if request_id and (not isinstance(request_id, str) or len(request_id) > 64):
+        raise ValidationError({'request_id': 'Use a request identity up to 64 characters.'})
+    # All activation and enrollment paths lock periods in the same order.
+    list(Semester.objects.select_for_update().order_by('pk'))
+    if request_id:
+        previous = SemesterTransitionLog.objects.filter(request_id=request_id).first()
+        if previous:
+            if previous.operation != 'activation' or previous.to_semester_id != target_semester.pk or previous.changed_by_id != user.pk:
+                raise ValidationError('This request identity has already been used for another transition.')
+            if previous.reason != reason or previous.forced != bool(force) or previous.impact_snapshot.get('decisions', []) != (decisions or []):
+                raise ValidationError('This request has already completed with different decisions. Refresh the period before starting another review.')
+            return previous.impact_snapshot, previous
+    source = active_semester()
+    if source and source.pk == target_semester.pk:
+        if preview_revision or decisions:
+            raise ValidationError({'code': 'stale_preview', 'detail': 'This semester is already active. Refresh the current roster.'})
+        return build_semester_transition_preview(target_semester), None
+    source_teams = StudentTeam.objects.filter(semester=source)
+    from django.contrib.auth import get_user_model
+    from student_teams.models import TeamMembership
+    ids = set(source_teams.values_list('leader_id', flat=True)) | set(TeamMembership.objects.filter(team__in=source_teams).values_list('student_id', flat=True))
+    list(get_user_model().objects.select_for_update().filter(pk__in=ids).order_by('pk'))
+    from user_management.academic_records.models import StudentAcademicRecord
+    list(StudentAcademicRecord.objects.select_for_update().filter(student_id__in=ids, semester=target_semester).order_by('pk'))
+    list(source_teams.select_for_update().order_by('pk'))
+    list(TeamGrade.all_objects.select_for_update().filter(team__in=source_teams).order_by('pk'))
     preview = build_semester_transition_preview(target_semester)
+
+    review = preview.get('capstone_review', {})
+    if review.get('requires_review') and preview_revision != preview.get('preview_revision'):
+        raise ValidationError({'detail': 'Review the current semester transition before confirming. The preview may have changed.',
+                               'preview': preview, 'code': 'stale_preview'})
 
     if preview['blocking_reasons']:
         if not force:
@@ -84,6 +138,8 @@ def switch_active_semester(target_semester, user, force=False, reason=''):
         capstone_fields = normalize_capstone_flags(target)
         target.save(update_fields=['is_active'] + capstone_fields)
         log = SemesterTransitionLog.objects.create(
+            request_id=request_id or None,
+            preview_revision=preview.get('preview_revision', ''),
             from_semester=current,
             to_semester=target,
             changed_by=user if getattr(user, 'is_authenticated', False) else None,
@@ -91,6 +147,11 @@ def switch_active_semester(target_semester, user, force=False, reason=''):
             reason=reason,
             impact_snapshot=preview,
         )
+        from student_teams.capstone_lifecycle import apply_capstone_transition
+        applied = apply_capstone_transition(current, target, review, decisions or [],
+            actor=user, log=log, reason=reason)
+        log.impact_snapshot = {**preview, 'applied_team_ids': applied, 'decisions': decisions or []}
+        log.save(update_fields=['impact_snapshot'])
         log_high_impact_action(
             category=SystemAuditLog.CATEGORY_ACADEMIC_PERIOD,
             action='semester.active_switch',
@@ -108,9 +169,10 @@ def switch_active_semester(target_semester, user, force=False, reason=''):
                 'forced': bool(force),
             },
             reason=reason,
+            strict=True,
         )
 
-    return build_semester_transition_preview(target), log
+    return log.impact_snapshot, log
 
 
 def _impact_counts(current_semester):

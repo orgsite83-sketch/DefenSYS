@@ -52,6 +52,181 @@ class RosterWorkspaceTests(APITestCase):
         self.assertFalse(PITEventRoster.objects.exists())
         self.assertFalse(PITRosterTeamDetails.objects.exists())
 
+    def test_unsectioned_cohort_opens_with_setup_guidance_without_writes(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        from user_management.models import SectionInstructorAssignment
+        StudentAcademicRecord.objects.filter(semester=self.term).update(section='')
+        SectionInstructorAssignment.objects.filter(semester=self.term).delete()
+        for query in ({'year_level': '2nd Year'}, {}):
+            response = self.client.get('/api/teams/rosters/', {**query, 'workspace': 'operations'})
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(response.data['year_level'], '2nd Year')
+            self.assertIsNone(response.data['section'])
+            self.assertEqual(response.data['scope_options'], [])
+            self.assertEqual(response.data['rosters'], [])
+            self.assertIsNone(response.data['fingerprint'])
+            self.assertTrue(response.data['can_import_sections'])
+        self.assertFalse(StudentTeam.objects.exists())
+        self.assertFalse(PITSectionRoster.objects.exists())
+        self.assertFalse(PITEventRoster.objects.exists())
+        self.assertFalse(PITRosterTeamDetails.objects.exists())
+
+        denied = self.client.post('/api/teams/rosters/preview/', {
+            'year_level': '2nd Year', 'workspace': 'operations', 'operation': 'import', 'teams': [],
+        }, format='json')
+        self.assertEqual(denied.status_code, 400, denied.data)
+
+        StudentAcademicRecord.objects.filter(semester=self.term).update(section='BSIT-2A')
+        recovered = self.client.get('/api/teams/rosters/', {'year_level': '2nd Year', 'workspace': 'operations'})
+        self.assertEqual(recovered.status_code, 200, recovered.data)
+        self.assertEqual(recovered.data['section'], 'BSIT-2A')
+        self.assertTrue(recovered.data['fingerprint'])
+        self.assertEqual(len(recovered.data['rosters']), 2)
+
+    def test_management_choices_include_configured_and_other_instructors_empty_sections(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        from user_management.models import SectionInstructorAssignment
+        from .models import SectionAssignment
+        StudentAcademicRecord.objects.filter(semester=self.term).update(section='')
+        SectionInstructorAssignment.objects.filter(semester=self.term).delete()
+        instructor = get_user_model().objects.create_user(username='empty-section-instructor', role='faculty')
+        SectionInstructorAssignment.objects.create(faculty=instructor, semester=self.term,
+            year_level='2nd Year', section='BSIT-2B')
+        SectionInstructorAssignment.objects.create(faculty=instructor, semester=self.term,
+            year_level='2nd Year', section='BSIT-2C', is_active=False)
+        SectionAssignment.objects.create(semester=self.term, year_level='2nd Year', section='BSIT-2A')
+        SectionAssignment.objects.create(semester=self.term, year_level='1st Year', section='BSIT-1A')
+
+        response = self.client.get('/api/teams/rosters/', {'year_level': '2nd Year', 'workspace': 'operations'})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['scope_options'], [
+            {'year_level': '2nd Year', 'section': 'BSIT-2A'},
+            {'year_level': '2nd Year', 'section': 'BSIT-2B'},
+        ])
+        self.assertFalse(response.data['can_generate'])
+
+        self.client.force_authenticate(instructor)
+        own = self.client.get('/api/teams/rosters/', {'workspace': 'instructor'})
+        self.assertEqual(own.status_code, 200, own.data)
+        self.assertEqual(own.data['scope_options'], [{'year_level': '2nd Year', 'section': 'BSIT-2B'}])
+        self.assertFalse(own.data['can_import_sections'])
+
+    def section_import(self, **fields):
+        return self.body(operation='import', workspace='instructor', teams=[{
+            'team_name': 'Imported section team', 'section': 'BSIT-2A',
+            'member_ids': [s.username for s in self.students[:3]],
+            'leader_id': self.students[0].username,
+            'instructor_name': self.lead.username,
+        }], **fields)
+
+    def test_assigned_instructor_imports_unsectioned_students_without_class_list(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        from user_management.models import SectionInstructorAssignment
+        from .models import SectionAssignment
+        self.lead.is_pit_lead = False
+        self.lead.save(update_fields=['is_pit_lead'])
+        StudentAcademicRecord.objects.filter(student=self.students[0], semester=self.term).update(section='')
+        StudentAcademicRecord.objects.filter(student=self.students[1], semester=self.term).update(section='BSIT')
+        body = self.section_import()
+        body['teams'][0].update(system_name='Section System', project_manager=self.students[0].username)
+        preview = self.client.post('/api/teams/rosters/preview/', body, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['section_assignment_count'], 2)
+        self.assertFalse(StudentTeam.objects.exists())
+        self.assertEqual(StudentAcademicRecord.objects.get(student=self.students[0], semester=self.term).section, '')
+        result = self.apply(preview.data)
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertEqual(StudentAcademicRecord.objects.filter(student__in=self.students[:3],
+            semester=self.term, section='BSIT-2A').count(), 3)
+        self.assertEqual(SectionAssignment.objects.get().project_manager, self.students[0])
+        self.assertEqual(SectionInstructorAssignment.objects.count(), 2)
+        repeated = self.apply(preview.data)
+        self.assertEqual(repeated.data['team_ids'], result.data['team_ids'])
+        self.assertEqual(StudentTeam.objects.count(), 1)
+
+    def test_instructor_import_cannot_claim_other_sections_years_or_missing_enrollment(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        self.lead.is_pit_lead = False
+        self.lead.save(update_fields=['is_pit_lead'])
+        record = StudentAcademicRecord.objects.get(student=self.students[0], semester=self.term)
+        for year, section in (('2nd Year', 'BSIT-2C'), ('1st Year', '')):
+            record.year_level, record.section = year, section
+            record.save()
+            response = self.client.post('/api/teams/rosters/preview/', self.section_import(), format='json')
+            self.assertEqual(response.status_code, 403, response.data)
+        record.delete()
+        self.assertEqual(self.client.post('/api/teams/rosters/preview/', self.section_import(), format='json').status_code, 403)
+        self.assertFalse(StudentTeam.objects.exists())
+
+    def test_instructor_import_rechecks_assignment_and_unsectioned_enrollment_at_apply(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        from user_management.models import SectionInstructorAssignment
+        self.lead.is_pit_lead = False
+        self.lead.save(update_fields=['is_pit_lead'])
+        StudentAcademicRecord.objects.filter(student__in=self.students[:3], semester=self.term).update(section='')
+        for change in ('assignment', 'enrollment'):
+            with self.subTest(change=change):
+                preview = self.client.post('/api/teams/rosters/preview/', self.section_import(), format='json')
+                self.assertEqual(preview.status_code, 200, preview.data)
+                if change == 'assignment':
+                    SectionInstructorAssignment.objects.filter(faculty=self.lead, section='BSIT-2A').update(is_active=False)
+                else:
+                    StudentAcademicRecord.objects.filter(student=self.students[0], semester=self.term).update(section='BSIT-2C')
+                denied = self.apply(preview.data)
+                self.assertEqual(denied.status_code, 403, denied.data)
+                self.assertFalse(StudentTeam.objects.exists())
+                self.assertEqual(StudentAcademicRecord.objects.filter(student__in=self.students[1:3], section='').count(), 2)
+                SectionInstructorAssignment.objects.filter(faculty=self.lead, section='BSIT-2A').update(is_active=True)
+
+    def test_instructor_workspace_cannot_assign_another_instructor_even_for_a_lead(self):
+        body = self.section_import()
+        other = get_user_model().objects.create_user(username='foreign-section-instructor', role='faculty')
+        body['teams'][0]['instructor_name'] = other.username
+        result = self.client.post('/api/teams/rosters/preview/', body, format='json')
+        self.assertEqual(result.status_code, 403, result.data)
+        self.assertFalse(other.section_instructor_assignments.exists())
+        self.assertFalse(StudentTeam.objects.exists())
+
+    def test_lead_section_import_rechecks_and_saves_instructor_with_enrollment_atomically(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        from user_management.models import SectionInstructorAssignment
+        other = get_user_model().objects.create_user(username='imported-section-instructor', role='faculty')
+        StudentAcademicRecord.objects.filter(student__in=self.students[:3], semester=self.term).update(section='')
+        body = self.section_import()
+        body['workspace'] = 'operations'
+        body['teams'][0]['instructor_name'] = other.username
+        preview = self.client.post('/api/teams/rosters/preview/', body, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        other.is_active = False
+        other.save(update_fields=['is_active'])
+        failed = self.apply(preview.data)
+        self.assertEqual(failed.status_code, 400, failed.data)
+        self.assertFalse(StudentTeam.objects.exists())
+        self.assertEqual(StudentAcademicRecord.objects.filter(student__in=self.students[:3], section='').count(), 3)
+        other.is_active = True
+        other.save(update_fields=['is_active'])
+        refreshed = self.client.post('/api/teams/rosters/preview/', body, format='json')
+        committed = self.apply(refreshed.data)
+        self.assertEqual(committed.status_code, 201, committed.data)
+        self.assertTrue(SectionInstructorAssignment.objects.filter(faculty=other,
+            semester=self.term, year_level='2nd Year', section='BSIT-2A', is_active=True).exists())
+        self.assertEqual(StudentAcademicRecord.objects.filter(student__in=self.students[:3], section='BSIT-2A').count(), 3)
+
+    def test_empty_read_still_rejects_other_years_invalid_workspaces_and_capstone(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        from user_management.models import SectionInstructorAssignment
+        StudentAcademicRecord.objects.filter(semester=self.term).update(section='')
+        SectionInstructorAssignment.objects.filter(semester=self.term).delete()
+        for query, status in (
+            ({'year_level': '1st Year', 'workspace': 'operations'}, 403),
+            ({'year_level': '2nd Year', 'workspace': 'invalid'}, 403),
+            ({'year_level': '2nd Year', 'workspace': 'instructor'}, 403),
+            ({'year_level': '4th Year', 'workspace': 'operations'}, 400),
+        ):
+            with self.subTest(query=query):
+                response = self.client.get('/api/teams/rosters/', query)
+                self.assertEqual(response.status_code, status, response.data)
+
     def test_instructor_replaces_own_section_and_lead_retains_access(self):
         old = self.baseline()
         later = self.later()

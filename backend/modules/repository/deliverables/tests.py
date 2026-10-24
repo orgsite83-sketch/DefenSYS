@@ -1520,6 +1520,12 @@ class CapstoneDeliverablesApiTests(APITestCase):
         )
 
         # Team previously passed Stage 1 (so team.status == 'Approved')
+        self.stage.is_presentation_only = True
+        self.stage.save(update_fields=['is_presentation_only'])
+        from student_teams.capstone_lifecycle import capture_participation, configured_requirements
+        capture_participation(self.team, requirements=configured_requirements())
+        TeamGrade.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
+            status='published', verdict='approved', panel_score=85, adviser_score=85, peer_score=85)
         from student_teams.models import TeamStageProgress
         TeamStageProgress.objects.update_or_create(team=self.team, semester=self.semester,
             defense_stage=self.stage, defaults={'status': TeamStageProgress.STATUS_PASSED})

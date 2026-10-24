@@ -133,13 +133,15 @@ class DeliverableActionPerformanceTests(APITestCase):
         self.upload('PAPER', 'paper.docx')
         team = team_queryset_for_user(self.adviser).get(pk=self.team.pk)
         from . import services
-        with patch.object(services, 'stage_payload', wraps=services.stage_payload) as serialize:
-            result = team_payload(team, selected_stage=self.stage.label, evaluator=self.adviser)
-        self.assertEqual(sum(call.args[1] == self.stage.label for call in serialize.call_args_list), 1)
-        self.assertEqual(result['submitted_count'], 1)
-        from .services import submissions_for, submission_payload
-        with self.assertNumQueries(0):
-            submission_payload(submissions_for(team, self.stage.label)['PAPER'])
+        from defensys_backend.read_projection import read_projection
+        with read_projection():
+            with patch.object(services, 'stage_payload', wraps=services.stage_payload) as serialize:
+                result = team_payload(team, selected_stage=self.stage.label, evaluator=self.adviser)
+            self.assertEqual(sum(call.args[1] == self.stage.label for call in serialize.call_args_list), 1)
+            self.assertEqual(result['submitted_count'], 1)
+            from .services import submissions_for, submission_payload
+            with self.assertNumQueries(0):
+                submission_payload(submissions_for(team, self.stage.label)['PAPER'])
 
     def test_partial_response_does_not_bypass_team_permissions(self):
         self.upload('PAPER', 'paper.docx')

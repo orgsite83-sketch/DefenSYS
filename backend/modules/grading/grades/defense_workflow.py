@@ -266,35 +266,12 @@ def apply_workflow_action(grade, *, actor, action, reason='', project_title='', 
             TeamRecoveryAuthorization.objects.filter(team=team, project_version=team.project_version,
                 defense_stage=grade.defense_stage, action='retake', consumed_at__isnull=True).update(consumed_at=timezone.now())
         elif action == 'authorize_retake':
-            if grade.verdict == 'project_rejected':
-                raise ValidationError('A rejected concept needs an authorized replacement concept.')
-            if recovery_for(team, grade.defense_stage):
-                raise ValidationError('Another attempt is already authorized for this outcome.')
-            TeamRecoveryAuthorization.objects.create(team=team, semester=team.semester, defense_stage=grade.defense_stage,
-                project_version=team.project_version, previous_project_title=team.project_title,
-                action='retake', reason=reason.strip(), authorized_by=actor)
+            from student_teams.capstone_lifecycle import authorize_recovery
+            authorize_recovery(team, grade, target=team.semester, choice='continue', reason=reason, actor=actor)
         else:
-            if not project_title.strip() or len(project_title.strip()) > 255:
-                raise ValidationError('Enter a replacement concept title (up to 255 characters).')
-            from defense.stages.models import DefenseStage
-            first_stage = DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id').first()
-            if not first_stage:
-                raise ValidationError('Configure the first defense stage before creating a replacement concept.')
-            TeamRecoveryAuthorization.objects.create(team=team, semester=team.semester, defense_stage=first_stage,
-                project_version=team.project_version, previous_project_title=team.project_title,
-                replacement_project_version=team.project_version+1, replacement_project_title=project_title.strip(),
-                action='new_concept', reason=reason.strip(), authorized_by=actor)
-            team.project_version += 1
-            team.project_title = project_title.strip()
-            team.status = StudentTeam.STATUS_PENDING
-            team.current_defense_stage = first_stage.label
-            team.ready_for_stage = None
-            team.unlocked_stages = []
-            team.save(update_fields=['project_version', 'project_title', 'status', 'current_defense_stage', 'ready_for_stage', 'unlocked_stages', 'updated_at'])
-            TeamStageProgress.objects.create(team=team, semester=team.semester, defense_stage=first_stage,
-                status=TeamStageProgress.STATUS_LOCKED, created_by=actor, updated_by=actor)
-            from .services import GradeContextService
-            GradeContextService.get_or_create_unscheduled_team(team, stage_label=first_stage.label)
+            from student_teams.capstone_lifecycle import authorize_recovery
+            authorize_recovery(team, grade, target=team.semester, choice='new', title=project_title,
+                reason=reason, actor=actor)
     else:
         raise ValidationError('Select a valid workflow action.')
     audit(grade, actor, f'defense.{action}', reason=reason, replacement_project_title=project_title,

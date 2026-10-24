@@ -99,7 +99,13 @@ def get_deliverable_definitions_for_team(team, stage_label):
     """Load deliverable definitions configured for a Capstone stage or PIT event."""
     if not team or not stage_label:
         return []
-    definitions = get_deliverable_definitions_for_scope('capstone' if team.is_capstone else 'pit', team.semester_id, stage_label, year_level=team.year_level)
+    from copy import deepcopy
+    captured = getattr(team, '_capstone_requirement', None)
+    if not captured and team.is_capstone:
+        from student_teams.capstone_lifecycle import requirement_for_label
+        captured = requirement_for_label(team, stage_label)
+    definitions = (deepcopy(captured['definitions']) if captured and 'definitions' in captured else
+        get_deliverable_definitions_for_scope('capstone' if team.is_capstone else 'pit', team.semester_id, stage_label, year_level=team.year_level))
     if any((d.get('file_policy') or {}).get('mode') == 'concepts' for d in definitions):
         from student_teams.concept_policy import resolve_policy
         stage = document_context(team, stage_label)
@@ -198,17 +204,11 @@ def current_stage_for_team(team):
         return default_stage_label()
     if team.is_capstone:
         from defense.scheduler.models import DefenseSchedule
-        from defense.stages.models import DefenseStage, StageGradingConfig
-        from student_teams.models import TeamStageProgress
-        from grading.grades.models import TeamGrade
-
-        # A stored team label or old schedule cannot create an active stage
-        # when the administrator has no active stage definitions.
-        stages = list(
-            DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id')
-        )
-        if not stages:
+        from student_teams.capstone_lifecycle import requirements_for, stage_cleared
+        required = requirements_for(team)
+        if not required:
             return None
+        labels = dict(DefenseStage.objects.filter(pk__in=[r['id'] for r in required]).values_list('pk', 'label'))
 
         # 1. If currently scheduled, the scheduled stage is active
         sched = (
@@ -225,30 +225,10 @@ def current_stage_for_team(team):
         if sched and sched.defense_stage:
             return sched.defense_stage.label
 
-        # 2. Check completion for each stage in order
-        stage_ids = [stage.pk for stage in stages]
-        completed_stage_ids = set(TeamStageProgress.objects.filter(
-            team=team, defense_stage_id__in=stage_ids,
-            status__in=[TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED],
-        ).values_list('defense_stage_id', flat=True))
-        grades = list(TeamGrade.objects.filter(
-            team=team, defense_stage_id__in=stage_ids,
-        ).select_related('team', 'semester', 'schedule'))
-        from grading.grades.defense_workflow import passed_and_cleared, legacy_finalized_pass
-        completed_stage_ids.update(grade.defense_stage_id for grade in grades
-            if grade.status == TeamGrade.STATUS_PUBLISHED and (passed_and_cleared(grade) or legacy_finalized_pass(grade)))
-        completed_stage_ids = {stage.pk for stage in stages if stage.pk in completed_stage_ids
-            and post_deliverables_complete(team, stage.label)
-            and all(grade.status == TeamGrade.STATUS_PUBLISHED and (passed_and_cleared(grade) or legacy_finalized_pass(grade))
-                    for grade in grades if grade.defense_stage_id == stage.pk)}
-
-        # 3. Find the first uncompleted stage in order
-        for stg in stages:
-            if stg.id not in completed_stage_ids:
-                return stg.label
-
-        # 4. If all configured stages are completed, return the last completed stage
-        return stages[-1].label
+        for requirement in required:
+            if not stage_cleared(team, requirement):
+                return labels.get(requirement['id'], requirement['label'])
+        return labels.get(required[-1]['id'], required[-1]['label'])
     else:
         # For PIT: find the scheduled schedule or the first event config
         from defense.scheduler.models import DefenseSchedule
@@ -464,6 +444,10 @@ def post_defense_ready(team, stage_label):
     grade = latest_stage_grade(team, stage_label, scope=scope)
     if not grade or grade.project_version != team.project_version or not grade.schedule_id:
         return False
+    if team.is_capstone:
+        from student_teams.capstone_lifecycle import evidence_team, requirement_for_label
+        team = evidence_team(team, grade, requirement_for_label(team, stage_label))
+        grade.team = team
     schedule = grade.schedule
     if (schedule.project_version != team.project_version
             or schedule.semester_id != team.semester_id
@@ -530,6 +514,11 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
 @read_memoize
 def latest_stage_grade(team, stage_label, *, scope=None):
     from grading.grades.models import TeamGrade
+    if team.is_capstone and scope != TeamGrade.SCOPE_PIT:
+        from student_teams.capstone_lifecycle import latest_stage_assessment, requirement_for_label
+        requirement = getattr(team, '_capstone_requirement', None) or requirement_for_label(team, stage_label)
+        if requirement and not getattr(team, '_assessment_semester_id', None):
+            return latest_stage_assessment(team, requirement['id'])
     label_filter = (Q(pit_event_config__event_name=stage_label) | Q(stage_label=stage_label)
                     if scope == TeamGrade.SCOPE_PIT else
                     Q(defense_stage__label=stage_label) | Q(stage_label=stage_label))
@@ -541,15 +530,27 @@ def latest_stage_grade(team, stage_label, *, scope=None):
 
 @read_memoize
 def submissions_for(team, stage_label):
+    labels = {stage_label}
+    if team.is_capstone:
+        from student_teams.capstone_lifecycle import requirement_for_label
+        requirement = getattr(team, '_capstone_requirement', None) or requirement_for_label(team, stage_label)
+        if requirement:
+            labels.add(requirement['label'])
     return {
         submission.deliverable_id: submission
-        for submission in team.deliverable_submissions.all()
-        if submission.stage_label == stage_label
+        for submission in sorted(team.deliverable_submissions.all(), key=lambda s: (s.uploaded_at, s.pk))
+        if submission.stage_label in labels
     }
 
 
 @read_memoize
 def is_presentation_stage(team, stage_label):
+    captured = getattr(team, '_capstone_requirement', None)
+    if not captured and team and team.is_capstone:
+        from student_teams.capstone_lifecycle import requirement_for_label
+        captured = requirement_for_label(team, stage_label)
+    if captured:
+        return bool(captured.get('presentation_only'))
     if not stage_label:
         return False
     if not team or getattr(team, 'is_capstone', True):
@@ -680,11 +681,12 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
     progress_status = progress.status if progress else ('ready' if (pit_endorsed(team, stage_label) if team.is_pit else team.ready_for_stage == stage_label) else 'locked')
 
     today = timezone.localdate()
+    assessment = latest_stage_grade(team, stage_label) if is_capstone else None
     active_schedules = DefenseSchedule.objects.filter(
         scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
         team=team,
         project_version=team.project_version,
-        semester=team.semester,
+        semester_id=assessment.semester_id if assessment else team.semester_id,
         status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
     )
     if stage_obj:
@@ -967,11 +969,12 @@ def stage_payload(team, stage_label, evaluator=None):
         is_endorsed = False
 
     today = timezone.localdate()
+    assessment = latest_stage_grade(team, stage_label) if is_capstone else None
     active_schedules = DefenseSchedule.objects.filter(
         scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
         team=team,
         project_version=team.project_version,
-        semester=team.semester,
+        semester_id=assessment.semester_id if assessment else team.semester_id,
         status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
     )
     if stage_obj:
@@ -1356,7 +1359,10 @@ def resolve_team_instructor_or_adviser_name(team):
 
 def team_payload(team, selected_stage=None, evaluator=None):
     if team.is_capstone:
-        configured_stage_labels = list(STAGE_OPTIONS)
+        from student_teams.capstone_lifecycle import requirements_for
+        required = requirements_for(team)
+        labels = dict(DefenseStage.objects.filter(pk__in=[r['id'] for r in required]).values_list('pk', 'label'))
+        configured_stage_labels = [labels.get(r['id'], r['label']) for r in required]
     else:
         from defense.scheduler.models import PitEventGradingConfig
         from defense.scheduler.event_scope import pit_events_for_team
@@ -1933,11 +1939,7 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
             if not is_approved_concept(definition or {}) or not final_paper_complete(team, stage, required=True):
                 raise ValueError('Clear concept revisions with the accepted final paper for the selected concept.')
         from grading.grades.models import TeamGrade
-        stage_grade = TeamGrade.objects.filter(
-            Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
-            team=team,
-            semester=team.semester,
-        ).order_by('-updated_at', '-id').first()
+        stage_grade = latest_stage_grade(team, stage_label)
         if stage_grade and stage_grade.verdict == 'approved_with_revisions' and not stage_grade.revisions_cleared_at:
             if clear_defense_revisions:
                 from grading.grades.defense_workflow import apply_workflow_action
@@ -1986,8 +1988,7 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
         from grading.grades.models import TeamGrade
         from grading.grades.services import _apply_team_result_from_grade
         from grading.grades.defense_workflow import legacy_finalized_pass
-        grade = TeamGrade.objects.filter(team=team, semester=team.semester,
-            defense_stage__label=stage_label).first()
+        grade = latest_stage_grade(team, stage_label)
         if grade and (grade.verdict in TeamGrade.PASSING_VERDICTS or legacy_finalized_pass(grade)):
             _apply_team_result_from_grade(grade)
 

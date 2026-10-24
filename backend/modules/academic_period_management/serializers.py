@@ -3,6 +3,14 @@ from rest_framework import serializers
 from .models import SchoolYear, Semester, validate_school_year_label
 
 
+class SemesterActivationSerializer(serializers.Serializer):
+    force = serializers.BooleanField(default=False)
+    reason = serializers.CharField(required=False, allow_blank=True, default='', max_length=3000)
+    decisions = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    preview_revision = serializers.CharField(required=False, allow_blank=True, default='', max_length=64)
+    request_id = serializers.CharField(required=False, allow_null=True, max_length=64)
+
+
 class SemesterSerializer(serializers.ModelSerializer):
     school_year_id = serializers.IntegerField(source='school_year.id', read_only=True)
     school_year = serializers.CharField(source='school_year.label', read_only=True)

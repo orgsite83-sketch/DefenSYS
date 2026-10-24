@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'widgets/semester_transition_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -1805,6 +1806,16 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                         ),
                         child: const Text('Activate This Semester'),
                       ),
+                    if (isActive && semester['label'] == '2nd Semester')
+                      OutlinedButton.icon(
+                        onPressed: isSaving ? null : () async {
+                          final changed = await showSemesterTransitionReview(context, ref,
+                            int.parse(semester['id'].toString()), returning: true);
+                          if (mounted && changed == true) context.go('/admin/student-teams');
+                        },
+                        icon: const Icon(Icons.people_outline, size: 16),
+                        label: const Text('Review returning teams'),
+                      ),
                   ],
                 ),
               ],
@@ -2136,39 +2147,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     final semesterId = int.tryParse(semester['id']?.toString() ?? '');
     if (semesterId == null) return;
 
-    final notifier = ref.read(academicPeriodProvider.notifier);
-    final preview = await notifier.fetchTransitionPreview(semesterId);
-    if (!mounted || preview == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surfaceColor,
-        title: Text('Activate Semester', style: TextStyle(color: _inkColor)),
-        content: Text(
-          'Are you sure you want to set "${semester['label']}" as the active institutional semester?',
-          style: TextStyle(color: _mutedColor),
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _maroon,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Activate'),
-          ),
-        ],
-      ),
-    );
-
+    final confirmed = await showSemesterTransitionReview(context, ref, semesterId);
     if (confirmed == true && mounted) {
-      await notifier.activateSemester(semesterId);
-      _loadData();
+      context.go('/admin/student-teams');
     }
   }
 
