@@ -1520,8 +1520,15 @@ class CapstoneDeliverablesApiTests(APITestCase):
         )
 
         # Team previously passed Stage 1 (so team.status == 'Approved')
-        self.stage.is_presentation_only = True
-        self.stage.save(update_fields=['is_presentation_only'])
+        from repository.deliverables.services import get_deliverable_definitions
+        for definition in get_deliverable_definitions(self.stage.label):
+            if not definition['required']:
+                continue
+            DeliverableSubmission.objects.update_or_create(team=self.team,
+                stage_label=self.stage.label, deliverable_id=definition['id'],
+                defaults={'label': definition['label'], 'deliverable_type': definition['type'],
+                    'file_name': f"{definition['id']}.pdf",
+                    'status': DeliverableSubmission.STATUS_ACCEPTED})
         from student_teams.capstone_lifecycle import capture_participation, configured_requirements
         capture_participation(self.team, requirements=configured_requirements())
         TeamGrade.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,

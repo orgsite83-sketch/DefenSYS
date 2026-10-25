@@ -3,6 +3,32 @@ import 'package:defensys/services/capstone_deliverables_provider.dart';
 
 void main() {
   group('StudentTaskBadgeHelper', () {
+    test('Team dot follows editable leader tasks and clears when titles are complete', () {
+      Map<String, dynamic> data({bool leader = true, bool locked = false, bool complete = false, int teamId = 5}) => {
+        'student': {'id': 10, 'is_leader': leader},
+        'team': {'id': 5, 'currentStage': 'Concept Proposal'},
+        'stages': [{'stage_label': 'Concept Proposal', 'team_id': teamId, 'concept_workflow': {
+          'enabled': true, 'can_edit_titles': !locked, 'status': locked ? 'scheduled' : 'concepts_needed',
+          'concepts': [{'key': 'c1', 'title': 'Imported idea'}, {'key': 'c2', 'title': complete ? 'Second idea' : ''}],
+        }}],
+      };
+      expect(StudentTaskBadgeHelper.hasPendingTeamTasks(data()), isTrue);
+      expect(StudentTaskBadgeHelper.hasPendingTeamTasks(data(leader: false)), isFalse);
+      expect(StudentTaskBadgeHelper.hasPendingTeamTasks(data(complete: true)), isFalse);
+      expect(StudentTaskBadgeHelper.hasPendingTeamTasks(data(locked: true)), isFalse);
+      expect(StudentTaskBadgeHelper.hasPendingTeamTasks(data(teamId: 99)), isFalse);
+      expect(StudentTaskBadgeHelper.hasPendingTeamTasks(data(complete: true), setup: {
+        'event_teams': [{'needs_details': true}],
+      }), isTrue);
+    });
+    test('Team dot includes actionable shared manager tasks but excludes faculty waiting states', () {
+      for (final status in ['papers_missing', 'corrections_requested', 'shared_revisions_pending', 'final_paper_pending',
+        'awaiting_faculty_review', 'awaiting_name_confirmation', 'section_defense_pending', 'cleared']) {
+        expect(StudentTaskBadgeHelper.hasPendingTeamTasks(null, setup: {
+          'section_tasks': [{'role': 'project_manager', 'status': status}],
+        }), ['papers_missing', 'corrections_requested', 'shared_revisions_pending', 'final_paper_pending'].contains(status));
+      }
+    });
     test('isDeliverablePending returns true when required and not uploaded', () {
       final item = {
         'id': 'concept_paper',
@@ -130,6 +156,7 @@ void main() {
         'student': {'id': '1'},
         'members': [{'id': '1'}, {'id': '2'}, {'id': '3'}],
         'myPeerSubmissions': [
+          {'evaluateeId': '1'},
           {'evaluateeId': '2'},
           {'evaluateeId': '3'},
         ],

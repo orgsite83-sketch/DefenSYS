@@ -46,7 +46,7 @@ def configured_requirements():
     from defense.stages.models import DefenseStage
     from repository.deliverables.services import get_deliverable_definitions
     return [{'id': stage.pk, 'label': stage.label, 'order': stage.display_order,
-             'presentation_only': stage.is_presentation_only,
+             'presentation_only': False,
              'definitions': get_deliverable_definitions(stage.label),
              'updated_at': stage.updated_at.isoformat()}
             for stage in DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id')]
@@ -203,7 +203,7 @@ def stage_cleared(team, requirement, grade=None):
     if not (passed_and_cleared(grade) or legacy_finalized_pass(grade)):
         return False
     label = grade.stage_label or grade.defense_stage.label
-    if not requirement.get('presentation_only') and not required_complete(source, label):
+    if not required_complete(source, label):
         return False
     return post_deliverables_complete(source, label)
 

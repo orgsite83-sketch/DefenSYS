@@ -26,6 +26,13 @@ class AssignedConceptTests(APITestCase):
         self.team.concept_assignment = {'mode': 'assigned' if assigned else 'proposals',
             'assigned_title': 'School assigned module' if assigned else '', 'project_version': 1}
         self.team.save()
+        if assigned:
+            # Captured legacy hearings keep their one-concept policy until an
+            # explicit reviewed conversion. New imports use stage counts.
+            ConceptRound.objects.create(team=self.team, defense_stage=self.stage, project_version=1,
+                number=1, concepts=[{'key': 'c1', 'title': 'School assigned module', 'decision': '', 'remarks': ''}],
+                policy_snapshot={**self.stage.concept_config, 'mode': 'assigned', 'required_count': 1,
+                    'assigned_title': 'School assigned module', 'source': 'import'})
 
     def upload(self, key='c1:paper'):
         return upsert_submission(self.team, self.stage.label, 'PAPER', 'paper.pdf', '10 B', self.student,
@@ -79,14 +86,13 @@ class AssignedConceptTests(APITestCase):
     def test_section_and_team_overrides_take_precedence_and_require_assignment(self):
         self.configure(assigned=False)
         response = self.update_policy({'mode': 'assigned'})
-        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.status_code, 200, response.data)
         response = self.update_policy({'mode': 'proposals', 'required_count': 2},
             team_policy={'mode': 'assigned', 'assigned_title': 'Admin assigned project'})
         self.assertEqual(response.status_code, 200, response.data)
         self.team.refresh_from_db()
         policy = resolve_policy(self.team, self.stage)
-        self.assertEqual((policy['source'], policy['required_count'], policy['assigned_title']),
-                         ('team', 1, 'Admin assigned project'))
+        self.assertEqual((policy['required_count'], policy['seed_title']), (3, 'Admin assigned project'))
         self.assertEqual(response.data['concept_contexts'][0]['teams'][0]['effective_policy'], policy)
 
     def test_submitted_papers_require_review_and_are_preserved_after_policy_change(self):
@@ -147,7 +153,7 @@ class AssignedConceptTests(APITestCase):
         self.assertEqual(resolve_policy(self.team, self.stage)['required_count'], 3)
 
     def test_legacy_team_with_title_keeps_stage_default(self):
-        self.configure()
+        self.configure(assigned=False)
         self.team.concept_assignment = {}
         self.team.save()
         self.assertEqual(resolve_policy(self.team, self.stage)['required_count'], 3)
@@ -169,4 +175,27 @@ class AssignedConceptTests(APITestCase):
         serializer = DefenseStageWriteSerializer(self.stage, data={'concept_config': {'enabled': False}}, partial=True)
         self.assertTrue(serializer.is_valid(), serializer.errors)
         serializer.save()
-        self.assertTrue(StageDeliverable.objects.filter(pk=paper.pk).exists())
+        self.assertFalse(StageDeliverable.objects.filter(pk=paper.pk).exists())
+        self.assertFalse(self.stage.deliverables.exists())
+
+    def test_disabling_keeps_manually_authored_concept_requirements(self):
+        self.configure()
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(f'/api/defense/stages/{self.stage.pk}/',
+            {'concept_config': {'enabled': False}}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(StageDeliverable.objects.filter(pk=self.paper.pk).exists())
+
+    def test_disabling_cannot_remove_automatic_papers_with_submissions(self):
+        self.configure()
+        self.paper.file_policy = {'mode': 'concepts', 'auto_added_for': 'concept_selection'}
+        self.paper.save()
+        self.upload()
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(f'/api/defense/stages/{self.stage.pk}/',
+            {'concept_config': {'enabled': False}}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.stage.refresh_from_db()
+        self.assertTrue(self.stage.concept_config['enabled'])
+        self.assertTrue(StageDeliverable.objects.filter(pk=self.paper.pk).exists())
+        self.assertTrue(self.team.deliverable_submissions.filter(deliverable_id='PAPER').exists())

@@ -12,6 +12,14 @@ import '../services/capstone_deliverables_provider.dart';
 import '../services/dashboard_provider.dart';
 import '../theme/defensys_tokens.dart';
 import 'repository/section_concept_workspace.dart';
+import '../services/academic/student_team_tasks_provider.dart';
+
+String conceptSetupLabel(Map task) {
+  final remaining = task['remaining_count'] ?? task['required_count'];
+  final partial = (task['provided_count'] as num? ?? 0) > 0;
+  final noun = task['shared_system'] == true ? 'matching module concepts' : 'concepts';
+  return partial ? 'Add $remaining remaining $noun' : 'Submit ${task['required_count']} $noun';
+}
 
 class StudentTeamSetupTasks extends ConsumerStatefulWidget {
   const StudentTeamSetupTasks({
@@ -19,10 +27,12 @@ class StudentTeamSetupTasks extends ConsumerStatefulWidget {
     this.onOpenRepository,
     this.onRefresh,
     this.refreshKey,
+    this.showConceptTasks = true,
   });
   final VoidCallback? onOpenRepository;
   final Future<void> Function()? onRefresh;
   final Object? refreshKey;
+  final bool showConceptTasks;
 
   @override
   ConsumerState<StudentTeamSetupTasks> createState() =>
@@ -47,15 +57,15 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
   void didUpdateWidget(covariant StudentTeamSetupTasks oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.refreshKey != widget.refreshKey) {
-      load();
+      load(refresh: true);
     }
   }
 
-  Future<void> load() async {
+  Future<void> load({bool refresh = false}) async {
     if (ref.read(authProvider).user?['role'] != 'student') return;
     final revision = ++_requestRevision;
     try {
-      final result = await ref.read(teamFormationServiceProvider).setupTasks();
+      final result = await (refresh ? ref.refresh(studentTeamTasksProvider.future) : ref.read(studentTeamTasksProvider.future));
       if (mounted && revision == _requestRevision) {
         setState(() {
           teams = _teams(result);
@@ -94,6 +104,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
           .read(teamFormationServiceProvider)
           .completeName(team['id'] as int, name);
       if (mounted) setState(() => teams = _teams(result));
+      await load(refresh: true);
       await widget.onRefresh?.call();
     } catch (e) {
       if (mounted) {
@@ -147,12 +158,24 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
       builder: (_) => _EventTeamDetailsDialog(team: team),
     );
     if (saved != true || !mounted) return;
-    await load();
+    await load(refresh: true);
     await widget.onRefresh?.call();
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(studentTeamTasksProvider, (previous, next) {
+      next.whenData((result) {
+        if (mounted) { setState(() {
+          this.teams = _teams(result);
+          this.eventTeams = (result['event_teams'] as List? ?? []).whereType<Map>().map((t) => Map<String, dynamic>.from(t)).toList();
+          sectionTasks = (result['section_tasks'] as List? ?? []).whereType<Map>().map((t) => Map<String, dynamic>.from(t)).toList();
+          error = null;
+        }); }
+      });
+    });
+    final teams = this.teams.where((t) => widget.showConceptTasks || t['needs_name'] == true).toList();
+    final eventTeams = this.eventTeams.where((t) => widget.showConceptTasks || t['needs_name'] == true || t['needs_details'] == true).toList();
     if (teams.isEmpty && sectionTasks.isEmpty && eventTeams.isEmpty && error == null) return const SizedBox.shrink();
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -241,7 +264,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                           style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
                         ),
                         TextButton(
-                          onPressed: busy ? null : load,
+                          onPressed: busy ? null : () => load(refresh: true),
                           child: const Text('Retry'),
                         ),
                       ],
@@ -356,7 +379,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                                           ),
                                         ),
                                       );
-                                      if (mounted) await load();
+                                      if (mounted) await load(refresh: true);
                                     },
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: DefensysTokens.maroonOf(context),
@@ -431,7 +454,8 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                                         )),
                                       ),
                                     for (final task
-                                        in (team['concept_tasks'] as List? ??
+                                        in (widget.showConceptTasks ? team['concept_tasks'] as List? ??
+                                                [] :
                                                 [])
                                             .whereType<Map>())
                                       ShadButton(
@@ -442,7 +466,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                                         onPressed: () =>
                                             openConcepts(team, task),
                                         child: Flexible(child: Text(
-                                          'Complete ${task['required_count']} concept${task['required_count'] == 1 ? '' : 's'}',
+                                          conceptSetupLabel(task),
                                           textAlign: TextAlign.center,
                                         )),
                                       ),
@@ -454,7 +478,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                         ),
                       ...teams.map(
                         (team) {
-                          final conceptTasks = (team['concept_tasks'] as List? ?? []).cast<Map>();
+                          final conceptTasks = (widget.showConceptTasks ? team['concept_tasks'] as List? ?? [] : []).cast<Map>();
                           final needsName = team['needs_name'] == true;
                           if (!needsName && conceptTasks.isEmpty) return const SizedBox.shrink();
 
@@ -498,9 +522,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                                     label: Text(
                                       task['mode'] == 'assigned'
                                           ? 'View assigned project · ${task['stage_label']}'
-                                          : task['shared_system'] == true
-                                            ? 'Submit 3 corresponding module concepts · ${task['stage_label']}'
-                                            : 'Submit ${task['required_count']} concepts · ${task['stage_label']}',
+                                          : '${conceptSetupLabel(task)} · ${task['stage_label']}',
                                       style: const TextStyle(fontSize: 11.5),
                                     ),
                                     style: ElevatedButton.styleFrom(

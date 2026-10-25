@@ -66,3 +66,33 @@ class PeerYearDiscoveryTests(TestCase):
             auto_peer_eval.run()
         clients.assert_called_once_with('http://127.0.0.1:8000', 'b-first', 'b-first')
         client.submit_evaluation.assert_not_called()
+
+    def test_automation_includes_required_self_rating_and_skips_existing_pairs(self):
+        for submitted_ids, expected_ids in [
+            ([], [self.first.pk, self.shared.pk]),
+            ([self.shared.pk], [self.first.pk]),
+            ([self.first.pk, self.shared.pk], []),
+        ]:
+            with self.subTest(submitted_ids=submitted_ids):
+                client = Mock()
+                client.authenticate.return_value = True
+                client.get_dashboard.return_value = {
+                    'student': {'id': self.first.pk},
+                    'team': {'id': self.first_team.pk, 'yearLevel': '1st Year', 'members': [
+                        {'id': self.first.pk, 'name': 'First Student'},
+                        {'id': self.shared.pk, 'name': 'Shared Student'},
+                    ]},
+                    'peerEvalEnabled': True,
+                    'current_stage': 'Peer test event',
+                    'peerCriteria': [{'name': 'Contribution', 'maxScore': 10}],
+                    'myPeerSubmissions': [{'evaluateeId': pk} for pk in submitted_ids],
+                }
+                args = ['auto_peer_eval.py', '--all-students', '--year', '1', '--limit', '1', '--dry-run']
+                with patch.object(sys, 'argv', args), \
+                        patch.object(auto_peer_eval, 'StudentClient', return_value=client), \
+                        patch.object(auto_peer_eval.time, 'sleep'), redirect_stdout(StringIO()):
+                    auto_peer_eval.run()
+                self.assertEqual([call.args[0]['evaluateeId'] for call in client.submit_evaluation.call_args_list],
+                                 expected_ids)
+                for call in client.submit_evaluation.call_args_list:
+                    self.assertTrue(call.kwargs['dry_run'])

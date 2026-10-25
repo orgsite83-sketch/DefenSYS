@@ -77,7 +77,6 @@ class _DefenseStageEditorScreenState
   int _orderPosition = 1;
   late int _activeTab;
   bool _isActive = true;
-  bool _isPresentationOnly = false;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -121,7 +120,7 @@ class _DefenseStageEditorScreenState
       'description': _description.text,
       'display_order': _orderPosition,
       'is_active': _isActive,
-      'is_presentation_only': _isPresentationOnly,
+      'is_presentation_only': false,
       'minutes_required': _minutesRequired,
       'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
       'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
@@ -416,7 +415,6 @@ class _DefenseStageEditorScreenState
     _description.text = stage['description']?.toString() ?? '';
     _orderPosition = _asInt(stage['display_order']) ?? 1;
     _isActive = stage['is_active'] != false;
-    _isPresentationOnly = stage['is_presentation_only'] == true;
     _conceptConfig = Map<String, dynamic>.from(stage['concept_config'] as Map? ?? {});
     _qualifyingScore.text = stage['qualifying_score']?.toString() ?? '';
     _scoreCarryover = stage['score_carryover']?.toString() ?? _conceptConfig['score_carryover']?.toString() ?? 'reassess';
@@ -510,30 +508,28 @@ class _DefenseStageEditorScreenState
       return;
     }
 
-    // Validate deliverables labels & archive naming templates (only in Document-Gated mode)
-    if (!_isPresentationOnly) {
-      for (int i = 0; i < _deliverables.length; i++) {
-        final d = _deliverables[i];
-        final labelVal = d['label']?.toString().trim() ?? '';
-        if (labelVal.isEmpty) {
+    // Validate student deliverable labels and archive naming templates.
+    for (int i = 0; i < _deliverables.length; i++) {
+      final d = _deliverables[i];
+      final labelVal = d['label']?.toString().trim() ?? '';
+      if (labelVal.isEmpty) {
+        setState(() {
+          _activeTab = 2;
+          _selectedDeliverable = d;
+          _error = 'Enter a name for this deliverable.';
+        });
+        return;
+      }
+      if (d['deliverable_type'] == 'post') {
+        final tpl = (d['archive_file_template'] ?? '').toString().trim();
+        final count = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(tpl).length;
+        if (count > 3) {
           setState(() {
             _activeTab = 2;
             _selectedDeliverable = d;
-            _error = 'Enter a name for this deliverable.';
+            _error = 'Use at most 3 variables in the archive file name for "$labelVal".';
           });
           return;
-        }
-        if (d['deliverable_type'] == 'post') {
-          final tpl = (d['archive_file_template'] ?? '').toString().trim();
-          final count = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(tpl).length;
-          if (count > 3) {
-            setState(() {
-              _activeTab = 2;
-              _selectedDeliverable = d;
-              _error = 'Use at most 3 variables in the archive file name for "$labelVal".';
-            });
-            return;
-          }
         }
       }
     }
@@ -567,14 +563,14 @@ class _DefenseStageEditorScreenState
             'display_order': _orderPosition,
             'description': _description.text.trim(),
             'is_active': _isActive,
-            'is_presentation_only': _isPresentationOnly,
+            'is_presentation_only': false,
             'minutes_required': _minutesRequired,
       'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
       'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
       'score_carryover': _scoreCarryover,
             'minutes_deliverable_id': _minutesNumber.text.trim(),
             'minutes_deliverable_label': _minutesName.text.trim(),
-            'deliverables': _isPresentationOnly ? [] : _deliverables,
+            'deliverables': _deliverables,
             if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
           },
         );
@@ -847,8 +843,7 @@ class _DefenseStageEditorScreenState
                       child: _buildTabBar(
                         activeTab: _activeTab,
                         hasWeightError: hasWeightError,
-                        deliverableCount: (_isPresentationOnly ? 0 : _deliverables.length) + (_minutesRequired == true ? 1 : 0),
-                        isPresentationOnly: _isPresentationOnly,
+                        deliverableCount: _deliverables.length + (_minutesRequired == true ? 1 : 0),
                         onTabSelected: (tab) => setState(() => _activeTab = tab),
                       ),
                     ),
@@ -916,6 +911,7 @@ class _DefenseStageEditorScreenState
                                 setState(() {
                                   _conceptConfig = value;
                                   ensureConceptPapers(_deliverables, value);
+                                  if (!_deliverables.contains(_selectedDeliverable)) _selectedDeliverable = null;
                                 });
                                 _markDirty();
                               }),
@@ -1026,107 +1022,102 @@ class _DefenseStageEditorScreenState
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _buildSubmissionModeSelector(),
-                              if (_isPresentationOnly)
-                                _buildPresentationOnlyInfoBanner()
-                              else ...[
-                                StageDeliverablePresetsBar(
-                                  existingStages: ref.read(defenseStagesProvider).stages,
-                                  currentDeliverables: _deliverables,
-                                  enabled: !_isLocked,
-                                  onApplyDeliverables: (newDeliverables) {
-                                    setState(() {
-                                      _deliverables.clear();
-                                      _deliverables.addAll(newDeliverables);
-                                      _selectedDeliverable = _deliverables.isNotEmpty ? _deliverables.first : null;
-                                      _error = null;
-                                    });
-                                    _markDirty();
-                                  },
-                                ),
-                                StageDeliverableCounts(
-                                  deliverables: _deliverables,
-                                  minutesRequired: _minutesRequired == true,
-                                ),
-                                _buildDeliverableSection(
-                                  title: 'Pre-Defense Requirements',
-                                  subtitle: 'Required files need faculty acceptance before endorsement and scheduling.',
-                                  icon: Icons.folder_open_rounded,
-                                  accentColor: const Color(0xFF0F172A),
-                                  bgHeaderColor: const Color(0xFFF8FAFC),
-                                  borderColor: const Color(0xFFE2E8F0),
-                                  count: preDeliverables.length,
-                                  buttonText: 'Add Pre-Defense',
-                                  onAdd: _isLocked
-                                      ? () {}
-                                      : () {
-                                          setState(() {
-                                            final item = <String, dynamic>{
-                                              'deliverable_id': 'D${_deliverables.length + 1}',
-                                              'label': '',
-                                              'deliverable_type': 'pre',
-                                              'requirement_timing': 'scheduling',
-                                              'deadline_hours_before': 24,
-                                              'required': true,
-                                              'display_order': _deliverables.length + 1,
-                                              'archive_note': '',
-                                              'archive_file_template': '',
-                                              'is_restricted': false,
-                                              'is_defense_material': false,
-                                              'verdict_condition': 'all_pass',
-                                              'file_format': 'any',
-                                            };
-                                            _deliverables.add(item);
-                                            _selectedDeliverable = item;
-                                            _minutesExpanded = false;
-                                          });
-                                          _markDirty();
-                                        },
-                                  emptyPlaceholderText: 'No pre-defense gatekeepers configured yet. (e.g. Proposal Manuscript Draft, Similarity Report)',
-                                  items: preDeliverables,
-                                  isPost: false,
-                                ),
-                                const SizedBox(height: 18),
-                                _buildDeliverableSection(
-                                  title: 'Post-Defense Requirements & Archive',
-                                  subtitle: 'Deliverables required for milestone clearance and repository archiving.',
-                                  icon: Icons.inventory_2_rounded,
-                                  accentColor: const Color(0xFF0F172A),
-                                  bgHeaderColor: const Color(0xFFF8FAFC),
-                                  borderColor: const Color(0xFFE2E8F0),
-                                  count: postDeliverables.length,
-                                  buttonText: 'Add Post-Defense',
-                                  onAdd: _isLocked
-                                      ? () {}
-                                      : () {
-                                          setState(() {
-                                            final item = <String, dynamic>{
-                                              'deliverable_id': 'D${_deliverables.length + 1}',
-                                              'label': '',
-                                              'deliverable_type': 'post',
-                                              'required': true,
-                                              'display_order': _deliverables.length + 1,
-                                              'archive_note': '',
-                                              'archive_file_template': postDeliverables.isEmpty ? '{project}' : '{project}_{deliverable}',
-                                              'is_restricted': false,
-                                              'is_defense_material': false,
-                                              'verdict_condition': 'all_pass',
-                                              'file_format': 'any',
-                                            };
-                                            _deliverables.add(item);
-                                            _selectedDeliverable = item;
-                                            _minutesExpanded = false;
-                                          });
-                                          _markDirty();
-                                        },
-                                  emptyPlaceholderText: 'No post-defense deliverables configured yet. (e.g. Final Manuscript PDF, Source Code Zip, Demo Video)',
-                                  items: postDeliverables,
-                                  isPost: true,
-                                  stageDefaultNamingWidget: postDeliverables.length >= 2
-                                      ? _buildStageDefaultNamingDropdown(postDeliverables)
-                                      : null,
-                                ),
-                              ],
+                              StageDeliverablePresetsBar(
+                                existingStages: ref.read(defenseStagesProvider).stages,
+                                currentDeliverables: _deliverables,
+                                enabled: !_isLocked,
+                                onApplyDeliverables: (newDeliverables) {
+                                  setState(() {
+                                    _deliverables.clear();
+                                    _deliverables.addAll(newDeliverables);
+                                    _selectedDeliverable = _deliverables.isNotEmpty ? _deliverables.first : null;
+                                    _error = null;
+                                  });
+                                  _markDirty();
+                                },
+                              ),
+                              StageDeliverableCounts(
+                                deliverables: _deliverables,
+                                minutesRequired: _minutesRequired == true,
+                              ),
+                              _buildDeliverableSection(
+                                title: 'Pre-Defense Requirements',
+                                subtitle: 'Required files need faculty acceptance before endorsement and scheduling.',
+                                icon: Icons.folder_open_rounded,
+                                accentColor: const Color(0xFF0F172A),
+                                bgHeaderColor: const Color(0xFFF8FAFC),
+                                borderColor: const Color(0xFFE2E8F0),
+                                count: preDeliverables.length,
+                                buttonText: 'Add Pre-Defense',
+                                onAdd: _isLocked
+                                    ? () {}
+                                    : () {
+                                        setState(() {
+                                          final item = <String, dynamic>{
+                                            'deliverable_id': 'D${_deliverables.length + 1}',
+                                            'label': '',
+                                            'deliverable_type': 'pre',
+                                            'requirement_timing': 'scheduling',
+                                            'deadline_hours_before': 24,
+                                            'required': true,
+                                            'display_order': _deliverables.length + 1,
+                                            'archive_note': '',
+                                            'archive_file_template': '',
+                                            'is_restricted': false,
+                                            'is_defense_material': false,
+                                            'verdict_condition': 'all_pass',
+                                            'file_format': 'any',
+                                          };
+                                          _deliverables.add(item);
+                                          _selectedDeliverable = item;
+                                          _minutesExpanded = false;
+                                        });
+                                        _markDirty();
+                                      },
+                                emptyPlaceholderText: 'No pre-defense gatekeepers configured yet. (e.g. Proposal Manuscript Draft, Similarity Report)',
+                                items: preDeliverables,
+                                isPost: false,
+                              ),
+                              const SizedBox(height: 18),
+                              _buildDeliverableSection(
+                                title: 'Post-Defense Requirements & Archive',
+                                subtitle: 'Deliverables required for milestone clearance and repository archiving.',
+                                icon: Icons.inventory_2_rounded,
+                                accentColor: const Color(0xFF0F172A),
+                                bgHeaderColor: const Color(0xFFF8FAFC),
+                                borderColor: const Color(0xFFE2E8F0),
+                                count: postDeliverables.length,
+                                buttonText: 'Add Post-Defense',
+                                onAdd: _isLocked
+                                    ? () {}
+                                    : () {
+                                        setState(() {
+                                          final item = <String, dynamic>{
+                                            'deliverable_id': 'D${_deliverables.length + 1}',
+                                            'label': '',
+                                            'deliverable_type': 'post',
+                                            'required': true,
+                                            'display_order': _deliverables.length + 1,
+                                            'archive_note': '',
+                                            'archive_file_template': postDeliverables.isEmpty ? '{project}' : '{project}_{deliverable}',
+                                            'is_restricted': false,
+                                            'is_defense_material': false,
+                                            'verdict_condition': 'all_pass',
+                                            'file_format': 'any',
+                                          };
+                                          _deliverables.add(item);
+                                          _selectedDeliverable = item;
+                                          _minutesExpanded = false;
+                                        });
+                                        _markDirty();
+                                      },
+                                emptyPlaceholderText: 'No post-defense deliverables configured yet. (e.g. Final Manuscript PDF, Source Code Zip, Demo Video)',
+                                items: postDeliverables,
+                                isPost: true,
+                                stageDefaultNamingWidget: postDeliverables.length >= 2
+                                    ? _buildStageDefaultNamingDropdown(postDeliverables)
+                                    : null,
+                              ),
                               if (_minutesRequired == true) ...[
                                 const SizedBox(height: 18),
                                 StageMinutesDeliverableCard(
@@ -1251,7 +1242,6 @@ class _DefenseStageEditorScreenState
     required int activeTab,
     required bool hasWeightError,
     required int deliverableCount,
-    required bool isPresentationOnly,
     required void Function(int) onTabSelected,
   }) {
     return Container(
@@ -1291,7 +1281,7 @@ class _DefenseStageEditorScreenState
           _buildTabItem(
             index: 2,
             label: '3. Deliverables',
-            icon: isPresentationOnly ? Icons.campaign_rounded : Icons.inventory_2_rounded,
+            icon: Icons.inventory_2_rounded,
             badge: (deliverableCount > 0
                     ? Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -1441,253 +1431,6 @@ class _DefenseStageEditorScreenState
   }
 
 
-
-  Widget _buildSubmissionModeSelector() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      margin: const EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: _panelBgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-        boxShadow: _isDark
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.02),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.tune_rounded,
-                size: 18,
-                color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Will students submit files for this stage?',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: _textPrimaryColor,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _submissionModeCard(
-                  title: 'Student file submissions',
-                  description:
-                      'Configure pre-defense requirements and post-defense submissions.',
-                  icon: Icons.description_rounded,
-                  selected: !_isPresentationOnly,
-                  onTap: _isLocked
-                      ? null
-                      : () {
-                          if (_isPresentationOnly) {
-                            setState(() {
-                              _isPresentationOnly = false;
-                              _selectedDeliverable = null;
-                            });
-                            _markDirty();
-                          }
-                        },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _submissionModeCard(
-                  title: 'Presentation / Demo Only',
-                  description:
-                      'Students present without uploading deliverables. Minutes are configured in Stage Details.',
-                  icon: Icons.co_present_rounded,
-                  selected: _isPresentationOnly,
-                  onTap: _isLocked
-                      ? null
-                      : () async {
-                          if (!_isPresentationOnly) {
-                            if (_deliverables.isNotEmpty) {
-                              final confirmed = await confirmRemoveStageDeliverables(
-                                context, _deliverables.length,
-                              );
-                              if (!confirmed || !mounted) return;
-                            }
-                            setState(() {
-                              _isPresentationOnly = true;
-                              _selectedDeliverable = null;
-                            });
-                            _markDirty();
-                          }
-                        },
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _submissionModeCard({
-    required String title,
-    required String description,
-    required IconData icon,
-    required bool selected,
-    required VoidCallback? onTap,
-  }) {
-    final isPres = title.contains('Presentation');
-    final activeBg = isPres
-        ? (_isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFF0FDF4))
-        : (_isDark ? const Color(0xFF4C0519).withValues(alpha: 0.35) : const Color(0xFFFAF5FF));
-    final activeBorder = isPres
-        ? (_isDark ? const Color(0xFF10B981) : const Color(0xFF22C55E))
-        : (_isDark ? const Color(0xFFF87171) : AppColors.maroon);
-    final activeIconColor = isPres
-        ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF16A34A))
-        : (_isDark ? const Color(0xFFF87171) : AppColors.maroon);
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: selected ? activeBg : _inputFillColor,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? activeBorder : _borderColor,
-            width: selected ? 1.5 : 1.0,
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-              size: 18,
-              color: selected
-                  ? activeIconColor
-                  : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF94A3B8)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(icon, size: 15, color: _textPrimaryColor),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: _textPrimaryColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: _textSecondaryColor,
-                      height: 1.3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPresentationOnlyInfoBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.25) : const Color(0xFFF0FDF4),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _isDark ? const Color(0xFF059669).withValues(alpha: 0.4) : const Color(0xFFBBF7D0),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.campaign_rounded,
-                  color: _isDark ? const Color(0xFF34D399) : const Color(0xFF15803D),
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Presentation / Demo Mode Active',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF14532D),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'This milestone does not require document submissions.',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: _isDark ? const Color(0xFFA7F3D0) : const Color(0xFF166534),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            '• Students will not be prompted to upload manuscripts or archive files for this stage.\n'
-            '• Advisers can endorse teams directly based on verbal presentation or demo readiness.\n'
-            '• Administrators can schedule defenses freely once endorsed.',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: _isDark ? const Color(0xFFA7F3D0) : const Color(0xFF166534),
-              height: 1.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildDeliverableSection({
     required String title,

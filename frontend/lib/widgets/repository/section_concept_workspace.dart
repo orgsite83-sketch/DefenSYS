@@ -403,17 +403,13 @@ class SectionConceptOverviewState extends State<SectionConceptOverview> {
               ),
               subtitle: Text(
                 progress != null && !showReview
-                    ? '${progress['papers_accepted']}/3 papers accepted · ${summary?['status_label'] ?? ''}'
+                    ? '${progress['papers_accepted']}/${progress['required'] ?? 3} papers accepted · ${summary?['status_label'] ?? ''}'
                     : names.isEmpty
                     ? 'Waiting for the section project manager to propose system names.'
                     : names
                           .map(
                             (s) =>
-                                '${s['key'] == 'c1'
-                                    ? 'A'
-                                    : s['key'] == 'c2'
-                                    ? 'B'
-                                    : 'C'}. ${s['title']}',
+                                '${systemLetter(s['key'])}. ${s['title']}',
                           )
                           .join('\n'),
                 style: TextStyle(
@@ -556,6 +552,8 @@ class _SectionConceptWorkspaceState
       context: context,
       builder: (_) => _ProposalNamesDialog(
         rows: rows,
+        lockedKeys: project!['can_review'] == true || project!['can_manage'] == true
+            ? {} : {for (final s in rows) if (s['confirmed'] == true) '${s['key']}'},
         title: team == null
             ? 'System proposal names'
             : '${team['name']} · Module names',
@@ -811,6 +809,19 @@ class _SectionConceptWorkspaceState
     }
   }
 
+  Future<void> reviewRequirementUpdate() async {
+    final snapshot = Map<String, dynamic>.from(project!);
+    final approved = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
+      title: const Text('Review shared concept requirements'),
+      content: Text('Apply ${snapshot['configured_count']} shared concepts to all participating teams? Existing system and module titles and papers stay in place. Missing alternatives and fresh faculty endorsement are required. Scheduled or decided sets cannot change.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Keep current set')),
+        TextButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Apply configured count')),
+      ],
+    ));
+    if (approved == true && mounted) await perform(() => service.action(snapshot, 'reconcile_requirements', {'expected_required_count': snapshot['configured_count']}));
+  }
+
   Widget _sharedAcknowledgment(Map<String, dynamic> p) {
     final shared = p['shared_review'] as Map? ?? {};
     if (shared['can_review_shared_context'] != true) {
@@ -965,15 +976,24 @@ class _SectionConceptWorkspaceState
                                   ? 'System outcome: ${p['verdict']}\n${p['remarks']}'
                                   : p['endorsed'] == true
                                   ? 'Shared papers cleared. Each team needs its own module review and endorsement before scheduling.'
-                                  : 'The project manager submits three shared papers. Faculty confirms the titles and accepts each current paper for hearing.',
+                                  : 'The project manager submits the configured shared papers. Faculty confirms the titles and accepts each current paper for hearing.',
                               style: const TextStyle(fontSize: 13, height: 1.4),
                             ),
                             const SizedBox(height: 12),
                             _sharedAcknowledgment(p),
+                            if ('${p['verdict'] ?? ''}'.isEmpty && p['endorsed'] != true)
+                              Text('${(p['review_progress'] as Map?)?['papers_accepted'] ?? 0} of ${_rows(p['systems']).length} papers accepted'),
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
                               children: [
+                                if (p['can_reconcile_requirements'] == true)
+                                  ShadButton.outline(
+                                    size: ShadButtonSize.sm,
+                                    enabled: !busy,
+                                    onPressed: busy ? null : reviewRequirementUpdate,
+                                    child: Text('Review ${p['configured_count']}-concept requirement'),
+                                  ),
                                 if (p['can_edit_names'] == true)
                                   ShadButton.outline(
                                     size: ShadButtonSize.sm,
@@ -1206,6 +1226,7 @@ class _SectionConceptWorkspaceState
               Divider(height: 32, color: DefensysTokens.borderOf(context)),
               ProposalNamesEditor(
                 rows: _rows(snapshot['systems']),
+                lockedKeys: p['can_review'] == true || p['can_manage'] == true ? {} : {for (final s in _rows(snapshot['systems'])) if (s['confirmed'] == true) '${s['key']}'},
                 shared: false,
                 systems: true,
                 busy: busy,
@@ -1251,7 +1272,7 @@ class _SectionConceptWorkspaceState
             )
             .length;
     final namesConfirmed =
-        systems.length == 3 &&
+        systems.isNotEmpty &&
         systems.every(
           (s) =>
               s['confirmed'] == true && '${s['title'] ?? ''}'.trim().isNotEmpty,
@@ -1262,7 +1283,7 @@ class _SectionConceptWorkspaceState
         ? verdict.replaceAll('_', ' ')
         : p['endorsed'] == true
         ? 'Shared papers cleared for hearing'
-        : '$accepted of 3 papers accepted';
+        : '$accepted of ${systems.length} papers accepted';
     return DefensysShadcnScope(
       child: Container(
         padding: const EdgeInsets.all(18),
@@ -1352,9 +1373,9 @@ class _SectionConceptWorkspaceState
                   : p['endorsed'] == true
                   ? 'Shared papers are cleared for hearing. Each team needs its own module review and endorsement.'
                   : !namesConfirmed
-                  ? 'Confirm the three system names, then accept their current concept papers.'
-                  : accepted != 3
-                  ? 'Accept all three current concept papers to clear the shared papers for hearing.'
+                  ? 'Confirm all required system names, then accept their current concept papers.'
+                  : accepted != systems.length
+                  ? 'Accept all required current concept papers to clear the shared papers for hearing.'
                   : 'Confirmed titles and accepted current papers automatically clear the shared set for hearing.',
               style: TextStyle(fontSize: 12, height: 1.5, color: secondary),
             ),
@@ -1364,6 +1385,13 @@ class _SectionConceptWorkspaceState
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                if (p['can_reconcile_requirements'] == true)
+                  ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    enabled: !busy,
+                    onPressed: busy ? null : reviewRequirementUpdate,
+                    child: Text('Review ${p['configured_count']}-concept requirement'),
+                  ),
                 if (p['can_edit_names'] == true)
                   ShadButton.outline(
                     size: ShadButtonSize.sm,
@@ -1472,12 +1500,7 @@ class _SectionConceptWorkspaceState
     );
   }
 
-  String _letter(dynamic key) => switch (key) {
-    'c1' => 'A',
-    'c2' => 'B',
-    'c3' => 'C',
-    _ => '$key',
-  };
+  String _letter(dynamic key) => systemLetter(key);
 
   Widget _inlineSystem(Map<String, dynamic> system) {
     final isFinal = system['paper_purpose'] == 'final';
@@ -1685,9 +1708,7 @@ class _SectionConceptWorkspaceState
     final current = papers.where((p) => p['is_current'] == true).firstOrNull;
     final selected = project!['selected_key'] == system['key'];
     final keyStr = '${system['key']}';
-    final letter = keyStr.substring(1) == '1'
-        ? 'A'
-        : (keyStr == 'c2' ? 'B' : 'C');
+    final letter = systemLetter(keyStr);
     final title = system['title'] == ''
         ? 'Awaiting proposal name'
         : system['title'];
@@ -1979,9 +2000,10 @@ class _SectionConceptWorkspaceState
 }
 
 class _ProposalNamesDialog extends StatefulWidget {
-  const _ProposalNamesDialog({required this.rows, required this.title});
+  const _ProposalNamesDialog({required this.rows, required this.title, this.lockedKeys = const {}});
   final List<Map<String, dynamic>> rows;
   final String title;
+  final Set<String> lockedKeys;
   @override
   State<_ProposalNamesDialog> createState() => _ProposalNamesDialogState();
 }
@@ -2016,10 +2038,11 @@ class _ProposalNamesDialogState extends State<_ProposalNamesDialog> {
                   padding: const EdgeInsets.only(bottom: 16),
                   child: TextFormField(
                     controller: controllers[i],
+                    enabled: !widget.lockedKeys.contains('${widget.rows[i]['key']}'),
                     maxLength: 255,
                     decoration: InputDecoration(
                       labelText:
-                          'System ${String.fromCharCode(65 + i)}${widget.rows[i]['system_title'] == null ? '' : ' · ${widget.rows[i]['system_title']}'}',
+                          'System ${systemLetter(widget.rows[i]['key'])}${widget.rows[i]['system_title'] == null ? '' : ' · ${widget.rows[i]['system_title']}'}',
                     ),
                     validator: (v) => v == null || v.trim().isEmpty
                         ? 'Enter a proposal name.'

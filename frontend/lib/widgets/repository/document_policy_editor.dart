@@ -3,11 +3,33 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 
+bool _isAutomaticConceptPaper(Map<String, dynamic> item) {
+  final policy = item['file_policy'] as Map? ?? {};
+  if (policy['auto_added_for'] == 'concept_selection') return true;
+
+  // Older automatic definitions predate the origin marker. Match only their
+  // generated identifiers and default labels, never a manually numbered paper.
+  final number = '${item['deliverable_id'] ?? ''}';
+  final label = '${item['label'] ?? ''}'.trim().toLowerCase();
+  return (RegExp(r'^CONCEPT_PAPERS(?:_\d+)?$').hasMatch(number) &&
+          label == 'concept papers' &&
+          policy['mode'] == 'concepts') ||
+      (RegExp(r'^APPROVED_CONCEPT(?:_\d+)?$').hasMatch(number) &&
+          label == 'approved concept paper' &&
+          policy['purpose'] == 'approved_concept');
+}
+
 void ensureConceptPapers(
   List<Map<String, dynamic>> items,
   Map<String, dynamic> config,
 ) {
   if (config['enabled'] != true) {
+    items.removeWhere((item) {
+      if (!_isAutomaticConceptPaper(item)) return false;
+      (item['_labelController'] as TextEditingController?)?.dispose();
+      (item['_templateController'] as TextEditingController?)?.dispose();
+      return true;
+    });
     return;
   }
   final finals = items
@@ -46,7 +68,11 @@ void ensureConceptPapers(
       'required': true,
       'file_format': 'pdf',
       'display_order': items.length + 1,
-      'file_policy': {'mode': 'single', 'purpose': 'approved_concept'},
+      'file_policy': {
+        'mode': 'single',
+        'purpose': 'approved_concept',
+        'auto_added_for': 'concept_selection',
+      },
     });
   }
   final proposals = items
@@ -77,6 +103,7 @@ void ensureConceptPapers(
     'is_defense_material': true,
     'file_policy': {
       'mode': 'concepts',
+      'auto_added_for': 'concept_selection',
       'slots': [
         {
           'key': 'paper',
@@ -378,8 +405,8 @@ class ConceptSettings extends StatelessWidget {
                   icon: const Icon(LucideIcons.info, size: 16),
                   description: Text(
                     isPit
-                        ? 'Automatically adds required concept papers. Assigned projects/modules need one concept; other teams use the default count. Instructor review and panel approval remain required.'
-                        : 'Automatically adds required concept papers. Teams submit the default number of concepts, or one concept when a project/module is assigned. Adviser review and panel approval remain required.',
+                        ? 'Automatically adds required concept papers. Every team submits the configured count; a supplied project/module fills the first concept. Instructor review and panel approval remain required.'
+                        : 'Automatically adds required concept papers. Every team submits the configured count; a supplied project/module fills the first concept. Adviser review and panel approval remain required.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: secondaryColor,
                       height: 1.45,
@@ -510,6 +537,8 @@ class DocumentPolicyEditor extends StatelessWidget {
       onChanged({
         'mode': newMode,
         if (value['purpose'] != null) 'purpose': value['purpose'],
+        if (value['auto_added_for'] != null)
+          'auto_added_for': value['auto_added_for'],
         if (newMode == 'multiple') ...{
           'min_files': minFiles,
           'max_files': maxFiles < minFiles ? minFiles : maxFiles,

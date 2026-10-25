@@ -1,8 +1,8 @@
 """Versioned PIT rosters and event-specific student setup.
 
 Reads are projections only. Signed reviews are revalidated under the same event
-locks as first activity. Replacements create fresh team identities, never edit
-memberships already used by an event, and never copy workflow evidence.
+locks as first activity. Membership replacements create fresh team identities;
+explicit reuse and project edits retain identities and preserve event evidence.
 """
 import csv
 import io
@@ -116,13 +116,19 @@ def project_for(team, event=None):
     from repository.deliverables.concepts import latest_round, titles_complete
     from .concept_policy import resolve_policy
     detail = details_for(team, event)
+    if not event and detail and detail.details_source_event_id:
+        source = next((r for r in team.roster_details.all() if r.event_id == detail.details_source_event_id), None)
+        # Corrections await leader confirmation before changing a confirmed
+        # current declaration. Concept decisions still resolve from their event.
+        if not detail.confirmed_at or source and source.confirmed_at:
+            return project_for(team, detail.details_source_event)
     title = detail.project_title if detail else (team.project_title if team.project_title != team.name else '')
     mode = detail.project_mode if detail else 'continue'
     explicit_event = bool(detail and event and detail.event_id == event.pk)
     # A team formed without a project can register it in its first event and
     # continue it later without retyping. Explicit event setup captures its own
     # value; new-project policies never take this fallback.
-    if not title and (mode == 'continue' or not explicit_event) and not (explicit_event and (detail.opened_at or detail.confirmed_at)):
+    if not title and event and (mode == 'continue' or not explicit_event) and not (explicit_event and (detail.opened_at or detail.confirmed_at)):
         previous = [r for r in team.roster_details.all() if r.event_id and r.confirmed_at and r.project_title
             and (not event or r.event_id != event.pk)]
         latest = max(previous, key=lambda r: (r.confirmed_at, r.pk)) if previous else None
@@ -142,6 +148,11 @@ def project_for(team, event=None):
         if policy.get('mode') == 'assigned' and policy.get('assigned_title'):
             assigned = policy['assigned_title']
             return {'title': assigned, 'status': 'Assigned', 'complete': True, 'carry_title': assigned, 'round_id': None}
+        from .concept_policy import initial_concepts
+        proposals = initial_concepts(policy)
+        titles = [c['title'] for c in proposals if c.get('title')]
+        return {'title': '\n'.join(titles) or title, 'status': 'Proposed' if titles or title else 'Missing',
+            'complete': bool(proposals) and len(titles) == len(proposals), 'carry_title': title, 'round_id': None}
         # A carried identity may be registered for a later concept-enabled event;
         # opening setup explicitly assigns it through the existing policy resolver.
         if explicit_event and mode == 'new':
@@ -408,8 +419,8 @@ def prepare_projects(user, data, term, year, section, event):
     if event:
         prepared = selected
     else:
-        # Changing Current roster creates fresh team identities just like other
-        # reviewed replacements. Frozen event teams keep all their evidence.
+        # A project change keeps membership identity. Apply freezes event
+        # profiles before changing the reusable current details in place.
         prepared = []
         for row in rows:
             choice = choices_by_id.get(row['id'])
@@ -458,8 +469,10 @@ def prepare(user, data):
         return review_roster_import(user, term, year, section, data.get('teams'), event,
             workspace=data.get('workspace'))
     source = None
-    if operation == 'copy':
+    if operation in ('copy', 'reuse'):
         source = event_for(term, year, data.get('source_event_id'))
+        if operation == 'reuse' and (event or not source):
+            raise ValidationError('Choose an event roster to use as Current roster.')
         if (source.pk if source else None) == (event.pk if event else None):
             raise ValidationError('Choose a different source roster.')
         rows = [{'name': t['name'], 'member_ids': [m['id'] for m in t['members']], 'leader_id': t['leader_id'],
@@ -495,25 +508,28 @@ def prepare(user, data):
             rows.append({'name': f'{section} · Team {i + 1:02d}', 'member_ids': group, 'leader_id': group[0],
                 'section': section, 'project_title': '', 'source_event_id': None, 'source_team_id': None})
     else:
-        raise ValidationError('Choose copy, import, or generate.')
+        raise ValidationError('Choose copy, reuse, import, or generate.')
     existing = team_rows(term, year, section, event)
+    current = resolve(term.pk, year).get(section, {})
+    initializes_current = bool(event and operation in ('generate', 'import') and
+        not current.get('team_ids') and not current.get('needs_selection'))
     for row in rows:
         # Generation always starts fresh, even if deterministic grouping happens
         # to produce the same members. Copying explicitly retains source titles;
         # imported titles are the user's reviewed assignments.
         row['project_mode'] = 'continue' if row['project_title'] else 'new'
-        if row['project_mode'] == 'new':
+        if row['project_mode'] == 'new' and operation != 'reuse':
             row['source_event_id'] = None
     validate_rows(term, year, section, rows, event, allow_unassigned=operation == 'import')
+    if initializes_current:
+        validate_rows(term, year, section, rows, None, allow_unassigned=operation == 'import')
     if operation == 'import':
         from .bulk_import import imported_concept_requirement
         for row in rows:
-            assignment, policy = imported_concept_requirement({
+            assignment, _ = imported_concept_requirement({
                 'team_name': row['name'], 'project_title': row['project_title'],
                 'level': f'{year} PIT', 'year_level': year, 'section': section,
                 'current_defense_stage': event.event_name if event else None})
-            if policy['mode'] != assignment['mode'] or policy['mode'] == 'assigned' and not policy.get('assigned_title'):
-                raise ValidationError('The section concept policy conflicts with an imported title. Review the section policy before importing.')
             row['concept_assignment'] = assignment
     enrolled = set(StudentAcademicRecord.objects.filter(semester=term, year_level=year, section=section,
         student__is_active=True, student__role='student').values_list('student_id', flat=True))
@@ -521,11 +537,14 @@ def prepare(user, data):
     affected, preserved = [], []
     for e in PitEventGradingConfig.objects.filter(semester=term, year_level=year):
         r = resolve(term.pk, year, e.pk).get(section, {})
-        (affected if not event and not event_in_use(e, section) and r.get('source') == 'current' and not
-            PITEventRoster.objects.filter(event=e, section=section).exists() else preserved).append(e.event_name)
+        uses_new_default = ((not event or initializes_current) and not event_in_use(e, section) and
+            r.get('source', 'current') == 'current' and not
+            PITEventRoster.objects.filter(event=e, section=section).exists())
+        (affected if (initializes_current and e.pk == event.pk) or uses_new_default else preserved).append(e.event_name)
     sheet_details = imported_sheet_details(user, term, year, section, data['teams'], member_ids=used,
         workspace=data.get('workspace')) if operation == 'import' else {}
-    state = {'actor': user.pk, 'sheet_details': sheet_details, 'data': {'year_level': year, 'section': section, 'workspace': data.get('workspace'),
+    state = {'actor': user.pk, 'sheet_details': sheet_details, 'initializes_current': initializes_current,
+        'data': {'year_level': year, 'section': section, 'workspace': data.get('workspace'),
         'event_id': event.pk if event else None, 'operation': operation}, 'rows': rows,
         'fingerprint': fingerprint(term, year, section), 'nonce': uuid4().hex}
     people = {u.pk: u for u in get_user_model().objects.filter(pk__in=used)}
@@ -539,12 +558,17 @@ def prepare(user, data):
     return {'preview_token': signing.dumps(state, salt=SALT, compress=True), 'teams': preview_rows,
         'section_summaries': summaries,
         'target': event.event_name if event else 'Current roster', 'previous_team_count': len(existing),
+        'initializes_current': initializes_current,
+        'reuses_teams': operation == 'reuse',
+        'source_name': source.event_name if source else 'Current roster',
         'team_count': len(rows), 'student_count': len(used), 'omitted_student_count': len(enrolled - used),
         'affected_events': affected, 'preserved_events': preserved,
         'section_assignment_count': StudentAcademicRecord.objects.filter(
             Q(section='') | Q(section__iexact='BSIT'), semester=term, year_level=year,
             student_id__in=used).count() if operation == 'import' else 0,
-        'confirmation': f'Apply to {event.event_name}' if event else 'Set as current roster for upcoming events'}
+        'confirmation': 'Use existing teams as Current roster' if operation == 'reuse' else
+            'Apply teams & set Current roster' if initializes_current else
+            f'Apply to {event.event_name}' if event else 'Set as current roster for upcoming events'}
 
 
 def lock_cohort(term, year):
@@ -608,10 +632,18 @@ def apply(request, token):
         raise ValidationError('Roster, enrollment, projects or event activity changed. Review the replacement again.')
     if project_setup:
         return apply_event_projects(request, state, term, year, section, event, receipt_key)
+    if state['data']['operation'] == 'projects':
+        return apply_current_projects(request, state, term, year, section, events, receipt_key)
     if event and event_in_use(event, section):
         raise ValidationError('This event roster is locked. Prepare projects in a future roster.')
     importing = state['data']['operation'] == 'import'
     validate_rows(term, year, section, state['rows'], event, allow_unassigned=importing)
+    initializes_current = bool(state.get('initializes_current'))
+    if initializes_current:
+        current = resolve(term.pk, year).get(section, {})
+        if not event or state['data']['operation'] not in ('generate', 'import') or current.get('team_ids') or current.get('needs_selection'):
+            raise ValidationError('The Current roster changed. Review the generated teams again.')
+        validate_rows(term, year, section, state['rows'], None, allow_unassigned=importing)
     sheet_details = state.get('sheet_details', {})
     instructor_ids = sheet_details.get('instructor_ids', [])
     instructors = list(get_user_model().objects.select_for_update().filter(pk__in=instructor_ids))
@@ -631,13 +663,25 @@ def apply(request, token):
         PITSectionRoster.objects.get_or_create(semester=term, year_level=year, section=section)
     else:
         ensure_current(term.pk, year, [section])
+    if initializes_current:
+        # Recheck after locking the saved default; another roster writer may
+        # have populated a previously absent head while this apply waited.
+        current_binding = PITSectionRoster.objects.select_for_update().get(
+            semester=term, year_level=year, section=section)
+        if current_binding.teams.exists():
+            raise ValidationError('The Current roster changed. Review the generated teams again.')
     created = []
     for row in state['rows']:
+        if state['data']['operation'] == 'reuse':
+            team = StudentTeam.objects.select_for_update().get(pk=row['source_team_id'],
+                semester=term, year_level=year, section=section, level__icontains='PIT')
+            created.append(team)
+            continue
         needs_name = not bool(row['name']) or state['data']['operation'] == 'generate'
         name = row['name'] or f'Unnamed team {uuid4().hex}'
         team = StudentTeam.objects.create(name=name, roster_identity=uuid4(), semester=term, year_level=year,
             level=f'{year} PIT', section=section, leader_id=row['leader_id'], project_title=row['project_title'],
-            setup_pending=needs_name, project_pending=not bool(row['project_title']),
+            setup_pending=needs_name, project_pending=bool(event and event.concept_config.get('enabled')) or not bool(row['project_title']),
             concept_assignment=row.get('concept_assignment', {'mode': 'assigned', 'assigned_title': row['project_title'], 'project_version': 1}
                 if row['project_title'] else {}), current_defense_stage=event.event_name if event else None)
         TeamMembership.objects.bulk_create([TeamMembership(team=team, student_id=i, order=n,
@@ -648,7 +692,7 @@ def apply(request, token):
         PITRosterTeamDetails.objects.create(team=team, **defaults)
         if event:
             PITRosterTeamDetails.objects.create(team=team, event=event, **{**defaults, 'confirmed_at': None,
-                'opened_at': timezone.now() if needs_name or not row['project_title'] else None})
+                'opened_at': timezone.now() if needs_name or not row['project_title'] or event.concept_config.get('enabled') else None})
         created.append(team)
     if event:
         binding, _ = PITEventRoster.objects.select_for_update().get_or_create(event=event, section=section, defaults={'source': 'custom'})
@@ -658,6 +702,19 @@ def apply(request, token):
     binding.teams.set(created)
     binding.revision += 1
     binding.save()
+    if initializes_current:
+        current_binding.teams.set(created)
+        current_binding.revision += 1
+        current_binding.save(update_fields=['revision', 'updated_at'])
+    from .current_identity import activate_details, sync_confirmed_details
+    for team in created:
+        if event:
+            activate_details(team, event)
+        elif state['data']['operation'] == 'reuse':
+            source_id = next(r['source_event_id'] for r in state['rows'] if r['source_team_id'] == team.pk)
+            source = event_for(term, year, source_id)
+            activate_details(team, source, explicit=True)
+            sync_confirmed_details(team, source)
     if sheet_details.get('system_name') or sheet_details.get('project_manager_id'):
         from .section_access import require_section_write, audit_section
         manager = get_user_model().objects.filter(pk=sheet_details.get('project_manager_id')).first()
@@ -673,9 +730,37 @@ def apply(request, token):
             SectionInstructorAssignment.objects.update_or_create(faculty_id=instructor_id,
                 semester=term, year_level=year, section=section,
                 defaults={'assigned_by': request.user, 'is_active': True})
-    result = {'team_ids': [t.pk for t in created], 'created_count': len(created), 'preview_id': receipt_key,
+    result = {'team_ids': [t.pk for t in created],
+        'created_count': 0 if state['data']['operation'] == 'reuse' else len(created),
+        'reused_count': len(created) if state['data']['operation'] == 'reuse' else 0, 'preview_id': receipt_key,
+        'initializes_current': initializes_current,
         'event_id': event.pk if event else None, 'section': section, 'operation': state['data']['operation']}
     audit(request, 'teams.roster_replace', binding, result)
+    return result
+
+
+def apply_current_projects(request, state, term, year, section, events, receipt_key):
+    """Changing a project keeps team/member identities and freezes history."""
+    freeze_events(term, year, section, events)
+    selected = set(state['data']['team_ids'])
+    for row in state['rows']:
+        if row['id'] not in selected:
+            continue
+        team = StudentTeam.objects.select_for_update().get(pk=row['id'], semester=term,
+            year_level=year, section=section)
+        profile, _ = PITRosterTeamDetails.objects.select_for_update().get_or_create(
+            team=team, event=None, defaults={'name': team.name})
+        profile.project_title, profile.project_mode = row['project_title'], row['project_mode']
+        profile.details_source_event = None
+        profile.confirmed_at = profile.confirmed_at if row['project_title'] else None
+        profile.revision += 1
+        profile.save()
+        team.project_title, team.project_pending = row['project_title'], not bool(row['project_title'])
+        team.save(update_fields=['project_title', 'project_pending', 'updated_at'])
+    result = {'team_ids': list(selected), 'requested_count': len(selected),
+        'created_count': 0, 'section': section, 'event_id': None,
+        'operation': 'projects', 'preview_id': receipt_key}
+    audit(request, 'teams.roster_replace', term, result)
     return result
 
 
@@ -708,23 +793,14 @@ def apply_event_projects(request, state, term, year, section, event, receipt_key
         detail.opened_at, detail.confirmed_at = timezone.now(), None
         detail.revision += 1
         detail.save()
+        from .current_identity import activate_details
+        activate_details(team, event, explicit=True)
         if event.concept_config.get('enabled'):
             from .concept_policy import resolve_policy, team_policy_key, initial_concepts
             current_policy = resolve_policy(team, event, use_round=False)
             if current_policy.get('source') != 'section_system':
-                required_count = event.concept_config.get('required_count', 3)
-                if current_policy.get('mode') == 'proposals':
-                    required_count = current_policy.get('required_count', required_count)
-                else:
-                    from .concept_policy import context_key
-                    section_assignment = SectionAssignment.objects.filter(semester=term,
-                        year_level=year, section=section).first()
-                    section_policy = (section_assignment.concept_policies or {}).get(context_key(event), {}) if section_assignment else {}
-                    if section_policy.get('mode') == 'proposals':
-                        required_count = section_policy.get('required_count', required_count)
                 team.concept_policies = {**team.concept_policies, team_policy_key(team, event):
-                    {'mode': 'assigned', 'assigned_title': detail.project_title} if mode == 'continue' and detail.project_title else
-                    {'mode': 'proposals', 'required_count': required_count}}
+                    {'mode': 'proposals', 'seed_title': detail.project_title if mode == 'continue' else ''}}
                 team.save(update_fields=['concept_policies', 'updated_at'])
                 # Display-created empty drafts have no student work or hearing
                 # evidence. Keep them aligned with the newly reviewed choice.
@@ -752,7 +828,8 @@ def open_setup(request, data):
 
 
 def setup_tasks(user):
-    from .concept_policy import resolve_policy
+    from .concept_policy import resolve_policy, title_progress
+    from repository.deliverables.concepts import latest_round
     rows = PITRosterTeamDetails.objects.filter(event__isnull=False, opened_at__isnull=False,
         team__semester=get_active_semester(), team__leader=user, team__memberships__student=user,
         event__is_officially_complete=False).select_related('event', 'team').distinct()
@@ -771,7 +848,7 @@ def setup_tasks(user):
             'section': team.section, 'scope': 'pit', 'year_level': team.year_level, 'revision': detail.revision,
             'needs_details': not bool(detail.confirmed_at), 'concept_enabled': bool(event.concept_config.get('enabled')),
             'project_title': detail.project_title, 'project_complete': project['complete'],
-            'concept_tasks': [{'stage_label': event.event_name, 'required_count': policy.get('required_count', 3),
+            'concept_tasks': [{'stage_label': event.event_name, **title_progress(policy, latest_round(team, event)),
                 'mode': policy.get('mode', 'proposals'), 'shared_system': policy.get('source') == 'section_system'}]
                 if event.concept_config.get('enabled') and not project['complete'] else []})
     return result
@@ -779,6 +856,9 @@ def setup_tasks(user):
 
 @transaction.atomic
 def confirm_setup(request, team_id, event_id, data):
+    term = get_active_semester()
+    if term:
+        Semester.objects.select_for_update().get(pk=term.pk)
     event = PitEventGradingConfig.objects.select_for_update().filter(pk=event_id,
         semester=get_active_semester(), is_officially_complete=False).first()
     if not event:
@@ -807,6 +887,9 @@ def confirm_setup(request, team_id, event_id, data):
     detail.name, detail.confirmed_at = name, timezone.now()
     detail.revision += 1
     detail.save()
+    from .current_identity import activate_details, sync_confirmed_details
+    activate_details(detail.team, event)
+    sync_confirmed_details(detail.team, event)
     # An imported event team has its own identity. Do not rewrite the names
     # of a Current roster or historical event snapshots when confirming it.
     if detail.team.setup_pending and detail.team.current_defense_stage == event.event_name:

@@ -238,22 +238,19 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (state.teams.length > 1) Padding(padding: const EdgeInsets.only(bottom: 16),
-          child: DropdownButtonFormField<int>(
-            key: ValueKey('deliverables-team-${team['id']}'), initialValue: team['id'] as int,
-            isExpanded: true, decoration: const InputDecoration(labelText: 'Team'),
-            items: state.teams.map((t) => DropdownMenuItem<int>(value: t['id'] as int,
-              child: Text('${t['name']} · ${t['current_defense_stage'] ?? t['level'] ?? ''}',
-                  overflow: TextOverflow.ellipsis))).toList(),
-            onChanged: state.isSaving ? null : (id) {
-              ref.read(studentTeamSelectionProvider.notifier).select(id);
-              final next = state.teams.where((t) => t['id'] == id).firstOrNull;
-              final stage = next?['current_defense_stage']?.toString();
-              if (stage != null && state.stageOptions.contains(stage)) {
-                ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(selectedStage: stage);
-              }
-            },
-          )),
+        if (!widget.hideHeader && state.teams.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final option in state.teams)
+                ChoiceChip(
+                  label: Text('${option['name']}'),
+                  selected: option['id'] == team['id'],
+                  onSelected: state.isSaving ? null : (_) => ref
+                      .read(studentTeamSelectionProvider.notifier).select(option['id'] as int),
+                ),
+            ]),
+          ),
         if (!widget.hideHeader) ...[
           // Header section
           Container(

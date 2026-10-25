@@ -248,6 +248,70 @@ class RosterWorkspaceTests(APITestCase):
             [student_id for team in preview['teams'] for student_id in team['member_ids']], confirmed)
         self.assertFalse(StudentTeam.objects.exists())
 
+    def test_first_event_generation_sets_current_and_event_to_the_same_teams(self):
+        later = self.later()
+        preview = self.preview(operation='generate', event_id=self.event.pk, workspace='instructor')
+        self.assertTrue(preview['initializes_current'])
+        self.assertCountEqual(preview['affected_events'], [self.event.event_name, later.event_name])
+        self.assertFalse(PITSectionRoster.objects.exists())
+        self.assertFalse(StudentTeam.objects.exists())
+
+        result = self.apply(preview)
+        self.assertEqual(result.status_code, 201, result.data)
+        ids = set(result.data['team_ids'])
+        self.assertTrue(result.data['initializes_current'])
+        for event in (None, self.event, later):
+            self.assertEqual(effective_ids(self.term.pk, '2nd Year', event), ids)
+        self.assertEqual(StudentTeam.objects.count(), len(ids))
+        self.assertEqual(sum(t.members.count() for t in StudentTeam.objects.all()), 10)
+        self.assertTrue(all(t.setup_pending and t.project_pending for t in StudentTeam.objects.all()))
+        current, selected, _ = self.context()['rosters']
+        self.assertEqual({t['id'] for t in current['teams']}, ids)
+        self.assertEqual({t['id'] for t in selected['teams']}, ids)
+        self.assertEqual(self.apply(preview).data, result.data)
+        self.assertEqual(StudentTeam.objects.count(), len(ids))
+
+    def test_event_generation_fills_saved_empty_current_and_preserves_other_event_rosters(self):
+        completed = self.later(is_officially_complete=True)
+        old = self.existing(event=completed.event_name)
+        PITSectionRoster.objects.create(semester=self.term, year_level='2nd Year', section='BSIT-2A')
+        custom = PitEventGradingConfig.objects.create(semester=self.term, year_level='2nd Year',
+            event_name='Custom future')
+        binding = PITEventRoster.objects.create(event=custom, section='BSIT-2A', source='custom')
+        binding.teams.add(old)
+
+        preview = self.preview(operation='generate', event_id=self.event.pk)
+        self.assertTrue(preview['initializes_current'])
+        self.assertCountEqual(preview['preserved_events'], [completed.event_name, custom.event_name])
+        result = self.apply(preview)
+        self.assertEqual(result.status_code, 201, result.data)
+        ids = set(result.data['team_ids'])
+        self.assertEqual(effective_ids(self.term.pk, '2nd Year'), ids)
+        self.assertEqual(effective_ids(self.term.pk, '2nd Year', self.event), ids)
+        for event in (completed, custom):
+            self.assertEqual(effective_ids(self.term.pk, '2nd Year', event), {old.pk})
+        old.refresh_from_db()
+        self.assertEqual(old.members.count(), 3)
+        self.assertEqual(old.project_title, 'Existing project')
+
+    def test_event_generation_keeps_an_existing_current_roster(self):
+        old = self.baseline()
+        preview = self.preview(operation='generate', event_id=self.event.pk)
+        self.assertFalse(preview['initializes_current'])
+        result = self.apply(preview)
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertFalse(result.data['initializes_current'])
+        self.assertEqual(effective_ids(self.term.pk, '2nd Year'), {old.pk})
+        self.assertEqual(effective_ids(self.term.pk, '2nd Year', self.event), set(result.data['team_ids']))
+
+    def test_first_event_generation_rejects_a_current_roster_added_after_review(self):
+        preview = self.preview(operation='generate', event_id=self.event.pk)
+        old = self.baseline()
+        result = self.apply(preview)
+        self.assertEqual(result.status_code, 400, result.data)
+        self.assertEqual(effective_ids(self.term.pk, '2nd Year'), {old.pk})
+        self.assertEqual(StudentTeam.objects.count(), 1)
+
     def test_generation_rejects_stale_or_invalid_student_confirmation(self):
         confirmed = [s.pk for s in self.students[:10]]
         for ids in ([], confirmed[:-1], confirmed + [self.students[10].pk],
@@ -258,6 +322,98 @@ class RosterWorkspaceTests(APITestCase):
                 self.assertEqual(response.status_code, 400, response.data)
                 self.assertIn('confirm it again', str(response.data))
         self.assertFalse(StudentTeam.objects.exists())
+
+    def test_use_existing_event_as_current_reuses_identities_and_retires_unused_copy(self):
+        generated = self.apply(self.preview(operation='generate', event_id=self.event.pk))
+        original_ids = set(generated.data['team_ids'])
+        copied = self.apply(self.preview(operation='copy', source_event_id=self.event.pk))
+        self.assertEqual(copied.status_code, 201, copied.data)
+        copied_ids = set(copied.data['team_ids'])
+        self.assertTrue(original_ids.isdisjoint(copied_ids))
+        before = StudentTeam.objects.count()
+        review = self.preview(operation='reuse', source_event_id=self.event.pk)
+        self.assertTrue(review['reuses_teams'])
+        result = self.apply(review)
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertEqual(result.data['created_count'], 0)
+        self.assertEqual(result.data['reused_count'], len(original_ids))
+        self.assertEqual(StudentTeam.objects.count(), before)
+        self.assertEqual(effective_ids(self.term.pk, '2nd Year'), original_ids)
+        self.assertEqual(effective_ids(self.term.pk, '2nd Year', self.event), original_ids)
+        self.client.force_authenticate(self.students[0])
+        dashboard = self.client.get('/api/dashboards/student/')
+        self.assertEqual(dashboard.status_code, 200, dashboard.data)
+        self.assertIn(dashboard.data['team']['id'], original_ids)
+        tasks = self.client.get('/api/teams/my-setup/').data
+        self.assertFalse({t['id'] for t in tasks['teams']}.intersection(copied_ids))
+
+    def test_old_event_confirmation_cannot_overwrite_current_details_source(self):
+        team = self.baseline()
+        older = self.later()
+        newer = PitEventGradingConfig.objects.create(semester=self.term, year_level='2nd Year', event_name='New project event')
+        self.assertEqual(self.request_setup(older).status_code, 200)
+        self.assertEqual(self.request_setup(newer).status_code, 200)
+        self.client.force_authenticate(team.leader)
+        for event, name, title in ((newer, 'ByteCraft', 'New project'), (older, 'Old event name', 'Old project')):
+            detail = PITRosterTeamDetails.objects.get(team=team, event=event)
+            response = self.client.patch(f'/api/teams/{team.pk}/events/{event.pk}/setup/', {
+                'revision': detail.revision, 'name': name, 'project_title': title}, format='json')
+            self.assertEqual(response.status_code, 200, response.data)
+        profile = PITRosterTeamDetails.objects.get(team=team, event=None)
+        self.assertEqual(profile.details_source_event_id, newer.pk)
+        self.assertEqual((profile.name, profile.project_title), ('ByteCraft', 'New project'))
+        self.assertEqual(PITRosterTeamDetails.objects.get(team=team, event=older).name, 'Old event name')
+        dashboard = self.client.get('/api/dashboards/student/')
+        self.assertEqual(dashboard.data['team']['name'], 'ByteCraft')
+        self.assertEqual(dashboard.data['team']['currentStage'], newer.event_name)
+        self.assertEqual(dashboard.data['team']['projectTitle'], 'New project')
+
+    def test_event_only_group_confirmation_keeps_current_identity_and_event_navigation(self):
+        current = self.baseline()
+        event = self.later()
+        result = self.apply(self.preview(operation='generate', event_id=event.pk))
+        self.assertEqual(result.status_code, 201, result.data)
+        event_team = StudentTeam.objects.get(pk=result.data['team_ids'][0])
+        detail = PITRosterTeamDetails.objects.get(team=event_team, event=event)
+        self.client.force_authenticate(event_team.leader)
+        response = self.client.patch(f'/api/teams/{event_team.pk}/events/{event.pk}/setup/', {
+            'revision': detail.revision, 'name': 'Event only', 'project_title': 'Event project'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        current.refresh_from_db()
+        self.assertEqual(current.name, 'Current team')
+        dashboard = self.client.get('/api/dashboards/student/')
+        self.assertEqual(dashboard.data['team']['id'], current.pk)
+        entry = next(s for s in dashboard.data['stages'] if s['stage_label'] == event.event_name)
+        self.assertEqual(entry['team_id'], event_team.pk)
+        self.assertEqual(entry['team']['name'], 'Event only')
+
+    def test_current_project_status_follows_concepts_without_implying_approval(self):
+        from .roster_workspace import project_for
+        team = self.baseline()
+        self.assertEqual(self.request_setup(self.event, project_mode='new').status_code, 200)
+        concepts.save_titles(team, self.event,
+            [{'key': f'c{i}', 'title': f'Proposed system {i}'} for i in range(1, 4)], actor=team.leader)
+        project = project_for(StudentTeam.objects.get(pk=team.pk))
+        self.assertEqual(project['status'], 'Proposed')
+        self.assertEqual(project['carry_title'], '')
+        self.assertIn('Proposed system 1', project['title'])
+
+    def test_relink_review_refuses_used_copies_and_different_groupings(self):
+        import runpy
+        from pathlib import Path
+        inspect_relink = runpy.run_path(str(Path(__file__).resolve().parents[3] /
+            'execution' / 'relink_current_roster.py'))['inspect_relink']
+        self.apply(self.preview(operation='generate', event_id=self.event.pk))
+        copied = self.apply(self.preview(operation='copy', source_event_id=self.event.pk))
+        inspect = lambda: inspect_relink(self.term, '2nd Year', 'BSIT-2A', self.event)
+        self.assertEqual(inspect()['blockers'], [])
+        team = StudentTeam.objects.get(pk=copied.data['team_ids'][0])
+        detail = PITRosterTeamDetails.objects.create(team=team, event=self.event, name='Used copy')
+        self.assertTrue(inspect()['blockers'])
+        detail.delete()
+        team.leader_id = next(i for i in team.members.values_list('pk', flat=True) if i != team.leader_id)
+        team.save(update_fields=['leader'])
+        self.assertTrue(inspect()['blockers'])
 
     def test_empty_section_must_import_students_before_generation(self):
         from user_management.academic_records.models import StudentAcademicRecord
@@ -358,8 +514,11 @@ class RosterWorkspaceTests(APITestCase):
         self.assertEqual(result.status_code, 200, result.data)
         self.assertEqual(result.data['event_teams'], [])
         old.refresh_from_db()
-        self.assertEqual(old.name, 'Current team')
-        self.assertEqual(old.project_title, 'Existing project')
+        self.assertEqual(old.name, 'Name for this event')
+        self.assertEqual(old.project_title, 'Declared event project')
+        current = self.client.get('/api/dashboards/student/').data
+        self.assertEqual(current['team']['name'], old.name)
+        self.assertEqual(current['team']['projectTitle'], old.project_title)
         self.client.force_authenticate(self.lead)
         exported = self.client.get('/api/teams/rosters/export/', self.body(event_id=later.pk))
         self.assertEqual(exported.status_code, 200, exported.data)
@@ -547,7 +706,7 @@ class RosterWorkspaceTests(APITestCase):
         self.assertEqual(task['concept_tasks'][0]['required_count'], 2)
         self.assertEqual(task['project_title'], '')
 
-    def test_current_project_changes_version_the_roster_and_preserve_completed_event(self):
+    def test_current_project_changes_keep_team_identity_and_preserve_completed_event(self):
         first, second = self.pair()
         self.event.is_officially_complete = True
         self.event.save()
@@ -558,14 +717,16 @@ class RosterWorkspaceTests(APITestCase):
         self.assertEqual(set(effective_ids(self.term.pk, '2nd Year')), {first.pk, second.pk})
         result = self.apply(preview)
         self.assertEqual(result.status_code, 201, result.data)
-        new_ids = set(result.data['team_ids'])
-        self.assertTrue(new_ids.isdisjoint({first.pk, second.pk}))
+        new_ids = set(effective_ids(self.term.pk, '2nd Year'))
+        self.assertEqual(new_ids, {first.pk, second.pk})
+        self.assertEqual(result.data['created_count'], 0)
         self.assertEqual(set(effective_ids(self.term.pk, '2nd Year', self.event)), {first.pk, second.pk})
         self.assertEqual(set(effective_ids(self.term.pk, '2nd Year', future)), new_ids)
         titles = dict(StudentTeam.objects.filter(pk__in=new_ids).values_list('name', 'project_title'))
         self.assertEqual(titles, {'Current team': '', 'Second team': 'Second project'})
         first.refresh_from_db()
-        self.assertEqual(first.project_title, 'Existing project')
+        self.assertEqual(first.project_title, '')
+        self.assertEqual(PITRosterTeamDetails.objects.get(team=first, event=self.event).project_title, 'Existing project')
         self.assertEqual(first.members.count(), 3)
 
     def test_another_teams_activity_does_not_block_preparing_team_project_setup(self):
@@ -674,7 +835,7 @@ class RosterWorkspaceTests(APITestCase):
         self.assertEqual(current.policy_snapshot['required_count'], 2)
         self.assertTrue(all(not c['title'] for c in current.concepts))
 
-    def test_new_project_keeps_section_proposal_count_after_an_assigned_title(self):
+    def test_new_project_uses_stage_count_despite_legacy_section_override(self):
         from .models import SectionAssignment
         from .concept_policy import context_key, resolve_policy
         team = self.baseline()
@@ -686,7 +847,7 @@ class RosterWorkspaceTests(APITestCase):
             team_ids=[team.pk], team_modes={str(team.pk): 'new'}))
         self.assertEqual(result.status_code, 201, result.data)
         team.refresh_from_db()
-        self.assertEqual(resolve_policy(team, event)['required_count'], 2)
+        self.assertEqual(resolve_policy(team, event)['required_count'], 3)
 
     def test_empty_round_with_review_evidence_is_protected(self):
         from repository.deliverables.models import ConceptRound

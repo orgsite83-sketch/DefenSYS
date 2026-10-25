@@ -121,6 +121,7 @@ class GradeReviewQueueTests(APITestCase):
             criterion_name_snapshot=criterion.name, max_score_snapshot=criterion.max_score,
         )
         grade.panel_score = grade.adviser_score = grade.peer_score = Decimal('90')
+        grade.peer_score_is_override = True
         grade.verdict = TeamGrade.VERDICT_APPROVED
         grade.save()
         ready_team = StudentTeam.objects.create(

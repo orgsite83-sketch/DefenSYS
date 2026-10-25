@@ -53,7 +53,7 @@ def imported_concept_requirement(data):
     from .concept_policy import context_key, contexts_for, resolve_policy
     from .term_scope import get_active_semester
     title = (data.get('project_title') or '').strip()
-    assignment = {'mode': 'assigned' if title else 'proposals',
+    assignment = {'mode': 'proposals', 'seed_title': title,
                   'assigned_title': title, 'project_version': 1}
     candidate = StudentTeam(name=data['team_name'], project_title=title,
         level=data.get('level', ''), year_level=data.get('year_level', ''),
@@ -66,8 +66,8 @@ def imported_concept_requirement(data):
     if stage:
         assignment['context_key'] = context_key(stage)
     policy = resolve_policy(candidate, stage, use_round=False) if stage else {
-        'mode': assignment['mode'], 'required_count': 1 if title else 3, 'assigned_title': title}
-    label = ('Assigned module' if data.get('system_name') else 'Assigned project') if policy['mode'] == 'assigned' else 'Topic unassigned'
+        'mode': 'proposals', 'required_count': 1 if title else 3, 'assigned_title': '', 'seed_title': title}
+    label = ('First module supplied' if data.get('system_name') else 'First concept supplied') if title else 'Concept titles needed'
     return assignment, {**policy, 'label': f'{label} · {policy["required_count"]} concept' +
         ('' if policy['required_count'] == 1 else 's'), 'stage_label': stage.label if stage else None}
 
@@ -678,10 +678,6 @@ def validate_bulk_team_row(
                     'existing concepts, files and approvals stay with their original teams.')
 
     concept_assignment, concept_requirement = imported_concept_requirement(data)
-    if concept_requirement['mode'] != concept_assignment['mode']:
-        issues.append('The section concept policy conflicts with this team\'s title choice. Review the section policy before importing retained titles or new proposals.')
-    if concept_requirement['mode'] == 'assigned' and not concept_requirement.get('assigned_title'):
-        issues.append('This section requires one assigned concept. Supply this team’s project/module title.')
     adviser_filter_ok = True if pit_row else row_passes_adviser_filter(adviser_status, adviser_filter)
     ready = (
         not issues
@@ -981,16 +977,17 @@ def format_bulk_import_errors(errors):
     if isinstance(errors, dict):
         lines = []
         for field, messages in errors.items():
+            prefix = '' if field == 'non_field_errors' else f'{field}: '
             if isinstance(messages, (list, tuple)):
                 for item in messages:
                     if isinstance(item, dict):
                         lines.extend(format_bulk_import_errors(item))
                     else:
-                        lines.append(f'{field}: {item}')
+                        lines.append(f'{prefix}{item}')
             elif isinstance(messages, dict):
                 lines.extend(format_bulk_import_errors(messages))
             else:
-                lines.append(f'{field}: {messages}')
+                lines.append(f'{prefix}{messages}')
         return lines
     return [str(errors)]
 

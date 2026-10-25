@@ -654,73 +654,73 @@ class StageGradingConfigApiTests(APITestCase):
         self.assertEqual(res_reorder.status_code, 400)
         self.assertIn('stage_ids', res_reorder.data)
 
-    def test_create_and_update_presentation_only_stage(self):
-        response = self.client.post(
-            '/api/defense/stages/',
-            {
-                'label': 'Title Pitch & Idea Validation',
-                'description': 'Verbal pitch session with no deliverables.',
-                'display_order': 4,
-                'is_presentation_only': True,
-            },
-            format='json',
-        )
-        self.assertEqual(response.status_code, 201)
-        self.assertTrue(response.data['stage']['is_presentation_only'])
-        stage_id = response.data['stage']['id']
-        stage = DefenseStage.objects.get(id=stage_id)
-        self.assertTrue(stage.is_presentation_only)
-
-        # Update via patch
-        patch_res = self.client.patch(
-            f'/api/defense/stages/{stage_id}/',
-            {'is_presentation_only': False},
-            format='json',
-        )
-        self.assertEqual(patch_res.status_code, 200)
+    def test_presentation_only_is_rejected_on_create_and_update(self):
+        response = self.client.post('/api/defense/stages/', {
+            'label': 'Title Pitch', 'is_presentation_only': True,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('is_presentation_only', response.data)
+        stage = DefenseStage.objects.create(label='Title Pitch', display_order=4)
+        response = self.client.patch(f'/api/defense/stages/{stage.id}/', {
+            'is_presentation_only': True,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
         stage.refresh_from_db()
         self.assertFalse(stage.is_presentation_only)
+        response = self.client.patch(f'/api/defense/stages/{stage.id}/', {
+            'is_presentation_only': False,
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
 
-    def test_presentation_only_stage_endorsement_and_readiness(self):
-        from repository.deliverables.services import endorse_team, stage_deliverables_configured, required_complete
-        from student_teams.services import is_stage_ready
 
-        stage = DefenseStage.objects.create(
-            label='Demo Day Expo',
-            display_order=5,
-            is_presentation_only=True,
+    def test_legacy_presentation_stage_requires_files_before_endorsement(self):
+        from repository.deliverables.services import (
+            endorse_team, stage_deliverables_configured, required_complete,
+            is_presentation_stage,
         )
-        for previous in DefenseStage.objects.filter(is_active=True, display_order__lt=stage.display_order):
-            previous.is_presentation_only = True
-            previous.save()
-
-        student = User.objects.create_user(
-            username='student-innovator',
-            password='pass12345',
-            role='student',
+        stage = DefenseStage.objects.create(
+            label='Demo Day Expo', display_order=4, is_presentation_only=True,
         )
         team = StudentTeam.objects.create(
-            name='Team Innovation Alpha',
-            project_title='Innovation Alpha Project',
-            level=StudentTeam.LEVEL_4_CAPSTONE,
-            year_level='4th Year',
+            name='Team Innovation Alpha', project_title='Innovation Alpha',
+            level=StudentTeam.LEVEL_4_CAPSTONE, year_level='4th Year',
             semester=self.semester,
-            leader=student,
+            leader=User.objects.create_user(username='legacy-demo-student', role='student'),
         )
+        self.assertFalse(stage_deliverables_configured(team, stage.label))
+        self.assertFalse(required_complete(team, stage.label))
+        self.assertFalse(is_presentation_stage(team, stage.label))
+        with self.assertRaisesMessage(ValueError, 'No deliverables configured'):
+            endorse_team(team, stage.label)
+        # Older cohort snapshots cannot restore the upload exemption either.
+        team._capstone_requirement = {
+            'id': stage.pk, 'label': stage.label,
+            'presentation_only': True, 'definitions': [],
+        }
+        self.assertFalse(is_presentation_stage(team, stage.label))
+        self.assertFalse(required_complete(team, stage.label))
+        response = self.client.get('/api/defense/stages/')
+        data = next(s for s in response.data['stages'] if s['id'] == stage.pk)
+        self.assertFalse(data['is_presentation_only'])
 
+
+    def test_legacy_presentation_stage_still_checks_configured_required_files(self):
+        from repository.deliverables.services import required_complete, stage_deliverables_configured
+        from repository.deliverables.models import DeliverableSubmission
+        stage = DefenseStage.objects.create(label='Pitch Documents', display_order=0,
+            is_presentation_only=True)
+        stage.deliverables.create(deliverable_id='PAPER', label='Pitch Paper',
+            deliverable_type='pre', required=True)
+        team = StudentTeam.objects.create(name='Pitch Team', semester=self.semester,
+            level=StudentTeam.LEVEL_4_CAPSTONE, year_level='4th Year',
+            leader=User.objects.create_user(username='pitch-student', role='student'))
         self.assertTrue(stage_deliverables_configured(team, stage.label))
+        self.assertFalse(required_complete(team, stage.label))
+        DeliverableSubmission.objects.create(team=team, stage_label=stage.label,
+            deliverable_id='PAPER', label='Pitch Paper', deliverable_type='pre', file_name='pitch.pdf',
+            status=DeliverableSubmission.STATUS_ACCEPTED)
         self.assertTrue(required_complete(team, stage.label))
-
-        # This case tests upload readiness after the prerequisite stages pass.
-        from student_teams.models import TeamStageProgress
-        for previous in DefenseStage.objects.filter(is_active=True, display_order__lt=stage.display_order):
-            TeamStageProgress.objects.create(team=team, semester=self.semester,
-                defense_stage=previous, status=TeamStageProgress.STATUS_PASSED)
-            from grading.grades.models import TeamGrade
-            TeamGrade.objects.create(team=team, semester=self.semester, defense_stage=previous, scope='capstone',
-                status='published', verdict='approved', panel_score=85, adviser_score=85, peer_score=85)
-
-        # Endorsement should succeed with 0 deliverables
-        endorsed_team = endorse_team(team, stage.label)
-        self.assertEqual(endorsed_team.ready_for_stage, 'Demo Day Expo')
+        from repository.deliverables.services import endorse_team
+        from student_teams.services import is_stage_ready
+        endorse_team(team, stage.label)
         self.assertTrue(is_stage_ready(team, stage))

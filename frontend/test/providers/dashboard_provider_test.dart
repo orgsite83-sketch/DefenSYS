@@ -39,7 +39,7 @@ void main() {
   });
 
   test(
-    'student team refreshes share requests and ignore older team responses',
+    'event team selection cannot replace the current home team or duplicate its request',
     () async {
       final requests = <http.Request>[];
       final responses = <Completer<http.Response>>[];
@@ -60,32 +60,23 @@ void main() {
       final shared = dashboard.fetchDashboardData(silent: true);
       await Future<void>.delayed(Duration.zero);
       expect(requests, hasLength(1));
-      expect(requests.first.url.queryParameters['team_id'], '7');
+      expect(requests.first.url.queryParameters.containsKey('team_id'), isFalse);
       selection.select(9);
       final second = dashboard.fetchDashboardData();
       await Future<void>.delayed(Duration.zero);
-      expect(requests, hasLength(2));
-      responses[1].complete(
-        http.Response(
-          jsonEncode({
-            'team': {'id': 9},
-          }),
-          200,
-        ),
-      );
-      await second;
+      expect(requests, hasLength(1));
       responses[0].complete(
         http.Response(
           jsonEncode({
-            'team': {'id': 7},
+            'team': {'id': 1},
           }),
           200,
         ),
       );
-      await Future.wait([first, shared]);
+      await Future.wait([first, shared, second]);
       expect(
         container.read(dashboardProvider('student')).data?['team']['id'],
-        9,
+        1,
       );
     },
   );

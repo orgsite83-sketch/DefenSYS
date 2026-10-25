@@ -12,10 +12,10 @@ import '../../config/api_config.dart';
 import '../../services/capstone_deliverables_provider.dart';
 import '../../services/dashboard_provider.dart';
 import '../../services/auth_provider.dart';
-import '../../services/academic/student_team_selection_provider.dart';
 import '../../services/academic/student_teams_provider.dart';
 import '../../services/repository_provider.dart';
 import '../../services/app/data_refresh_provider.dart';
+import '../../services/academic/student_team_tasks_provider.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../widgets/branding/defensys_mobile_brand.dart';
 import '../../l10n/l10n_ext.dart';
@@ -155,13 +155,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       });
       WidgetsBinding.instance.ensureVisualUpdate();
     });
-    ref.listen(studentTeamSelectionProvider, (previous, next) {
-      if (previous != next) {
-        ref
-            .read(dashboardProvider('student').notifier)
-            .fetchDashboardData(silent: true);
-      }
-    });
     ref.listen(dashboardProvider('student'), (prev, next) {
       if (prev?.data == next.data) return;
       if (_selectedTab == 'events' && _visitedTabs.contains('events')) return;
@@ -184,12 +177,14 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
 
     final dashState = ref.watch(dashboardProvider('student'));
     final delivState = ref.watch(capstoneDeliverablesProvider);
+    final setupTasks = ref.watch(studentTeamTasksProvider).asData?.value;
 
     final dataToPass = Map<String, dynamic>.from(
       dashState.data ?? <String, dynamic>{},
     );
 
     final team = dataToPass['team'] as Map<String, dynamic>?;
+    final hasPendingTeam = StudentTaskBadgeHelper.hasPendingTeamTasks(dataToPass, setup: setupTasks);
     final isCapstone = team?['isCapstone'] == true;
 
     final isPM =
@@ -290,8 +285,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final l10n = context.l10n;
     final destinations = <NavigationDestination>[
       NavigationDestination(
-        icon: const Icon(Icons.group_outlined),
-        selectedIcon: const Icon(Icons.group),
+        icon: Badge(key: const ValueKey('team-task-badge'), isLabelVisible: hasPendingTeam,
+          smallSize: 8, backgroundColor: Colors.redAccent, child: const Icon(Icons.group_outlined)),
+        selectedIcon: Badge(isLabelVisible: hasPendingTeam,
+          smallSize: 8, backgroundColor: Colors.redAccent, child: const Icon(Icons.group)),
         label: l10n.navTeam,
       ),
       NavigationDestination(

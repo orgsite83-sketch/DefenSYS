@@ -335,7 +335,7 @@ class RubricDetailsFields extends StatelessWidget {
               Text('Individual scoring', style: _body(context)),
               const SizedBox(height: 4),
               Text(
-                'Peer evaluations always grade each student individually.',
+                'Each student must evaluate themselves and every teammate using this rubric. All ratings count equally toward each student\'s peer score.',
                 style: _caption(context),
               ),
             ],

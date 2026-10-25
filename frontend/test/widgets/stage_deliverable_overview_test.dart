@@ -67,36 +67,6 @@ void main() {
     },
   );
 
-  testWidgets('presentation-only confirmation explains the removal', (
-    tester,
-  ) async {
-    bool? answer;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () async {
-                answer = await confirmRemoveStageDeliverables(context, 2);
-              },
-              child: const Text('Choose mode'),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('Choose mode'));
-    await tester.pumpAndSettle();
-    expect(
-      find.textContaining('remove 2 configured deliverables'),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Keep requirements'));
-    await tester.pumpAndSettle();
-    expect(answer, false);
-  });
-
   testWidgets('six requirements stay scannable without opening editors', (
     tester,
   ) async {

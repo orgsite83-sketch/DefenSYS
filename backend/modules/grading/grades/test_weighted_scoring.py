@@ -142,7 +142,9 @@ class WeightedScoringApiTests(APITestCase):
         self._enable_capstone_peer_grading()
         criteria = self.configure(self.peer_rubric, target='individual')
         for evaluator, evaluatee, scores in [(self.student, self.second_student, (9, 2.5)),
-                                            (self.second_student, self.student, (10, 5))]:
+                                            (self.student, self.student, (10, 5)),
+                                            (self.second_student, self.student, (10, 5)),
+                                            (self.second_student, self.second_student, (9, 2.5))]:
             self.client.force_authenticate(evaluator)
             response = self.client.post('/api/grading/grades/peer-evaluations/', {
                 'teamId': self.capstone_team.pk, 'evaluateeId': evaluatee.pk, 'total': 999, 'max': 1,
@@ -152,7 +154,8 @@ class WeightedScoringApiTests(APITestCase):
             self.assertEqual(response.status_code, 200, response.data)
         grade = self._capstone_grade()
         self.assertEqual(grade.peer_score, Decimal('91.00'))
-        submission = PeerEvaluationSubmission.objects.get(team_grade=grade, evaluator=self.student)
+        submission = PeerEvaluationSubmission.objects.get(team_grade=grade, evaluator=self.student,
+                                                         evaluatee=self.second_student)
         self.assertEqual(submission.weighted_score, Decimal('82.00'))
         self.assertEqual(submission.total_score, Decimal('11.50'))
         self.assertEqual(submission.max_score, Decimal('15.00'))

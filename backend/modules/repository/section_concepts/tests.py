@@ -268,9 +268,9 @@ class SharedSystemConceptTests(APITestCase):
         self.project.title_mode = 'faculty_provided'
         self.project.save()
         self.assertEqual(resolve_policy(self.team, self.event)['required_count'], 3)
-        with self.assertRaises(PermissionError):
-            concepts.save_titles(self.team, self.event, self.titles('Student module'), actor=self.pm)
-        self.assertEqual(self.action('save_titles', self.pm, concepts=self.titles()).status_code, 403)
+        concepts.save_titles(self.team, self.event, self.titles('Student module'), actor=self.pm)
+        self.assertFalse(any(c.get('faculty_confirmed') for c in concepts.latest_round(self.team, self.event).concepts))
+        self.assertEqual(self.action('save_titles', self.pm, concepts=self.titles()).status_code, 200)
         self.assertEqual(self.action('confirm_modules', team_id=self.team.pk, concepts=self.titles('Faculty module')).status_code, 200)
         self.assertTrue(all(c['faculty_confirmed'] for c in concepts.latest_round(self.team, self.event).concepts))
 

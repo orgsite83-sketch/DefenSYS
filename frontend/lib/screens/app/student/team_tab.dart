@@ -7,8 +7,10 @@ import '../../../services/capstone_deliverables_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/program_badge.dart';
 import '../../../widgets/student_team_setup_tasks.dart';
-import '../../../services/academic/student_team_selection_provider.dart';
 import '../../../services/academic/team_formation_service.dart';
+import '../../../services/dashboard_provider.dart';
+import '../../../services/app/data_refresh_provider.dart';
+import '../../../widgets/repository/team_concept_title_editor.dart';
 import 'student_stage_data.dart';
 
 /// Screen 1: Academic Defense Overview & Student Team Workspace.
@@ -33,6 +35,7 @@ class TeamTab extends ConsumerStatefulWidget {
 }
 
 class _TeamTabState extends ConsumerState<TeamTab> {
+  final _conceptOverrides = <String, Map<String, dynamic>>{};
 
   @override
   void initState() {
@@ -59,6 +62,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
   @override
   void didUpdateWidget(TeamTab oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.studentData, widget.studentData)) _conceptOverrides.clear();
     if (widget.onRefresh == null) return;
     final oldTeam = oldWidget.studentData?['team'];
     final newTeam = widget.studentData?['team'] as Map<String, dynamic>?;
@@ -160,7 +164,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     }
 
     final delivState = ref.watch(capstoneDeliverablesProvider);
-    final teamData = delivState.teams.firstOrNull;
+    final teamData = delivState.teams.where((t) => t['id'] == team['id']).firstOrNull;
 
     final teamName = team['name']?.toString() ?? 'Team Project';
     final rawProjectTitle = team['projectTitle']?.toString() ??
@@ -186,8 +190,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             .toList() ??
         const <String>[];
 
-    final stagesList = (teamData?['stages'] as List? ??
-            widget.studentData?['stages'] as List? ??
+    final stagesList = (widget.studentData?['stages'] as List? ??
+            teamData?['stages'] as List? ??
             [])
         .cast<Map<String, dynamic>>();
 
@@ -281,15 +285,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     }
 
     final needsName = team['needs_name'] == true || team['setup_pending'] == true;
-    final student = widget.studentData?['student'] as Map<String, dynamic>?;
-    final isLeader = student?['is_leader'] == true ||
-        student?['isLeader'] == true ||
-        widget.studentData?['user']?['is_leader'] == true ||
-        members.any(
-          (m) =>
-              (m['id'] == student?['id'] || m['username'] == widget.studentData?['user']?['username']) &&
-              (m['isLeader'] == true || m['is_leader'] == true),
-        );
+    final isLeader = StudentTaskBadgeHelper.isTeamLeader(widget.studentData);
 
     final leaderMember = members.where((m) => m['isLeader'] == true || m['is_leader'] == true).firstOrNull;
     final leaderName = team['leader_name']?.toString() ??
@@ -299,12 +295,15 @@ class _TeamTabState extends ConsumerState<TeamTab> {
 
     Map<String, dynamic>? conceptWorkflow;
     for (final s in stagesList) {
+      if ('${s['stage_label']}'.trim().toLowerCase() != activeStageName.trim().toLowerCase()) continue;
+      if (s['team_id'] != null && s['team_id'] != team['id']) continue;
       final cw = s['concept_workflow'];
       if (cw is Map && (cw['enabled'] == true || (cw['concepts'] as List? ?? []).isNotEmpty)) {
         conceptWorkflow = Map<String, dynamic>.from(cw);
         break;
       }
     }
+    conceptWorkflow = _conceptOverrides['${team['id']}:$activeStageName'] ?? conceptWorkflow;
     final concepts = (conceptWorkflow?['concepts'] as List? ?? [])
         .whereType<Map>()
         .map((c) => Map<String, dynamic>.from(c))
@@ -320,20 +319,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if ((studentData?['team_options'] as List? ?? []).length > 1) ...[
-          DropdownButtonFormField<int>(
-            key: ValueKey('student-team-${team['id']}'), initialValue: team['id'] as int,
-            isExpanded: true, decoration: const InputDecoration(labelText: 'Your team'),
-            items: (studentData!['team_options'] as List).map((t) => DropdownMenuItem<int>(
-              value: t['id'] as int, child: Text('${t['name']} · ${t['event_name'] == '' ? t['level'] : t['event_name']}',
-                  overflow: TextOverflow.ellipsis))).toList(),
-            onChanged: (id) => ref.read(studentTeamSelectionProvider.notifier).select(id),
-          ),
-          const SizedBox(height: 16),
-        ],
         if (onRefresh != null || team['setup_pending'] == true || team['project_pending'] == true)
           StudentTeamSetupTasks(onOpenRepository: () => onSelectTab?.call(1, subTabIndex: 1),
-            onRefresh: onRefresh, refreshKey: delivState.teams),
+            onRefresh: onRefresh, refreshKey: delivState.teams, showConceptTasks: false),
         // 1. TEAM & PROJECT OVERVIEW (CLEAN WHITE CARD)
         _buildTeamHeaderCard(
           teamName: teamName,
@@ -349,6 +337,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           leaderName: leaderName,
           teamId: team['id'] as int?,
           hasConceptWorkflow: hasConceptWorkflow,
+          conceptProgress: '${concepts.where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty).length} of ${concepts.length} ${isSharedSystem ? 'module' : 'concept'} titles provided',
           isPendingSelection: isPendingSelection,
           isSharedSystem: isSharedSystem,
         ),
@@ -358,6 +347,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             workflow: conceptWorkflow,
             concepts: concepts,
             isSharedSystem: isSharedSystem,
+            isLeader: isLeader,
+            onEdit: () => _editConceptTitles(team['id'] as int, activeStageName),
             onSelectTab: onSelectTab,
           ),
         ],
@@ -427,6 +418,18 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     }
   }
 
+  Future<void> _editConceptTitles(int teamId, String stageLabel) async {
+    final workflow = await editTeamConceptTitles(context, teamId: teamId, stageLabel: stageLabel);
+    if (workflow == null || !mounted) return;
+    setState(() => _conceptOverrides['$teamId:$stageLabel'] = workflow);
+    ref.read(dashboardProvider('student').notifier).applyStudentConceptWorkflow(teamId, stageLabel, workflow);
+    ref.read(dataRefreshProvider.notifier).markChanged(const [DataArea.dashboard, DataArea.teams, DataArea.deliverables]);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+      (workflow['concepts'] as List? ?? []).whereType<Map>().any((c) => '${c['title'] ?? ''}'.trim().isEmpty)
+        ? 'Draft saved. Complete the remaining titles before review.' : 'Concept titles saved.')));
+    await widget.onRefresh?.call();
+  }
+
   // ─── 1. TEAM & PROJECT OVERVIEW CARD ───────────────────────────────────────
 
   Widget _buildTeamHeaderCard({
@@ -445,6 +448,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     bool hasConceptWorkflow = false,
     bool isPendingSelection = false,
     bool isSharedSystem = false,
+    String conceptProgress = '',
   }) {
     final monogram = _extractTeamMonogram(teamName);
     final compactSemester = semester
@@ -565,7 +569,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     const SizedBox(height: 2),
                     Text(
                       isPendingSelection && hasConceptWorkflow
-                          ? (isSharedSystem ? '3 Shared System Modules Proposed' : '3 Concept Proposals Submitted')
+                          ? conceptProgress
                           : projectTitle,
                       style: TextStyle(
                         fontSize: 13,
@@ -676,6 +680,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     required Map<String, dynamic> workflow,
     required List<Map<String, dynamic>> concepts,
     required bool isSharedSystem,
+    required bool isLeader,
+    required VoidCallback onEdit,
     required void Function(int index, {int? subTabIndex})? onSelectTab,
   }) {
     final status = switch (workflow['status']) {
@@ -889,24 +895,16 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             ),
           ],
           const SizedBox(height: 8),
+          if (isLeader && StudentTaskBadgeHelper.canEditConceptTitles(workflow))
+            SizedBox(width: double.infinity, child: FilledButton.icon(
+              key: const ValueKey('edit-team-concepts'), onPressed: onEdit,
+              style: FilledButton.styleFrom(backgroundColor: DefensysTokens.maroonOf(context), foregroundColor: Colors.white),
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: Text(isSharedSystem ? 'Edit module titles' : 'Edit concept titles'))),
           Row(
             children: [
-              Expanded(
-                child: SizedBox(
-                  height: 34,
-                  child: OutlinedButton.icon(
-                    onPressed: () => onSelectTab?.call(1, subTabIndex: 1),
-                    icon: const Icon(Icons.description_outlined, size: 14),
-                    label: const Text('Deliverables', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: DefensysTokens.textPrimaryOf(context),
-                      side: BorderSide(color: DefensysTokens.borderOf(context)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                ),
-              ),
+              Expanded(child: TextButton.icon(onPressed: () => onSelectTab?.call(1, subTabIndex: 1),
+                icon: const Icon(Icons.description_outlined, size: 14), label: const Text('View deliverables'))),
               if (isSharedSystem) ...[
                 const SizedBox(width: 8),
                 Expanded(

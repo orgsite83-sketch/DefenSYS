@@ -14,6 +14,7 @@ class SchedulerTeamPicker extends StatefulWidget {
     required this.assignedElsewhere,
     required this.sessionNumber,
     this.scope = 'capstone',
+    this.scheduleSelection = false,
   });
 
   final List<Map<String, dynamic>> teams;
@@ -21,6 +22,7 @@ class SchedulerTeamPicker extends StatefulWidget {
   final Map<int, String> assignedElsewhere;
   final int sessionNumber;
   final String scope;
+  final bool scheduleSelection;
 
   static Future<Set<int>?> show(
     BuildContext context, {
@@ -29,6 +31,7 @@ class SchedulerTeamPicker extends StatefulWidget {
     required Map<int, String> assignedElsewhere,
     required int sessionNumber,
     required String scope,
+    bool scheduleSelection = false,
   }) => showDialog<Set<int>>(
     context: context,
     builder: (_) => SchedulerTeamPicker(
@@ -37,6 +40,7 @@ class SchedulerTeamPicker extends StatefulWidget {
       assignedElsewhere: assignedElsewhere,
       sessionNumber: sessionNumber,
       scope: scope,
+      scheduleSelection: scheduleSelection,
     ),
   );
 
@@ -147,7 +151,9 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Choose teams for Session\u00a0${widget.sessionNumber}',
+                        widget.scheduleSelection
+                            ? 'Choose teams for this schedule'
+                            : 'Choose teams for Session\u00a0${widget.sessionNumber}',
                         style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
@@ -163,7 +169,9 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _isPit
+                  widget.scheduleSelection
+                      ? 'Select teams once, then assign them across sessions.'
+                      : _isPit
                       ? 'Choose teams or filter by section and instructor. Teams assigned to another session stay there.'
                       : 'Choose teams or filter by section and adviser. Teams assigned to another session stay there.',
                   style: TextStyle(fontSize: 12, color: secondary),
@@ -280,44 +288,54 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                   },
                 ),
                 const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    ShadButton.outline(
-                      key: const ValueKey('session-select-shown-teams'),
-                      size: ShadButtonSize.sm,
-                      enabled: available.isNotEmpty,
-                      onPressed: available.isEmpty
-                          ? null
-                          : () {
-                              setState(() => _selected.addAll(available));
-                            },
-                      leading: const Icon(LucideIcons.listChecks, size: 14),
-                      child: Text(
-                        _faculty > 0 &&
-                                _query.trim().isEmpty &&
-                                _section.isEmpty
-                            ? _isPit
-                                  ? 'Select instructor’s teams'
-                                  : 'Select adviser’s teams'
-                            : 'Select shown teams',
+                LayoutBuilder(
+                  builder: (_, constraints) => Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      ShadButton.outline(
+                        key: const ValueKey('session-select-shown-teams'),
+                        width: constraints.maxWidth < 420
+                            ? constraints.maxWidth
+                            : null,
+                        expands: constraints.maxWidth < 420,
+                        size: ShadButtonSize.sm,
+                        enabled: available.isNotEmpty,
+                        onPressed: available.isEmpty
+                            ? null
+                            : () {
+                                setState(() => _selected.addAll(available));
+                              },
+                        leading: const Icon(LucideIcons.listChecks, size: 14),
+                        child: Text(
+                          _faculty > 0 &&
+                                  _query.trim().isEmpty &&
+                                  _section.isEmpty
+                              ? _isPit
+                                    ? 'Select instructor’s teams'
+                                    : 'Select adviser’s teams'
+                              : 'Select shown teams',
+                        ),
                       ),
-                    ),
-                    ShadButton.outline(
-                      key: const ValueKey('session-clear-shown-teams'),
-                      size: ShadButtonSize.sm,
-                      enabled: available.any(_selected.contains),
-                      onPressed: available.any(_selected.contains)
-                          ? () {
-                              setState(() => _selected.removeAll(available));
-                            }
-                          : null,
-                      leading: const Icon(LucideIcons.x, size: 14),
-                      child: const Text('Clear shown teams'),
-                    ),
-                  ],
+                      ShadButton.outline(
+                        key: const ValueKey('session-clear-shown-teams'),
+                        width: constraints.maxWidth < 420
+                            ? constraints.maxWidth
+                            : null,
+                        expands: constraints.maxWidth < 420,
+                        size: ShadButtonSize.sm,
+                        enabled: available.any(_selected.contains),
+                        onPressed: available.any(_selected.contains)
+                            ? () {
+                                setState(() => _selected.removeAll(available));
+                              }
+                            : null,
+                        leading: const Icon(LucideIcons.x, size: 14),
+                        child: const Text('Clear shown teams'),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Divider(color: DefensysTokens.borderOf(context)),
@@ -381,22 +399,28 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                         ),
                 ),
                 const SizedBox(height: 12),
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    Text(
-                      '${_selected.length} teams selected',
-                      style: TextStyle(fontSize: 12, color: secondary),
-                    ),
-                    ShadButton(
-                      key: const ValueKey('apply-session-teams'),
-                      onPressed: () => Navigator.pop(context, _selected),
-                      child: const Text('Use selected teams'),
-                    ),
-                  ],
+                LayoutBuilder(
+                  builder: (_, constraints) => Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      Text(
+                        '${_selected.length} teams selected',
+                        style: TextStyle(fontSize: 12, color: secondary),
+                      ),
+                      ShadButton(
+                        key: const ValueKey('apply-session-teams'),
+                        width: constraints.maxWidth < 420
+                            ? constraints.maxWidth
+                            : null,
+                        expands: constraints.maxWidth < 420,
+                        onPressed: () => Navigator.pop(context, _selected),
+                        child: const Text('Use selected teams'),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

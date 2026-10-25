@@ -24,6 +24,21 @@ class _StudentAuth extends AuthNotifier {
 }
 
 void main() {
+  testWidgets('Team card owns title prompts while naming and event confirmation stay visible', (tester) async {
+    setApiHttpClientForTesting(MockClient((request) async => http.Response(jsonEncode({
+      'teams': [
+        {'id': 7, 'name': 'Named team', 'needs_name': false, 'concept_tasks': [{'required_count': 3}]},
+        {'id': 8, 'name': 'Unnamed team', 'needs_name': true, 'concept_tasks': [{'required_count': 3}]},
+      ],
+      'event_teams': [{'id': 7, 'event_id': 1, 'needs_details': true, 'concept_tasks': [{'required_count': 3}]}],
+    }), 200)));
+    await pumpDefensysWidget(tester, const StudentTeamSetupTasks(showConceptTasks: false),
+      overrides: [authProvider.overrideWith(_StudentAuth.new)]);
+    expect(find.text('Choose team name'), findsOneWidget);
+    expect(find.text('Confirm event team details'), findsOneWidget);
+    expect(find.textContaining('Submit 3'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(resetApiHttpClientForTesting);
 
@@ -165,7 +180,7 @@ void main() {
     final dashboard = requests.singleWhere(
       (r) => r.url.path.contains('/dashboards/'),
     );
-    expect(dashboard.url.queryParameters['team_id'], '7');
+    expect(dashboard.url.queryParameters.containsKey('team_id'), isFalse);
     final concepts = requests.singleWhere(
       (r) => r.url.path.contains('/deliverables'),
     );

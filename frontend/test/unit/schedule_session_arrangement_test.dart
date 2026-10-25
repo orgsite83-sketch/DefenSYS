@@ -3,6 +3,70 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 
 void main() {
+  ScheduleSessionDraft day(String key) {
+    final result = ScheduleSessionDraft(
+      key: key,
+      date: TextEditingController(text: '2026-10-26'),
+      start: TextEditingController(text: '08:00'),
+      duration: TextEditingController(text: '60'),
+      room: TextEditingController(text: 'Lab 1'),
+    );
+    addTearDown(result.dispose);
+    return result;
+  }
+
+  test(
+    '16 selected teams fill two eight-slot sessions without reservations',
+    () {
+      final sessions = [day('one')];
+      final selected = {for (int id = 1; id <= 16; id++) id};
+      expect(fillSessionTeams(sessions, selected), 8);
+      expect(sessions.first.teamIds, {1, 2, 3, 4, 5, 6, 7, 8});
+      expect(unassignedSessionTeams(sessions, selected), {
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+      });
+      sessions.add(day('two'));
+      expect(fillSessionTeams(sessions, selected), 8);
+      expect(sessions.last.teamIds, {9, 10, 11, 12, 13, 14, 15, 16});
+      expect(unassignedSessionTeams(sessions, selected), isEmpty);
+      expect(fillSessionTeams(sessions, selected), 0);
+    },
+  );
+
+  test(
+    'shrinking and removing sessions keep excess teams selected and movable',
+    () {
+      final sessions = [day('one'), day('two')];
+      final selected = {for (int id = 1; id <= 16; id++) id};
+      fillSessionTeams(sessions, selected);
+      sessions.first.duration.text = '90';
+      reconcileSessionTeams(sessions, selected);
+      expect(sessions.first.teamIds, {1, 2, 3, 4});
+      expect(unassignedSessionTeams(sessions, selected), {5, 6, 7, 8});
+      sessions.removeLast();
+      expect(unassignedSessionTeams(sessions, selected).length, 12);
+      expect(selected.length, 16);
+      sessions.first.teamIds.remove(1);
+      final third = day('three')..teamIds = {1};
+      sessions.add(third);
+      fillSessionTeams(sessions, selected);
+      expect(third.teamIds.first, 1);
+      expect(sessions.first.teamIds.contains(1), isFalse);
+    },
+  );
+
+  test('overlapping blocks have no usable session capacity', () {
+    final session = day('one');
+    session.blocks.last.start.text = '11:00';
+    expect(session.capacity, 0);
+  });
   test('a default day session has eight slots and skips lunch', () {
     final draft = ScheduleSessionDraft(
       key: 'day',

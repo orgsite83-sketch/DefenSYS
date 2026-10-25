@@ -19,6 +19,11 @@ from .models import (SectionConceptProject, SectionProjectTeam, SectionConceptRo
 KEYS = ('c1', 'c2', 'c3')
 
 
+def round_keys(round):
+    """The persisted system rows capture this hearing's configured count."""
+    return sorted(round.systems.values_list('key', flat=True), key=lambda k: int(k[1:]))
+
+
 def admin(user):
     return bool(user and (getattr(user, 'is_superuser', False) or getattr(user, 'role', '') == 'admin'))
 
@@ -182,7 +187,7 @@ def invalidate(round, *, modules=False):
 @read_memoize(copy=True)
 def snapshot(round):
     return {'teams': list(active_links(round.project).order_by('team_id').values('team_id', 'project_version')),
-        'systems': list(round.systems.order_by('key').values('id', 'key', 'title', 'confirmed')),
+        'systems': sorted(round.systems.values('id', 'key', 'title', 'confirmed'), key=lambda s: int(s['key'][1:])),
         'papers': list(SectionConceptPaper.objects.filter(concept__round=round, purpose='proposal', is_current=True).order_by(
             'concept__key').values('id', 'concept_id', 'revision', 'status'))}
 
@@ -200,9 +205,9 @@ def shared_clearance(round, *, state=None):
         return bool(round.revisions_cleared_at and round.endorsement_snapshot == state)
     systems = state['systems']
     papers = state['papers']
-    return bool(len(systems) == 3 and {s['key'] for s in systems} == set(KEYS)
+    return bool(systems and {s['key'] for s in systems} == set(round_keys(round))
         and all(s['confirmed'] and s['title'].strip() for s in systems)
-        and len(papers) == 3 and {p['concept_id'] for p in papers} == {s['id'] for s in systems}
+        and len(papers) == len(systems) and {p['concept_id'] for p in papers} == {s['id'] for s in systems}
         and all(p['status'] == 'accepted' for p in papers))
 
 
@@ -210,7 +215,7 @@ def shared_clearance(round, *, state=None):
 def review_summary(round, *, team=None, actor=None):
     """Read-only section facts shared by team summaries and review surfaces."""
     state = snapshot(round)
-    progress = {'required': 3,
+    progress = {'required': len(state['systems']),
         'names_confirmed': sum(bool(s['confirmed'] and s['title'].strip()) for s in state['systems']),
         'papers_uploaded': len(state['papers']),
         'papers_accepted': sum(p['status'] == 'accepted' for p in state['papers'])}
@@ -224,7 +229,7 @@ def review_summary(round, *, team=None, actor=None):
         ('selected', 'Shared system selected') if round.verdict == 'approved' and cleared else
         ('cleared', 'Shared papers cleared for hearing') if cleared else
         ('changes_requested', 'Shared paper corrections requested') if 'rejected' in statuses else
-        ('awaiting_files', 'Shared papers awaiting upload') if len(statuses) < 3 else
+        ('awaiting_files', 'Shared papers awaiting upload') if len(statuses) < len(state['systems']) else
         ('needs_review', 'Shared papers awaiting review') if 'pending' in statuses else
         ('needs_review', 'Shared titles awaiting confirmation'))
     from .acknowledgments import summary as acknowledgment_summary
@@ -303,7 +308,10 @@ def configure(actor, teams, context, data):
             project_manager=manager, reviewer=reviewer, title_mode=mode)
         require_active(project)
         round = SectionConceptRound.objects.create(project=project)
-        SectionSystemConcept.objects.bulk_create([SectionSystemConcept(round=round, key=k) for k in KEYS])
+        from student_teams.concept_policy import proposal_keys
+        SectionSystemConcept.objects.bulk_create([SectionSystemConcept(round=round, key=k,
+            title=section.system_name if k == 'c1' else '')
+            for k in proposal_keys(context.concept_config.get('required_count', 3))])
     for team in teams:
         if project.team_links.filter(team=team, project_version=team.project_version).exists():
             continue
@@ -332,9 +340,43 @@ def policy_for(team, context):
     if not project:
         return None
     round = latest(project)
-    return {**context.concept_config, 'mode': 'proposals', 'required_count': 3, 'assigned_title': '',
+    from student_teams.concept_policy import supplied_title
+    keys = round_keys(round)
+    return {**context.concept_config, 'mode': 'proposals', 'required_count': len(keys),
+        'concept_keys': keys, 'assigned_title': '', 'seed_title': supplied_title(team, context),
         'source': 'section_system', 'section_project_id': project.pk, 'section_round_id': round.pk,
-        'title_mode': project.title_mode, 'system_concepts': list(round.systems.values('id', 'key', 'title'))}
+        'title_mode': project.title_mode, 'system_concepts': sorted(round.systems.values('id', 'key', 'title'), key=lambda s: int(s['key'][1:]))}
+
+
+@transaction.atomic
+def reconcile_requirements(project, actor, *, expected_count=None):
+    require_active(project)
+    if not can_manage(actor, project):
+        raise PermissionError('Only authorized section management can update the configured count.')
+    round = locked_round(project)
+    editable(round)
+    context = type(project.context).objects.select_for_update().get(pk=project.context.pk)
+    count = context.concept_config.get('required_count', 3)
+    if expected_count is not None and expected_count != count:
+        raise ValidationError('The configured count changed. Refresh and review it again.')
+    if round.number != 1 or round.schedules.exists():
+        raise ValidationError('Existing hearings and replacement sets retain their requirements.')
+    from student_teams.concept_policy import proposal_keys
+    from repository.deliverables.concepts import reconcile_initial_requirements
+    keys = proposal_keys(count)
+    old_keys = round_keys(round)
+    if set(old_keys) - set(keys):
+        raise ValidationError('This would remove existing shared concepts. Use a reviewed new project instead.')
+    for link in active_links(project):
+        current = link.team.concept_rounds.filter(**context_fields(project.context),
+            project_version=link.project_version).order_by('-number').first()
+        if current and (current.schedule_id or current.verdict or current.number != 1):
+            raise ValidationError('Every participating team must have an undecided, unscheduled initial set.')
+    SectionSystemConcept.objects.bulk_create([SectionSystemConcept(round=round, key=k) for k in keys if k not in old_keys])
+    for link in active_links(project):
+        reconcile_initial_requirements(link.team, context, actor, expected_count=count)
+    invalidate(round)
+    audit(actor, 'count_reconciled', round, old_keys=old_keys, concept_keys=keys)
 
 
 def team_display(team, label=None):
@@ -396,9 +438,7 @@ def can_edit_module_titles(user, team, context, current):
     if user is None:
         return False
     faculty = can_manage(user, project) or (getattr(user, 'role', '') == 'faculty' and team.adviser_id == user.pk)
-    if project.title_mode == 'faculty_provided' and not faculty:
-        return False
-    if any(c.get('faculty_confirmed') for c in current.concepts) and not faculty:
+    if all(c.get('faculty_confirmed') for c in current.concepts) and not faculty:
         return False
     return faculty or (getattr(user, 'role', '') == 'student' and team.leader_id == user.pk)
 
@@ -416,10 +456,11 @@ def save_system_titles(project, actor, titles):
     round = locked_round(project)
     editable(round)
     faculty = can_manage(actor, project) or is_reviewer(actor, project)
-    if not faculty and (not is_pm(actor, project) or project.title_mode == 'faculty_provided'):
+    if not faculty and not is_pm(actor, project):
         raise PermissionError('Only the designated project manager can propose names; faculty confirms official names.')
-    if not isinstance(titles, list) or len(titles) != 3 or {c.get('key') for c in titles if isinstance(c, dict)} != set(KEYS):
-        raise ValidationError('Enter one unique title for each of System A, B and C.')
+    keys = round_keys(round)
+    if not isinstance(titles, list) or len(titles) != len(keys) or {c.get('key') for c in titles if isinstance(c, dict)} != set(keys):
+        raise ValidationError(f'Enter one title for each of the {len(keys)} shared system proposals.')
     keyed = {c['key']: c for c in titles}
     changed = False
     changed_keys = set()
@@ -598,9 +639,9 @@ def endorse(project, actor):
     if not is_reviewer(actor, project):
         raise PermissionError('Only the designated system reviewer can endorse the section papers.')
     if round.systems.exclude(confirmed=True).exists() or round.systems.filter(title='').exists():
-        raise ValidationError('Faculty must confirm all three system names before endorsement.')
-    if SectionConceptPaper.objects.filter(concept__round=round, purpose='proposal', is_current=True, status='accepted').count() != 3:
-        raise ValidationError('Accept all three current system concept papers before endorsement.')
+        raise ValidationError('Faculty must confirm all required system names before endorsement.')
+    if SectionConceptPaper.objects.filter(concept__round=round, purpose='proposal', is_current=True, status='accepted').count() != len(round_keys(round)):
+        raise ValidationError('Accept all required current system concept papers before endorsement.')
     round.endorsed_by, round.endorsed_at = actor, timezone.now()
     round.endorsement_snapshot = snapshot(round)
     round.save(update_fields=['endorsed_by', 'endorsed_at', 'endorsement_snapshot'])
@@ -779,7 +820,7 @@ def decide(project, actor, decisions, verdict, remarks, *, team_outcomes=None):
     candidate = type('SystemSet', (), {'concepts': [{'key': s.key, 'title': s.title} for s in round.systems.all()]})()
     systems, replacement, selected = validate_decisions(candidate, decisions, verdict, False)
     if verdict == 'for_redefense' and not all(s['decision'] == 'rejected' for s in systems):
-        raise ValidationError('Reject all three system proposals to request a replacement section set.')
+        raise ValidationError('Reject all system proposals to request a replacement section set.')
     for item in systems:
         round.systems.filter(key=item['key']).update(decision=item['decision'], remarks=item['remarks'])
     round.verdict, round.remarks = verdict, remarks.strip()
@@ -811,7 +852,7 @@ def decide(project, actor, decisions, verdict, remarks, *, team_outcomes=None):
             schedule, grade, _ = candidates[item['team_id']]
             module_verdict, notes = item['verdict'], item.get('remarks', '').strip()
             module_decisions = [{'key': key, 'decision': module_verdict if key == round.selected_key else 'not_selected',
-                'remarks': notes if key == round.selected_key else ''} for key in KEYS]
+                'remarks': notes if key == round.selected_key else ''} for key in round_keys(round)]
             if project.pit_event_config_id:
                 from repository.deliverables.pit_decisions import record_decision
                 current = team_latest_round(schedule.team, project.context)
@@ -826,7 +867,7 @@ def decide(project, actor, decisions, verdict, remarks, *, team_outcomes=None):
         from grading.grades.defense_workflow import record_verdict
         for schedule in schedules:
             grade = schedule.grade_records.first()
-            decisions = [{'key': key, 'decision': 'rejected', 'remarks': remarks, 'next_action': 'replace'} for key in KEYS]
+            decisions = [{'key': key, 'decision': 'rejected', 'remarks': remarks, 'next_action': 'replace'} for key in round_keys(round)]
             if project.pit_event_config_id:
                 from repository.deliverables.pit_decisions import record_decision, review_token
                 current = schedule.concept_round
@@ -836,7 +877,7 @@ def decide(project, actor, decisions, verdict, remarks, *, team_outcomes=None):
                 record_verdict(grade, actor=actor, verdict='for_redefense', remarks=remarks,
                     concept_decisions=decisions, replacement_concepts_required=True)
         next_round = SectionConceptRound.objects.create(project=project, number=round.number + 1)
-        SectionSystemConcept.objects.bulk_create([SectionSystemConcept(round=next_round, key=key) for key in KEYS])
+        SectionSystemConcept.objects.bulk_create([SectionSystemConcept(round=next_round, key=key) for key in round_keys(round)])
         for module_round in round.module_rounds.filter(schedule__isnull=True):
             module_round.section_round = next_round
             module_round.policy_snapshot = {**module_round.policy_snapshot, 'section_round_id': next_round.pk,
@@ -936,7 +977,7 @@ def task_payload(user):
             statuses = [paper['status'] for paper in state['papers']]
             status = ('awaiting_shared_acknowledgment' if shared_clearance(round) and acknowledgment_pending else
                 'shared_revisions_pending' if round.verdict == 'approved_with_revisions' else
-                'papers_missing' if len(statuses) < 3 else 'corrections_requested' if 'rejected' in statuses else
+                'papers_missing' if len(statuses) < len(state['systems']) else 'corrections_requested' if 'rejected' in statuses else
                 'awaiting_faculty_review' if 'pending' in statuses else
                 'awaiting_name_confirmation' if not all(c['confirmed'] for c in state['systems']) else
                 'cleared')
@@ -945,7 +986,7 @@ def task_payload(user):
                 'role': 'project_manager' if manager else 'reviewer' if reviewer else 'adviser',
                 'title': (('Submit revised shared system paper' if manager else 'Review and clear shared system revisions')
                     if round.verdict == 'approved_with_revisions' else
-                    'Submit three shared system concept papers' if manager else
+                    f'Submit {len(state["systems"])} shared system concept papers' if manager else
                     'Review and acknowledge shared system alignment' if acknowledgment_pending and not reviewer else
                     'Confirm system names and review shared concept papers'),
                 'status': status, 'status_label': status.replace('_', ' ')})
@@ -964,7 +1005,7 @@ def payload(project, actor):
     editable_now = not round.verdict and not round.module_rounds.filter(schedule__isnull=False).exclude(
         schedule__status='cancelled').exists() and can_write
     systems = []
-    for concept in round.systems.prefetch_related('papers'):
+    for concept in sorted(round.systems.prefetch_related('papers'), key=lambda s: int(s.key[1:])):
         all_papers = list(concept.papers.all())
         papers = [p for p in all_papers if p.purpose == 'proposal']
         final_papers = [p for p in all_papers if p.purpose == 'final']
@@ -988,7 +1029,8 @@ def payload(project, actor):
     teams = []
     for link in active_links(project):
         current = latest_round(link.team, context)
-        concepts = deepcopy(current.concepts) if current else [{'key': k, 'title': ''} for k in KEYS]
+        from student_teams.concept_policy import initial_concepts
+        concepts = deepcopy(current.concepts) if current else initial_concepts(policy_for(link.team, context))
         from repository.deliverables.services import get_deliverable_definitions_for_team
         from repository.deliverables.models import DeliverableSubmission
         from repository.deliverables.documents import slots_for, file_payload
@@ -1041,7 +1083,7 @@ def payload(project, actor):
             'can_confirm_names': can_write and (can_manage(actor, project) or (
                 getattr(actor, 'role', '') == 'faculty' and link.team.adviser_id == actor.pk))})
     current_papers = [p for system in systems for p in system['papers'] if p['is_current']]
-    progress = {'required': 3,
+    progress = {'required': len(systems),
         'names_confirmed': sum(bool(s['confirmed'] and s['title'].strip()) for s in systems),
         'papers_uploaded': len(current_papers),
         'papers_accepted': sum(p['status'] == 'accepted' for p in current_papers)}
@@ -1065,6 +1107,10 @@ def payload(project, actor):
     reviewer = effective_reviewer(project)
     from .acknowledgments import pit_instructors
     return {'id': project.pk, 'section': project.section.section, 'year_level': project.section.year_level,
+        'configured_count': context.concept_config.get('required_count', 3),
+        'can_reconcile_requirements': bool(can_write and can_manage(actor, project) and not round.verdict
+            and round.number == 1 and not round.module_rounds.filter(schedule__isnull=False).exists()
+            and len(systems) < context.concept_config.get('required_count', 3)),
         'review_token': review_token(round), 'manager_options': manager_options, 'reviewer_options': reviewer_options,
         'can_reassign': can_write,
         'semester_id': project.section.semester_id, 'stage_label': context.label,
@@ -1086,7 +1132,7 @@ def payload(project, actor):
             is_reviewer(actor, project)) and can_write,
         'can_manage': can_manage(actor, project),
         'can_edit_names': editable_now and (can_manage(actor, project) or is_reviewer(actor, project) or (
-            is_pm(actor, project) and project.title_mode == 'student_proposed')),
+            is_pm(actor, project) and any(not s['confirmed'] for s in systems))),
         'can_upload': editable_now and is_pm(actor, project),
         'can_review': editable_now and is_reviewer(actor, project),
         'can_start_presentation': bool(not round.presentation_started_at and not round.verdict and can_write and decision_allowed(round, actor)),

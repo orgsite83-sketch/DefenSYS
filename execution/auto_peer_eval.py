@@ -1,7 +1,7 @@
 """
 Automate Student Peer Evaluations over HTTP REST API.
 
-Simulates students submitting peer evaluations for their teammates via the actual
+Simulates students evaluating themselves and every teammate via the actual
 DefenSYS backend API endpoints:
   - Fetches dashboard: GET /api/dashboards/student/
   - Generates random criteria scores (default: 6 to 9 out of 10)
@@ -350,14 +350,14 @@ def run():
             if s.get("evaluateeId") is not None
         }
 
-        # Filter teammates needing evaluation (exclude self and already submitted)
+        # Every member, including the evaluator, needs one evaluation.
         teammates_to_rate = [
             m for m in members
-            if m.get("id") != current_id and m.get("id") not in already_submitted
+            if m.get("id") not in already_submitted
         ]
 
         if not teammates_to_rate:
-            total_evals_skipped += (len(members) - 1)
+            total_evals_skipped += len(members)
             continue
 
         students_processed += 1
@@ -366,6 +366,8 @@ def run():
         for teammate in teammates_to_rate:
             teammate_id = teammate.get("id")
             teammate_name = teammate.get("name") or f"Teammate {teammate_id}"
+            if teammate_id == current_id:
+                teammate_name += " (self-evaluation)"
 
             # Generate random score between min_score and max_score
             breakdown = []

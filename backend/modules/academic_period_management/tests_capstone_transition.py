@@ -28,8 +28,11 @@ class CapstoneTransitionTests(APITestCase):
             capstone_peer_evaluation_enabled=False, capstone_adviser_grading_enabled=False)
         self.expired = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=years[2], label=Semester.SECOND)
         DefenseStage.objects.update(is_active=False)
-        self.first = DefenseStage.objects.create(label='Discovery workshop', display_order=1, is_presentation_only=True)
-        self.second = DefenseStage.objects.create(label='Product review', display_order=2, is_presentation_only=True)
+        self.first = DefenseStage.objects.create(label='Discovery workshop', display_order=1)
+        self.second = DefenseStage.objects.create(label='Product review', display_order=2)
+        for stage in (self.first, self.second):
+            stage.deliverables.create(deliverable_id='PRE', label='Stage paper',
+                deliverable_type='pre', required=True)
         self.team = self.make_team('Cedar')
         self.enroll(self.team, self.normal)
 
@@ -46,6 +49,10 @@ class CapstoneTransitionTests(APITestCase):
             defaults={'year_level': '4th Year', 'section': 'BSIT-4A'})
 
     def assess(self, team, stage, verdict='approved', term=None, status='published'):
+        from repository.deliverables.models import DeliverableSubmission
+        DeliverableSubmission.objects.get_or_create(team=team, stage_label=stage.label,
+            deliverable_id='PRE', defaults={'label': 'Stage paper', 'deliverable_type': 'pre',
+                'file_name': 'stage-paper.pdf', 'status': DeliverableSubmission.STATUS_ACCEPTED})
         grade = TeamGrade(team=team, semester=term or team.semester, defense_stage=stage,
             scope='capstone', verdict=verdict, status=status, panel_score=85, adviser_score=85, peer_score=85)
         grade.save(clean=False)
@@ -219,7 +226,7 @@ class CapstoneTransitionTests(APITestCase):
         response = self.activate(self.extension, decisions=[self.decision()], reason='Reviewed')
         self.assertEqual(response.status_code, 200, response.data)
         self.team.refresh_from_db()
-        added = DefenseStage.objects.create(label='New batch workshop', display_order=3, is_presentation_only=True)
+        added = DefenseStage.objects.create(label='New batch workshop', display_order=3)
         self.assertNotIn(added.pk, {r['id'] for r in requirements_for(self.team)})
         self.first.label = 'Renamed discovery'
         self.first.save()
@@ -241,8 +248,6 @@ class CapstoneTransitionTests(APITestCase):
     def test_passing_verdict_with_required_files_missing_is_not_completion(self):
         from defense.stages.models import StageDeliverable
         self.enter_normal()
-        self.second.is_presentation_only = False
-        self.second.save()
         StageDeliverable.objects.create(defense_stage=self.second, deliverable_id='PAPER',
             label='Required paper', required=True, deliverable_type='post')
         self.assess(self.team, self.second)

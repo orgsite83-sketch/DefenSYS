@@ -1,6 +1,9 @@
 from types import SimpleNamespace
+from importlib import import_module
 from unittest.mock import Mock, patch
 
+from django.apps import apps
+from django.db import connection
 from django.test import SimpleTestCase, TestCase
 
 from academic_period_management.models import SchoolYear, Semester
@@ -51,16 +54,16 @@ class StageSetupReadinessTests(SimpleTestCase):
         self.assertTrue(result['ready'])
         self.assertEqual(result['required_rubric_roles'], ['panel'])
 
-    def test_presentation_only_has_no_upload_requirement(self):
+    def test_legacy_presentation_flag_does_not_replace_upload_requirements(self):
         self.stage.deliverables.exists.return_value = False
         self.assertFalse(self.readiness()['ready'])
         self.stage.is_presentation_only = True
-        self.assertTrue(self.readiness()['ready'])
+        self.assertFalse(self.readiness()['ready'])
 
     def test_signed_minutes_do_not_replace_student_upload_configuration(self):
         self.stage.minutes_required = True
         self.stage.deliverables.exists.return_value = False
-        self.assertIn('Add deliverable requirements or select presentation only.', self.readiness()['issues'])
+        self.assertIn('Add student file submission requirements.', self.readiness()['issues'])
 
     def test_unpublished_and_wrong_role_rubrics_are_reported(self):
         self.config.panel_rubric = self.rubric('panel', status='draft')
@@ -82,6 +85,16 @@ class StageSetupReadinessTests(SimpleTestCase):
 
 
 class StageReadinessSerializerTests(TestCase):
+    def test_retiring_presentation_flags_preserves_file_requirements(self):
+        stage = DefenseStage.objects.create(label='Legacy upload stage', is_presentation_only=True)
+        item = StageDeliverable.objects.create(defense_stage=stage,
+            deliverable_id='PAPER', label='Stage paper', required=True)
+        migration = import_module('defense.migrations.0046_retire_presentation_only_stages')
+        migration.retire_presentation_only(apps, SimpleNamespace(connection=connection))
+        stage.refresh_from_db()
+        self.assertFalse(stage.is_presentation_only)
+        self.assertTrue(stage.deliverables.filter(pk=item.pk).exists())
+
     def test_lock_and_publication_do_not_imply_completion_or_setup_readiness(self):
         year = SchoolYear.objects.create(label='2040-2041')
         semester = Semester.objects.create(school_year=year, label='1st Semester')

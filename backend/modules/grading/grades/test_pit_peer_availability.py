@@ -60,13 +60,21 @@ class PitPeerAvailabilityTests(APITestCase):
         for i in range(len(self.panelists)):
             self.panel_grade(i)
 
-    def submit_peer(self):
+    def submit_peer(self, evaluatee=None):
         self.client.force_authenticate(self.student)
         return self.client.post('/api/grading/grades/peer-evaluations/', {
-            'teamId': self.team.pk, 'evaluateeId': self.teammate.pk, 'stage': self.event.event_name,
+            'teamId': self.team.pk, 'evaluateeId': (evaluatee or self.teammate).pk, 'stage': self.event.event_name,
             'breakdown': [{'criterion_id': self.peer.criteria.get().pk,
                            'criteriaName': 'Contribution', 'score': 8, 'max': 10}],
         }, format='json')
+
+    def test_self_evaluation_uses_the_same_finished_defense_gate(self):
+        self.assertEqual(self.submit_peer(self.student).status_code, 400)
+        self.finish_panel()
+        self.assertEqual(self.submit_peer(self.student).status_code, 200)
+        self.assertTrue(PeerEvaluationSubmission.objects.filter(team_grade=self.grade,
+            evaluator=self.student, evaluatee=self.student).exists())
+        self.assertEqual(self.submit_peer(self.student).status_code, 400)
 
     def assert_closed(self):
         self.assertTrue(peer_grading_unavailable_reason(self.grade))

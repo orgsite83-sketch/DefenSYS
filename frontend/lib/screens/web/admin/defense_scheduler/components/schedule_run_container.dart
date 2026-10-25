@@ -57,6 +57,8 @@ class ScheduleRunContainer extends ConsumerStatefulWidget {
   final Future<void> Function() onPrefillCapstoneStageRubrics;
   final Future<void> Function() onPrefillPitEventConfig;
   final List<Map<String, dynamic>>? initialSessions;
+  final Set<int>? initialSelectedTeamIds;
+  final ValueChanged<Set<int>>? onSelectedTeamIdsChanged;
   final ValueChanged<List<Map<String, dynamic>>>? onSessionsChanged;
   final int? initialChairId;
   final ValueChanged<int?>? onChairChanged;
@@ -102,6 +104,8 @@ class ScheduleRunContainer extends ConsumerStatefulWidget {
     required this.onPrefillCapstoneStageRubrics,
     required this.onPrefillPitEventConfig,
     this.initialSessions,
+    this.initialSelectedTeamIds,
+    this.onSelectedTeamIdsChanged,
     this.onSessionsChanged,
     this.initialChairId,
     this.onChairChanged,
@@ -127,6 +131,16 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   DateTime? _guestExpiry;
   late final List<ScheduleSessionDraft> _sessions;
   int _nextSession = 2;
+  Set<int> _selectedTeamIds = {};
+  final Set<String> _managedTeamSessions = {};
+  final Set<String> _editingTimeSessions = {};
+  bool _showUnassignedTeams = false;
+  Set<int> get _poolTeamIds => {
+    ..._selectedTeamIds,
+    for (final session in _sessions) ...session.teamIds,
+  };
+  Set<int> get _unassignedTeamIds =>
+      unassignedSessionTeams(_sessions, _poolTeamIds);
 
   @override
   void initState() {
@@ -169,6 +183,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         ),
       ];
     }
+    _selectedTeamIds = {
+      ...?widget.initialSelectedTeamIds,
+      for (final session in _sessions) ...session.teamIds,
+      for (final slot in widget.planSlots)
+        if (asInt(slot['team_id']) != null) asInt(slot['team_id'])!,
+    };
+    reconcileSessionTeams(_sessions, _selectedTeamIds);
     if (widget.planSlots.isNotEmpty) {
       _lastGeneratedConfigSignature = _generateConfigSignature();
     }
@@ -184,7 +205,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     }
   }
 
-  void _notifySessionsChanged() {
+  void _notifySessionsChanged({bool configurationChanged = false}) {
+    if (configurationChanged) {
+      // Keep session membership/order, but regenerate stale times and team data.
+      _lastGeneratedConfigSignature = null;
+      if (widget.planSlots.isNotEmpty) widget.onPlanSlotsChanged([]);
+      widget.onShowFinalPreviewChanged(false);
+    }
+    widget.onSelectedTeamIdsChanged?.call(_poolTeamIds);
     widget.onSessionsChanged?.call(
       _sessions.map(serializeSessionDraft).toList(),
     );
@@ -199,6 +227,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   }
 
   void _addSession() {
+    while (_sessions.any((session) => session.key == 'session-$_nextSession')) {
+      _nextSession++;
+    }
     final previous = _sessions.last;
     final date = DateTime.tryParse(previous.date.text);
     final draft = ScheduleSessionDraft(
@@ -228,47 +259,26 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           ),
     );
     setState(() => _sessions.add(draft));
-    _notifySessionsChanged();
-  }
-
-  void _addTimeBlock(ScheduleSessionDraft session) {
-    final start = scheduleTimeMinutes(session.blocks.last.end.text);
-    final duration = int.tryParse(session.duration.text) ?? 60;
-    if (start < 0 ||
-        duration < 15 ||
-        duration > 240 ||
-        start + duration > 1439) {
-      showValidationToast(
-        context,
-        'Adjust the last block to leave room for another time block.',
-      );
-      return;
-    }
-    setState(
-      () => session.blocks.add(
-        ScheduleSessionBlock(
-          start: TextEditingController(text: scheduleTimeLabel(start)),
-          end: TextEditingController(text: scheduleTimeLabel(start + duration)),
-        ),
-      ),
-    );
-    _notifySessionsChanged();
+    _notifySessionsChanged(configurationChanged: true);
   }
 
   int get _unassignedCount =>
       widget.planSlots.where((slot) => slot['session_key'] == null).length;
 
   void _updatePlan(List<Map<String, dynamic>> slots) {
+    _recalculatePlanSlots(slots);
+    _selectedTeamIds = {
+      for (final slot in slots)
+        if (asInt(slot['team_id']) != null) asInt(slot['team_id'])!,
+    };
     for (final session in _sessions) {
       session.teamIds = {
         for (final slot in slots)
-          if ((slot['session_key'] ?? slot['requested_session_key']) ==
-                  session.key &&
+          if (slot['session_key'] == session.key &&
               asInt(slot['team_id']) != null)
             asInt(slot['team_id'])!,
       };
     }
-    _recalculatePlanSlots(slots);
     widget.onPlanSlotsChanged(slots);
     _notifySessionsChanged();
   }
@@ -325,33 +335,38 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       orElse: () => <String, dynamic>{},
     );
     return activeScopeTeams.where((team) {
-      final alreadyScheduled = state.schedules.any(
-        (schedule) {
-          if (asInt(schedule['team_id'] ?? schedule['team']?['id']) != asInt(team['id'])) {
-            return false;
-          }
-          if ((schedule['project_version'] ?? 1) != (team['project_version'] ?? 1)) {
-            return false;
-          }
-          final status = schedule['status']?.toString();
-          final displayStatus = schedule['display_status']?.toString().toLowerCase();
-          final hasVerdict = schedule['verdict'] != null ||
-              schedule['defense_verdict'] != null ||
-              schedule['is_defense_done'] == true ||
-              displayStatus == 'redefense_required' ||
-              displayStatus == 'completed' ||
-              displayStatus == 'failed' ||
-              displayStatus == 'assessed';
-          final isPendingScheduled = status == 'scheduled' && !hasVerdict;
+      final alreadyScheduled = state.schedules.any((schedule) {
+        if (asInt(schedule['team_id'] ?? schedule['team']?['id']) !=
+            asInt(team['id'])) {
+          return false;
+        }
+        if ((schedule['project_version'] ?? 1) !=
+            (team['project_version'] ?? 1)) {
+          return false;
+        }
+        final status = schedule['status']?.toString();
+        final displayStatus = schedule['display_status']
+            ?.toString()
+            .toLowerCase();
+        final hasVerdict =
+            schedule['verdict'] != null ||
+            schedule['defense_verdict'] != null ||
+            schedule['is_defense_done'] == true ||
+            displayStatus == 'redefense_required' ||
+            displayStatus == 'completed' ||
+            displayStatus == 'failed' ||
+            displayStatus == 'assessed';
+        final isPendingScheduled = status == 'scheduled' && !hasVerdict;
 
-          if (widget.scope == 'capstone') {
-            return asInt(schedule['defense_stage_id']) == widget.stageId && isPendingScheduled;
-          } else {
-            return (schedule['event_name']?.toString() ?? '').toLowerCase() ==
-                    activeStageOrEvent.toLowerCase() &&
-                isPendingScheduled;
-          }
-        });
+        if (widget.scope == 'capstone') {
+          return asInt(schedule['defense_stage_id']) == widget.stageId &&
+              isPendingScheduled;
+        } else {
+          return (schedule['event_name']?.toString() ?? '').toLowerCase() ==
+                  activeStageOrEvent.toLowerCase() &&
+              isPendingScheduled;
+        }
+      });
       if (alreadyScheduled) return false;
       return widget.scope == 'capstone'
           ? isTeamStageReady(team, activeStageOrEvent)
@@ -362,67 +377,250 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   int _getReadyTeamsCount(DefenseSchedulerState state) =>
       _eligibleTeams(state).length;
 
-  Future<void> _chooseSessionTeams(
-    ScheduleSessionDraft session,
-    int number,
-  ) async {
+  Future<void> _chooseScheduleTeams() async {
+    final eligible = _eligibleTeams(widget.state);
+    final ids = {
+      for (final team in eligible)
+        if (asInt(team['id']) != null) asInt(team['id'])!,
+    };
     final chosen = await SchedulerTeamPicker.show(
       context,
-      teams: _eligibleTeams(widget.state),
-      selected: session.teamIds,
-      assignedElsewhere: {
-        for (int i = 0; i < _sessions.length; i++)
-          if (_sessions[i] != session)
-            for (final id in _sessions[i].teamIds) id: 'Session ${i + 1}',
-      },
-      sessionNumber: number,
+      teams: eligible,
+      selected: _poolTeamIds.intersection(ids),
+      assignedElsewhere: const {},
+      sessionNumber: 0,
       scope: widget.scope,
+      scheduleSelection: true,
     );
-    if (chosen != null && mounted) {
-      setState(() => session.teamIds = chosen);
-      _notifySessionsChanged();
-    }
+    if (chosen == null || !mounted) return;
+    setState(() {
+      _selectedTeamIds = chosen;
+      reconcileSessionTeams(_sessions, chosen);
+    });
+    _notifySessionsChanged(configurationChanged: true);
   }
 
-  Widget _sessionTeamSelection(ScheduleSessionDraft session, int number) {
-    final names = widget.state.teams
-        .where((team) => session.teamIds.contains(asInt(team['id'])))
-        .map((team) => team['name']?.toString() ?? 'Team')
-        .toList();
-    return Column(
+  void _fillSessions() {
+    setState(() {
+      _selectedTeamIds = _poolTeamIds;
+      fillSessionTeams(_sessions, _selectedTeamIds);
+    });
+    _notifySessionsChanged(configurationChanged: true);
+  }
+
+  String _teamName(int id) =>
+      widget.state.teams
+          .where((team) => asInt(team['id']) == id)
+          .firstOrNull?['name']
+          ?.toString() ??
+      'Team $id';
+
+  void _assignTeam(int id, String destination) {
+    final target = _sessions.where((s) => s.key == destination).firstOrNull;
+    if (destination != 'unassigned' &&
+        (target == null || target.teamIds.length >= target.capacity)) {
+      return;
+    }
+    setState(() {
+      _selectedTeamIds = _poolTeamIds;
+      for (final session in _sessions) {
+        session.teamIds.remove(id);
+      }
+      target?.teamIds.add(id);
+    });
+    _notifySessionsChanged(configurationChanged: true);
+  }
+
+  Widget _teamAssignmentRow(int id, {bool enabled = true}) {
+    final current =
+        _sessions
+            .where((session) => session.teamIds.contains(id))
+            .firstOrNull
+            ?.key ??
+        'unassigned';
+    String label(String key) {
+      final index = _sessions.indexWhere((session) => session.key == key);
+      return index < 0
+          ? 'Unassigned'
+          : 'Session ${index + 1} · ${_sessions[index].date.text}';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: LayoutBuilder(
+        builder: (_, constraints) {
+          final select = ShadSelect<String>(
+            key: ValueKey('setup-team-assignment-$id-$current'),
+            initialValue: current,
+            enabled: enabled,
+            minWidth: constraints.maxWidth < 450 ? constraints.maxWidth : 230,
+            maxWidth: constraints.maxWidth < 450 ? constraints.maxWidth : 230,
+            options: [
+              const ShadOption(value: 'unassigned', child: Text('Unassigned')),
+              for (final session in _sessions)
+                if (session.key == current ||
+                    session.teamIds.length < session.capacity)
+                  ShadOption(
+                    value: session.key,
+                    child: Text(label(session.key)),
+                  ),
+            ],
+            selectedOptionBuilder: (_, value) =>
+                Text(label(value), overflow: TextOverflow.ellipsis),
+            onChanged: (value) {
+              if (value != null && value != current) _assignTeam(id, value);
+            },
+          );
+          final name = Text(
+            _teamName(id),
+            style: DefensysTokens.body.copyWith(
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
+          );
+          return constraints.maxWidth < 450
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [name, const SizedBox(height: 8), select],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: name),
+                    const SizedBox(width: 16),
+                    SizedBox(width: 230, child: select),
+                  ],
+                );
+        },
+      ),
+    );
+  }
+
+  Widget _scheduleTeamSelection(bool busy) => Container(
+    margin: const EdgeInsets.only(bottom: 24),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      border: Border.all(color: DefensysTokens.borderOf(context)),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 8,
           children: [
-            const Expanded(
-              child: Text(
-                'Teams for this session *',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            Text(
+              'Choose teams for this schedule',
+              style: DefensysTokens.body.copyWith(
+                color: DefensysTokens.textPrimaryOf(context),
+                fontWeight: FontWeight.w600,
               ),
             ),
             ShadButton.outline(
-              key: ValueKey('choose-session-teams-${session.key}'),
-              onPressed: _isGenerating || _isConfirming
-                  ? null
-                  : () => _chooseSessionTeams(session, number),
-              child: const Text('Choose teams'),
+              key: const ValueKey('choose-schedule-teams'),
+              enabled: !busy,
+              onPressed: _chooseScheduleTeams,
+              child: Text(
+                _poolTeamIds.isEmpty ? 'Choose teams' : 'Edit selection',
+              ),
             ),
           ],
         ),
         const SizedBox(height: 8),
         Text(
-          names.isEmpty
-              ? widget.scope == 'pit'
-                    ? 'Choose teams individually or filter by section and instructor.'
-                    : 'Choose teams individually or filter by section and adviser.'
-              : names.join(', '),
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 12,
+          'Select teams once, then assign them across sessions.',
+          style: DefensysTokens.caption.copyWith(
             color: DefensysTokens.textSecondaryOf(context),
           ),
         ),
+        const SizedBox(height: 12),
+        Divider(height: 1, color: DefensysTokens.borderOf(context)),
+        const SizedBox(height: 12),
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            '${_poolTeamIds.length} selected · ${_poolTeamIds.length - _unassignedTeamIds.length} assigned · ${_unassignedTeamIds.length} unassigned',
+            key: const ValueKey('schedule-team-summary'),
+            style: DefensysTokens.body.copyWith(
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _sessionAssignments(ScheduleSessionDraft session, bool busy) {
+    final expanded = _managedTeamSessions.contains(session.key);
+    final waiting = _unassignedTeamIds;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            Text(
+              'Assigned teams',
+              style: DefensysTokens.caption.copyWith(
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
+            ShadButton.ghost(
+              key: ValueKey('manage-session-teams-${session.key}'),
+              size: ShadButtonSize.sm,
+              enabled: !busy,
+              onPressed: () => setState(() {
+                if (expanded) {
+                  _managedTeamSessions.remove(session.key);
+                } else {
+                  _managedTeamSessions.add(session.key);
+                }
+              }),
+              child: Text(expanded ? 'Done' : 'Manage teams'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (!expanded)
+          Text(
+            session.teamIds.isEmpty
+                ? 'No teams assigned yet.'
+                : '${session.teamIds.take(3).map(_teamName).join(', ')}${session.teamIds.length > 3 ? ' + ${session.teamIds.length - 3} more' : ''}',
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        if (expanded) ...[
+          for (final id in session.teamIds)
+            _teamAssignmentRow(id, enabled: !busy),
+          if (waiting.isNotEmpty &&
+              session.teamIds.length < session.capacity) ...[
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (_, constraints) => ShadSelect<int>(
+                key: ValueKey(
+                  'assign-unassigned-team-${session.key}-${waiting.join('-')}',
+                ),
+                enabled: !busy,
+                minWidth: constraints.maxWidth,
+                maxWidth: constraints.maxWidth,
+                placeholder: const Text('Add an unassigned team'),
+                options: [
+                  for (final id in waiting)
+                    ShadOption(value: id, child: Text(_teamName(id))),
+                ],
+                selectedOptionBuilder: (_, id) => Text(_teamName(id)),
+                onChanged: (id) {
+                  if (id != null) _assignTeam(id, session.key);
+                },
+              ),
+            ),
+          ],
+        ],
       ],
     );
   }
@@ -583,7 +781,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       )) {
         final adviserId = asInt(team['adviser_id']) ?? asInt(team['adviser']);
         if (adviserId != null && panelIds.contains(adviserId)) {
-          final message = 'Session ${i + 1}: ${team['name']} — the team adviser cannot be a panelist or panel chair for their own advisees. Choose a different panelist.';
+          final message =
+              'Session ${i + 1}: ${team['name']} — the team adviser cannot be a panelist or panel chair for their own advisees. Choose a different panelist.';
           if (_adviserPanelWarning != message) {
             setState(() => _adviserPanelWarning = message);
           }
@@ -654,6 +853,24 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   }
 
   Future<void> _generatePlan() async {
+    if (_editingTimeSessions.isNotEmpty) return;
+    if (_unassignedTeamIds.isNotEmpty) {
+      showValidationToast(
+        context,
+        'Assign all selected teams using Fill available slots or Manage teams before generating.',
+      );
+      return;
+    }
+    final eligible = {
+      for (final team in _eligibleTeams(widget.state)) asInt(team['id']),
+    };
+    if (!_poolTeamIds.every(eligible.contains)) {
+      showValidationToast(
+        context,
+        'Some selected teams are no longer eligible. Edit the team selection before generating.',
+      );
+      return;
+    }
     if (!_canScheduleCurrentScope()) {
       showValidationToast(context, widget.scheduleNoticeMessage(widget.state));
       return;
@@ -871,9 +1088,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           ? null
           : () async {
               final currentText = controller.text.trim();
-              final calendar = SemesterCalendarWindow.fromMap(widget.state.activeSemester);
+              final calendar = SemesterCalendarWindow.fromMap(
+                widget.state.activeSemester,
+              );
               if (calendar == null) {
-                showValidationToast(context, 'Set semester dates in Academic Periods before scheduling.');
+                showValidationToast(
+                  context,
+                  'Set semester dates in Academic Periods before scheduling.',
+                );
                 return;
               }
               DateTime initialDate = DateTime.now();
@@ -909,14 +1131,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
               if (picked != null) {
                 controller.text = formatScheduleDate(picked);
-                if (widget.planSlots.isNotEmpty) {
-                  final copy = List<Map<String, dynamic>>.from(
-                    widget.planSlots,
-                  );
-                  _recalculatePlanSlots(copy);
-                  widget.onPlanSlotsChanged(copy);
-                }
                 setState(() {});
+                _notifySessionsChanged(configurationChanged: true);
               }
             },
       child: IgnorePointer(
@@ -937,80 +1153,6 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     );
   }
 
-  Widget _scheduleTimeField({required TextEditingController controller}) {
-    return InkWell(
-      onTap: _isGenerating || _isConfirming
-          ? null
-          : () async {
-              final currentText = controller.text.trim();
-              TimeOfDay initialTime = const TimeOfDay(hour: 8, minute: 0);
-              if (currentText.isNotEmpty) {
-                final parts = currentText.split(':');
-                if (parts.length >= 2) {
-                  final h = int.tryParse(parts[0]);
-                  final m = int.tryParse(parts[1]);
-                  if (h != null && m != null) {
-                    initialTime = TimeOfDay(hour: h, minute: m);
-                  }
-                }
-              }
-
-              final picked = await showTimePicker(
-                context: context,
-                initialTime: initialTime,
-                builder: (context, child) {
-                  return Theme(
-                    data: Theme.of(context).copyWith(
-                      colorScheme: _isDark
-                          ? const ColorScheme.dark(
-                              primary: AppColors.maroon,
-                              onPrimary: Colors.white,
-                              surface: DefensysTokens.mistSurface,
-                              onSurface: DefensysTokens.mistTextPrimary,
-                            )
-                          : const ColorScheme.light(
-                              primary: AppColors.maroon,
-                              onPrimary: Colors.white,
-                              onSurface: AppColors.textPrimary,
-                            ),
-                    ),
-                    child: child!,
-                  );
-                },
-              );
-
-              if (picked != null) {
-                final hh = picked.hour.toString().padLeft(2, '0');
-                final mm = picked.minute.toString().padLeft(2, '0');
-                controller.text = '$hh:$mm';
-                if (widget.planSlots.isNotEmpty) {
-                  final copy = List<Map<String, dynamic>>.from(
-                    widget.planSlots,
-                  );
-                  _recalculatePlanSlots(copy);
-                  widget.onPlanSlotsChanged(copy);
-                }
-                setState(() {});
-              }
-            },
-      child: IgnorePointer(
-        child: TextFormField(
-          controller: controller,
-          style: TextStyle(color: _textPrimary, fontSize: 14),
-          decoration: _schedulerInputDecoration(
-            suffixIcon: Icon(
-              Icons.access_time_outlined,
-              size: 18,
-              color: _isDark
-                  ? DefensysTokens.mistTextSecondary
-                  : const Color(0xFF667085),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildWarningBanner({
     required IconData icon,
     required bool isError,
@@ -1020,11 +1162,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   }) {
     final bgColor = isError
         ? (_isDark
-            ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
-            : const Color(0xFFFEF3F2))
+              ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+              : const Color(0xFFFEF3F2))
         : (_isDark
-            ? const Color(0xFF78350F).withValues(alpha: 0.25)
-            : const Color(0xFFFFFAEB));
+              ? const Color(0xFF78350F).withValues(alpha: 0.25)
+              : const Color(0xFFFFFAEB));
     final borderColor = isError
         ? (_isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFECDCA))
         : (_isDark ? const Color(0xFF78350F) : const Color(0xFFFEDF89));
@@ -1078,10 +1220,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Icon(
-                      Icons.open_in_new_rounded,
-                      size: 13,
-                      color: textColor),
+                    Icon(Icons.open_in_new_rounded, size: 13, color: textColor),
                   ],
                 ),
               ),
@@ -1105,8 +1244,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
     final stageLabel = targetStage['label']?.toString() ?? '';
     final stageTeams = teamsForScope(state, 'capstone');
-    final readyTeamsCount = stageTeams.where((team) =>
-        isTeamStageReady(team, stageLabel)).length;
+    final readyTeamsCount = stageTeams
+        .where((team) => isTeamStageReady(team, stageLabel))
+        .length;
     final hasDefenseProgress = stageTeams.any((team) {
       final status = getTeamStageStatus(team, stageLabel);
       return status != 'pending' && status != 'ready';
@@ -1286,7 +1426,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           (person) => !widget.selectedPanelistIds.contains(asInt(person['id'])),
         )
         .toList();
-    final busy = _isGenerating || _isConfirming;
+    final busy =
+        _isGenerating || _isConfirming || _editingTimeSessions.isNotEmpty;
     final readyCount = _getReadyTeamsCount(state);
 
     void changePanelists(Set<int> ids) {
@@ -1340,6 +1481,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   for (final session in _sessions) {
                     session.teamIds.clear();
                   }
+                  _selectedTeamIds.clear();
+                  _notifySessionsChanged();
                   widget.onScopeChanged('capstone');
                   widget.onStageChanged(value);
                   widget.onRubricChanged(null);
@@ -1384,6 +1527,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   for (final session in _sessions) {
                     session.teamIds.clear();
                   }
+                  _selectedTeamIds.clear();
+                  _notifySessionsChanged();
                   widget.onPlanSlotsChanged([]);
                   widget.onShowFinalPreviewChanged(false);
                   widget.eventController.text = value;
@@ -1396,6 +1541,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           _buildPitWarnings(state),
         ],
         const SizedBox(height: 20),
+        _scheduleTeamSelection(busy),
+        _setupHeading(
+          'Sessions',
+          'Set each session’s date, room, and time blocks.',
+        ),
+        const SizedBox(height: 16),
         for (int i = 0; i < _sessions.length; i++)
           SchedulerSessionEditor(
             key: ValueKey(_sessions[i].key),
@@ -1406,31 +1557,31 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             externals: ref.watch(externalEvaluatorProvider).approved,
             capstone: widget.scope == 'capstone',
             minutesRequired: _requiresMinutes,
-            enabled: !busy,
+            enabled: !_isGenerating && !_isConfirming,
             dateField: (controller) =>
                 _scheduleDateField(controller: controller),
-            timeField: (controller) =>
-                _scheduleTimeField(controller: controller),
-            teamSelection: _sessionTeamSelection(_sessions[i], i + 1),
-            onAddBlock: () => _addTimeBlock(_sessions[i]),
-            onRemoveBlock: (index) {
-              final removed = _sessions[i].blocks.removeAt(index);
-              setState(() {});
-              _notifySessionsChanged();
-              WidgetsBinding.instance.addPostFrameCallback(
-                (_) => removed.dispose(),
-              );
-            },
+            teamSelection: _sessionAssignments(_sessions[i], busy),
+            onEditingChanged: (editing) => setState(() {
+              if (editing) {
+                _editingTimeSessions.add(_sessions[i].key);
+              } else {
+                _editingTimeSessions.remove(_sessions[i].key);
+              }
+            }),
             onChanged: () {
-              setState(() {});
-              _notifySessionsChanged();
+              setState(() {
+                _selectedTeamIds = _poolTeamIds;
+                reconcileSessionTeams(_sessions, _selectedTeamIds);
+              });
+              _notifySessionsChanged(configurationChanged: true);
             },
             onRemove: i == 0
                 ? null
                 : () {
+                    _selectedTeamIds = _poolTeamIds;
                     final removed = _sessions.removeAt(i);
                     setState(() {});
-                    _notifySessionsChanged();
+                    _notifySessionsChanged(configurationChanged: true);
                     WidgetsBinding.instance.addPostFrameCallback(
                       (_) => removed.dispose(),
                     );
@@ -1446,18 +1597,72 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                     ? widget.documenterId
                     : null;
               }
-              _notifySessionsChanged();
+              _notifySessionsChanged(configurationChanged: true);
             }),
           ),
         Align(
           alignment: Alignment.centerLeft,
           child: ShadButton.outline(
             key: const ValueKey('add-schedule-session'),
+            enabled: !busy,
             onPressed: busy ? null : _addSession,
             leading: const Icon(Icons.add, size: 16),
             child: const Text('Add session'),
           ),
         ),
+        const SizedBox(height: 16),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 16,
+          runSpacing: 12,
+          children: [
+            Text(
+              '${_sessions.fold<int>(0, (total, session) => total + session.capacity)} total slots · ${_unassignedTeamIds.length} unassigned',
+              style: DefensysTokens.caption.copyWith(
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+            ShadButton(
+              key: const ValueKey('fill-schedule-sessions'),
+              enabled:
+                  !busy &&
+                  _unassignedTeamIds.isNotEmpty &&
+                  _sessions.any(
+                    (session) => session.teamIds.length < session.capacity,
+                  ),
+              onPressed: _fillSessions,
+              child: const Text('Fill available slots'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            Text(
+              '${_unassignedTeamIds.length} unassigned teams',
+              style: DefensysTokens.body.copyWith(
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
+            if (_unassignedTeamIds.isNotEmpty)
+              ShadButton.ghost(
+                size: ShadButtonSize.sm,
+                enabled: !busy,
+                onPressed: () => setState(
+                  () => _showUnassignedTeams = !_showUnassignedTeams,
+                ),
+                child: Text(_showUnassignedTeams ? 'Hide teams' : 'View teams'),
+              ),
+          ],
+        ),
+        if (_showUnassignedTeams)
+          for (final id in _unassignedTeamIds)
+            _teamAssignmentRow(id, enabled: !busy),
       ],
     );
 
@@ -1671,13 +1876,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${_sessions.fold<int>(0, (total, session) => total + session.teamIds.length)} selected / '
-                    '${_sessions.fold<int>(0, (total, session) => total + session.capacity)} slots available',
+                    '${_poolTeamIds.length} selected · ${_poolTeamIds.length - _unassignedTeamIds.length} assigned · ${_unassignedTeamIds.length} unassigned',
                     style: TextStyle(color: _textSecondary, fontSize: 12),
                   ),
                 ],
               );
               final action = ShadButton(
+                enabled: !busy,
                 onPressed: busy ? null : _generatePlan,
                 leading: _isGenerating
                     ? SizedBox(
@@ -2062,7 +2267,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       RegExp(r'^room\s+', caseSensitive: false),
       '',
     );
-    final isFull = session != null &&
+    final isFull =
+        session != null &&
         session.capacity > 0 &&
         indices.length >= session.capacity;
 
@@ -2094,29 +2300,30 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 decoration: BoxDecoration(
                   color: _isDark
                       ? (session == null
-                          ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
-                          : (isFull
-                              ? const Color(0xFF064E3B,
+                            ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+                            : (isFull
+                                  ? const Color(
+                                      0xFF064E3B,
                                     ).withValues(alpha: 0.35)
-                              : DefensysTokens.mistInputFill))
+                                  : DefensysTokens.mistInputFill))
                       : (session == null
-                          ? const Color(0xFFFEF3F2)
-                          : (isFull
-                              ? const Color(0xFFECFDF3)
-                              : const Color(0xFFF1F5F9))),
+                            ? const Color(0xFFFEF3F2)
+                            : (isFull
+                                  ? const Color(0xFFECFDF3)
+                                  : const Color(0xFFF1F5F9))),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
                     color: _isDark
                         ? (session == null
-                            ? const Color(0xFF7F1D1D)
-                            : (isFull
-                                ? const Color(0xFF065F46)
-                                : DefensysTokens.mistBorder))
+                              ? const Color(0xFF7F1D1D)
+                              : (isFull
+                                    ? const Color(0xFF065F46)
+                                    : DefensysTokens.mistBorder))
                         : (session == null
-                            ? const Color(0xFFFECDCA)
-                            : (isFull
-                                ? const Color(0xFFA6F4C5)
-                                : const Color(0xFFE2E8F0))),
+                              ? const Color(0xFFFECDCA)
+                              : (isFull
+                                    ? const Color(0xFFA6F4C5)
+                                    : const Color(0xFFE2E8F0))),
                   ),
                 ),
                 child: Text(
@@ -2126,15 +2333,15 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   style: TextStyle(
                     color: _isDark
                         ? (session == null
-                            ? const Color(0xFFFCA5A5)
-                            : (isFull
-                                ? const Color(0xFF6EE7B7)
-                                : DefensysTokens.mistTextPrimary))
+                              ? const Color(0xFFFCA5A5)
+                              : (isFull
+                                    ? const Color(0xFF6EE7B7)
+                                    : DefensysTokens.mistTextPrimary))
                         : (session == null
-                            ? const Color(0xFFB42318)
-                            : (isFull
-                                ? const Color(0xFF027A48)
-                                : const Color(0xFF334155))),
+                              ? const Color(0xFFB42318)
+                              : (isFull
+                                    ? const Color(0xFF027A48)
+                                    : const Color(0xFF334155))),
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -2706,10 +2913,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
   @override
   Widget build(BuildContext context) {
-    final currentStep = widget.currentStep ??
-        (widget.planSlots.isEmpty
-            ? 1
-            : (widget.showFinalPreview ? 3 : 2));
+    final currentStep =
+        widget.currentStep ??
+        (widget.planSlots.isEmpty ? 1 : (widget.showFinalPreview ? 3 : 2));
 
     if (currentStep == 1) {
       return SchedulerShadcnScope(child: _buildStepOne(widget.state));

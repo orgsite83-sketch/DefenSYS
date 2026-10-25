@@ -62,6 +62,10 @@ class AcademicCycleCard extends StatelessWidget {
 
     final hasActive = semesters.any((s) => s['is_active'] == true);
     final yearLabel = year['label']?.toString() ?? 'Unknown Year';
+    final canEditYear = semesters.isEmpty && year['can_edit_label'] != false;
+    final editLockReason =
+        year['edit_lock_reason']?.toString() ??
+        'School year labels are locked after semesters are added.';
 
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -169,29 +173,50 @@ class AcademicCycleCard extends StatelessWidget {
                     itemBuilder: (context) => [
                       PopupMenuItem<String>(
                         value: 'edit',
-                        enabled: !isSaving,
-                        height: 38,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.edit_outlined,
-                              size: 16,
-                              color: mutedColor,
-                            ),
-                            const SizedBox(width: 10),
-                            Flexible(
-                              child: Text(
-                                'Edit School Year',
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: inkColor,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w500,
+                        enabled: canEditYear && !isSaving,
+                        height: canEditYear ? 38 : 56,
+                        child: Tooltip(
+                          message: canEditYear ? '' : editLockReason,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                canEditYear
+                                    ? Icons.edit_outlined
+                                    : Icons.lock_outline,
+                                size: 16,
+                                color: mutedColor,
+                              ),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Edit School Year',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: canEditYear
+                                            ? inkColor
+                                            : mutedColor,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    if (!canEditYear)
+                                      Text(
+                                        'Locked after terms are added',
+                                        style: TextStyle(
+                                          color: mutedColor,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                       PopupMenuItem<String>(
@@ -244,7 +269,7 @@ class AcademicCycleCard extends StatelessWidget {
                       ),
                     ],
                     onSelected: (val) {
-                      if (val == 'edit') {
+                      if (val == 'edit' && canEditYear && !isSaving) {
                         onEditYear();
                       } else if (val == 'delete') {
                         onDeleteYear?.call();

@@ -58,7 +58,7 @@ class SignedMinutesRequirementTests(APITestCase):
 
     def test_admin_configuration_adds_generated_deliverable_without_student_upload_definition(self):
         self.client.force_authenticate(self.admin)
-        response = self.client.post('/api/defense/stages/', {'label': 'Proposal Defense', 'minutes_required': True, 'minutes_deliverable_id': '12', 'minutes_deliverable_label': 'Signed Minutes - Proposal', 'is_presentation_only': True}, format='json')
+        response = self.client.post('/api/defense/stages/', {'label': 'Proposal Defense', 'minutes_required': True, 'minutes_deliverable_id': '12', 'minutes_deliverable_label': 'Signed Minutes - Proposal'}, format='json')
         self.assertEqual(response.status_code, 201, response.data)
         stage = response.data['stage']
         self.assertEqual(stage['deliverables_count'], 1)

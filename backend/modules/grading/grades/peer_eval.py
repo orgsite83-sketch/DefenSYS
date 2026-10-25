@@ -50,11 +50,9 @@ def _peer_max_score(grade):
 
 @read_memoize
 def required_peer_submission_count(team):
-    """Each member evaluates every other member: N * (N - 1) submissions."""
+    """Each member evaluates everyone, including themselves: N * N submissions."""
     member_count = team.memberships.count()
-    if member_count <= 1:
-        return 0
-    return member_count * (member_count - 1)
+    return member_count * member_count
 
 
 @read_memoize
@@ -64,13 +62,23 @@ def peer_submission_count(grade):
 
 @read_memoize(copy=True)
 def _peer_submission_counts(grade):
-    return dict(PeerEvaluationSubmission.objects.filter(team_grade=grade)
+    member_ids = grade.team.memberships.values_list('student_id', flat=True)
+    return dict(PeerEvaluationSubmission.objects.filter(
+                    team_grade=grade, evaluator_id__in=member_ids, evaluatee_id__in=member_ids)
                 .values('evaluator_id').annotate(total=Count('pk'))
                 .values_list('evaluator_id', 'total'))
 
 
+def _has_final_or_overridden_peer_score(grade):
+    # Preserve published history and explicit administrative corrections. An
+    # unfinished source-derived score must still wait for all self-evaluations.
+    return grade.peer_score is not None and (
+        grade.status in TeamGrade.LOCKED_STATUSES or grade.peer_score_is_override
+    )
+
+
 def is_team_peer_eval_complete(grade):
-    if grade.peer_score is not None:
+    if _has_final_or_overridden_peer_score(grade):
         return True
     required = required_peer_submission_count(grade.team)
     if required == 0:
@@ -80,14 +88,8 @@ def is_team_peer_eval_complete(grade):
 
 def is_evaluator_peer_complete(grade, evaluator):
     member_count = grade.team.memberships.count()
-    if member_count <= 1:
-        return True
-    required = member_count - 1
-    submitted = PeerEvaluationSubmission.objects.filter(
-        team_grade=grade,
-        evaluator=evaluator,
-    ).count()
-    return submitted >= required
+    submitted = _peer_submission_counts(grade).get(evaluator.pk, 0)
+    return member_count > 0 and submitted >= member_count
 
 
 @read_memoize(copy=True)
@@ -97,7 +99,7 @@ def peer_completion_summary(grade):
         memberships = memberships.select_related('student')
     memberships = list(memberships)
     evaluators_total = len(memberships)
-    required = evaluators_total * max(evaluators_total - 1, 0)
+    required = evaluators_total * evaluators_total
     # One aggregate replaces a separate count for every evaluator.
     counts = _peer_submission_counts(grade)
     submitted = sum(counts.values())
@@ -106,7 +108,7 @@ def peer_completion_summary(grade):
 
     for membership in memberships:
         student = membership.student
-        need = max(evaluators_total - 1, 0)
+        need = evaluators_total
         have = counts.get(student.pk, 0)
         if have >= need:
             evaluators_done += 1
@@ -125,7 +127,7 @@ def peer_completion_summary(grade):
         'required': required,
         'evaluators_done': evaluators_done,
         'evaluators_total': evaluators_total,
-        'complete': grade.peer_score is not None or submitted >= required,
+        'complete': _has_final_or_overridden_peer_score(grade) or submitted >= required,
         'missing_evaluators': missing_evaluators,
     }
 
@@ -153,12 +155,14 @@ def recalculate_student_grade(sg):
 def _build_peer_scores_for_complete_grade(grade, memberships):
     peer_scores = {}
     normalized_total = Decimal('0.00')
+    member_ids = [membership.student_id for membership in memberships]
 
     for membership in memberships:
         evaluatee = membership.student
         submissions = PeerEvaluationSubmission.objects.filter(
             team_grade=grade,
             evaluatee=evaluatee,
+            evaluator_id__in=member_ids,
         )
         averages = []
         for submission in submissions:
@@ -180,6 +184,8 @@ def _build_peer_scores_for_complete_grade(grade, memberships):
 
 @transaction.atomic
 def sync_peer_summaries(grade):
+    if _has_final_or_overridden_peer_score(grade):
+        return
     memberships = list(grade.team.memberships.select_related('student').all())
     
     # Pre-create/ensure StudentStageGrade records exist
@@ -244,8 +250,6 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
         raise ValidationError({'teamId': 'You are not a member of this team.'})
 
     evaluatee = _resolve_evaluatee(team, evaluatee_id)
-    if evaluatee.id == evaluator.id:
-        raise ValidationError({'evaluateeId': 'You cannot evaluate yourself.'})
 
     target_stage = (stage_label or getattr(team, 'current_defense_stage', None) or getattr(team, 'ready_for_stage', None) or '').strip()
     grade = _grade_for_team(team, stage_label=target_stage, create_if_missing=False)

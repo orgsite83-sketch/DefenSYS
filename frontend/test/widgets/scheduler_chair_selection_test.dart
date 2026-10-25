@@ -43,10 +43,12 @@ class _Scheduler extends DefenseSchedulerNotifier {
   Map<String, dynamic>? payload;
   Map<String, dynamic>? confirmation;
   List<Map<String, dynamic>> generated = [];
+  int generationCalls = 0;
   @override
   DefenseSchedulerState build() => initial;
   @override
   Future<bool> generatePlan(Map<String, dynamic> data) async {
+    generationCalls++;
     payload = data;
     if (generated.isEmpty) return false;
     state = state.copyWith(generatedSlots: generated);
@@ -174,13 +176,18 @@ class _Fixture {
         );
     state = initialState != null || conflictingAdvisers
         ? original
-        : original.copyWith(teams: [
-            for (final team in original.teams)
-              {...team,
-                'adviser': team['adviser'] == 101 ? 201 : 202,
-                'adviser_name': team['adviser'] == 101 ? 'Marina Alonzo' : 'Eduardo Reyes',
-              },
-          ]);
+        : original.copyWith(
+            teams: [
+              for (final team in original.teams)
+                {
+                  ...team,
+                  'adviser': team['adviser'] == 101 ? 201 : 202,
+                  'adviser_name': team['adviser'] == 101
+                      ? 'Marina Alonzo'
+                      : 'Eduardo Reyes',
+                },
+            ],
+          );
     scheduler = _Scheduler(state);
   }
   late final DefenseSchedulerState state;
@@ -189,6 +196,9 @@ class _Fixture {
   int? documenter;
   List<Map<String, dynamic>> slots = [];
   bool preview = false;
+  int? step;
+  List<Map<String, dynamic>>? savedSessions;
+  Set<int>? savedTeamIds;
 }
 
 Future<void> _pump(
@@ -244,6 +254,14 @@ Future<void> _pump(
                       ),
                       const SizedBox(height: 24),
                       ScheduleRunContainer(
+                        currentStep: fixture.step,
+                        onStepChanged: (step) {
+                          if (fixture.step != null) {
+                            setState(() => fixture.step = step);
+                          }
+                        },
+                        initialSessions: fixture.savedSessions,
+                        initialSelectedTeamIds: fixture.savedTeamIds,
                         state: fixture.state,
                         scope: scope,
                         stageId: scope == 'capstone' ? 1 : null,
@@ -353,20 +371,111 @@ void main() {
   setUp(dismissFeedbackToasts);
   tearDown(dismissFeedbackToasts);
   setUpAll(() async {
-      final regular = FontLoader('Inter')
-        ..addFont(rootBundle.load('assets/fonts/Inter-Regular.ttf'));
-      await regular.load();
-      final material = FontLoader('MaterialIcons')
-        ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
-      await material.load();
-      final lucide = FontLoader('packages/lucide_icons_flutter/Lucide')
-        ..addFont(
-          rootBundle.load('packages/lucide_icons_flutter/assets/lucide.ttf'),
-        );
-      await lucide.load();
+    final regular = FontLoader('Inter')
+      ..addFont(rootBundle.load('assets/fonts/Inter-Regular.ttf'));
+    await regular.load();
+    final material = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await material.load();
+    final lucide = FontLoader('packages/lucide_icons_flutter/Lucide')
+      ..addFont(
+        rootBundle.load('packages/lucide_icons_flutter/assets/lucide.ttf'),
+      );
+    await lucide.load();
   });
 
   for (final width in [390.0, 1280.0]) {
+    testWidgets(
+      '16 teams fill two sessions and capacity changes keep the pool at $width',
+      (tester) async {
+        final base = _Fixture().state;
+        final fixture = _Fixture(
+          initialState: base.copyWith(
+            teams: [
+              for (int id = 1; id <= 16; id++)
+                {
+                  'id': id,
+                  'name': 'Team $id',
+                  'level': 'Capstone',
+                  'ready_for_stage': 'Concept Proposal',
+                  'is_endorsed': true,
+                },
+            ],
+          ),
+        )..panelists = {101};
+        await _pump(tester, fixture, width: width);
+        await _open(
+          tester,
+          find.byKey(const ValueKey('choose-schedule-teams')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('session-select-shown-teams')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('apply-session-teams')));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('16 selected · 0 assigned · 16 unassigned'),
+          findsWidgets,
+        );
+        await _open(
+          tester,
+          find.byKey(const ValueKey('fill-schedule-sessions')),
+        );
+        expect(_draft(tester).teamIds.length, 8);
+        expect(
+          find.text('16 selected · 8 assigned · 8 unassigned'),
+          findsWidgets,
+        );
+        await _open(tester, find.byKey(const ValueKey('add-schedule-session')));
+        expect(_draft(tester, 1).teamIds, isEmpty);
+        await _open(
+          tester,
+          find.byKey(const ValueKey('fill-schedule-sessions')),
+        );
+        expect(_draft(tester, 1).teamIds.length, 8);
+        expect(
+          find.text('16 selected · 16 assigned · 0 unassigned'),
+          findsWidgets,
+        );
+        await _captureSessions(tester, 'scheduler-team-pool-${width.toInt()}');
+        await _open(
+          tester,
+          find.byKey(const ValueKey('edit-time-blocks-session-1')),
+        );
+        await tester.enterText(
+          find.descendant(
+            of: find.byKey(const ValueKey('session-slot-duration-session-1')),
+            matching: find.byType(EditableText),
+          ),
+          '90',
+        );
+        await tester.pumpAndSettle();
+        expect(_draft(tester).capacity, 8);
+        expect(
+          find.text('Saving returns 4 teams to Unassigned.'),
+          findsOneWidget,
+        );
+        await _open(
+          tester,
+          find.byKey(const ValueKey('save-time-blocks-session-1')),
+        );
+        expect(_draft(tester).capacity, 4);
+        expect(
+          find.text('16 selected · 12 assigned · 4 unassigned'),
+          findsWidgets,
+        );
+        await tester.ensureVisible(find.byTooltip('Remove session 2'));
+        await tester.tap(find.byTooltip('Remove session 2'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('16 selected · 4 assigned · 12 unassigned'),
+          findsWidgets,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('admin chooses individual and adviser teams at $width', (
       tester,
     ) async {
@@ -374,9 +483,7 @@ void main() {
       await _pump(tester, fixture, width: width, dark: width == 390);
       expect(_draft(tester).capacity, 8);
       expect(_draft(tester).teamIds, isEmpty);
-      final chooseFirst = find.byKey(
-        const ValueKey('choose-session-teams-session-1'),
-      );
+      final chooseFirst = find.byKey(const ValueKey('choose-schedule-teams'));
       await _open(tester, chooseFirst);
       expect(find.text('Team Pending'), findsNothing);
       expect(find.text('Team Scheduled'), findsNothing);
@@ -409,6 +516,12 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('session-team-3')));
       await tester.tap(find.byKey(const ValueKey('apply-session-teams')));
       await tester.pumpAndSettle();
+      expect(_draft(tester).teamIds, isEmpty);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('fill-schedule-sessions')),
+      );
+      await tester.tap(find.byKey(const ValueKey('fill-schedule-sessions')));
+      await tester.pumpAndSettle();
       expect(_draft(tester).teamIds, {1, 3});
       await tester.ensureVisible(find.text('Add session'));
       await tester.tap(find.text('Add session'));
@@ -418,17 +531,14 @@ void main() {
         _draft(tester, 1).blocks.map((block) => block.toPayload()),
         _draft(tester).blocks.map((block) => block.toPayload()),
       );
-      await _open(
-        tester,
-        find.byKey(const ValueKey('choose-session-teams-session-2')),
-      );
+      await _open(tester, find.byKey(const ValueKey('choose-schedule-teams')));
       expect(
         tester
             .widget<CheckboxListTile>(
               find.byKey(const ValueKey('session-team-1')),
             )
             .onChanged,
-        isNull,
+        isNotNull,
       );
       expect(
         tester
@@ -436,12 +546,21 @@ void main() {
               find.byKey(const ValueKey('session-team-3')),
             )
             .onChanged,
-        isNull,
+        isNotNull,
       );
       await tester.tap(find.text('Select shown teams'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('apply-session-teams')));
       await tester.pumpAndSettle();
+      await _open(
+        tester,
+        find.byKey(const ValueKey('manage-session-teams-session-2')),
+      );
+      await _open(
+        tester,
+        find.byKey(const ValueKey('assign-unassigned-team-session-2-2')),
+      );
+      await _choose(tester, 'Team MirrorSync');
       expect(_draft(tester, 1).teamIds, {2});
       await tester.ensureVisible(find.text('Generate plan'));
       await tester.tap(find.text('Generate plan'));
@@ -456,6 +575,75 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets(
+    'restoring a legacy overfilled session keeps overflow in the pool',
+    (tester) async {
+      final fixture = _Fixture()
+        ..savedSessions = [
+          {
+            'key': 'session-1',
+            'date': '2026-10-03',
+            'start': '08:00',
+            'end': '12:00',
+            'duration': '60',
+            'room': 'Lab 3',
+            'team_ids': [for (int id = 1; id <= 16; id++) id],
+          },
+        ];
+      await _pump(tester, fixture);
+      expect(_draft(tester).teamIds.length, 8);
+      expect(
+        find.text('16 selected · 8 assigned · 8 unassigned'),
+        findsWidgets,
+      );
+      await _open(tester, find.byKey(const ValueKey('add-schedule-session')));
+      await _open(tester, find.byKey(const ValueKey('fill-schedule-sessions')));
+      expect(_draft(tester, 1).teamIds.length, 8);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'saving setup changes invalidates stale slots and preserves assignments',
+    (tester) async {
+      final fixture = _Fixture()
+        ..panelists = {101}
+        ..step = 1;
+      fixture.scheduler.generated = [
+        for (int id = 1; id <= 3; id++) _sessionSlot(id, 'session-1'),
+      ];
+      await _pump(tester, fixture);
+      _draft(tester).teamIds = {1, 2, 3};
+      await _open(tester, find.text('Generate plan'));
+      expect(fixture.scheduler.generationCalls, 1);
+      await _open(tester, find.text('Back to Step 1'));
+      await _open(
+        tester,
+        find.byKey(const ValueKey('edit-time-blocks-session-1')),
+      );
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('session-slot-duration-session-1')),
+          matching: find.byType(EditableText),
+        ),
+        '90',
+      );
+      await tester.pumpAndSettle();
+      await _open(
+        tester,
+        find.byKey(const ValueKey('save-time-blocks-session-1')),
+      );
+      expect(fixture.slots, isEmpty);
+      expect(_draft(tester).teamIds, {1, 2, 3});
+      await _open(tester, find.text('Generate plan'));
+      expect(fixture.scheduler.generationCalls, 2);
+      dismissFeedbackToasts();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('generating requires an admin selection', (tester) async {
     final fixture = _Fixture()..panelists = {101};
@@ -473,19 +661,26 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('generation warns and blocks an adviser as chair or panel member', (tester) async {
-    final fixture = _Fixture(conflictingAdvisers: true)..panelists = {101, 102};
-    await _pump(tester, fixture);
-    _draft(tester).teamIds = {1};
-    await tester.ensureVisible(find.text('Generate plan'));
-    await tester.tap(find.text('Generate plan'));
-    await tester.pumpAndSettle();
-    expect(fixture.scheduler.payload, isNull);
-    expect(find.textContaining('Team SkyLedger — the team adviser cannot'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'generation warns and blocks an adviser as chair or panel member',
+    (tester) async {
+      final fixture = _Fixture(conflictingAdvisers: true)
+        ..panelists = {101, 102};
+      await _pump(tester, fixture);
+      _draft(tester).teamIds = {1};
+      await tester.ensureVisible(find.text('Generate plan'));
+      await tester.tap(find.text('Generate plan'));
+      await tester.pumpAndSettle();
+      expect(fixture.scheduler.payload, isNull);
+      expect(
+        find.textContaining('Team SkyLedger — the team adviser cannot'),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'PIT team selection excludes scheduled and completed events without prerequisites',
@@ -495,7 +690,11 @@ void main() {
           faculty: _faculty,
           panelists: _faculty,
           pitEvents: [
-            {'event_name': 'Design Expo', 'year_level': '1st Year', 'deliverables': []},
+            {
+              'event_name': 'Design Expo',
+              'year_level': '1st Year',
+              'deliverables': [],
+            },
           ],
           rubrics: [
             {'id': 10, 'scope': 'pit'},
@@ -511,8 +710,19 @@ void main() {
               'year_level': '1st Year',
               'ready_for_stage': '',
             },
-            {'id': 2, 'name': 'PIT Done', 'level': 'PIT', 'year_level': '1st Year', 'completed_stages': ['Design Expo']},
-            {'id': 3, 'name': 'PIT Scheduled', 'level': 'PIT', 'year_level': '1st Year'},
+            {
+              'id': 2,
+              'name': 'PIT Done',
+              'level': 'PIT',
+              'year_level': '1st Year',
+              'completed_stages': ['Design Expo'],
+            },
+            {
+              'id': 3,
+              'name': 'PIT Scheduled',
+              'level': 'PIT',
+              'year_level': '1st Year',
+            },
             {'id': 4, 'name': 'Capstone Team', 'level': 'Capstone'},
           ],
           schedules: [
@@ -522,10 +732,7 @@ void main() {
         ),
       )..panelists = {101};
       await _pump(tester, fixture, scope: 'pit');
-      await _open(
-        tester,
-        find.byKey(const ValueKey('choose-session-teams-session-1')),
-      );
+      await _open(tester, find.byKey(const ValueKey('choose-schedule-teams')));
       expect(find.text('PIT Ready'), findsOneWidget);
       expect(find.text('PIT Done'), findsNothing);
       expect(find.text('PIT Scheduled'), findsNothing);
@@ -533,6 +740,11 @@ void main() {
       await tester.tap(find.text('Select shown teams'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('apply-session-teams')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('fill-schedule-sessions')),
+      );
+      await tester.tap(find.byKey(const ValueKey('fill-schedule-sessions')));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Generate plan'));
       await tester.tap(find.text('Generate plan'));
@@ -561,14 +773,27 @@ void main() {
           await _pump(tester, fixture, width: width, dark: dark);
           final first = _draft(tester)..teamIds = {1, 3};
           first.end.text = '09:00';
-          await tester.ensureVisible(find.byTooltip('Remove time block 2'));
-          await tester.tap(find.byTooltip('Remove time block 2'));
+          await _open(
+            tester,
+            find.byKey(const ValueKey('edit-time-blocks-session-1')),
+          );
+          await tester.ensureVisible(find.text('Remove'));
+          await tester.tap(find.text('Remove'));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(
+            find.byKey(const ValueKey('save-time-blocks-session-1')),
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('save-time-blocks-session-1')),
+          );
           await tester.pumpAndSettle();
           await tester.ensureVisible(find.text('Add session'));
           await tester.tap(find.text('Add session'));
           await tester.pumpAndSettle();
           expect(find.byType(SchedulerSessionEditor), findsNWidgets(2));
           _draft(tester, 1).teamIds = {2};
+          // Simulate a server response that leaves a requested team unassigned.
+          first.teamIds = {1, 3};
           expect(
             tester
                 .widget<SchedulerSessionEditor>(
@@ -777,9 +1002,13 @@ void main() {
     tester,
   ) async {
     final base = _Fixture().state;
-    final fixture = _Fixture(initialState: base.copyWith(defenseStages: [
-      {...base.defenseStages.single, 'minutes_required': true},
-    ]));
+    final fixture = _Fixture(
+      initialState: base.copyWith(
+        defenseStages: [
+          {...base.defenseStages.single, 'minutes_required': true},
+        ],
+      ),
+    );
     await _pump(tester, fixture);
     await _open(tester, _picker('documenter-picker'));
     await _choose(tester, 'Cecilia Magbanua');

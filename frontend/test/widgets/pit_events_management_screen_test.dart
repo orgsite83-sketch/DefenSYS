@@ -407,6 +407,22 @@ void main() {
         find.text('These document slots repeat for each required concept.'),
         findsOneWidget,
       );
+      await tester.tap(find.text('1. Event Details'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Concept selection'));
+      await tester.tap(find.text('Concept selection'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('3. Deliverables'));
+      await tester.pumpAndSettle();
+      expect(find.text('Concept Papers'), findsNothing);
+      expect(find.text('Approved Concept Paper'), findsNothing);
+      expect(find.text('Pitch Deck'), findsWidgets);
+      expect(find.text('Post Reflection'), findsWidgets);
+      await tester.tap(find.text('1. Event Details'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Concept selection'));
+      await tester.tap(find.text('Concept selection'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Save Changes'));
       await tester.pumpAndSettle();
       expect(scheduler.saved?['year_level'], '1st Year');

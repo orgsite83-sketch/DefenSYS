@@ -204,18 +204,15 @@ class GradeCenterApiTests(APITestCase):
     def _submit_all_capstone_peer_evaluations(self):
         self._complete_capstone_panel_grading()
         self._enable_capstone_peer_grading()
-        self.client.force_authenticate(user=self.student)
-        self.client.post(
-            '/api/grading/grades/peer-evaluations/',
-            self._peer_eval_payload(self.second_student),
-            format='json',
-        )
-        self.client.force_authenticate(user=self.second_student)
-        self.client.post(
-            '/api/grading/grades/peer-evaluations/',
-            self._peer_eval_payload(self.student),
-            format='json',
-        )
+        for evaluator in [self.student, self.second_student]:
+            self.client.force_authenticate(user=evaluator)
+            for evaluatee in [self.student, self.second_student]:
+                response = self.client.post(
+                    '/api/grading/grades/peer-evaluations/',
+                    self._peer_eval_payload(evaluatee),
+                    format='json',
+                )
+                self.assertEqual(response.status_code, 200, response.data)
         self.client.force_authenticate(user=self.admin)
 
     def _complete_capstone_panel_grading(self):
@@ -282,10 +279,10 @@ class GradeCenterApiTests(APITestCase):
         loaded = TeamGrade.objects.with_relations().get(pk=grade.pk)
         with self.assertNumQueries(1):
             summary = peer_completion_summary(loaded)
-        self.assertEqual(summary['required'], 30)
+        self.assertEqual(summary['required'], 36)
         self.assertEqual(summary['submitted'], 5)
-        self.assertEqual(summary['evaluators_done'], 1)
-        self.assertEqual(len(summary['missing_evaluators']), 5)
+        self.assertEqual(summary['evaluators_done'], 0)
+        self.assertEqual(len(summary['missing_evaluators']), 6)
         self.assertFalse(summary['complete'])
         PeerEvaluationSubmission.objects.create(team_grade=grade,
             evaluator=self.second_student, evaluatee=self.student, total_score=4, max_score=5)
@@ -293,6 +290,8 @@ class GradeCenterApiTests(APITestCase):
             updated = peer_completion_summary(loaded)
         self.assertEqual(updated['submitted'], 6)
         loaded.peer_score = Decimal('80')
+        self.assertFalse(peer_completion_summary(loaded)['complete'])
+        loaded.peer_score_is_override = True
         self.assertTrue(peer_completion_summary(loaded)['complete'])
 
     def _record_panel_evaluations(self, grade):
@@ -1324,6 +1323,7 @@ class GradeCenterApiTests(APITestCase):
             '2nd Year', semester=self.semester)])
 
         next_config = self._ensure_pit_event_config(event_name='PIT Next Event', semester=self.semester)
+        Semester.objects.filter(pk=self.semester.pk).update(starts_on='2026-05-01', ends_on='2026-05-31')
         next_schedule = self.client.post('/api/defense/schedules/', {
             'scope': 'pit', 'semester_id': self.semester.id, 'team_id': failed_team.id,
             'event_name': next_config.event_name, 'rubric_id': next_config.panel_rubric_id,
@@ -1360,6 +1360,7 @@ class GradeCenterApiTests(APITestCase):
             team=self.pit_team, schedule=self.pit_schedule, semester=self.first_semester,
             scope='pit', pit_event_config=config, panel_weight=80, peer_weight=20,
             panel_score=Decimal('0'), peer_score=Decimal('0'),
+            peer_score_is_override=True,
         )
         self._record_panel_evaluations(grade)
         config.is_officially_complete = True
@@ -1468,9 +1469,11 @@ class GradeCenterApiTests(APITestCase):
         other_grade = TeamGrade.objects.get(team=third_team, scope=TeamGrade.SCOPE_PIT)
         own_grade.panel_score = Decimal('90.00')
         own_grade.peer_score = Decimal('85.00')
+        own_grade.peer_score_is_override = True
         own_grade.save()
         other_grade.panel_score = Decimal('95.00')
         other_grade.peer_score = Decimal('95.00')
+        other_grade.peer_score_is_override = True
         other_grade.save()
 
         self._record_panel_evaluations(own_grade)
@@ -1671,7 +1674,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertIsNotNone(grade.peer_score)
         self.assertEqual(StudentStageGrade.objects.filter(team_grade=grade).exclude(peer_score=None).count(), 2)
 
-    def test_missing_evaluation_for_one_student_does_not_wipe_other_peer_scores(self):
+    def test_nonmember_evaluations_cannot_complete_team_or_produce_scores(self):
         grade = self._capstone_grade()
         self._enable_capstone_peer_grading()
 
@@ -1684,7 +1687,7 @@ class GradeCenterApiTests(APITestCase):
         )
         TeamMembership.objects.create(team=self.capstone_team, student=third_student, order=2)
 
-        # 3 members -> required = 3 * 2 = 6
+        # Three members require nine evaluations, including three self-ratings.
         # Submissions evaluating second_student
         PeerEvaluationSubmission.objects.create(
             team_grade=grade,
@@ -1721,7 +1724,7 @@ class GradeCenterApiTests(APITestCase):
             breakdown=[{'criteriaName': 'Technical Quality', 'score': 5, 'max': 5}],
         )
 
-        # 2 dummy submissions to satisfy required = 6 count check
+        # Legacy/imported outsider rows must not satisfy the required count.
         dummy_user = User.objects.create_user(
             username='dummy-student',
             password='pass12345',
@@ -1743,6 +1746,14 @@ class GradeCenterApiTests(APITestCase):
             max_score=Decimal('5.00'),
             breakdown=[{'criteriaName': 'Technical Quality', 'score': 4, 'max': 5}],
         )
+        PeerEvaluationSubmission.objects.bulk_create([
+            PeerEvaluationSubmission(team_grade=grade, evaluator=evaluator,
+                evaluatee=evaluatee, total_score=4, max_score=5)
+            for evaluator, evaluatee in [
+                (self.second_student, self.second_student), (third_student, third_student),
+                (dummy_user, self.student),
+            ]
+        ])
 
         from grading.grades.peer_eval import sync_peer_summaries
         sync_peer_summaries(grade)
@@ -1754,12 +1765,13 @@ class GradeCenterApiTests(APITestCase):
         self.assertIsNone(student_sg.final_grade)
 
         second_sg = StudentStageGrade.objects.get(team_grade=grade, student=self.second_student)
-        self.assertIsNotNone(second_sg.peer_score)
+        self.assertIsNone(second_sg.peer_score)
 
         third_sg = StudentStageGrade.objects.get(team_grade=grade, student=third_student)
-        self.assertIsNotNone(third_sg.peer_score)
+        self.assertIsNone(third_sg.peer_score)
 
-        self.assertEqual(grade.peer_score, Decimal('86.67'))
+        self.assertEqual(PeerEvaluationSubmission.objects.filter(team_grade=grade).count(), 9)
+        self.assertIsNone(grade.peer_score)
 
     def test_grade_detail_does_not_refresh_peer_summaries(self):
         grade = self._capstone_grade()

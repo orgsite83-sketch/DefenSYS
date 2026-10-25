@@ -29,6 +29,7 @@ void main() {
         pitTemplate: 'template.docx',
         documenterId: 103,
         selectedPanelistIds: [101, 102],
+        selectedTeamIds: [1, 2, 3, 4, 5, 6],
         selectedChairId: 101,
         externalIds: [201],
         sessions: [
@@ -40,7 +41,7 @@ void main() {
             'duration': '60',
             'room': 'Room 301',
             'team_ids': [1, 2, 3, 4],
-          }
+          },
         ],
         planSlots: [
           {
@@ -48,7 +49,7 @@ void main() {
             'session_key': 'session-1',
             'start_time': '08:00',
             'room': 'Room 301',
-          }
+          },
         ],
         showFinalPreview: true,
       );
@@ -64,6 +65,7 @@ void main() {
       expect(reconstructed.panelWeight, '75');
       expect(reconstructed.documenterId, 103);
       expect(reconstructed.selectedPanelistIds, [101, 102]);
+      expect(reconstructed.selectedTeamIds, [1, 2, 3, 4, 5, 6]);
       expect(reconstructed.selectedChairId, 101);
       expect(reconstructed.externalIds, [201]);
       expect(reconstructed.sessions.length, 1);
@@ -82,6 +84,35 @@ void main() {
       );
       expect(draft.hasContent, isFalse);
     });
+
+    test(
+      'unassigned selections are saved and legacy selections are restored',
+      () async {
+        final draft = DefenseSchedulerDraft(
+          scope: 'pit',
+          savedAt: DateTime.now(),
+          selectedTeamIds: [7, 8],
+        );
+        expect(draft.hasContent, isTrue);
+        await saveDefenseSchedulerDraft(draft);
+        expect(
+          (await loadDefenseSchedulerDraft(scope: 'pit'))!.selectedTeamIds,
+          [7, 8],
+        );
+        final legacy = DefenseSchedulerDraft.fromJson({
+          'scope': 'pit',
+          'sessions': [
+            {
+              'team_ids': [1, 2],
+            },
+            {
+              'team_ids': [2, 3],
+            },
+          ],
+        });
+        expect(legacy.selectedTeamIds, [1, 2, 3]);
+      },
+    );
 
     test('session draft serialization and deserialization roundtrip', () {
       final dateCtrl = TextEditingController(text: '2026-10-08');
@@ -124,35 +155,38 @@ void main() {
       deserialized.dispose();
     });
 
-    test('shared room and date controllers are populated when ownsFields is false', () {
-      final sharedRoom = TextEditingController(text: '');
-      final sharedDate = TextEditingController(text: '');
-      final map = {
-        'key': 'session-1',
-        'date': '2026-10-07',
-        'start': '08:00',
-        'end': '17:00',
-        'duration': '60',
-        'room': 'Room 301',
-        'team_ids': [1, 2],
-      };
+    test(
+      'shared room and date controllers are populated when ownsFields is false',
+      () {
+        final sharedRoom = TextEditingController(text: '');
+        final sharedDate = TextEditingController(text: '');
+        final map = {
+          'key': 'session-1',
+          'date': '2026-10-07',
+          'start': '08:00',
+          'end': '17:00',
+          'duration': '60',
+          'room': 'Room 301',
+          'team_ids': [1, 2],
+        };
 
-      final deserialized = deserializeSessionDraft(
-        map,
-        sharedRoom: sharedRoom,
-        sharedDate: sharedDate,
-        ownsFields: false,
-      );
+        final deserialized = deserializeSessionDraft(
+          map,
+          sharedRoom: sharedRoom,
+          sharedDate: sharedDate,
+          ownsFields: false,
+        );
 
-      expect(sharedRoom.text, 'Room 301');
-      expect(sharedDate.text, '2026-10-07');
-      expect(deserialized.room.text, 'Room 301');
-      expect(deserialized.date.text, '2026-10-07');
+        expect(sharedRoom.text, 'Room 301');
+        expect(sharedDate.text, '2026-10-07');
+        expect(deserialized.room.text, 'Room 301');
+        expect(deserialized.date.text, '2026-10-07');
 
-      deserialized.dispose();
-      sharedRoom.dispose();
-      sharedDate.dispose();
-    });
+        deserialized.dispose();
+        sharedRoom.dispose();
+        sharedDate.dispose();
+      },
+    );
 
     test('save, load, and clear defense scheduler draft', () async {
       final draft = DefenseSchedulerDraft(
@@ -165,24 +199,33 @@ void main() {
             'key': 'session-1',
             'room': 'Room 101',
             'team_ids': [10, 11],
-          }
+          },
         ],
       );
 
       await saveDefenseSchedulerDraft(draft);
 
-      final loaded = await loadDefenseSchedulerDraft(scope: 'capstone', semesterId: 5);
+      final loaded = await loadDefenseSchedulerDraft(
+        scope: 'capstone',
+        semesterId: 5,
+      );
       expect(loaded, isNotNull);
       expect(loaded!.stageId, 2);
       expect(loaded.sessions.first['room'], 'Room 101');
 
       // Loading with different semester returns null
-      final wrongTerm = await loadDefenseSchedulerDraft(scope: 'capstone', semesterId: 99);
+      final wrongTerm = await loadDefenseSchedulerDraft(
+        scope: 'capstone',
+        semesterId: 99,
+      );
       expect(wrongTerm, isNull);
 
       // Clearing draft
       await clearDefenseSchedulerDraft(scope: 'capstone', semesterId: 5);
-      final cleared = await loadDefenseSchedulerDraft(scope: 'capstone', semesterId: 5);
+      final cleared = await loadDefenseSchedulerDraft(
+        scope: 'capstone',
+        semesterId: 5,
+      );
       expect(cleared, isNull);
     });
   });

@@ -1,6 +1,7 @@
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
 
-from .models import SchoolYear, Semester, validate_school_year_label
+from .models import SCHOOL_YEAR_LOCK_REASON, SchoolYear, Semester, validate_school_year_label
 
 
 class SemesterActivationSerializer(serializers.Serializer):
@@ -37,10 +38,16 @@ class SemesterSerializer(serializers.ModelSerializer):
 class SchoolYearSerializer(serializers.ModelSerializer):
     school_year = serializers.CharField(source='label', read_only=True)
     semesters = SemesterSerializer(many=True, read_only=True)
+    can_edit_label = serializers.BooleanField(read_only=True)
+    edit_lock_reason = serializers.SerializerMethodField()
+
+    def get_edit_lock_reason(self, obj):
+        return '' if obj.can_edit_label else SCHOOL_YEAR_LOCK_REASON
 
     class Meta:
         model = SchoolYear
-        fields = ['id', 'label', 'school_year', 'semesters', 'created_at']
+        fields = ['id', 'label', 'school_year', 'semesters', 'created_at',
+                  'can_edit_label', 'edit_lock_reason']
 
 
 class SchoolYearCreateSerializer(serializers.Serializer):
@@ -82,6 +89,8 @@ class SchoolYearUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError({'school_year': exc.messages}) from exc
 
         instance = getattr(self, 'instance', None)
+        if instance and instance.label != label and not instance.can_edit_label:
+            raise serializers.ValidationError({'school_year': SCHOOL_YEAR_LOCK_REASON})
         qs = SchoolYear.objects.filter(label=label)
         if instance:
             qs = qs.exclude(pk=instance.pk)
@@ -93,7 +102,10 @@ class SchoolYearUpdateSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         instance.label = validated_data['label']
-        instance.save(update_fields=['label'])
+        try:
+            instance.save(update_fields=['label'])
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({'school_year': exc.messages}) from exc
         return instance
 
 

@@ -92,14 +92,12 @@ class PitTeamPolicyView(APIView):
 
 
 def setup_tasks(user):
-    from .concept_policy import contexts_for, resolve_policy
-    from repository.deliverables.concepts import latest_round, titles_complete
+    from .concept_policy import contexts_for, resolve_policy, title_progress
+    from repository.deliverables.concepts import latest_round
     teams = StudentTeam.objects.filter(semester=get_active_semester(), leader=user,
         memberships__student=user).prefetch_related('roster_details').distinct().order_by('name')
     result = []
     for team in teams:
-        if not (team.setup_pending or team.project_pending):
-            continue
         roster_backed = bool(team.roster_details.all())
         if roster_backed:
             # Current-roster naming is immediate; event project setup keeps
@@ -109,14 +107,15 @@ def setup_tasks(user):
             if not team.setup_pending or team.current_defense_stage or team.pk not in active_ids:
                 continue
         tasks = []
-        for stage in contexts_for(team) if team.project_pending and not roster_backed else []:
+        for stage in contexts_for(team) if not roster_backed else []:
             if team.is_pit and team.current_defense_stage and stage.event_name != team.current_defense_stage:
                 continue
             policy = resolve_policy(team, stage)
             current = latest_round(team, stage)
             shared = policy.get('source') == 'section_system'
-            if not titles_complete(current):
-                tasks.append({'stage_label': stage.label, 'required_count': policy['required_count'],
+            progress = title_progress(policy, current)
+            if progress['remaining_count']:
+                tasks.append({'stage_label': stage.label, **progress,
                               'mode': policy['mode'], 'shared_system': shared,
                               'section_project_id': policy.get('section_project_id')})
         if team.setup_pending or tasks:

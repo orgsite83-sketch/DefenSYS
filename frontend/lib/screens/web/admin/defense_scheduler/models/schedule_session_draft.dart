@@ -41,18 +41,8 @@ class ScheduleSessionDraft {
   Set<int> panelists = {}, externals = {};
   int? chair, documenter;
 
-  int get capacity {
-    final minutes = int.tryParse(duration.text) ?? 0;
-    if (minutes <= 0) return 0;
-    int total = 0;
-    for (final block in blocks) {
-      final startMinutes = scheduleTimeMinutes(block.start.text);
-      final endMinutes = scheduleTimeMinutes(block.end.text);
-      if (startMinutes < 0 || endMinutes <= startMinutes) return 0;
-      total += (endMinutes - startMinutes) ~/ minutes;
-    }
-    return total;
-  }
+  int get capacity =>
+      scheduleBlocksCapacity(blocks, int.tryParse(duration.text) ?? 0);
 
   String get timeWindowLabel => blocks
       .map((block) => '${block.start.text}–${block.end.text}')
@@ -87,6 +77,58 @@ class ScheduleSessionDraft {
       room.dispose();
     }
   }
+}
+
+int scheduleBlocksCapacity(Iterable<ScheduleSessionBlock> blocks, int minutes) {
+  if (minutes < 15 || minutes > 240 || blocks.isEmpty) return 0;
+  int total = 0;
+  int previousEnd = -1;
+  for (final block in blocks) {
+    final startMinutes = scheduleTimeMinutes(block.start.text);
+    final endMinutes = scheduleTimeMinutes(block.end.text);
+    if (startMinutes < previousEnd ||
+        startMinutes < 0 ||
+        endMinutes - startMinutes < minutes) {
+      return 0;
+    }
+    total += (endMinutes - startMinutes) ~/ minutes;
+    previousEnd = endMinutes;
+  }
+  return total;
+}
+
+/// Keep selected teams in the pool when a session shrinks or is removed.
+void reconcileSessionTeams(
+  List<ScheduleSessionDraft> sessions,
+  Set<int> selected,
+) {
+  final assigned = <int>{};
+  for (final session in sessions) {
+    session.teamIds = session.teamIds
+        .where((id) => selected.contains(id) && !assigned.contains(id))
+        .take(session.capacity)
+        .toSet();
+    assigned.addAll(session.teamIds);
+  }
+}
+
+Set<int> unassignedSessionTeams(
+  List<ScheduleSessionDraft> sessions,
+  Set<int> selected,
+) => selected.difference({for (final session in sessions) ...session.teamIds});
+
+/// Fill only empty slots; existing session membership and order are preserved.
+int fillSessionTeams(List<ScheduleSessionDraft> sessions, Set<int> selected) {
+  reconcileSessionTeams(sessions, selected);
+  final waiting = unassignedSessionTeams(sessions, selected).iterator;
+  var added = 0;
+  for (final session in sessions) {
+    while (session.teamIds.length < session.capacity && waiting.moveNext()) {
+      session.teamIds.add(waiting.current);
+      added++;
+    }
+  }
+  return added;
 }
 
 int scheduleTimeMinutes(String value) {

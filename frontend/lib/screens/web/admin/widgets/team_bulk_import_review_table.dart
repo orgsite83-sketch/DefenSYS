@@ -650,7 +650,7 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                 icon: Icons.pending_actions_outlined,
                               ),
                             _contextBadge(
-                              '${(preview?['concept_requirement'] as Map?)?['label'] ?? (projectTitle.isEmpty ? 'Topic unassigned · Stage default concepts' : 'Assigned project/module · 1 concept')}',
+                              '${(preview?['concept_requirement'] as Map?)?['label'] ?? (projectTitle.isEmpty ? 'Concept titles needed · Stage requirements apply' : 'Project/module title supplied · Stage requirements apply')}',
                               icon: Icons.description_outlined,
                             ),
                             if (sectionValue.isNotEmpty)

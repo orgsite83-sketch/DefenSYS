@@ -149,7 +149,7 @@ void main() {
 
   test('actual 16-team sample uses the production XLSX conversion', () {
     final bytes = File(
-      '../sample_file/16_Teams_2nd_Year/1st Sem/team/Team16roster.xlsx',
+      '../Defensys_sample files/sample_file/16_Teams_2nd_Year/1st Sem/team/Team16roster.xlsx',
     ).readAsBytesSync();
     final result = parseTeamBulkCsv(teamXlsxToCsv(bytes));
     expect(result.rows, hasLength(16));

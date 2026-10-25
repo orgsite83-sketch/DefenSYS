@@ -85,6 +85,7 @@ class _Service extends Fake implements TeamRosterService {
   final pendingValidation = <Completer<Map<String, dynamic>>>[];
   bool deferValidation = false;
   bool canGenerate = true;
+  bool initializesCurrent = false;
   bool noSections = false;
   final loads = <Map<String, dynamic>>[];
   Map<String, dynamic>? submitted;
@@ -234,7 +235,14 @@ class _Service extends Fake implements TeamRosterService {
         ),
       'teams': [_team(1, 'Team FreshStart')],
       'target': data['event_id'] == null ? 'Current roster' : '1st Year Expo',
-      'confirmation': data['event_id'] == null
+      'initializes_current': initializesCurrent,
+      'reuses_teams': data['operation'] == 'reuse',
+      'source_name': 'System Concept Pitching',
+      'confirmation': data['operation'] == 'reuse'
+          ? 'Use existing teams as Current roster'
+          : initializesCurrent
+          ? 'Apply teams & set Current roster'
+          : data['event_id'] == null
           ? 'Set as current roster for upcoming events'
           : 'Apply to 1st Year Expo',
       'team_count': 1,
@@ -254,7 +262,9 @@ class _Service extends Fake implements TeamRosterService {
       if (pending!['event_id'] != null) target['locked'] = true;
       return {'requested_count': (pending!['team_ids'] as List).length};
     }
-    return {'created_count': 1};
+    return {'created_count': pending?['operation'] == 'reuse' ? 0 : 1,
+      'reused_count': pending?['operation'] == 'reuse' ? 1 : 0,
+      'initializes_current': initializesCurrent};
   }
 
   @override
@@ -417,7 +427,7 @@ void main() {
       const TeamRosterScreen(initialEvent: '1st Year Expo', instructor: true),
       overrides: [teamRosterServiceProvider.overrideWithValue(service)],
     );
-    await tester.tap(find.text('Copy roster'));
+    await tester.tap(find.text('Copy as new teams'));
     await tester.pumpAndSettle();
     expect(find.text('Copy an existing roster'), findsOneWidget);
     await tester.tap(find.text('Review roster'));
@@ -800,16 +810,25 @@ void main() {
       const TeamRosterScreen(initialEvent: 'System Concept Pitching'),
       overrides: [teamRosterServiceProvider.overrideWithValue(service)],
     );
-    expect(find.text('Copy roster'), findsNothing);
+    expect(find.text('Copy as new teams'), findsNothing);
     expect(find.text('Import teams'), findsNothing);
     expect(find.text('Generate teams'), findsNothing);
     expect(find.text('Project setup'), findsNothing);
     expect(find.text('Export roster'), findsOneWidget);
-    expect(find.text('Copy to Current roster'), findsOneWidget);
-    await tester.ensureVisible(find.text('Copy to Current roster'));
-    await tester.tap(find.text('Copy to Current roster'));
+    expect(find.text('Use as Current roster'), findsOneWidget);
+    await tester.ensureVisible(find.text('Use as Current roster'));
+    await tester.tap(find.text('Use as Current roster'));
     await tester.pumpAndSettle();
-    expect(find.text('Target: Current roster · BSIT-1B'), findsOneWidget);
+    expect(find.text('Save as: Current roster · BSIT-1B'), findsOneWidget);
+    expect(find.text('Use the existing team identities'), findsOneWidget);
+    expect(service.submitted?['operation'], 'reuse');
+    expect(service.submitted?['source_event_id'], 10);
+    expect(service.submitted?.containsKey('event_id'), isFalse);
+    expect(service.applied, isNull);
+    await tester.ensureVisible(find.text('Use existing teams as Current roster'));
+    await tester.tap(find.text('Use existing teams as Current roster'));
+    await tester.pumpAndSettle();
+    expect(service.applied, 'signed-review');
   });
 
   testWidgets(
@@ -879,6 +898,48 @@ void main() {
             )
             .value,
         isFalse,
+      );
+    },
+  );
+
+  testWidgets(
+    'first event generation reviews and confirms both roster targets',
+    (tester) async {
+      final service = _Service()..initializesCurrent = true;
+      service.rosters.first['teams'] = [];
+      service.rosters.first['team_count'] = 0;
+      service.rosters.last['teams'] = [];
+      service.rosters.last['team_count'] = 0;
+      await pumpDefensysWidget(
+        tester,
+        const TeamRosterScreen(initialEvent: '1st Year Expo', instructor: true),
+        overrides: [
+          teamRosterServiceProvider.overrideWithValue(service),
+          teamFormationServiceProvider.overrideWithValue(_Formation()),
+        ],
+      );
+      await tester.ensureVisible(find.text('Generate teams'));
+      await tester.tap(find.text('Generate teams'));
+      await tester.pumpAndSettle();
+      await _confirmStudents(tester);
+      await tester.ensureVisible(find.text('Review roster'));
+      await tester.tap(find.text('Review roster'));
+      await tester.pumpAndSettle();
+      expect(find.text('Set the first Current roster'), findsOneWidget);
+      expect(
+        find.textContaining('and will also be used by 1st Year Expo'),
+        findsOneWidget,
+      );
+      expect(find.text('Replace this event roster'), findsNothing);
+      expect(service.submitted?['event_id'], 11);
+      expect(service.applied, isNull);
+      await tester.ensureVisible(find.text('Apply teams & set Current roster'));
+      await tester.tap(find.text('Apply teams & set Current roster'));
+      await tester.pumpAndSettle();
+      expect(service.applied, 'signed-review');
+      expect(
+        find.text('Teams saved to Current roster and 1st Year Expo · BSIT-1B.'),
+        findsOneWidget,
       );
     },
   );
@@ -1030,7 +1091,7 @@ void main() {
     await tester.tap(find.text('Confirm projects & request details'));
     await tester.pumpAndSettle();
     expect(service.applied, 'signed-project-review');
-    expect(find.text('Copy roster'), findsNothing);
+    expect(find.text('Copy as new teams'), findsNothing);
   });
 
   testWidgets(

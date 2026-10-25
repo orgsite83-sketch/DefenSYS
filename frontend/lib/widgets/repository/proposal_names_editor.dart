@@ -12,10 +12,12 @@ class ProposalNamesEditor extends StatefulWidget {
     required this.onBack,
     required this.onConfirm,
     this.systems = false,
+    this.lockedKeys = const {},
   });
   final List<Map<String, dynamic>> rows;
   final bool shared;
   final bool systems;
+  final Set<String> lockedKeys;
   final bool busy;
   final VoidCallback onBack;
   final Future<void> Function(List<Map<String, dynamic>>) onConfirm;
@@ -93,7 +95,7 @@ class _ProposalNamesEditorState extends State<ProposalNamesEditor> {
         const SizedBox(height: 6),
         ShadInput(
           controller: editors['${row['key']}'],
-          enabled: !widget.busy,
+          enabled: !widget.busy && !widget.lockedKeys.contains('${row['key']}'),
           minLines: 1,
           maxLines: 3,
           maxLength: 255,

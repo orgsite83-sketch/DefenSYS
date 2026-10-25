@@ -32,7 +32,7 @@ void main() {
   testWidgets('PIT peer form explains the finished-defense rule and keeps scoring locked', (tester) async {
     await pumpDefensysWidget(tester, const PeerEvalTab(
       isCapstone: false, peerEvalAllowed: false,
-      teammates: [{'id': 2, 'name': 'Member Two'}],
+      members: [{'id': 1, 'name': 'Member One'}, {'id': 2, 'name': 'Member Two'}],
       peerCriteria: [{'name': 'Contribution', 'maxScore': 5}], studentId: '1', teamId: '7',
     ));
     expect(find.textContaining('after all assigned panelists finish evaluating your scheduled defense'), findsOneWidget);
@@ -43,7 +43,7 @@ void main() {
     await pumpDefensysWidget(tester, const PeerEvalTab(
       isCapstone: true, peerEvalAllowed: false,
       peerEvalUnavailableReason: 'Waiting for all assigned panelists to finish grading.',
-      teammates: [{'id': 2, 'name': 'Member Two'}],
+      members: [{'id': 1, 'name': 'Member One'}, {'id': 2, 'name': 'Member Two'}],
       peerCriteria: [{'name': 'Contribution', 'maxScore': 5}], studentId: '1', teamId: '7',
     ));
     expect(find.text('Waiting for all assigned panelists to finish grading.'), findsOneWidget);
@@ -57,7 +57,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await pumpDefensysWidget(tester, const PeerEvalTab(
       isCapstone: true, peerEvalAllowed: false,
-      teammates: [{'id': 2, 'name': 'Member Two'}, {'id': 3, 'name': 'Member Three'}],
+      members: [{'id': 1, 'name': 'Member One'}, {'id': 2, 'name': 'Member Two'}, {'id': 3, 'name': 'Member Three'}],
       peerCriteria: [{'name': 'Contribution', 'maxScore': 5}], studentId: '1', teamId: '7',
       myPeerSubmissions: [{'evaluateeId': 2, 'breakdown': [{'criteriaName': 'Contribution', 'score': 4, 'max': 5}]}],
     ));

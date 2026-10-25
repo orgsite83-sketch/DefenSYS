@@ -17,6 +17,39 @@ class ConceptImportTests(APITestCase):
              'system_name': 'Hospital Management System', 'level': StudentTeam.LEVEL_3_CAPSTONE,
              'section': 'BSIT-3A', 'member_ids': ['Maria Santos'], 'leader_id': 'Maria Santos'}]
 
+    def test_manual_creation_retains_first_title_and_requires_configured_four(self):
+        from repository.deliverables import concepts
+        self._activate_capstone_intake_semester()
+        stage = DefenseStage.objects.first()
+        stage.concept_config = {'enabled': True, 'required_count': 4}
+        stage.save()
+        response = self.client.post('/api/teams/', {'name': 'Manual four concepts',
+            'project_title': 'Staff supplied idea', 'section': 'BSIT-3A',
+            'level': StudentTeam.LEVEL_3_CAPSTONE, 'leader_id': self.student_1.pk,
+            'member_ids': [self.student_1.pk]}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        team = StudentTeam.objects.get(name='Manual four concepts')
+        self.assertEqual([c['title'] for c in concepts.get_round(team, stage).concepts], ['Staff supplied idea', '', '', ''])
+
+    def test_admin_can_supply_first_title_before_concept_work_starts(self):
+        from repository.deliverables import concepts
+        self._activate_capstone_intake_semester()
+        response = self.client.post('/api/teams/', {'name': 'Later title team',
+            'project_title': '', 'section': 'BSIT-3A', 'level': StudentTeam.LEVEL_3_CAPSTONE,
+            'leader_id': self.student_1.pk, 'member_ids': [self.student_1.pk]}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        team = StudentTeam.objects.get(name='Later title team')
+        stage = DefenseStage.objects.first()
+        stage.concept_config = {'enabled': True, 'required_count': 3}
+        stage.save()
+        payload = {'name': team.name, 'project_title': 'Admin supplied later', 'section': team.section,
+            'level': team.level, 'leader_id': self.student_1.pk, 'member_ids': [self.student_1.pk]}
+        updated = self.client.patch(f'/api/teams/{team.pk}/', payload, format='json')
+        self.assertEqual(updated.status_code, 200, updated.data)
+        team.refresh_from_db()
+        self.assertTrue(team.project_pending)
+        self.assertEqual([c['title'] for c in concepts.get_round(team, stage).concepts], ['Admin supplied later', '', ''])
+
     def test_normalized_file_upload_headers_work_in_preview_and_commit(self):
         self._activate_capstone_intake_semester()
         # readTeamImportFiles normalizes CSV and XLSX to this row-based schema.
@@ -56,8 +89,8 @@ class ConceptImportTests(APITestCase):
         data = {'teams': self.rows()}
         preview = self.client.post('/api/teams/bulk-import/preview/', data, format='json')
         self.assertEqual(preview.status_code, 200, preview.data)
-        self.assertEqual([r['concept_requirement']['required_count'] for r in preview.data['rows']], [3, 1])
-        self.assertEqual(preview.data['summary']['concept_sections']['BSIT-3A'], {'assigned': 1, 'proposals': 1})
+        self.assertEqual([r['concept_requirement']['required_count'] for r in preview.data['rows']], [3, 3])
+        self.assertEqual(preview.data['summary']['concept_sections']['BSIT-3A'], {'assigned': 0, 'proposals': 2})
         imported = self.client.post('/api/teams/bulk-import/', data, format='json')
         self.assertEqual(imported.status_code, 201, imported.data)
         self.assertEqual(imported.data['created_count'], 2, imported.data)
@@ -66,7 +99,12 @@ class ConceptImportTests(APITestCase):
         self.assertEqual(unassigned.concept_assignment['mode'], 'proposals')
         self.assertEqual(assigned.concept_assignment['assigned_title'], 'Patient Records')
         self.assertEqual(resolve_policy(unassigned, stage)['required_count'], 3)
-        self.assertEqual(resolve_policy(assigned, stage)['required_count'], 1)
+        self.assertEqual(resolve_policy(assigned, stage)['required_count'], 3)
+        from repository.deliverables import concepts
+        self.assertEqual([c['title'] for c in concepts.get_round(assigned, stage).concepts], ['Patient Records', '', ''])
+        self.client.force_authenticate(assigned.leader)
+        task = self.client.get('/api/teams/my-setup/').data['teams'][0]['concept_tasks'][0]
+        self.assertEqual((task['required_count'], task['remaining_count']), (3, 2))
 
     def test_optional_column_and_empty_value_both_import_as_proposals(self):
         self._activate_capstone_intake_semester()
@@ -113,7 +151,7 @@ class ConceptImportTests(APITestCase):
                 StudentTeam.objects.all().delete()
                 self.client.force_authenticate(self.admin)
 
-    def test_assigned_section_rejects_future_imports_without_a_team_title(self):
+    def test_old_assigned_section_does_not_block_imports_without_titles(self):
         from .models import SectionAssignment
         from .concept_policy import context_key
         self._activate_capstone_intake_semester()
@@ -124,9 +162,10 @@ class ConceptImportTests(APITestCase):
             year_level='3rd Year', concept_policies={context_key(stage): {'mode': 'assigned'}})
         data = {'teams': [self.rows()[0]]}
         preview = self.client.post('/api/teams/bulk-import/preview/', data, format='json')
-        self.assertFalse(preview.data['rows'][0]['ready'])
+        self.assertTrue(preview.data['rows'][0]['ready'])
+        self.assertEqual(preview.data['rows'][0]['concept_requirement']['required_count'], 3)
         imported = self.client.post('/api/teams/bulk-import/', data, format='json')
-        self.assertEqual(imported.data['created_count'], 0)
+        self.assertEqual(imported.data['created_count'], 1)
 
     def test_section_proposals_policy_does_not_silently_discard_retained_title(self):
         from .models import SectionAssignment
@@ -139,7 +178,9 @@ class ConceptImportTests(APITestCase):
             year_level='3rd Year', concept_policies={context_key(stage): {'mode': 'proposals', 'required_count': 2}})
         data = {'teams': [self.rows()[1]]}
         preview = self.client.post('/api/teams/bulk-import/preview/', data, format='json')
-        self.assertFalse(preview.data['rows'][0]['ready'])
-        self.assertIn('policy conflicts', ' '.join(preview.data['rows'][0]['issues']))
+        self.assertTrue(preview.data['rows'][0]['ready'])
+        self.assertEqual(preview.data['rows'][0]['concept_requirement']['required_count'], 2)
         imported = self.client.post('/api/teams/bulk-import/', data, format='json')
-        self.assertEqual(imported.data['created_count'], 0)
+        self.assertEqual(imported.data['created_count'], 1)
+        from repository.deliverables import concepts
+        self.assertEqual([c['title'] for c in concepts.get_round(StudentTeam.objects.get(), stage).concepts], ['Patient Records', ''])

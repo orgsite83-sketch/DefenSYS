@@ -37,6 +37,8 @@ class WorkflowCompletionTests(APITestCase):
         self.submit(8)
         self.grade.refresh_from_db()
         self.grade.adviser_score = self.grade.peer_score = Decimal('80')
+        # This workflow fixture supplies an administrative peer total.
+        self.grade.peer_score_is_override = True
         self.grade.save()
         self.grade = record_verdict(self.grade, actor=self.admin, verdict=verdict, remarks='Review final files.')
 
@@ -175,6 +177,7 @@ class WorkflowCompletionTests(APITestCase):
         self.submit(5)
         self.grade.refresh_from_db()
         self.grade.adviser_score = self.grade.peer_score = Decimal('0')
+        self.grade.peer_score_is_override = True
         self.grade.save()
         self.grade = record_verdict(self.grade, actor=self.admin, verdict='approved')
         self.accepted_files()

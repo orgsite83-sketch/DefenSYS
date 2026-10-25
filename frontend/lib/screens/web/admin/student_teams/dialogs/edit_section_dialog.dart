@@ -9,7 +9,6 @@ import 'package:defensys/services/pit_instructor_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/defensys_loading.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
-import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:defensys/widgets/repository/section_concept_setup_dialog.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 
@@ -158,7 +157,7 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                 ),
                 title: const Text('Review concept requirements'),
                 description: Text(
-                  'Apply the reviewed policies to this section?\n\n${_conceptContexts.where((c) => changes.any((change) => change['context_key'] == c['key'])).map((c) => '${c['label']}: ${(c['teams'] as List).map((t) => t['name']).join(', ')}').join('\n')}\n\nScheduled hearings stay locked. For teams whose requirements change, current concept papers are preserved in history and fresh papers and adviser clearance are required.',
+                  'Apply the reviewed policies to this section?\n\n${_conceptContexts.where((c) => changes.any((change) => change['context_key'] == c['key'])).map((c) => '${c['label']}: ${(c['teams'] as List).map((t) => t['name']).join(', ')}').join('\n')}\n\nScheduled hearings stay locked. For teams whose requirements change, existing concept titles and papers stay in their slots. Missing concepts and fresh faculty endorsement are required. Sets that would lose concepts cannot be converted.',
                 ),
                 actions: [
                   Wrap(
@@ -220,180 +219,40 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
               ((_details!['project_manager_id'] as num?)?.toInt() ?? 0) ||
           _conceptChanges.isNotEmpty);
 
-  List<Map<String, dynamic>> get _conceptChanges {
-    final original = (_details?['concept_contexts'] as List? ?? []);
-    return [
-      for (final c in _conceptContexts)
-        if (jsonEncode(c) !=
-            jsonEncode(original.where((o) => o['key'] == c['key']).firstOrNull))
-          {
-            'context_key': c['key'],
-            'section_policy': c['policy'],
-            'team_policies': [
-              for (final t in c['teams'] as List)
-                {'team_id': t['id'], 'policy': t['override']},
-            ],
-          },
-    ];
-  }
+  List<Map<String, dynamic>> get _conceptChanges => [
+    for (final c in _conceptContexts)
+      if ((c['teams'] as List).any((t) => t['reconcile'] == true))
+        {
+          'context_key': c['key'],
+          'expected_required_count': c['required_count'] ?? 3,
+          'reconcile_team_ids': [for (final t in c['teams'] as List) if (t['reconcile'] == true) t['id']],
+        },
+  ];
 
-  Widget _conceptPolicyFields() {
-    final secondary = DefensysTokens.textSecondaryOf(context);
-    return Material(
-      color: Colors.transparent,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                LucideIcons.fileCheck,
-                size: 16,
-                color: DefensysTokens.maroon,
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Concept requirements',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Automatic uses the saved import: assigned projects/modules need one concept; unassigned teams use the stage default.',
-            style: TextStyle(color: secondary, fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          ShadAccordion<String>.multiple(
-            maintainState: true,
-            children: [
-              for (final c in _conceptContexts)
-                ShadAccordionItem<String>(
-                  key: ValueKey('concept-policy-${c['key']}'),
-                  value: '${c['key']}',
-                  title: Text('${c['label']}'),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      WorkflowChoice(
-                        value: '${c['policy']['mode'] ?? 'auto'}',
-                        enabled: !_busy && _canManageConcepts,
-                        options: const {
-                          'auto': 'Automatic from import',
-                          'proposals': 'Require multiple proposals',
-                          'assigned': 'Use one assigned concept',
-                        },
-                        onChanged: (mode) => setState(
-                          () => c['policy'] = {
-                            'mode': mode,
-                            if (mode == 'proposals') 'required_count': 3,
-                          },
-                        ),
-                      ),
-                      if (c['policy']['mode'] == 'proposals') ...[
-                        const SizedBox(height: 8),
-                        WorkflowChoice(
-                          value: '${c['policy']['required_count'] ?? 3}',
-                          enabled: !_busy && _canManageConcepts,
-                          options: {
-                            for (var i = 1; i <= 10; i++)
-                              '$i': '$i concept${i == 1 ? '' : 's'}',
-                          },
-                          onChanged: (value) => setState(
-                            () => c['policy']['required_count'] = int.parse(
-                              value,
-                            ),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      for (final raw in c['teams'] as List)
-                        _teamConceptFields(c, raw as Map),
-                    ],
-                  ),
-                ),
-            ],
-          ),
+  Widget _conceptPolicyFields() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Text('Concept requirements', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 6),
+      const Text('Stage setup controls the total. Supplied titles fill the first proposal. Review older unscheduled teams below to apply the configured count.'),
+      for (final c in _conceptContexts) ...[
+        const SizedBox(height: 16),
+        Text('${c['label']} · ${c['required_count'] ?? 3} concept${c['required_count'] == 1 ? '' : 's'} required', style: const TextStyle(fontWeight: FontWeight.w600)),
+        for (final raw in c['teams'] as List) ...[
+          const SizedBox(height: 10),
+          Text('${raw['name']} · ${raw['effective_policy']['required_count']} concept${raw['effective_policy']['required_count'] == 1 ? '' : 's'} in current set${raw['locked'] == true ? ' · Hearing locked' : ''}'),
+          if (raw['needs_requirement_update'] == true && raw['locked'] != true)
+            ShadCheckbox(
+              value: raw['reconcile'] == true,
+              enabled: !_busy && _canManageConcepts,
+              onChanged: (v) => setState(() => raw['reconcile'] = v),
+              label: const Text('Apply configured count'),
+              sublabel: const Text('Keep existing titles and papers; add missing concepts and require a fresh endorsement.'),
+            ),
         ],
-      ),
-    );
-  }
-
-  Widget _teamConceptFields(Map<String, dynamic> contextPolicy, Map team) {
-    final override = team['override'] as Map;
-    final mode = override['mode'] ?? 'auto';
-    final assigned =
-        mode == 'assigned' ||
-        (mode == 'auto' && contextPolicy['policy']['mode'] == 'assigned');
-    final locked = team['locked'] == true;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            '${team['name']}${locked ? ' · Hearing locked' : ''}',
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          Text(
-            'Current: ${team['effective_policy']['required_count']} concept(s)${team['effective_policy']['mode'] == 'assigned' ? ' · ${team['effective_policy']['assigned_title']}' : ''}',
-            style: TextStyle(
-              color: DefensysTokens.textSecondaryOf(context),
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 6),
-          WorkflowChoice(
-            value: '$mode',
-            enabled: !_busy && !locked && _canManageConcepts,
-            options: const {
-              'auto': 'Follow section / import',
-              'proposals': 'Multiple proposals',
-              'assigned': 'One assigned concept',
-            },
-            onChanged: (value) => setState(
-              () => team['override'] = {
-                'mode': value,
-                if (value == 'proposals') 'required_count': 3,
-                if (value == 'assigned')
-                  'assigned_title':
-                      team['effective_policy']['assigned_title'] ?? '',
-              },
-            ),
-          ),
-          if (mode == 'proposals') ...[
-            const SizedBox(height: 6),
-            WorkflowChoice(
-              value: '${override['required_count'] ?? 3}',
-              enabled: !_busy && !locked && _canManageConcepts,
-              options: {
-                for (var i = 1; i <= 10; i++)
-                  '$i': '$i concept${i == 1 ? '' : 's'}',
-              },
-              onChanged: (value) =>
-                  setState(() => override['required_count'] = int.parse(value)),
-            ),
-          ],
-          if (assigned) ...[
-            const SizedBox(height: 6),
-            ShadInput(
-              key: ValueKey('assignment-${contextPolicy['key']}-${team['id']}'),
-              initialValue:
-                  '${override['assigned_title'] ?? team['effective_policy']['assigned_title'] ?? ''}',
-              enabled: !_busy && !locked && _canManageConcepts,
-              placeholder: const Text('Assigned project / module title'),
-              onChanged: (value) => setState(
-                () => team['override'] = {
-                  'mode': 'assigned',
-                  'assigned_title': value,
-                },
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
+      ],
+    ],
+  );
 
   Widget _managerSelect() {
     return LayoutBuilder(

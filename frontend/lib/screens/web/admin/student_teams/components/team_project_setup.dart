@@ -42,26 +42,12 @@ class TeamProjectSetup extends StatelessWidget {
         ),
         Text(
           value['architecture'] == 'shared'
-              ? 'Teams build modules connected to the same System A, B and C proposals.'
-              : 'Each team keeps its own project. Imported project titles remain assigned.',
+              ? 'Teams propose modules for the same shared system alternatives. Stage setup controls the total.'
+              : 'Each team proposes its own alternatives. Supplied titles fill the first concept; stage setup controls the total.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         if (value['architecture'] == 'shared') ...[
           const SizedBox(height: 20),
-          if (allowTitleReplacement)
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Replace assigned titles with shared proposals',
-              ),
-              subtitle: const Text(
-                'Enable only when these teams should propose modules instead of keeping their imported project titles. The review lists this change before importing.',
-              ),
-              value: value['replace_assigned_titles'] == true,
-              onChanged: enabled
-                  ? (v) => change('replace_assigned_titles', v == true)
-                  : null,
-            ),
           WorkflowSelect(
             label: 'Section project manager',
             value: value['project_manager_id']?.toString(),
@@ -114,7 +100,7 @@ class TeamProjectSetup extends StatelessWidget {
             searchable: false,
             options: const {
               'student_proposed': 'Students propose; faculty confirms',
-              'faculty_provided': 'Faculty provides names',
+              'faculty_provided': 'Faculty starts; students complete',
             },
             onChanged: (v) => change('title_mode', v),
           ),

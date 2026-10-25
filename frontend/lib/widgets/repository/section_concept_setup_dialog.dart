@@ -103,7 +103,7 @@ class _SectionConceptSetupDialogState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Create three shared system proposals and three corresponding module proposals for every team. Activate this before concept work starts.',
+              'Create the number of shared system proposals configured for this stage/event, with matching module proposals from every team. Supplied titles fill the first proposal. Activate this before concept work starts.',
             ),
             const SizedBox(height: 16),
             if (contexts.isEmpty)
@@ -180,7 +180,7 @@ class _SectionConceptSetupDialogState
                 ),
                 DropdownMenuItem(
                   value: 'faculty_provided',
-                  child: Text('Faculty provides names'),
+                  child: Text('Faculty starts; students complete'),
                 ),
               ],
               onChanged: busy ? null : (v) => setState(() => mode = v!),

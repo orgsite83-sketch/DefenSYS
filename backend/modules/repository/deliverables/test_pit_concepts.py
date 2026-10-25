@@ -63,6 +63,35 @@ class PitConceptTests(APITestCase):
                          for i in range(1, self.event.concept_config['required_count'] + 1)],
         }, format='json')
 
+    def test_disabling_removes_automatic_papers_and_keeps_manual_requirements(self):
+        self.event.deliverables.all().delete()
+        self.client.force_authenticate(self.first)
+        manual = [{'deliverable_id': 'DECK', 'label': 'Pitch Deck', 'file_policy': {'mode': 'single'}}]
+        response = self.client.post(fixtures.CONFIG,
+            self.data(concept_config={'enabled': True}, deliverables=manual), format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.event.deliverables.count(), 3)
+        response = self.client.post(fixtures.CONFIG,
+            self.data(concept_config={'enabled': False}), format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.event.refresh_from_db()
+        self.assertFalse(self.event.concept_config['enabled'])
+        self.assertEqual(list(self.event.deliverables.values_list('deliverable_id', flat=True)), ['DECK'])
+
+    def test_disabling_cannot_remove_automatic_papers_with_submissions(self):
+        paper = self.event.deliverables.get(deliverable_id='CONCEPTS')
+        paper.file_policy = {**paper.file_policy, 'auto_added_for': 'concept_selection'}
+        paper.save()
+        self.prepare(accepted=False)
+        self.client.force_authenticate(self.first)
+        response = self.client.post(fixtures.CONFIG,
+            self.data(concept_config={'enabled': False}), format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.event.refresh_from_db()
+        self.assertTrue(self.event.concept_config['enabled'])
+        self.assertTrue(self.event.deliverables.filter(pk=paper.pk).exists())
+        self.assertTrue(self.team.deliverable_submissions.filter(deliverable_id='CONCEPTS').exists())
+
     def prepare(self, *, accepted=True):
         response = self.titles()
         self.assertEqual(response.status_code, 200, response.data)

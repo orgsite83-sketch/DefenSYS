@@ -256,7 +256,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 ElevatedButton.icon(
                   onPressed: () => _navigateToSemesterDetail(active),
                   icon: const Icon(Icons.tune_rounded, size: 14),
-                  label: const Text('Manage Active Term ↗'),
+                  label: const Text('Manage Active Term \u2197'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isDark
                         ? const Color(0xFF3B181F)
@@ -1113,6 +1113,11 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   }
 
   Future<void> _showEditYearDialog(Map<String, dynamic> year) async {
+    final semesters = year['semesters'];
+    if (year['can_edit_label'] == false ||
+        (semesters is List && semesters.isNotEmpty)) {
+      return;
+    }
     final yearId = _asInt(year['id']);
     final currentLabel = year['label']?.toString() ?? '';
     if (yearId == null) {
@@ -1607,7 +1612,8 @@ class _EditSchoolYearDialogState extends State<_EditSchoolYearDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Update the academic year label.',
+              'Correct the academic year label before adding semesters. '
+              'The label is locked once terms are added.',
               style: TextStyle(
                 color: mutedColor,
                 fontSize: 12.5,

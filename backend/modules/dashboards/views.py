@@ -326,17 +326,22 @@ def _latest_academic_record(user):
     )
 
 
-def _team_payload(team):
+def _team_payload(team, *, current=False, stage=None):
     memberships = list(team.memberships.all())
     from repository.deliverables.services import current_stage_for_team
-    active_stage = current_stage_for_team(team) if team else None
+    active_stage = stage or (current_stage_for_team(team) if team else None)
+    if current and team.is_pit:
+        from student_teams.roster_workspace import details_for
+        profile = details_for(team)
+        if profile and profile.details_source_event_id:
+            active_stage = profile.details_source_event.event_name
     has_capstone_stages = not team.is_capstone or active_stage is not None
     from repository.section_concepts.services import team_display
     from student_teams.roster_workspace import display_for
     from defense.scheduler.models import PitEventGradingConfig
     event = PitEventGradingConfig.objects.filter(semester_id=team.semester_id, year_level=team.year_level,
         event_name__iexact=active_stage).first() if team.is_pit and active_stage else None
-    roster_display = display_for(team, event) if team.is_pit else {'name': team.name, 'project_title': team.project_title}
+    roster_display = display_for(team, None if current else event) if team.is_pit else {'name': team.name, 'project_title': team.project_title}
     return {
         **team_display(team, active_stage),
         'id': team.id,
@@ -1119,10 +1124,9 @@ class AdminDashboardView(APIView):
                 if not has_panel_rubric or not has_adviser_rubric:
                     stages_missing_rubrics.append(stage.label)
 
-                if not stage.is_presentation_only:
-                    has_pre = len(getattr(stage, 'required_pre_deliverables', [])) > 0
-                    if not has_pre:
-                        stages_missing_deliverables.append(stage.label)
+                has_pre = len(getattr(stage, 'required_pre_deliverables', [])) > 0
+                if not has_pre:
+                    stages_missing_deliverables.append(stage.label)
 
             draft_rubric_count = Rubric.objects.filter(
                 semester=active_sem,
@@ -1517,9 +1521,10 @@ class StudentDashboardView(APIView):
                 raise ValidationError({'team_id': 'Choose a valid team.'})
             team = get_object_or_404(owned_teams, pk=int(selected_id))
         else:
-            team = apply_team_scope(owned_teams, 'active', user=user).first()
+            from student_teams.current_identity import current_student_team
+            team = current_student_team(owned_teams)
         academic_record = _latest_academic_record(user)
-        team_payload = _team_payload(team) if team else None
+        team_payload = _team_payload(team, current=not selected_id) if team else None
         # Query active schedule scoped to team's current defense stage, fallback to most recent schedule of current stage
         curr_stage = (team_payload.get('currentStage') or '').strip() if team_payload else ''
         schedule = None
@@ -1656,11 +1661,21 @@ class StudentDashboardView(APIView):
                 from defense.scheduler.models import PitEventGradingConfig
                 from repository.deliverables.services import stage_payload
                 from defense.scheduler.event_scope import pit_events_for_team
-                configs_qs = pit_events_for_team(team)
+                from student_teams.pit_rosters import effective_ids
+                active_owned = list(apply_team_scope(owned_teams, 'active', user=user))
+                configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester, year_level=team.year_level)
+                event_teams = {config.event_name: [item for item in active_owned if item.pk in
+                    effective_ids(team.semester_id, team.year_level, config)] for config in configs_qs}
+                configs_qs = configs_qs.filter(event_name__in=[name for name, items in event_teams.items() if items])
                 stage_options = list(
                     configs_qs.order_by('event_name').values_list('event_name', flat=True)
                 )
-            stages_payload = [stage_payload(team, stage, evaluator=user) for stage in stage_options]
+            if team.is_pit:
+                stages_payload = [{**stage_payload(item, stage, evaluator=user),
+                    'team_id': item.pk, 'team': _team_payload(item, stage=stage)}
+                    for stage in stage_options for item in event_teams[stage]]
+            else:
+                stages_payload = [stage_payload(team, stage, evaluator=user) for stage in stage_options]
 
         return Response({
             'student': _user_payload(user, active_sem),

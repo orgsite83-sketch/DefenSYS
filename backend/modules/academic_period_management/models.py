@@ -6,6 +6,10 @@ from django.db import models, transaction
 
 
 SCHOOL_YEAR_PATTERN = re.compile(r'^\d{4}-\d{4}$')
+SCHOOL_YEAR_LOCK_REASON = (
+    'School year labels are locked after semesters are added. '
+    'A used year requires an audited correction to preserve its calendar and academic history.'
+)
 
 
 def validate_school_year_label(value):
@@ -26,6 +30,26 @@ class SchoolYear(models.Model):
 
     def __str__(self):
         return self.label
+
+    @property
+    def can_edit_label(self):
+        return not self.semesters.exists()
+
+    def clean(self):
+        super().clean()
+        if (self.pk and SchoolYear.objects.filter(pk=self.pk).exclude(label=self.label).exists()
+                and not self.can_edit_label):
+            raise ValidationError({'label': SCHOOL_YEAR_LOCK_REASON})
+
+    def save(self, *args, **kwargs):
+        # Lock the parent before checking children: semester inserts need a
+        # conflicting FK lock, so a concurrent first semester cannot slip in.
+        with transaction.atomic():
+            if self.pk and (kwargs.get('update_fields') is None or 'label' in kwargs['update_fields']):
+                previous = SchoolYear.objects.select_for_update().filter(pk=self.pk).first()
+                if previous and previous.label != self.label and previous.semesters.exists():
+                    raise ValidationError({'label': SCHOOL_YEAR_LOCK_REASON})
+            super().save(*args, **kwargs)
 
 
 class Semester(models.Model):

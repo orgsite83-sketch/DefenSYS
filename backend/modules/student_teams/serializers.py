@@ -596,6 +596,20 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             current_defense_stage=validated_data.get('current_defense_stage') or None,
         )
         self._sync_members(team, member_ids, validated_data['leader'].id)
+        # Capture staff-supplied input explicitly. Display titles may later be
+        # replaced by a panel selection and must never seed another hearing.
+        from .concept_policy import contexts_for, context_key
+        contexts = contexts_for(team)
+        if team.is_pit and team.current_defense_stage:
+            contexts = contexts.filter(event_name=team.current_defense_stage)
+        concept_stage = contexts.first()
+        if concept_stage:
+            if not team.concept_assignment:
+                title = (validated_data.get('project_title') or '').strip()
+                team.concept_assignment = {'mode': 'proposals', 'seed_title': title,
+                    'project_version': team.project_version, 'context_key': context_key(concept_stage)}
+            team.project_pending = True
+            team.save(update_fields=['concept_assignment', 'project_pending', 'updated_at'])
         assigned_by = self.context.get('assigned_by') or self.context.get('user')
         self._ensure_adviser_role(team.adviser, changed_by=assigned_by)
         record_team_adviser_change(
@@ -620,6 +634,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         self._lock_members(member_ids)
         reason = validated_data.pop('adviser_change_reason', '')
         previous_adviser_id = instance.adviser_id
+        previous_project_title = instance.project_title
         from .pit_rosters import protect_membership
         protect_membership(instance, member_ids, validated_data['leader'].pk,
             name=validated_data['name'], section=validated_data.get('section', ''))
@@ -637,6 +652,19 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         # Term participation/recovery owns this field. Roster edits preserve it.
         instance.ready_for_stage = validated_data.get('ready_for_stage') or None
         instance.current_defense_stage = validated_data.get('current_defense_stage') or None
+        from .concept_policy import contexts_for, context_key
+        from repository.deliverables.concepts import latest_round
+        contexts = contexts_for(instance)
+        if instance.is_pit and instance.current_defense_stage:
+            contexts = contexts.filter(event_name=instance.current_defense_stage)
+        concept_stage = contexts.first()
+        if concept_stage:
+            current = latest_round(instance, concept_stage)
+            if not current and validated_data.get('project_title') and instance.project_title != previous_project_title:
+                instance.concept_assignment = {'mode': 'proposals', 'seed_title': instance.project_title,
+                    'project_version': instance.project_version, 'context_key': context_key(concept_stage)}
+            if not current or current.verdict not in ('approved', 'approved_with_revisions'):
+                instance.project_pending = True
         instance.save()
         self._sync_members(instance, member_ids, validated_data['leader'].id)
         assigned_by = self.context.get('assigned_by') or self.context.get('user')
@@ -733,6 +761,9 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 class BulkTeamRowSerializer(serializers.Serializer):
     team_name = serializers.CharField(required=False, default='', allow_blank=True, max_length=120)
     group_key = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    # Import layout metadata survives XLSX normalization and draft export. It
+    # describes a module/project column; it does not select an academic track.
+    project_kind = serializers.ChoiceField(choices=['project', 'module'], required=False, allow_blank=True)
     project_title = serializers.CharField(required=False, allow_blank=True, max_length=255)
     current_defense_stage = serializers.CharField(required=False, allow_blank=True, max_length=120)
     level = serializers.CharField(required=False, allow_blank=True, max_length=30)

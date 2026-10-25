@@ -516,11 +516,29 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
             ? selected == 'current'
                   ? 'Project choices saved for upcoming events. Saved event rosters are preserved.'
                   : 'Project choices saved. ${result['requested_count']} team leaders have details to confirm.'
+            : result['initializes_current'] == true
+            ? 'Teams saved to Current roster and ${roster?['name']} · $section.'
+            : (result['reused_count'] as num? ?? 0) > 0
+            ? 'Existing teams are now the Current roster. Event records are preserved.'
             : selected == 'current'
             ? 'Current roster updated for upcoming events. Saved event rosters are preserved.'
             : 'Roster applied to ${roster?['name']} · $section.',
       );
     }
+  });
+
+  Future<void> useAsCurrent() => run(() async {
+    final result = await ref.read(teamRosterServiceProvider).preview({
+      ...scope,
+      'operation': 'reuse',
+      'source_event_id': int.parse(selected),
+    });
+    if (!mounted) return;
+    setState(() {
+      selected = 'current';
+      action = 'reuse';
+      review = result;
+    });
   });
 
   Future<void> importSections() async {
@@ -852,22 +870,11 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
     runSpacing: 8,
     children:
         [
-              if (locked && selected != 'current')
-                secondary('Copy to Current roster', Icons.copy_outlined, () {
-                  final sourceKey = selected;
-                  setState(() {
-                    selected = 'current';
-                    action = 'copy';
-                    source = sourceKey;
-                    review = null;
-                    carryProjects = true;
-                    error = null;
-                    message = null;
-                  });
-                }),
+              if (selected != 'current' && teams.isNotEmpty)
+                secondary('Use as Current roster', Icons.link, useAsCurrent),
               if (!locked) ...[
                 secondary(
-                  'Copy roster',
+                  'Copy as new teams',
                   Icons.copy_outlined,
                   () => begin('copy'),
                   enabled: rosters.length > 1,
@@ -1665,7 +1672,7 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
           WorkflowNotice(
             title: 'Review project choices',
             message: selected == 'current'
-                ? 'Review the replacement and affected upcoming events before saving. Earlier event rosters and their records are preserved.'
+                ? 'Review the project choices and affected upcoming events before saving. Team memberships and earlier event records are preserved.'
                 : 'Changes take effect after review. Selected leaders confirm again; earlier event records are preserved.',
           ),
         ] else
@@ -1799,7 +1806,7 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
               ? 'Projects for upcoming events'
               : 'Leader confirmation',
           message: selected == 'current'
-              ? 'These choices create a replacement Current roster for upcoming events. Earlier event teams keep their projects and records.'
+              ? 'These choices update the current teams without changing their memberships. Earlier events keep their saved projects and records.'
               : 'Selected leaders confirm their details again. New projects follow this event’s requirements. Earlier event records stay intact.',
         ),
         Wrap(
@@ -1875,11 +1882,24 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+              if (action == 'copy')
+                const WorkflowNotice(
+                  title: 'Create separate teams',
+                  message: 'Copy creates new team identities. To make existing event teams the default, use “Use as Current roster” on that event instead.',
+                ),
               WorkflowNotice(
-                title: selected == 'current'
+                title: review!['reuses_teams'] == true
+                    ? 'Use the existing team identities'
+                    : review!['initializes_current'] == true
+                    ? 'Set the first Current roster'
+                    : selected == 'current'
                     ? 'Set the default for upcoming events'
                     : 'Replace this event roster',
-                message: selected == 'current'
+                message: review!['reuses_teams'] == true
+                    ? 'The existing teams from ${review!['source_name']} become Current roster for $section. Their event records are preserved. No duplicate teams will be created.'
+                    : review!['initializes_current'] == true
+                    ? 'These teams become the Current roster for $section and will also be used by ${review!['target']}. Upcoming events using the default will use them. Saved and custom event rosters keep their teams.'
+                    : selected == 'current'
                     ? 'These teams become the Current roster for $section. New events and upcoming events using the default will use them. Saved and custom event rosters keep their teams.'
                     : 'Only ${review!['target']} · $section will use these teams. Other event rosters stay unchanged.',
               ),

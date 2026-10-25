@@ -160,7 +160,7 @@ def update_section(request, team_id, data):
             raise PermissionDenied('Only an administrator or the scoped PIT Lead can change concept requirements and assignments.')
         from .section_concept_policies import apply_policy_changes
         apply_policy_changes(team, teams, assignment, data['concept_policy_changes'],
-            confirmed=data.get('confirm_concept_changes', False))
+            confirmed=data.get('confirm_concept_changes', False), actor=request.user)
     assignment.save()
 
     team_ids = [item.pk for item in teams]

@@ -51,6 +51,10 @@ class PITRosterTeamDetails(models.Model):
         on_delete=models.PROTECT, related_name='+')
     source_team = models.ForeignKey('StudentTeam', null=True, blank=True,
         on_delete=models.PROTECT, related_name='+')
+    # The reusable profile follows only this explicitly activated event.
+    # Copy provenance above remains independent of current detail ownership.
+    details_source_event = models.ForeignKey('defense.PitEventGradingConfig', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='+')
     opened_at = models.DateTimeField(null=True, blank=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
     revision = models.PositiveIntegerField(default=1)

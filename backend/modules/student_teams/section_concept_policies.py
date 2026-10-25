@@ -22,17 +22,20 @@ def policy_context_payload(team, teams, assignment):
                 'imported_assignment': member.concept_assignment,
                 'override': (member.concept_policies or {}).get(team_policy_key(member, stage), {'mode': 'auto'}),
                 'effective_policy': resolve_policy(member, stage, current=current, section_assignment=assignment),
-                'locked': bool(current and current.schedule_id),
+                'locked': bool(current and (current.schedule_id or current.verdict or current.number > 1)),
+                'needs_requirement_update': bool(current and (len(current.concepts) != stage.concept_config.get('required_count', 3)
+                    or (current.policy_snapshot or {}).get('mode') == 'assigned')),
                 'has_submissions': DeliverableSubmission.objects.filter(team=member,
                     project_version=member.project_version, stage_label=stage.label).exists()})
         result.append({'key': context_key(stage), 'label': stage.label,
+            'required_count': stage.concept_config.get('required_count', 3),
             'section_project_id': project.pk if project else None,
             'policy': (assignment.concept_policies or {}).get(context_key(stage), {'mode': 'auto'}) if assignment else {'mode': 'auto'},
             'teams': rows})
     return result
 
 
-def apply_policy_changes(team, teams, assignment, changes, *, confirmed=False):
+def apply_policy_changes(team, teams, assignment, changes, *, confirmed=False, actor=None):
     from repository.deliverables import concepts
     from repository.deliverables.models import ConceptRound, DeliverableSubmission
     from repository.deliverables.documents import sync_submission
@@ -49,6 +52,20 @@ def apply_policy_changes(team, teams, assignment, changes, *, confirmed=False):
         from repository.section_concepts.services import project_for
         if project_for(team, stage):
             raise ValidationError('Manage shared system and corresponding module proposals in the section concept workspace.')
+        reconcile_ids = change.get('reconcile_team_ids', [])
+        if reconcile_ids:
+            by_id = {member.pk: member for member in teams}
+            if not isinstance(reconcile_ids, list) or any(type(pk) is not int or pk not in by_id for pk in reconcile_ids) or len(set(reconcile_ids)) != len(reconcile_ids):
+                raise ValidationError('Choose each team once and only from this section.')
+            if not confirmed:
+                raise ValidationError('Review and confirm the configured concept count before applying it.')
+            if type(change.get('expected_required_count')) is not int:
+                raise ValidationError('Refresh and review the configured count before applying it.')
+            for pk in reconcile_ids:
+                concepts.reconcile_initial_requirements(by_id[pk], stage, actor,
+                    expected_count=change['expected_required_count'])
+        if 'section_policy' not in change and not change.get('team_policies'):
+            continue
         old_policies = {member.pk: resolve_policy(member, stage, section_assignment=assignment) for member in teams}
         try:
             if 'section_policy' in change:
@@ -71,6 +88,12 @@ def apply_policy_changes(team, teams, assignment, changes, *, confirmed=False):
             current = concepts.latest_round(member, stage)
             if current and (current.policy_snapshot or {}).get('redefense_plan'):
                 if member.pk in seen_teams:
+                    # A legacy assigned replacement is controlled by the
+                    # captured panel plan, independently of the initial count.
+                    explicit = (member.concept_policies or {}).get(team_policy_key(member, stage), {})
+                    new = {**old, **explicit}
+                    if explicit.get('mode') == 'assigned':
+                        new['required_count'] = 1
                     if (current.schedule_id or new.get('mode') != old.get('mode') or
                             new.get('required_count') != old.get('required_count')):
                         raise ValidationError('The panel-requested concept set is fixed for this hearing.')

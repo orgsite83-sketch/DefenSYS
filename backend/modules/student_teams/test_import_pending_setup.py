@@ -98,7 +98,8 @@ class PitImportSetupTests(APITestCase):
         tasks = event_tasks(self.students[0])
         self.assertEqual(len(tasks), 1)
         self.assertEqual(tasks[0]['project_title'], 'Retained title')
-        self.assertEqual(event_tasks(self.students[2]), [])
+        complete_task = event_tasks(self.students[2])[0]['concept_tasks'][0]
+        self.assertEqual((complete_task['required_count'], complete_task['remaining_count']), (3, 2))
         self.client.force_authenticate(self.students[0])
         saved = self.client.patch(f'/api/teams/{team.pk}/events/{self.event.pk}/setup/',
             {'name': 'Event choice', 'revision': tasks[0]['revision']}, format='json')
@@ -133,5 +134,6 @@ class PitImportSetupTests(APITestCase):
             concept_policies={context_key(self.event): {'mode': 'proposals', 'required_count': 2}})
         result = self.client.post('/api/teams/rosters/preview/', self.body(operation='import',
             event_id=self.event.pk, teams=self.rows()), format='json')
-        self.assertEqual(result.status_code, 400, result.data)
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['teams'][0]['concept_assignment']['seed_title'], 'Retained title')
         self.assertFalse(StudentTeam.objects.exists())

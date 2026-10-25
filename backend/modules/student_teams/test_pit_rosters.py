@@ -136,10 +136,10 @@ class PITRosterTests(APITestCase):
         self.assertEqual(result.status_code, 201, result.data)
         team = StudentTeam.objects.get(name='Imported team')
         self.assertEqual(team.project_title, 'Existing assigned project')
-        self.assertEqual(team.concept_assignment['mode'], 'assigned')
+        self.assertEqual(team.concept_assignment['mode'], 'proposals')
         body['project_setups'] = {'BSIT-2A': {'architecture': 'shared',
             'project_manager_id': self.students[0].pk, 'stage_label': self.event.event_name}}
-        self.assertEqual(self.preview_import(body).status_code, 400)
+        self.assertTrue(self.preview_import(body).data['ready'])
 
     def test_default_import_is_repeatable_and_independent_ready_rows_can_import(self):
         body = self.body(partial=True)
@@ -191,15 +191,16 @@ class PITRosterTests(APITestCase):
         body['project_setups'] = {'BSIT-2A': {'architecture': 'shared', 'replace_assigned_titles': True,
             'project_manager_id': self.students[0].pk, 'stage_label': self.event.event_name}}
         preview = self.preview_import(body)
-        self.assertIn('replaced', ' '.join(preview.data['rows'][0]['warnings']))
+        self.assertIn('first shared proposal', ' '.join(preview.data['rows'][0]['warnings']))
         response = self.commit_import(preview)
         self.assertEqual(response.status_code, 201, response.data)
         team = StudentTeam.objects.get(name='Imported team')
-        self.assertEqual(team.project_title, '')
+        self.assertEqual(team.project_title, 'Previously assigned project')
         self.assertEqual(team.concept_assignment['mode'], 'proposals')
         project = SectionConceptProject.objects.get()
         self.assertEqual(project.reviewer_id, self.lead.pk)
         self.assertEqual(project.team_links.get().team_id, team.pk)
+        self.assertEqual([c['title'] for c in concepts.get_round(team, self.event).concepts], ['Previously assigned project', '', ''])
 
     def test_partial_import_cannot_choose_one_of_two_overlapping_rows_silently(self):
         body = self.body(partial=True)

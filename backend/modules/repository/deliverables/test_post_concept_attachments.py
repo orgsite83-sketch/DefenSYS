@@ -21,6 +21,24 @@ from .services import (archive_unlocked, endorse_team, post_deliverables_complet
 
 
 class ApprovedConceptPolicyTests(SimpleTestCase):
+    def test_disabling_removes_saved_automatic_defaults_but_keeps_manual_papers(self):
+        manual = [{'deliverable_id': 'D1', 'label': 'Concept Papers',
+                   'deliverable_type': 'pre', 'file_policy': {'mode': 'single'}}]
+        generated = with_concept_papers(manual, {'enabled': True})
+        self.assertEqual(len(generated), 3)
+        for item in generated[1:]:
+            item['id'] = 10
+            item['label'] = 'Custom ' + item['label']
+        self.assertEqual(with_concept_papers(generated, {'enabled': False}), manual)
+        self.assertEqual(len(generated), 3)
+
+    def test_disabling_removes_legacy_automatic_defaults(self):
+        generated = with_concept_papers([], {'enabled': True})
+        for item in generated:
+            item['file_policy'].pop('auto_added_for')
+            item['deliverable_id'] += '_2'
+        self.assertEqual(with_concept_papers(generated, {'enabled': False}), [])
+
     def test_setup_preserves_authored_attachment_limits_and_identifier(self):
         policy = {'mode': 'multiple', 'min_files': 2, 'max_files': 4}
         items = [{'deliverable_id': 'AUTHORED_FINAL', 'label': 'Approved Concept Paper',

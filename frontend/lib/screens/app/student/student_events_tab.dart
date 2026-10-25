@@ -12,6 +12,7 @@ import 'peer_eval_tab.dart';
 import 'student_deliverables_tab.dart';
 import 'student_stage_data.dart';
 import '../../../utils/defense_time.dart';
+import '../../../services/academic/student_team_selection_provider.dart';
 
 class StudentEventsTab extends ConsumerStatefulWidget {
   final bool isCapstone;
@@ -119,13 +120,22 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         .toLowerCase();
     final targetStage =
         _selectedStageForView?.trim().toLowerCase() ?? currentStageLabel;
+    final eventRows = stages.where((s) => s['stage_label']?.toString().trim().toLowerCase() == targetStage
+        && s['team_id'] != null).toList();
+    final requestedTeam = ref.read(studentTeamSelectionProvider);
+    final eventRow = eventRows.where((s) => s['team_id'] == requestedTeam).firstOrNull
+        ?? eventRows.firstOrNull;
 
     Map<String, dynamic>? activeSchedule;
     final topSchedule =
         widget.studentData?['schedule'] as Map<String, dynamic>? ??
         widget.studentData?['defense_schedule'] as Map<String, dynamic>?;
 
-    if (topSchedule != null &&
+    if (eventRow != null) {
+      if (eventRow['schedule'] is Map) {
+        activeSchedule = Map<String, dynamic>.from(eventRow['schedule'] as Map);
+      }
+    } else if (topSchedule != null &&
         (targetStage == null ||
             topSchedule['stage']?.toString().trim().toLowerCase() ==
                 targetStage)) {
@@ -279,20 +289,26 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         ? backendStageOptions
         : delivState.stageOptions;
 
-    final team = widget.studentData?['team'] as Map<String, dynamic>?;
-    final scheduleData =
-        widget.studentData?['schedule'] as Map<String, dynamic>? ??
-        widget.studentData?['defense_schedule'] as Map<String, dynamic>?;
-    final grades = widget.studentData?['grades'] as Map<String, dynamic>?;
+    final selectedTeamId = ref.watch(studentTeamSelectionProvider);
+    final eventEntries = (widget.studentData?['stages'] as List? ?? [])
+        .whereType<Map>()
+        .where((entry) => entry['stage_label'] == _requestedStage && entry['team'] is Map)
+        .toList();
+    final eventEntry = eventEntries.where((entry) => entry['team_id'] == selectedTeamId).firstOrNull
+        ?? eventEntries.firstOrNull;
+    final team = !isCapstone && eventEntry != null
+        ? Map<String, dynamic>.from(eventEntry['team'] as Map)
+        : widget.studentData?['team'] as Map<String, dynamic>?;
+    final homeTeamMatches = team?['id'] == widget.studentData?['team']?['id'];
+    final scheduleData = homeTeamMatches
+        ? (widget.studentData?['schedule'] as Map<String, dynamic>? ??
+            widget.studentData?['defense_schedule'] as Map<String, dynamic>?)
+        : null;
+    final grades = homeTeamMatches ? (widget.studentData?['grades'] as Map<String, dynamic>?) : null;
 
-    final peerEvalAllowed = widget.studentData?['peerEvalEnabled'] == true;
-    final teammates = (widget.studentData?['members'] as List? ?? [])
+    final peerEvalAllowed = homeTeamMatches && widget.studentData?['peerEvalEnabled'] == true;
+    final evaluationMembers = (team?['members'] as List? ?? widget.studentData?['members'] as List? ?? [])
         .cast<Map<String, dynamic>>()
-        .where(
-          (m) =>
-              m['id']?.toString() !=
-              widget.studentData?['student']?['id']?.toString(),
-        )
         .toList();
 
     final teamData = team?['id'] == null
@@ -306,9 +322,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         (teamData?['stages'] as List? ??
                 widget.studentData?['stages'] as List? ??
                 [])
-            .cast<Map<String, dynamic>>();
+            .cast<Map<String, dynamic>>()
+            .where((entry) => isCapstone || entry['team_id'] == null || entry['team_id'] == team?['id'])
+            .toList();
 
     final rawActiveStageName =
+        widget.studentData?['current_stage']?.toString() ??
         teamData?['current_stage']?.toString() ??
         teamData?['current_defense_stage']?.toString() ??
         teamData?['ready_for_stage']?.toString() ??
@@ -454,6 +473,16 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     },
                   ),
                 const SizedBox(height: 12),
+                if (!isCapstone && eventEntries.length > 1)
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    for (final entry in eventEntries)
+                      ChoiceChip(
+                        label: Text('${entry['team']['name']}'),
+                        selected: entry['team_id'] == team?['id'],
+                        onSelected: (_) => ref.read(studentTeamSelectionProvider.notifier)
+                            .select(entry['team_id'] as int),
+                      ),
+                  ]),
 
                 // Contextual Notice Banner (Archive for past stages, Upcoming info for future stages - Capstone only)
                 if (isCapstone &&
@@ -812,7 +841,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                               ?.cast<Map<String, dynamic>>() ??
                           [];
                       final fallbackSubs =
-                          (widget.studentData?['myPeerSubmissions'] as List?)
+                          ((homeTeamMatches ? (widget.studentData?['myPeerSubmissions']) : null) as List?)
                               ?.cast<Map<String, dynamic>>() ??
                           [];
                       final rawSubmissions = stageSubs.isNotEmpty
@@ -859,7 +888,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                 ? (widget.studentData?['peerEvalUnavailableReason'])
                                       ?.toString()
                                 : null),
-                        teammates: teammates,
+                        members: evaluationMembers,
                         peerCriteria: stagePeerCriteria,
                         myPeerSubmissions: effectiveSubmissions,
                         studentId:

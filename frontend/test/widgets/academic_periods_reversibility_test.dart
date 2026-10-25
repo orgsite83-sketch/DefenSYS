@@ -17,7 +17,9 @@ class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
     return AcademicPeriodState(
       isLoading: false,
       schoolYears: _years,
-      selectedSchoolYearId: _years.isNotEmpty ? _years.first['id'] as int : null,
+      selectedSchoolYearId: _years.isNotEmpty
+          ? _years.first['id'] as int
+          : null,
       activeSemester: null,
     );
   }
@@ -29,7 +31,9 @@ class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
   Future<bool> deleteSchoolYear(int schoolYearId) async {
     deleteCalled = true;
     state = state.copyWith(
-      schoolYears: state.schoolYears.where((y) => y['id'] != schoolYearId).toList(),
+      schoolYears: state.schoolYears
+          .where((y) => y['id'] != schoolYearId)
+          .toList(),
       selectedSchoolYearId: null,
       message: 'School year deleted.',
     );
@@ -45,80 +49,121 @@ class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
       }
       return y;
     }).toList();
-    state = state.copyWith(schoolYears: updated, message: 'School year updated.');
+    state = state.copyWith(
+      schoolYears: updated,
+      message: 'School year updated.',
+    );
     return true;
   }
 }
 
 void main() {
-  testWidgets('Renders Edit and Delete actions on empty School Year and shows empty state escape hatch',
-      (tester) async {
+  testWidgets('School year with a semester explains its locked edit action', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() => tester.view.resetPhysicalSize());
-
+    addTearDown(() => tester.view.resetDevicePixelRatio());
     final notifier = _FakeAcademicPeriodNotifier([
       {
         'id': 101,
-        'label': '2026-2027',
-        'semesters': <Map<String, dynamic>>[],
-      }
+        'label': '2025-2026',
+        'semesters': [
+          {'id': 102, 'label': '2nd Semester', 'is_active': false},
+        ],
+      },
     ]);
-
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          academicPeriodProvider.overrideWith(() => notifier),
-        ],
+        overrides: [academicPeriodProvider.overrideWith(() => notifier)],
         child: MaterialApp(
           theme: AppTheme.mistDarkTheme,
-          home: const Scaffold(
-            body: AcademicPeriodsScreen(),
-          ),
+          home: const Scaffold(body: AcademicPeriodsScreen()),
         ),
       ),
     );
     await tester.pumpAndSettle();
-
-    // 1. Check that the school year label is displayed in the card title and rich text
-    expect(find.textContaining('2026-2027'), findsWidgets);
-
-    // 2. Check that the "Delete School Year" secondary action button is visible in the empty state
-    expect(find.text('Delete School Year'), findsOneWidget);
-
-    // 3. Open school year options menu
-    final optionsMenu = find.byTooltip('School year options');
-    expect(optionsMenu, findsOneWidget);
-    await tester.tap(optionsMenu);
+    await tester.tap(find.byTooltip('School year options'));
     await tester.pumpAndSettle();
-
-    // 4. Tap "Edit School Year" to open edit dialog
-    expect(find.text('Edit School Year'), findsOneWidget);
-    await tester.tap(find.text('Edit School Year'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Edit School Year'), findsOneWidget);
-    expect(find.text('Save'), findsOneWidget);
-
-    // Dismiss edit dialog
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-
-    // 5. Tap the empty state "Delete School Year" button
-    await tester.tap(find.text('Delete School Year'));
-    await tester.pumpAndSettle();
-
-    // Verify confirmation dialog appears
-    expect(find.text('Delete School Year'), findsWidgets);
-    expect(find.text('Delete'), findsOneWidget);
-
-    // Confirm deletion
-    await tester.tap(find.text('Delete'));
-    await tester.pumpAndSettle();
-
-    expect(notifier.deleteCalled, isTrue);
-
-    // Drain toastification timer
-    await tester.pump(const Duration(seconds: 4));
+    expect(find.text('Locked after terms are added'), findsOneWidget);
+    final item = tester.widget<PopupMenuItem<String>>(
+      find.ancestor(
+        of: find.text('Edit School Year'),
+        matching: find.byType(PopupMenuItem<String>),
+      ),
+    );
+    expect(item.enabled, isFalse);
+    expect(notifier.updateCalled, isFalse);
+    expect(find.byType(AlertDialog), findsNothing);
   });
+
+  testWidgets(
+    'Renders Edit and Delete actions on empty School Year and shows empty state escape hatch',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final notifier = _FakeAcademicPeriodNotifier([
+        {
+          'id': 101,
+          'label': '2026-2027',
+          'semesters': <Map<String, dynamic>>[],
+        },
+      ]);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [academicPeriodProvider.overrideWith(() => notifier)],
+          child: MaterialApp(
+            theme: AppTheme.mistDarkTheme,
+            home: const Scaffold(body: AcademicPeriodsScreen()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Check that the school year label is displayed in the card title and rich text
+      expect(find.textContaining('2026-2027'), findsWidgets);
+
+      // 2. Check that the "Delete School Year" secondary action button is visible in the empty state
+      expect(find.text('Delete School Year'), findsOneWidget);
+
+      // 3. Open school year options menu
+      final optionsMenu = find.byTooltip('School year options');
+      expect(optionsMenu, findsOneWidget);
+      await tester.tap(optionsMenu);
+      await tester.pumpAndSettle();
+
+      // 4. Tap "Edit School Year" to open edit dialog
+      expect(find.text('Edit School Year'), findsOneWidget);
+      await tester.tap(find.text('Edit School Year'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit School Year'), findsOneWidget);
+      expect(find.text('Save'), findsOneWidget);
+
+      // Dismiss edit dialog
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      // 5. Tap the empty state "Delete School Year" button
+      await tester.tap(find.text('Delete School Year'));
+      await tester.pumpAndSettle();
+
+      // Verify confirmation dialog appears
+      expect(find.text('Delete School Year'), findsWidgets);
+      expect(find.text('Delete'), findsOneWidget);
+
+      // Confirm deletion
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(notifier.deleteCalled, isTrue);
+
+      // Drain toastification timer
+      await tester.pump(const Duration(seconds: 4));
+    },
+  );
 }

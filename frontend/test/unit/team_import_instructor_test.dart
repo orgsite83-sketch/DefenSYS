@@ -63,7 +63,7 @@ Team Two,Library Finder,Andrei Catapang
   });
 
   test('reported 16-team first-year sample preserves both section instructors', () {
-    final file = File('../sample_file/16_Teams_1st_Year_Set_2/1st Sem/team/team_roster_combined_1A_and_1B.csv');
+    final file = File('../Defensys_sample files/sample_file/16_Teams_1st_Year_Set_2/1st Sem/team/team_roster_combined_1A_and_1B.csv');
     final result = parseTeamBulkCsv(file.readAsStringSync());
     expect(result.rows, hasLength(16));
     expect(result.rows.map((r) => r['instructor_name']).toSet(), {

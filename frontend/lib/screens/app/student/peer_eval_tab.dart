@@ -13,7 +13,7 @@ class PeerEvalTab extends ConsumerStatefulWidget {
   final bool isCapstone;
   final bool peerEvalAllowed;
   final String? peerEvalUnavailableReason;
-  final List<Map<String, dynamic>> teammates; // from studentData members (excluding self)
+  final List<Map<String, dynamic>> members; // All team members, including self.
   final List<Map<String, dynamic>> peerCriteria; // from peer rubric
   final String studentId;
   final String teamId;
@@ -30,7 +30,7 @@ class PeerEvalTab extends ConsumerStatefulWidget {
     required this.isCapstone,
     required this.peerEvalAllowed,
     this.peerEvalUnavailableReason,
-    required this.teammates,
+    required this.members,
     required this.peerCriteria,
     this.myPeerSubmissions = const [],
     this.onPeerSubmitted,
@@ -75,13 +75,13 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
         submission['evaluatee_name']?.toString() ?? '').trim().toLowerCase();
 
     if (id != null && id.isNotEmpty) {
-      for (final teammate in widget.teammates) {
+      for (final teammate in widget.members) {
         if (_teammateId(teammate) == id) return _teammateId(teammate);
       }
     }
 
     if (name.isNotEmpty) {
-      for (final teammate in widget.teammates) {
+      for (final teammate in widget.members) {
         if (_teammateName(teammate).trim().toLowerCase() == name) {
           return _teammateId(teammate);
         }
@@ -103,7 +103,14 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   @override
   void didUpdateWidget(PeerEvalTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.teammates != widget.teammates ||
+    final contextChanged = oldWidget.teamId != widget.teamId ||
+        oldWidget.studentId != widget.studentId || oldWidget.stage != widget.stage;
+    if (contextChanged) {
+      _scores.clear();
+      _posted.clear();
+      _submitting.clear();
+    }
+    if (contextChanged || oldWidget.members != widget.members ||
         oldWidget.peerCriteria != widget.peerCriteria ||
         oldWidget.myPeerSubmissions != widget.myPeerSubmissions ||
         oldWidget.peerEvalAllowed != widget.peerEvalAllowed) {
@@ -115,7 +122,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   }
 
   void _buildScores() {
-    for (final t in widget.teammates) {
+    for (final t in widget.members) {
       final id = _teammateId(t);
       _posted.putIfAbsent(id, () => false);
       
@@ -255,7 +262,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                           widget.peerEvalUnavailableReason ??
                               (widget.isCapstone
                                   ? 'It opens after your team is endorsed, scheduled, and every assigned panelist finishes grading.'
-                                  : 'With peer access enabled, you can grade your teammates after all assigned panelists finish evaluating your scheduled defense.'),
+                                  : 'With peer access enabled, you must grade yourself and every teammate after all assigned panelists finish evaluating your scheduled defense.'),
                           style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
                         ),
                       ],
@@ -269,20 +276,20 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       );
     }
 
-    if (widget.teammates.isEmpty) {
+    if (widget.members.isEmpty) {
       return refreshWrapper(
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 32),
           child: Center(
-            child: Text('No teammates found for peer evaluation.',
+            child: Text('No team members found for evaluation.',
                 style: TextStyle(color: Colors.grey, fontSize: 14)),
           ),
         ),
       );
     }
 
-    final total = widget.teammates.length;
-    final done = widget.teammates.where((t) => _posted[_teammateId(t)] == true).length;
+    final total = widget.members.length;
+    final done = widget.members.where((t) => _posted[_teammateId(t)] == true).length;
     final hasPending = widget.peerEvalAllowed && done < total;
 
     final column = Column(
@@ -290,9 +297,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       children: [
         _buildPeerProgressBlock(done, total),
         const SizedBox(height: 16),
-        _sectionHeader('Peer Evaluation', showRedDot: hasPending),
+        _sectionHeader('Peer & Self-Evaluation', showRedDot: hasPending),
         const SizedBox(height: 4),
-        const Text('Rate each teammate per criterion. Once submitted, scores are locked.',
+        const Text('Rate yourself and every teammate using the same criteria. All evaluations are required. Once submitted, scores are locked.',
             style: TextStyle(color: Colors.grey, fontSize: 13)),
         const SizedBox(height: 12),
         if (done == total && total > 0) ...[
@@ -310,7 +317,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'All peer evaluations submitted and locked for this event.',
+                    'All peer and self-evaluations submitted and locked for this event.',
                     style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.green),
                   ),
                 ),
@@ -330,14 +337,14 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
               const Icon(Icons.info_outline, color: DefensysTokens.gold, size: 16),
               const SizedBox(width: 8),
               Expanded(
-                child: Text('Peer evaluation weight: ${widget.peerWeight}% of final grade.',
+                child: Text('Peer and self-evaluation weight: ${widget.peerWeight}% of final grade. Your self-rating counts equally with each teammate\'s rating.',
                     style: const TextStyle(fontSize: 12, color: DefensysTokens.gold)),
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        ...widget.teammates.map((t) {
+        ...widget.members.map((t) {
           final id = _teammateId(t);
           final name = _teammateName(t);
           return _peerCard(id, name);
@@ -382,7 +389,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Required Peer Evaluation Check',
+                'Required evaluations',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -390,7 +397,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 ),
               ),
               Text(
-                total > 0 ? '$done / $total Complete' : 'No Teammates',
+                total > 0 ? '$done / $total Complete' : 'No Team Members',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -415,6 +422,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   }
 
   Widget _peerCard(String teammateId, String name) {
+    final isSelf = teammateId == widget.studentId;
     final scores = _scores[teammateId] ?? {};
     final isPosted = _posted[teammateId] ?? false;
     final effectiveCriteria = widget.peerCriteria.isNotEmpty
@@ -469,7 +477,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          name,
+                          isSelf ? '$name (You)' : name,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -504,7 +512,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                     SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Peer evaluation submitted and locked.',
+                        isSelf ? 'Self-evaluation submitted and locked.' : 'Peer evaluation submitted and locked.',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -574,7 +582,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     )));
     final confirmed = await confirmLock(
       context,
-      title: 'Submit Peer Evaluation?',
+      title: teammateId == widget.studentId ? 'Submit Self-Evaluation?' : 'Submit Peer Evaluation?',
       message: 'Your evaluation for $name will be saved and permanently locked.${preview == null ? '' : ' Evaluation score: ${preview.toStringAsFixed(2)}%.'}',
       confirmLabel: 'Submit',
       icon: Icons.save_rounded,

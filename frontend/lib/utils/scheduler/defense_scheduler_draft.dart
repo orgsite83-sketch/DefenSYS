@@ -24,6 +24,7 @@ class DefenseSchedulerDraft {
     this.pitTemplate = '',
     this.documenterId,
     this.selectedPanelistIds = const [],
+    this.selectedTeamIds = const [],
     this.selectedChairId,
     this.externalIds = const [],
     this.sessions = const [],
@@ -45,6 +46,7 @@ class DefenseSchedulerDraft {
   final String pitTemplate;
   final int? documenterId;
   final List<int> selectedPanelistIds;
+  final List<int> selectedTeamIds;
   final int? selectedChairId;
   final List<int> externalIds;
   final List<Map<String, dynamic>> sessions;
@@ -52,6 +54,7 @@ class DefenseSchedulerDraft {
   final bool showFinalPreview;
 
   bool get hasContent {
+    if (selectedTeamIds.isNotEmpty) return true;
     if (planSlots.isNotEmpty) return true;
     for (final s in sessions) {
       final teamIds = (s['team_ids'] as List?) ?? [];
@@ -76,6 +79,7 @@ class DefenseSchedulerDraft {
     'pit_template': pitTemplate,
     'documenter_id': documenterId,
     'selected_panelist_ids': selectedPanelistIds,
+    'selected_team_ids': selectedTeamIds,
     'selected_chair_id': selectedChairId,
     'external_ids': externalIds,
     'sessions': sessions,
@@ -86,34 +90,66 @@ class DefenseSchedulerDraft {
   factory DefenseSchedulerDraft.fromJson(Map<String, dynamic> json) {
     return DefenseSchedulerDraft(
       scope: json['scope']?.toString() ?? 'capstone',
-      savedAt: DateTime.tryParse(json['saved_at']?.toString() ?? '') ?? DateTime.now(),
-      semesterId: json['semester_id'] is int ? json['semester_id'] as int : int.tryParse(json['semester_id']?.toString() ?? ''),
-      stageId: json['stage_id'] is int ? json['stage_id'] as int : int.tryParse(json['stage_id']?.toString() ?? ''),
+      savedAt:
+          DateTime.tryParse(json['saved_at']?.toString() ?? '') ??
+          DateTime.now(),
+      semesterId: json['semester_id'] is int
+          ? json['semester_id'] as int
+          : int.tryParse(json['semester_id']?.toString() ?? ''),
+      stageId: json['stage_id'] is int
+          ? json['stage_id'] as int
+          : int.tryParse(json['stage_id']?.toString() ?? ''),
       eventName: json['event_name']?.toString() ?? '',
-      rubricId: json['rubric_id'] is int ? json['rubric_id'] as int : int.tryParse(json['rubric_id']?.toString() ?? ''),
-      adviserRubricId: json['adviser_rubric_id'] is int ? json['adviser_rubric_id'] as int : int.tryParse(json['adviser_rubric_id']?.toString() ?? ''),
-      capstonePeerRubricId: json['capstone_peer_rubric_id'] is int ? json['capstone_peer_rubric_id'] as int : int.tryParse(json['capstone_peer_rubric_id']?.toString() ?? ''),
-      peerRubricId: json['peer_rubric_id'] is int ? json['peer_rubric_id'] as int : int.tryParse(json['peer_rubric_id']?.toString() ?? ''),
+      rubricId: json['rubric_id'] is int
+          ? json['rubric_id'] as int
+          : int.tryParse(json['rubric_id']?.toString() ?? ''),
+      adviserRubricId: json['adviser_rubric_id'] is int
+          ? json['adviser_rubric_id'] as int
+          : int.tryParse(json['adviser_rubric_id']?.toString() ?? ''),
+      capstonePeerRubricId: json['capstone_peer_rubric_id'] is int
+          ? json['capstone_peer_rubric_id'] as int
+          : int.tryParse(json['capstone_peer_rubric_id']?.toString() ?? ''),
+      peerRubricId: json['peer_rubric_id'] is int
+          ? json['peer_rubric_id'] as int
+          : int.tryParse(json['peer_rubric_id']?.toString() ?? ''),
       panelWeight: json['panel_weight']?.toString() ?? '80',
       peerWeight: json['peer_weight']?.toString() ?? '20',
       pitTemplate: json['pit_template']?.toString() ?? '',
-      documenterId: json['documenter_id'] is int ? json['documenter_id'] as int : int.tryParse(json['documenter_id']?.toString() ?? ''),
-      selectedPanelistIds: (json['selected_panelist_ids'] as List?)
+      documenterId: json['documenter_id'] is int
+          ? json['documenter_id'] as int
+          : int.tryParse(json['documenter_id']?.toString() ?? ''),
+      selectedPanelistIds:
+          (json['selected_panelist_ids'] as List?)
               ?.map((e) => int.tryParse(e.toString()))
               .whereType<int>()
               .toList() ??
           const [],
-      selectedChairId: json['selected_chair_id'] is int ? json['selected_chair_id'] as int : int.tryParse(json['selected_chair_id']?.toString() ?? ''),
-      externalIds: (json['external_ids'] as List?)
+      selectedChairId: json['selected_chair_id'] is int
+          ? json['selected_chair_id'] as int
+          : int.tryParse(json['selected_chair_id']?.toString() ?? ''),
+      selectedTeamIds:
+          (json['selected_team_ids'] as List? ??
+                  [
+                    for (final session in (json['sessions'] as List? ?? []))
+                      ...((session as Map)['team_ids'] as List? ?? []),
+                  ])
+              .map((id) => int.tryParse(id.toString()))
+              .whereType<int>()
+              .toSet()
+              .toList(),
+      externalIds:
+          (json['external_ids'] as List?)
               ?.map((e) => int.tryParse(e.toString()))
               .whereType<int>()
               .toList() ??
           const [],
-      sessions: (json['sessions'] as List?)
+      sessions:
+          (json['sessions'] as List?)
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           const [],
-      planSlots: (json['plan_slots'] as List?)
+      planSlots:
+          (json['plan_slots'] as List?)
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           const [],
@@ -172,7 +208,8 @@ Future<DefenseSchedulerDraft?> loadDefenseSchedulerDraft({
       : prefs.getString('${key}_term_$semesterId');
   raw ??= prefs.getString(key);
   if (raw == null || raw.isEmpty) {
-    final fallbackKey = '$_schedulerDraftKeyPrefix${scope != null ? '_$scope' : ''}';
+    final fallbackKey =
+        '$_schedulerDraftKeyPrefix${scope != null ? '_$scope' : ''}';
     if (key != fallbackKey) {
       raw = prefs.getString(fallbackKey);
     }
@@ -183,9 +220,13 @@ Future<DefenseSchedulerDraft?> loadDefenseSchedulerDraft({
   try {
     final json = jsonDecode(raw);
     if (json is! Map) return null;
-    final draft = DefenseSchedulerDraft.fromJson(Map<String, dynamic>.from(json));
+    final draft = DefenseSchedulerDraft.fromJson(
+      Map<String, dynamic>.from(json),
+    );
     if (!draft.hasContent) return null;
-    if (semesterId != null && draft.semesterId != null && draft.semesterId != semesterId) {
+    if (semesterId != null &&
+        draft.semesterId != null &&
+        draft.semesterId != semesterId) {
       return null;
     }
     return draft;
@@ -204,10 +245,14 @@ Future<void> saveDefenseSchedulerDraft(DefenseSchedulerDraft draft) async {
   await prefs.setString(key, encoded);
 }
 
-Future<void> clearDefenseSchedulerDraft({String? scope, int? semesterId}) async {
+Future<void> clearDefenseSchedulerDraft({
+  String? scope,
+  int? semesterId,
+}) async {
   final prefs = await SharedPreferences.getInstance();
   final key = await _schedulerDraftStorageKey(scope: scope);
-  final fallbackKey = '$_schedulerDraftKeyPrefix${scope != null ? '_$scope' : ''}';
+  final fallbackKey =
+      '$_schedulerDraftKeyPrefix${scope != null ? '_$scope' : ''}';
   if (semesterId != null) {
     await prefs.remove('${key}_term_$semesterId');
   }
@@ -248,16 +293,20 @@ ScheduleSessionDraft deserializeSessionDraft(
   final key = map['key']?.toString() ?? 'session-1';
   final date = ownsFields
       ? TextEditingController(text: map['date']?.toString() ?? '')
-      : (sharedDate ?? TextEditingController(text: map['date']?.toString() ?? ''));
+      : (sharedDate ??
+            TextEditingController(text: map['date']?.toString() ?? ''));
   final start = ownsFields
       ? TextEditingController(text: map['start']?.toString() ?? '08:00')
-      : (sharedStart ?? TextEditingController(text: map['start']?.toString() ?? '08:00'));
+      : (sharedStart ??
+            TextEditingController(text: map['start']?.toString() ?? '08:00'));
   final duration = ownsFields
       ? TextEditingController(text: map['duration']?.toString() ?? '60')
-      : (sharedDuration ?? TextEditingController(text: map['duration']?.toString() ?? '60'));
+      : (sharedDuration ??
+            TextEditingController(text: map['duration']?.toString() ?? '60'));
   final room = ownsFields
       ? TextEditingController(text: map['room']?.toString() ?? '')
-      : (sharedRoom ?? TextEditingController(text: map['room']?.toString() ?? ''));
+      : (sharedRoom ??
+            TextEditingController(text: map['room']?.toString() ?? ''));
   final end = map['end']?.toString() ?? '12:00';
 
   if (!ownsFields) {
@@ -266,15 +315,23 @@ ScheduleSessionDraft deserializeSessionDraft(
       sharedRoom.text = roomVal;
     }
     final dateVal = map['date']?.toString() ?? '';
-    if (dateVal.isNotEmpty && sharedDate != null && (sharedDate.text.isEmpty || sharedDate.text == DateTime.now().toIso8601String().substring(0, 10))) {
+    if (dateVal.isNotEmpty &&
+        sharedDate != null &&
+        (sharedDate.text.isEmpty ||
+            sharedDate.text ==
+                DateTime.now().toIso8601String().substring(0, 10))) {
       sharedDate.text = dateVal;
     }
     final startVal = map['start']?.toString() ?? '';
-    if (startVal.isNotEmpty && sharedStart != null && sharedStart.text.isEmpty) {
+    if (startVal.isNotEmpty &&
+        sharedStart != null &&
+        sharedStart.text.isEmpty) {
       sharedStart.text = startVal;
     }
     final durationVal = map['duration']?.toString() ?? '';
-    if (durationVal.isNotEmpty && sharedDuration != null && sharedDuration.text.isEmpty) {
+    if (durationVal.isNotEmpty &&
+        sharedDuration != null &&
+        sharedDuration.text.isEmpty) {
       sharedDuration.text = durationVal;
     }
   }
@@ -299,8 +356,12 @@ ScheduleSessionDraft deserializeSessionDraft(
       if (blockMap is Map) {
         session.blocks.add(
           ScheduleSessionBlock(
-            start: TextEditingController(text: blockMap['start_time']?.toString() ?? '08:00'),
-            end: TextEditingController(text: blockMap['end_time']?.toString() ?? '12:00'),
+            start: TextEditingController(
+              text: blockMap['start_time']?.toString() ?? '08:00',
+            ),
+            end: TextEditingController(
+              text: blockMap['end_time']?.toString() ?? '12:00',
+            ),
           ),
         );
       }
@@ -310,18 +371,21 @@ ScheduleSessionDraft deserializeSessionDraft(
     }
   }
 
-  session.teamIds = (map['team_ids'] as List?)
+  session.teamIds =
+      (map['team_ids'] as List?)
           ?.map((e) => int.tryParse(e.toString()))
           .whereType<int>()
           .toSet() ??
       {};
   session.customStaff = map['custom_staff'] == true;
-  session.panelists = (map['panelists'] as List?)
+  session.panelists =
+      (map['panelists'] as List?)
           ?.map((e) => int.tryParse(e.toString()))
           .whereType<int>()
           .toSet() ??
       {};
-  session.externals = (map['externals'] as List?)
+  session.externals =
+      (map['externals'] as List?)
           ?.map((e) => int.tryParse(e.toString()))
           .whereType<int>()
           .toSet() ??

@@ -109,6 +109,29 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(resetApiHttpClientForTesting);
 
+  testWidgets('shared progress and names follow four configured alternatives', (tester) async {
+    final project = projectFixture()
+      ..['endorsed'] = false
+      ..['can_edit_names'] = true
+      ..['can_manage'] = false
+      ..['can_review'] = false
+      ..['review_progress'] = {'required': 4, 'papers_accepted': 0};
+    (project['systems'] as List).add({'id': 4, 'key': 'c4', 'title': '', 'confirmed': false, 'papers': []});
+    setApiHttpClientForTesting(MockClient((request) async => http.Response(jsonEncode(project), 200)));
+    await pumpDefensysWidget(tester, const SingleChildScrollView(child: SectionConceptWorkspace(projectId: 7, embedded: true)), overrides: [authProvider.overrideWith(_Student.new)]);
+    await tester.pumpAndSettle();
+    expect(find.text('0 of 4 papers accepted'), findsOneWidget);
+    expect(find.text('System D'), findsWidgets);
+    await tester.ensureVisible(find.text('Propose system names').first);
+    await tester.tap(find.text('Propose system names').first);
+    await tester.pumpAndSettle();
+    final inputs = tester.widgetList<TextFormField>(find.byType(TextFormField)).toList();
+    expect(inputs, hasLength(4));
+    expect(inputs.first.enabled, isFalse);
+    expect(inputs.last.enabled, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'student integration uses one list response and obeys paper upload permissions',
     (tester) async {
@@ -699,7 +722,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.text('Submit 3 corresponding module concepts · PIT Design'),
+      find.text('Submit 3 matching module concepts · PIT Design'),
       findsOneWidget,
     );
   });

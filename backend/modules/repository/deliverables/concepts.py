@@ -10,7 +10,7 @@ from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from .models import ConceptRound, DeliverableSubmission
 from .documents import completeness
-from student_teams.concept_policy import resolve_policy, initial_concepts
+from student_teams.concept_policy import resolve_policy, initial_concepts, title_progress
 
 
 @read_memoize
@@ -49,6 +49,16 @@ def reviewer_name(stage):
 
 def enabled(stage):
     return bool(stage and (stage.concept_config or {}).get('enabled'))
+
+
+@read_memoize
+def title_context_is_open(team, stage):
+    if not team.semester.is_active:
+        return False
+    if hasattr(stage, 'event_name'):
+        return not stage.is_officially_complete
+    return not stage.grading_configs.filter(
+        semester_id=team.semester_id, is_officially_complete=True).exists()
 
 
 @read_memoize
@@ -102,6 +112,57 @@ def fingerprint(snapshot):
 
 def titles_complete(current):
     return bool(current and current.concepts and all(c.get('title', '').strip() for c in current.concepts))
+
+
+@transaction.atomic
+def reconcile_initial_requirements(team, stage, actor, *, expected_count=None):
+    """Reviewed expansion preserves slot IDs/files; a hearing is never rewritten."""
+    from student_teams.models import StudentTeam
+    from defense.scheduler.models import DefenseSchedule
+    team = StudentTeam.objects.select_for_update().get(pk=team.pk)
+    stage = type(stage).objects.select_for_update().get(pk=stage.pk)
+    if expected_count is not None and expected_count != stage.concept_config.get('required_count', 3):
+        raise ValidationError('The stage concept count changed. Refresh and review the new requirement.')
+    if not team.semester.is_active or getattr(stage, 'is_officially_complete', False):
+        raise ValidationError('Historical or completed concept sets are read-only.')
+    current = latest_round(team, stage)
+    if not hasattr(stage, 'event_name') and stage.grading_configs.filter(
+            semester_id=team.semester_id, is_officially_complete=True).exists():
+        raise ValidationError('This completed stage retains its captured requirements.')
+    schedules = DefenseSchedule.objects.filter(team=team, semester=team.semester,
+        project_version=team.project_version, **({'scope': 'pit', 'event_name': stage.event_name}
+        if hasattr(stage, 'event_name') else {'scope': 'capstone', 'defense_stage': stage})).exclude(status='cancelled')
+    if schedules.exists() or current and (current.schedule_id or current.verdict or current.number != 1):
+        raise ValidationError('Scheduled, decided and panel-requested sets retain their captured requirements.')
+    policy = resolve_policy(team, stage, use_round=False)
+    desired = initial_concepts(policy)
+    if current:
+        before = deepcopy(current.policy_snapshot)
+        by_key = {c['key']: c for c in current.concepts}
+        if set(by_key) - {c['key'] for c in desired}:
+            raise ValidationError('This change would remove existing concepts. Use a reviewed new project instead.')
+        current.concepts = [by_key.get(c['key'], c) for c in desired]
+        current.policy_snapshot = policy
+        current.review_required = True
+        current.save(update_fields=['concepts', 'policy_snapshot', 'review_required'])
+        invalidate_clearance(team, stage.label)
+    else:
+        before = {}
+        current = get_round(team, stage)
+    from .services import get_deliverable_definitions_for_team
+    from .documents import sync_submission
+    definitions = {d['id']: d for d in get_deliverable_definitions_for_team(team, stage.label)
+        if (d.get('file_policy') or {}).get('mode') == 'concepts'}
+    for submission in DeliverableSubmission.objects.filter(team=team, stage_label=stage.label,
+            project_version=team.project_version, deliverable_id__in=definitions):
+        sync_submission(submission, definitions[submission.deliverable_id], stage)
+    team.project_pending = True
+    team.save(update_fields=['project_pending', 'updated_at'])
+    log_high_impact_action(category=SystemAuditLog.CATEGORY_REPOSITORY,
+        action='repository.concept_count_reconciled', target=current, actor=actor,
+        reason='Applied the reviewed stage requirement while retaining existing concepts and files.',
+        old_values={'policy': before}, new_values={'policy': policy}, strict=True)
+    return current
 
 
 def module_review_token(team, stage):
@@ -332,9 +393,13 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
 
 
 @transaction.atomic
-def save_titles(team, stage, concepts, *, actor=None):
+def save_titles(team, stage, concepts, *, actor=None, draft=False):
     from student_teams.models import StudentTeam
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
+    if actor and getattr(actor, 'role', '') == 'student' and team.leader_id != actor.pk:
+        raise PermissionError('Only this team’s leader can edit its concept titles.')
+    if draft and not title_context_is_open(team, stage):
+        raise PermissionError('Completed or historical concept titles are read-only.')
     current = get_round(team, stage)
     policy = resolve_policy(team, stage, current=current)
     from repository.section_concepts.services import can_edit_module_titles, module_title_metadata, require_active
@@ -355,13 +420,17 @@ def save_titles(team, stage, concepts, *, actor=None):
     selected_key = current.section_round.selected_key if current.section_round_id else ''
     for c in updated:
         title = keyed.get(c['key'], {}).get('title', '')
-        if not isinstance(title, str) or not title.strip() or len(title.strip()) > 255:
+        if not isinstance(title, str) or (not draft and not title.strip()) or len(title.strip()) > 255:
             raise ValueError('Every concept needs a title of up to 255 characters.')
         if selected_key and c['key'] != selected_key:
             if title.strip() != c['title']:
                 raise ValidationError('Only the module linked to the selected section system can be changed.')
             continue
         metadata = module_title_metadata(actor, team, stage)
+        if current.section_round_id and c.get('faculty_confirmed') and not metadata.get('faculty_confirmed'):
+            if title.strip() != c['title']:
+                raise PermissionError('Only assigned faculty can change a confirmed module name.')
+            continue
         if metadata.get('faculty_confirmed') and (not c.get('faculty_confirmed') or c['title'] != title.strip()):
             c.update(faculty_confirmed_by=actor.pk, faculty_confirmed_at=timezone.now().isoformat())
         c['title'] = title.strip()
@@ -471,12 +540,13 @@ def payload(team, stage, *, history=True, actor=None):
         'section_selected_key': shared_round.selected_key if shared_round else '',
         'section_presenting': bool(shared_round and shared_round.presentation_started_at),
         'section_revisions_pending': bool(shared_round and shared_round.verdict == 'approved_with_revisions' and not shared_round.revisions_cleared_at),
-        'faculty_names_required': shared_policy and policy.get('title_mode') == 'faculty_provided',
+        'faculty_names_required': False,
         'module_names_confirmed': shared_policy and all(c.get('faculty_confirmed') for c in concepts),
         'module_names_confirmed_count': sum(bool(c.get('faculty_confirmed')) for c in concepts),
         'concepts': concepts, 'status': status, 'can_edit': bool(team.semester.is_active and (not current or not current.schedule_id)),
+        'title_progress': title_progress(policy, current),
         'assigned': policy.get('mode') == 'assigned',
-        'can_edit_titles': policy.get('mode') != 'assigned' and bool(team.semester.is_active and (not current or not current.schedule_id)),
+        'can_edit_titles': policy.get('mode') != 'assigned' and title_context_is_open(team, stage) and bool(not current or not current.schedule_id),
         'clearance_valid': clearance_valid(team, stage, current),
         'review_required': current.review_required if current else True,
         'redefense_plan': policy.get('redefense_plan'),
@@ -526,6 +596,7 @@ def summary(team, stage):
         else:
             status = 'concept_endorsement_pending' if required_complete(team, stage.label) else 'concept_review_pending'
     return {'enabled': True, 'round': number, 'status': status,
+        'title_progress': title_progress(policy, current),
         'section_project_id': policy.get('section_project_id'),
         'system_concepts': policy.get('system_concepts', []),
         'concepts': [{k: c.get(k, '') for k in ('key', 'title', 'decision')}

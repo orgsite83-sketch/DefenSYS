@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import '../models/schedule_session_draft.dart';
 import 'scheduler_people_picker.dart';
+import 'scheduler_time_blocks_editor.dart';
 import '../dialogs/documenter_pool_dialog.dart';
 
 class SchedulerSessionEditor extends StatelessWidget {
@@ -20,10 +21,8 @@ class SchedulerSessionEditor extends StatelessWidget {
     required this.onChanged,
     required this.onCustomize,
     required this.dateField,
-    required this.timeField,
     required this.teamSelection,
-    required this.onAddBlock,
-    required this.onRemoveBlock,
+    this.onEditingChanged,
     this.onRemove,
   });
 
@@ -34,10 +33,9 @@ class SchedulerSessionEditor extends StatelessWidget {
   final bool minutesRequired;
   final VoidCallback onChanged, onCustomize;
   final VoidCallback? onRemove;
-  final Widget Function(TextEditingController) dateField, timeField;
+  final Widget Function(TextEditingController) dateField;
   final Widget teamSelection;
-  final VoidCallback onAddBlock;
-  final ValueChanged<int> onRemoveBlock;
+  final ValueChanged<bool>? onEditingChanged;
 
   Widget _field(String label, Widget child) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -87,7 +85,7 @@ class SchedulerSessionEditor extends StatelessWidget {
             ),
             Flexible(
               child: Text(
-                '${draft.teamIds.length} selected · ${draft.capacity} slots',
+                '${draft.teamIds.length} / ${draft.capacity} slots filled',
                 style: TextStyle(
                   fontSize: 12,
                   color: DefensysTokens.textSecondaryOf(context),
@@ -104,8 +102,6 @@ class SchedulerSessionEditor extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        teamSelection,
-        const SizedBox(height: 16),
         _pair(
           _field('Date *', dateField(draft.date)),
           _field(
@@ -118,66 +114,19 @@ class SchedulerSessionEditor extends StatelessWidget {
             ),
           ),
         ),
+        const SizedBox(height: 20),
+        Divider(height: 1, color: DefensysTokens.borderOf(context)),
         const SizedBox(height: 16),
-        const Text(
-          'Defense time blocks',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Teams are scheduled inside these blocks. Gaps are breaks.',
-          style: TextStyle(
-            fontSize: 12,
-            color: DefensysTokens.textSecondaryOf(context),
-          ),
-        ),
-        for (int i = 0; i < draft.blocks.length; i++) ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Block ${i + 1}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-              if (i > 0)
-                IconButton(
-                  onPressed: enabled ? () => onRemoveBlock(i) : null,
-                  tooltip: 'Remove time block ${i + 1}',
-                  icon: const Icon(Icons.close, size: 16),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _pair(
-            _field('Start time *', timeField(draft.blocks[i].start)),
-            _field('End time *', timeField(draft.blocks[i].end)),
-          ),
-        ],
-        const SizedBox(height: 12),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ShadButton.outline(
-            key: ValueKey('add-time-block-$number'),
-            size: ShadButtonSize.sm,
-            enabled: enabled && draft.blocks.length < 20,
-            onPressed: enabled && draft.blocks.length < 20 ? onAddBlock : null,
-            leading: const Icon(LucideIcons.plus, size: 14),
-            child: const Text('Add time block'),
-          ),
+        SchedulerTimeBlocksEditor(
+          draft: draft,
+          enabled: enabled,
+          onSaved: onChanged,
+          onEditingChanged: onEditingChanged,
         ),
         const SizedBox(height: 16),
-        _field(
-          'Slot duration (minutes) *',
-          ShadInput(
-            controller: draft.duration,
-            enabled: enabled,
-            keyboardType: TextInputType.number,
-            onChanged: (_) => onChanged(),
-          ),
-        ),
+        Divider(height: 1, color: DefensysTokens.borderOf(context)),
+        const SizedBox(height: 16),
+        teamSelection,
         const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerLeft,
@@ -247,7 +196,10 @@ class SchedulerSessionEditor extends StatelessWidget {
           ),
           if (capstone && minutesRequired) ...[
             const SizedBox(height: 16),
-            const Align(alignment: Alignment.centerRight, child: DocumenterPoolButton()),
+            const Align(
+              alignment: Alignment.centerRight,
+              child: DocumenterPoolButton(),
+            ),
             _field(
               'Documenter *',
               SchedulerPeoplePicker(

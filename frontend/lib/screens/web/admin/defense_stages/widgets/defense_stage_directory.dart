@@ -644,13 +644,10 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
                 LucideIcons.clipboardList,
                 '$count ${count == 1 ? 'rubric' : 'rubrics'} attached',
               ),
-              if (stage['is_presentation_only'] == true)
-                _metadataPill(LucideIcons.presentation, 'Presentation only')
-              else
-                _metadataPill(
-                  LucideIcons.folder,
-                  '$pre pre-defense · $post post-defense',
-                ),
+              _metadataPill(
+                LucideIcons.folder,
+                '$pre pre-defense · $post post-defense',
+              ),
               if (system.isNotEmpty)
                 _metadataPill(LucideIcons.fileCheck, 'Signed minutes required'),
             ],
@@ -825,32 +822,9 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     final requirements = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (stage['is_presentation_only'] == true)
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _border),
-            ),
-            child: Row(
-              children: [
-                Icon(LucideIcons.presentation, size: 16, color: _muted),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Presentation only. Student file uploads are not required.',
-                    style: _small,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else ...[
-          SetupRequirementGroup(title: 'Pre-defense requirements', rows: pre),
-          const SizedBox(height: 14),
-          SetupRequirementGroup(title: 'Post-defense requirements', rows: post),
-        ],
+        SetupRequirementGroup(title: 'Pre-defense requirements', rows: pre),
+        const SizedBox(height: 14),
+        SetupRequirementGroup(title: 'Post-defense requirements', rows: post),
         if (_rows(stage['system_deliverables']).isNotEmpty) ...[
           const SizedBox(height: 14),
           SetupRequirementGroup(

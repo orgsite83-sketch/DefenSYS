@@ -27,6 +27,7 @@ class _PolicyNotifier extends StudentTeamsNotifier {
       {
         'key': 'capstone:10',
         'label': 'Concept Proposal',
+        'required_count': 3,
         'policy': {'mode': 'auto'},
         'teams': [
           {
@@ -44,6 +45,7 @@ class _PolicyNotifier extends StudentTeamsNotifier {
             },
             'has_submissions': true,
             'locked': false,
+            'needs_requirement_update': true,
           },
         ],
       },
@@ -87,16 +89,10 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('section-tab-2')));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Concept Proposal'));
-        await tester.tap(find.text('Concept Proposal'));
+        await tester.ensureVisible(find.text('Apply configured count'));
+        await tester.tap(find.text('Apply configured count'));
         await tester.pumpAndSettle();
-        expect(find.textContaining('Current: 1 concept'), findsOneWidget);
-        await tester.ensureVisible(find.byType(WorkflowChoice).first);
-        await tester.tap(find.byType(WorkflowChoice).first);
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Require multiple proposals').last);
-        await tester.pumpAndSettle();
-        expect(find.text('3 concepts'), findsOneWidget);
+        expect(find.textContaining('3 concepts required'), findsOneWidget);
         await capturePreview(
           tester,
           find
@@ -116,10 +112,7 @@ void main() {
         expect(notifier.saved?['confirm_concept_changes'], isTrue);
         final change =
             (notifier.saved!['concept_policy_changes'] as List).single as Map;
-        expect(change['section_policy'], {
-          'mode': 'proposals',
-          'required_count': 3,
-        });
+        expect(change['reconcile_team_ids'], [5]);
         expect(tester.takeException(), isNull);
       },
     );

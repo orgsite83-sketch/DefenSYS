@@ -12,6 +12,25 @@ def team_policy_key(team, stage):
     return f'{context_key(stage)}:v{team.project_version}'
 
 
+def proposal_keys(count):
+    return [f'c{i}' for i in range(1, count + 1)]
+
+
+def supplied_title(team, stage):
+    """Read explicit, version/context-bound input, never a selected display title."""
+    override = (team.concept_policies or {}).get(team_policy_key(team, stage), {})
+    if override.get('mode') == 'assigned' or 'seed_title' in override:
+        return (override.get('seed_title', override.get('assigned_title', '')) or '').strip()
+    assignment = team.concept_assignment or {}
+    if assignment.get('project_version') != team.project_version:
+        return ''
+    key = assignment.get('context_key')
+    if not key:
+        first = contexts_for(team).first()
+        key = context_key(first) if first else None
+    return (assignment.get('seed_title', assignment.get('assigned_title', '')) or '').strip() if key == context_key(stage) else ''
+
+
 def contexts_for(team):
     if team.is_capstone:
         from defense.stages.models import DefenseStage
@@ -21,7 +40,7 @@ def contexts_for(team):
 
 
 def resolve_policy(team, stage, *, current=None, use_round=True, section_assignment=None):
-    """Never infer assignment from a display title; existing hearings own their policy."""
+    """Stage setup owns new sets; captured hearings retain their exact policy."""
     config = deepcopy(stage.concept_config or {})
     if use_round:
         if current is None:
@@ -39,27 +58,9 @@ def resolve_policy(team, stage, *, current=None, use_round=True, section_assignm
     shared = policy_for(team, stage)
     if shared:
         return shared
-    if section_assignment is None:
-        from .models import SectionAssignment
-        section_assignment = SectionAssignment.objects.filter(semester_id=team.semester_id,
-            section=team.section, year_level=team.year_level).first()
-    section = (section_assignment.concept_policies or {}).get(context_key(stage), {}) if section_assignment else {}
-    override = (team.concept_policies or {}).get(team_policy_key(team, stage), {})
-    selected, source = next(((p, s) for p, s in ((override, 'team'), (section, 'section'))
-                             if p.get('mode') in ('assigned', 'proposals')), ({}, 'stage'))
-    assignment = team.concept_assignment or {}
-    if assignment.get('project_version') != team.project_version:
-        assignment = {}
-    assignment_context = assignment.get('context_key')
-    if assignment and not assignment_context:
-        first_context = contexts_for(team).first()
-        assignment_context = context_key(first_context) if first_context else None
-    if not selected and assignment and assignment_context == context_key(stage):
-        selected, source = assignment, 'import'
-    mode = selected.get('mode', 'proposals')
-    title = (selected.get('assigned_title') or assignment.get('assigned_title') or '').strip() if mode == 'assigned' else ''
-    return {**config, 'mode': mode, 'required_count': 1 if mode == 'assigned' else selected.get(
-        'required_count', config.get('required_count', 3)), 'assigned_title': title, 'source': source}
+    title = supplied_title(team, stage)
+    return {**config, 'mode': 'proposals', 'required_count': config.get('required_count', 3),
+            'assigned_title': '', 'seed_title': title, 'source': 'supplied' if title else 'stage'}
 
 
 def validate_override(value, *, team=False):
@@ -80,6 +81,13 @@ def validate_override(value, *, team=False):
 
 
 def initial_concepts(policy):
-    keys = policy.get('concept_keys') or [f'c{i}' for i in range(1, policy['required_count'] + 1)]
-    return [{'key': key, 'title': policy.get('assigned_title', '') if i == 0 else '',
+    keys = policy.get('concept_keys') or proposal_keys(policy['required_count'])
+    return [{'key': key, 'title': (policy.get('seed_title') or policy.get('assigned_title', '')) if i == 0 else '',
              'decision': '', 'remarks': ''} for i, key in enumerate(keys)]
+
+
+def title_progress(policy, current=None):
+    concepts = current.concepts if current else initial_concepts(policy)
+    provided = sum(bool(c.get('title', '').strip()) for c in concepts)
+    return {'required_count': len(concepts), 'provided_count': provided,
+            'remaining_count': len(concepts) - provided}

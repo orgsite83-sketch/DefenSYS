@@ -4,8 +4,11 @@ import 'package:defensys/screens/app/student/team_tab.dart';
 import 'package:defensys/screens/app/student/student_events_tab.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/defense/team_defense_provider.dart';
+import 'package:defensys/screens/app/student/peer_eval_tab.dart';
 
 import '../helpers/pump_app.dart';
+import '../helpers/capture_preview.dart';
+import 'package:defensys/theme/app_theme.dart';
 
 class _TestDeliverablesNotifier extends CapstoneDeliverablesNotifier {
   @override
@@ -66,6 +69,76 @@ class _TestDefenses extends TeamDefenseNotifier {
 }
 
 void main() {
+  for (final dark in [false, true]) {
+    testWidgets('imported title shows actual configured progress on phone ${dark ? 'dark' : 'light'}', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await loadPreviewFonts();
+      int? selectedTab;
+      int? selectedSubTab;
+      await pumpDefensysWidget(tester, RepaintBoundary(
+        key: const ValueKey('configured-concepts-phone'),
+        child: TeamTab(studentData: {
+          'student': {'id': 10, 'is_leader': true},
+          'team': {'id': 1, 'isCapstone': true, 'name': 'Team AgriPulse', 'projectTitle': 'Imported soil sensor concept',
+            'currentStage': 'Colloquium', 'section': 'BSIT-3A', 'adviserName': 'Eduardo Padilla'},
+          'stage_options': ['Colloquium'],
+          'stages': [{'stage_label': 'Colloquium', 'concept_workflow': {
+            'enabled': true, 'status': 'concepts_needed', 'required_count': 4,
+            'concepts': [for (var i = 1; i <= 4; i++) {'key': 'c$i', 'title': i == 1 ? 'Imported soil sensor concept' : ''}],
+          }}],
+        }, onSelectTab: (tab, {subTabIndex}) { selectedTab = tab; selectedSubTab = subTabIndex; }),
+      ), theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+      overrides: [capstoneDeliverablesProvider.overrideWith(_TestDeliverablesNotifier.new)]);
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 4 concept titles provided'), findsOneWidget);
+      expect(find.text('Concept 4'), findsOneWidget);
+      expect(find.text('3 Concept Proposals Submitted'), findsNothing);
+      expect(find.text('Edit concept titles'), findsOneWidget);
+      await tester.ensureVisible(find.text('View deliverables'));
+      await tester.tap(find.text('View deliverables'));
+      expect(selectedTab, 1);
+      expect(selectedSubTab, 1);
+      await capturePreview(tester, find.byKey(const ValueKey('configured-concepts-phone')), 'configured-concepts-phone-${dark ? 'dark' : 'light'}');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('PIT event resolves its own membership without changing the current team', (tester) async {
+    final data = <String, dynamic>{
+      'student': {'id': 10},
+      'team': {'id': 1, 'name': 'Current team', 'currentStage': 'Current event'},
+      'current_stage': 'Current event',
+      'stage_options': ['Earlier event', 'Current event'],
+      'members': [{'id': 11, 'name': 'Current teammate'}],
+      'stages': [
+        {
+          'stage_label': 'Earlier event',
+          'team_id': 2,
+          'team': {'id': 2, 'name': 'Earlier team', 'members': [
+            {'id': 10, 'name': 'Student'}, {'id': 12, 'name': 'Earlier teammate'},
+          ]},
+          'peer_eval_allowed': false,
+        },
+        {'stage_label': 'Current event', 'team_id': 1},
+      ],
+    };
+    await pumpDefensysWidget(tester, StudentEventsTab(
+      isCapstone: false, studentData: data, initialStage: 'Earlier event', isActive: false,
+    ), overrides: [
+      capstoneDeliverablesProvider.overrideWith(_TestDeliverablesNotifier.new),
+    ]);
+    await tester.ensureVisible(find.text('Peer Eval').last);
+    await tester.tap(find.text('Peer Eval').last);
+    await tester.pumpAndSettle();
+    final peer = tester.widget<PeerEvalTab>(find.byType(PeerEvalTab));
+    expect(peer.teamId, '2');
+    expect(peer.members.any((m) => m['id'] == 12), isTrue);
+    expect(data['team']['id'], 1);
+    expect(find.byKey(const ValueKey('student-team-1')), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
     'TeamTab displays project details, roster, and defense shortcuts',
     (tester) async {
@@ -130,6 +203,10 @@ void main() {
         'stage_options': ['Project Proposal', 'Colloquium', 'Final Defense'],
       };
 
+      mockStudentData['team_options'] = [
+        {'id': 1, 'name': 'Current team'},
+        {'id': 2, 'name': 'Historical team'},
+      ];
       int? selectedTab;
 
       await pumpDefensysWidget(
@@ -146,6 +223,8 @@ void main() {
 
       // The team overview keeps project details and navigation together.
       expect(find.text('Team Innovators'), findsOneWidget);
+      expect(find.byType(DropdownButtonFormField<int>), findsNothing);
+      expect(find.text('Your team'), findsNothing);
       expect(find.text('Shared system concepts'), findsNothing);
       expect(find.text('AI Defense Evaluation System'), findsOneWidget);
       expect(find.text('Colloquium'), findsWidgets);

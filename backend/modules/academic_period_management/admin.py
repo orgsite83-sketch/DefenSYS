@@ -15,6 +15,9 @@ class SchoolYearAdmin(admin.ModelAdmin):
     search_fields = ('label',)
     inlines = [SemesterInline]
 
+    def get_readonly_fields(self, request, obj=None):
+        return ('label',) if obj and not obj.can_edit_label else ()
+
     def semester_count(self, obj):
         return obj.semesters.count()
 

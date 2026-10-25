@@ -397,7 +397,9 @@ ParsedBulkCsvResult _parseMultiColumnTeamMatrix(
           'team_name': teamName,
           'project_title': project,
           'year_level': yearLevel,
-          if (yearLevel.isNotEmpty)
+          // Third-year scope depends on the semester. Preserve the year and
+          // let the server resolve PIT versus Capstone from enrollment.
+          if (yearLevel.isNotEmpty && yearLevel != '3rd Year')
             'level': yearLevel == '4th Year'
                 ? '4th Year Capstone'
                 : '$yearLevel PIT',
@@ -429,6 +431,10 @@ ParsedBulkCsvResult _parseMultiColumnTeamMatrix(
           if (!(currentTeam['member_ids'] as List<String>).contains(member)) {
             (currentTeam['member_ids'] as List<String>).add(member);
           }
+        }
+        if ((currentTeam['leader_id'] ?? '').toString().isEmpty &&
+            (currentTeam['member_ids'] as List).isNotEmpty) {
+          currentTeam['leader_id'] = (currentTeam['member_ids'] as List).first;
         }
       }
     }
@@ -1068,7 +1074,8 @@ ParsedBulkCsvResult parseTeamBulkCsv(
           'project_title': project,
           if (moduleLayout) 'project_kind': 'module',
           'year_level': inferredYear,
-          if (inferredYear.isNotEmpty)
+          // BSIT-3 alone cannot distinguish first-semester PIT from Capstone 1.
+          if (inferredYear.isNotEmpty && inferredYear != '3rd Year')
             'level': inferredYear == '4th Year'
                 ? '4th Year Capstone'
                 : '$inferredYear PIT',
@@ -1085,6 +1092,9 @@ ParsedBulkCsvResult parseTeamBulkCsv(
         if (member.isNotEmpty) {
           if (!(currentTeam['member_ids'] as List<String>).contains(member)) {
             (currentTeam['member_ids'] as List<String>).add(member);
+          }
+          if ((currentTeam['leader_id'] ?? '').toString().isEmpty) {
+            currentTeam['leader_id'] = (currentTeam['member_ids'] as List).first;
           }
         }
       }

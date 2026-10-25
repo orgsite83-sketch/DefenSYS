@@ -39,7 +39,11 @@ void main() {
         'deliverable_id': 'FINAL',
         'label': 'Approved Concept Paper',
         'deliverable_type': 'post',
-        'file_policy': {'mode': 'single', 'purpose': 'approved_concept'},
+        'file_policy': {
+          'mode': 'single',
+          'purpose': 'approved_concept',
+          'auto_added_for': 'concept_selection',
+        },
       },
     ];
     await pumpDefensysWidget(
@@ -65,6 +69,7 @@ void main() {
     expect(items.first['file_policy'], {
       'mode': 'multiple',
       'purpose': 'approved_concept',
+      'auto_added_for': 'concept_selection',
       'min_files': 1,
       'max_files': 10,
     });
@@ -80,6 +85,7 @@ void main() {
     expect(items.first['file_policy'], {
       'mode': 'single',
       'purpose': 'approved_concept',
+      'auto_added_for': 'concept_selection',
     });
     expect(tester.takeException(), isNull);
   });

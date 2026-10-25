@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -66,8 +67,10 @@ class AcademicPeriodListCreateView(APIView):
 class SchoolYearDetailView(APIView):
     permission_classes = [IsAuthenticated, IsSystemAdmin]
 
+    @transaction.atomic
     def patch(self, request, school_year_id):
-        school_year = get_object_or_404(SchoolYear, pk=school_year_id)
+        school_year = get_object_or_404(SchoolYear.objects.select_for_update(), pk=school_year_id)
+        old_label = school_year.label
         serializer = SchoolYearUpdateSerializer(
             instance=school_year,
             data=request.data,
@@ -75,6 +78,15 @@ class SchoolYearDetailView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         school_year = serializer.save()
+        if school_year.label != old_label:
+            from authentication_access_control.audit import log_high_impact_action
+            from authentication_access_control.models import SystemAuditLog
+            log_high_impact_action(
+                category=SystemAuditLog.CATEGORY_ACADEMIC_PERIOD,
+                action='school_year.renamed', target=school_year, request=request,
+                old_values={'label': old_label}, new_values={'label': school_year.label},
+                reason='Corrected an unused school year before adding semesters.', strict=True,
+            )
 
         school_years = SchoolYear.objects.prefetch_related('semesters').all()
         return Response({

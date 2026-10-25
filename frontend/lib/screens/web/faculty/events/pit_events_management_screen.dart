@@ -2374,6 +2374,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                 setState(() {
                                   _conceptConfig = value;
                                   ensureConceptPapers(_deliverables, value);
+                                  if (!_deliverables.contains(_selectedDeliverable)) _selectedDeliverable = null;
                                 });
                                 _markDirty();
                               },

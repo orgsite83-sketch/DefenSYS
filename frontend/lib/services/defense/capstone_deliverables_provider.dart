@@ -117,6 +117,50 @@ class CapstoneDeliverablesState {
 }
 
 class StudentTaskBadgeHelper {
+  static bool isTeamLeader(Map<String, dynamic>? data) {
+    if (data == null) return false;
+    final student = data['student'] as Map? ?? {};
+    if (student['is_leader'] == true || student['isLeader'] == true) return true;
+    final id = student['id'];
+    if (id != null && '${data['team']?['leader_id']}' == '$id') return true;
+    return (data['members'] as List? ?? []).whereType<Map>().any((m) =>
+      id != null && '${m['id']}' == '$id' && (m['isLeader'] == true || m['is_leader'] == true));
+  }
+  static bool canEditConceptTitles(Map workflow) {
+    if (workflow['can_edit_titles'] == false || workflow['can_edit'] == false ||
+        workflow['assigned'] == true || workflow['module_names_confirmed'] == true) { return false; }
+    return !const {'scheduled', 'approved', 'approved_with_revisions', 'failed',
+      'project_rejected', 'for_redefense'}.contains(workflow['status']);
+  }
+
+  static bool hasPendingTeamTasks(Map<String, dynamic>? data, {Map<String, dynamic>? setup}) {
+    final teams = (setup?['teams'] as List? ?? []).whereType<Map>();
+    final events = (setup?['event_teams'] as List? ?? []).whereType<Map>();
+    final sectionTasks = (setup?['section_tasks'] as List? ?? []).whereType<Map>();
+    if (teams.any((t) => t['needs_name'] == true) ||
+        events.any((t) => t['needs_name'] == true || t['needs_details'] == true) ||
+        sectionTasks.any((t) => t['role'] == 'project_manager' && const {
+          'papers_missing', 'corrections_requested', 'shared_revisions_pending', 'final_paper_pending',
+        }.contains(t['status']))) { return true; }
+    if (data == null || data['team'] is! Map) return false;
+    final team = data['team'] as Map;
+    if (!isTeamLeader(data)) return false;
+    if (team['setup_pending'] == true || team['needs_name'] == true) return true;
+    final options = (data['stage_options'] as List? ?? []);
+    final rawLabel = '${team['currentStage'] ?? team['readyForStage'] ?? team['ready_for_stage'] ?? data['current_stage'] ?? ''}';
+    final label = options.isEmpty || options.any((s) => '$s'.trim().toLowerCase() == rawLabel.trim().toLowerCase())
+        ? rawLabel : '${options.first}';
+    for (final stage in (data['stages'] as List? ?? []).whereType<Map>()) {
+      if (label.isNotEmpty && '${stage['stage_label']}'.trim().toLowerCase() != label.trim().toLowerCase()) continue;
+      if (stage['team_id'] != null && stage['team_id'] != team['id']) continue;
+      final workflow = stage['concept_workflow'];
+      if (workflow is! Map || workflow['enabled'] != true || !canEditConceptTitles(workflow)) continue;
+      if ((workflow['concepts'] as List? ?? []).whereType<Map>().any((c) =>
+          c['faculty_confirmed'] != true && '${c['title'] ?? ''}'.trim().isEmpty)) { return true; }
+    }
+    return false;
+  }
+
   /// Checks if a deliverable item is pending required action (missing or needs revision).
   static bool isDeliverablePending(Map<String, dynamic> item) {
     if (item['is_waived'] == true) return false;
@@ -203,7 +247,7 @@ class StudentTaskBadgeHelper {
     return null;
   }
 
-  /// Checks if peer evaluations are enabled and there are pending evaluations for teammates.
+  /// Checks for required self-evaluations and teammate evaluations.
   static bool hasPendingPeerEval(Map<String, dynamic>? studentData) {
     if (studentData == null) return false;
     final peerEvalAllowed =
@@ -211,10 +255,8 @@ class StudentTaskBadgeHelper {
         studentData['peer_eval_enabled'] == true;
     if (!peerEvalAllowed) return false;
 
-    final studentId = studentData['student']?['id']?.toString();
     final members = (studentData['members'] as List? ?? [])
         .cast<Map<String, dynamic>>()
-        .where((m) => m['id']?.toString() != studentId)
         .toList();
     if (members.isEmpty) return false;
 
@@ -255,9 +297,9 @@ class StudentTaskBadgeHelper {
     return members.any((m) {
       final mId = m['id']?.toString() ?? '';
       final mName = (m['name']?.toString() ?? '').trim().toLowerCase();
-      final isEvaluated =
-          (mId.isNotEmpty && evaluatedKeys.contains(mId)) ||
-          (mName.isNotEmpty && evaluatedKeys.contains(mName));
+      final isEvaluated = mId.isNotEmpty
+          ? evaluatedKeys.contains(mId)
+          : mName.isNotEmpty && evaluatedKeys.contains(mName);
       return !isEvaluated;
     });
   }

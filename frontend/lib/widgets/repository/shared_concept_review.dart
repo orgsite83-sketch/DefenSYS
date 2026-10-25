@@ -9,6 +9,8 @@ List<Map<String, dynamic>> conceptRows(dynamic value) => (value as List? ?? [])
     .map((row) => Map<String, dynamic>.from(row))
     .toList();
 
+String systemLetter(dynamic key) => String.fromCharCode(64 + (int.tryParse('$key'.replaceFirst('c', '')) ?? 1));
+
 bool isSharedConceptWorkflow(Map<String, dynamic> workflow) =>
     workflow['selection_mode'] == 'shared_module' ||
     workflow['section_project_id'] != null;

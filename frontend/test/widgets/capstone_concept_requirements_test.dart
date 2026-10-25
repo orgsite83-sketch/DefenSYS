@@ -183,7 +183,7 @@ void main() {
             'capstone-concepts-${editing ? 'edit' : 'add'}-${dark ? 'dark' : 'light'}',
           );
 
-          // Disabling retains authored requirements; re-enabling reuses them.
+          // Disabling removes automatic requirements; re-enabling adds one pair.
           await tester.ensureVisible(find.text('1. Stage Details'));
           await tester.tap(find.text('1. Stage Details'));
           await tester.pumpAndSettle();
@@ -195,7 +195,10 @@ void main() {
             false,
           );
           await showRequirements();
-          expectPapers();
+          expect(find.text('Pre-defense: 0'), findsOneWidget);
+          expect(find.text('Post-defense: 0'), findsOneWidget);
+          expect(find.text('Concept Papers'), findsNothing);
+          expect(find.text('Approved Concept Paper'), findsNothing);
           await tester.ensureVisible(find.text('1. Stage Details'));
           await tester.tap(find.text('1. Stage Details'));
           await tester.pumpAndSettle();

@@ -96,6 +96,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     final oldWorkflow = oldWidget.stage['concept_workflow'] as Map? ?? {};
     if ('${oldWidget.teamId}:${oldWidget.stageLabel}:${oldWorkflow['round']}' !=
             identity ||
+        '${(oldWorkflow['concepts'] as List? ?? []).map((c) => c['key']).toList()}' != '${concepts.map((c) => c['key']).toList()}' ||
         ((workflow['assigned'] == true ||
                 workflow['section_project_id'] != null) &&
             '${oldWorkflow['concepts']}' != '${workflow['concepts']}')) {
@@ -146,6 +147,8 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
           ProposalNamesEditor(
             key: ValueKey('names-$identity'),
             rows: visibleConcepts,
+            lockedKeys: ref.read(authProvider).user?['role'] == 'student'
+                ? {for (final c in visibleConcepts) if (c['faculty_confirmed'] == true) '${c['key']}'} : {},
             shared: shared,
             busy: busy,
             onBack: () => setState(() => editingNames = false),
@@ -198,7 +201,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                     editingNames = true;
                   }),
                   child: Text(
-                    shared ? 'Confirm module names' : 'Edit concept names',
+                    shared ? 'Complete module names' : 'Edit concept names',
                   ),
                 ),
             ],
@@ -343,11 +346,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                     for (final c in visibleConcepts) ...[
                       const SizedBox(height: 18),
                       Text(
-                        'System ${c['key'] == 'c1'
-                            ? 'A'
-                            : c['key'] == 'c2'
-                            ? 'B'
-                            : 'C'} · ${'${c['system_title'] ?? ''}'.trim().isEmpty ? 'Shared name pending' : c['system_title']}',
+                        'System ${systemLetter(c['key'])} · ${'${c['system_title'] ?? ''}'.trim().isEmpty ? 'Shared name pending' : c['system_title']}',
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -531,7 +530,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                         workflow['section_project_id'] != null ||
                         c['system_title'] != null;
                     final slotBadge = isShared
-                        ? 'System ${keyStr == 'c1' ? 'A' : (keyStr == 'c2' ? 'B' : 'C')}'
+                        ? 'System ${systemLetter(keyStr)}'
                         : 'Concept ${keyStr.replaceFirst(RegExp(r'^c'), '')}';
 
                     final decision = c['decision']?.toString();
@@ -706,6 +705,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                               controller: controllers['${c['key']}'],
                               enabled:
                                   titlesEditable &&
+                                  (faculty || c['faculty_confirmed'] != true) &&
                                   !busy &&
                                   !(shared && faculty),
                               minLines: 1,

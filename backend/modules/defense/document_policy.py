@@ -4,11 +4,26 @@ from copy import deepcopy
 from django.core.exceptions import ValidationError
 
 
+def _is_automatic_concept_paper(item):
+    policy = item.get('file_policy') or {}
+    if policy.get('auto_added_for') == 'concept_selection':
+        return True
+    # Compatibility for automatic definitions saved before origin was recorded.
+    number = str(item.get('deliverable_id', ''))
+    label = str(item.get('label', '')).strip().lower()
+    return bool(
+        (re.fullmatch(r'CONCEPT_PAPERS(?:_\d+)?', number)
+         and label == 'concept papers' and policy.get('mode') == 'concepts')
+        or (re.fullmatch(r'APPROVED_CONCEPT(?:_\d+)?', number)
+            and label == 'approved concept paper' and policy.get('purpose') == 'approved_concept')
+    )
+
+
 def with_concept_papers(items, config):
-    """Normalize required proposal/final papers without replacing authored IDs."""
+    """Reconcile automatic papers while preserving manually authored definitions."""
     items = deepcopy(items)
     if not config.get('enabled'):
-        return items
+        return [item for item in items if not _is_automatic_concept_paper(item)]
     finals = [d for d in items if is_approved_concept(d) or (
         d.get('deliverable_type') == 'post' and str(d.get('label', '')).strip().lower() in (
             'approved concept paper', 'approved concept papers'))]
@@ -31,7 +46,8 @@ def with_concept_papers(items, config):
         items.append({'deliverable_id': number, 'label': 'Approved Concept Paper', 'deliverable_type': 'post',
             'requirement_timing': 'scheduling', 'deadline_hours_before': 24,
             'required': True, 'display_order': max((d.get('display_order', 0) for d in items), default=0) + 1,
-            'file_format': 'pdf', 'file_policy': {'mode': 'single', 'purpose': 'approved_concept'}})
+            'file_format': 'pdf', 'file_policy': {'mode': 'single', 'purpose': 'approved_concept',
+                                                'auto_added_for': 'concept_selection'}})
     concept_items = [d for d in items if (d.get('file_policy') or {}).get('mode') == 'concepts']
     if concept_items:
         for item in concept_items:
@@ -46,7 +62,7 @@ def with_concept_papers(items, config):
         'required': True, 'requirement_timing': 'scheduling', 'deadline_hours_before': 24,
         'display_order': max((d.get('display_order', 0) for d in items), default=0) + 1,
         'file_format': 'pdf', 'is_defense_material': True,
-        'file_policy': {'mode': 'concepts', 'slots': [
+        'file_policy': {'mode': 'concepts', 'auto_added_for': 'concept_selection', 'slots': [
             {'key': 'paper', 'label': 'Concept paper', 'file_format': 'pdf', 'required': True}]}})
     return items
 

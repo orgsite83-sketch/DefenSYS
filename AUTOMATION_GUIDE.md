@@ -32,7 +32,7 @@ Each script authenticates and reads the live backend during a preview. The minut
 | Accept scheduling files and endorse teams | `execution/auto_review_endorse.py` | Assigned PIT instructor or Capstone adviser |
 | Accept/archive uploaded post-defense files | `execution/auto_review_endorse.py --timing post` | Assigned PIT instructor or Capstone adviser |
 | Generate panelist evaluations | `execution/auto_panelist_eval.py` | Assigned faculty and external panelists |
-| Generate teammate peer evaluations | `execution/auto_peer_eval.py` | Students |
+| Generate peer and self-evaluations | `execution/auto_peer_eval.py` | Students |
 | Generate Capstone adviser grades | `execution/auto_adviser_eval.py` | Assigned advisers |
 | Populate draft minutes comments | `execution/auto_documenter_minutes.py` | Assigned documenter |
 
@@ -146,7 +146,7 @@ Run after every assigned faculty and external panelist has completed the current
   --dry-run
 ```
 
-Remove `--dry-run` to submit. Students rate their teammates, excluding themselves and already submitted evaluator/evaluatee pairs.
+Remove `--dry-run` to submit. Every student must rate themselves and every teammate using the same peer rubric. Self-ratings count equally with teammate ratings. The script skips already submitted evaluator/evaluatee pairs.
 
 `--year` accepts `1`, `2`, `3`, `4` or labels such as `"1st Year"`. It filters student discovery and rechecks the dashboard team's cohort before scoring. It uses the team's assessment year, rather than the student's latest academic record. The script uses each student's currently selected dashboard evaluation context; `--stage` filters that context rather than switching stages.
 

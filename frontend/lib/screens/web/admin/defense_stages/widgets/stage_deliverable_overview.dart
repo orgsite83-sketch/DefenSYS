@@ -3,34 +3,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 
-Future<bool> confirmRemoveStageDeliverables(
-  BuildContext context,
-  int count,
-) async {
-  return await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Remove student file requirements?'),
-          content: Text(
-            'Presentation / Demo Only does not use student file uploads. '
-            'Saving this stage will remove $count configured '
-            '${count == 1 ? 'deliverable' : 'deliverables'}.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Keep requirements'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Use presentation only'),
-            ),
-          ],
-        ),
-      ) ??
-      false;
-}
-
 class StageDeliverableCounts extends StatelessWidget {
   const StageDeliverableCounts({
     super.key,

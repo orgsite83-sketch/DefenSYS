@@ -545,25 +545,18 @@ def submissions_for(team, stage_label):
 
 @read_memoize
 def is_presentation_stage(team, stage_label):
-    captured = getattr(team, '_capstone_requirement', None)
-    if not captured and team and team.is_capstone:
-        from student_teams.capstone_lifecycle import requirement_for_label
-        captured = requirement_for_label(team, stage_label)
-    if captured:
-        return bool(captured.get('presentation_only'))
+    # Every Capstone stage uses files, including legacy presentation-only stages
+    # and captured cohort requirements. PIT event policy remains independent.
+    if not team or getattr(team, 'is_capstone', True):
+        return False
     if not stage_label:
         return False
-    if not team or getattr(team, 'is_capstone', True):
-        stage = defense_stage_for_label(stage_label)
-        if stage and getattr(stage, 'is_presentation_only', False):
+    from defense.scheduler.pit_config import get_pit_event_config
+    sem = getattr(team, 'semester', None)
+    if sem:
+        config = get_pit_event_config(sem, stage_label.strip(), year_level=team.year_level)
+        if config and not config.deliverables.exists():
             return True
-    else:
-        from defense.scheduler.pit_config import get_pit_event_config
-        sem = getattr(team, 'semester', None)
-        if sem:
-            config = get_pit_event_config(sem, stage_label.strip(), year_level=team.year_level)
-            if config and not config.deliverables.exists():
-                return True
     return False
 
 

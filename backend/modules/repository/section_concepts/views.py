@@ -26,12 +26,13 @@ class SetupSerializer(serializers.Serializer):
 class ActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['save_titles', 'review', 'endorse', 'confirm_modules',
         'schedule_hearing', 'decide', 'module_verdict', 'module_decision', 'clear_module_revisions',
-        'reassign', 'clear_revisions', 'acknowledge', 'start_presentation'])
+        'reassign', 'clear_revisions', 'acknowledge', 'start_presentation', 'reconcile_requirements'])
     round_id = serializers.IntegerField(min_value=1)
     review_token = serializers.CharField(required=False, max_length=64)
     module_review_token = serializers.CharField(required=False, max_length=64)
-    module_key = serializers.ChoiceField(choices=services.KEYS, required=False)
-    concepts = serializers.ListField(child=serializers.DictField(), required=False, max_length=3)
+    module_key = serializers.ChoiceField(choices=[f'c{i}' for i in range(1, 11)], required=False)
+    expected_required_count = serializers.IntegerField(min_value=1, max_value=10, required=False)
+    concepts = serializers.ListField(child=serializers.DictField(), required=False, max_length=10)
     paper_id = serializers.IntegerField(min_value=1, required=False)
     team_id = serializers.IntegerField(min_value=1, required=False)
     status = serializers.ChoiceField(choices=['accepted', 'rejected'], required=False)
@@ -112,10 +113,14 @@ class SectionProjectDetailView(SectionAPIView):
         round = services.latest(project)
         if d['round_id'] != round.pk:
             return Response({'detail': 'The section proposal round changed. Refresh before submitting.'}, status=409)
-        if d['action'] in ('review', 'endorse', 'decide', 'save_titles', 'clear_revisions', 'acknowledge', 'start_presentation') and d.get('review_token') != services.review_token(round):
+        if d['action'] in ('review', 'endorse', 'decide', 'save_titles', 'clear_revisions', 'acknowledge', 'start_presentation', 'reconcile_requirements') and d.get('review_token') != services.review_token(round):
             return Response({'detail': 'The section names or papers changed. Refresh and review the current versions.'}, status=409)
         action, actor = d['action'], request.user
-        if action == 'save_titles':
+        if action == 'reconcile_requirements':
+            if 'expected_required_count' not in d:
+                raise serializers.ValidationError('Review the configured count before applying it.')
+            services.reconcile_requirements(project, actor, expected_count=d['expected_required_count'])
+        elif action == 'save_titles':
             services.save_system_titles(project, actor, d.get('concepts'))
         elif action == 'review':
             services.review(project, actor, d.get('paper_id'), d.get('status'), d['remarks'])

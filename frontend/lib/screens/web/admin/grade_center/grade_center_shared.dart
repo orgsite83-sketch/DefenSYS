@@ -3946,7 +3946,7 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
                 title: 'Student Access & Criteria',
                 description: isPit
                     ? 'With access enabled, a peer rubric assigned and a positive peer weight, students can grade each teammate after all assigned faculty and external panelists finish evaluating their scheduled defense. Scheduling alone does not unlock peer grading.'
-                    : 'After all assigned faculty and external panelists finish evaluating the scheduled defense, each student can grade teammates on individual contribution in the Peer Eval tab.',
+                    : 'After all assigned faculty and external panelists finish evaluating the scheduled defense, each student must grade themselves and every teammate on individual contribution in the Peer Eval tab. All ratings count equally.',
                 icon: Icons.people_outline_rounded,
                 color: const Color(0xFF2563EB),
                 bgColor: const Color(0xFFEFF6FF),

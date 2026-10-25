@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
 import '../session/session_expired.dart';
-import '../academic/student_team_selection_provider.dart';
 import 'data_refresh_provider.dart';
 
 final dashboardProvider =
@@ -46,7 +45,6 @@ class DashboardNotifier extends Notifier<DashboardState> {
   final String role;
   int _requestRevision = 0;
   Completer<void>? _studentRefresh;
-  int? _studentRefreshTeam;
   int? _studentRefreshRevision;
 
   @override
@@ -59,21 +57,28 @@ class DashboardNotifier extends Notifier<DashboardState> {
   AuthenticatedHttpClient get _client =>
       ref.read(authenticatedHttpClientProvider);
 
+  void applyStudentConceptWorkflow(int teamId, String stageLabel, Map<String, dynamic> workflow) {
+    if (role != 'student' || state.data?['team']?['id'] != teamId) return;
+    final stages = (state.data?['stages'] as List? ?? []).whereType<Map>().map((s) => <String, dynamic>{
+      ...s,
+      if (s['stage_label'] == stageLabel && (s['team_id'] == null || s['team_id'] == teamId))
+        'concept_workflow': workflow,
+    }).toList();
+    state = state.copyWith(data: {...state.data!, 'stages': stages});
+  }
+
   Future<void> fetchDashboardData({bool silent = false}) async {
-    final selectedTeam = role == 'student'
-        ? ref.read(studentTeamSelectionProvider)
-        : null;
+    // The Team tab always resolves Current roster on the server. Event team
+    // selection belongs to the event workspace and never changes the home team.
     final dataRevision = ref.read(dataRefreshProvider)[DataArea.dashboard] ?? 0;
     if (role == 'student' &&
         _studentRefresh != null &&
-        _studentRefreshTeam == selectedTeam &&
         _studentRefreshRevision == dataRevision) {
       return _studentRefresh!.future;
     }
     final completion = Completer<void>();
     if (role == 'student') {
       _studentRefresh = completion;
-      _studentRefreshTeam = selectedTeam;
       _studentRefreshRevision = dataRevision;
     }
     final revision = ++_requestRevision;
@@ -86,13 +91,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
     try {
       final url = '$baseUrl/$role/';
-      final response = await _client.get(
-        Uri.parse(url).replace(
-          queryParameters: {
-            if (selectedTeam != null) 'team_id': '$selectedTeam',
-          },
-        ),
-      );
+      final response = await _client.get(Uri.parse(url));
       if (!ref.mounted || revision != _requestRevision) return;
 
       if (response.statusCode == 200) {

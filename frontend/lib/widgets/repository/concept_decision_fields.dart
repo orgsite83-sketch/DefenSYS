@@ -138,7 +138,7 @@ class ConceptVerdictFields extends StatelessWidget {
           Text(
             shared
                 ? selected < 0
-                      ? 'The section choice is pending. All three module proposals remain available. Open the section workspace to select the shared system.'
+                      ? 'The section choice is pending. All configured module proposals remain available. Open the section workspace to select the shared system.'
                       : 'The selected system is highlighted. Review this team’s linked module and record its outcome. The alternatives remain visible until the decision is recorded.'
                 : isSingle
                 ? 'Evaluate this project defense: determine whether the proposal is approved, requires revisions, or needs re-defense.'

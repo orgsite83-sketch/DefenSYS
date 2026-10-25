@@ -225,8 +225,6 @@ def _team_import_preview(user, data):
             formation.generation_concept_context(event, config, semester=term, pit_year=year if 'PIT' in level else None)
             if not config.get('project_manager_id'):
                 raise ValidationError('Choose the shared system project manager before reviewing the import.')
-            if any(clean(row.get('project_title')) for row in input_rows if clean(row.get('section') or data.get('section')) == section) and config.get('replace_assigned_titles') is not True:
-                raise ValidationError('This section includes assigned project titles. Keep independent projects, or explicitly clear those titles before choosing shared proposals.')
     results, state, seen, batch_members = [], [], set(), set()
     for index, raw in enumerate(input_rows, 1):
         issues, warnings, payload = [], [], None
@@ -245,10 +243,8 @@ def _team_import_preview(user, data):
         existing = StudentTeam.objects.filter(name=name, level=level).first()
         setup = setups.get(row['section'], {})
         shared = setup.get('architecture') == 'shared'
-        if shared and existing and existing.project_title and setup.get('replace_assigned_titles') is not True:
-            issues.append('This existing team has an assigned title. Explicitly replace assigned titles in project setup before converting it to shared proposals.')
-        if shared and setup.get('replace_assigned_titles') is True:
-            warnings.append('Assigned project titles will be replaced with shared module proposals for this section.')
+        if shared:
+            warnings.append('Supplied module titles fill the first shared proposal. Leaders complete the remaining modules for the same shared alternatives.')
         if existing and (existing.semester_id != term.pk or
                 (existing.current_defense_stage or '') != (event.event_name if event else '')):
             issues.append('This name belongs to another semester/event. Choose a distinct team name.')
@@ -409,11 +405,6 @@ class PreparedTeamsCommitView(ImportAPIView):
             team = serializer.save(**({} if existing else {'concept_assignment': assignment,
                                    'project_pending': not bool(saved['payload']['project_title'])}))
             setup = preview['data'].get('project_setups', {}).get(team.section, {})
-            if setup.get('architecture') == 'shared' and setup.get('replace_assigned_titles') is True:
-                team.project_title = ''
-                team.project_pending = True
-                team.concept_assignment = {**assignment, 'mode': 'proposals', 'assigned_title': ''}
-                team.save(update_fields=['project_title', 'project_pending', 'concept_assignment', 'updated_at'])
             if is_manager(request.user) and row.get('instructor_name') and team.section:
                 instructor, _ = resolve_user_by_full_name(row['instructor_name'], role=['faculty', 'admin'], field_label='Instructor')
                 if instructor:

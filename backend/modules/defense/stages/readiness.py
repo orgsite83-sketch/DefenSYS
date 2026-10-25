@@ -30,9 +30,8 @@ def stage_setup_readiness(stage, config, semester):
             elif rubric.scope != 'capstone' or rubric.evaluation_type != role:
                 issues.append(f'Choose a Capstone {role} evaluation rubric.')
 
-    # Oral/demo stages intentionally have no student upload requirements.
-    if not stage.is_presentation_only and not stage.deliverables.exists():
-        issues.append('Add deliverable requirements or select presentation only.')
+    if not stage.deliverables.exists():
+        issues.append('Add student file submission requirements.')
 
     return {
         'ready': not issues,

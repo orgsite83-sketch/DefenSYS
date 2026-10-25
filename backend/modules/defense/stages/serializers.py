@@ -96,6 +96,8 @@ def check_stage_locked(stage, semester=None):
 
 
 class DefenseStageSerializer(serializers.ModelSerializer):
+    # Keep the response key for older clients without exposing a retired mode.
+    is_presentation_only = serializers.SerializerMethodField()
     system_deliverables = serializers.SerializerMethodField()
     previous_stage_id = serializers.SerializerMethodField()
     previous_stage_label = serializers.SerializerMethodField()
@@ -326,6 +328,10 @@ class DefenseStageSerializer(serializers.ModelSerializer):
         return None
 
 
+    def get_is_presentation_only(self, obj):
+        return False
+
+
 class DefenseStageWriteSerializer(serializers.ModelSerializer):
     deliverables = serializers.ListField(
         child=serializers.DictField(),
@@ -351,6 +357,11 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         if queryset.exists():
             raise serializers.ValidationError('A defense stage with this label already exists.')
         return value.strip()
+
+    def validate_is_presentation_only(self, value):
+        if value:
+            raise serializers.ValidationError('Every defense stage uses student file submissions.')
+        return False
 
     def validate_code(self, value):
         if value and value.strip():
@@ -421,8 +432,6 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         if any(d.get('deliverable_type', 'pre') != 'pre' for d in concept_items):
             raise serializers.ValidationError('Concept-set documents belong to pre-defense requirements.')
         if config.get('enabled'):
-            if attrs.get('is_presentation_only', getattr(self.instance, 'is_presentation_only', False)):
-                raise serializers.ValidationError('Concept selection requires configured student documents.')
             if not any(d.get('required', True) and d.get('requirement_timing', 'scheduling') == 'scheduling' for d in concept_items):
                 raise serializers.ValidationError('Add a required concept-documents deliverable before enabling concept selection.')
         required = attrs.get('minutes_required', getattr(self.instance, 'minutes_required', False))

@@ -69,7 +69,6 @@ class DefenseSchedulerApiTests(APITestCase):
             DefenseStage.objects.get_or_create(label=label, defaults={
                 'code': label.lower().replace(' ', '-'), 'display_order': order, 'is_active': True})
         self.stage = DefenseStage.objects.get(label='Project Proposal')
-        DefenseStage.objects.filter(display_order__lt=self.stage.display_order).update(is_presentation_only=True)
         self.team = StudentTeam.objects.create(
             name='Team VaultSync',
             project_title='Cloud File Sync',
@@ -172,8 +171,14 @@ class DefenseSchedulerApiTests(APITestCase):
         return team
 
     def _complete_prior_stages(self, team):
+        from repository.deliverables.models import DeliverableSubmission
         for stage in DefenseStage.objects.filter(is_active=True, display_order__lt=self.stage.display_order):
-            DefenseStage.objects.filter(pk=stage.pk).update(is_presentation_only=True)
+            stage.deliverables.get_or_create(deliverable_id='PAPER', defaults={
+                'label': 'Stage paper', 'deliverable_type': 'pre', 'required': True,
+            })
+            DeliverableSubmission.objects.get_or_create(team=team, stage_label=stage.label,
+                deliverable_id='PAPER', defaults={'label': 'Stage paper', 'deliverable_type': 'pre',
+                    'file_name': 'stage-paper.pdf', 'status': DeliverableSubmission.STATUS_ACCEPTED})
             TeamStageProgress.objects.create(team=team, semester=self.semester,
                 defense_stage=stage, status=TeamStageProgress.STATUS_PASSED)
             # A progress label alone is not official prerequisite clearance.
@@ -183,7 +188,7 @@ class DefenseSchedulerApiTests(APITestCase):
                 panel_score=90, adviser_score=90, peer_score=90)
             grade.save(clean=False)
         # Team creation captures the applicable requirements. This fixture
-        # explicitly configures presentation-only prerequisites, including when
+        # explicitly configures accepted prerequisite files, including when
         # reused by minutes tests after their team has already been created.
         from student_teams.capstone_lifecycle import configured_requirements
         team.term_participations.filter(semester=self.semester, project_version=team.project_version).update(
