@@ -806,7 +806,7 @@ class DashboardApiTests(APITestCase):
     def test_student_dashboard_uses_current_pit_event_after_completed_event(self):
         student = User.objects.create_user(username='pit-current-event', role='student')
         year = SchoolYear.objects.create(label='2098-2099')
-        semester = Semester.objects.create(school_year=year, label=Semester.FIRST)
+        semester = Semester.objects.create(school_year=year, label=Semester.FIRST, is_active=True)
         team = StudentTeam.objects.create(
             name='PIT Event Team', leader=student, semester=semester,
             level=StudentTeam.LEVEL_3_PIT, year_level='3rd Year',

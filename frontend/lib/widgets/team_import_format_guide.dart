@@ -7,6 +7,7 @@ import 'shadcn/defensys_shadcn_scope.dart';
 import '../utils/csv_file_io.dart';
 import '../utils/export/team_roster_excel_generator.dart';
 import '../utils/import/team_bulk_import_csv.dart';
+import '../utils/import/team_roster_template_layout.dart';
 
 /// Shared presentation; the caller owns scope, validation and commit.
 class TeamImportFormatGuide extends StatelessWidget {
@@ -17,8 +18,10 @@ class TeamImportFormatGuide extends StatelessWidget {
     required this.onDownload,
     this.section,
     this.instructorName,
+    this.instructorWorkspace = false,
   });
   final bool isCapstone;
+  final bool instructorWorkspace;
   final String contextLabel;
   final VoidCallback? onDownload;
   final String? section, instructorName;
@@ -31,12 +34,14 @@ class TeamImportFormatGuide extends StatelessWidget {
     final colors = ShadTheme.of(context).colorScheme;
     final faculty = isCapstone ? 'Adviser' : 'Instructor';
     Widget headers(String project) => Table(
-      columnWidths: const {
+      columnWidths: {
         0: FlexColumnWidth(1.2),
         1: FlexColumnWidth(1.4),
         2: FlexColumnWidth(.9),
-        3: FlexColumnWidth(1),
-        4: FlexColumnWidth(1.4),
+        if (!instructorWorkspace || isCapstone) 3: const FlexColumnWidth(1),
+        (instructorWorkspace && !isCapstone ? 3 : 4): const FlexColumnWidth(
+          1.4,
+        ),
       },
       border: TableBorder.all(color: colors.border),
       children: [
@@ -47,7 +52,7 @@ class TeamImportFormatGuide extends StatelessWidget {
               'Team Name',
               project,
               'Section',
-              faculty,
+              if (!instructorWorkspace || isCapstone) faculty,
               'Team Members',
             ])
               Padding(
@@ -141,6 +146,7 @@ class TeamImportFormatGuide extends StatelessWidget {
                     contextLabel: contextLabel,
                     section: section,
                     instructorName: instructorName,
+                    instructorWorkspace: instructorWorkspace,
                   ),
                   leading: const Icon(Icons.visibility_outlined, size: 14),
                   child: const Flexible(
@@ -289,16 +295,19 @@ Future<void> showTeamImportBlueprint(
   required String contextLabel,
   String? section,
   String? instructorName,
+  bool instructorWorkspace = false,
 }) async {
   final bytes = generateOfficialTeamRosterExcelBytes(
     isCapstone: isCapstone,
     assignedSection: section,
     instructorName: instructorName,
+    instructorWorkspace: instructorWorkspace,
   );
   final csv = officialTeamRosterCsv(
     isCapstone: isCapstone,
     assignedSection: section,
     instructorName: instructorName,
+    instructorWorkspace: instructorWorkspace,
   );
   final sheet = xl.Excel.decodeBytes(bytes).tables.values.first;
   final stem = isCapstone
@@ -391,7 +400,12 @@ Future<void> showTeamImportBlueprint(
                 ),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: _WorkbookPreview(sheet: sheet),
+                  child: _WorkbookPreview(
+                    sheet: sheet,
+                    layout: TeamRosterTemplateLayout(
+                      instructorWorkspace: instructorWorkspace && !isCapstone,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -405,24 +419,12 @@ Future<void> showTeamImportBlueprint(
 /// Render the workbook's actual coordinates and merged cells, so the blueprint
 /// cannot drift from either downloadable format.
 class _WorkbookPreview extends StatelessWidget {
-  const _WorkbookPreview({required this.sheet});
+  const _WorkbookPreview({required this.sheet, required this.layout});
   final xl.Sheet sheet;
-  static const widths = [
-    24.0,
-    114.0,
-    160.0,
-    70.0,
-    120.0,
-    125.0,
-    24.0,
-    114.0,
-    146.0,
-    70.0,
-    120.0,
-    125.0,
-  ];
+  final TeamRosterTemplateLayout layout;
   @override
   Widget build(BuildContext context) {
+    final widths = layout.previewWidths;
     const height = 26.0, gutter = 34.0;
     final spans = sheet.spannedItems
         .map((span) => span.split(':').map(xl.CellIndex.indexByString).toList())
@@ -515,7 +517,9 @@ class _WorkbookPreview extends StatelessWidget {
             (r + 1) * height,
             w,
             h,
-            heading: (r == 3 && c >= 1 && c <= 5) || (r == 5 && c >= 7),
+            heading:
+                (r == 3 && c >= 1 && c <= layout.column(5)) ||
+                (r == 5 && c >= layout.column(7)),
           ),
         );
       }

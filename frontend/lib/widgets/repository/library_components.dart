@@ -1,20 +1,10 @@
 import 'package:defensys/theme/program_colors.dart';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../models/repository_library.dart';
-import '../../services/authenticated_client.dart';
-import '../shadcn/defensys_workflow_widgets.dart';
-
-final _posterBytesProvider = FutureProvider.autoDispose
-    .family<Uint8List, String>((ref, file) {
-      return ref
-          .watch(authenticatedHttpClientProvider)
-          .fetchAuthenticatedFile(file);
-    });
+import '../../theme/defensys_tokens.dart';
+import 'library_media_preview.dart';
 
 IconData libraryOutputIcon(VaultEntry entry) => switch (entry.outputKind) {
   'poster' => Icons.image_outlined,
@@ -23,28 +13,6 @@ IconData libraryOutputIcon(VaultEntry entry) => switch (entry.outputKind) {
     entry.isImage ? Icons.image_outlined : Icons.insert_drive_file_outlined,
   _ => Icons.description_outlined,
 };
-
-class LibraryBrowsePicker extends StatelessWidget {
-  const LibraryBrowsePicker({
-    super.key,
-    required this.value,
-    required this.onChanged,
-  });
-  final LibraryBrowse value;
-  final ValueChanged<LibraryBrowse> onChanged;
-  @override
-  Widget build(BuildContext context) => WorkflowSelect(
-    label: 'Show',
-    value: value.name,
-    searchable: false,
-    options: {
-      for (final browse in LibraryBrowse.values) browse.name: browse.label,
-    },
-    onChanged: (name) => onChanged(
-      LibraryBrowse.values.firstWhere((browse) => browse.name == name),
-    ),
-  );
-}
 
 class LibraryCategoryPicker extends StatelessWidget {
   const LibraryCategoryPicker({
@@ -88,19 +56,25 @@ class LibraryChoiceChip extends StatelessWidget {
     selected: selected,
     child: selected
         ? ShadButton.secondary(
-            height: 36,
+            height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             onPressed: onSelected,
             child: Text(label, style: const TextStyle(fontSize: 12)),
           )
         : ShadButton.ghost(
-            height: 36,
+            height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             onPressed: onSelected,
             child: Text(label, style: const TextStyle(fontSize: 12)),
           ),
   );
 }
+
+int libraryColumns(double width) => width >= 900
+    ? 4
+    : width >= 650
+    ? 3
+    : 2;
 
 class LibraryResults extends StatelessWidget {
   const LibraryResults({
@@ -147,12 +121,11 @@ class LibraryResults extends StatelessWidget {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 900
-            ? 4
-            : constraints.maxWidth >= 650
-            ? 3
-            : 2;
+        final columns = libraryColumns(constraints.maxWidth);
         final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+        final coverWidth =
+            (constraints.maxWidth - (columns - 1) * 14) / columns;
+        final coverHeight = (coverWidth / .76).clamp(170.0, 320.0);
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -161,7 +134,7 @@ class LibraryResults extends StatelessWidget {
             crossAxisCount: columns,
             crossAxisSpacing: 14,
             mainAxisSpacing: 18,
-            mainAxisExtent: 258 + (scale - 1).clamp(0, 2) * 95,
+            mainAxisExtent: coverHeight + 96 + (scale - 1).clamp(0, 2) * 125,
           ),
           itemBuilder: (_, index) => tile(index),
         );
@@ -188,16 +161,20 @@ class LibraryEntryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final title = project?.title ?? entry.displayTitle;
+    final documentCount =
+        project?.entries.where((file) => file.isDocument).length ?? 0;
     final label = project != null
-        ? '${project!.entries.where((file) => file.isDocument).length} documents'
+        ? '$documentCount ${documentCount == 1 ? 'document' : 'documents'}'
         : entry.outputLabel;
     final metadata = project != null
         ? [
-            label,
+            if (documentCount > 0) label,
             if (project!.entries.any((file) => file.outputKind == 'poster'))
               'Poster',
             if (project!.entries.any((file) => file.outputKind == 'video'))
               'Video',
+            if (project!.entries.any((file) => file.outputKind == 'other'))
+              'Other outputs',
           ].join(' · ')
         : '$label · Published';
     final ink = InkWell(
@@ -276,7 +253,7 @@ class LibraryEntryTile extends StatelessWidget {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.14),
+                          color: Colors.black.withValues(alpha: 0.14),
                           blurRadius: 6,
                           offset: const Offset(2, 3),
                         ),
@@ -290,7 +267,9 @@ class LibraryEntryTile extends StatelessWidget {
                           bottom: 0,
                           child: Container(
                             width: 1.2,
-                            color: const Color(0xFFD4AF37).withOpacity(0.7),
+                            color: const Color(
+                              0xFFD4AF37,
+                            ).withValues(alpha: 0.7),
                           ),
                         ),
                         Center(
@@ -310,7 +289,10 @@ class LibraryEntryTile extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -318,23 +300,31 @@ class LibraryEntryTile extends StatelessWidget {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: ProgramColors.of(context, scope: entry.type).tint,
+                                color: ProgramColors.of(
+                                  context,
+                                  scope: entry.type,
+                                ).tint,
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 project != null
-                                    ? (entry.type == 'pit' ? 'PIT' : 'CAPSTONE')
+                                    ? ProgramColors.of(
+                                        context,
+                                        scope: entry.type,
+                                      ).label
                                     : entry.outputLabel,
                                 style: TextStyle(
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w700,
-                                  color: ProgramColors.of(context, scope: entry.type).text,
+                                  color: ProgramColors.of(
+                                    context,
+                                    scope: entry.type,
+                                  ).text,
                                 ),
                               ),
                             ),
                             if (entry.academicYear != '—' &&
                                 entry.academicYear.isNotEmpty) ...[
-                              const SizedBox(width: 6),
                               Text(
                                 'SY ${entry.academicYear}',
                                 style: TextStyle(
@@ -389,7 +379,9 @@ class LibraryEntryTile extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 11,
                               fontStyle: FontStyle.italic,
-                              color: colors.onSurfaceVariant.withOpacity(0.85),
+                              color: colors.onSurfaceVariant.withValues(
+                                alpha: 0.85,
+                              ),
                               height: 1.25,
                             ),
                           ),
@@ -437,157 +429,145 @@ class LibraryEntryTile extends StatelessWidget {
   );
 }
 
-class LibraryCover extends ConsumerWidget {
+class LibraryCover extends StatelessWidget {
   const LibraryCover({super.key, required this.entry, this.project = false});
   final VaultEntry entry;
   final bool project;
+
+  // Keep a project's cover consistent on every shelf and in its detail view.
+  Color get _color {
+    const palette = [
+      Color(0xFF465451),
+      Color(0xFF495666),
+      Color(0xFF71564E),
+      Color(0xFF625D4E),
+    ];
+    final seed = entry.groupingKey.runes.fold(
+      0,
+      (value, rune) => (value * 31 + rune) & 0x7fffffff,
+    );
+    return palette[seed % palette.length];
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final image = !project && entry.isImage && entry.fileUrl?.isNotEmpty == true
-        ? ref.watch(_posterBytesProvider(entry.fileUrl!))
-        : null;
-    return Container(
-      width: double.infinity,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(4),
-          bottomLeft: Radius.circular(4),
-          topRight: Radius.circular(10),
-          bottomRight: Radius.circular(10),
-        ),
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            const Color(0xFF252C35), // deep spine hinge
-            const Color(0xFF34404E), // crease shadow
-            const Color(0xFF475569), // neutral cover; track identity stays in its badge
-            const Color(0xFF526174), // subtle surface illumination
-          ],
-          stops: [0.0, 0.05, 0.16, 1.0],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.18),
-            blurRadius: 10,
-            offset: const Offset(3, 5),
+  Widget build(BuildContext context) {
+    if (!project && !entry.isDocument) {
+      return LibraryMediaPreview(entry: entry);
+    }
+    return Semantics(
+      image: true,
+      label: 'Cover for ${entry.displayTitle}',
+      child: Container(
+        width: double.infinity,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: _color,
+          borderRadius: const BorderRadius.horizontal(
+            left: Radius.circular(3),
+            right: Radius.circular(7),
           ),
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 2,
-            offset: const Offset(1, 1),
-          ),
-        ],
-      ),
-      child:
-          image?.when(
-            data: (bytes) => Image.memory(
-              bytes,
-              fit: BoxFit.contain,
-              semanticLabel: '${entry.displayTitle} poster',
+          boxShadow: [
+            BoxShadow(
+              color: _color.withValues(alpha: .14),
+              blurRadius: 6,
+              offset: const Offset(2, 3),
             ),
-            error: (_, _) => _textCover(context),
-            loading: () => _textCover(context),
-          ) ??
-          _textCover(context),
+          ],
+        ),
+        child: _textCover(context),
+      ),
     );
   }
 
-  Widget _textCover(BuildContext context) => Stack(
-    children: [
-      // Embossed gold spine hinge line
-      Positioned(
-        left: 8,
-        top: 0,
-        bottom: 0,
-        child: Container(
-          width: 1.2,
-          color: const Color(0xFFD4AF37).withOpacity(0.7),
-        ),
-      ),
-      // Spine crease shadow
-      Positioned(
-        left: 10,
-        top: 0,
-        bottom: 0,
-        child: Container(
-          width: 2.0,
-          color: Colors.black.withOpacity(0.22),
-        ),
-      ),
-      // Simulated page paper edge on right
-      Positioned(
-        right: 0,
-        top: 4,
-        bottom: 4,
-        child: Container(
-          width: 2.0,
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF7ED).withOpacity(0.35),
-            borderRadius: const BorderRadius.horizontal(
-              right: Radius.circular(2),
+  Widget _textCover(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 130;
+      return Stack(
+        children: [
+          Positioned(
+            left: 6,
+            top: 0,
+            bottom: 0,
+            child: Container(
+              width: 2,
+              color: Colors.black.withValues(alpha: .18),
             ),
           ),
-        ),
-      ),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(17, 14, 12, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+          Positioned(
+            right: 0,
+            top: 4,
+            bottom: 4,
+            child: Container(
+              width: 2,
+              color: const Color(0xFFEEE6D7).withValues(alpha: .5),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              compact ? 13 : 18,
+              14,
+              compact ? 9 : 14,
+              14,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  project ? Icons.menu_book_outlined : libraryOutputIcon(entry),
-                  size: 13,
-                  color: const Color(0xFFFFD387),
+                Text(
+                  project
+                      ? '${ProgramColors.of(context, scope: entry.type).label.toUpperCase()} PROJECT'
+                      : entry.outputLabel.toUpperCase(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: DefensysTokens.caption.copyWith(
+                    color: const Color(0xFFF3DBAF),
+                    fontSize: compact ? 9 : 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: .6,
+                  ),
                 ),
-                const SizedBox(width: 5),
+                const SizedBox(height: 12),
+                Container(
+                  width: 24,
+                  height: 1,
+                  color: const Color(0xFFF3DBAF).withValues(alpha: .65),
+                ),
+                const SizedBox(height: 8),
                 Expanded(
-                  child: Text(
-                    project
-                        ? (entry.type == 'pit' ? 'PIT PROJECT' : 'CAPSTONE')
-                        : entry.outputLabel.toUpperCase(),
-                    maxLines: 2,
-                    style: const TextStyle(
-                      color: Color(0xFFFFD387),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 10,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      entry.displayTitle,
+                      maxLines: 6,
+                      overflow: TextOverflow.ellipsis,
+                      style: DefensysTokens.sectionTitle.copyWith(
+                        color: Colors.white,
+                        fontSize: compact ? 12 : 17,
+                        height: 1.25,
+                        letterSpacing: -.25,
+                      ),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Divider(height: 1, color: Colors.white.withValues(alpha: .3)),
+                const SizedBox(height: 8),
+                Text(
+                  entry.academicYear.isNotEmpty && entry.academicYear != '—'
+                      ? 'SY ${entry.academicYear}'
+                      : 'USTP Research Library',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: DefensysTokens.caption.copyWith(
+                    color: const Color(0xFFF4ECE1),
+                    fontSize: compact ? 9 : 10,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  entry.displayTitle,
-                  maxLines: 5,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                    height: 1.17,
-                    letterSpacing: -.3,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              entry.teamName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFFFFE7D2), fontSize: 11),
-            ),
-          ],
-        ),
-      ),
-    ],
+          ),
+        ],
+      );
+    },
   );
 }
 

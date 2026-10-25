@@ -143,6 +143,8 @@ def extension_eligibility(team, target):
 
 def enrollment_check(team, target):
     from user_management.academic_records.models import StudentAcademicRecord
+    if target.pk is None:
+        return False, 'Every continuing member, including the leader, must be enrolled in fourth year for the target term.'
     roster = set(team.memberships.values_list('student_id', flat=True)) | {team.leader_id}
     enrolled = set(StudentAcademicRecord.objects.filter(semester=target, student_id__in=roster,
         year_level=StudentAcademicRecord.FOURTH_YEAR, student__is_active=True).values_list('student_id', flat=True))
@@ -336,13 +338,14 @@ def build_capstone_review(source, target, *, late=False):
         fingerprints.append({'team': team_snapshot(team), 'requirements': requirements, 'row': row,
             'grades': list(TeamGrade.all_objects.filter(team=team, project_version=team.project_version).order_by('pk')
                 .values('id', 'semester_id', 'defense_stage_id', 'status', 'verdict', 'updated_at', 'revisions_cleared_at', 'final_grade')),
-            'enrollment': list(StudentAcademicRecord.objects.filter(semester=target, student_id__in=roster).order_by('pk').values('id', 'student_id', 'year_level', 'section')),
+            'enrollment': list(StudentAcademicRecord.objects.filter(semester_id=target.pk, student_id__in=roster).order_by('pk').values('id', 'student_id', 'year_level', 'section')),
             'recoveries': list(team.recovery_authorizations.order_by('pk').values('id', 'action', 'project_version', 'consumed_at'))})
         from repository.deliverables.models import DeliverableSubmission
         fingerprints[-1]['files'] = list(DeliverableSubmission.all_objects.filter(team=team,
             project_version=team.project_version).order_by('pk').values('id', 'status', 'uploaded_at', 'reviewed_at', 'file', 'file_name', 'file_size'))
     counts = {key: sum(r['destination'] == key for r in rows) for key in ('history', 'continue', 'extended', 'needs_review', 'institutional_review')}
-    revision = sha256(json.dumps({'source': source.pk if source else None, 'target': target.pk,
+    revision = sha256(json.dumps({'source': source.pk if source else None,
+        'target': [target.school_year_id, target.label, target.starts_on, target.ends_on],
         'kind': kind, 'teams': fingerprints}, sort_keys=True, default=str).encode()).hexdigest()
     return {'kind': kind, 'teams': rows, 'counts': counts, 'total': len(rows), 'revision': revision,
             'requires_review': bool(rows), 'late': late}

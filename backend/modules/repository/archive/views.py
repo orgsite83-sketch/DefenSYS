@@ -1,6 +1,7 @@
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.http import HttpResponse
 from defensys_backend.read_projection import ReadAPIView as APIView
 
 from .services import (
@@ -27,6 +28,23 @@ class ProjectArchiveSearchView(APIView):
 
     def get(self, request):
         return Response(search_archive_payload(request))
+
+
+class RepositoryPreviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .previews import published_preview_file, preview_bytes
+        target = str(request.query_params.get('target_id', '')).strip()
+        if not target or len(target) > 100:
+            return Response({'detail': 'A valid target_id is required.'}, status=400)
+        source = published_preview_file(target, request.user)
+        data = preview_bytes(source)
+        response = HttpResponse(data or b'', status=200 if data else 204, content_type='image/jpeg')
+        response['Cache-Control'] = 'private, no-store'
+        response['Vary'] = 'Authorization, Cookie'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
 
 
 class RepositoryReviewView(APIView):

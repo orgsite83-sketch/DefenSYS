@@ -76,6 +76,58 @@ class NotificationActionTests(APITestCase):
         self.client.force_authenticate(self.other)
         self.assertEqual(self.client.get(f'/api/users/panelist-requests/{item.pk}/').status_code, 404)
 
+    def dashboard_panelist_items(self):
+        response = self.client.get('/api/dashboards/admin/')
+        self.assertEqual(response.status_code, 200, response.data)
+        return [item for item in response.data['action_items']
+                if item['id'] == 'pending_panelist_requests']
+
+    def test_dashboard_shows_pending_approval_even_after_notification_is_read(self):
+        item, alert = self.nomination()
+        actions = self.dashboard_panelist_items()
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]['count'], 1)
+        self.assertEqual(actions[0]['target_route'], self.action(alert)['route'])
+        self.assertEqual(actions[0]['button_label'], 'Review Request')
+        self.client.post(f'/api/notifications/{alert.pk}/read/?workspace=admin')
+        self.assertEqual(self.dashboard_panelist_items(), actions)
+        self.client.post('/api/notifications/read-all/?workspace=admin')
+        self.assertEqual(self.dashboard_panelist_items(), actions)
+
+        response = self.client.patch(f'/api/users/panelist-requests/{item.pk}/',
+                                     {'decision': 'approved'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.dashboard_panelist_items(), [])
+        self.assertEqual(self.action(alert)['label'], 'Approved')
+
+    def test_dashboard_groups_pending_requests_without_relying_on_notifications(self):
+        first, _ = self.nomination()
+        second, _ = nominate_panelist(self.other, self.faculty.pk, 'Additional nomination')
+        PanelistEligibilityRequest.objects.create(faculty=self.faculty, requested_by=self.lead,
+                                                 pit_year='1st Year', status='declined')
+        Notification.objects.filter(recipient=self.admin).delete()
+
+        actions = self.dashboard_panelist_items()
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]['count'], 2)
+        self.assertEqual(actions[0]['button_label'], 'Review Requests')
+        self.assertEqual(actions[0]['target_route'],
+                         '/admin/users?tab=faculty&view=panelists&section=requests')
+
+        response = self.client.patch(f'/api/users/panelist-requests/{first.pk}/',
+                                     {'decision': 'declined'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        actions = self.dashboard_panelist_items()
+        self.assertEqual(actions[0]['count'], 1)
+        self.assertTrue(actions[0]['target_route'].endswith(f'&request={second.pk}'))
+        review_nomination(self.admin, second, 'declined', 'Insufficient experience')
+        self.assertEqual(self.dashboard_panelist_items(), [])
+
+    def test_dashboard_approval_queue_is_admin_only(self):
+        self.nomination()
+        self.client.force_authenticate(self.lead)
+        self.assertEqual(self.client.get('/api/dashboards/admin/').status_code, 403)
+
     def test_deleted_target_is_unavailable_and_scoped_to_recipient(self):
         item, alert = self.nomination()
         item.delete()
@@ -100,7 +152,7 @@ class NotificationActionTests(APITestCase):
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['panelist_requests'][0]['requested_by_id'], self.lead.pk)
         notification = Notification.objects.get(recipient=self.lead, title='Panelist eligibility request declined')
-        self.assertEqual(self.action(notification, 'pit_lead')['route'], f'/faculty/defense-board?panelistRequest={item.pk}')
+        self.assertEqual(self.action(notification, 'pit_lead')['route'], f'/faculty/cohort?tab=panelists&section=requests&request={item.pk}')
 
     def test_central_request_history_paginates_and_rejects_invalid_filters(self):
         item, _ = self.nomination()

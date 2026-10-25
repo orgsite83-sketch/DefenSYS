@@ -167,10 +167,19 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   bool _navigateUserView(Map<String, String> query) {
     final router = GoRouter.maybeOf(context);
     if (router == null) return false;
+    final previous = router.routeInformationProvider.value.uri.queryParameters;
     router.go(
       Uri(
         path: '/admin/users',
-        queryParameters: {'tab': 'faculty', ...query},
+        queryParameters: {
+          'tab': 'faculty',
+          if (query['view'] == 'panelists') ...{
+            if (previous['faculty'] case final faculty?) 'faculty': faculty,
+            if (previous['returnTo'] case final destination?)
+              'returnTo': destination,
+          },
+          ...query,
+        },
       ).toString(),
     );
     return true;
@@ -229,7 +238,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     // A retained sidebar branch can finish importing after another tab opens.
     if (router?.routeInformationProvider.value.uri.path == '/admin/users') {
       _navigateUserView({
-        'tab': _currentTab == UserManagementTab.faculty ? 'faculty' : 'students',
+        'tab': _currentTab == UserManagementTab.faculty
+            ? 'faculty'
+            : 'students',
       });
     }
   }

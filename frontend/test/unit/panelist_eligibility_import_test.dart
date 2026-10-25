@@ -83,6 +83,8 @@ void main() {
       final lead = state.copyWith(requiresPanelistApproval: true);
       final row = preview(lead);
       expect(row.panelistIds, [12]);
+      expect(row.panelistEligibilityIds, [12]);
+      expect(row.hasUnresolvedFaculty, isFalse);
       expect(
         row.slotIssues.any((i) => i.contains('Request admin approval')),
         isTrue,
@@ -107,7 +109,20 @@ void main() {
         isFalse,
       );
       expect(row.ready, isTrue);
+      expect(row.panelistEligibilityIds, isEmpty);
       expect(lead.selectablePanelists.length, 1);
+    },
+  );
+  test(
+    'unknown faculty requires account correction rather than eligibility',
+    () {
+      final row = preview(
+        state.copyWith(faculty: const [], requiresPanelistApproval: true),
+      );
+      expect(row.hasUnresolvedFaculty, isTrue);
+      expect(row.panelistEligibilityIds, isEmpty);
+      expect(row.panelistEligibilityIssues, isEmpty);
+      expect(row.ready, isFalse);
     },
   );
 }

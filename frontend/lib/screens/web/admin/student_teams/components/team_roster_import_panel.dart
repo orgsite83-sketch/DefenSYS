@@ -7,6 +7,7 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic/team_formation_service.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/import/class_list_template.dart';
@@ -26,6 +27,7 @@ class TeamRosterImportPanel extends ConsumerStatefulWidget {
     this.onBusyChanged,
     this.onDirtyChanged,
     this.canResolveConflicts = false,
+    this.showGroupingHeader = true,
   });
 
   final String level;
@@ -37,6 +39,7 @@ class TeamRosterImportPanel extends ConsumerStatefulWidget {
   final ValueChanged<bool>? onBusyChanged;
   final ValueChanged<bool>? onDirtyChanged;
   final bool canResolveConflicts;
+  final bool showGroupingHeader;
 
   @override
   ConsumerState<TeamRosterImportPanel> createState() =>
@@ -836,12 +839,14 @@ class _TeamRosterImportPanelState extends ConsumerState<TeamRosterImportPanel> {
               ),
             ),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: isRequired ? FontWeight.w700 : FontWeight.w600,
-              color: isRequired ? _maroon : const Color(0xFF334155),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: isRequired ? FontWeight.w700 : FontWeight.w600,
+                color: isRequired ? _maroon : const Color(0xFF334155),
+              ),
             ),
           ),
         ],
@@ -886,9 +891,9 @@ class _TeamRosterImportPanelState extends ConsumerState<TeamRosterImportPanel> {
             ),
             child: Column(
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.check_circle_rounded, color: Color(0xFF15803D), size: 20),
+                LayoutBuilder(builder: (context, constraints) {
+                  final summary = Row(children: [
+                    const Icon(Icons.people_outline_rounded, color: Color(0xFF15803D), size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -904,30 +909,36 @@ class _TeamRosterImportPanelState extends ConsumerState<TeamRosterImportPanel> {
                           ),
                           const SizedBox(height: 2),
                           const Text(
-                            'Active section roster is verified and ready for team grouping.',
+                            'Review this class list before team grouping.',
                             style: TextStyle(fontSize: 11.5, color: Color(0xFF15803D)),
                           ),
                         ],
                       ),
                     ),
-                    TextButton.icon(
-                      onPressed: () => setState(() => showCurrentRoster = !showCurrentRoster),
-                      icon: Icon(
-                        showCurrentRoster ? Icons.expand_less_rounded : Icons.people_outline_rounded,
-                        size: 16,
-                        color: const Color(0xFF166534),
-                      ),
-                      label: Text(
-                        showCurrentRoster ? 'Hide Roster' : 'View Roster (${widget.students.length})',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF166534),
-                        ),
+                  ]);
+                  final viewRoster = TextButton.icon(
+                    onPressed: () => setState(() => showCurrentRoster = !showCurrentRoster),
+                    icon: Icon(
+                      showCurrentRoster ? Icons.expand_less_rounded : Icons.people_outline_rounded,
+                      size: 16,
+                      color: const Color(0xFF166534),
+                    ),
+                    label: Text(
+                      showCurrentRoster ? 'Hide Roster' : 'View Roster (${widget.students.length})',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF166534),
                       ),
                     ),
-                  ],
-                ),
+                  );
+                  return constraints.maxWidth < 360
+                      ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                          summary,
+                          Align(alignment: Alignment.centerLeft, child: viewRoster),
+                        ])
+                      : Row(children: [Expanded(child: summary), viewRoster]);
+                }),
                 if (showCurrentRoster) ...[
                   const Divider(height: 16, color: Color(0xFFBBF7D0)),
                   ConstrainedBox(
@@ -1208,7 +1219,7 @@ class _TeamRosterImportPanelState extends ConsumerState<TeamRosterImportPanel> {
                           side: const BorderSide(color: Color(0xFFCBD5E1)),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                          textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontSize: 11, fontWeight: FontWeight.w700),
                         ),
                       ),
                       OutlinedButton.icon(
@@ -1220,7 +1231,7 @@ class _TeamRosterImportPanelState extends ConsumerState<TeamRosterImportPanel> {
                           side: const BorderSide(color: Color(0xFFCBD5E1)),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                          textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontSize: 11, fontWeight: FontWeight.w700),
                         ),
                       ),
                     ],
@@ -1377,7 +1388,7 @@ class _TeamRosterImportPanelState extends ConsumerState<TeamRosterImportPanel> {
                               side: const BorderSide(color: Color(0xFFCBD5E1)),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                              textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontSize: 11.5, fontWeight: FontWeight.w700),
                             ),
                           ),
                         ],
@@ -1706,16 +1717,17 @@ class _TeamRosterImportPanelState extends ConsumerState<TeamRosterImportPanel> {
           ),
         ],
 
-        // Divider to Step 2
-        const SizedBox(height: 20),
-        const Divider(),
-        const SizedBox(height: 12),
-        Text(
-          '2. Configure grouping',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-        ),
+        if (widget.showGroupingHeader) ...[
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 12),
+          Text(
+            '2. Configure grouping',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ],
       ],
     );
   }

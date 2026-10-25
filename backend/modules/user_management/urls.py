@@ -1,6 +1,6 @@
 from django.urls import include, path
 from .external_evaluator_views import ExternalEvaluatorsView, ExternalEvaluatorDetailView, ExternalInvitationsView, ExternalInvitationDetailView
-from .panelist_eligibility_views import PanelistEligibilityRequestsView, PanelistEligibilityRequestReviewView
+from .panelist_eligibility_views import PanelistPoolView, PanelistEligibilityRequestsView, PanelistEligibilityRequestReviewView
 
 from .views import (
     AdminResetPasswordView,
@@ -22,6 +22,7 @@ from .views import (
 
 
 urlpatterns = [
+    path('panelist-pool/', PanelistPoolView.as_view(), name='panelist_pool'),
     path('external-evaluators/', ExternalEvaluatorsView.as_view(), name='external_evaluators'),
     path('external-evaluators/<int:evaluator_id>/', ExternalEvaluatorDetailView.as_view(), name='external_evaluator_detail'),
     path('external-invitations/', ExternalInvitationsView.as_view(), name='external_invitations'),

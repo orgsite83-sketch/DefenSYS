@@ -5,11 +5,13 @@ from repository.deliverables.services import display_name
 from repository.entry_payloads import ml_fields_from
 from defensys_backend.read_projection import read_memoize
 
-from django.db.models import Avg, Count
+from django.db.models import Avg, Case, Count, Exists, OuterRef, Q, Value, When
+from django.db.models.functions import Coalesce, NullIf
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, ValidationError
 from .library import enrich_library_entry
 from .ml_search import filter_and_rank_entries
+from .public_taxonomy import enrich_public_tags, public_facets
 from .models import ArchiveEntry, RepositoryReview, UserBookShelf
 
 
@@ -33,72 +35,77 @@ def active_defense_stage_options():
     )
 
 
+def _accepted_post_deliverables_queryset(scope, *, restricted=False):
+    """Deliverable IDs are local to a PIT event or Capstone stage."""
+    submissions = DeliverableSubmission.objects.filter(
+        deliverable_type=DeliverableSubmission.TYPE_POST,
+        team__level__icontains='PIT' if scope == 'pit' else 'Capstone',
+        status=DeliverableSubmission.STATUS_ACCEPTED,
+    )
+    if scope == 'pit':
+        from defense.scheduler.models import PitEventDeliverable
+        definitions = PitEventDeliverable.objects.filter(
+            deliverable_id=OuterRef('deliverable_id'), is_restricted=True,
+        )
+        submissions = submissions.alias(
+            _archive_semester_id=Coalesce('archive_semester_id', 'team__semester_id'),
+            _archive_year_level=Coalesce(NullIf('archive_year_level', Value('')), 'team__year_level'),
+        )
+        # Prefer the captured event. Legacy rows resolve within the captured
+        # term/year, with unclassified legacy events retained conservatively.
+        restriction = Case(
+            When(pit_event_config__isnull=False, then=Exists(definitions.filter(
+                pit_event_config_id=OuterRef('pit_event_config_id'),
+            ))),
+            default=Exists(definitions.filter(
+                Q(pit_event_config__year_level=OuterRef('_archive_year_level'))
+                | Q(pit_event_config__year_level=''),
+                pit_event_config__semester_id=OuterRef('_archive_semester_id'),
+                pit_event_config__event_name__iexact=OuterRef('stage_label'),
+            )),
+        )
+    else:
+        from defense.stages.models import StageDeliverable
+        restriction = Exists(StageDeliverable.objects.filter(
+            deliverable_id=OuterRef('deliverable_id'),
+            defense_stage__label=OuterRef('stage_label'),
+            is_restricted=True,
+        ))
+    return submissions.alias(_archive_restricted=restriction).filter(_archive_restricted=restricted)
+
+
 def pit_visible_deliverables_queryset():
-    from defense.scheduler.models import PitEventDeliverable
-    restricted_ids = PitEventDeliverable.objects.filter(is_restricted=True).values_list('deliverable_id', flat=True)
     return (
-        DeliverableSubmission.objects.select_related(
+        _accepted_post_deliverables_queryset('pit').select_related(
             'team',
             'team__semester',
             'team__semester__school_year',
             'uploaded_by',
         )
         .prefetch_related('files')
-        .filter(
-            deliverable_type=DeliverableSubmission.TYPE_POST,
-            team__level__icontains='PIT',
-            status=DeliverableSubmission.STATUS_ACCEPTED,
-        )
-        .exclude(
-            deliverable_id__in=restricted_ids,
-        )
         .order_by('-uploaded_at', 'file_name')
     )
 
 
 def capstone_visible_queryset():
-    from defense.stages.models import StageDeliverable
-    restricted_ids = StageDeliverable.objects.filter(is_restricted=True).values_list('deliverable_id', flat=True)
     return (
-        DeliverableSubmission.objects.select_related(
+        _accepted_post_deliverables_queryset('capstone').select_related(
             'team',
             'team__semester',
             'team__semester__school_year',
             'uploaded_by',
         )
         .prefetch_related('files')
-        .filter(
-            deliverable_type=DeliverableSubmission.TYPE_POST,
-            team__level__icontains='Capstone',
-            status=DeliverableSubmission.STATUS_ACCEPTED,
-        )
-        .exclude(
-            deliverable_id__in=restricted_ids,
-        )
         .order_by('-uploaded_at', 'file_name')
     )
 
 
 def capstone_restricted_queryset():
-    from defense.stages.models import StageDeliverable
-    restricted_ids = StageDeliverable.objects.filter(is_restricted=True).values_list('deliverable_id', flat=True)
-    return DeliverableSubmission.objects.prefetch_related('files').filter(
-        deliverable_type=DeliverableSubmission.TYPE_POST,
-        deliverable_id__in=restricted_ids,
-        team__level__icontains='Capstone',
-        status=DeliverableSubmission.STATUS_ACCEPTED,
-    )
+    return _accepted_post_deliverables_queryset('capstone', restricted=True).prefetch_related('files')
 
 
 def pit_restricted_queryset():
-    from defense.scheduler.models import PitEventDeliverable
-    restricted_ids = PitEventDeliverable.objects.filter(is_restricted=True).values_list('deliverable_id', flat=True)
-    return DeliverableSubmission.objects.prefetch_related('files').filter(
-        deliverable_type=DeliverableSubmission.TYPE_POST,
-        deliverable_id__in=restricted_ids,
-        team__level__icontains='PIT',
-        status=DeliverableSubmission.STATUS_ACCEPTED,
-    )
+    return _accepted_post_deliverables_queryset('pit', restricted=True).prefetch_related('files')
 
 
 def pit_queryset():
@@ -344,6 +351,7 @@ def all_visible_entries(user=None):
         entry['is_saved'] = shelf_info.get('is_saved', False)
         entry['last_opened_at'] = shelf_info.get('last_opened_at')
 
+    enrich_public_tags(entries)
     return sorted(entries, key=lambda item: item.get('uploaded_at'), reverse=True)
 
 
@@ -354,6 +362,7 @@ def search_archive_payload(request):
     return {
         'entries': filtered,
         'suggestions': suggestions,
+        'library_facets': public_facets(entries, request.query_params),
         'counts': counts_payload(entries, filtered),
         'filters': {
             'search': request.query_params.get('search', ''),
@@ -404,6 +413,7 @@ def project_archive_payload(request):
         'suggestions': suggestions,
         'counts': counts_payload(entries, filtered_entries),
         'options': options_payload(entries),
+        'library_facets': public_facets(entries, request.query_params),
         'filters': {
             'search': request.query_params.get('search', ''),
             'type': request.query_params.get('type', ''),

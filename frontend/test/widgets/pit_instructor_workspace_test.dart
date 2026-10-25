@@ -83,6 +83,15 @@ class _PitDeliverablesNotifier extends CapstoneDeliverablesNotifier {
   }) async {}
 }
 
+class _UnconfiguredPitDeliverablesNotifier extends _PitDeliverablesNotifier {
+  @override
+  CapstoneDeliverablesState build() => const CapstoneDeliverablesState(
+    scope: 'pit',
+    selectedStage: 'Prototype Showcase',
+    stageOptions: ['Prototype Showcase'],
+  );
+}
+
 class _PitGradesNotifier extends AdviserGradingNotifier {
   @override
   Future<void> fetchAll() async {}
@@ -127,6 +136,40 @@ class _PitDefenseNotifier extends PitInstructorDefenseNotifier {
 }
 
 void main() {
+  for (final instructor in [true, false]) {
+    testWidgets(
+      'PIT configuration warning belongs to management (instructor: $instructor)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1500, 1100);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await pumpDefensysWidget(
+          tester,
+          TeamDeliverablesScreen(
+            initialScope: 'pit',
+            isPitInstructor: instructor,
+          ),
+          overrides: [
+            capstoneDeliverablesProvider.overrideWith(
+              _UnconfiguredPitDeliverablesNotifier.new,
+            ),
+            adviserGradingProvider.overrideWith(_PitGradesNotifier.new),
+            weeklyProgressProvider.overrideWith(_PitWeeklyNotifier.new),
+            pitInstructorDefenseProvider.overrideWith(_PitDefenseNotifier.new),
+          ],
+        );
+        expect(
+          find.text(
+            'No deliverables configured for Prototype Showcase. Add them in PIT Events Setup.',
+          ),
+          instructor ? findsNothing : findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets(
     'instructor dashboard uses adviser layout for assigned PIT teams',
     (tester) async {

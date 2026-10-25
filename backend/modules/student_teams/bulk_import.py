@@ -1,4 +1,6 @@
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from django.contrib.auth import get_user_model
 
 from .models import StudentTeam, TeamMembership
@@ -7,6 +9,33 @@ from .team_levels import prepare_bulk_row, program_label_for_row, user_is_pit_le
 
 
 User = get_user_model()
+_import_users = ContextVar('team_import_users', default=None)
+
+
+@contextmanager
+def import_user_lookup():
+    """One account projection per review; retain the normal name/ID matching rules."""
+    if _import_users.get() is not None:
+        yield
+        return
+    token = _import_users.set(list(User.objects.only(
+        'id', 'username', 'first_name', 'last_name', 'role', 'is_active')))
+    try:
+        yield
+    finally:
+        _import_users.reset(token)
+
+
+def _role_users(role):
+    cached = _import_users.get()
+    if cached is not None:
+        roles = role if isinstance(role, (list, tuple, set)) else [role]
+        return [u for u in cached if not role or u.role in roles]
+    queryset = User.objects.all()
+    if role:
+        roles = role if isinstance(role, (list, tuple, set)) else [role]
+        queryset = queryset.filter(role__in=roles)
+    return queryset
 
 ADVISER_STATUS_NONE = 'none'
 ADVISER_STATUS_VALID = 'valid'
@@ -160,12 +189,7 @@ def _users_matching_full_name(value, *, role=None):
     if not normalized:
         return []
 
-    queryset = User.objects.all()
-    if role:
-        if isinstance(role, (list, tuple, set)):
-            queryset = queryset.filter(role__in=role)
-        else:
-            queryset = queryset.filter(role=role)
+    queryset = _role_users(role)
 
     matches = []
     cleaned_input = normalize_name(clean_person_name(value))
@@ -182,6 +206,8 @@ def _users_matching_full_name(value, *, role=None):
 
 
 def _user_by_username_ref(raw, *, role=None):
+    if _import_users.get() is not None:
+        return next((u for u in _role_users(role) if u.username.casefold() == raw.casefold()), None)
     queryset = User.objects.filter(username__iexact=raw)
     if role:
         if isinstance(role, (list, tuple, set)):
@@ -198,12 +224,7 @@ def _users_matching_initial_and_surname(surname, initial, *, role=None):
     norm_initial = normalize_name((clean_init or initial).rstrip('.'))
     if not norm_surname or not norm_initial:
         return []
-    queryset = User.objects.all()
-    if role:
-        if isinstance(role, (list, tuple, set)):
-            queryset = queryset.filter(role__in=role)
-        else:
-            queryset = queryset.filter(role=role)
+    queryset = _role_users(role)
     matches = []
     for user in queryset:
         user_last = normalize_name(user.last_name)
@@ -222,12 +243,7 @@ def _users_matching_surname_only(surname, *, role=None):
     norm_surname = normalize_name(clean_sur or surname)
     if not norm_surname:
         return []
-    queryset = User.objects.all()
-    if role:
-        if isinstance(role, (list, tuple, set)):
-            queryset = queryset.filter(role__in=role)
-        else:
-            queryset = queryset.filter(role=role)
+    queryset = _role_users(role)
     matches = []
     for user in queryset:
         user_last = normalize_name(user.last_name)
@@ -871,6 +887,7 @@ def preview_bulk_teams(
         manager, metadata_issues = metadata_results[key]
         if metadata_issues:
             preview_rows[row_index]['issues'].extend(metadata_issues)
+            preview_rows[row_index]['metadata_issues'] = metadata_issues
             preview_rows[row_index]['ready'] = False
             preview_rows[row_index]['section_metadata_invalid'] = True
         elif manager and manager.pk in members and preview_rows[row_index]['ready']:
@@ -885,6 +902,9 @@ def preview_bulk_teams(
             counts = sections.setdefault(row.get('section', ''), {'assigned': 0, 'proposals': 0})
             counts[policy['mode']] += 1
     summary['concept_sections'] = sections
+    for source, result in zip(rows, preview_rows):
+        if isinstance(source, dict) and source.get('group_key'):
+            result['group_key'] = source['group_key']
     return preview_rows, summary
 
 

@@ -21,7 +21,7 @@ from repository.deliverables.models import DeliverableSubmission, DeliverableSub
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-from execution.upload_deliverables import ApiClient, StudentLeaderBatch, UploadError, prepare_plan, run_plan
+from execution.upload_deliverables import ApiClient, StudentLeaderBatch, UploadError, prepare_plan, run_plan, main, batch_stage
 
 
 class _ApiSession:
@@ -198,6 +198,69 @@ class UploadAutomationApiTests(APITestCase):
         with self.assertRaisesRegex(UploadError, 'student leader'):
             prepare_plan(batch, scope='pit', stage=self.event.event_name,
                          files_root=self.files, team_ids=[self.pit.pk])
+
+    def test_team_filename_batch_uploads_only_selected_document_as_each_student_leader(self):
+        self.pit.name = 'Team Upload PIT'
+        self.pit.save(update_fields=['name'])
+        second_leader = get_user_model().objects.create_user(username='flat-upload-leader', role='student')
+        second = StudentTeam.objects.create(name='AlphaWave', project_title='Another project',
+            leader=second_leader, semester=self.semester, year_level='1st Year', level=StudentTeam.LEVEL_1_PIT,
+            status=StudentTeam.STATUS_APPROVED)
+        TeamMembership.objects.create(team=second, student=second_leader, is_leader=True)
+        PitEventDeliverable.objects.create(pit_event_config=self.event, deliverable_id='SLIDES',
+            label='Pitch Deck', file_format='pdf', required=True)
+        expected = {}
+        for selected, filename in [(self.pit, 'Upload_PIT_Any_filename.pdf'),
+                                   (second, 'AlphaWave_Concept_Paper.pdf')]:
+            content = f'%PDF-1.4\n{selected.name} unique document\n%%EOF'.encode()
+            (self.files / filename).write_bytes(content)
+            expected[selected.pk] = content
+        with patch('execution.upload_deliverables.requests.Session', side_effect=_ApiSession):
+            batch = StudentLeaderBatch('http://testserver')
+            self.addCleanup(batch.close)
+            plan = prepare_plan(batch, scope='pit', stage=self.event.event_name,
+                files_root=self.files, all_teams=True, deliverable='Event documents', slot='Paper')
+            self.assertEqual(len(plan['items']), 2)
+            self.assertEqual({(item['deliverable_id'], item['slot_key']) for item in plan['items']},
+                             {('DOCS', 'paper')})
+            with redirect_stdout(StringIO()):
+                self.assertEqual(run_plan(batch, plan), 0)
+            self.assertFalse(DeliverableSubmission.objects.exists())
+            with redirect_stdout(StringIO()):
+                self.assertEqual(run_plan(batch, plan, apply=True), 0)
+                self.assertEqual(run_plan(batch, plan, apply=True), 0)
+        self.assertEqual(DeliverableSubmission.objects.count(), 2)
+        self.assertEqual(DeliverableSubmissionFile.objects.count(), 2)
+        for selected in [self.pit, second]:
+            saved = DeliverableSubmission.objects.get(team=selected, deliverable_id='DOCS')
+            self.assertEqual(saved.uploaded_by_id, selected.leader_id)
+            self.assertEqual(saved.files.get().slot_key, 'paper')
+            self.assertEqual(Path(saved.files.get().file.path).read_bytes(), expected[selected.pk])
+
+    def test_simple_command_uploads_all_pre_documents_and_excludes_post(self):
+        PitEventDeliverable.objects.create(pit_event_config=self.event, deliverable_id='DECK',
+            label='Pitch Deck', file_format='presentation', required=True)
+        PitEventDeliverable.objects.create(pit_event_config=self.event, deliverable_id='FINAL',
+            label='Final Paper', deliverable_type='post', file_format='pdf', required=True)
+        for filename in ['DOCS/paper/Upload_PIT_Anything.pdf', 'DOCS/notes/Upload_PIT_Notes.pdf',
+                         'Pitch Deck/01_Upload_PIT_Pitch.pptx', 'FINAL/Upload_PIT_Final.pdf']:
+            self.write(filename)
+        arguments = ['--all-teams', '--year', '1', '--files', str(self.files)]
+        with patch('execution.upload_deliverables.requests.Session', side_effect=_ApiSession), redirect_stdout(StringIO()):
+            self.assertEqual(main(arguments + ['--dry-run']), 0)
+            self.assertFalse(DeliverableSubmission.objects.exists())
+            self.assertEqual(main(arguments), 0)
+            self.assertEqual(main(arguments), 0)
+        self.assertEqual(set(DeliverableSubmission.objects.values_list('deliverable_id', flat=True)), {'DOCS', 'DECK'})
+        self.assertEqual(DeliverableSubmissionFile.objects.count(), 3)
+        for saved in DeliverableSubmission.objects.all():
+            self.assertEqual(saved.uploaded_by_id, self.student.pk)
+
+    def test_simple_command_requires_stage_when_year_has_multiple_events(self):
+        self.assertEqual(batch_stage('pit', '1st Year', None), self.event.event_name)
+        PitEventGradingConfig.objects.create(semester=self.semester, year_level='1st Year', event_name='Another exhibit')
+        with self.assertRaisesRegex(UploadError, '--stage explicitly'):
+            batch_stage('pit', '1st Year', None)
 
     def test_capstone_student_batch_uploads_under_leader_and_blocks_changed_leader(self):
         (self.files / f'{self.capstone.pk}__PAPER.pdf').write_bytes(b'%PDF-1.4\nCapstone-specific paper')

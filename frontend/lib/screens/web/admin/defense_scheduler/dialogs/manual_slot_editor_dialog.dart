@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/utils/semester_calendar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/services/defense_scheduler_provider.dart';
@@ -273,13 +274,18 @@ class ManualSlotEditorDialog {
                               controller: date,
                               readOnly: true,
                               onTap: () async {
+                                final calendar = SemesterCalendarWindow.fromMap(state.activeSemester);
+                                if (calendar == null) {
+                                  showValidationToast(context, 'Set semester dates in Academic Periods before scheduling.');
+                                  return;
+                                }
                                 final now = DateTime.now();
                                 final today = DateTime(now.year, now.month, now.day);
                                 final picked = await showDatePicker(
                                   context: context,
-                                  initialDate: DateTime.tryParse(date.text) ?? today,
-                                  firstDate: today,
-                                  lastDate: DateTime(now.year + 3, now.month, now.day),
+                                  initialDate: calendar.clamp(DateTime.tryParse(date.text) ?? today),
+                                  firstDate: calendar.start,
+                                  lastDate: calendar.end,
                                 );
                                 if (picked != null) {
                                   date.text = formatScheduleDate(picked);

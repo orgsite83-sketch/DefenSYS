@@ -302,6 +302,9 @@ class ScheduleImportPreviewRow {
     this.stageIssues = const <String>[],
     this.teamIssues = const <String>[],
     this.slotIssues = const <String>[],
+    this.panelistEligibilityIds = const <int>[],
+    this.panelistEligibilityIssues = const <String>[],
+    this.hasUnresolvedFaculty = false,
     this.issues = const <String>[],
     required this.warnings,
     this.rowType = ScheduleImportRowType.invalid,
@@ -328,6 +331,9 @@ class ScheduleImportPreviewRow {
   final List<String> stageIssues;
   final List<String> teamIssues;
   final List<String> slotIssues;
+  final List<int> panelistEligibilityIds;
+  final List<String> panelistEligibilityIssues;
+  final bool hasUnresolvedFaculty;
   final List<String> issues;
   final List<String> warnings;
   final ScheduleImportRowType rowType;
@@ -746,6 +752,9 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final stageIssues = <String>[];
     final teamIssues = <String>[];
     final slotIssues = <String>[...source.parseIssues];
+    final panelistEligibilityIds = <int>[];
+    final panelistEligibilityIssues = <String>[];
+    var hasUnresolvedFaculty = false;
     final warnings = <String>[];
     final rowDate = normalizeImportDate(source.date).isNotEmpty
         ? normalizeImportDate(source.date)
@@ -784,6 +793,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     if (!isPit && source.documenter.trim().isNotEmpty) {
       final docMatch = matchDocumenter(source.documenter, state);
       if (docMatch.id == null) {
+        hasUnresolvedFaculty = true;
         slotIssues.add(docMatch.message);
       } else {
         documenterId = docMatch.id;
@@ -1002,6 +1012,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final panelistIds = <int>[];
     for (final match in panelistMatches) {
       if (match.id == null) {
+        hasUnresolvedFaculty = true;
         slotIssues.add(match.message);
       } else if (!panelistIds.contains(match.id)) {
         panelistIds.add(match.id!);
@@ -1022,9 +1033,11 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
           .firstOrNull;
       final name = person?['name']?.toString() ?? 'Faculty #$id';
       if (state.requiresPanelistApproval) {
-        slotIssues.add(
-          '$name needs panelist eligibility. Request admin approval before importing this slot.',
-        );
+        final message =
+            '$name needs panelist eligibility. Request admin approval before importing this slot.';
+        panelistEligibilityIds.add(id);
+        panelistEligibilityIssues.add(message);
+        slotIssues.add(message);
       }
     }
 
@@ -1052,6 +1065,9 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       stageIssues: stageIssues,
       teamIssues: teamIssues,
       slotIssues: slotIssues,
+      panelistEligibilityIds: panelistEligibilityIds,
+      panelistEligibilityIssues: panelistEligibilityIssues,
+      hasUnresolvedFaculty: hasUnresolvedFaculty,
       issues: allIssues,
       warnings: warnings,
       rowType: rowType,

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../notifications/notifications_provider.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/defense_board_provider.dart';
@@ -48,6 +50,20 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('admin'));
     final academicState = ref.watch(academicPeriodProvider);
+
+    // New inbox entries can arrive while this dashboard stays mounted.
+    // Also notice decisions made by another admin when the inbox polls again.
+    // Read flags do not affect approval work.
+    ref.listen<String>(
+      notificationsProvider('admin').select(_approvalInboxState),
+      (previous, next) {
+        if (previous != next) {
+          ref
+              .read(dashboardProvider('admin').notifier)
+              .fetchDashboardData(silent: true);
+        }
+      },
+    );
 
     ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
       if (next == DefensysAdminSection.overview && previous != DefensysAdminSection.overview) {
@@ -1119,7 +1135,9 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                             : const Color(0xFFB91C1C);
                         categoryLabel = categoryRaw ?? 'SETUP REQUIRED';
                       } else if (severity == 'action') {
-                        actionIcon = Icons.task_alt_rounded;
+                        actionIcon = itemId == 'pending_panelist_requests'
+                            ? Icons.person_add_alt_1_rounded
+                            : Icons.task_alt_rounded;
                         iconColor = _isDark
                             ? const Color(0xFF34D399)
                             : const Color(0xFF059669);
@@ -1157,9 +1175,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                       }
 
                       return InkWell(
-                        onTap: () => widget.onNavigate(
-                          _mapSection(targetSectionKey),
-                        ),
+                        onTap: () => _openActionItem(item),
                         borderRadius: BorderRadius.circular(10),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
@@ -1258,9 +1274,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                               ),
                               const SizedBox(width: 10),
                               FilledButton.icon(
-                                onPressed: () => widget.onNavigate(
-                                  _mapSection(targetSectionKey),
-                                ),
+                                onPressed: () => _openActionItem(item),
                                 style: FilledButton.styleFrom(
                                   backgroundColor: _maroon,
                                   foregroundColor: Colors.white,
@@ -1585,6 +1599,37 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
       default:
         return Icons.history_rounded;
     }
+  }
+
+  String _approvalInboxState(NotificationsState state) {
+    final requests = <String>[];
+    for (final notification in state.notifications) {
+      final payload = notification['action_payload'];
+      final action = notification['action'];
+      if (payload is Map &&
+          (payload['action_kind'] == 'panelist_request' ||
+              payload['panelist_eligibility'] == true)) {
+        requests.add(
+          '${payload['request_id']}:${action is Map ? action['status'] : ''}',
+        );
+      }
+    }
+    requests.sort();
+    return '${state.totalCount}|${requests.join(',')}';
+  }
+
+  void _openActionItem(Map<String, dynamic> item) {
+    final route = Uri.tryParse(item['target_route']?.toString() ?? '');
+    final router = GoRouter.maybeOf(context);
+    if (router != null &&
+        route != null &&
+        !route.hasScheme &&
+        !route.hasAuthority &&
+        route.path.startsWith('/admin/')) {
+      router.go(route.toString());
+      return;
+    }
+    widget.onNavigate(_mapSection(item['target_section']?.toString() ?? ''));
   }
 
   DefensysAdminSection _mapSection(String sectionKey) {

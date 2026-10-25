@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/widgets/team_import_review.dart';
 
 import '../widgets/defensys_admin_shell.dart';
 
@@ -46,6 +47,9 @@ class TeamBulkImportReviewTable extends StatefulWidget {
     this.onSectionAdded,
     this.onOpenExistingTeam,
     this.lockAssignments = false,
+    this.sectionSummaries = const [],
+    this.statusFilter = 'all',
+    this.isValidating = false,
   });
 
   final List<Map<String, dynamic>> rows;
@@ -66,13 +70,63 @@ class TeamBulkImportReviewTable extends StatefulWidget {
   final void Function(String newSection)? onSectionAdded;
   final ValueChanged<int>? onOpenExistingTeam;
   final bool lockAssignments;
+  final List<Map<String, dynamic>> sectionSummaries;
+  final String statusFilter;
+  final bool isValidating;
 
   @override
-  State<TeamBulkImportReviewTable> createState() =>
-      _TeamBulkImportReviewTableState();
+  TeamBulkImportReviewTableState createState() =>
+      TeamBulkImportReviewTableState();
 }
 
-class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
+class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
+  final _rowAnchors = <int, GlobalKey>{};
+  List<int> _visibleIndices = [];
+
+  void goToFirstIssue() {
+    final candidates = _visibleIndices
+        .where(
+          (index) =>
+              (_previewForRow(index + 1)?['issues'] as List? ?? []).isNotEmpty,
+        )
+        .toList();
+    final target =
+        candidates.firstOrNull ??
+        _visibleIndices
+            .where(
+              (index) => (_previewForRow(index + 1)?['warnings'] as List? ?? [])
+                  .isNotEmpty,
+            )
+            .firstOrNull;
+    if (target == null) return;
+    setState(
+      () => _currentPage = _pageSize > 0
+          ? _visibleIndices.indexOf(target) ~/ _pageSize
+          : 0,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final anchor = _rowAnchors[target]?.currentContext;
+      if (mounted && anchor != null) {
+        Scrollable.ensureVisible(
+          anchor,
+          duration: const Duration(milliseconds: 250),
+          alignment: .3,
+        );
+        Focus.of(anchor).requestFocus();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant TeamBulkImportReviewTable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.statusFilter != widget.statusFilter ||
+        oldWidget.sectionFilter != widget.sectionFilter ||
+        oldWidget.searchQuery != widget.searchQuery) {
+      _currentPage = 0;
+    }
+  }
+
   Color get _ink => DefensysTokens.isDark(context)
       ? const Color(0xFFFAFAFA)
       : const Color(0xFF18181B);
@@ -170,6 +224,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       if (widget.showIssuesOnly) {
         if (preview != null && preview['ready'] == true) return false;
       }
+      if (widget.statusFilter == 'issues' &&
+          (preview?['issues'] as List? ?? []).isEmpty) {
+        return false;
+      }
+      if (widget.statusFilter == 'warnings' &&
+          (preview?['warnings'] as List? ?? []).isEmpty) {
+        return false;
+      }
 
       // Section filter
       if (widget.sectionFilter != null &&
@@ -216,6 +278,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             project.contains(query) ||
             section.contains(query) ||
             adviser.contains(query) ||
+            '${row['system_name'] ?? ''}'.toLowerCase().contains(query) ||
+            '${row['project_manager'] ?? ''}'.toLowerCase().contains(query) ||
             members.contains(query);
         if (!matches) return false;
       }
@@ -235,6 +299,17 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         : totalItems;
 
     final List<Widget> bodyContent = [];
+    final summaries = teamImportSummaries(widget.rows, widget.sectionSummaries);
+    final visibleSections = visible
+        .map((entry) => '${entry.value['section'] ?? ''}')
+        .toSet();
+    if (widget.groupBy != 'section') {
+      bodyContent.addAll(
+        summaries
+            .where((s) => visibleSections.contains('${s['section']}'))
+            .map((s) => TeamImportSharedDetails(summary: s)),
+      );
+    }
 
     if (visible.isEmpty) {
       bodyContent.add(
@@ -299,6 +374,12 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             color: _muted,
           ),
         );
+        final section = '${grp.value.first.value['section'] ?? ''}';
+        bodyContent.addAll(
+          summaries
+              .where((s) => '${s['section']}' == section)
+              .map((s) => TeamImportSharedDetails(summary: s)),
+        );
         bodyContent.addAll(
           grp.value.map((entry) => _rowCard(context, entry.key, entry.value)),
         );
@@ -346,6 +427,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       );
     }
 
+    _visibleIndices = visible.map((entry) => entry.key).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -436,12 +518,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
   }
 
   Map<String, dynamic>? _previewForRow(int rowNumber) {
-    for (final item in widget.previewRows) {
-      if (item['row'] == rowNumber) {
-        return item;
-      }
-    }
-    return null;
+    if (widget.isValidating) return null;
+    return teamImportPreviewFor(widget.rows, widget.previewRows, rowNumber - 1);
   }
 
   Widget _rowCard(BuildContext context, int index, Map<String, dynamic> row) {
@@ -452,6 +530,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         .map((item) => item.toString())
         .toList();
     final warnings = (preview?['warnings'] as List? ?? const [])
+        .map((item) => item.toString())
+        .toList();
+    final notes = (preview?['notes'] as List? ?? const [])
         .map((item) => item.toString())
         .toList();
 
@@ -493,243 +574,354 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     final rowIsPit =
         !widget.isCapstoneAdmin || currentProgram.toUpperCase().contains('PIT');
     final adviserValue = _facultyValue(row, preview);
+    final shared =
+        row['project_kind'] == 'module' ||
+        '${row['system_name'] ?? ''}'.isNotEmpty ||
+        widget.sectionSummaries.any((s) => s['section'] == sectionValue);
 
-    final borderColor = ready
+    final borderColor = issues.isNotEmpty
+        ? const Color(0xFFEF4444)
+        : warnings.isNotEmpty
+        ? _amber
+        : ready
         ? const Color(0xFF10B981)
         : (issues.isNotEmpty
               ? const Color(0xFFEF4444)
               : const Color(0xFFCBD5E1));
 
-    return Container(
-      key: ValueKey('bulk_import_row_${row['group_key'] ?? index}'),
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: borderColor,
-          width: ready || issues.isNotEmpty ? 1.4 : 1.0,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(9),
-              ),
-              border: Border(bottom: BorderSide(color: _line)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        teamTitle.isNotEmpty
-                            ? teamTitle
-                            : 'Unnamed team $rowNumber',
-                        style: TextStyle(
-                          color: _ink,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      const SizedBox(height: 9),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          _contextBadge('Row $rowNumber'),
-                          if (teamTitle.isEmpty || projectTitle.isEmpty)
-                            _contextBadge(
-                              'Leader completes: ${[if (teamTitle.isEmpty) 'team name', if (projectTitle.isEmpty) 'project setup'].join(' + ')}',
-                              icon: Icons.pending_actions_outlined,
-                            ),
-                          _contextBadge(
-                            '${(preview?['concept_requirement'] as Map?)?['label'] ?? (projectTitle.isEmpty ? 'Topic unassigned · Stage default concepts' : 'Assigned project/module · 1 concept')}',
-                            icon: Icons.description_outlined,
-                          ),
-                          if (sectionValue.isNotEmpty)
-                            _contextBadge(
-                              'Sec: $sectionValue',
-                              icon: Icons.meeting_room_outlined,
-                            ),
-                          if (adviserValue.isNotEmpty)
-                            _contextBadge(
-                              '${rowIsPit ? 'Instructor' : 'Adviser'}: $adviserValue',
-                              icon: Icons.person_outline,
-                            ),
-                          if (currentProgram.isNotEmpty)
-                            _contextBadge(
-                              currentProgram,
-                              icon: Icons.school_outlined,
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _statusBadge(ready, issues.length, warnings.length),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Delete team row',
-                  onPressed: () => widget.onDeleteRow(index),
-                  icon: Icon(Icons.delete_outline, size: 17, color: _muted),
-                  constraints: const BoxConstraints(
-                    minWidth: 30,
-                    minHeight: 30,
-                  ),
-                  padding: const EdgeInsets.all(6),
-                ),
-              ],
-            ),
+    return Focus(
+      child: Container(
+        key: ValueKey('bulk_import_row_${row['group_key'] ?? index}'),
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: borderColor,
+            width: ready || issues.isNotEmpty ? 1.4 : 1.0,
           ),
-
-          // 2. Validation Issues / Warnings Alerts (if any)
-          if (issues.isNotEmpty)
+        ),
+        child: Column(
+          key: _rowAnchors.putIfAbsent(index, GlobalKey.new),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Container(
-              margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
               decoration: BoxDecoration(
-                color: _redBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _redBorder),
+                color: _surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(9),
+                ),
+                border: Border(bottom: BorderSide(color: _line)),
               ),
-              child: Column(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.error_outline_rounded,
-                        size: 15,
-                        color: _red,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${issues.length} issue${issues.length == 1 ? ' requires' : 's require'} correction:',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: _red,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          teamTitle.isNotEmpty
+                              ? teamTitle
+                              : 'Unnamed team $rowNumber',
+                          style: TextStyle(
+                            color: _ink,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.2,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  ...issues.map(
-                    (issue) => Padding(
-                      padding: const EdgeInsets.only(left: 23, bottom: 2),
-                      child: Text(
-                        '• $issue',
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF7F1D1D),
+                        const SizedBox(height: 9),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            _contextBadge('Row $rowNumber'),
+                            if (shared)
+                              _contextBadge(
+                                'System: ${widget.sectionSummaries.where((s) => s['section'] == sectionValue).firstOrNull?['system_name'] ?? row['system_name'] ?? 'Not supplied'}',
+                                icon: Icons.hub_outlined,
+                              ),
+                            if (teamTitle.isEmpty || projectTitle.isEmpty)
+                              _contextBadge(
+                                'Leader completes: ${[if (teamTitle.isEmpty) 'team name', if (projectTitle.isEmpty) 'project setup'].join(' + ')}',
+                                icon: Icons.pending_actions_outlined,
+                              ),
+                            _contextBadge(
+                              '${(preview?['concept_requirement'] as Map?)?['label'] ?? (projectTitle.isEmpty ? 'Topic unassigned · Stage default concepts' : 'Assigned project/module · 1 concept')}',
+                              icon: Icons.description_outlined,
+                            ),
+                            if (sectionValue.isNotEmpty)
+                              _contextBadge(
+                                'Sec: $sectionValue',
+                                icon: Icons.meeting_room_outlined,
+                              ),
+                            if (adviserValue.isNotEmpty)
+                              _contextBadge(
+                                '${rowIsPit ? 'Instructor' : 'Adviser'}: $adviserValue',
+                                icon: Icons.person_outline,
+                              ),
+                            if (currentProgram.isNotEmpty)
+                              _contextBadge(
+                                currentProgram,
+                                icon: Icons.school_outlined,
+                              ),
+                          ],
                         ),
-                      ),
+                      ],
                     ),
+                  ),
+                  const SizedBox(width: 12),
+                  _statusBadge(ready, issues.length, warnings.length),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Delete team row',
+                    onPressed: () => widget.onDeleteRow(index),
+                    icon: Icon(Icons.delete_outline, size: 17, color: _muted),
+                    constraints: const BoxConstraints(
+                      minWidth: 30,
+                      minHeight: 30,
+                    ),
+                    padding: const EdgeInsets.all(6),
                   ),
                 ],
               ),
             ),
 
-          if (warnings.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: _amberBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _amberBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.warning_amber_rounded,
-                        size: 15,
-                        color: _amber,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${warnings.length} warning${warnings.length == 1 ? '' : 's'}:',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: _amber,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  ...warnings.map(
-                    (warn) => Padding(
-                      padding: const EdgeInsets.only(left: 23, bottom: 2),
-                      child: Text(
-                        '• $warn',
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF78350F),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          if (widget.onOpenExistingTeam != null &&
-              (preview?['membership_conflicts'] as List? ?? []).isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  for (final team
-                      in (preview!['membership_conflicts'] as List)
-                          .whereType<Map>())
-                    TextButton.icon(
-                      onPressed: () =>
-                          widget.onOpenExistingTeam!(team['id'] as int),
-                      icon: const Icon(Icons.open_in_new, size: 14),
-                      label: Text('Review ${team['name']}'),
-                    ),
-                ],
-              ),
-            ),
-
-          // 3. Form Fields Body
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 840;
-
-                return Column(
+            // 2. Validation Issues / Warnings Alerts (if any)
+            if (issues.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: _redBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _redBorder),
+                ),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Row 1: Core Identification & Academic Assignments
-                    if (isWide)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: _field(
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          size: 15,
+                          color: _red,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${issues.length} issue${issues.length == 1 ? ' requires' : 's require'} correction:',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _red,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ...issues.map(
+                      (issue) => Padding(
+                        padding: const EdgeInsets.only(left: 23, bottom: 2),
+                        child: Text(
+                          '• $issue',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF7F1D1D),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            if (warnings.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: _amberBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _amberBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          size: 15,
+                          color: _amber,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${warnings.length} warning${warnings.length == 1 ? '' : 's'}:',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _amber,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ...warnings.map(
+                      (warn) => Padding(
+                        padding: const EdgeInsets.only(left: 23, bottom: 2),
+                        child: Text(
+                          '• $warn',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF78350F),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            for (final note in notes)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Icon(Icons.info_outline, size: 14, color: _muted),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        note,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _muted,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            if (widget.onOpenExistingTeam != null &&
+                (preview?['membership_conflicts'] as List? ?? []).isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    for (final team
+                        in (preview!['membership_conflicts'] as List)
+                            .whereType<Map>())
+                      TextButton.icon(
+                        onPressed: () =>
+                            widget.onOpenExistingTeam!(team['id'] as int),
+                        icon: const Icon(Icons.open_in_new, size: 14),
+                        label: Text('Review ${team['name']}'),
+                      ),
+                  ],
+                ),
+              ),
+
+            // 3. Form Fields Body
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 840;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Row 1: Core Identification & Academic Assignments
+                      if (isWide)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: _field(
+                                label: 'Team Name',
+                                icon: Icons.groups_2_outlined,
+                                isRequired: false,
+                                value: row['team_name']?.toString() ?? '',
+                                hintText: 'e.g. Team SkyLedger',
+                                onChanged: (v) {
+                                  row['team_name'] = v;
+                                  widget.onRowChanged(index);
+                                },
+                                key: ValueKey(
+                                  'field_name_${row['group_key'] ?? rowNumber}',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 4,
+                              child: _field(
+                                label: shared
+                                    ? 'Module'
+                                    : widget.isCapstoneAdmin
+                                    ? 'Capstone Project Title'
+                                    : 'PIT Project Title',
+                                icon: Icons.lightbulb_outline_rounded,
+                                isRequired: false,
+                                value: row['project_title']?.toString() ?? '',
+                                hintText: 'e.g. Alumni Career Tracker',
+                                onChanged: (v) {
+                                  row['project_title'] = v;
+                                  widget.onRowChanged(index);
+                                },
+                                key: ValueKey(
+                                  'field_proj_${row['group_key'] ?? rowNumber}',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: _buildSectionSelector(
+                                index: index,
+                                rowNumber: rowNumber,
+                                row: row,
+                                sectionValue: sectionValue,
+                              ),
+                            ),
+                            if (!widget.lockAssignments) ...[
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 3,
+                                child: _buildAdviserField(
+                                  context: context,
+                                  index: index,
+                                  rowNumber: rowNumber,
+                                  adviserValue: adviserValue,
+                                  isInstructor: rowIsPit,
+                                ),
+                              ),
+                            ],
+                          ],
+                        )
+                      else
+                        Column(
+                          children: [
+                            _field(
                               label: 'Team Name',
                               icon: Icons.groups_2_outlined,
                               isRequired: false,
@@ -743,12 +935,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                 'field_name_${row['group_key'] ?? rowNumber}',
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 4,
-                            child: _field(
-                              label: widget.isCapstoneAdmin
+                            const SizedBox(height: 12),
+                            _field(
+                              label: shared
+                                  ? 'Module'
+                                  : widget.isCapstoneAdmin
                                   ? 'Capstone Project Title'
                                   : 'PIT Project Title',
                               icon: Icons.lightbulb_outline_rounded,
@@ -763,106 +954,47 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                 'field_proj_${row['group_key'] ?? rowNumber}',
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: _buildSectionSelector(
+                            const SizedBox(height: 12),
+                            _buildSectionSelector(
                               index: index,
                               rowNumber: rowNumber,
                               row: row,
                               sectionValue: sectionValue,
                             ),
-                          ),
-                          ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 3,
-                              child: _buildAdviserField(
+                            if (!widget.lockAssignments) ...[
+                              const SizedBox(height: 12),
+                              _buildAdviserField(
                                 context: context,
                                 index: index,
                                 rowNumber: rowNumber,
                                 adviserValue: adviserValue,
                                 isInstructor: rowIsPit,
                               ),
-                            ),
+                            ],
                           ],
-                        ],
-                      )
-                    else
-                      Column(
-                        children: [
-                          _field(
-                            label: 'Team Name',
-                            icon: Icons.groups_2_outlined,
-                            isRequired: false,
-                            value: row['team_name']?.toString() ?? '',
-                            hintText: 'e.g. Team SkyLedger',
-                            onChanged: (v) {
-                              row['team_name'] = v;
-                              widget.onRowChanged(index);
-                            },
-                            key: ValueKey(
-                              'field_name_${row['group_key'] ?? rowNumber}',
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          _field(
-                            label: widget.isCapstoneAdmin
-                                ? 'Capstone Project Title'
-                                : 'PIT Project Title',
-                            icon: Icons.lightbulb_outline_rounded,
-                            isRequired: false,
-                            value: row['project_title']?.toString() ?? '',
-                            hintText: 'e.g. Alumni Career Tracker',
-                            onChanged: (v) {
-                              row['project_title'] = v;
-                              widget.onRowChanged(index);
-                            },
-                            key: ValueKey(
-                              'field_proj_${row['group_key'] ?? rowNumber}',
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          _buildSectionSelector(
-                            index: index,
-                            rowNumber: rowNumber,
-                            row: row,
-                            sectionValue: sectionValue,
-                          ),
-                          ...[
-                            const SizedBox(height: 12),
-                            _buildAdviserField(
-                              context: context,
-                              index: index,
-                              rowNumber: rowNumber,
-                              adviserValue: adviserValue,
-                              isInstructor: rowIsPit,
-                            ),
-                          ],
-                        ],
+                        ),
+
+                      const SizedBox(height: 16),
+                      const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                      const SizedBox(height: 16),
+
+                      // Row 2: Interactive Team Roster & Leader Studio (Max 4 limit)
+                      _buildRosterStudio(
+                        context: context,
+                        index: index,
+                        rowNumber: rowNumber,
+                        row: row,
+                        membersList: membersList,
+                        leaderId: leaderId,
+                        teamTitle: teamTitle,
                       ),
-
-                    const SizedBox(height: 16),
-                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                    const SizedBox(height: 16),
-
-                    // Row 2: Interactive Team Roster & Leader Studio (Max 4 limit)
-                    _buildRosterStudio(
-                      context: context,
-                      index: index,
-                      rowNumber: rowNumber,
-                      row: row,
-                      membersList: membersList,
-                      leaderId: leaderId,
-                      teamTitle: teamTitle,
-                    ),
-                  ],
-                );
-              },
+                    ],
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2168,7 +2300,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         ? '$issueCount issue${issueCount == 1 ? '' : 's'}'
         : warningCount > 0
         ? '$warningCount warning${warningCount == 1 ? '' : 's'}'
-        : 'Pending Review';
+        : widget.isValidating
+        ? 'Checking…'
+        : 'Not checked';
     final color = ready && warningCount > 0
         ? _amber
         : ready

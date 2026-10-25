@@ -42,6 +42,8 @@ class Semester(models.Model):
     school_year = models.ForeignKey(SchoolYear, related_name='semesters', on_delete=models.CASCADE)
     label = models.CharField(max_length=20, choices=TERM_CHOICES)
     is_active = models.BooleanField(default=False)
+    starts_on = models.DateField(null=True, blank=True)
+    ends_on = models.DateField(null=True, blank=True)
     capstone_peer_evaluation_enabled = models.BooleanField(
         default=True,
         help_text='When off, students cannot use peer evaluation for Capstone teams.',
@@ -73,6 +75,14 @@ class Semester(models.Model):
     class Meta:
         ordering = ['school_year__label', 'id']
         constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(starts_on__isnull=True, ends_on__isnull=True)
+                    | (models.Q(starts_on__isnull=False, ends_on__isnull=False)
+                       & models.Q(starts_on__lt=models.F('ends_on')))
+                ),
+                name='semester_calendar_ordered_pair',
+            ),
             models.UniqueConstraint(
                 fields=['school_year', 'label'],
                 name='unique_semester_per_school_year',

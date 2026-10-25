@@ -38,10 +38,14 @@ class SemesterTransitionDialog extends ConsumerStatefulWidget {
     required this.semesterId,
     required this.preview,
     this.returning = false,
+    this.creationDraft,
+    this.schoolYearId,
   });
   final int semesterId;
   final Map<String, dynamic> preview;
   final bool returning;
+  final Map<String, dynamic>? creationDraft;
+  final int? schoolYearId;
   @override
   ConsumerState<SemesterTransitionDialog> createState() =>
       _SemesterTransitionDialogState();
@@ -113,9 +117,16 @@ class _SemesterTransitionDialogState
 
   Future<void> _refresh() async {
     setState(() => _busy = true);
-    final fresh = await ref
-        .read(academicPeriodProvider.notifier)
-        .fetchTransitionPreview(widget.semesterId, returning: widget.returning);
+    final notifier = ref.read(academicPeriodProvider.notifier);
+    final fresh = widget.creationDraft == null
+        ? await notifier.fetchTransitionPreview(
+            widget.semesterId,
+            returning: widget.returning,
+          )
+        : await notifier.fetchCreateTransitionPreview(
+            widget.schoolYearId!,
+            widget.creationDraft!,
+          );
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -147,17 +158,32 @@ class _SemesterTransitionDialogState
           'project_title': _titles[id]!.text.trim(),
       };
     }).toList();
-    final ok = await ref
-        .read(academicPeriodProvider.notifier)
-        .activateSemester(
-          widget.semesterId,
-          returning: widget.returning,
-          force: _force,
-          reason: _reason.text.trim(),
-          decisions: decisions,
-          previewRevision: _preview['preview_revision']?.toString() ?? '',
-          requestId: _requestId,
-        );
+    final notifier = ref.read(academicPeriodProvider.notifier);
+    final ok = widget.creationDraft == null
+        ? await notifier.activateSemester(
+            widget.semesterId,
+            returning: widget.returning,
+            force: _force,
+            reason: _reason.text.trim(),
+            decisions: decisions,
+            previewRevision: _preview['preview_revision']?.toString() ?? '',
+            requestId: _requestId,
+          )
+        : await notifier.addSemester(
+            widget.schoolYearId!,
+            widget.creationDraft!['label'] as String,
+            startsOn: widget.creationDraft!['starts_on'] as String,
+            endsOn: widget.creationDraft!['ends_on'] as String,
+            setActive: true,
+            activation: {
+              'force': _force,
+              'reason': _reason.text.trim(),
+              'decisions': decisions,
+              'preview_revision':
+                  _preview['preview_revision']?.toString() ?? '',
+              'request_id': _requestId,
+            },
+          );
     if (!mounted) return;
     if (ok) {
       Navigator.of(context).pop(true);

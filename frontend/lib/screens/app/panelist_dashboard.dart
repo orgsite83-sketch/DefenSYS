@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/branding/defensys_mobile_brand.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -496,7 +497,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             isPosted: isPosted,
             submittedSubmissions: submissions,
             defenseMaterials: defenseMaterials,
-            assessmentConcepts: (team['assessment_concepts'] as List? ?? []).whereType<Map>().map((c) => Map<String, dynamic>.from(c)).toList(),
+            assessmentConcepts: (team['assessment_concepts'] as List? ?? [])
+                .whereType<Map>()
+                .map((c) => Map<String, dynamic>.from(c))
+                .toList(),
             panelWeight: (weights['panel'] as num?)?.toInt() ?? 0,
             peerWeight: (weights['peer'] as num?)?.toInt() ?? 0,
             adviserWeight: (weights['adviser'] as num?)?.toInt() ?? 0,
@@ -1506,6 +1510,9 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
   }
 
   Widget _buildAppBarTitle() {
+    if (DefensysMobileBrand.usesMobileHeader(context)) {
+      return const DefensysMobileBrand();
+    }
     switch (_selectedIndex) {
       case 0:
         return const Text(

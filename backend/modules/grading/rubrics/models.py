@@ -25,11 +25,13 @@ class Rubric(models.Model):
     SCALE_5 = '5-Point Scale'
     SCALE_10 = '10-Point Scale'
     SCALE_100 = '100-Point Scale'
+    SCALE_CUSTOM = 'Custom Scale'
 
     SCALE_CHOICES = (
         (SCALE_5, SCALE_5),
         (SCALE_10, SCALE_10),
         (SCALE_100, SCALE_100),
+        (SCALE_CUSTOM, SCALE_CUSTOM),
     )
 
     STATUS_DRAFT = 'draft'
@@ -68,6 +70,7 @@ class Rubric(models.Model):
     evaluation_type = models.CharField(max_length=20, choices=EVALUATION_TYPE_CHOICES)
     target_type = models.CharField(max_length=20, choices=TARGET_CHOICES, default=TARGET_TEAM)
     scale = models.CharField(max_length=30, choices=SCALE_CHOICES, default=SCALE_10)
+    custom_max_score = models.PositiveSmallIntegerField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     is_locked = models.BooleanField(default=False)
     panel_weight = models.PositiveSmallIntegerField(default=50)
@@ -107,6 +110,10 @@ class Rubric(models.Model):
             self.target_type = self.TARGET_INDIVIDUAL
 
         errors = {}
+        if self.scale == self.SCALE_CUSTOM and (
+            self.custom_max_score is None or not 1 <= self.custom_max_score <= 32767
+        ):
+            errors['custom_max_score'] = 'Enter a whole number from 1 to 32767.'
         if self.scope == self.SCOPE_PIT:
             if self.evaluation_type == self.EVAL_ADVISER:
                 errors['evaluation_type'] = 'PIT rubrics do not support adviser evaluation.'

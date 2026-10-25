@@ -57,7 +57,7 @@ class AcademicPeriodState {
 }
 
 class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
-    static String get baseUrl => ApiConfig.academicPeriodsUrl;
+  static String get baseUrl => ApiConfig.academicPeriodsUrl;
 
   @override
   AcademicPeriodState build() {
@@ -73,10 +73,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     );
 
     try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/'),
-        
-      );
+      final response = await _client.get(Uri.parse('$baseUrl/'));
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -114,7 +111,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        
+
         body: jsonEncode({'school_year': trimmed}),
       );
 
@@ -156,7 +153,10 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
-        _applyPayload(payload, successMessage: 'School year updated to $trimmed.');
+        _applyPayload(
+          payload,
+          successMessage: 'School year updated to $trimmed.',
+        );
         _markDependentDataChanged();
         return true;
       }
@@ -206,7 +206,14 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     }
   }
 
-  Future<bool> addSemester(int schoolYearId, String label) async {
+  Future<bool> addSemester(
+    int schoolYearId,
+    String label, {
+    String? startsOn,
+    String? endsOn,
+    bool setActive = false,
+    Map<String, dynamic> activation = const {},
+  }) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -216,12 +223,22 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/$schoolYearId/semesters/'),
-        
-        body: jsonEncode({'label': label}),
+
+        body: jsonEncode({
+          'label': label,
+          'starts_on': startsOn,
+          'ends_on': endsOn,
+          'set_active': setActive,
+          ...activation,
+        }),
       );
 
       if (response.statusCode == 201) {
-        await fetchPeriods(successMessage: '$label added.');
+        await fetchPeriods(
+          successMessage: setActive
+              ? '$label added and activated.'
+              : '$label added.',
+        );
         _markDependentDataChanged();
         return true;
       }
@@ -268,6 +285,63 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     }
   }
 
+  Future<Map<String, dynamic>?> fetchCreateTransitionPreview(
+    int schoolYearId,
+    Map<String, dynamic> draft,
+  ) async {
+    state = state.copyWith(clearError: true);
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/$schoolYearId/semesters/transition-preview/'),
+        body: jsonEncode({...draft, 'set_active': true}),
+      );
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+      state = state.copyWith(error: _errorFromResponse(response));
+    } catch (e) {
+      state = state.copyWith(error: 'Connection error: $e');
+    }
+    return null;
+  }
+
+  Future<bool> updateSemesterCalendar(
+    int semesterId,
+    String startsOn,
+    String endsOn,
+  ) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+    try {
+      final response = await _client.patch(
+        Uri.parse('$baseUrl/semesters/$semesterId/'),
+        body: jsonEncode({'starts_on': startsOn, 'ends_on': endsOn}),
+      );
+      if (response.statusCode == 200) {
+        final payload = jsonDecode(response.body) as Map;
+        final count =
+            (payload['calendar_issues'] as Map?)?['out_of_range_count'] ?? 0;
+        await fetchPeriods(
+          successMessage: count == 0
+              ? 'Semester dates saved.'
+              : 'Semester dates saved. $count existing schedules need date review.',
+        );
+        _markDependentDataChanged();
+        return true;
+      }
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+    }
+    return false;
+  }
+
   Future<bool> setSemesterActive(int semesterId, bool isActive) async {
     if (isActive) {
       return activateSemester(semesterId);
@@ -281,7 +355,10 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     return false;
   }
 
-  Future<Map<String, dynamic>?> fetchTransitionPreview(int semesterId, {bool returning = false}) async {
+  Future<Map<String, dynamic>?> fetchTransitionPreview(
+    int semesterId, {
+    bool returning = false,
+  }) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -290,7 +367,9 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
     try {
       final response = await _client.get(
-        Uri.parse('$baseUrl/semesters/$semesterId/${returning ? 'returning-teams' : 'transition-preview'}/'),
+        Uri.parse(
+          '$baseUrl/semesters/$semesterId/${returning ? 'returning-teams' : 'transition-preview'}/',
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -326,7 +405,9 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
     try {
       final response = await _client.post(
-        Uri.parse('$baseUrl/semesters/$semesterId/${returning ? 'returning-teams' : 'activate'}/'),
+        Uri.parse(
+          '$baseUrl/semesters/$semesterId/${returning ? 'returning-teams' : 'activate'}/',
+        ),
         body: jsonEncode({
           'decisions': decisions,
           'preview_revision': previewRevision,
@@ -414,13 +495,14 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
       DataArea.defenseStages,
       DataArea.scheduler,
       DataArea.defenseBoard,
+      DataArea.deliverables,
       DataArea.analytics,
       DataArea.audit,
     ]);
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     final schoolYears = _readMapList(payload['school_years']);

@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from django.contrib.auth import get_user_model
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -26,6 +27,28 @@ class ReviewSerializer(serializers.Serializer):
     review_note = serializers.CharField(
         max_length=1000, allow_blank=True, required=False, default='',
     )
+
+
+class PanelistPoolView(APIView):
+    """Reusable faculty eligibility, independent of schedules and academic terms."""
+    permission_classes = [IsPitLeadOrAdmin]
+
+    def get(self, request):
+        faculty = get_user_model().objects.filter(
+            role__in=['faculty', 'admin'], is_active=True,
+        ).order_by('last_name', 'first_name', 'username')
+        # Pending IDs are complete, so pagination can never enable a duplicate
+        # nomination. Reviewed decisions remain in the paginated requests API.
+        pending = visible_requests(request.user).filter(status='pending')
+        return Response({
+            'faculty': [{
+                'id': person.pk, 'username': person.username,
+                'name': person.get_full_name() or person.username,
+                'is_panelist': person.is_panelist,
+            } for person in faculty],
+            'panelist_requests': [request_payload(item) for item in pending],
+            'can_approve_panelists': is_admin_user(request.user),
+        })
 
 
 class PanelistEligibilityRequestsView(APIView):

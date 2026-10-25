@@ -1292,6 +1292,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Widget _buildFilterBar(DefenseBoardState state) {
     final showStageOrEventFilter = state.scope.isNotEmpty;
+    final showScopeTabs = _canSwitchBoardScope &&
+        !(_plannerDate != null && _plannerScope == null);
 
     return Container(
       width: double.infinity,
@@ -1317,8 +1319,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [_buildScopeTabs(state), _buildCollapseAllButton(state), _buildManageSchedulesButton(state)]),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (showScopeTabs) _buildScopeTabs(state),
+                    _buildCollapseAllButton(state),
+                    _buildManageSchedulesButton(state),
+                  ],
+                ),
                 const SizedBox(height: 14),
                 Row(
                   children: [
@@ -1342,8 +1352,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
           return Row(
             children: [
-              _buildScopeTabs(state),
-              const SizedBox(width: 14),
+              if (showScopeTabs) ...[
+                _buildScopeTabs(state),
+                const SizedBox(width: 14),
+              ],
               if (!isPit) ...[
                 _buildAdviserDropdown(state, 175),
                 const SizedBox(width: 10),
@@ -1380,6 +1392,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     ));
   }
 
+  bool get _canSwitchBoardScope {
+    final user = ref.read(authProvider).user;
+    return user?['role'] == 'admin' || user?['is_superuser'] == true;
+  }
+
   String _effectiveBoardScope(DefenseBoardState state) {
     if (state.scope == 'capstone' || state.scope == 'pit') return state.scope;
     final user = ref.read(authProvider).user;
@@ -1389,9 +1406,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   Widget _buildScopeTabs(DefenseBoardState state) {
-    if (_plannerDate != null && _plannerScope == null) {
-      return const SizedBox.shrink();
-    }
     return DefensysSegmentedControl<String>(
       value: _effectiveBoardScope(state),
       items: const [
@@ -3350,7 +3364,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final panelists = schedule['panelists'] as List? ?? [];
     final names = panelists
         .whereType<Map>()
-        .map((panelist) => panelist['name']?.toString() ?? '')
+        .map((panelist) {
+          final name = panelist['name']?.toString() ?? '';
+          return name.isNotEmpty && panelist['is_chair'] == true
+              ? '$name (Chair)'
+              : name;
+        })
         .where((name) => name.isNotEmpty)
         .toList();
     names.addAll((schedule['external_evaluators'] as List? ?? []).whereType<Map>().map((e) => '${e['name']} (External)'));

@@ -343,7 +343,7 @@ class _TeamDeliverablesScreenState
               AppColors.success,
             ),
           ],
-          if (_stageNotConfigured(state)) ...[
+          if (!widget.isPitInstructor && _stageNotConfigured(state)) ...[
             const SizedBox(height: 12),
             _notice(
               Icons.info_outline,

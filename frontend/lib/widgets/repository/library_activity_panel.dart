@@ -12,14 +12,20 @@ import '../../toasts/feedback_toast.dart';
 import 'library_components.dart';
 
 class LibraryActivityPanel extends ConsumerStatefulWidget {
-  const LibraryActivityPanel({super.key});
+  const LibraryActivityPanel({super.key, this.initialTab = 'Recent'})
+    : assert(
+        initialTab == 'Recent' ||
+            initialTab == 'Saved' ||
+            initialTab == 'Activity',
+      );
+  final String initialTab;
   @override
   ConsumerState<LibraryActivityPanel> createState() =>
       _LibraryActivityPanelState();
 }
 
 class _LibraryActivityPanelState extends ConsumerState<LibraryActivityPanel> {
-  String _tab = 'Recent';
+  late String _tab = widget.initialTab;
   bool _clearing = false;
   String _time(String? value) {
     final date = DateTime.tryParse(value ?? '');

@@ -1,5 +1,6 @@
 """Uploader tests require no database, credentials, server, or real submissions."""
 from contextlib import redirect_stdout
+from contextlib import redirect_stderr
 from copy import deepcopy
 from io import StringIO
 import json
@@ -157,6 +158,108 @@ class UploadTests(unittest.TestCase):
             files_root=self.root, all_teams=True)
         self.assertEqual([item['file'] for item in plan['items']],
                          ['Team A/Concept Paper.pdf', 'Team B/Concept Paper.pdf'])
+        uploads.validate_plan(plan)
+
+    def test_selected_deliverable_matches_only_team_prefixes_for_the_whole_batch(self):
+        first = team(name='Alpha Wave')
+        second = team(id=8, name='ApexCode')
+        for current in [first, second]:
+            current['selected_stage']['pre'].append(requirement(id='D2', label='Pitch Deck'))
+        (self.root / 'AlphaWave_Concept_Paper.pdf').write_bytes(b'Alpha Wave document')
+        (self.root / 'ApexCode_Any_filename.pdf').write_bytes(b'Apex Code document')
+        (self.root / 'OtherTeam_Concept_Paper.pdf').write_bytes(b'Other cohort')
+        self.client.teams.return_value['teams'] = [second, first]
+        plan = uploads.prepare_plan(self.client, scope='pit', stage='PIT Exhibit',
+            files_root=self.root, all_teams=True, deliverable='Concept Paper')
+        self.assertEqual([(item['team_id'], item['deliverable_id'], item['file']) for item in plan['items']],
+                         [(8, 'D1', 'ApexCode_Any_filename.pdf'), (7, 'D1', 'AlphaWave_Concept_Paper.pdf')])
+        self.assertEqual(plan['file_matching'], 'team_filename')
+        uploads.validate_plan(plan)
+        self.client.upload.assert_not_called()
+
+    def test_team_filename_matching_requires_a_full_prefix_and_never_substrings(self):
+        self.client.teams.return_value['teams'] = [team(name='Alpha'), team(id=8, name='AlphaWave')]
+        (self.root / 'AlphaWave.pdf').write_bytes(b'The longer team name')
+        (self.root / 'Concept_Paper_Alpha.pdf').write_bytes(b'Team name in the wrong position')
+        plan = uploads.prepare_plan(self.client, scope='pit', stage='PIT Exhibit',
+            files_root=self.root, all_teams=True, deliverable='D1')
+        self.assertEqual([item['file'] for item in plan['items']], ['', 'AlphaWave.pdf'])
+
+    def test_team_filename_accepts_optional_team_word_from_the_roster(self):
+        for filename in ['AlphaWave_Concept_Paper.pdf', 'Team_AlphaWave_Concept_Paper.pdf']:
+            with self.subTest(filename=filename):
+                path = self.root / filename
+                path.write_bytes(b'AlphaWave distinct paper')
+                self.client.teams.return_value['teams'] = [team(name='Team AlphaWave')]
+                plan = uploads.prepare_plan(self.client, scope='pit', stage='PIT Exhibit',
+                    files_root=self.root, all_teams=True, deliverable='D1')
+                self.assertEqual(plan['items'][0]['file'], filename)
+                path.unlink()
+
+    def test_optional_team_word_never_resolves_ambiguous_team_identity(self):
+        (self.root / 'AlphaWave_Concept_Paper.pdf').write_bytes(b'Ambiguous team paper')
+        self.client.teams.return_value['teams'] = [team(name='Team AlphaWave'), team(id=8, name='AlphaWave')]
+        with self.assertRaisesRegex(uploads.UploadError, 'ambiguous team'):
+            uploads.prepare_plan(self.client, scope='pit', stage='PIT Exhibit',
+                files_root=self.root, all_teams=True, deliverable='D1')
+
+    def test_team_filename_collisions_are_reported_instead_of_assigned_by_order(self):
+        (self.root / 'Team_A_Paper.pdf').write_bytes(b'A document')
+        for other in [team(id=8, name='TeamA'), team(id=8, name='Team A Paper')]:
+            self.client.teams.return_value['teams'] = [team(), other]
+            with self.subTest(other=other['name']), self.assertRaisesRegex(uploads.UploadError, 'ambiguous team'):
+                uploads.prepare_plan(self.client, scope='pit', stage='PIT Exhibit',
+                    files_root=self.root, all_teams=True, deliverable='Concept Paper')
+
+    def test_multiple_files_for_one_team_leave_single_target_unmapped(self):
+        for name in ['Team_A_draft.pdf', 'Team_A_final.pdf']:
+            (self.root / name).write_bytes(b'Team A document')
+        plan = self.plan(deliverable='Concept Paper')
+        self.assertEqual(plan['items'][0]['file'], '')
+        self.assertEqual(self.run_plan(plan, apply=True), 2)
+        self.client.upload.assert_not_called()
+
+    def test_deliverable_selector_checks_configured_label_id_and_timing(self):
+        for selector in ['D1', 'concept_paper']:
+            self.assertEqual(self.plan(deliverable=selector)['items'][0]['deliverable_id'], 'D1')
+        for selector in ['not configured', '']:
+            with self.subTest(selector=selector), self.assertRaises(uploads.UploadError):
+                self.plan(deliverable=selector)
+        with self.assertRaisesRegex(uploads.UploadError, 'timing'):
+            self.plan(deliverable='D1', timing='post')
+        current = team()
+        current['selected_stage']['post'] = [requirement(id='D2', type='post')]
+        self.client.teams.return_value['teams'] = [current]
+        with self.assertRaisesRegex(uploads.UploadError, 'exactly one'):
+            uploads.prepare_plan(self.client, scope='pit', stage='PIT Exhibit',
+                files_root=self.root, all_teams=True, deliverable='Concept Paper', timing='all')
+
+    def test_grouped_deliverable_uses_command_slot_ignoring_filename_suffix(self):
+        row = requirement(file_policy={'mode': 'named'}, document_slots=[
+            {'key': 'paper', 'label': 'Main paper', 'file_format': 'pdf'},
+            {'key': 'notes', 'label': 'Notes', 'file_format': 'pdf'}])
+        (self.root / 'Team_A_Any_name.pdf').write_bytes(b'Team A paper')
+        with self.assertRaisesRegex(uploads.UploadError, '--slot'):
+            self.plan(row, deliverable='Concept Paper')
+        for selector in ['paper', 'main_paper']:
+            plan = self.plan(row, deliverable='D1', slot=selector)
+            self.assertEqual([(item['slot_key'], item['file']) for item in plan['items']],
+                             [('paper', 'Team_A_Any_name.pdf')])
+        for selector in ['missing', '']:
+            with self.subTest(selector=selector), self.assertRaisesRegex(uploads.UploadError, '--slot'):
+                self.plan(row, deliverable='D1', slot=selector)
+        with self.assertRaisesRegex(uploads.UploadError, 'requires --deliverable'):
+            self.plan(row, slot='paper')
+        with self.assertRaisesRegex(uploads.UploadError, 'only used'):
+            self.plan(deliverable='D1', slot='primary')
+
+    def test_selected_multiple_deliverable_keeps_all_team_attachments(self):
+        row = requirement(file_policy={'mode': 'multiple', 'max_files': 3}, document_slots=[])
+        for name in ['Team_A_code.pdf', 'Team_A_notes.pdf']:
+            (self.root / name).write_bytes(b'Attachment')
+        plan = self.plan(row, deliverable='Concept Paper')
+        self.assertEqual([item['file'] for item in plan['items']], ['Team_A_code.pdf', 'Team_A_notes.pdf'])
+        self.assertEqual(len({item['slot_key'] for item in plan['items']}), 2)
         uploads.validate_plan(plan)
 
     def test_duplicate_team_names_are_never_assigned_by_sorting(self):
@@ -348,6 +451,101 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(records[0]['sha256'], uploads.file_digest(self.path))
         self.assertNotIn('Authorization', journal.read_text(encoding='utf-8'))
         self.assertEqual(json.loads(manifest.read_text(encoding='utf-8'))['scope'], 'pit')
+
+    def test_cli_deliverable_option_prepares_team_filename_plan(self):
+        manifest = self.root / 'one-deliverable.json'
+        (self.root / 'Team_A_Anything.pdf').write_bytes(b'Team A document')
+        with patch.object(uploads, 'ApiClient', return_value=self.client), redirect_stdout(StringIO()):
+            self.assertEqual(uploads.main(['prepare', '--scope', 'pit', '--stage', 'PIT Exhibit',
+                '--all-teams', '--deliverable', 'Concept Paper', '--files-root', str(self.root),
+                '--manifest', str(manifest)]), 0)
+        plan = json.loads(manifest.read_text(encoding='utf-8'))
+        self.assertEqual(plan['items'][0]['file'], 'Team_A_Anything.pdf')
+        self.client.upload.assert_not_called()
+
+    def test_simple_command_previews_or_uploads_without_a_manifest(self):
+        (self.root / 'Team_A_Anything.pdf').write_bytes(b'Team A paper')
+        current = team(upload_actor={'id': 70, 'username': 'student70'})
+        self.client.student_leaders = True
+        self.client.teams.return_value['teams'] = [current]
+        self.client.team.return_value = current
+        self.client.upload.return_value = {'submission_id': 42}
+        arguments = ['--all-teams', '--year', '1', '--files', str(self.root), '--deliverable', 'D1']
+        with patch.object(uploads, 'ROOT', self.root), patch.object(uploads, 'batch_stage', return_value='PIT Exhibit'), \
+                patch.object(uploads, 'StudentLeaderBatch', return_value=self.client), redirect_stdout(StringIO()):
+            self.assertEqual(uploads.main(arguments + ['--dry-run']), 0)
+            self.client.upload.assert_not_called()
+            self.assertEqual(uploads.main(arguments), 0)
+        self.client.upload.assert_called_once()
+        self.assertEqual(self.client.upload.call_args.args[0]['upload_as'], 'student_leaders')
+        self.assertEqual(self.client.upload.call_args.args[1]['file'], 'Team_A_Anything.pdf')
+        self.assertFalse(list(self.root.rglob('*.json')))
+        self.assertFalse(list(self.root.rglob('*.lock')))
+
+    def test_all_pre_batch_routes_deliverable_folders_and_preserves_post_exclusion(self):
+        current = team()
+        current['selected_stage']['pre'].append(requirement(id='D2', label='Pitch Deck', file_format='presentation'))
+        current['selected_stage']['post'] = [requirement(id='D3', label='Approved Paper', type='post')]
+        for filename in ['D1/01_Team_A_Any_name.pdf', 'Pitch Deck/02_Team_A_Anything.pptx']:
+            path = self.root / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'Team A distinct document')
+        self.client.teams.return_value['teams'] = [current]
+        plan = uploads.prepare_plan(self.client, scope='pit', stage='PIT Exhibit',
+            files_root=self.root, all_teams=True, batch_folders=True)
+        self.assertEqual([(item['deliverable_id'], item['file']) for item in plan['items']],
+                         [('D1', 'D1/01_Team_A_Any_name.pdf'), ('D2', 'Pitch Deck/02_Team_A_Anything.pptx')])
+        uploads.validate_plan(plan)
+
+    def test_all_pre_folder_override_and_pdf_variant_select_exact_files(self):
+        row = requirement(label='Cocept Paper')
+        folder = self.root / 'Concept Paper'
+        for filename in ['PDF/Team_A_Draft.pdf', 'Editable_DOCX/Team_A_Draft.docx']:
+            path = folder / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'Sample format')
+        plan = self.plan(row, batch_folders=True, folder_overrides={'d1': 'Concept Paper'})
+        self.assertEqual(plan['items'][0]['file'], 'Concept Paper/PDF/Team_A_Draft.pdf')
+        for mapping in [{'bad': 'Concept Paper'}, {'d1': '../outside'}]:
+            with self.subTest(mapping=mapping), self.assertRaises(uploads.UploadError):
+                self.plan(row, batch_folders=True, folder_overrides=mapping)
+
+    def test_all_pre_named_document_groups_use_document_folders(self):
+        row = requirement(file_policy={'mode': 'named'}, document_slots=[
+            {'key': 'paper', 'label': 'Paper', 'file_format': 'pdf'},
+            {'key': 'notes', 'label': 'Notes', 'file_format': 'pdf'}])
+        for document in ['paper', 'notes']:
+            path = self.root / 'D1' / document / 'Team_A_Anything.pdf'
+            path.parent.mkdir(parents=True)
+            path.write_bytes(document.encode())
+        plan = self.plan(row, batch_folders=True)
+        self.assertEqual([(item['slot_key'], item['file']) for item in plan['items']],
+                         [('paper', 'D1/paper/Team_A_Anything.pdf'), ('notes', 'D1/notes/Team_A_Anything.pdf')])
+
+    def test_numbered_filename_never_assigns_a_team_by_its_number(self):
+        path = self.root / '07_Team_B_Concept_Paper.pdf'
+        path.write_bytes(b'Team B paper')
+        matches = uploads.team_filename_files(self.root, [team(), team(id=8, name='Team B')])
+        self.assertEqual(matches[7], [])
+        self.assertEqual(matches[8], [path])
+
+    def test_simple_year_numbers_and_explicit_stage(self):
+        for value in ['1', '1st', '1st Year']:
+            self.assertEqual(uploads.year_label(value), '1st Year')
+        self.assertEqual(uploads.year_label('3'), '3rd Year')
+        with patch.object(uploads, 'local_read_only') as database:
+            self.assertEqual(uploads.batch_stage('pit', '1st Year', 'My event'), 'My event')
+        database.assert_not_called()
+
+    def test_simple_command_reports_stage_ambiguity_and_closes_on_invalid_mapping(self):
+        with patch.object(uploads, 'batch_stage', side_effect=uploads.UploadError('Choose --stage explicitly.')), \
+                patch.object(uploads, 'StudentLeaderBatch') as client, redirect_stderr(StringIO()):
+            self.assertEqual(uploads.main(['--all-teams', '--files', str(self.root), '--dry-run']), 1)
+        client.assert_not_called()
+        with patch.object(uploads, 'StudentLeaderBatch') as client, redirect_stderr(StringIO()):
+            self.assertEqual(uploads.main(['--all-teams', '--files', str(self.root),
+                                          '--folder', 'missing equals', '--dry-run']), 1)
+        client.assert_not_called()
 
 
 class TransportTests(unittest.TestCase):

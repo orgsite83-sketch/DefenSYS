@@ -8,6 +8,7 @@ import 'package:defensys/services/defense_board_provider.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
+import 'package:defensys/widgets/table/defensys_segmented_control.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -136,6 +137,12 @@ class _External extends ExternalEvaluatorNotifier {
 }
 
 const _admin = {'id': 1, 'role': 'admin'};
+const _pitLead = {
+  'id': 2,
+  'role': 'faculty',
+  'is_pit_lead': true,
+  'pit_lead_year': '1st Year',
+};
 
 Future<void> _pumpPlannerLink(WidgetTester tester, String date, {bool focusSession = true}) async {
   SharedPreferences.setMockInitialValues({});
@@ -287,6 +294,7 @@ void main() {
         find.text('PIT'),
         findsOneWidget,
       ); // Schedule scope remains available.
+      expect(find.byType(DefensysSegmentedControl<String>), findsOneWidget);
       expect(find.text('1 Ready'), findsOneWidget);
       expect(
         find.textContaining('1 team has met all deliverable requirements'),
@@ -385,6 +393,24 @@ void main() {
     expect(find.text('Schedule 2 Ready Teams'), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
+
+  for (final width in [1200.0, 1920.0]) {
+    testWidgets('PIT lead has no program switcher at width $width', (tester) async {
+      await _pump(
+        tester,
+        external: _External(),
+        schedules: [_defense(1, scope: 'pit')],
+        user: _pitLead,
+        width: width,
+        dark: width == 1920,
+      );
+      expect(find.byType(DefensysSegmentedControl<String>), findsNothing);
+      expect(find.text('Capstone'), findsNothing);
+      expect(find.text('Manage schedules'), findsOneWidget);
+      expect(find.text('Team 1'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('team slots show start and end times', (tester) async {
     await _pump(

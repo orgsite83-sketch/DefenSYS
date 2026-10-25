@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:defensys/utils/semester_calendar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'scheduler_people_picker.dart';
@@ -870,6 +871,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           ? null
           : () async {
               final currentText = controller.text.trim();
+              final calendar = SemesterCalendarWindow.fromMap(widget.state.activeSemester);
+              if (calendar == null) {
+                showValidationToast(context, 'Set semester dates in Academic Periods before scheduling.');
+                return;
+              }
               DateTime initialDate = DateTime.now();
               if (currentText.isNotEmpty) {
                 initialDate = DateTime.tryParse(currentText) ?? DateTime.now();
@@ -877,9 +883,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
               final picked = await showDatePicker(
                 context: context,
-                initialDate: initialDate,
-                firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+                initialDate: calendar.clamp(initialDate),
+                firstDate: calendar.start,
+                lastDate: calendar.end,
                 builder: (context, child) {
                   return Theme(
                     data: Theme.of(context).copyWith(

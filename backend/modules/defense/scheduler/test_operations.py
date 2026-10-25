@@ -151,7 +151,7 @@ class ScheduleOperationsTests(APITestCase):
         from academic_period_management.models import Semester
         a = self.schedule()
         b = self.schedule()
-        b.semester = Semester.objects.create(school_year=self.school_year, label=Semester.FIRST)
+        b.semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=self.school_year, label=Semester.FIRST)
         b.save()
         response = self.management_operation([a,b], changes={'room': 'Room 302'})
         self.assertEqual(response.status_code, 403)
@@ -568,7 +568,7 @@ class ScheduleOperationsTests(APITestCase):
         response = self.operation(a, target='stage_selected', schedule_ids=[a.pk, other.pk],
             expected_revisions={str(a.pk): 1, str(other.pk): 1}, changes={'operation_state': 'paused'})
         self.assertEqual(response.status_code, 403, response.data)
-        previous = Semester.objects.create(school_year=self.school_year, label=Semester.FIRST)
+        previous = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=self.school_year, label=Semester.FIRST)
         b.semester = previous
         b.save()
         response = self.operation(a, target='stage_selected', schedule_ids=[a.pk, b.pk],

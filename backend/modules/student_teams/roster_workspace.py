@@ -264,7 +264,7 @@ def fingerprint(term, year, section):
     return sha256(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def validate_rows(term, year, section, rows, event, *, allow_unassigned=False):
+def validate_rows(term, year, section, rows, event, *, allow_unassigned=False, enrollment=None, conflicts=None):
     if not isinstance(rows, list) or not 0 < len(rows) <= 500:
         raise ValidationError('Prepare between 1 and 500 teams.')
     names, members = [], []
@@ -290,15 +290,17 @@ def validate_rows(term, year, section, rows, event, *, allow_unassigned=False):
     if allow_unassigned:
         # A reviewed import can establish a class section; other operations cannot.
         enrollment_sections |= Q(section='') | Q(section__iexact='BSIT')
-    enrolled = set(StudentAcademicRecord.objects.filter(enrollment_sections, semester=term, year_level=year,
-        student__is_active=True, student__role='student', student_id__in=members).values_list('student_id', flat=True))
-    if enrolled != set(members):
+    enrolled = enrollment if enrollment is not None else set(StudentAcademicRecord.objects.filter(
+        enrollment_sections, semester=term, year_level=year, student__is_active=True,
+        student__role='student', student_id__in=members).values_list('student_id', flat=True))
+    if not set(members).issubset(enrolled):
         raise PermissionDenied('Every member must be an active student enrolled in this section, year and semester.')
     # A replacement cannot borrow another section's event membership policy.
     other = TeamMembership.objects.filter(student_id__in=members, team__semester=term,
         team__year_level=year, team__level__icontains='PIT').exclude(team__section=section)
     from .pit_rosters import membership_queryset
-    if (not event or event.team_membership_policy != 'multiple') and membership_queryset(other, event.event_name if event else None).exists():
+    conflict = bool(set(members).intersection(conflicts)) if conflicts is not None else membership_queryset(other, event.event_name if event else None).exists()
+    if (not event or event.team_membership_policy != 'multiple') and conflict:
         raise ValidationError('Some students already belong to a different section roster. Resolve the enrollment conflict first.')
 
 
@@ -451,6 +453,10 @@ def prepare(user, data):
     if event and event_in_use(event, section):
         raise ValidationError('This event roster is locked. Prepare a new Current roster for upcoming events instead.')
     operation = data.get('operation')
+    if operation == 'import' and data.get('validation_only') is True:
+        from .import_review import review_roster_import
+        return review_roster_import(user, term, year, section, data.get('teams'), event,
+            workspace=data.get('workspace'))
     source = None
     if operation == 'copy':
         source = event_for(term, year, data.get('source_event_id'))
@@ -471,6 +477,13 @@ def prepare(user, data):
             student__is_active=True, student__role='student').select_related('student').order_by(
                 'student__last_name', 'student__first_name', 'student__username'))
         ids = [s.student_id for s in students]
+        if not ids:
+            raise ValidationError('Import and confirm the section class list before generating teams.')
+        if 'confirmed_student_ids' in data:
+            confirmed = data['confirmed_student_ids']
+            if (not isinstance(confirmed, list) or any(type(i) is not int for i in confirmed)
+                    or sorted(confirmed) != sorted(ids)):
+                raise ValidationError('The section class list changed. Return to the students step and confirm it again.')
         if data.get('method') == 'random':
             SystemRandom().shuffle(ids)
         rows, offset = [], 0
@@ -520,7 +533,11 @@ def prepare(user, data):
         'needs_name': not bool(r['name']), 'needs_project': not bool(r['project_title']), 'leader_name': people[r['leader_id']].get_full_name() or people[r['leader_id']].username,
         'members': [{'id': i, 'name': people[i].get_full_name() or people[i].username,
             'username': people[i].username} for i in r['member_ids']]} for index, r in enumerate(rows, 1)]
+    from .import_review import section_import_summaries
+    summaries = section_import_summaries(data['teams'], [], term, import_section=section,
+        year=year, user=user) if operation == 'import' else []
     return {'preview_token': signing.dumps(state, salt=SALT, compress=True), 'teams': preview_rows,
+        'section_summaries': summaries,
         'target': event.event_name if event else 'Current roster', 'previous_team_count': len(existing),
         'team_count': len(rows), 'student_count': len(used), 'omitted_student_count': len(enrolled - used),
         'affected_events': affected, 'preserved_events': preserved,

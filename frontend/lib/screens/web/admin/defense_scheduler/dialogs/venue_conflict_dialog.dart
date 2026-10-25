@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'package:defensys/navigation/panelist_routes.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:defensys/utils/semester_calendar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/services/defense_scheduler_provider.dart';
@@ -177,6 +179,7 @@ class ScheduleImportDialog {
         panelWeight: panelWeight,
         peerWeight: peerWeight,
         savedAt: DateTime.now(),
+        semesterId: asInt(ref.read(defenseSchedulerProvider).activeSemester?['id']),
         rowCount: parsed!.rows.length,
       );
       await saveScheduleImportDraft(draft);
@@ -690,6 +693,7 @@ class ScheduleImportDialog {
                             dialogContext,
                             previewRows,
                             isPit: isPit,
+                            saveDraft: () => persistDraft(),
                           ),
                         ),
                       ],
@@ -1767,13 +1771,18 @@ class ScheduleImportDialog {
                     controller: dateController,
                     readOnly: true,
                     onTap: () async {
+                      final calendar = SemesterCalendarWindow.fromMap(state.activeSemester);
+                      if (calendar == null) {
+                        showValidationToast(context, 'Set semester dates in Academic Periods before scheduling.');
+                        return;
+                      }
                       final now = DateTime.now();
                       final today = DateTime(now.year, now.month, now.day);
                       final picked = await showDatePicker(
                         context: context,
-                        initialDate: DateTime.tryParse(dateController.text) ?? today,
-                        firstDate: today,
-                        lastDate: DateTime(now.year + 3, now.month, now.day),
+                        initialDate: calendar.clamp(DateTime.tryParse(dateController.text) ?? today),
+                        firstDate: calendar.start,
+                        lastDate: calendar.end,
                       );
                       if (picked != null) {
                         dateController.text = formatScheduleDate(picked);
@@ -2060,6 +2069,7 @@ class ScheduleImportDialog {
     BuildContext context,
     List<ScheduleImportPreviewRow> rows, {
     required bool isPit,
+    required Future<void> Function() saveDraft,
   }) {
     if (rows.isEmpty) {
       return Container(
@@ -2267,7 +2277,11 @@ class ScheduleImportDialog {
                   DataCell(
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 420),
-                      child: _buildValidationIssuesCell(context, row),
+                      child: _buildValidationIssuesCell(
+                        context,
+                        row,
+                        saveDraft: saveDraft,
+                      ),
                     ),
                   ),
                 ],
@@ -2281,8 +2295,9 @@ class ScheduleImportDialog {
 
   static Widget _buildValidationIssuesCell(
     BuildContext context,
-    ScheduleImportPreviewRow row,
-  ) {
+    ScheduleImportPreviewRow row, {
+    required Future<void> Function() saveDraft,
+  }) {
     if (row.ready) {
       return Row(
         mainAxisSize: MainAxisSize.min,
@@ -2351,17 +2366,63 @@ class ScheduleImportDialog {
       );
     }
 
-    if (row.slotIssues.isNotEmpty) {
-      final hasFileIssue = row.source.parseIssues.isNotEmpty ||
-          row.source.chair.trim().isEmpty;
-      final needsFacultyReview = !hasFileIssue && row.slotIssues.any((s) =>
-          s.toLowerCase().contains('panel') ||
-          s.toLowerCase().contains('documenter') ||
-          s.toLowerCase().contains('faculty'));
+    if (row.panelistEligibilityIds.isNotEmpty) {
+      issueWidgets.add(
+        _issueCategoryPill(
+          prefix: 'Panelist',
+          message: row.panelistEligibilityIssues.join('; '),
+          color: const Color(0xFF991B1B),
+          bg: const Color(0xFFFEF2F2),
+          border: const Color(0xFFFECACA),
+          tooltip: 'View panelist eligibility and requests',
+          onTap: () async {
+            try {
+              await saveDraft();
+              if (!context.mounted) return;
+              final admin = ProviderScope.containerOf(
+                context,
+                listen: false,
+              ).read(defenseSchedulerProvider).canApprovePanelists;
+              final router = GoRouter.of(context);
+              Navigator.pop(context);
+              router.go(
+                PanelistRoutes.directory(
+                  admin: admin,
+                  facultyIds: row.panelistEligibilityIds,
+                  returnTo: admin
+                      ? AdminRoutes.defenseScheduleBulkImport
+                      : FacultyRoutes.defenseScheduleBulkImport,
+                ),
+              );
+            } catch (_) {
+              if (context.mounted) {
+                showErrorToast(
+                  context,
+                  'Could not save the import draft. Please try again.',
+                );
+              }
+            }
+          },
+        ),
+      );
+    }
+    final remainingSlotIssues = row.slotIssues
+        .where((issue) => !row.panelistEligibilityIssues.contains(issue))
+        .toList();
+    if (remainingSlotIssues.isNotEmpty) {
+      final hasFileIssue =
+          row.source.parseIssues.isNotEmpty || row.source.chair.trim().isEmpty;
+      final needsFacultyReview =
+          !hasFileIssue &&
+          row.hasUnresolvedFaculty &&
+          ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(defenseSchedulerProvider).canApprovePanelists;
       issueWidgets.add(
         _issueCategoryPill(
           prefix: hasFileIssue ? 'File' : 'Slot',
-          message: row.slotIssues.join('; '),
+          message: remainingSlotIssues.join('; '),
           color: const Color(0xFF991B1B),
           bg: const Color(0xFFFEF2F2),
           border: const Color(0xFFFECACA),
@@ -2369,11 +2430,16 @@ class ScheduleImportDialog {
               ? 'Correct the spreadsheet and upload it again'
               : needsFacultyReview
               ? 'Click to open User Management to check faculty accounts'
+              : row.hasUnresolvedFaculty
+              ? 'Correct the faculty name in the spreadsheet or ask an admin to check the account'
               : null,
           onTap: needsFacultyReview
-              ? () {
+              ? () async {
+                  await saveDraft();
+                  if (!context.mounted) return;
+                  final router = GoRouter.of(context);
                   Navigator.pop(context);
-                  context.go(AdminRoutes.users);
+                  router.go('${AdminRoutes.users}?tab=faculty');
                 }
               : null,
         ),

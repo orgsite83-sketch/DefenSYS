@@ -18,15 +18,15 @@ class CapstoneTransitionTests(APITestCase):
         self.admin = get_user_model().objects.create_user(username='transition-admin', role='admin')
         self.client.force_authenticate(self.admin)
         years = [SchoolYear.objects.create(label=label) for label in ('2026-2027', '2027-2028', '2028-2029')]
-        self.intake = Semester.objects.create(school_year=years[0], label=Semester.SECOND, is_active=True,
+        self.intake = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=years[0], label=Semester.SECOND, is_active=True,
             capstone_peer_evaluation_enabled=False, capstone_adviser_grading_enabled=False)
-        self.normal = Semester.objects.create(school_year=years[1], label=Semester.FIRST,
+        self.normal = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=years[1], label=Semester.FIRST,
             capstone_peer_evaluation_enabled=False, capstone_adviser_grading_enabled=False)
-        self.extension = Semester.objects.create(school_year=years[1], label=Semester.SECOND,
+        self.extension = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=years[1], label=Semester.SECOND,
             capstone_peer_evaluation_enabled=False, capstone_adviser_grading_enabled=False)
-        self.last = Semester.objects.create(school_year=years[2], label=Semester.FIRST,
+        self.last = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=years[2], label=Semester.FIRST,
             capstone_peer_evaluation_enabled=False, capstone_adviser_grading_enabled=False)
-        self.expired = Semester.objects.create(school_year=years[2], label=Semester.SECOND)
+        self.expired = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=years[2], label=Semester.SECOND)
         DefenseStage.objects.update(is_active=False)
         self.first = DefenseStage.objects.create(label='Discovery workshop', display_order=1, is_presentation_only=True)
         self.second = DefenseStage.objects.create(label='Product review', display_order=2, is_presentation_only=True)

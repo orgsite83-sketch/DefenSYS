@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:defensys/widgets/team_import_format_guide.dart';
+import 'package:defensys/widgets/team_import_review.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
@@ -8,7 +9,6 @@ import 'package:defensys/screens/web/admin/widgets/team_bulk_import_review_table
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/utils/team_bulk_import_draft.dart';
 
-import 'student_teams_grid.dart';
 import 'student_teams_toolbar.dart';
 
 class DraftResumeBanner extends StatelessWidget {
@@ -164,6 +164,9 @@ class _StudentTeamsBulkImportViewState
   String _selectedSectionFilter = 'all';
   String _selectedAdviserFilter = 'all';
   String _groupBy = 'none'; // 'none' | 'section' | 'adviser'
+  String _reviewFilter = 'all';
+  final _reviewAnchor = GlobalKey();
+  final _reviewTable = GlobalKey<TeamBulkImportReviewTableState>();
   final Set<String> _customSections = {};
 
   List<Map<String, dynamic>> get _previewRows =>
@@ -206,6 +209,41 @@ class _StudentTeamsBulkImportViewState
   Widget build(BuildContext context) =>
       DefensysShadcnScope(child: Builder(builder: _buildImport));
 
+  Widget _reviewToolbar() => TeamImportValidationToolbar(
+    rows: widget.parsedBulkRows,
+    previewRows: _previewRows,
+    filter: widget.showIssuesOnly ? 'issues' : _reviewFilter,
+    checking: widget.isPreviewLoading,
+    error: widget.fileImportError ?? widget.state.error,
+    onRetry: widget.isPreviewLoading ? null : widget.onRetryPreview,
+    onFilter: (value) {
+      widget.onShowIssuesOnlyChanged(false);
+      setState(() => _reviewFilter = value);
+    },
+    onFirstIssue: () {
+      widget.onShowIssuesOnlyChanged(false);
+      setState(() {
+        _reviewFilter = 'all';
+        _selectedSectionFilter = 'all';
+        _selectedAdviserFilter = 'all';
+        _searchCtrl.clear();
+      });
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _reviewTable.currentState?.goToFirstIssue(),
+      );
+    },
+    action: ShadButton(
+      size: ShadButtonSize.sm,
+      enabled:
+          !widget.state.isSaving &&
+          !widget.isPreviewLoading &&
+          widget.fileImportError == null &&
+          _readyCount > 0,
+      onPressed: widget.onImportBulkTeams,
+      child: Text(widget.state.isSaving ? 'Importing…' : 'Import Ready'),
+    ),
+  );
+
   Widget _buildImport(BuildContext context) {
     final activeSemLabel = _getActiveSemLabel();
 
@@ -215,137 +253,151 @@ class _StudentTeamsBulkImportViewState
         if (didPop) return;
         await widget.onRequestClose();
       },
-      child: SingleChildScrollView(
-        padding: DefensysUi.contentPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DefensysPageHeader(
-              icon: Icons.groups_2_rounded,
-              title: 'Bulk Import Student Teams',
-              subtitle: widget.isCapstoneAdmin
-                  ? 'Upload team spreadsheets, validate member details and advisers inline, then import ready teams into the active capstone term.'
-                  : 'Import teams for all sections in your PIT year, including each section\'s instructor. Existing students are linked and blank section assignments are filled from the roster.',
-              actions: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (activeSemLabel.isNotEmpty) ...[
-                    _headerPill(activeSemLabel),
-                    const SizedBox(width: 10),
-                  ],
-                  OutlinedButton.icon(
-                    onPressed: widget.state.isSaving
-                        ? null
-                        : () => widget.onRequestClose(),
-                    icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                    label: Text(
-                      widget.isPitInstructor
-                          ? 'Back to Deliverables'
-                          : 'Back to Teams',
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _ink,
-                      side: const BorderSide(color: _line),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
+      child: TeamImportStickyReview(
+        anchor: _reviewAnchor,
+        toolbar: _reviewToolbar(),
+        enabled: widget.parsedBulkRows.isNotEmpty,
+        child: SingleChildScrollView(
+          padding: DefensysUi.contentPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DefensysPageHeader(
+                icon: Icons.groups_2_rounded,
+                title: 'Bulk Import Student Teams',
+                subtitle: widget.isCapstoneAdmin
+                    ? 'Upload team spreadsheets, validate member details and advisers inline, then import ready teams into the active capstone term.'
+                    : 'Import teams for all sections in your PIT year, including each section\'s instructor. Existing students are linked and blank section assignments are filled from the roster.',
+                actions: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (activeSemLabel.isNotEmpty) ...[
+                      _headerPill(activeSemLabel),
+                      const SizedBox(width: 10),
+                    ],
+                    OutlinedButton.icon(
+                      onPressed: widget.state.isSaving
+                          ? null
+                          : () => widget.onRequestClose(),
+                      icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                      label: Text(
+                        widget.isPitInstructor
+                            ? 'Back to Deliverables'
+                            : 'Back to Teams',
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (widget.state.error != null) ...[
-              const SizedBox(height: 14),
-              _notice(widget.state.error!, warning: true),
-            ],
-            if (widget.fileImportError != null) ...[
-              const SizedBox(height: 12),
-              _notice(widget.fileImportError!, warning: true),
-            ],
-            if (widget.state.message != null) ...[
-              const SizedBox(height: 14),
-              _notice(widget.state.message!),
-            ],
-            const SizedBox(height: 20),
-
-            if (!widget.isCapstoneAdmin) ...[
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey('import-event-${widget.state.eventName ?? ''}'),
-                  initialValue: widget.state.eventName ?? '',
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Import roster for',
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: '',
-                      child: Text('Unassigned roster'),
-                    ),
-                    for (final event in widget.state.pitEvents.where(
-                      (e) =>
-                          widget.pitLeadYear == null ||
-                          e['year_level'] == widget.pitLeadYear,
-                    ))
-                      DropdownMenuItem(
-                        value: '${event['event_name']}',
-                        child: Text(
-                          '${event['event_name']}',
-                          overflow: TextOverflow.ellipsis,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _ink,
+                        side: const BorderSide(color: _line),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
                         ),
                       ),
+                    ),
                   ],
-                  onChanged: widget.state.isSaving || widget.isPreviewLoading
-                      ? null
-                      : widget.onEventChanged,
                 ),
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'Unassigned rosters are checked against existing PIT teams in this semester. '
-                'Choose a different event explicitly when creating another roster for the same students.',
-                style: TextStyle(fontSize: 12, color: _muted, height: 1.5),
-              ),
+              if (widget.state.error != null &&
+                  widget.parsedBulkRows.isEmpty) ...[
+                const SizedBox(height: 14),
+                _notice(widget.state.error!, warning: true),
+              ],
+              if (widget.fileImportError != null &&
+                  widget.parsedBulkRows.isEmpty) ...[
+                const SizedBox(height: 12),
+                _notice(widget.fileImportError!, warning: true),
+              ],
+              if (widget.state.message != null) ...[
+                const SizedBox(height: 14),
+                _notice(widget.state.message!),
+              ],
               const SizedBox(height: 20),
-            ],
 
-            // Top 2-Column Section: Left is Smart Format Guide, Right is Primary Upload Action
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 960;
-                if (!isWide) {
-                  return Column(
+              if (!widget.isCapstoneAdmin) ...[
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey(
+                      'import-event-${widget.state.eventName ?? ''}',
+                    ),
+                    initialValue: widget.state.eventName ?? '',
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Import roster for',
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('Unassigned roster'),
+                      ),
+                      for (final event in widget.state.pitEvents.where(
+                        (e) =>
+                            widget.pitLeadYear == null ||
+                            e['year_level'] == widget.pitLeadYear,
+                      ))
+                        DropdownMenuItem(
+                          value: '${event['event_name']}',
+                          child: Text(
+                            '${event['event_name']}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: widget.state.isSaving || widget.isPreviewLoading
+                        ? null
+                        : widget.onEventChanged,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Unassigned rosters are checked against existing PIT teams in this semester. '
+                  'Choose a different event explicitly when creating another roster for the same students.',
+                  style: TextStyle(fontSize: 12, color: _muted, height: 1.5),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // Top 2-Column Section: Left is Smart Format Guide, Right is Primary Upload Action
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 960;
+                  if (!isWide) {
+                    return Column(
+                      children: [
+                        _buildTeamFormatCard(activeSemLabel),
+                        const SizedBox(height: 18),
+                        _buildTeamUploadCard(context),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildTeamFormatCard(activeSemLabel),
-                      const SizedBox(height: 18),
-                      _buildTeamUploadCard(context),
+                      Expanded(
+                        flex: 5,
+                        child: _buildTeamFormatCard(activeSemLabel),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(flex: 6, child: _buildTeamUploadCard(context)),
                     ],
                   );
-                }
+                },
+              ),
+              const SizedBox(height: 24),
 
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 5,
-                      child: _buildTeamFormatCard(activeSemLabel),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(flex: 6, child: _buildTeamUploadCard(context)),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 24),
-
-            // Bottom Full-Width Preflight Review Table Card
-            _buildPreflightReviewCard(),
-          ],
+              // Bottom Full-Width Preflight Review Table Card
+              if (widget.parsedBulkRows.isNotEmpty) ...[
+                SizedBox(key: _reviewAnchor),
+                _reviewToolbar(),
+                const SizedBox(height: 14),
+              ],
+              _buildPreflightReviewCard(),
+            ],
+          ),
         ),
       ),
     );
@@ -427,6 +479,7 @@ class _StudentTeamsBulkImportViewState
 
   Widget _buildTeamFormatCard(String activeSemLabel) => TeamImportFormatGuide(
     isCapstone: widget.isCapstoneAdmin,
+    instructorWorkspace: widget.isPitInstructor,
     contextLabel: activeSemLabel,
     section: widget.isCapstoneAdmin ? null : widget.section,
     onDownload: widget.state.isSaving ? null : widget.onDownloadTemplate,
@@ -738,12 +791,6 @@ class _StudentTeamsBulkImportViewState
                       style: const TextStyle(fontSize: 12),
                     ),
                   ),
-                  if (!widget.isPreviewLoading && widget.onRetryPreview != null)
-                    TextButton.icon(
-                      onPressed: widget.onRetryPreview,
-                      icon: const Icon(Icons.refresh_rounded, size: 16),
-                      label: const Text('Retry validation'),
-                    ),
                 ],
               ),
             ),
@@ -1105,14 +1152,16 @@ class _StudentTeamsBulkImportViewState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (widget.section != null && widget.section!.isNotEmpty)
-                    UnifiedSectionMetadataCard(
-                      section: widget.section,
-                      systemName: widget.systemName,
-                      projectManager: widget.projectManager,
-                      bulkPreview: widget.bulkPreview,
-                    ),
                   TeamBulkImportReviewTable(
+                    key: _reviewTable,
+                    sectionSummaries: widget.isPreviewLoading
+                        ? const []
+                        : (widget.bulkPreview?['section_summaries'] as List? ??
+                                  const [])
+                              .map((s) => Map<String, dynamic>.from(s as Map))
+                              .toList(),
+                    statusFilter: _reviewFilter,
+                    isValidating: widget.isPreviewLoading,
                     onOpenExistingTeam: widget.onOpenExistingTeam,
                     rows: widget.parsedBulkRows,
                     previewRows: previewRows,

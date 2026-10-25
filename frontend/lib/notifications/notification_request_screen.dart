@@ -6,9 +6,11 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../config/api_config.dart';
 import '../services/authenticated_client.dart';
+import '../services/app/data_refresh_provider.dart';
 import '../services/defense_scheduler_provider.dart';
 import '../services/admin/external_evaluator_provider.dart';
 import '../services/admin/panelist_requests_provider.dart';
+import '../services/admin/panelist_pool_provider.dart';
 import '../services/user_management_provider.dart';
 import '../theme/defensys_tokens.dart';
 import '../widgets/shadcn/defensys_shadcn_scope.dart';
@@ -167,10 +169,17 @@ class _NotificationRequestScreenState
         );
       } else {
         ref.invalidate(notificationsProvider('admin'));
+        ref.read(dataRefreshProvider.notifier).markChanged(const [
+          DataArea.dashboard,
+          DataArea.users,
+          DataArea.scheduler,
+        ]);
         ref.invalidate(defenseSchedulerProvider);
-        if (widget.embedded)
+        if (widget.embedded) {
           ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+        }
         if (_panelist) {
+          ref.invalidate(panelistPoolProvider);
           ref.invalidate(panelistRequestsProvider);
           ref.read(userManagementProvider.notifier).fetchUsers();
         }

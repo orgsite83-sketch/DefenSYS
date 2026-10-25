@@ -1,3 +1,17 @@
+class LibraryTag {
+  const LibraryTag({
+    required this.id,
+    required this.label,
+    this.status = 'documented',
+  });
+  final String id, label, status;
+  factory LibraryTag.fromJson(Map<String, dynamic> json) => LibraryTag(
+    id: json['id']?.toString() ?? '',
+    label: json['label']?.toString() ?? '',
+    status: json['status']?.toString() ?? 'documented',
+  );
+}
+
 class VaultEntry {
   final String id;
   final String fileName;
@@ -13,6 +27,7 @@ class VaultEntry {
   final String? deliverableLabel;
   final String extractedText;
   final List<String> topics;
+  final Map<String, List<LibraryTag>> libraryTags;
   final String summary;
   final String category;
   final double averageRating;
@@ -53,6 +68,7 @@ class VaultEntry {
     this.deliverableLabel,
     this.extractedText = '',
     this.topics = const [],
+    this.libraryTags = const {},
     this.summary = '',
     this.category = '',
     this.averageRating = 0.0,
@@ -97,6 +113,20 @@ class VaultEntry {
           ?.toString(),
       extractedText: j['extracted_text']?.toString() ?? '',
       topics: (j['topics'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      libraryTags: {
+        for (final group in ['subject', 'technology', 'language'])
+          group:
+              ((j['library_tags'] is Map ? j['library_tags'][group] : null)
+                          as List? ??
+                      [])
+                  .whereType<Map>()
+                  .map(
+                    (tag) =>
+                        LibraryTag.fromJson(Map<String, dynamic>.from(tag)),
+                  )
+                  .where((tag) => tag.id.isNotEmpty && tag.label.isNotEmpty)
+                  .toList(),
+      },
       summary: j['summary']?.toString() ?? '',
       category: j['category']?.toString() ?? '',
       averageRating: (j['average_rating'] is num)
@@ -169,6 +199,7 @@ class VaultEntry {
       deliverableLabel: deliverableLabel,
       extractedText: extractedText,
       topics: topics,
+      libraryTags: libraryTags,
       summary: summary,
       category: category,
       averageRating: averageRating ?? this.averageRating,
@@ -270,6 +301,7 @@ class VaultEntry {
 
 enum LibraryBrowse {
   projects('Projects', ''),
+  outputs('All outputs', ''),
   concept('Concept Papers', 'concept'),
   chapters('Chapters 1–3', 'chapters'),
   finalManuscripts('Final Manuscripts', 'final'),

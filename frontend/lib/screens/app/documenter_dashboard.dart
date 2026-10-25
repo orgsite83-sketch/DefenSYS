@@ -6,6 +6,7 @@ import '../../notifications/notifications_bell.dart';
 import '../../services/auth_provider.dart';
 import '../../services/documenter_provider.dart';
 import '../../theme/defensys_tokens.dart';
+import '../../widgets/branding/defensys_mobile_brand.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/minutes/documenter_assignments_view.dart';
 import '../../widgets/minutes/faculty_app_workspace_switcher.dart';
@@ -53,32 +54,34 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
       foregroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      toolbarHeight: 72,
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'DefenSYS',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: Colors.white70,
+      toolbarHeight: DefensysMobileBrand.usesMobileHeader(context) ? 56 : 72,
+      title: DefensysMobileBrand.usesMobileHeader(context)
+          ? const DefensysMobileBrand()
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'DefenSYS',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  ['Documenter workspace', 'Minutes records', 'Profile'][_tab],
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            ['Documenter workspace', 'Minutes records', 'Profile'][_tab],
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
-            ),
-          ),
-        ],
-      ),
       actions: const [
         NotificationsBell(
           workspace: 'documenter',
@@ -99,7 +102,7 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
                 child: DocumenterAssignmentsView(
                   recordsOnly: _tab == 1,
-                  showHeader: false,
+                  showHeader: DefensysMobileBrand.usesMobileHeader(context),
                   onOpenMinutes: (id) =>
                       context.go('${AppRoutes.documenter}/minutes/$id'),
                 ),

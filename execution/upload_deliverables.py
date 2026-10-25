@@ -1,8 +1,8 @@
 """Prepare and run resumable PIT/Capstone file uploads through the regular API.
 
-Run --help or read execution/UPLOAD_DELIVERABLES.md. Student-leader mode uses
-read-only local discovery, then student-authenticated API requests. Preview is
-the default; only `run --apply` uploads actual files.
+Run --help or read execution/UPLOAD_DELIVERABLES.md. The simple command uses
+student leaders automatically; --dry-run previews without uploading, like the
+evaluation tools. Advanced prepare/run commands remain available separately.
 """
 from __future__ import annotations
 
@@ -353,10 +353,95 @@ def named_requirement_files(folders, row, *, slot=None, allow_direct=True):
     return result
 
 
+def team_filename_files(root, teams):
+    """Match a full team-name prefix, ignoring the remaining filename text."""
+    if not root.is_dir():
+        raise UploadError('The batch files folder does not exist.')
+    by_team = {team['id']: [] for team in teams}
+    team_keys = {}
+    for team in teams:
+        words = name_key(team.get('name', '')).split()
+        keys = {''.join(words)} - {''}
+        # Demo roster names include "Team AlphaWave" while the samples use
+        # "AlphaWave_...". Both forms identify the same team, unless ambiguous.
+        if len(words) > 1 and words[0] == 'team':
+            keys.add(''.join(words[1:]))
+        team_keys[team['id']] = keys
+    for path in sorted(root.iterdir()):
+        if not path.is_file():
+            continue
+        # Compact spelling accepts AlphaWave and Alpha Wave. Prefix boundaries
+        # prevent Alpha from matching AlphaWave; never use substring/fuzzy matches.
+        words = name_key(path.stem).split()
+        prefixes = {''.join(words[:end]) for end in range(1, len(words) + 1)}
+        # Optional sample-file numbering is decoration, never a team index.
+        if len(words) > 1 and words[0].isdigit():
+            prefixes.update(''.join(words[1:end]) for end in range(2, len(words) + 1))
+        matches = [team for team in teams if team_keys[team['id']] & prefixes]
+        if len(matches) > 1:
+            labels = ', '.join(f'{team["name"]} (ID {team["id"]})' for team in matches)
+            raise UploadError(f'Filename {path.name!r} has an ambiguous team name: {labels}. '
+                              'Use team-ID folders without --deliverable for those teams.')
+        if matches:
+            by_team[matches[0]['id']].append(path)
+    return by_team
+
+
+def selected_requirement(rows, selector, team, timing):
+    candidates = [row for row in rows if (timing == 'all' or row['type'] == timing)
+                  and (row['id'].casefold() == selector.casefold()
+                       or name_key(row['label']) == name_key(selector))]
+    if len(candidates) != 1:
+        available = ', '.join(f'{row["id"]}: {row["label"]} ({row["type"]})' for row in rows)
+        raise UploadError(f'Team {team["id"]}: deliverable {selector!r} must identify exactly one '
+                          f'requirement for timing {timing!r}. Available: {available}')
+    return candidates
+
+
+def selected_document_slots(definitions, selector):
+    if selector:
+        definitions = [slot for slot in definitions if slot['key'].casefold() == selector.casefold()
+                       or name_key(slot.get('label', '')) == name_key(selector)]
+    if len(definitions) != 1:
+        raise UploadError('Choose exactly one grouped document using --slot with its key or label.')
+    return definitions
+
+
+def requirement_folder(root, row, overrides):
+    """A folder selects the requirement; filenames only select the owning team."""
+    override = overrides.get(row['id'].casefold())
+    if override is not None:
+        folder = (root / override).resolve()
+        if not folder.is_relative_to(root) or not folder.is_dir():
+            raise UploadError(f'Folder for {row["id"]} must exist inside --files.')
+    else:
+        candidates = [path for path in root.iterdir() if path.is_dir() and
+                      (name_key(path.name) == name_key(row['label']) or
+                       name_key(path.name).split()[:1] == [name_key(row['id'])])]
+        if len(candidates) > 1:
+            raise UploadError(f'Multiple folders match {row["id"]}. Use --folder "{row["id"]}=PATH".')
+        if not candidates:
+            return None
+        folder = candidates[0]
+    # Existing samples offer PDF and editable variants. For a PDF requirement,
+    # its explicit PDF subfolder selects the required format without duplication.
+    if not any(path.is_file() for path in folder.iterdir()):
+        formats = matching_directories(folder, row.get('file_format', 'any'))
+        if len(formats) == 1:
+            folder = formats[0]
+    return folder
+
+
 def prepare_plan(client, *, scope, stage, files_root, team_ids=(), all_teams=False,
-                 timing='pre', year=None):
+                 timing='pre', year=None, deliverable=None, slot=None,
+                 batch_folders=False, folder_overrides=None):
+    slot_selector = slot
     if not all_teams and not team_ids:
         raise UploadError('Select team IDs or explicitly choose all teams.')
+    if slot and not deliverable:
+        raise UploadError('--slot requires --deliverable.')
+    if deliverable is not None and not deliverable.strip():
+        raise UploadError('--deliverable must name a configured requirement or its ID.')
     payload = client.teams(scope=scope, stage=stage)
     semester_id = (payload.get('active_semester') or {}).get('id')
     if not semester_id:
@@ -371,24 +456,50 @@ def prepare_plan(client, *, scope, stage, files_root, team_ids=(), all_teams=Fal
     if not teams:
         raise UploadError('No matching teams. Check scope, event/stage, year and account access.')
     root = files_root.resolve()
-    named_folders = team_name_folders(root, teams)
+    if batch_folders and not root.is_dir():
+        raise UploadError('The batch files folder does not exist.')
+    overrides = folder_overrides or {}
+    if deliverable and overrides:
+        raise UploadError('Use --files for a single --deliverable, or --folder for a multi-deliverable batch.')
+    named_folders = team_name_folders(root, teams) if not deliverable else {}
+    filename_files = team_filename_files(root, teams) if deliverable else {}
+    folder_files = {}
+    used_overrides = set()
+    def files_in(folder):
+        folder = folder.resolve()
+        if not folder.is_relative_to(root):
+            raise UploadError('Deliverable folders must stay inside --files.')
+        if folder not in folder_files:
+            folder_files[folder] = team_filename_files(folder, teams)
+        return folder_files[folder]
     items = []
     for team in teams:
         rows = requirement_rows(team, stage)
         label_counts = Counter(name_key(row['label']) for row in rows)
+        if deliverable:
+            rows = selected_requirement(rows, deliverable, team, timing)
         for row in rows:
             if timing != 'all' and row.get('type') != timing:
                 continue
             if row.get('is_waived'):
                 continue
             mode = (row.get('file_policy') or {}).get('mode', 'single')
+            if slot_selector and mode not in ('named', 'concepts'):
+                raise UploadError('--slot is only used for named or concept document groups.')
             prefix = Path(str(team['id'])) / component(row['id'])
             flat_prefix = Path(f'{team["id"]}__{component(row["id"])}')
+            folder = requirement_folder(root, row, overrides) if batch_folders and not deliverable else None
+            if row['id'].casefold() in overrides:
+                used_overrides.add(row['id'].casefold())
+            row_files = files_in(folder)[team['id']] if folder else filename_files.get(team['id'], [])
             allow_direct = label_counts[name_key(row['label'])] == 1
             if mode == 'multiple':
-                paths = sorted(path for path in (root / prefix).glob('*') if path.is_file())
-                paths += sorted(path for path in root.glob(str(flat_prefix) + '__*.*') if path.is_file())
-                paths += named_requirement_files(named_folders[team['id']], row, allow_direct=allow_direct)
+                if deliverable or folder:
+                    paths = row_files
+                else:
+                    paths = sorted(path for path in (root / prefix).glob('*') if path.is_file())
+                    paths += sorted(path for path in root.glob(str(flat_prefix) + '__*.*') if path.is_file())
+                    paths += named_requirement_files(named_folders[team['id']], row, allow_direct=allow_direct)
                 paths = sorted(set(paths))
                 slots = [(f'auto_{digest(path.name)[:32]}', path.relative_to(root).as_posix(),
                           row.get('file_format', 'any')) for path in paths]
@@ -401,19 +512,36 @@ def prepare_plan(client, *, scope, stage, files_root, team_ids=(), all_teams=Fal
                     definitions = [{'key': 'primary', 'file_format': row.get('file_format', 'any')}]
                 if not definitions:
                     raise UploadError(f'Team {team["id"]}, {row["id"]}: no document slots returned. Complete concept setup first.')
+                if deliverable and mode != 'single':
+                    definitions = selected_document_slots(definitions, slot_selector)
                 slots = []
                 for slot in definitions:
                     stem = prefix if mode == 'single' else prefix / component(slot['key'])
                     flat_stem = flat_prefix if mode == 'single' else Path(f'{flat_prefix}__{component(slot["key"])}')
-                    candidates = matching_files(root, stem) + matching_files(root, flat_stem)
-                    candidates += named_requirement_files(named_folders[team['id']], row,
-                        slot=slot if mode != 'single' else None, allow_direct=allow_direct)
+                    if deliverable:
+                        candidates = row_files
+                    elif folder:
+                        candidates = row_files
+                        if mode != 'single':
+                            groups = list(set(matching_directories(folder, slot['key']) +
+                                matching_directories(folder, component(slot['key'])) +
+                                matching_directories(folder, slot.get('label', ''))))
+                            if len(groups) > 1:
+                                raise UploadError(f'Multiple folders match document {slot["key"]}.')
+                            candidates = files_in(groups[0])[team['id']] if groups else (
+                                row_files if len(definitions) == 1 else [])
+                    else:
+                        candidates = matching_files(root, stem) + matching_files(root, flat_stem)
+                        candidates += named_requirement_files(named_folders[team['id']], row,
+                            slot=slot if mode != 'single' else None, allow_direct=allow_direct)
                     candidates = sorted(set(candidates))
                     relative = candidates[0].relative_to(root).as_posix() if len(candidates) == 1 else ''
                     slots.append((slot['key'], relative, slot.get('file_format', row.get('file_format', 'any'))))
                 expected = ''
             for key, relative, file_format in slots:
                 hint = expected or ((prefix if mode == 'single' else prefix / component(key)).as_posix() + '.<extension>')
+                if deliverable or folder:
+                    hint = f'{team.get("name", "Team")}_<any filename>.<extension>'
                 items.append({'team_id': team['id'], 'team_name': team.get('name', ''),
                     'project_version': team['project_version'], 'deliverable_id': row['id'],
                     'deliverable_label': row['label'], 'type': row['type'], 'slot_key': key,
@@ -424,8 +552,12 @@ def prepare_plan(client, *, scope, stage, files_root, team_ids=(), all_teams=Fal
                     'suggested_file_name': row.get('suggested_file_name', ''),
                     'flat_path': (str(flat_prefix) + ('__<filename>' if mode == 'multiple' else
                                   ('' if mode == 'single' else '__' + component(key)) + '.<extension>'))})
+    if set(overrides) - used_overrides:
+        raise UploadError('Folder mappings do not match selected requirements: ' + ', '.join(sorted(set(overrides) - used_overrides)))
     plan = {'schema_version': 1, 'base_url': client.base_url, 'scope': scope, 'stage': stage,
             'semester_id': semester_id, 'files_root': str(root), 'items': items}
+    if deliverable:
+        plan.update(deliverable=deliverable, file_matching='team_filename')
     if getattr(client, 'student_leaders', False) is True:
         plan.update(upload_as='student_leaders', uploaders={str(team['id']): team['upload_actor'] for team in teams})
     return plan
@@ -535,6 +667,7 @@ def run_plan(client, plan, *, apply=False, journal=None):
             status, detail, path = inspect_item(plan, item, cached_teams[item['team_id']])
             result.update(status=status, detail=detail)
             if status == 'ready':
+                result['detail'] += f' Source: {item["file"]}.'
                 result['sha256'] = file_digest(path)
                 row = next(row for row in requirement_rows(cached_teams[item['team_id']], plan['stage'])
                            if row['id'] == item['deliverable_id'])
@@ -584,7 +717,7 @@ def apply_lock(manifest):
         lock.unlink()
 
 
-def main(argv=None):
+def manifest_main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     prepare = commands.add_parser('prepare', help='Read configured requirements and create an editable JSON plan.')
@@ -596,6 +729,8 @@ def main(argv=None):
     targets.add_argument('--all-teams', action='store_true', help='All teams visible to the signed-in account in this context.')
     prepare.add_argument('--year', help='Optional exact year level, e.g. "1st Year".')
     prepare.add_argument('--timing', choices=['pre', 'post', 'all'], default='pre')
+    prepare.add_argument('--deliverable', help='Select one requirement by label or ID; match flat filenames by team name only.')
+    prepare.add_argument('--slot', help='With --deliverable, select one named/concept document by key or label.')
     prepare.add_argument('--files-root', type=Path, required=True)
     prepare.add_argument('--student-leaders', action='store_true',
         help='Demo automation: discover local teams and upload through each real student leader account.')
@@ -629,7 +764,8 @@ def main(argv=None):
                 client.authenticate(username=args.username, token_env=args.token_env)
             if args.command == 'prepare':
                 plan = prepare_plan(client, scope=args.scope, stage=args.stage, files_root=args.files_root,
-                    team_ids=args.team_id or (), all_teams=args.all_teams, timing=args.timing, year=args.year)
+                    team_ids=args.team_id or (), all_teams=args.all_teams, timing=args.timing, year=args.year,
+                    deliverable=args.deliverable, slot=args.slot)
                 validate_plan(plan)
                 manifest.parent.mkdir(parents=True, exist_ok=True)
                 with manifest.open('x', encoding='utf-8') as stream:
@@ -658,6 +794,100 @@ def main(argv=None):
     except KeyboardInterrupt:
         print('Stopped. Check saved progress and server state before rerunning.', file=sys.stderr)
         return 130
+
+
+def year_label(value):
+    compact = ''.join(name_key(value).split())
+    labels = {'1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year'}
+    for number, label in labels.items():
+        if compact in (number, ''.join(label.lower().split()), label.split()[0]):
+            return label
+    raise argparse.ArgumentTypeError('Use a year number from 1 to 4, or a label such as "1st Year".')
+
+
+def batch_stage(scope, year, stage):
+    if stage and stage.strip():
+        return stage.strip()
+    with local_read_only():
+        if scope == 'pit':
+            from defense.scheduler.models import PitEventGradingConfig
+            events = PitEventGradingConfig.objects.filter(semester__is_active=True)
+            if year:
+                events = events.filter(year_level=year)
+            choices = list(events.values_list('event_name', flat=True))
+        else:
+            from defense.stages.models import DefenseStage
+            choices = list(DefenseStage.objects.filter(is_active=True).values_list('label', flat=True))
+    if len(choices) != 1:
+        raise UploadError('Choose --stage explicitly. Available events/stages: ' + (', '.join(choices) or 'none'))
+    return choices[0]
+
+
+def simple_main(argv):
+    parser = argparse.ArgumentParser(
+        description='Upload team deliverables as their student leaders. Add --dry-run to preview.',
+        epilog='Advanced saved-plan commands are still available: prepare --help or run --help.')
+    targets = parser.add_mutually_exclusive_group(required=True)
+    targets.add_argument('--all-teams', action='store_true', help='Process every team in the selected event/stage.')
+    targets.add_argument('--team-id', type=int, nargs='+', help='Process only these team IDs.')
+    parser.add_argument('--scope', choices=['pit', 'capstone'], default='pit', help='Default: pit.')
+    parser.add_argument('--year', type=year_label, help='Year number, e.g. --year 1.')
+    parser.add_argument('--stage', help='Event/stage name; optional when exactly one is available.')
+    parser.add_argument('--files', '--files-root', dest='files_root', type=Path, required=True,
+                        help='Folder containing one deliverable, or subfolders for all selected deliverables.')
+    parser.add_argument('--deliverable', help='Upload one configured requirement by label or ID.')
+    parser.add_argument('--slot', help='With --deliverable, choose one grouped document by key or label.')
+    parser.add_argument('--timing', choices=['pre', 'post', 'all'], default='pre', help='Default: pre.')
+    parser.add_argument('--folder', action='append', default=[], metavar='ID=PATH',
+                        help='Optional folder override relative to --files, e.g. "D1=Concept Paper/PDF".')
+    parser.add_argument('--dry-run', action='store_true', help='Preview without uploading. Otherwise ready files are uploaded.')
+    parser.add_argument('--base-url', default='http://127.0.0.1:8000')
+    args = parser.parse_args(argv)
+    client = None
+    try:
+        overrides = {}
+        for mapping in args.folder:
+            key, separator, path = mapping.partition('=')
+            key = key.strip().casefold()
+            if not separator or not key or not path.strip() or key in overrides:
+                raise UploadError('Each --folder must be a unique ID=PATH mapping.')
+            overrides[key] = path.strip()
+        stage = batch_stage(args.scope, args.year, args.stage)
+        client = StudentLeaderBatch(args.base_url, team_ids=args.team_id, year=args.year)
+        print(f'Mode: {"DRY RUN (no uploads)" if args.dry_run else "LIVE UPLOAD"}')
+        print(f'{args.scope.upper()} / {stage} / {args.year or "selected cohort"} / {args.timing}')
+        plan = prepare_plan(client, scope=args.scope, stage=stage, files_root=args.files_root,
+            team_ids=args.team_id or (), all_teams=args.all_teams, timing=args.timing, year=args.year,
+            deliverable=args.deliverable, slot=args.slot, batch_folders=True, folder_overrides=overrides)
+        validate_plan(plan)
+        print(f'{len(plan["items"])} documents across {len(plan["uploaders"])} student leaders.')
+        # No user-managed manifest: keep the same validation, live refresh and
+        # resumability as the saved-plan workflow, using server state on each run.
+        log_key = digest(plan)[:16]
+        log_root = ROOT / '.tmp'
+        log_root.mkdir(parents=True, exist_ok=True)
+        journal_path = log_root / f'deliverable-uploads-{log_key}.jsonl'
+        if args.dry_run:
+            with journal_path.open('a', encoding='utf-8') as journal:
+                return run_plan(client, plan, journal=journal)
+        with apply_lock(log_root / f'deliverable-uploads-{log_key}.json'), journal_path.open('a', encoding='utf-8') as journal:
+            return run_plan(client, plan, apply=True, journal=journal)
+    except (UploadError, OSError, ValueError, TypeError, KeyError) as error:
+        print(f'Error: {error}', file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print('Stopped. Rerun to check server state before uploading again.', file=sys.stderr)
+        return 130
+    finally:
+        if client:
+            client.close()
+
+
+def main(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] in ('prepare', 'run'):
+        return manifest_main(arguments)
+    return simple_main(arguments)
 
 
 if __name__ == '__main__':

@@ -7,6 +7,7 @@ import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
 import '../app/data_refresh_provider.dart';
 import '../admin/user_management_provider.dart';
+import '../auth_provider.dart';
 
 final defenseSchedulerProvider =
     NotifierProvider<DefenseSchedulerNotifier, DefenseSchedulerState>(
@@ -792,6 +793,33 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
       success:
           'Eligibility request submitted. Your schedule selections are retained.',
     );
+  }
+
+  /// Refresh eligibility when resuming an import without replacing its draft,
+  /// generated slots, filters, or selected faculty.
+  Future<void> refreshPanelistPool() async {
+    if (ref.read(authProvider).user?['id'] == null) return;
+    final actor = ref.read(authProvider).user?['id'];
+    try {
+      final response = await _client.get(
+        Uri.parse('${ApiConfig.usersUrl}/panelist-pool/'),
+      );
+      if (!ref.mounted || ref.read(authProvider).user?['id'] != actor) return;
+      if (response.statusCode != 200) return;
+      final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+      final faculty = _readMapList(payload['faculty']);
+      state = state.copyWith(
+        faculty: faculty,
+        panelists: faculty
+            .where((person) => person['is_panelist'] == true)
+            .toList(),
+        panelistRequests: _readMapList(payload['panelist_requests']),
+        canApprovePanelists: payload['can_approve_panelists'] == true,
+      );
+    } catch (_) {
+      // Import validation still rechecks permissions on the server at commit.
+      // Preserve the last readable pool during a temporary connection failure.
+    }
   }
 
   /// Uses the canonical RBAC endpoint so role history and pending requests stay

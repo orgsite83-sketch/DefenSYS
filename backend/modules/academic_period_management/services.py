@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from hashlib import sha256
 import json
@@ -17,13 +17,21 @@ def active_semester():
     return Semester.objects.select_related('school_year').filter(is_active=True).first()
 
 
+def _lock_period_state():
+    # A row lock alone cannot serialize two first activations when no period
+    # exists yet. The transaction-scoped lock also covers that empty-table case.
+    if connection.vendor == 'postgresql':
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT pg_advisory_xact_lock(%s)', [741912004])
+    list(Semester.objects.select_for_update().order_by('pk'))
+
+
 def build_semester_transition_preview(target_semester):
     current_semester = (
         Semester.objects.select_related('school_year').filter(is_active=True).first()
     )
-    target_semester = Semester.objects.select_related('school_year').get(
-        pk=target_semester.pk,
-    )
+    if target_semester.pk is not None:
+        target_semester = Semester.objects.select_related('school_year').get(pk=target_semester.pk)
 
     if current_semester and current_semester.pk == target_semester.pk:
         return {
@@ -77,7 +85,7 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
     if request_id and (not isinstance(request_id, str) or len(request_id) > 64):
         raise ValidationError({'request_id': 'Use a request identity up to 64 characters.'})
     # All activation and enrollment paths lock periods in the same order.
-    list(Semester.objects.select_for_update().order_by('pk'))
+    _lock_period_state()
     if request_id:
         previous = SemesterTransitionLog.objects.filter(request_id=request_id).first()
         if previous:
@@ -91,6 +99,9 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
         if preview_revision or decisions:
             raise ValidationError({'code': 'stale_preview', 'detail': 'This semester is already active. Refresh the current roster.'})
         return build_semester_transition_preview(target_semester), None
+    from .calendar import validate_calendar
+    target_semester.refresh_from_db()
+    validate_calendar(target_semester.starts_on, target_semester.ends_on)
     source_teams = StudentTeam.objects.filter(semester=source)
     from django.contrib.auth import get_user_model
     from student_teams.models import TeamMembership
@@ -103,7 +114,7 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
     preview = build_semester_transition_preview(target_semester)
 
     review = preview.get('capstone_review', {})
-    if review.get('requires_review') and preview_revision != preview.get('preview_revision'):
+    if (review.get('requires_review') or preview_revision) and preview_revision != preview.get('preview_revision'):
         raise ValidationError({'detail': 'Review the current semester transition before confirming. The preview may have changed.',
                                'preview': preview, 'code': 'stale_preview'})
 
@@ -173,6 +184,57 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
         )
 
     return log.impact_snapshot, log
+
+
+def proposed_semester(school_year, *, label, starts_on, ends_on, **_ignored):
+    from .capstone_mode import default_capstone_flags_for_label
+    creation, phase = default_capstone_flags_for_label(label)
+    return Semester(school_year=school_year, label=label, starts_on=starts_on, ends_on=ends_on,
+                    capstone_program_phase=phase, capstone_team_creation_enabled=creation)
+
+
+@transaction.atomic
+def create_semester(school_year, user, *, label, starts_on, ends_on, set_active=False,
+                    force=False, reason='', decisions=None, preview_revision='', request_id=None):
+    """Create and optionally activate together through the canonical transition."""
+    from .calendar import validate_calendar
+    from .models import SchoolYear
+    from rest_framework.exceptions import PermissionDenied
+    if not (user.is_superuser or user.role == 'admin'):
+        raise PermissionDenied('Only an administrator can create a semester.')
+    validate_calendar(starts_on, ends_on)
+    _lock_period_state()
+    SchoolYear.objects.select_for_update().get(pk=school_year.pk)
+    identity = {'school_year_id': school_year.pk, 'label': label,
+                'starts_on': starts_on.isoformat(), 'ends_on': ends_on.isoformat()}
+    if set_active and request_id:
+        previous = SemesterTransitionLog.objects.filter(request_id=request_id).select_related('to_semester').first()
+        if previous:
+            if (previous.changed_by_id != user.pk or previous.operation != 'activation'
+                    or previous.impact_snapshot.get('created_term') != identity
+                    or previous.forced != force or previous.reason != reason.strip()
+                    or previous.impact_snapshot.get('decisions', []) != (decisions or [])):
+                raise ValidationError('This request identity has already been used for another operation.')
+            if not previous.to_semester.is_active:
+                raise ValidationError({'code': 'stale_creation',
+                    'detail': 'This term was already created, and another semester is now active. Refresh academic periods.'})
+            return previous.to_semester
+    if Semester.objects.filter(school_year=school_year, label=label).exists():
+        raise ValidationError({'label': 'This semester already exists for the selected school year.'})
+    target = proposed_semester(school_year, label=label, starts_on=starts_on, ends_on=ends_on)
+    if set_active:
+        preview = build_semester_transition_preview(target)
+        if active_semester() and preview_revision != preview['preview_revision']:
+            raise ValidationError({'code': 'stale_preview', 'detail': 'Review the current semester transition before confirming.', 'preview': preview})
+    target.save()
+    if set_active:
+        _preview, log = switch_active_semester(target, user, force=force, reason=reason,
+            decisions=decisions, preview_revision=preview['preview_revision'], request_id=request_id)
+        if log:
+            log.impact_snapshot = {**log.impact_snapshot, 'created_term': identity}
+            log.save(update_fields=['impact_snapshot'])
+        target.refresh_from_db()
+    return target
 
 
 def _impact_counts(current_semester):
@@ -338,4 +400,6 @@ def _semester_summary(semester):
         'school_year': semester.school_year.label,
         'school_year_id': semester.school_year_id,
         'display_name': semester.display_name,
+        'starts_on': semester.starts_on.isoformat() if semester.starts_on else None,
+        'ends_on': semester.ends_on.isoformat() if semester.ends_on else None,
     }

@@ -4,6 +4,7 @@ import 'package:defensys/notifications/notification_request_screen.dart';
 import 'package:defensys/notifications/notifications_bell.dart';
 import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
+import 'package:defensys/services/app/data_refresh_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -260,6 +261,10 @@ void main() {
       await tester.tap(find.text('Approve request'));
       await tester.pumpAndSettle();
       expect(client.bodies.single['decision'], 'approved');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(NotificationRequestScreen)),
+      );
+      expect(container.read(dataRefreshProvider)[DataArea.dashboard], 1);
       expect(find.text('Approved'), findsOneWidget);
       expect(find.text('Approve request'), findsNothing);
       expect(

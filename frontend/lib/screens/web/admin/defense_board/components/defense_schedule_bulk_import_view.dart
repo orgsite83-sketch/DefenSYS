@@ -12,6 +12,7 @@ import 'schedule_import_settings_dialog.dart';
 import '../../defense_scheduler/dialogs/documenter_pool_dialog.dart';
 
 import 'package:defensys/navigation/admin_route_paths.dart';
+import 'package:defensys/navigation/panelist_routes.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
@@ -107,6 +108,41 @@ class _DefenseScheduleBulkImportViewState
   String? _importResultMessage;
   final Set<String> _collapsedSessions = {};
   final ScrollController _reviewScrollController = ScrollController();
+  GoRouter? _router;
+  bool _importRouteActive = false;
+
+  bool _isImportRoute(String? path) =>
+      path == FacultyRoutes.defenseScheduleBulkImport ||
+      path == AdminRoutes.defenseScheduleBulkImport;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.maybeOf(context);
+    if (router == _router) return;
+    _router?.routerDelegate.removeListener(_onRouteChanged);
+    _router = router;
+    _importRouteActive = _isImportRoute(
+      router?.routerDelegate.currentConfiguration.uri.path,
+    );
+    router?.routerDelegate.addListener(_onRouteChanged);
+  }
+
+  void _onRouteChanged() {
+    final active = _isImportRoute(
+      _router?.routerDelegate.currentConfiguration.uri.path,
+    );
+    final returning = active && !_importRouteActive;
+    _importRouteActive = active;
+    if (!returning) return;
+    // Sidebar branches retain the import widget, including filters and edits.
+    // Returning must revalidate eligibility even though initState is not called.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await ref.read(defenseSchedulerProvider.notifier).refreshPanelistPool();
+      if (mounted) await _refreshConflictSchedules();
+    });
+  }
 
   int? get _semesterId =>
       asInt(ref.read(defenseSchedulerProvider).activeSemester?['id']);
@@ -132,6 +168,7 @@ class _DefenseScheduleBulkImportViewState
 
   @override
   void dispose() {
+    _router?.routerDelegate.removeListener(_onRouteChanged);
     _draftDebounce?.cancel();
     _reviewScrollController.dispose();
     _searchCtrl.dispose();
@@ -165,6 +202,8 @@ class _DefenseScheduleBulkImportViewState
   }
 
   Future<void> _initDraftAndConfig() async {
+    await ref.read(defenseSchedulerProvider.notifier).refreshPanelistPool();
+    if (!mounted) return;
     final schedState = ref.read(defenseSchedulerProvider);
     final existingDraft = await loadScheduleImportDraft(
       scope: widget.scope,
@@ -2642,22 +2681,59 @@ class _DefenseScheduleBulkImportViewState
       );
     }
 
-    if (row.slotIssues.isNotEmpty) {
+    if (row.panelistEligibilityIds.isNotEmpty) {
+      issueWidgets.add(
+        _issueCategoryPill(
+          prefix: 'Panelist',
+          message: row.panelistEligibilityIssues.join('; '),
+          color: const Color(0xFF991B1B),
+          bg: const Color(0xFFFEF2F2),
+          border: const Color(0xFFFECACA),
+          tooltip: 'View panelist eligibility and requests',
+          onTap: _busy
+              ? null
+              : () async {
+                  try {
+                    await _persistDraft();
+                    if (!context.mounted) return;
+                    final admin = ref
+                        .read(defenseSchedulerProvider)
+                        .canApprovePanelists;
+                    context.go(
+                      PanelistRoutes.directory(
+                        admin: admin,
+                        facultyIds: row.panelistEligibilityIds,
+                        returnTo: admin
+                            ? AdminRoutes.defenseScheduleBulkImport
+                            : FacultyRoutes.defenseScheduleBulkImport,
+                      ),
+                    );
+                  } catch (_) {
+                    if (context.mounted) {
+                      showErrorToast(
+                        context,
+                        'Could not save the import draft. Please try again.',
+                      );
+                    }
+                  }
+                },
+        ),
+      );
+    }
+    final remainingSlotIssues = row.slotIssues
+        .where((issue) => !row.panelistEligibilityIssues.contains(issue))
+        .toList();
+    if (remainingSlotIssues.isNotEmpty) {
       final hasFileIssue =
           row.source.parseIssues.isNotEmpty || row.source.chair.trim().isEmpty;
       final needsFacultyReview =
           !hasFileIssue &&
-          row.slotIssues.any(
-            (s) =>
-                !s.toLowerCase().contains('overlap') &&
-                (s.toLowerCase().contains('panel') ||
-                    s.toLowerCase().contains('documenter') ||
-                    s.toLowerCase().contains('faculty')),
-          );
+          row.hasUnresolvedFaculty &&
+          ref.read(defenseSchedulerProvider).canApprovePanelists;
       issueWidgets.add(
         _issueCategoryPill(
           prefix: hasFileIssue ? 'File' : 'Slot',
-          message: row.slotIssues.join('; '),
+          message: remainingSlotIssues.join('; '),
           color: const Color(0xFF991B1B),
           bg: const Color(0xFFFEF2F2),
           border: const Color(0xFFFECACA),
@@ -2665,10 +2741,14 @@ class _DefenseScheduleBulkImportViewState
               ? 'Correct the spreadsheet and upload it again'
               : needsFacultyReview
               ? 'Click to open User Management to check faculty accounts'
+              : row.hasUnresolvedFaculty
+              ? 'Correct the faculty name in the spreadsheet or ask an admin to check the account'
               : null,
           onTap: needsFacultyReview
-              ? () {
-                  context.go(AdminRoutes.users);
+              ? () async {
+                  await _persistDraft();
+                  if (!context.mounted) return;
+                  context.go('${AdminRoutes.users}?tab=faculty');
                 }
               : null,
         ),

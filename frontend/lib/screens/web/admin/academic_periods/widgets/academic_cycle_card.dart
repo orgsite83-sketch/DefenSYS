@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'semester_calendar_fields.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
@@ -385,11 +386,10 @@ class AcademicCycleCard extends StatelessWidget {
     }
 
     return Container(
-      height: 52,
+      constraints: const BoxConstraints(minHeight: 72),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
-        color: isActive
-            ? (isDark ? const Color(0xFF1A211E) : const Color(0xFFF7FAF8))
-            : surfaceColor,
+        color: surfaceColor,
         border: Border(bottom: BorderSide(color: borderColor)),
       ),
       child: Row(
@@ -409,16 +409,25 @@ class AcademicCycleCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Flexible(
-                    child: Text(
-                      termName,
-                      style: TextStyle(
-                        color: inkColor,
-                        fontSize: 13.5,
-                        fontWeight: isActive
-                            ? FontWeight.w700
-                            : FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          termName,
+                          style: TextStyle(
+                            color: inkColor,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          semesterDateRange(sem),
+                          style: TextStyle(color: mutedColor, fontSize: 11.5),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -435,7 +444,7 @@ class AcademicCycleCard extends StatelessWidget {
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
                 child: _statusBadge(
-                  label: isActive ? 'Active (Write-Enabled)' : 'Upcoming',
+                  label: isActive ? 'Active' : 'Upcoming',
                   isDark: isDark,
                   active: isActive,
                   showDot: true,
@@ -704,13 +713,13 @@ class AcademicCycleCard extends StatelessWidget {
     bool showDot = false,
   }) {
     final background = active
-        ? (isDark ? const Color(0xFF203329) : const Color(0xFFF0F7F2))
+        ? const Color(0xFF047857)
         : (isDark ? const Color(0xFF27272A) : const Color(0xFFF8FAFC));
     final foreground = active
-        ? (isDark ? const Color(0xFFA6CDB4) : const Color(0xFF2D6243))
+        ? Colors.white
         : (isDark ? const Color(0xFFA1A1AA) : _muted);
     final border = active
-        ? (isDark ? const Color(0xFF365241) : const Color(0xFFD5E5DA))
+        ? const Color(0xFF047857)
         : (isDark ? DefensysTokens.mistBorder : _line);
 
     return ShadBadge.secondary(

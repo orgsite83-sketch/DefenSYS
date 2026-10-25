@@ -24,6 +24,7 @@ import '../screens/web/faculty/faculty_dashboard.dart';
 import '../services/app_navigator.dart';
 import '../services/auth_provider.dart';
 import 'admin_route_paths.dart';
+import 'panelist_routes.dart';
 import 'route_pages.dart';
 import 'workspace_access.dart';
 import 'workspace_preference.dart';
@@ -326,20 +327,28 @@ Map<String, dynamic>? _routeUser(BuildContext context) =>
     ProviderScope.containerOf(context, listen: false).read(authProvider).user;
 
 List<GoRoute> _notificationActionRoutes(String workspace) => [
-  GoRoute(path: 'requests/panelist/:requestId', redirect: (_, state) {
-    final id = state.pathParameters['requestId']!;
-    return workspace == 'admin' ? '/admin/users?tab=faculty&view=panelists&section=requests&request=$id' :
-      '/faculty/defense-board?panelistRequest=$id';
-  }),
-    GoRoute(
-      path: 'requests/external/:requestId',
-      builder: (context, state) => NotificationRequestScreen(
-        key: ValueKey(state.uri.path),
-        kind: 'external',
-        requestId: int.parse(state.pathParameters['requestId']!),
-        onBack: () => context.go('/$workspace/defense-board'),
-      ),
+  GoRoute(
+    path: 'requests/panelist/:requestId',
+    redirect: (_, state) {
+      final id = state.pathParameters['requestId']!;
+      return workspace == 'admin'
+          ? '/admin/users?tab=faculty&view=panelists&section=requests&request=$id'
+          : PanelistRoutes.directory(
+              admin: false,
+              section: 'requests',
+              requestId: int.tryParse(id),
+            );
+    },
+  ),
+  GoRoute(
+    path: 'requests/external/:requestId',
+    builder: (context, state) => NotificationRequestScreen(
+      key: ValueKey(state.uri.path),
+      kind: 'external',
+      requestId: int.parse(state.pathParameters['requestId']!),
+      onBack: () => context.go('/$workspace/defense-board'),
     ),
+  ),
   GoRoute(
     path: 'minutes/:scheduleId',
     builder: (context, state) => MinutesFormScreen(
@@ -519,7 +528,24 @@ List<GoRoute> _facultySectionRoutes() {
     ),
     GoRoute(path: 'pit-instructors', pageBuilder: _facultySectionPage),
     GoRoute(path: 'defense-scheduler', pageBuilder: _facultySectionPage),
-    GoRoute(path: 'defense-board', pageBuilder: _facultySectionPage, routes: _notificationActionRoutes('faculty')),
+    GoRoute(
+      path: 'defense-board',
+      pageBuilder: _facultySectionPage,
+      redirect: (context, state) {
+        final id = int.tryParse(
+          state.uri.queryParameters['panelistRequest'] ?? '',
+        );
+        if (id == null || id < 1 || _routeUser(context)?['is_pit_lead'] != true) {
+          return null;
+        }
+        return PanelistRoutes.directory(
+          admin: false,
+          section: 'requests',
+          requestId: id,
+        );
+      },
+      routes: _notificationActionRoutes('faculty'),
+    ),
     GoRoute(
       path: 'grade-center',
       pageBuilder: _facultySectionPage,

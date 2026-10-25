@@ -194,7 +194,7 @@ class PitEventConfigLookupView(APIView):
 
         event_name = request.query_params.get('event_name', '').strip()
         if not event_name:
-            configs = pit_events_for_user(request.user, semester=semester).prefetch_related('deliverables').order_by('event_name')
+            configs = pit_events_for_user(request.user, semester=semester).select_related('panel_rubric', 'peer_rubric').prefetch_related('deliverables').order_by('event_name')
             return Response({'configs': [pit_event_config_payload(c) for c in configs]})
 
         config = get_pit_event_config(semester, event_name)
@@ -206,7 +206,9 @@ class PitEventConfigLookupView(APIView):
                 'event_name': event_name,
                 'year_level': pit_year or '',
                 'panel_rubric_id': None,
+                'panel_rubric_name': None,
                 'peer_rubric_id': None,
+                'peer_rubric_name': None,
                 'panel_weight': 80,
                 'peer_weight': 20,
                 'is_officially_complete': False,

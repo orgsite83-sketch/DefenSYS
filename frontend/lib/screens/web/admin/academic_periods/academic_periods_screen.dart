@@ -11,6 +11,7 @@ import '../widgets/defensys_admin_shell.dart';
 import 'semester_detail_screen.dart';
 import 'widgets/academic_cycle_card.dart';
 import 'widgets/semester_transition_dialog.dart';
+import 'widgets/add_semester_dialog.dart';
 
 class AcademicPeriodsScreen extends ConsumerStatefulWidget {
   const AcademicPeriodsScreen({super.key});
@@ -34,11 +35,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
   Color get _inkColor => _isDark ? const Color(0xFFF4F4F5) : _ink;
   Color get _mutedColor => _isDark ? const Color(0xFFA1A1AA) : _muted;
-  Color get _panelBgColor => _isDark ? const Color(0xFF1B1B1F) : const Color(0xFFF9FAFB);
   Color get _headerBgColor => _isDark ? const Color(0xFF18191E) : const Color(0xFFF8FAFC);
   Color get _headerTextColor => _isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B);
 
-  static const _terms = ['1st Semester', '2nd Semester', 'Summer'];
   static const _rowHeight = 48.0;
   static const _emptyBodyMinHeight = 80.0;
   static const _schoolYearsScrollThreshold = 6;
@@ -1318,147 +1317,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   }
 
   Future<void> _showAddSemesterDialog(Map<String, dynamic> year) async {
-    final yearId = _asInt(year['id']);
-    if (yearId == null) {
-      return;
-    }
-
-    String? selectedTerm;
-    final added = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              backgroundColor: _surfaceColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: _borderColor),
-              ),
-              titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 12),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 22),
-              actionsPadding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: _isDark ? const Color(0xFF27272A) : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: _borderColor),
-                    ),
-                    child: Icon(
-                      Icons.add_chart_rounded,
-                      size: 18,
-                      color: _isDark ? DefensysTokens.mistMaroon : DefensysUi.primaryMaroon,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Add Semester',
-                    style: TextStyle(
-                      color: _inkColor,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Adding term to Academic Year ${year['label']}.',
-                      style: TextStyle(
-                        color: _mutedColor,
-                        fontSize: 12.5,
-                        height: 1.35,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedTerm,
-                      dropdownColor: _surfaceColor,
-                      style: TextStyle(color: _inkColor, fontSize: 14),
-                      decoration: InputDecoration(
-                        labelText: 'Select Term',
-                        filled: true,
-                        fillColor: _panelBgColor,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: _borderColor),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: _borderColor),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: DefensysUi.primaryMaroon, width: 1.5),
-                        ),
-                      ),
-                      items: _terms
-                          .map(
-                            (term) => DropdownMenuItem(
-                              value: term,
-                              child: Text(term, style: TextStyle(color: _inkColor)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setDialogState(() {
-                          selectedTerm = value;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _inkColor,
-                    side: BorderSide(color: _borderColor),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  ),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: DefensysUi.primaryMaroon,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: _isDark
-                        ? const Color(0xFF3F3F46)
-                        : const Color(0xFFE2E8F0),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  onPressed: selectedTerm == null
-                      ? null
-                      : () => Navigator.pop(dialogContext, true),
-                  child: const Text('Add Semester'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (added != true || selectedTerm == null) {
-      return;
-    }
-
-    await ref
-        .read(academicPeriodProvider.notifier)
-        .addSemester(yearId, selectedTerm!);
+    if (_asInt(year['id']) == null) return;
+    await showDialog<bool>(context: context, barrierDismissible: false,
+      builder: (_) => AddSemesterDialog(year: year));
   }
 
   Future<void> _handleSemesterSwitch(

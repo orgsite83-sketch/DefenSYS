@@ -11,6 +11,7 @@ import '../../../theme/defensys_tokens.dart';
 import 'peer_eval_tab.dart';
 import 'student_deliverables_tab.dart';
 import 'student_stage_data.dart';
+import '../../../utils/defense_time.dart';
 
 class StudentEventsTab extends ConsumerStatefulWidget {
   final bool isCapstone;
@@ -33,7 +34,7 @@ class StudentEventsTab extends ConsumerStatefulWidget {
 }
 
 class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _subTabController;
   int _activeSubIndex = 0;
   Timer? _countdownTimer;
@@ -41,6 +42,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   bool _isDefensePast = false;
   String? _selectedStageForView;
   bool _refreshQueued = false;
+  final _defenseClock = DefenseCountdownClock();
 
   String? get _requestedStage =>
       _selectedStageForView ??
@@ -55,6 +57,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _selectedStageForView = widget.initialStage;
     final initialIdx = (widget.subTabNotifier?.value ?? 0).clamp(0, 2);
     _subTabController = TabController(
@@ -139,46 +142,15 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
       }
     }
 
-    final dateStr =
-        activeSchedule?['date']?.toString() ??
-        activeSchedule?['scheduled_date']?.toString();
-    final timeStr =
-        activeSchedule?['startTime']?.toString() ??
-        activeSchedule?['start_time']?.toString();
-
-    if (dateStr == null || dateStr.trim().isEmpty) {
+    final scheduledDate = defenseScheduledAt(activeSchedule);
+    if (scheduledDate == null || activeSchedule == null) {
       _timeUntilDefense = null;
       _isDefensePast = false;
       return;
     }
 
     try {
-      DateTime scheduledDate;
-      if (timeStr != null && timeStr.contains(':')) {
-        final parsedDate = DateTime.parse(dateStr);
-        final timeClean = timeStr
-            .toUpperCase()
-            .replaceAll('AM', '')
-            .replaceAll('PM', '')
-            .trim();
-        final timeParts = timeClean.split(':');
-        int hour = int.tryParse(timeParts[0]) ?? 9;
-        final minute = timeParts.length > 1
-            ? (int.tryParse(timeParts[1]) ?? 0)
-            : 0;
-        if (timeStr.toUpperCase().contains('PM') && hour < 12) hour += 12;
-        scheduledDate = DateTime(
-          parsedDate.year,
-          parsedDate.month,
-          parsedDate.day,
-          hour,
-          minute,
-        );
-      } else {
-        scheduledDate = DateTime.parse(dateStr);
-      }
-
-      final now = DateTime.now();
+      final now = _defenseClock.now(activeSchedule);
       final diff = scheduledDate.difference(now);
 
       if (diff.isNegative) {
@@ -207,6 +179,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   @override
   void didUpdateWidget(covariant StudentEventsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.studentData, widget.studentData)) {
+      _calculateRemainingTime();
+    }
     if (oldWidget.isActive != widget.isActive) {
       _startCountdown();
       if (widget.isActive) {
@@ -240,10 +215,18 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.subTabNotifier?.removeListener(_onSubTabNotifierChanged);
     _countdownTimer?.cancel();
     _subTabController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && widget.isActive) {
+      _refreshAll();
+    }
   }
 
   Future<void> _refreshAll() async {
@@ -2301,6 +2284,14 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 'Date & Time',
                 '$scheduledDate${startTime != null ? ' at $startTime' : ''}',
               ),
+              if (stageSchedule?['semester_label'] != null) ...[
+                const SizedBox(height: 10),
+                _scheduleMetaRow(
+                  Icons.school_outlined,
+                  'Semester',
+                  stageSchedule!['semester_label'].toString(),
+                ),
+              ],
               const SizedBox(height: 10),
               _scheduleMetaRow(
                 Icons.location_on_outlined,

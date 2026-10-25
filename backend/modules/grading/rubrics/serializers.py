@@ -23,6 +23,7 @@ def display_name(user):
 
 
 class RubricCriterionSerializer(serializers.ModelSerializer):
+    max_score = serializers.IntegerField(required=False, min_value=1, max_value=32767)
     weight = serializers.DecimalField(
         max_digits=5, decimal_places=2,
         min_value=Decimal('0.01'), max_value=Decimal('100'),
@@ -87,6 +88,7 @@ class RubricSerializer(serializers.ModelSerializer):
             'target_type',
             'scale',
             'status',
+            'custom_max_score',
             'is_locked',
             'panel_weight',
             'adviser_weight',
@@ -264,6 +266,7 @@ class RubricWriteSerializer(serializers.Serializer):
     evaluation_type = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.EVALUATION_TYPE_CHOICES])
     target_type = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.TARGET_CHOICES], default=Rubric.TARGET_TEAM)
     scale = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.SCALE_CHOICES], default=Rubric.SCALE_10)
+    custom_max_score = serializers.IntegerField(required=False, allow_null=True, min_value=1, max_value=32767)
     status = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.STATUS_CHOICES], default=Rubric.STATUS_DRAFT)
     panel_weight = serializers.IntegerField(required=False, min_value=0, max_value=100)
     adviser_weight = serializers.IntegerField(required=False, min_value=0, max_value=100)
@@ -329,6 +332,18 @@ class RubricWriteSerializer(serializers.Serializer):
                 attrs['peer_weight'] = attrs.get('peer_weight') if attrs.get('peer_weight') is not None else 20
                 if attrs['panel_weight'] + attrs['adviser_weight'] + attrs['peer_weight'] != 100:
                     raise serializers.ValidationError({'weights': 'Panel, adviser, and peer weights must total 100%.'})
+        custom_max = attrs.get('custom_max_score')
+        if attrs['scale'] == Rubric.SCALE_CUSTOM:
+            if custom_max is None:
+                raise serializers.ValidationError({'custom_max_score': 'Enter the maximum points per criterion.'})
+            for criterion in attrs['criteria']:
+                if criterion.get('max_score', custom_max) != custom_max:
+                    raise serializers.ValidationError({'criteria': 'Custom-scale criteria must use the rubric maximum score.'})
+                criterion['scale'] = Rubric.SCALE_CUSTOM
+                criterion['max_score'] = custom_max
+        else:
+            custom_max = None
+        attrs['custom_max_score'] = custom_max
         attrs['criteria'] = self._normalized_criteria(attrs['criteria'], attrs.get('target_type', Rubric.TARGET_TEAM))
         return attrs
 
@@ -344,6 +359,7 @@ class RubricWriteSerializer(serializers.Serializer):
             evaluation_type=validated_data['evaluation_type'],
             target_type=validated_data.get('target_type', Rubric.TARGET_TEAM),
             scale=validated_data.get('scale', Rubric.SCALE_10),
+            custom_max_score=validated_data.get('custom_max_score'),
             status=validated_data.get('status', Rubric.STATUS_DRAFT),
             panel_weight=validated_data['panel_weight'],
             adviser_weight=validated_data['adviser_weight'],
@@ -366,6 +382,7 @@ class RubricWriteSerializer(serializers.Serializer):
         instance.evaluation_type = validated_data['evaluation_type']
         instance.target_type = validated_data.get('target_type', instance.target_type)
         instance.scale = validated_data.get('scale', Rubric.SCALE_10)
+        instance.custom_max_score = validated_data.get('custom_max_score')
         instance.status = validated_data.get('status', instance.status)
         instance.panel_weight = validated_data['panel_weight']
         instance.adviser_weight = validated_data['adviser_weight']

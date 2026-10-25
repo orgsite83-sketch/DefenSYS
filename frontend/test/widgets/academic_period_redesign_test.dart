@@ -196,7 +196,7 @@ void main() {
     // 2. Verify that active A.Y. 2026-2027 is expanded and shows its terms
     expect(find.text('1st Semester'), findsWidgets);
     expect(find.text('2nd Semester'), findsWidgets);
-    expect(find.text('Active (Write-Enabled)'), findsWidgets);
+    expect(find.text('Active'), findsWidgets);
     expect(find.text('Capstone 2 Continue'), findsOneWidget);
     expect(find.text('PIT Active'), findsWidgets);
 

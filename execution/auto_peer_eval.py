@@ -22,6 +22,9 @@ Usage Examples:
 
   # 5. Connect to a custom server IP/port (e.g., LAN):
   python execution/auto_peer_eval.py --base-url http://192.168.1.3:8000 --all-students
+
+  # 6. Preview only first-year peer evaluations:
+  python execution/auto_peer_eval.py --all-students --year 1 --dry-run
 """
 
 import argparse
@@ -31,6 +34,11 @@ import sys
 import time
 from typing import Dict, List, Optional, Tuple
 import requests
+
+if __package__:
+    from . import upload_deliverables as common
+else:
+    import upload_deliverables as common
 
 # Ensure backend directory is in sys.path for Django model access
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -68,6 +76,11 @@ def parse_args():
         "--team-id",
         type=int,
         help="Filter to students belonging to a specific Team ID",
+    )
+    parser.add_argument(
+        "--year",
+        type=common.year_label,
+        help='Filter the team cohort, e.g. --year 1 or --year "1st Year".',
     )
     parser.add_argument(
         "--min-score",
@@ -115,7 +128,8 @@ def parse_args():
     return parser.parse_args()
 
 
-def fetch_student_records(team_id: Optional[int] = None, specific_usernames: Optional[List[str]] = None) -> List[Tuple[str, str]]:
+def fetch_student_records(team_id: Optional[int] = None, specific_usernames: Optional[List[str]] = None,
+                          year: Optional[str] = None) -> List[Tuple[str, str]]:
     """
     Returns a list of (username, password) tuples from Django database (read-only).
     Student passwords default to their username in DefenSYS.
@@ -126,14 +140,20 @@ def fetch_student_records(team_id: Optional[int] = None, specific_usernames: Opt
 
     User = get_user_model()
 
+    users = User.objects.filter(role="student")
     if specific_usernames:
-        users = User.objects.filter(role="student", username__in=specific_usernames).order_by("username")
-    elif team_id:
-        memberships = TeamMembership.objects.filter(team_id=team_id).select_related("student")
-        users = [m.student for m in memberships if m.student]
-    else:
-        # All active students
-        users = User.objects.filter(role="student", is_active=True).order_by("username")
+        users = users.filter(username__in=specific_usernames)
+    elif not team_id:
+        users = users.filter(is_active=True)
+
+    if team_id or year:
+        memberships = TeamMembership.objects.all()
+        if team_id:
+            memberships = memberships.filter(team_id=team_id)
+        if year:
+            memberships = memberships.filter(team__year_level=year)
+        users = users.filter(pk__in=memberships.values('student_id'))
+    users = users.order_by("username")
 
     records = []
     for u in users:
@@ -248,7 +268,7 @@ def run():
         sys.exit(1)
 
     print(f"[*] Discovering student accounts...")
-    student_records = fetch_student_records(team_id=args.team_id, specific_usernames=specific_users)
+    student_records = fetch_student_records(team_id=args.team_id, specific_usernames=specific_users, year=args.year)
 
     if not student_records:
         print("[!] No student records found matching the criteria.")
@@ -265,6 +285,8 @@ def run():
     print("=" * 70)
     print(f"  Target Server   : {args.base_url}")
     print(f"  Total Students  : {len(student_records)}")
+    if args.year:
+        print(f"  Year Filter     : {args.year}")
     print(f"  Score Range     : {min_s} to {max_s} per criterion")
     print(f"  Auth Method     : {'HTTP POST /api/login/' if args.http_login else 'Direct JWT (Fast/No-Throttle)'}")
     print(f"  Mode            : {'DRY RUN (No changes saved)' if args.dry_run else 'LIVE SUBMISSION'}")
@@ -296,6 +318,10 @@ def run():
 
         if not team_id or not members:
             # Student not assigned to a team
+            continue
+
+        if args.year and team.get("yearLevel") != args.year:
+            print(f"  [SKIP] {team_name}: --year does not match the team's current evaluation context.")
             continue
 
         stage = args.stage or dashboard.get("current_stage") or "Concept Proposal"

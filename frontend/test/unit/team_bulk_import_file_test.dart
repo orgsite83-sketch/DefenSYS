@@ -115,6 +115,38 @@ void main() {
     }
   }
 
+  test(
+    'optional file provenance distinguishes files with identical names and exported keys',
+    () {
+      const files = [
+        PickedTabularFile(
+          name: 'roster.csv',
+          extension: 'csv',
+          bytes: [],
+          text:
+              'team_name,project_title,section,member_ids,leader_id,group_key,import_file_key\n'
+              'Core,Directory,BSIT-2B,Ana Reyes,Ana Reyes,same,spoofed\n',
+        ),
+        PickedTabularFile(
+          name: 'roster.csv',
+          extension: 'csv',
+          bytes: [],
+          text:
+              'team_name,project_title,section,member_ids,leader_id,group_key,import_file_key\n'
+              'Auth,Sign in,BSIT-2B,Luis Santos,Luis Santos,same,spoofed\n',
+        ),
+      ];
+      final rows = parseTeamBulkCsv(
+        readTeamImportFiles(files, includeFileSources: true),
+      ).rows;
+      expect(rows.map((row) => row['import_file_key']), ['file0', 'file1']);
+      expect(rows.map((row) => row['group_key']), ['file0/same', 'file1/same']);
+      expect(rows.first['member_ids'], ['Ana Reyes']);
+      expect(rows.last['member_ids'], ['Luis Santos']);
+      expect(readTeamImportFiles(files), isNot(contains('import_file_key')));
+    },
+  );
+
   test('actual 16-team sample uses the production XLSX conversion', () {
     final bytes = File(
       '../sample_file/16_Teams_2nd_Year/1st Sem/team/Team16roster.xlsx',

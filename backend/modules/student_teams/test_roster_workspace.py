@@ -241,6 +241,33 @@ class RosterWorkspaceTests(APITestCase):
         old.refresh_from_db()
         self.assertEqual(old.members.count(), 3)
 
+    def test_generation_uses_exactly_the_confirmed_section_class_list(self):
+        confirmed = [s.pk for s in self.students[:10]]
+        preview = self.preview(operation='generate', confirmed_student_ids=confirmed, method='random')
+        self.assertCountEqual(
+            [student_id for team in preview['teams'] for student_id in team['member_ids']], confirmed)
+        self.assertFalse(StudentTeam.objects.exists())
+
+    def test_generation_rejects_stale_or_invalid_student_confirmation(self):
+        confirmed = [s.pk for s in self.students[:10]]
+        for ids in ([], confirmed[:-1], confirmed + [self.students[10].pk],
+                    confirmed + [confirmed[0]], None, ['invalid']):
+            with self.subTest(ids=ids):
+                response = self.client.post('/api/teams/rosters/preview/',
+                    self.body(operation='generate', confirmed_student_ids=ids), format='json')
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIn('confirm it again', str(response.data))
+        self.assertFalse(StudentTeam.objects.exists())
+
+    def test_empty_section_must_import_students_before_generation(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        StudentAcademicRecord.objects.filter(semester=self.term, section='BSIT-2A').update(section='')
+        response = self.client.post('/api/teams/rosters/preview/',
+            self.body(operation='generate', confirmed_student_ids=[]), format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('Import and confirm', str(response.data))
+        self.assertFalse(StudentTeam.objects.exists())
+
     def test_unassigned_inactive_other_year_and_capstone_sections_are_rejected(self):
         self.lead.is_pit_lead = False
         self.lead.save(update_fields=['is_pit_lead'])

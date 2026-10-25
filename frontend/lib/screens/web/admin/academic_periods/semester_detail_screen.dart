@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'widgets/semester_transition_dialog.dart';
+import 'widgets/semester_calendar_fields.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -211,6 +212,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
 
             // Header Banner
             _buildTermHeader(semester, yearLabel, termName, isActive),
+            const SizedBox(height: 20),
+            SemesterCalendarSummary(semester: semester,
+              onEdit: state.isSaving ? null : () => showSemesterCalendarEditor(context, ref, semester)),
             const SizedBox(height: 20),
 
             // 3 KPI Overview Cards

@@ -7,7 +7,7 @@ DefenSYS backend API endpoints:
   - Generates criteria scores (default: 7 to 9 out of 10)
   - Submits evaluations: POST /api/defense/schedules/submit-grades/
   - External invitations use guest-assignments/ and guest-submit-grades/ with guest JWTs
-  - Issues official Capstone defense verdict (chair/admin): PATCH /api/defense/schedules/<schedule_id>/verdict/
+  - Requests allowed Capstone defense verdicts as the assigned chair: PATCH /api/defense/schedules/<schedule_id>/verdict/
     (Note: PIT events do not use verdicts and are scored only)
 
 Usage Examples:
@@ -23,10 +23,10 @@ Usage Examples:
   # 4. Filter by defense stage, session UUID, or academic term:
   python execution/auto_panelist_eval.py --all-panelists --stage "Project Proposal" --session-id <uuid>
 
-  # 5. Only evaluate PIT events (scores only, no verdicts):
-  python execution/auto_panelist_eval.py --all-panelists --scope pit
+  # 5. Only evaluate first-year PIT events (scores only, no verdicts):
+  python execution/auto_panelist_eval.py --all-panelists --scope pit --year 1
 
-  # 6. Specify Capstone verdict outcome (default: approved):
+  # 6. Request a permitted Capstone outcome (default: auto, following the API):
   python execution/auto_panelist_eval.py --all-panelists --scope capstone --verdict approved_with_revisions
 
   # 7. Issue verdicts only for Capstone defenses whose panel scores are already posted:
@@ -40,7 +40,8 @@ Dry runs use GET requests only and do not create refresh-token records.
 """
 
 import argparse
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from functools import wraps
 import math
 import os
 import random
@@ -48,6 +49,12 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 import requests
+from zoneinfo import ZoneInfo
+
+if __package__:
+    from . import upload_deliverables as common
+else:
+    import upload_deliverables as common
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BACKEND_PATH = os.path.join(REPO_ROOT, "backend")
@@ -67,6 +74,14 @@ def init_django():
     django.setup()
 
 
+def read_only_lookup(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with common.local_read_only():
+            return function(*args, **kwargs)
+    return wrapped
+
+
 DEFAULT_VERDICT_REMARKS = {
     "approved": "Approved by panel deliberation. Proceed to final manuscript submission.",
     "approved_with_revisions": "Approved with revisions. Comply with all panel recommendations by deadline.",
@@ -76,7 +91,7 @@ DEFAULT_VERDICT_REMARKS = {
 }
 
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Automate defense schedule panel evaluations across teams using random scores and record Capstone verdicts."
     )
@@ -121,6 +136,9 @@ def parse_args():
         choices=["capstone", "pit"],
         help="Filter evaluations by defense scope ('capstone' or 'pit')",
     )
+    parser.add_argument('--year', type=common.year_label, help='Filter the cohort, e.g. --year 1.')
+    parser.add_argument('--include-drafts', action='store_true',
+        help='Preserve saved draft scores/remarks, fill missing scores, then submit. Drafts are skipped by default.')
     parser.add_argument(
         "--min-score",
         type=float,
@@ -135,9 +153,9 @@ def parse_args():
     )
     parser.add_argument(
         "--verdict",
-        default="approved",
-        choices=["approved", "approved_with_revisions", "for_redefense", "failed", "project_rejected"],
-        help="Verdict to issue for completed Capstone defenses (default: approved)",
+        default="auto",
+        choices=["auto", "approved", "approved_with_revisions", "for_redefense", "failed", "project_rejected"],
+        help="Follow the API's allowed outcome (default: auto); explicit choices must be permitted by the API.",
     )
     parser.add_argument(
         "--verdict-remarks",
@@ -173,12 +191,12 @@ def parse_args():
         default=0.1,
         help="Delay in seconds between requests (default: 0.1s)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not (math.isfinite(args.min_score) and math.isfinite(args.max_score)
             and 0 <= args.min_score <= args.max_score <= 10):
         parser.error("Scores must satisfy 0 <= --min-score <= --max-score <= 10 (scaled to each criterion maximum).")
-    if not math.isfinite(args.delay) or args.delay < 0:
-        parser.error("--delay must be a non-negative finite number.")
+    if not math.isfinite(args.delay) or not 0 <= args.delay <= 60:
+        parser.error("--delay must be a finite number between 0 and 60 seconds.")
     if args.external_only and args.panelists:
         parser.error("--external-only cannot be combined with --panelists.")
     if args.verdict_only and args.no_verdict:
@@ -191,30 +209,32 @@ def parse_args():
     return args
 
 
-def fetch_target_schedule_ids(team_id=None, stage=None, session_id=None, semester_id=None, scope=None):
+def fetch_target_schedule_ids(team_id=None, stage=None, session_id=None, semester_id=None, scope=None, year=None):
     """One authoritative allowlist for discovery and every API assignment response."""
-    init_django()
-    from django.db.models import Q
-    from defense.scheduler.models import DefenseSchedule
-    from academic_period_management.services import active_semester
-
-    qs = DefenseSchedule.objects.filter(status=DefenseSchedule.STATUS_SCHEDULED)
-    if team_id:
-        qs = qs.filter(team_id=team_id)
-    if stage:
-        qs = qs.filter(Q(defense_stage__label__iexact=stage.strip()) | Q(scope='pit', event_name__iexact=stage.strip()))
-    if session_id:
-        qs = qs.filter(session_id=session_id.strip())
-    if semester_id:
-        qs = qs.filter(semester_id=semester_id)
-    elif not team_id and not session_id:
-        semester = active_semester()
-        if semester is None:
-            raise ValueError("No active semester. Specify --semester-id, --team-id, or --session-id.")
-        qs = qs.filter(semester=semester)
-    if scope:
-        qs = qs.filter(scope=scope)
-    return list(qs.order_by('pk').values_list('pk', flat=True))
+    with common.local_read_only():
+        from django.db.models import Q, F
+        from defense.scheduler.models import DefenseSchedule
+        from academic_period_management.services import active_semester
+        qs = DefenseSchedule.objects.filter(status=DefenseSchedule.STATUS_SCHEDULED,
+                                            project_version=F('team__project_version'))
+        if team_id:
+            qs = qs.filter(team_id=team_id)
+        if stage:
+            qs = qs.filter(Q(defense_stage__label__iexact=stage.strip()) | Q(scope='pit', event_name__iexact=stage.strip()))
+        if session_id:
+            qs = qs.filter(session_id=session_id.strip())
+        if semester_id:
+            qs = qs.filter(semester_id=semester_id)
+        elif not team_id and not session_id:
+            semester = active_semester()
+            if semester is None:
+                raise ValueError("No active semester. Specify --semester-id, --team-id, or --session-id.")
+            qs = qs.filter(semester=semester)
+        if scope:
+            qs = qs.filter(scope=scope)
+        if year:
+            qs = qs.filter(team__year_level=year)
+        return list(qs.order_by('pk').values_list('pk', flat=True))
 
 
 def fetch_panelist_users(
@@ -226,21 +246,19 @@ def fetch_panelist_users(
     scope: Optional[str] = None,
     schedule_ids: Optional[List[int]] = None,
 ) -> List[str]:
-    init_django()
-    from django.contrib.auth import get_user_model  # type: ignore
-    from defense.scheduler.models import SchedulePanelist  # type: ignore
-
-    User = get_user_model()
-
     if schedule_ids is None:
         schedule_ids = fetch_target_schedule_ids(team_id, stage, session_id, semester_id, scope)
-    users = User.objects.filter(is_active=True, role__in=['faculty', 'admin'],
-        pk__in=SchedulePanelist.objects.filter(schedule_id__in=schedule_ids).values('panelist_id'))
-    if specific_usernames:
-        users = users.filter(username__in=specific_usernames)
-    return list(users.order_by('username').values_list('username', flat=True))
+    with common.local_read_only():
+        from django.contrib.auth import get_user_model
+        from defense.scheduler.models import SchedulePanelist
+        users = get_user_model().objects.filter(is_active=True, role__in=['faculty', 'admin'],
+            pk__in=SchedulePanelist.objects.filter(schedule_id__in=schedule_ids).values('panelist_id'))
+        if specific_usernames:
+            users = users.filter(username__in=specific_usernames)
+        return list(users.order_by('username').values_list('username', flat=True))
 
 
+@read_only_lookup
 def fetch_external_panelists(schedule_ids):
     """Include legacy single-defense invitations and current multi-defense invitations."""
     init_django()
@@ -267,6 +285,7 @@ def fetch_external_panelists(schedule_ids):
     return result
 
 
+@read_only_lookup
 def get_guest_jwt_token(invitation_id):
     """Mint the normal scoped guest token without exchanging codes or updating access records."""
     init_django()
@@ -281,12 +300,146 @@ def get_guest_jwt_token(invitation_id):
 
 def generate_scores(criteria, minimum, maximum):
     """Treat the CLI range as a ten-point scale, including zero and fractional maxima."""
-    return [{'criterion_id': c['id'],
-             'score': round(min(float(c.get('max_score', 10)),
-                                random.uniform(minimum, maximum) / 10 * float(c.get('max_score', 10))), 2)}
-            for c in criteria]
+    scores = []
+    for criterion in criteria:
+        maximum_score = float(criterion.get('max_score', 10))
+        if not math.isfinite(maximum_score) or maximum_score < 0:
+            raise ValueError('The assigned rubric contains an invalid criterion maximum.')
+        score = min(maximum_score, max(0, round(random.uniform(minimum, maximum) / 10 * maximum_score, 2)))
+        scores.append({'criterion_id': criterion['id'], 'score': score})
+    return scores
 
 
+def build_submissions(assignment, minimum, maximum, remarks, *, include_drafts=False):
+    rubric = assignment.get('panel_rubric') or {}
+    criteria = rubric.get('criteria') or []
+    target = rubric.get('target_type')
+    members = assignment.get('members') or []
+    if not isinstance(criteria, list) or not criteria:
+        raise ValueError('No panel rubric criteria are configured.')
+    if target not in ('team', 'individual', 'both'):
+        raise ValueError('The assigned rubric has an unsupported grading target.')
+    if len({c['id'] for c in criteria}) != len(criteria):
+        raise ValueError('The assigned rubric has duplicate criterion IDs.')
+    if target in ('individual', 'both') and (not members or len({m['id'] for m in members}) != len(members)):
+        raise ValueError('A complete, unique team membership is required for individual grading.')
+    draft = assignment.get('draft')
+    if draft and not include_drafts:
+        raise ValueError('A saved evaluation draft exists. Finish it in the app or use --include-drafts to preserve and complete it.')
+    groups = []
+    if target == 'team':
+        groups = [(None, criteria)]
+    elif target == 'individual':
+        groups = [(member['id'], criteria) for member in members]
+    else:
+        if any(c.get('target_type', 'team') not in ('team', 'individual') for c in criteria):
+            raise ValueError('The assigned mixed rubric contains an unsupported criterion target.')
+        team_criteria = [c for c in criteria if c.get('target_type', 'team') == 'team']
+        individual_criteria = [c for c in criteria if c.get('target_type', 'team') == 'individual']
+        if team_criteria:
+            groups.append((None, team_criteria))
+        if individual_criteria:
+            groups.extend((member['id'], individual_criteria) for member in members)
+    concepts = assignment.get('assessment_concepts') or []
+    per_concept = (assignment.get('assessment_policy') or {}).get('per_concept', bool(concepts))
+    keys = [concept['key'] for concept in concepts] if per_concept else ['']
+    if not keys or len(set(keys)) != len(keys) or (per_concept and any(not isinstance(key, str) or not key for key in keys)):
+        raise ValueError('The hearing has no complete, unique set of assessed concepts. Refresh its configuration.')
+    rows = {}
+    allowed = {}
+    for key in keys:
+        for student_id, selected in groups:
+            identity = (key, student_id)
+            rows[identity] = {'student_id': student_id, 'criteria_scores': generate_scores(selected, minimum, maximum), 'remarks': remarks}
+            allowed[identity] = {criterion['id']: float(criterion.get('max_score', 10)) for criterion in selected}
+            if key:
+                rows[identity]['concept_key'] = key
+    if not rows:
+        raise ValueError('No complete grading targets are available for this rubric.')
+    seen = set()
+    for saved in (draft or {}).get('submissions', []):
+        identity = (saved.get('concept_key', ''), saved.get('student_id'))
+        if identity not in rows or identity in seen:
+            raise ValueError('The saved draft no longer matches the hearing targets.')
+        seen.add(identity)
+        scores = {}
+        for item in saved.get('criteria_scores', []):
+            criterion_id = item.get('criterion_id', item.get('id'))
+            score = float(item.get('score'))
+            if (criterion_id not in allowed[identity] or criterion_id in scores or not math.isfinite(score)
+                    or not 0 <= score <= allowed[identity][criterion_id]):
+                raise ValueError('The saved draft contains an invalid or outdated criterion score.')
+            scores[criterion_id] = score
+        for item in rows[identity]['criteria_scores']:
+            if item['criterion_id'] in scores:
+                item['score'] = scores[item['criterion_id']]
+        if 'remarks' in saved:
+            if not isinstance(saved['remarks'], str):
+                raise ValueError('The saved draft remarks must be text.')
+            rows[identity]['remarks'] = saved['remarks']
+    return list(rows.values())
+
+
+class AssignmentError(ValueError):
+    def __init__(self, code, detail):
+        self.code = code
+        super().__init__(detail)
+
+
+def current_assignment(session, url, schedule_id):
+    response = session.get(url, timeout=10, allow_redirects=False)
+    if response.status_code != 200:
+        raise AssignmentError(response.status_code, f'Assignment refresh failed (HTTP {response.status_code}).')
+    data = response.json()
+    if not isinstance(data, dict) or not isinstance(data.get('teams'), list):
+        raise ValueError('The assignment API returned an invalid response.')
+    rows = [row for row in data['teams'] if isinstance(row, dict) and row.get('schedule_id') == schedule_id]
+    if len(rows) != 1:
+        raise ValueError('The current schedule is no longer available to this panelist.')
+    return rows[0]
+
+
+def assignment_matches(row, args, allowed):
+    return (row.get('schedule_id') in allowed
+            and (not args.team_id or (row.get('id') or row.get('team_id')) == args.team_id)
+            and (not args.stage or str(row.get('defense_stage', '')).strip().casefold() == args.stage.strip().casefold())
+            and (not args.session_id or str(row.get('session_id', '')) == str(args.session_id))
+            and (not args.semester_id or row.get('semester_id') == args.semester_id)
+            and (not args.scope or (row.get('scope') or ('capstone' if row.get('is_capstone') else 'pit')) == args.scope)
+            and (not getattr(args, 'year', None) or row.get('year_level') == args.year))
+
+
+def requires_concept_decision(row):
+    workflow = (row.get('grade_record') or {}).get('workflow') or {}
+    return bool(row.get('assessment_concepts') or (row.get('assessment_policy') or {}).get('per_concept')
+                or workflow.get('concept_workflow'))
+
+
+def plan_verdict(row, requested):
+    """Use the chair's current API facts, never the academic weighted score."""
+    if row.get('verdict'):
+        return 'existing', f'Existing verdict: {row["verdict"]}.', None
+    if requires_concept_decision(row):
+        return 'manual', 'Concept assessments saved; the chair must select a qualifying concept and record the outcome.', None
+    if row.get('is_chair') is not True or row.get('can_issue_verdict') is not True:
+        return 'pending', row.get('verdict_unavailable_reason') or 'The assigned chair is not currently allowed to issue a verdict.', None
+    workflow = (row.get('grade_record') or {}).get('workflow') or {}
+    rule = workflow.get('outcome_rule')
+    if (row.get('assessment_policy') or {}).get('version') == 1 and not rule:
+        return 'pending', 'The current configured outcome assessment is unavailable.', None
+    if rule is not None:
+        allowed = rule.get('allowed_verdicts') or []
+        if not rule.get('panel_complete') or not allowed:
+            return 'pending', rule.get('reason') or 'Every required faculty and external evaluation must be complete.', None
+        verdict = ('approved' if 'approved' in allowed else 'for_redefense' if allowed == ['for_redefense'] else None) if requested == 'auto' else requested
+        if verdict not in allowed:
+            return 'pending', f'Requested verdict is not permitted by the panel qualification rule. Allowed: {", ".join(allowed)}.', None
+    else:
+        verdict = 'approved' if requested == 'auto' else requested
+    return 'ready', '', verdict
+
+
+@read_only_lookup
 def get_jwt_token_for_user(username: str) -> Optional[str]:
     init_django()
     from django.contrib.auth import get_user_model  # type: ignore
@@ -294,7 +447,7 @@ def get_jwt_token_for_user(username: str) -> Optional[str]:
 
     User = get_user_model()
     try:
-        user = User.objects.get(username=username, is_active=True)
+        user = User.objects.get(username=username, is_active=True, role__in=['faculty', 'admin'])
         # A short-lived access token does not insert an OutstandingToken row in dry runs.
         return str(AccessToken.for_user(user))
     except Exception as e:
@@ -302,27 +455,15 @@ def get_jwt_token_for_user(username: str) -> Optional[str]:
         return None
 
 
+@read_only_lookup
 def get_schedule_chair_username(schedule_id: int) -> Optional[str]:
     init_django()
     from defense.scheduler.models import SchedulePanelist  # type: ignore
-    chair_sp = (
+    chairs = list(
         SchedulePanelist.objects.filter(schedule_id=schedule_id, is_chair=True, panelist__is_active=True)
-        .select_related("panelist")
-        .first()
+        .values_list('panelist__username', flat=True)
     )
-    if chair_sp and chair_sp.panelist:
-        return chair_sp.panelist.username
-    return None
-
-
-def get_admin_username() -> Optional[str]:
-    init_django()
-    from django.contrib.auth import get_user_model  # type: ignore
-    User = get_user_model()
-    admin = User.objects.filter(role="admin", is_active=True).order_by("id").first()
-    if not admin:
-        admin = User.objects.filter(is_superuser=True, is_active=True).order_by("id").first()
-    return admin.username if admin else None
+    return chairs[0] if len(chairs) == 1 else None
 
 
 def submit_schedule_verdict(
@@ -339,7 +480,9 @@ def submit_schedule_verdict(
         return {"status": "dry_run"}
 
     if not actor_username:
-        return {"status": "error", "detail": "No authorized panel chair or administrator available."}
+        return {"status": "error", "detail": "No active assigned panel chair available."}
+    if get_schedule_chair_username(schedule_id) != actor_username:
+        return {"status": "error", "detail": "The assigned chair changed; refresh the assignments before requesting a verdict."}
 
     token = get_jwt_token_for_user(actor_username)
     if not token:
@@ -352,7 +495,7 @@ def submit_schedule_verdict(
     }
     if verdict == "approved_with_revisions":
         if not revision_deadline:
-            revision_deadline = (date.today() + timedelta(days=14)).isoformat()
+            revision_deadline = (datetime.now(ZoneInfo('Asia/Manila')).date() + timedelta(days=14)).isoformat()
         payload["revision_deadline"] = revision_deadline
 
     url = f"{base_url.rstrip('/')}/api/defense/schedules/{schedule_id}/verdict/"
@@ -361,7 +504,7 @@ def submit_schedule_verdict(
         "Content-Type": "application/json",
     }
     try:
-        resp = requests.patch(url, json=payload, headers=headers, timeout=10)
+        resp = requests.patch(url, json=payload, headers=headers, timeout=10, allow_redirects=False)
         if resp.status_code in (200, 201):
             return {"status": "ok", "data": resp.json()}
         else:
@@ -375,8 +518,9 @@ def submit_schedule_verdict(
         return {"status": "error", "detail": str(e)}
 
 
-def run():
-    args = parse_args()
+def run(argv=None):
+    args = parse_args(argv)
+    args.base_url = common.server_url(args.base_url)
 
     specific_panelists = None
     if args.panelists:
@@ -389,7 +533,11 @@ def run():
         sys.exit(1)
 
     print("[*] Discovering assigned defense panelists...")
-    schedule_ids = fetch_target_schedule_ids(args.team_id, args.stage, args.session_id, args.semester_id, args.scope)
+    schedule_ids = fetch_target_schedule_ids(args.team_id, args.stage, args.session_id, args.semester_id,
+                                             args.scope, year=getattr(args, 'year', None))
+    if not schedule_ids:
+        print('[SKIP] No current scheduled defenses match the selected cohort/event/stage/term. Nothing was submitted.')
+        return 0
     allowed_schedules = set(schedule_ids)
     panelist_usernames = [] if args.external_only else fetch_panelist_users(
         specific_usernames=specific_panelists,
@@ -408,8 +556,8 @@ def run():
         if missing:
             raise ValueError(f"No active, assigned faculty/admin panelist in the selected schedules: {', '.join(missing)}")
     if not actors:
-        print("[!] No matching assigned panelist records found.")
-        sys.exit(1)
+        print('[PENDING] Matching defenses have no selected active panelist assignments. Check the panel roster.')
+        return 2
 
     min_s = args.min_score
     max_s = args.max_score
@@ -423,6 +571,8 @@ def run():
     print(f"  Score Range     : {min_s} to {max_s} out of 10 (scaled per criterion)")
     if args.scope:
         print(f"  Scope Filter    : {args.scope.upper()}")
+    if getattr(args, 'year', None):
+        print(f'  Year Filter     : {args.year}')
     if args.stage:
         print(f"  Stage Filter    : {args.stage}")
     if args.session_id:
@@ -430,7 +580,7 @@ def run():
     if args.semester_id:
         print(f"  Semester ID     : {args.semester_id}")
     if not args.no_verdict:
-        print(f"  Capstone Verdict: {args.verdict.upper()} (chair/admin submission)")
+        print(f"  Capstone Verdict: {args.verdict.upper()} (assigned chair; subject to API readiness/outcome)")
     print(f"  Mode            : {'DRY RUN (No changes saved)' if args.dry_run else 'LIVE SUBMISSION'}")
     print("=" * 70)
 
@@ -445,6 +595,7 @@ def run():
     # Track unique Capstone schedules encountered across all panelists for Verdict phase
     capstone_schedules: Dict[int, Dict[str, Any]] = {}
     concept_schedule_ids = set()
+    abort_batch = False
 
     remarks_pool = [
         "Well-structured presentation and sound methodology.",
@@ -454,6 +605,8 @@ def run():
     ]
 
     for idx, actor in enumerate(actors, 1):
+        if abort_batch:
+            break
         is_external = actor['is_external']
         username = f"{actor['name']} (external invitation #{actor['id']})" if is_external else actor['username']
         reason = actor.get('unavailable_reason')
@@ -476,13 +629,16 @@ def run():
         assignment_endpoint = 'guest-assignments' if is_external else 'panelist-assignments'
         url = f"{args.base_url.rstrip('/')}/api/defense/schedules/{assignment_endpoint}/"
         try:
-            resp = session.get(url, timeout=10)
+            resp = session.get(url, timeout=10, allow_redirects=False)
             if resp.status_code != 200:
                 print(f"  [✗] Failed to fetch assignments for panelist {username} (HTTP {resp.status_code})")
                 total_failed += 1
+                abort_batch = resp.status_code in (401, 429)
                 session.close()
                 continue
             data = resp.json()
+            if not isinstance(data, dict) or not isinstance(data.get('teams'), list):
+                raise ValueError('The assignment API returned an invalid response.')
         except Exception as e:
             print(f"  [✗] Error connecting to API: {e}")
             total_failed += 1
@@ -491,36 +647,27 @@ def run():
 
         teams = data.get("teams", [])
 
-        # Filter teams locally
-        filtered_teams = []
-        for t in teams:
-            if t.get('schedule_id') not in allowed_schedules:
-                continue
-            t_team_id = t.get("id") or t.get("team_id")
-            t_scope = t.get("scope") or ("capstone" if t.get("is_capstone") else "pit")
-            t_stage = t.get("defense_stage") or ""
-            t_sess = t.get("session_id") or ""
-            t_sem = t.get("semester_id")
-
-            if args.team_id and t_team_id != args.team_id:
-                continue
-            if args.stage and str(t_stage).strip().casefold() != args.stage.strip().casefold():
-                continue
-            if args.session_id and str(t_sess) != str(args.session_id):
-                continue
-            if args.semester_id and t_sem != args.semester_id:
-                continue
-            if args.scope and str(t_scope).strip().casefold() != args.scope.strip().casefold():
-                continue
-
-            filtered_teams.append(t)
+        filtered_teams = [row for row in teams if assignment_matches(row, args, allowed_schedules)]
 
         print(f"\n[{idx}/{len(actors)}] Panelist: {username} (Matching Teams: {len(filtered_teams)})")
 
         for team_payload in filtered_teams:
+            schedule_id = team_payload.get('schedule_id')
+            if not args.dry_run and not args.verdict_only and not team_payload.get('is_posted'):
+                try:
+                    team_payload = current_assignment(session, url, schedule_id)
+                    if not assignment_matches(team_payload, args, allowed_schedules):
+                        raise ValueError('The assignment moved outside the requested cohort or event/stage.')
+                except (ValueError, requests.RequestException) as error:
+                    print(f'  [FAIL] Schedule #{schedule_id}: {error}')
+                    total_failed += 1
+                    abort_batch = isinstance(error, AssignmentError) and error.code in (401, 429)
+                    if abort_batch:
+                        break
+                    continue
             team_name = team_payload.get("name") or team_payload.get("team_name") or f"Team {team_payload.get('id')}"
             schedule_id = team_payload.get("schedule_id")
-            if team_payload.get('assessment_concepts'):
+            if requires_concept_decision(team_payload):
                 concept_schedule_ids.add(schedule_id)
             team_id = team_payload.get("id") or team_payload.get("team_id")
             is_posted = team_payload.get("is_posted", False)
@@ -541,6 +688,9 @@ def run():
                 continue
 
             if args.verdict_only:
+                if is_capstone and schedule_id:
+                    capstone_schedules[schedule_id] = {'team_name': team_name, 'team_id': team_id,
+                                                      'schedule_id': schedule_id, 'verdict': team_payload.get('verdict')}
                 continue
 
             # Check backend eligibility to avoid unwanted data or locked evaluation errors
@@ -550,58 +700,19 @@ def run():
                 total_unavailable += 1
                 continue
 
-            panel_rubric = team_payload.get("panel_rubric") or {}
-            criteria = panel_rubric.get("criteria", [])
-            target_type = panel_rubric.get("target_type", "team")
-            members = team_payload.get("members", [])
             eval_context = team_payload.get("evaluation_context")
-
-            if not criteria:
-                print(f"  [!] No rubric criteria configured for {team_name}. Skipping.")
+            if not isinstance(eval_context, str) or not eval_context:
+                print(f'  [SKIP] {team_name}: The API did not supply a current evaluation context.')
                 total_unavailable += 1
                 continue
-
-            submissions = []
             remarks = random.choice(remarks_pool)
-
-            if target_type == "team":
-                submissions.append({
-                    "student_id": None,
-                    "criteria_scores": generate_scores(criteria, min_s, max_s),
-                    "remarks": remarks,
-                })
-            elif target_type == "individual":
-                for m in members:
-                    submissions.append({
-                        "student_id": m["id"],
-                        "criteria_scores": generate_scores(criteria, min_s, max_s),
-                        "remarks": f"{remarks} ({m.get('name')})",
-                    })
-            else:  # 'both'
-                team_criteria = [c for c in criteria if c.get("target_type") == "team"]
-                ind_criteria = [c for c in criteria if c.get("target_type") == "individual"]
-                if team_criteria:
-                    submissions.append({
-                        "student_id": None,
-                        "criteria_scores": generate_scores(team_criteria, min_s, max_s),
-                        "remarks": remarks,
-                    })
-                for m in members:
-                    if ind_criteria:
-                        submissions.append({
-                            "student_id": m["id"],
-                            "criteria_scores": generate_scores(ind_criteria, min_s, max_s),
-                            "remarks": f"Individual contribution: {m.get('name')}",
-                        })
-
-            assessment_concepts = team_payload.get('assessment_concepts') or []
-            if assessment_concepts:
-                templates = submissions
-                submissions = [{**item, 'concept_key': concept['key'],
-                    'criteria_scores': generate_scores([
-                        criterion for criterion in criteria if criterion['id'] in {
-                            score['criterion_id'] for score in item['criteria_scores']}], min_s, max_s)}
-                    for concept in assessment_concepts for item in templates]
+            try:
+                submissions = build_submissions(team_payload, min_s, max_s, remarks,
+                                                include_drafts=getattr(args, 'include_drafts', False))
+            except (ValueError, TypeError, KeyError) as error:
+                print(f'  [SKIP] {team_name}: {error}')
+                total_unavailable += 1
+                continue
 
             payload = {
                 "team_id": team_id,
@@ -624,7 +735,7 @@ def run():
                 submit_endpoint = 'guest-submit-grades' if is_external else 'submit-grades'
                 submit_url = f"{args.base_url.rstrip('/')}/api/defense/schedules/{submit_endpoint}/"
                 try:
-                    s_resp = session.post(submit_url, json=payload, timeout=10)
+                    s_resp = session.post(submit_url, json=payload, timeout=10, allow_redirects=False)
                     if s_resp.status_code in (200, 201):
                         res_data = s_resp.json()
                         p_score = res_data.get("panel_score")
@@ -641,15 +752,18 @@ def run():
                     else:
                         print(f"    [FAIL] Failed to submit for {team_name} (HTTP {s_resp.status_code}): {s_resp.text}")
                         total_failed += 1
+                        abort_batch = s_resp.status_code in (401, 429)
                 except Exception as e:
                     print(f"    [FAIL] Network error submitting for {team_name}: {e}")
                     total_failed += 1
 
+            if abort_batch:
+                break
             time.sleep(args.delay)
         session.close()
 
     # Phase 2: Capstone Defense Verdict Processing
-    if not args.no_verdict and capstone_schedules:
+    if not args.no_verdict and capstone_schedules and not abort_batch:
         print("\n" + "=" * 70)
         print("  Phase 2: Capstone Defense Verdict Processing")
         print("=" * 70)
@@ -657,7 +771,7 @@ def run():
         for sched_id, sched_info in sorted(capstone_schedules.items()):
             t_name = sched_info["team_name"]
             if sched_id in concept_schedule_ids:
-                print(f'  [-] {t_name}: Concept assessments saved. The chair must select a qualifying concept and record the outcome.')
+                print(f'  [-] {t_name}: Concept hearing; the chair must review the concepts and record the outcome.')
                 total_verdicts_skipped += 1
                 continue
             existing_verdict = sched_info.get("verdict")
@@ -669,25 +783,48 @@ def run():
 
             chair_user = get_schedule_chair_username(sched_id)
             if not chair_user:
-                chair_user = get_admin_username()
-
-            if not chair_user:
-                print(f"  [!] {t_name} (Schedule #{sched_id}): No panel chair or admin found to issue verdict.")
-                total_failed += 1
+                print(f"  [VERDICT PENDING] {t_name} (Schedule #{sched_id}): Assign one active panel chair; no admin fallback is used.")
+                total_verdicts_pending += 1
                 continue
-
-            verdict_remarks = args.verdict_remarks or DEFAULT_VERDICT_REMARKS.get(
-                args.verdict, "Evaluated by panel deliberation."
-            )
+            chair_session = requests.Session()
+            try:
+                chair_token = get_jwt_token_for_user(chair_user)
+                if not chair_token:
+                    raise ValueError('Unable to authenticate the assigned chair.')
+                chair_session.headers.update({'Authorization': f'Bearer {chair_token}'})
+                current = current_assignment(chair_session,
+                    f'{args.base_url}/api/defense/schedules/panelist-assignments/', sched_id)
+                if not assignment_matches(current, args, allowed_schedules):
+                    raise ValueError('The current chair assignment moved outside the requested cohort or stage.')
+                verdict_state, detail, verdict = plan_verdict(current, args.verdict)
+            except (ValueError, requests.RequestException) as error:
+                print(f'  [VERDICT PENDING] {t_name}: {error}')
+                total_verdicts_pending += 1
+                if isinstance(error, AssignmentError) and error.code in (401, 429):
+                    total_failed += 1
+                    abort_batch = True
+                    break
+                continue
+            finally:
+                chair_session.close()
+            if verdict_state in ('existing', 'manual'):
+                print(f'  [-] {t_name}: {detail}')
+                total_verdicts_skipped += 1
+                continue
+            if verdict_state != 'ready':
+                print(f'  [VERDICT PENDING] {t_name}: {detail}')
+                total_verdicts_pending += 1
+                continue
+            verdict_remarks = args.verdict_remarks or DEFAULT_VERDICT_REMARKS.get(verdict, 'Evaluated by panel deliberation.')
 
             if args.dry_run:
-                print(f"    [DRY-RUN] Would request verdict \"{args.verdict}\" for {t_name} (Schedule #{sched_id}) as {chair_user}, once every required panel evaluation is complete.")
+                print(f"    [DRY-RUN] Would request verdict \"{verdict}\" for {t_name} (Schedule #{sched_id}) as {chair_user}.")
                 total_verdicts_issued += 1
             else:
                 res = submit_schedule_verdict(
                     base_url=args.base_url,
                     schedule_id=sched_id,
-                    verdict=args.verdict,
+                    verdict=verdict,
                     remarks=verdict_remarks,
                     revision_deadline=args.revision_deadline,
                     redefense_verification=args.redefense_verification,
@@ -695,7 +832,7 @@ def run():
                     dry_run=args.dry_run,
                 )
                 if res.get("status") == "ok":
-                    print(f"    [VERDICT OK] {t_name} (Schedule #{sched_id}): Defense verdict \"{args.verdict}\" recorded by chair {chair_user}!")
+                    print(f"    [VERDICT OK] {t_name} (Schedule #{sched_id}): Defense verdict \"{verdict}\" recorded by chair {chair_user}!")
                     total_verdicts_issued += 1
                 else:
                     detail = res.get("detail", "Unknown error")
@@ -705,6 +842,9 @@ def run():
                     else:
                         print(f"    [VERDICT SKIP] {t_name} (Schedule #{sched_id}): {detail}")
                         total_failed += 1
+                    if res.get('code') in (401, 429):
+                        abort_batch = True
+                        break
                 time.sleep(args.delay)
 
     print("\n" + "=" * 70)
@@ -720,6 +860,8 @@ def run():
         print(f"  Verdicts Pending    : {total_verdicts_pending}")
     print("=" * 70)
     if total_failed:
+        if abort_batch:
+            print('[STOPPED] Authentication/rate-limit failure; remaining submissions and verdicts were not attempted.')
         return 1
     if total_unavailable or total_verdicts_pending:
         print("[PENDING] Some assignments need attention; see the reasons above.")
@@ -733,6 +875,6 @@ def run():
 if __name__ == "__main__":
     try:
         sys.exit(run())
-    except (ValueError, requests.RequestException) as exc:
+    except (ValueError, common.UploadError, requests.RequestException) as exc:
         print(f"[FAIL] {exc}")
         sys.exit(1)

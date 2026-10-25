@@ -15,7 +15,13 @@ String rowsToTeamCsv(
   required bool isCapstoneAdmin,
 }) {
   // Row-based CSV keeps unnamed teams explicit without empty separator rows.
-  if (rows.any((row) => (row['team_name'] ?? '').toString().trim().isEmpty)) {
+  if (rows.any(
+    (row) =>
+        (row['team_name'] ?? '').toString().trim().isEmpty ||
+        (row['system_name'] ?? '').toString().isNotEmpty ||
+        (row['project_manager'] ?? '').toString().isNotEmpty ||
+        row['project_kind'] == 'module',
+  )) {
     const fields = [
       'team_name',
       'project_title',
@@ -29,6 +35,7 @@ String rowsToTeamCsv(
       'system_name',
       'project_manager',
       'group_key',
+      'project_kind',
     ];
     return [
       fields.join(','),
@@ -846,6 +853,8 @@ ParsedBulkCsvResult parseTeamBulkCsv(
     Map<String, dynamic>? currentTeam;
 
     var sourceRow = lineIndex;
+    var pendingSharedHeaders = false;
+    var moduleLayout = headers.any((h) => h == 'module' || h == 'modules');
     for (final line in lines.skip(1)) {
       sourceRow++;
 
@@ -866,6 +875,9 @@ ParsedBulkCsvResult parseTeamBulkCsv(
         }
         section = sectionHeaderMatch.group(1)!.trim();
         currentInstructor = '';
+        systemName = '';
+        projectManager = '';
+        pendingSharedHeaders = false;
         allSections.add(section);
         continue;
       }
@@ -880,23 +892,35 @@ ParsedBulkCsvResult parseTeamBulkCsv(
         }
         section = columns[1].trim();
         currentInstructor = '';
+        systemName = '';
+        projectManager = '';
+        pendingSharedHeaders = false;
         allSections.add(section);
         continue;
       }
 
       // Check for intermediate System Name or Project Manager
       if (columns.length >= 2 &&
-          (firstCol.toLowerCase() == 'system name' ||
-              firstCol.toLowerCase() == 'system_name' ||
-              firstCol.toLowerCase() == 'system')) {
+          (firstCol.toLowerCase().replaceAll(':', '') == 'system name' ||
+              firstCol.toLowerCase().replaceAll(':', '') == 'system_name' ||
+              firstCol.toLowerCase().replaceAll(':', '') == 'system')) {
+        if (currentTeam != null &&
+            (currentTeam['member_ids'] as List).isNotEmpty) {
+          parsedRows.add(currentTeam);
+          currentTeam = null;
+        }
+        if (!pendingSharedHeaders) projectManager = '';
         systemName = columns[1].trim();
+        pendingSharedHeaders = true;
         continue;
       }
       if (columns.length >= 2 &&
-          (firstCol.toLowerCase() == 'project manager' ||
-              firstCol.toLowerCase() == 'project_manager' ||
-              firstCol.toLowerCase() == 'pm')) {
+          (firstCol.toLowerCase().replaceAll(':', '') == 'project manager' ||
+              firstCol.toLowerCase().replaceAll(':', '') == 'project_manager' ||
+              firstCol.toLowerCase().replaceAll(':', '') == 'pm')) {
+        if (!pendingSharedHeaders) systemName = '';
         projectManager = columns[1].trim();
+        pendingSharedHeaders = true;
         continue;
       }
 
@@ -942,6 +966,9 @@ ParsedBulkCsvResult parseTeamBulkCsv(
           .toList();
       if (lineNormalized.contains('team name') ||
           lineNormalized.contains('team_name')) {
+        moduleLayout = lineNormalized.any(
+          (h) => h == 'module' || h == 'modules',
+        );
         if (currentTeam != null &&
             (currentTeam['member_ids'] as List).isNotEmpty) {
           parsedRows.add(currentTeam);
@@ -980,6 +1007,10 @@ ParsedBulkCsvResult parseTeamBulkCsv(
         if (section.isNotEmpty &&
             rowSection.toLowerCase() != section.toLowerCase()) {
           currentInstructor = rowInstructor;
+          if (!pendingSharedHeaders) {
+            systemName = '';
+            projectManager = '';
+          }
         }
         section = rowSection;
         allSections.add(section);
@@ -1000,6 +1031,7 @@ ParsedBulkCsvResult parseTeamBulkCsv(
         systemName = rowSys;
       }
       final effectiveSys = rowSys.isNotEmpty ? rowSys : systemName;
+      pendingSharedHeaders = false;
 
       final isSameTeam =
           currentTeam != null &&
@@ -1034,6 +1066,7 @@ ParsedBulkCsvResult parseTeamBulkCsv(
           'group_key': groupKey.isEmpty ? '$sourceKey/row$sourceRow' : groupKey,
           'team_name': teamName,
           'project_title': project,
+          if (moduleLayout) 'project_kind': 'module',
           'year_level': inferredYear,
           if (inferredYear.isNotEmpty)
             'level': inferredYear == '4th Year'
@@ -1146,6 +1179,10 @@ ParsedBulkCsvResult parseTeamBulkCsv(
             'system_name': read(index('system_name')),
           if (index('project_manager') >= 0)
             'project_manager': read(index('project_manager')),
+          if (index('project_kind') >= 0)
+            'project_kind': read(index('project_kind')),
+          if (index('import_file_key') >= 0)
+            'import_file_key': read(index('import_file_key')),
         };
       })
       .where((row) => (row['member_ids'] as List).isNotEmpty)

@@ -27,7 +27,7 @@ User = get_user_model()
 
 class PitYearIsolationTests(APITestCase):
     def setUp(self):
-        self.semester = Semester.objects.create(school_year=SchoolYear.objects.create(label='2098-2099'),
+        self.semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=SchoolYear.objects.create(label='2098-2099'),
                                                 label=Semester.FIRST, is_active=True)
         self.admin = User.objects.create_user(username='scope-admin', role='admin')
         self.first = User.objects.create_user(username='scope-first', role='faculty', is_pit_lead=True, pit_lead_year='1st Year')
@@ -70,6 +70,36 @@ class PitYearIsolationTests(APITestCase):
         self.assertEqual(self.client.get(CONFIG, {'event_name': self.event.event_name}).status_code, 403)
         self.client.force_authenticate(self.first)
         self.assertEqual([c['id'] for c in self.client.get(CONFIG).data['configs']], [self.event.pk])
+
+    def test_assigned_draft_names_are_returned_without_becoming_scheduler_choices(self):
+        Rubric.objects.filter(pk__in=[self.panel.pk, self.peer.pk]).update(status=Rubric.STATUS_DRAFT)
+        self.client.force_authenticate(self.first)
+        response = self.client.get('/api/defense/schedules/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertNotIn(self.panel.pk, [r['id'] for r in response.data['rubrics']])
+        self.assertNotIn(self.peer.pk, [r['id'] for r in response.data['peer_rubrics']])
+        event = next(c for c in response.data['pit_events'] if c['id'] == self.event.pk)
+        listed = self.client.get(CONFIG)
+        named = self.client.get(CONFIG, {'event_name': self.event.event_name})
+        self.assertEqual(listed.status_code, 200, listed.data)
+        self.assertEqual(named.status_code, 200, named.data)
+        for config in (event, listed.data['configs'][0], named.data['config']):
+            with self.subTest(config=config['id']):
+                self.assertEqual(config['panel_rubric_id'], self.panel.pk)
+                self.assertEqual(config['panel_rubric_name'], self.panel.name)
+                self.assertEqual(config['peer_rubric_id'], self.peer.pk)
+                self.assertEqual(config['peer_rubric_name'], self.peer.name)
+
+    def test_unassigned_rubric_names_are_null(self):
+        self.event.panel_rubric = None
+        self.event.peer_rubric = None
+        self.event.save(update_fields=['panel_rubric', 'peer_rubric'])
+        self.client.force_authenticate(self.first)
+        response = self.client.get(CONFIG)
+        self.assertEqual(response.status_code, 200, response.data)
+        config = response.data['configs'][0]
+        self.assertIsNone(config['panel_rubric_name'])
+        self.assertIsNone(config['peer_rubric_name'])
 
     def test_missing_assignment_fails_closed_for_list_and_named_lookup(self):
         self.client.force_authenticate(self.unassigned)
@@ -172,7 +202,7 @@ class PitYearIsolationTests(APITestCase):
 
     def test_invalid_or_wrong_semester_edit_id_never_creates_an_event(self):
         self.client.force_authenticate(self.first)
-        other_semester = Semester.objects.create(school_year=self.semester.school_year, label=Semester.SECOND)
+        other_semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=self.semester.school_year, label=Semester.SECOND)
         other = PitEventGradingConfig.objects.create(semester=other_semester,
             year_level='1st Year', event_name='Other semester event')
         for config_id in (None, 999999, 'invalid', True, 0, 1.5, 10**30, other.pk):

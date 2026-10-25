@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:defensys/l10n/app_localizations.dart';
 import 'package:defensys/navigation/app_router.dart';
@@ -76,7 +77,11 @@ class FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
       schoolYears: [
         {'id': 1, 'school_year': '2024-2025', 'is_active': true},
       ],
-      activeSemester: {'id': 1, 'school_year': '2024-2025', 'semester': '1st Semester'},
+      activeSemester: {
+        'id': 1,
+        'school_year': '2024-2025',
+        'semester': '1st Semester',
+      },
     );
   }
 
@@ -89,9 +94,7 @@ class FakeAdminDashboardNotifier extends DashboardNotifier {
 
   @override
   DashboardState build() {
-    return DashboardState(
-      data: {'active_semester': '2024-2025'},
-    );
+    return DashboardState(data: {'active_semester': '2024-2025'});
   }
 
   @override
@@ -103,9 +106,7 @@ class FakeFacultyDashboardNotifier extends DashboardNotifier {
 
   @override
   DashboardState build() {
-    return DashboardState(
-      data: {'pit_lead_year': '3rd Year'},
-    );
+    return DashboardState(data: {'pit_lead_year': '3rd Year'});
   }
 
   @override
@@ -115,10 +116,14 @@ class FakeFacultyDashboardNotifier extends DashboardNotifier {
 class FakeNotificationsNotifier extends NotificationsNotifier {
   FakeNotificationsNotifier([super.workspace = 'admin']);
   @override
-  NotificationsState build() => const NotificationsState(notifications: [], unreadCount: 0);
+  NotificationsState build() =>
+      const NotificationsState(notifications: [], unreadCount: 0);
 
   @override
-  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {}
+  Future<void> fetchNotifications({
+    bool? unreadOnly,
+    bool loadMore = false,
+  }) async {}
 }
 
 void main() {
@@ -131,84 +136,142 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final container = ProviderContainer(overrides: [
-      authProvider.overrideWith(() => FakeAuthNotifier()),
-      rubricEngineProvider.overrideWith(() => FakeRubricNotifier()),
-      dashboardProvider('faculty').overrideWith(() => FakeFacultyDashboardNotifier()),
-    ]);
+    final container = ProviderContainer(
+      overrides: [
+        authProvider.overrideWith(() => FakeAuthNotifier()),
+        rubricEngineProvider.overrideWith(() => FakeRubricNotifier()),
+        dashboardProvider(
+          'faculty',
+        ).overrideWith(() => FakeFacultyDashboardNotifier()),
+      ],
+    );
     addTearDown(container.dispose);
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: MaterialApp(home: Scaffold(body: RubricFullPageEditor(
-        rubric: {
-          'id': 1, 'name': 'Saved weights', 'scope': 'capstone',
-          'evaluation_type': 'panel', 'semester_id': 1,
-          'criteria': [for (var i = 0; i < weights.length; i++) {
-            'name': 'Criterion $i', 'weight': weights[i], 'max_score': 10,
-            'display_order': i,
-          }],
-        },
-        readOnly: readOnly,
-        onBack: () {},
-      ))),
-    ));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: RubricFullPageEditor(
+              rubric: {
+                'id': 1,
+                'name': 'Saved weights',
+                'scope': 'capstone',
+                'evaluation_type': 'panel',
+                'semester_id': 1,
+                'criteria': [
+                  for (var i = 0; i < weights.length; i++)
+                    {
+                      'name': 'Criterion $i',
+                      'weight': weights[i],
+                      'max_score': 10,
+                      'display_order': i,
+                    },
+                ],
+              },
+              readOnly: readOnly,
+              onBack: () {},
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     return container;
   }
 
-  testWidgets('incomplete totals block draft, publish and unsaved draft saves', (tester) async {
-    final container = await pumpWeightEditor(tester, [1, 1, 1, 1]);
-    final notifier = container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
-    for (final label in ['Save as Draft', 'Publish Rubric']) {
-      final button = find.text(label);
-      await tester.ensureVisible(button);
-      await tester.tap(button);
-      await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
+  testWidgets(
+    'incomplete totals block draft, publish and unsaved draft saves',
+    (tester) async {
+      final container = await pumpWeightEditor(tester, [1, 1, 1, 1]);
+      final notifier =
+          container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+      for (final label in ['Save as Draft', 'Publish Rubric']) {
+        final button = find.text(label);
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(notifier.savedPayload, isNull);
+      }
+      final saveDraft = container.read(unsavedChangesSaveDraftProvider)!;
+      expect(await saveDraft(), isFalse);
       expect(notifier.savedPayload, isNull);
-    }
-    final saveDraft = container.read(unsavedChangesSaveDraftProvider)!;
-    expect(await saveDraft(), isFalse);
-    expect(notifier.savedPayload, isNull);
-    await tester.pumpAndSettle(const Duration(seconds: 5));
-  });
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    },
+  );
 
-  testWidgets('one hundredth under 100 is visible and blocked until corrected', (tester) async {
-    final container = await pumpWeightEditor(tester, [99.99]);
-    expect(find.text('99.99% of 100%'), findsOneWidget);
-    expect(find.text('0.01% Unallocated'), findsOneWidget);
-    final saveDraft = container.read(unsavedChangesSaveDraftProvider)!;
-    expect(await saveDraft(), isFalse);
-    final weightField = find.byWidgetPredicate((widget) =>
-        widget is TextField && widget.decoration?.labelText == 'WEIGHT');
-    await tester.ensureVisible(weightField);
-    await tester.enterText(weightField, '100');
-    await tester.pumpAndSettle();
-    expect(await saveDraft(), isTrue);
-    final notifier = container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
-    expect((notifier.savedPayload!['criteria'] as List).single['weight'], 100);
-    await tester.pumpAndSettle(const Duration(seconds: 5));
-  });
+  testWidgets(
+    'one hundredth under 100 is visible and blocked until corrected',
+    (tester) async {
+      final container = await pumpWeightEditor(tester, [99.99]);
+      expect(find.text('99.99% of 100%'), findsOneWidget);
+      expect(find.text('0.01% Unallocated'), findsOneWidget);
+      final saveDraft = container.read(unsavedChangesSaveDraftProvider)!;
+      expect(await saveDraft(), isFalse);
+      final weightField = find.descendant(
+        of: find.byKey(const ValueKey('criterion-weight-0')),
+        matching: find.byType(EditableText),
+      );
+      await tester.ensureVisible(weightField);
+      await tester.enterText(weightField, '100');
+      await tester.pumpAndSettle();
+      expect(await saveDraft(), isTrue);
+      final notifier =
+          container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+      expect(
+        (notifier.savedPayload!['criteria'] as List).single['weight'],
+        100,
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    },
+  );
 
-  testWidgets('decimal percentages loaded from the API survive saving', (tester) async {
-    final container = await pumpWeightEditor(tester, ['33.33', '33.33', '33.34']);
+  testWidgets('decimal percentages loaded from the API survive saving', (
+    tester,
+  ) async {
+    final container = await pumpWeightEditor(tester, [
+      '33.33',
+      '33.33',
+      '33.34',
+    ]);
     expect(find.text('100% of 100%'), findsOneWidget);
     expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
-    final notifier = container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
-    expect((notifier.savedPayload!['criteria'] as List).map((item) => item['weight']).toList(), [33.33, 33.33, 33.34]);
+    final notifier =
+        container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+    expect(
+      (notifier.savedPayload!['criteria'] as List)
+          .map((item) => item['weight'])
+          .toList(),
+      [33.33, 33.33, 33.34],
+    );
     await tester.pumpAndSettle(const Duration(seconds: 5));
   });
 
-  testWidgets('locked rubric displays all four saved percentages as 100 total', (tester) async {
-    await pumpWeightEditor(tester, [25, 25, 25, 25], readOnly: true);
-    expect(find.text('100% of 100%'), findsOneWidget);
-    final weightFields = tester.widgetList<TextField>(find.byWidgetPredicate((widget) =>
-        widget is TextField && widget.decoration?.labelText == 'WEIGHT'));
-    expect(weightFields.map((widget) => widget.controller!.text).toList(), ['25', '25', '25', '25']);
-    expect(weightFields.every((widget) => widget.enabled == false), isTrue);
-  });
+  testWidgets(
+    'locked rubric displays all four saved percentages as 100 total',
+    (tester) async {
+      await pumpWeightEditor(tester, [25, 25, 25, 25], readOnly: true);
+      expect(find.text('100% of 100%'), findsOneWidget);
+      final weightFields = tester.widgetList<ShadInput>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is ShadInput &&
+              widget.key.toString().contains('criterion-weight-'),
+        ),
+      );
+      expect(weightFields.map((widget) => widget.controller!.text).toList(), [
+        '25',
+        '25',
+        '25',
+        '25',
+      ]);
+      expect(weightFields.every((widget) => widget.enabled == false), isTrue);
+    },
+  );
 
-  testWidgets('Clicking Create Standard Rubric opens editor without crash', (tester) async {
+  testWidgets('Clicking Create Standard Rubric opens editor without crash', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -218,9 +281,15 @@ void main() {
         authProvider.overrideWith(() => FakeAuthNotifier()),
         rubricEngineProvider.overrideWith(() => FakeRubricNotifier()),
         academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
-        dashboardProvider('admin').overrideWith(() => FakeAdminDashboardNotifier()),
-        dashboardProvider('faculty').overrideWith(() => FakeFacultyDashboardNotifier()),
-        notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
+        dashboardProvider(
+          'admin',
+        ).overrideWith(() => FakeAdminDashboardNotifier()),
+        dashboardProvider(
+          'faculty',
+        ).overrideWith(() => FakeFacultyDashboardNotifier()),
+        notificationsProvider.overrideWith2(
+          (workspace) => FakeNotificationsNotifier(workspace),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -266,9 +335,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.state(find.byType(RubricFullPageEditor)), same(editorState));
 
-    await tester.enterText(find.descendant(
-      of: find.byType(RubricFullPageEditor), matching: find.byType(TextField),
-    ).first, 'Discarded rubric name');
+    await tester.enterText(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('rubric-name')),
+            matching: find.byType(EditableText),
+          )
+          .first,
+      'Discarded rubric name',
+    );
     await tester.pumpAndSettle();
     expect(container.read(unsavedChangesProvider), isTrue);
     await tester.tap(find.text('Academic Periods').first);

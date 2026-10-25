@@ -1,7 +1,7 @@
-import 'package:defensys/theme/program_colors.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../services/auth_provider.dart';
 import '../../../../services/rubric_engine_provider.dart';
@@ -13,11 +13,15 @@ import '../../../../utils/unsaved_changes.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../widgets/defensys_admin_shell.dart';
+import 'rubric_details_fields.dart';
+import 'rubric_criterion_fields.dart';
+import 'rubric_publish_review.dart';
 
 const _kDefaultScales = [
   '5-Point Scale',
   '10-Point Scale',
   '100-Point Scale',
+  'Custom Scale',
 ];
 
 int? _asInt(dynamic value) {
@@ -85,18 +89,23 @@ class RubricFullPageEditor extends ConsumerStatefulWidget {
   final Future<void> Function()? onDelete;
 
   @override
-  ConsumerState<RubricFullPageEditor> createState() => _RubricFullPageEditorState();
+  ConsumerState<RubricFullPageEditor> createState() =>
+      _RubricFullPageEditorState();
 }
 
 class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
-  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
-  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A);
-  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
-  Color get _subtleFillColor => _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9);
+  Color get _surfaceColor =>
+      _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _borderColor =>
+      _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+  Color get _textPrimaryColor =>
+      _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A);
+  Color get _textSecondaryColor =>
+      _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
 
   late final TextEditingController _name;
+  late final TextEditingController _customMaxScore;
   late String _scope;
   late String _evaluationType;
   late String _targetType;
@@ -252,7 +261,6 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     _markDirty();
   }
 
-
   String _createSubtitle() {
     if (_scope == 'pit') {
       return 'Create a panel or peer rubric and optionally assign it to a configured PIT event.';
@@ -262,19 +270,21 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
 
   void _initFromRubric(Map<String, dynamic>? r) {
     final state = ref.read(rubricEngineProvider);
-    _scales = state.scaleOptions.isEmpty ? _kDefaultScales : state.scaleOptions;
+    _scales = {..._kDefaultScales, ...state.scaleOptions}.toList();
     _name.removeListener(_markDirty);
     _name.text = r?['name']?.toString() ?? '';
     _isCustomName = r != null && _name.text.trim().isNotEmpty;
     _scope = _resolveInitialScope(r);
-    _evaluationType = r?['evaluation_type']?.toString() ??
+    _evaluationType =
+        r?['evaluation_type']?.toString() ??
         widget.initialEvaluationType ??
         'panel';
     _targetType = r?['target_type']?.toString() ?? 'team';
     if (_evaluationType == 'peer') {
       _targetType = 'individual';
     }
-    _semesterId = _asInt(r?['semester_id']) ?? _asInt(state.activeSemester?['id']);
+    _semesterId =
+        _asInt(r?['semester_id']) ?? _asInt(state.activeSemester?['id']);
     _defenseStageId = _asInt(r?['defense_stage_id']);
     _pitEventId = _asInt(r?['pit_event_id']);
     _eventName = r?['event_name']?.toString();
@@ -282,10 +292,30 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       _disposeCriteriaList(_criteria);
     } catch (_) {}
     _criteria = _buildCriterionDrafts(r, _scales);
-    _rubricScale = r?['scale']?.toString() ??
+    _rubricScale =
+        r?['scale']?.toString() ??
         (_criteria.isNotEmpty
             ? _criteria.first.scale
             : RubricCriterionDraft.defaultScale(_scales));
+    _customMaxScore.text = (_asInt(r?['custom_max_score']) ?? 20).toString();
+    if (r != null) {
+      final pitYear =
+          ref
+              .read(dashboardProvider('faculty'))
+              .data?['pit_lead_year']
+              ?.toString() ??
+          ref.read(authProvider).user?['pit_lead_year']?.toString() ??
+          '2nd Year';
+      _isCustomName =
+          _name.text !=
+          _computeDefaultRubricName(
+            scope: _scope,
+            defenseStageId: _defenseStageId,
+            evaluationType: _evaluationType,
+            defenseStages: state.defenseStages,
+            pitYear: pitYear,
+          );
+    }
     if (_scope == 'pit' && _evaluationType == 'adviser') {
       _evaluationType = 'panel';
     }
@@ -297,6 +327,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   void initState() {
     super.initState();
     _name = TextEditingController();
+    _customMaxScore = TextEditingController();
     _initFromRubric(widget.rubric);
     _unsavedNotifier = ref.read(unsavedChangesProvider.notifier);
     _unsavedDraftNotifier = ref.read(unsavedChangesSaveDraftProvider.notifier);
@@ -307,8 +338,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         ref.read(rubricEngineProvider.notifier).fetchRubrics();
       }
       if (mounted) {
-        ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(
-            () => _save('draft', showConfirmation: false));
+        ref
+            .read(unsavedChangesSaveDraftProvider.notifier)
+            .setCallback(() => _save('draft', showConfirmation: false));
         if (!_isCustomName && _name.text.trim().isEmpty) {
           final dashboard = ref.read(dashboardProvider('faculty')).data;
           final pitYear = dashboard?['pit_lead_year']?.toString() ?? '2nd Year';
@@ -338,6 +370,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   void dispose() {
     _name.removeListener(_markDirty);
     _name.dispose();
+    _customMaxScore.dispose();
     for (final draft in _criteria) {
       draft.name.removeListener(_markDirty);
       draft.description.removeListener(_markDirty);
@@ -361,6 +394,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         _targetType = 'individual';
       }
       _rubricScale = sourceRubric['scale']?.toString() ?? _rubricScale;
+      _customMaxScore.text = (_asInt(sourceRubric['custom_max_score']) ?? 20)
+          .toString();
       _defenseStageId = null;
       _pitEventId = null;
 
@@ -372,7 +407,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
             .map((item) => RubricCriterionDraft.fromMap(item, _scales))
             .toList();
       } else {
-        _criteria = [RubricCriterionDraft(scales: _scales, scale: _rubricScale)];
+        _criteria = [
+          RubricCriterionDraft(scales: _scales, scale: _rubricScale),
+        ];
       }
       _attachCriteriaListeners();
     });
@@ -388,12 +425,14 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       context: context,
       barrierDismissible: true,
       builder: (dialogContext) {
-        return _CloneRubricDialog(
-          availableRubrics: availableRubrics,
-          onClone: (sourceRubric) {
-            _cloneFromRubric(sourceRubric);
-            Navigator.pop(dialogContext);
-          },
+        return DefensysShadcnScope(
+          child: _CloneRubricDialog(
+            availableRubrics: availableRubrics,
+            onClone: (sourceRubric) {
+              _cloneFromRubric(sourceRubric);
+              Navigator.pop(dialogContext);
+            },
+          ),
         );
       },
     );
@@ -416,180 +455,87 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       return const SizedBox.shrink();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _labeledControl(
-          'CLONE FROM EXISTING RUBRIC (OPTIONAL)',
-          InkWell(
-            onTap: () => _showCloneRubricDialog(context, availableRubrics),
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFD1D5DB)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.copy_all_rounded,
-                    color: AppColors.maroon,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Select a rubric to copy criteria...',
-                      style: TextStyle(
-                        fontFamily: DefensysUi.fontFamily,
-                        color: const Color(0xFF9CA3AF),
-                        fontSize: _bodySize,
-                      ),
-                    ),
-                  ),
-                  const Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    color: Color(0xFF9CA3AF),
-                    size: 14,
-                  ),
-                ],
-              ),
-            ),
-          ),
+    return ShadButton.outline(
+      size: ShadButtonSize.sm,
+      enabled: !state.isSaving,
+      onPressed: state.isSaving
+          ? null
+          : () => _showCloneRubricDialog(context, availableRubrics),
+      leading: const Icon(LucideIcons.copy, size: 15),
+      child: const Text('Copy from rubric'),
+    );
+  }
+
+  Widget _assignmentSelect({
+    required String label,
+    required String fieldKey,
+    required int? value,
+    required Map<int, String> names,
+    required bool enabled,
+    required ValueChanged<int?> onChanged,
+    Set<int> disabled = const {},
+    String? note,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        label,
+        style: DefensysTokens.tableCell.copyWith(
+          fontWeight: FontWeight.w600,
+          color: _textPrimaryColor,
         ),
-        const SizedBox(height: 16),
-        const Divider(height: 1, color: Color(0xFFE5E7EB)),
-        const SizedBox(height: 16),
-      ],
-    );
-  }
-
-  static const _fieldLabelSize = 10.0;
-  static const _bodySize = 13.0;
-  static const _sectionTitleSize = 16.0;
-  static const _helperSize = 11.0;
-
-  TextStyle get _staticLabelStyle => TextStyle(
-        fontFamily: DefensysUi.fontFamily,
-        fontSize: _fieldLabelSize,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 0.45,
-        color: _textSecondaryColor,
-      );
-
-  /// Outlined input with **no** Material label on the border — use [_labeledControl] for the caption above.
-  InputDecoration _outlineInputDec({String? hint}) {
-    final borderSide = BorderSide(color: _borderColor);
-    return InputDecoration(
-      hintText: hint,
-      filled: true,
-      fillColor: _subtleFillColor,
-      isDense: true,
-      hintStyle: TextStyle(
-        fontFamily: DefensysUi.fontFamily,
-        color: _isDark ? const Color(0xFF71717A) : const Color(0xFF9CA3AF),
-        fontSize: _bodySize,
       ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: borderSide,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: borderSide,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.5),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-    );
-  }
-
-  Widget _labeledControl(String label, Widget control, {String? helpText}) {
-    final helpKey = GlobalKey<TooltipState>();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          height: 24,
-          child: Row(
-            children: [
-              Expanded(child: Text(label, style: _staticLabelStyle)),
-              if (helpText != null)
-                Tooltip(
-                  key: helpKey,
-                  message: helpText,
-                  triggerMode: TooltipTriggerMode.tap,
-                  waitDuration: const Duration(milliseconds: 250),
-                  showDuration: const Duration(seconds: 8),
-                  constraints: const BoxConstraints(maxWidth: 320),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.maroonOf(context),
-                    borderRadius: BorderRadius.circular(8),
+      const SizedBox(height: 8),
+      LayoutBuilder(
+        builder: (context, constraints) => ShadSelect<int>(
+          key: ValueKey(fieldKey),
+          initialValue: value ?? 0,
+          enabled: enabled,
+          minWidth: constraints.maxWidth,
+          maxWidth: constraints.maxWidth,
+          maxHeight: 280,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          selectedOptionBuilder: (_, id) => Text(
+            names[id] ?? 'Selected assignment (unavailable)',
+            overflow: TextOverflow.ellipsis,
+            style: DefensysTokens.tableCell.copyWith(color: _textPrimaryColor),
+          ),
+          options: names.entries.map((entry) {
+            final text = Text(
+              entry.value,
+              overflow: TextOverflow.ellipsis,
+              style: DefensysTokens.tableCell.copyWith(
+                color: disabled.contains(entry.key)
+                    ? _textSecondaryColor
+                    : _textPrimaryColor,
+              ),
+            );
+            if (disabled.contains(entry.key) && entry.key != value) {
+              return Semantics(
+                enabled: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 10,
                   ),
-                  textStyle: const TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    color: Colors.white,
-                    fontSize: 12,
-                    height: 1.5,
-                  ),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 24,
-                      minHeight: 24,
-                    ),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => helpKey.currentState?.ensureTooltipVisible(),
-                    icon: Icon(
-                      Icons.help_outline_rounded,
-                      size: 16,
-                      color: DefensysTokens.maroonOf(context),
-                    ),
-                  ),
+                  child: text,
                 ),
-            ],
-          ),
+              );
+            }
+            return ShadOption<int>(value: entry.key, child: text);
+          }),
+          onChanged: (id) => onChanged(id == 0 ? null : id),
         ),
-        const SizedBox(height: 6),
-        control,
-      ],
-    );
-  }
-
-  Widget _scoringTargetControl(Widget control) {
-    const peerHelp =
-        'Each student evaluates their teammates separately. Each teammate receives an individual score, so Peer rubrics always use Individual. This setting cannot be changed.';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _labeledControl(
-          'SCORING TARGET',
-          control,
-          helpText: _evaluationType == 'peer'
-              ? peerHelp
-              : 'Team gives all members the same score. Individual grades each student separately. Both allows team criteria and individual criteria in the same rubric.',
+      ),
+      if (note != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          note,
+          style: DefensysTokens.caption.copyWith(color: _textSecondaryColor),
         ),
-        if (_evaluationType == 'peer') ...[
-          const SizedBox(height: 6),
-          Text(
-            'Peer evaluations always grade each student individually.',
-            style: TextStyle(
-              fontFamily: DefensysUi.fontFamily,
-              fontSize: _helperSize,
-              fontWeight: FontWeight.w600,
-              color: DefensysTokens.maroonOf(context),
-            ),
-          ),
-        ],
       ],
-    );
-  }
+    ],
+  );
 
   Widget _pitEventControl(RubricEngineState state, {required bool canEdit}) {
     final events = state.pitEvents
@@ -605,66 +551,163 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     final selected = events
         .where((event) => _asInt(event['id']) == _pitEventId)
         .firstOrNull;
-    final slot = '${_evaluationType}_rubric_id';
-    final existingRubricId = _asInt(selected?[slot]);
-    final replacesRubric =
-        existingRubricId != null &&
-        existingRubricId != _asInt(widget.rubric?['id']);
+    final current = _asInt(selected?['${_evaluationType}_rubric_id']);
+    final replacing =
+        current != null && current != _asInt(widget.rubric?['id']);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _labeledControl(
-          'ASSIGN TO PIT EVENT (OPTIONAL)',
-          DropdownButtonFormField<int?>(
-            key: ValueKey('pit-event-$_semesterId-$_pitEventId'),
-            initialValue: _pitEventId,
-            isExpanded: true,
-            style: _dropdownFieldStyle,
-            decoration: _outlineInputDec(),
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text('None / Keep as an unassigned template'),
-              ),
-              ...events.map((event) {
-                final id = _asInt(event['id']);
-                final locked = event['is_locked'] == true;
-                return DropdownMenuItem<int?>(
-                  value: id,
-                  enabled: !locked || id == _pitEventId,
-                  child: Text(
-                    '${event['event_name']}${locked ? ' (Locked)' : ''}',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                );
-              }),
-            ],
-            onChanged: canEdit
-                ? (value) {
-                    setState(() => _pitEventId = value);
-                    _markDirty();
-                  }
-                : null,
-          ),
-          helpText:
-              'Choose an event already created in PIT Events Setup for this semester. Saving assigns this rubric to its panel or peer slot. Events that have started or are complete are locked.',
-        ),
-        const SizedBox(height: 6),
-        Text(
-          replacesRubric
-              ? 'Saving will replace the selected event\'s current ${_evaluationType == 'peer' ? 'peer' : 'panel'} rubric.'
-              : events.isEmpty
+        _assignmentSelect(
+          label: 'PIT event (optional)',
+          fieldKey: 'pit-event-$_semesterId-$_pitEventId',
+          value: _pitEventId,
+          names: {
+            0: 'Unassigned template',
+            for (final event in events)
+              if (_asInt(event['id']) case final int id)
+                id: '${event['event_name']}${event['is_locked'] == true ? ' (Locked)' : ''}',
+          },
+          disabled: {
+            for (final event in events)
+              if (event['is_locked'] == true && _asInt(event['id']) != null)
+                _asInt(event['id'])!,
+          },
+          enabled: canEdit,
+          onChanged: (value) {
+            setState(() => _pitEventId = value);
+            _markDirty();
+          },
+          note: events.isEmpty
               ? 'No configured PIT events for this semester. Create one in PIT Events Setup, or save this rubric as a template.'
-              : 'Choose a configured event, or leave this rubric unassigned for later.',
-          style: TextStyle(
-            fontFamily: DefensysUi.fontFamily,
-            fontSize: _helperSize,
-            color: replacesRubric
-                ? DefensysTokens.maroonOf(context)
-                : _textSecondaryColor,
-          ),
+              : 'Choose an event or keep this rubric as an unassigned template.',
         ),
+        if (replacing) ...[
+          const SizedBox(height: 8),
+          Text(
+            "Saving will replace the selected event's current ${_evaluationType == 'peer' ? 'peer' : 'panel'} rubric.",
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.maroonTextOf(context),
+            ),
+          ),
+        ],
       ],
+    );
+  }
+
+  String _semesterLabel(RubricEngineState state) {
+    final semester =
+        state.semesters
+            .where((item) => _asInt(item['id']) == _semesterId)
+            .firstOrNull ??
+        (_asInt(state.activeSemester?['id']) == _semesterId
+            ? state.activeSemester
+            : null);
+    final display =
+        semester?['display_name']?.toString() ??
+        widget.rubric?['display_semester']?.toString();
+    final term =
+        semester?['semester']?.toString() ??
+        semester?['label']?.toString() ??
+        'Semester';
+    final year =
+        semester?['school_year']?.toString() ??
+        widget.rubric?['school_year']?.toString();
+    return _semesterId == null
+        ? 'No active semester'
+        : (display != null && display.isNotEmpty
+              ? display
+              : '$term${year == null ? '' : ', A.Y. $year'}');
+  }
+
+  Widget _detailsFields(RubricEngineState state, String pitYear, bool canEdit) {
+    void syncName() => _syncDefaultRubricNameIfAuto(
+      defenseStages: state.defenseStages,
+      pitYear: pitYear,
+    );
+    final assignment = _scope == 'pit'
+        ? _pitEventControl(state, canEdit: canEdit)
+        : _assignmentSelect(
+            label: 'Defense stage (optional)',
+            fieldKey: 'stage-$_defenseStageId',
+            value: _defenseStageId,
+            names: {
+              0: 'Unassigned template',
+              for (final stage in state.defenseStages)
+                if (_asInt(stage['id']) case final int id)
+                  id: stage['label']?.toString() ?? 'Stage $id',
+              if (_defenseStageId != null &&
+                  !state.defenseStages.any(
+                    (stage) => _asInt(stage['id']) == _defenseStageId,
+                  ))
+                _defenseStageId!:
+                    widget.rubric?['defense_stage_label']?.toString() ??
+                    'Assigned stage (unavailable)',
+            },
+            enabled: canEdit,
+            onChanged: (value) {
+              setState(() {
+                _defenseStageId = value;
+                syncName();
+              });
+              _markDirty();
+            },
+            note: _defenseStageId == null
+                ? 'Choose a stage or keep this rubric as an unassigned template.'
+                : 'Saving will automatically assign this rubric to the selected defense stage.',
+          );
+    return RubricDetailsFields(
+      semesterLabel: _semesterLabel(state),
+      semesterActive:
+          _semesterId != null &&
+          _semesterId == _asInt(state.activeSemester?['id']),
+      hasSemester: _semesterId != null,
+      nameController: _name,
+      customName: _isCustomName,
+      enabled: canEdit,
+      onNameChanged: (_) {
+        setState(() => _isCustomName = true);
+        _markDirty();
+      },
+      onResetName: () {
+        setState(() {
+          _isCustomName = false;
+          syncName();
+        });
+        _markDirty();
+      },
+      isPit: _scope == 'pit',
+      evaluationType: _evaluationType,
+      onEvaluationChanged: (value) {
+        setState(() {
+          _evaluationType = value;
+          if (value == 'peer') {
+            _targetType = 'individual';
+            for (final criterion in _criteria) {
+              criterion.targetType = 'individual';
+            }
+          }
+          syncName();
+        });
+        _markDirty();
+      },
+      scale: _rubricScale,
+      scales: _scales,
+      customPoints: _customMaxScore,
+      onScaleChanged: _onRubricScaleChanged,
+      onCustomPointsChanged: _onCustomMaxScoreChanged,
+      target: _targetType,
+      onTargetChanged: (value) {
+        setState(() {
+          _targetType = value;
+          if (value != 'both') {
+            for (final criterion in _criteria) {
+              criterion.targetType = value;
+            }
+          }
+        });
+        _markDirty();
+      },
+      assignment: assignment,
     );
   }
 
@@ -672,186 +715,98 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     required IconData icon,
     required String title,
     required Widget child,
-    Color? iconColor,
     Widget? trailing,
-  }) {
-    final effectiveIconColor = iconColor ?? DefensysTokens.maroonOf(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: effectiveIconColor, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
+  }) => LayoutBuilder(
+    builder: (context, constraints) => ShadCard(
+      padding: EdgeInsets.all(constraints.maxWidth < 600 ? 16 : 24),
+      backgroundColor: _surfaceColor,
+      radius: BorderRadius.circular(12),
+      shadows: const [],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 16,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 18, color: _textSecondaryColor),
+                  const SizedBox(width: 10),
+                  Text(
                     title,
-                    style: TextStyle(
-                      fontFamily: DefensysUi.fontFamily,
-                      fontSize: _sectionTitleSize,
-                      fontWeight: FontWeight.w900,
-                      color: _isDark ? DefensysTokens.maroonLight : AppColors.maroon,
+                    style: DefensysTokens.sectionTitle.copyWith(
+                      color: _textPrimaryColor,
                     ),
                   ),
-                ),
-                if (trailing != null) trailing,
-              ],
-            ),
-            const SizedBox(height: 18),
-            child,
-          ],
-        ),
+                ],
+              ),
+              if (trailing != null) trailing,
+            ],
+          ),
+          const SizedBox(height: 24),
+          child,
+        ],
       ),
-    );
-  }
+    ),
+  );
 
   Widget _buildScopeHeaderWidget({
     required bool canSwitchScope,
     required RubricEngineState state,
     required String pitYear,
   }) {
-    if (canSwitchScope) {
-      return Container(
-        decoration: BoxDecoration(
-          color: _subtleFillColor,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _borderColor),
-        ),
-        padding: const EdgeInsets.all(3),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildScopeToggleSegment('capstone', 'Capstone', state, pitYear),
-            _buildScopeToggleSegment('pit', 'PIT', state, pitYear),
-          ],
-        ),
+    if (!canSwitchScope) {
+      return ShadBadge.secondary(
+        child: Text(_scope == 'pit' ? 'PIT Program' : 'Capstone Program'),
       );
     }
-    final isPit = _scope == 'pit';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: _subtleFillColor,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isPit ? Icons.layers_outlined : Icons.account_balance_outlined,
-            size: 13,
-            color: _textSecondaryColor,
-          ),
-          const SizedBox(width: 5),
-          Text(
-            isPit ? 'PIT Program' : 'Capstone Program',
-            style: TextStyle(
-              fontFamily: DefensysUi.fontFamily,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.2,
-              color: _textPrimaryColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScopeToggleSegment(
-    String val,
-    String label,
-    RubricEngineState state,
-    String pitYear,
-  ) {
-    final active = _scope == val;
-    if (active) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: _surfaceColor,
-          borderRadius: BorderRadius.circular(6),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: DefensysUi.fontFamily,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: DefensysTokens.maroonOf(context),
-          ),
-        ),
-      );
-    }
-    return InkWell(
-      onTap: () {
-        _onScopeChanged(
-          val,
-          defenseStages: state.defenseStages,
-          pitYear: pitYear,
-        );
+    return ShadRadioGroup<String>(
+      initialValue: _scope,
+      axis: Axis.horizontal,
+      spacing: 16,
+      onChanged: (value) {
+        if (value != null && value != _scope) {
+          _onScopeChanged(
+            value,
+            defenseStages: state.defenseStages,
+            pitYear: pitYear,
+          );
+        }
       },
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: DefensysUi.fontFamily,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: _textSecondaryColor,
-          ),
-        ),
-      ),
+      items: const [
+        ShadRadio(value: 'capstone', label: Text('Capstone')),
+        ShadRadio(value: 'pit', label: Text('PIT')),
+      ],
     );
-  }
-
-  TextStyle get _dropdownFieldStyle => TextStyle(
-        fontFamily: DefensysUi.fontFamily,
-        fontSize: _bodySize,
-        color: _textPrimaryColor,
-      );
-
-  String _scaleDisplayLabel(String scale) {
-    return switch (scale) {
-      '5-Point Scale' => '5-Point Scale (1 - 5)',
-      '10-Point Scale' => '10-Point Scale (1 - 10)',
-      '100-Point Scale' => '100-Point Scale (Percentage)',
-      _ => scale,
-    };
   }
 
   void _onRubricScaleChanged(String newScale) {
     setState(() {
       _rubricScale = newScale;
-      final max = _defaultMaxForScale(newScale);
+      final max = _rubricMaxScore;
       for (final c in _criteria) {
         c.scale = newScale;
         c.maxScore.text = max.toString();
+      }
+    });
+    _markDirty();
+  }
+
+  int get _rubricMaxScore => _rubricScale == 'Custom Scale'
+      ? int.tryParse(_customMaxScore.text.trim()) ?? 20
+      : _defaultMaxForScale(_rubricScale);
+
+  void _onCustomMaxScoreChanged(String value) {
+    final maximum = int.tryParse(value.trim());
+    setState(() {
+      if (maximum != null && maximum >= 1 && maximum <= 32767) {
+        for (final criterion in _criteria) {
+          criterion.maxScore.text = maximum.toString();
+        }
       }
     });
     _markDirty();
@@ -913,116 +868,72 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     }
   }
 
-  Widget _buildWeightAssistantBar() {
+  Widget _buildWeightAssistantBar({required bool enabled}) {
     final total = _totalCriteriaWeight;
     final count = _criteria.length;
-    final isOver = total > 100.000001;
-    final isUnder = total < 99.999999;
-
-    final progressRatio = (total / 100.0).clamp(0.0, 1.0);
-    Color statusColor = const Color(0xFF16A34A);
-    Color statusBg = _isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5);
-    Color statusBorder = _isDark ? const Color(0xFF047857) : const Color(0xFFA7F3D0);
-    String statusText = '100% Balanced ✓';
-
-    if (isOver) {
-      statusColor = const Color(0xFFDC2626);
-      statusBg = _isDark ? const Color(0xFF450A0A) : const Color(0xFFFEF2F2);
-      statusBorder = _isDark ? const Color(0xFF991B1B) : const Color(0xFFFECACA);
-      final overAmt = (total - 100).toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
-      statusText = 'Exceeds 100% by $overAmt%';
-    } else if (isUnder) {
-      statusColor = const Color(0xFFD97706);
-      statusBg = _isDark ? const Color(0xFF451A03) : const Color(0xFFFFFBEB);
-      statusBorder = _isDark ? const Color(0xFF92400E) : const Color(0xFFFDE68A);
-      final remAmt = (100 - total).toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
-      statusText = '$remAmt% Unallocated';
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _subtleFillColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _borderColor),
-      ),
+    final over = total > 100.000001;
+    final under = total < 99.999999;
+    String percentage(num value) =>
+        value.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+    final color = over
+        ? DefensysTokens.maroonTextOf(context)
+        : under
+        ? (_isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E))
+        : (_isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857));
+    final status = over
+        ? 'Exceeds 100% by ${percentage(total - 100)}%'
+        : under
+        ? '${percentage(100 - total)}% Unallocated'
+        : '100% Balanced';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 16,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Icon(Icons.balance_rounded, size: 18, color: DefensysTokens.maroonOf(context)),
-              const SizedBox(width: 8),
-              Text(
-                'Weight Allocation: ',
-                style: TextStyle(
-                  fontFamily: DefensysUi.fontFamily,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12.5,
-                  color: _textPrimaryColor,
-                ),
-              ),
-              Text(
-                '${total.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')}% of 100%',
-                style: TextStyle(
-                  fontFamily: DefensysUi.fontFamily,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                  color: statusColor,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                decoration: BoxDecoration(
-                  color: statusBg,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: statusBorder),
-                ),
-                child: Text(
-                  statusText,
-                  style: TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: statusColor,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              if (!widget.readOnly && count > 0)
-                OutlinedButton(
-                  onPressed: _distributeWeightsEvenly,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _textPrimaryColor,
-                    side: BorderSide(color: _borderColor),
-                    backgroundColor: _surfaceColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    visualDensity: VisualDensity.compact,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  ),
-                  child: Text(
-                    'Distribute Evenly (${(100.0 / count).toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '')}% each)',
-                    style: TextStyle(
-                      fontFamily: DefensysUi.fontFamily,
-                      fontSize: 11.5,
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    '${percentage(total)}% of 100%',
+                    style: DefensysTokens.body.copyWith(
                       fontWeight: FontWeight.w600,
                       color: _textPrimaryColor,
                     ),
                   ),
+                  ShadBadge.outline(
+                    child: Text(
+                      status,
+                      style: DefensysTokens.caption.copyWith(color: color),
+                    ),
+                  ),
+                ],
+              ),
+              if (!widget.readOnly && count > 0)
+                ShadButton.outline(
+                  size: ShadButtonSize.sm,
+                  enabled: enabled,
+                  onPressed: enabled ? _distributeWeightsEvenly : null,
+                  leading: const Icon(LucideIcons.equal, size: 15),
+                  child: const Text('Distribute evenly'),
                 ),
             ],
           ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progressRatio,
-              minHeight: 5,
-              backgroundColor: _borderColor,
-              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
-            ),
+          const SizedBox(height: 12),
+          ShadProgress(
+            value: (total / 100).clamp(0.0, 1.0),
+            minHeight: 4,
+            color: color,
+            backgroundColor: _borderColor,
+            semanticsLabel: 'Criterion weight allocation',
+            semanticsValue: '${percentage(total)} percent',
           ),
         ],
       ),
@@ -1035,308 +946,40 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     required bool enabled,
     required VoidCallback? onRemove,
     required VoidCallback onChanged,
-  }) {
-    final isBoth = _targetType == 'both';
-    final isTeam = draft.targetType == 'team';
-    final maxPts = _defaultMaxForScale(_rubricScale);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '#${index + 1}',
-                  style: TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12.5,
-                    color: DefensysTokens.maroonOf(context),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: draft.name,
-                  enabled: enabled,
-                  onChanged: enabled ? (_) => onChanged() : null,
-                  style: TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: _textPrimaryColor,
-                  ),
-                  decoration: _outlineInputDec(
-                    hint: 'Criterion Title (e.g. Technical Implementation)',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 105,
-                child: TextField(
-                  controller: draft.weight,
-                  enabled: enabled,
-                  onChanged: enabled ? (_) => onChanged() : null,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  style: TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _textPrimaryColor,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'WEIGHT',
-                    suffixText: '%',
-                    suffixStyle: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: DefensysTokens.maroonOf(context),
-                    ),
-                    filled: true,
-                    fillColor: _subtleFillColor,
-                    isDense: true,
-                    labelStyle: TextStyle(
-                      fontFamily: DefensysUi.fontFamily,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                      color: _textSecondaryColor,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: _borderColor),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: _borderColor),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: DefensysTokens.maroonOf(context),
-                        width: 1.5,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Tooltip(
-                message: 'Move up',
-                child: IconButton(
-                  onPressed: enabled && index > 0 ? () => _moveCriterionUp(index) : null,
-                  icon: const Icon(Icons.arrow_upward_rounded, size: 18),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-                  color: _textSecondaryColor,
-                ),
-              ),
-              Tooltip(
-                message: 'Move down',
-                child: IconButton(
-                  onPressed: enabled && index < _criteria.length - 1
-                      ? () => _moveCriterionDown(index)
-                      : null,
-                  icon: const Icon(Icons.arrow_downward_rounded, size: 18),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-                  color: _textSecondaryColor,
-                ),
-              ),
-              if (onRemove != null) ...[
-                const SizedBox(width: 4),
-                Tooltip(
-                  message: 'Remove criterion',
-                  child: IconButton(
-                    onPressed: onRemove,
-                    icon: Icon(
-                      Icons.delete_outline_rounded,
-                      size: 19,
-                      color: AppColors.danger.withValues(alpha: 0.85),
-                    ),
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _borderColor),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.assessment_outlined, size: 13, color: _textSecondaryColor),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Scale: $_rubricScale (Max $maxPts pts)',
-                      style: TextStyle(
-                        fontFamily: DefensysUi.fontFamily,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: _textSecondaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (isBoth) ...[
-                const SizedBox(width: 10),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Target: ',
-                      style: TextStyle(
-                        fontFamily: DefensysUi.fontFamily,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: _textSecondaryColor,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    InkWell(
-                      onTap: enabled
-                          ? () {
-                              setState(() => draft.targetType = 'team');
-                              _markDirty();
-                            }
-                          : null,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isTeam
-                              ? DefensysTokens.maroonOf(context).withValues(alpha: 0.12)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: isTeam
-                                ? DefensysTokens.maroonOf(context)
-                                : _borderColor,
-                            width: isTeam ? 1.2 : 1,
-                          ),
-                        ),
-                        child: Text(
-                          '👥 Team',
-                          style: TextStyle(
-                            fontFamily: DefensysUi.fontFamily,
-                            fontSize: 11,
-                            fontWeight: isTeam ? FontWeight.w800 : FontWeight.w500,
-                            color: isTeam
-                                ? DefensysTokens.maroonOf(context)
-                                : _textSecondaryColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    InkWell(
-                      onTap: enabled
-                          ? () {
-                              setState(() => draft.targetType = 'individual');
-                              _markDirty();
-                            }
-                          : null,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: !isTeam
-                              ? const Color(0xFFEFF6FF)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: !isTeam
-                                ? const Color(0xFF2563EB)
-                                : _borderColor,
-                            width: !isTeam ? 1.2 : 1,
-                          ),
-                        ),
-                        child: Text(
-                          '👤 Individual',
-                          style: TextStyle(
-                            fontFamily: DefensysUi.fontFamily,
-                            fontSize: 11,
-                            fontWeight: !isTeam ? FontWeight.w800 : FontWeight.w500,
-                            color: !isTeam
-                                ? const Color(0xFF1D4ED8)
-                                : _textSecondaryColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: draft.description,
-            enabled: enabled,
-            onChanged: enabled ? (_) => onChanged() : null,
-            minLines: 2,
-            maxLines: 4,
-            style: TextStyle(
-              fontFamily: DefensysUi.fontFamily,
-              fontSize: 12.5,
-              color: _textPrimaryColor,
-              height: 1.4,
-            ),
-            decoration: _outlineInputDec(
-              hint: 'Evaluation Guidelines & Description: Explain the expectations and benchmarks for full vs. partial credit...',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  }) => RubricCriterionFields(
+    key: ObjectKey(draft),
+    index: index,
+    name: draft.name,
+    weight: draft.weight,
+    description: draft.description,
+    maximum: _rubricMaxScore,
+    enabled: enabled,
+    showTarget: _targetType == 'both',
+    target: draft.targetType,
+    onTargetChanged: (value) {
+      setState(() => draft.targetType = value);
+      _markDirty();
+    },
+    onChanged: onChanged,
+    onMoveUp: index > 0 ? () => _moveCriterionUp(index) : null,
+    onMoveDown: index < _criteria.length - 1
+        ? () => _moveCriterionDown(index)
+        : null,
+    onRemove: onRemove,
+  );
 
   String? _validationMessage() {
     if (_name.text.trim().isEmpty) {
       return 'Enter a rubric name.';
     }
     if (_semesterId == null) {
-      return 'Select a semester.';
+      return 'Configure an active semester in Academic Periods before creating a rubric.';
+    }
+    if (_rubricScale == 'Custom Scale') {
+      final maximum = int.tryParse(_customMaxScore.text.trim());
+      if (maximum == null || maximum < 1 || maximum > 32767) {
+        return 'Enter a whole number from 1 to 32767 for the custom scale.';
+      }
     }
     if (_criteria.isEmpty) {
       return 'Add at least one criterion.';
@@ -1387,120 +1030,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       return false;
     }
 
-    String title = '';
-    String confirmLabel = '';
-
-    if (status == 'published') {
-      title = 'Publish Rubric?';
-      confirmLabel = 'Publish';
-    } else {
-      title = 'Save Rubric Draft?';
-      confirmLabel = 'Save Draft';
-    }
-
     if (showConfirmation && !mounted) return false;
 
-    final selectedEvent = ref
-        .read(rubricEngineProvider)
-        .pitEvents
-        .where((event) => _asInt(event['id']) == _pitEventId)
-        .firstOrNull;
-    final assignedRubricId = _asInt(
-      selectedEvent?['${_evaluationType}_rubric_id'],
-    );
-    final assignmentSummary = _scope == 'pit' && _pitEventId != null
-        ? 'This will assign the rubric to ${selectedEvent?['event_name'] ?? _eventName ?? 'the selected PIT event'} for ${_evaluationType == 'peer' ? 'peer' : 'panel'} evaluation.'
-              '${assignedRubricId != null && assignedRubricId != _asInt(widget.rubric?['id']) ? ' The current rubric in that slot will be replaced.' : ''}'
-        : '';
-
-    if (showConfirmation) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) {
-          return AlertDialog(
-            surfaceTintColor: Colors.transparent,
-            backgroundColor: _surfaceColor,
-            title: Text(
-              title,
-              style: TextStyle(
-                fontFamily: DefensysUi.fontFamily,
-                fontWeight: FontWeight.bold,
-                fontSize: 16.5,
-                color: _textPrimaryColor,
-              ),
-            ),
-            content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 550),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    status == 'published'
-                        ? 'Are you sure you want to publish this rubric? Published rubrics can be assigned to defense stages and PIT events. You can continue editing criteria until defenses are scheduled or evaluations begin.'
-                        : 'Are you sure you want to save this rubric draft?',
-                    style: TextStyle(
-                      fontFamily: DefensysUi.fontFamily,
-                      fontSize: 13.5,
-                      color: _textSecondaryColor,
-                      height: 1.4,
-                    ),
-                  ),
-                  if (assignmentSummary.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      assignmentSummary,
-                      style: TextStyle(
-                        fontFamily: DefensysUi.fontFamily,
-                        fontSize: 13.5,
-                        color: DefensysTokens.maroonOf(context),
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    color: _textSecondaryColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: DefensysTokens.maroonOf(context),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                ),
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(
-                  confirmLabel,
-                  style: const TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (confirmed != true) return false;
-    }
-
+    // Keep the reviewed values identical to the eventual save request.
     final payload = {
       'name': _name.text.trim(),
       'scope': _scope,
@@ -1511,9 +1043,90 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       'evaluation_type': _evaluationType,
       'target_type': _targetType,
       'scale': _rubricScale,
+      'custom_max_score': _rubricScale == 'Custom Scale'
+          ? _rubricMaxScore
+          : null,
       'status': status,
       'criteria': _criteria.map((d) => d.toPayload()).toList(),
     };
+    final state = ref.read(rubricEngineProvider);
+    final selectedEvent = state.pitEvents
+        .where((event) => _asInt(event['id']) == _pitEventId)
+        .firstOrNull;
+    final selectedStage = state.defenseStages
+        .where((stage) => _asInt(stage['id']) == _defenseStageId)
+        .firstOrNull;
+    final assignmentLabel = _scope == 'pit'
+        ? (_pitEventId == null
+              ? 'Unassigned template'
+              : selectedEvent?['event_name']?.toString() ??
+                    _eventName ??
+                    'Assigned PIT event (unavailable)')
+        : (_defenseStageId == null
+              ? 'Unassigned template'
+              : selectedStage?['label']?.toString() ??
+                    widget.rubric?['defense_stage_label']?.toString() ??
+                    'Assigned stage (unavailable)');
+    final assignedRubricId = _asInt(
+      selectedEvent?['${_evaluationType}_rubric_id'],
+    );
+    final assignmentSummary = _scope == 'pit' && _pitEventId != null
+        ? 'This will assign the rubric to $assignmentLabel for ${_evaluationType == 'peer' ? 'peer' : 'panel'} evaluation.'
+              '${assignedRubricId != null && assignedRubricId != _asInt(widget.rubric?['id']) ? ' The current rubric in that slot will be replaced.' : ''}'
+        : _scope == 'capstone' && _defenseStageId != null
+        ? 'This will assign the rubric to $assignmentLabel for $_evaluationType evaluation.'
+        : '';
+
+    if (showConfirmation) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => DefensysShadcnScope(
+          child: status == 'published'
+              ? RubricPublishReview(
+                  payload: payload,
+                  semesterLabel: _semesterLabel(state),
+                  assignmentLabel: assignmentLabel,
+                  assignmentNotice: assignmentSummary.isNotEmpty
+                      ? assignmentSummary
+                      : 'This rubric will be published as an unassigned template. '
+                            'You can assign it to ${_scope == 'pit' ? 'a PIT event' : 'a defense stage'} later.',
+                )
+              : ShadDialog(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  title: const Text('Save Rubric Draft?'),
+                  description: const Text(
+                    'Save this rubric as a draft to continue editing later.',
+                  ),
+                  actions: [
+                    ShadButton.outline(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('Cancel'),
+                    ),
+                    ShadButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      backgroundColor: DefensysTokens.maroonOf(context),
+                      foregroundColor: Colors.white,
+                      child: const Text('Save Draft'),
+                    ),
+                  ],
+                  child: assignmentSummary.isEmpty
+                      ? null
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: Text(
+                            assignmentSummary,
+                            style: DefensysTokens.body.copyWith(
+                              color: _textPrimaryColor,
+                            ),
+                          ),
+                        ),
+                ),
+        ),
+      );
+
+      if (confirmed != true) return false;
+    }
 
     final notifier = ref.read(rubricEngineProvider.notifier);
     final ok = _editing
@@ -1547,7 +1160,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }
 
   Widget _softLockedBanner() {
-    final assignedContext = widget.rubric?['assigned_context_name']?.toString() ?? 'a defense stage';
+    final assignedContext =
+        widget.rubric?['assigned_context_name']?.toString() ??
+        'a defense stage';
     final scope = widget.rubric?['scope']?.toString() ?? _scope;
     final contextType = scope == 'pit' ? 'PIT Event' : 'Defense Stage';
 
@@ -1608,10 +1223,14 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     } else if (hasEvaluations) {
       bannerText =
           'This rubric is locked because evaluations/grades have already been submitted using these criteria.';
-    } else if (hasSchedule && assignedContext != null && assignedContext.isNotEmpty) {
+    } else if (hasSchedule &&
+        assignedContext != null &&
+        assignedContext.isNotEmpty) {
       bannerText =
           'This rubric is locked because active defense sessions are currently scheduled for "$assignedContext".';
-    } else if (isStageCompleted && assignedContext != null && assignedContext.isNotEmpty) {
+    } else if (isStageCompleted &&
+        assignedContext != null &&
+        assignedContext.isNotEmpty) {
       bannerText =
           'This rubric is assigned to Defense Stage "$assignedContext" (Completed). Criteria and deletion are locked.';
     }
@@ -1622,7 +1241,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       decoration: BoxDecoration(
         color: _isDark ? const Color(0xFF2E2214) : DefensysUi.warningBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _isDark ? const Color(0xFF78350F) : DefensysUi.warningBorder),
+        border: Border.all(
+          color: _isDark ? const Color(0xFF78350F) : DefensysUi.warningBorder,
+        ),
       ),
       child: Row(
         children: [
@@ -1637,7 +1258,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
               bannerText,
               style: TextStyle(
                 fontFamily: DefensysUi.fontFamily,
-                color: _isDark ? const Color(0xFFFDE68A) : DefensysUi.warningText,
+                color: _isDark
+                    ? const Color(0xFFFDE68A)
+                    : DefensysUi.warningText,
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
               ),
@@ -1658,73 +1281,53 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     final isCapstoneOnlyManager = _isCapstoneOnlyManager(user);
     final saving = state.isSaving || _checking;
     final canEdit = !widget.readOnly && !saving;
-    final canSwitchScope = canEdit &&
+    final canSwitchScope =
+        canEdit &&
         !_editing &&
         !isPitLeadOnly &&
         !isCapstoneOnlyManager &&
         state.scopes.length > 1;
 
     final activeSem = state.activeSemester;
-    final activeYear = activeSem?['school_year']?.toString();
     final activeSemId = _asInt(activeSem?['id']);
     if (_semesterId == null && activeSemId != null && widget.rubric == null) {
       _semesterId = activeSemId;
     }
 
-    final filteredSemesters = state.semesters.where((semester) {
-      final semId = _asInt(semester['id']);
-      final semYear = semester['school_year']?.toString();
-
-      // Always include the currently selected semester to avoid dropdown validation crash.
-      if (semId == _semesterId) {
-        return true;
-      }
-
-      // Limit dropdown to semesters of the active semester's school year.
-      if (activeYear != null) {
-        return semYear == activeYear;
-      }
-
-      return true;
-    }).toList();
-
-    final evalItems = [
-      DropdownMenuItem(
-        value: 'panel',
-        child: Text(
-          'Panel',
-          style: TextStyle(
-            fontFamily: DefensysUi.fontFamily,
-            fontSize: _bodySize,
-            color: DefensysUi.textDark,
+    final actions = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (widget.rubric?['id'] != null)
+          ReportExportMenu(
+            reportId: 'rubric-details',
+            params: {
+              'rubric_id': widget.rubric!['id'].toString(),
+              'scope': widget.rubric!['scope'].toString(),
+              'term_context': '',
+              'search': '',
+              'status': '',
+              'evaluation_type': '',
+            },
           ),
+        ShadButton.outline(
+          enabled: !saving,
+          onPressed: saving ? null : _handleBack,
+          leading: const Icon(LucideIcons.arrowLeft, size: 16),
+          child: const Text('Back to rubrics'),
         ),
-      ),
-      if (_scope != 'pit')
-        DropdownMenuItem(
-          value: 'adviser',
-          child: Text(
-            'Adviser',
-            style: TextStyle(
-              fontFamily: DefensysUi.fontFamily,
-              fontSize: _bodySize,
-              color: DefensysUi.textDark,
-            ),
-          ),
-        ),
-      DropdownMenuItem(
-        value: 'peer',
-        child: Text(
-          'Peer',
-          style: TextStyle(
-            fontFamily: DefensysUi.fontFamily,
-            fontSize: _bodySize,
-            color: DefensysUi.textDark,
-          ),
-        ),
-      ),
-    ];
-
+      ],
+    );
+    final header = DefensysPageHeader(
+      title: widget.readOnly
+          ? 'View Rubric'
+          : (_editing ? 'Edit Rubric' : 'Create Rubric'),
+      subtitle: widget.readOnly
+          ? 'This rubric is locked. Criteria and settings cannot be changed.'
+          : (_editing
+                ? 'Update rubric details, criteria, and evaluation settings.'
+                : _createSubtitle()),
+    );
     return PopScope(
       canPop: widget.readOnly || !_isDirty,
       onPopInvokedWithResult: (didPop, _) async {
@@ -1734,923 +1337,221 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       child: DefensysShadcnScope(
         child: ColoredBox(
           color: DefensysTokens.backgroundOf(context),
-          child: SingleChildScrollView(
-            padding: DefensysUi.contentPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DefensysPageHeader(
-              icon: widget.readOnly
-                  ? Icons.lock_outline_rounded
-                  : Icons.edit_note_rounded,
-              title: widget.readOnly
-                  ? 'View Rubric'
-                  : (_editing ? 'Edit Rubric' : 'Create Rubric'),
-              subtitle: widget.readOnly
-                  ? 'This rubric is locked. Criteria and settings cannot be changed.'
-                  : (_editing
-                      ? 'Update rubric details, criteria, and evaluation settings.'
-                      : _createSubtitle()),
-              actions: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [if (widget.rubric?['id'] != null) ReportExportMenu(reportId: 'rubric-details', params: {'rubric_id': widget.rubric!['id'].toString(), 'scope': widget.rubric!['scope'].toString(), 'term_context': '', 'search': '', 'status': '', 'evaluation_type': ''}), OutlinedButton.icon(
-                onPressed: saving ? null : _handleBack,
-                icon: Icon(
-                  Icons.arrow_back_rounded,
-                  size: 16,
-                  color: DefensysTokens.maroonOf(context),
-                ),
-                label: Text(
-                  'Back to Evaluation Rubrics',
-                  style: TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: DefensysTokens.maroonOf(context),
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: DefensysTokens.maroonOf(context),
-                  side: BorderSide(color: _borderColor),
-                  backgroundColor: _surfaceColor,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              )]),
-            ),
-            if (widget.readOnly || widget.rubric?['is_locked'] == true) ...[
-              const SizedBox(height: 18),
-              _lockedBanner(),
-            ] else if (widget.rubric?['is_soft_locked'] == true ||
-                widget.rubric?['is_assigned'] == true) ...[
-              const SizedBox(height: 18),
-              _softLockedBanner(),
-            ],
-            const SizedBox(height: 26),
-                _sectionCard(
-                  icon: Icons.description_outlined,
-                  iconColor: DefensysUi.primaryMaroon,
-                  title: 'Rubric Details',
-                  trailing: _buildScopeHeaderWidget(
-                    canSwitchScope: canSwitchScope,
-                    state: state,
-                    pitYear: pitYear,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildCloneDropdown(state),
-                      if (_scope == 'capstone') ...[
-                        Row(
+          child: LayoutBuilder(
+            builder: (context, viewport) => SingleChildScrollView(
+              padding: viewport.maxWidth < 600
+                  ? const EdgeInsets.fromLTRB(16, 20, 16, 36)
+                  : DefensysUi.contentPadding,
+              child: SizedBox(
+                key: const ValueKey('rubric-editor-content'),
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < 720) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              actions,
+                              const SizedBox(height: 20),
+                              header,
+                            ],
+                          );
+                        }
+                        return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: _labeledControl(
-                                'SEMESTER',
-                                DropdownButtonFormField<int?>(
-                                  key: ValueKey('sem-$_semesterId'),
-                                  initialValue: _semesterId,
-                                  isExpanded: true,
-                                  style: _dropdownFieldStyle,
-                                  decoration: _outlineInputDec(
-                                    hint: '— Select semester —',
-                                  ),
-                                  items: [
-                                    DropdownMenuItem<int?>(
-                                      value: null,
-                                      child: Text(
-                                        '— Select semester —',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          color: const Color(0xFF9CA3AF),
-                                          fontSize: _bodySize,
-                                        ),
+                            Expanded(child: header),
+                            const SizedBox(width: 24),
+                            actions,
+                          ],
+                        );
+                      },
+                    ),
+                    if (widget.readOnly ||
+                        widget.rubric?['is_locked'] == true) ...[
+                      const SizedBox(height: 24),
+                      _lockedBanner(),
+                    ] else if (widget.rubric?['is_soft_locked'] == true ||
+                        widget.rubric?['is_assigned'] == true) ...[
+                      const SizedBox(height: 24),
+                      _softLockedBanner(),
+                    ],
+                    const SizedBox(height: 28),
+                    _sectionCard(
+                      icon: LucideIcons.fileText,
+                      title: 'Rubric details',
+                      trailing: Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _buildScopeHeaderWidget(
+                            canSwitchScope: canSwitchScope,
+                            state: state,
+                            pitYear: pitYear,
+                          ),
+                          _buildCloneDropdown(state),
+                        ],
+                      ),
+                      child: _detailsFields(state, pitYear, canEdit),
+                    ),
+                    const SizedBox(height: 24),
+                    _sectionCard(
+                      icon: LucideIcons.listChecks,
+                      title: 'Evaluation Criteria (${_criteria.length})',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildWeightAssistantBar(enabled: canEdit),
+                          ..._criteria.asMap().entries.map((entry) {
+                            final i = entry.key;
+                            final draft = entry.value;
+                            return _criterionCard(
+                              draft,
+                              i,
+                              enabled: canEdit,
+                              onRemove: !canEdit || _criteria.length == 1
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        draft.dispose();
+                                        _criteria.removeAt(i);
+                                        _reassignDisplayOrders();
+                                      });
+                                      _attachCriteriaListeners();
+                                      _markDirty();
+                                    },
+                              onChanged: () {
+                                setState(() {});
+                                _markDirty();
+                              },
+                            );
+                          }),
+                          if (canEdit)
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: ShadButton.outline(
+                                onPressed: () {
+                                  var defaultTarget =
+                                      _targetType == 'individual'
+                                      ? 'individual'
+                                      : 'team';
+                                  if (_targetType == 'both' &&
+                                      _criteria.any(
+                                        (c) => c.targetType == 'team',
+                                      ) &&
+                                      !_criteria.any(
+                                        (c) => c.targetType == 'individual',
+                                      )) {
+                                    defaultTarget = 'individual';
+                                  }
+                                  setState(
+                                    () => _criteria.add(
+                                      RubricCriterionDraft(
+                                        scales: _scales,
+                                        name: '',
+                                        scale: _rubricScale,
+                                        maxScore: _rubricMaxScore,
+                                        weight: 10,
+                                        displayOrder: _criteria.length,
+                                        targetType: defaultTarget,
                                       ),
                                     ),
-                                    ...filteredSemesters.map(
-                                      (semester) {
-                                        final semId = _asInt(semester['id']);
-                                        final isActive = semester['is_active'] == true ||
-                                            semId == _asInt(state.activeSemester?['id']);
-                                        final displayName =
-                                            semester['display_name']?.toString() ?? '';
-                                        final labelText = isActive
-                                            ? '$displayName (Active)'
-                                            : displayName;
-                                        return DropdownMenuItem<int?>(
-                                          value: semId,
-                                          child: Text(
-                                            labelText,
-                                            style: TextStyle(
-                                              fontFamily: DefensysUi.fontFamily,
-                                              fontSize: _bodySize,
-                                              color: _textPrimaryColor,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                  onChanged: canEdit
-                                      ? (v) {
-                                          setState(() {
-                                            _semesterId = v;
-                                            _pitEventId = null;
-                                          });
-                                          _markDirty();
-                                        }
-                                      : null,
-                                ),
+                                  );
+                                  _attachCriteriaListeners();
+                                  _markDirty();
+                                },
+                                leading: const Icon(LucideIcons.plus, size: 16),
+                                child: const Text('Add Criterion'),
                               ),
                             ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: _labeledControl(
-                                'ASSIGN TO DEFENSE STAGE (OPTIONAL)',
-                                DropdownButtonFormField<int?>(
-                                  key: ValueKey('stage-$_defenseStageId'),
-                                  initialValue: _defenseStageId,
-                                  isExpanded: true,
-                                  style: _dropdownFieldStyle,
-                                  decoration: _outlineInputDec(
-                                    hint: '— None / Not assigned to a stage yet —',
-                                  ),
-                                  items: [
-                                    DropdownMenuItem<int?>(
-                                      value: null,
-                                      child: Text(
-                                        '— None / Not assigned to a stage yet —',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          color: const Color(0xFF9CA3AF),
-                                          fontSize: _bodySize,
-                                        ),
-                                      ),
-                                    ),
-                                    ...state.defenseStages.map((stage) {
-                                      final stageId = _asInt(stage['id']);
-                                      final stageLabel =
-                                          stage['label']?.toString() ?? 'Stage #$stageId';
-                                      return DropdownMenuItem<int?>(
-                                        value: stageId,
-                                        child: Text(
-                                          stageLabel,
-                                          style: TextStyle(
-                                            fontFamily: DefensysUi.fontFamily,
-                                            fontSize: _bodySize,
-                                            color: _textPrimaryColor,
-                                          ),
-                                        ),
-                                      );
-                                    }),
-                                  ],
-                                  onChanged: canEdit
-                                      ? (v) {
-                                          setState(() {
-                                            _defenseStageId = v;
-                                            _syncDefaultRubricNameIfAuto(
-                                              defenseStages: state.defenseStages,
-                                              pitYear: pitYear,
-                                            );
-                                          });
-                                          _markDirty();
-                                        }
-                                      : null,
-                                ),
-                              ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Divider(height: 1, color: _borderColor),
+                    const SizedBox(height: 20),
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      spacing: 20,
+                      runSpacing: 16,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            ShadButton.ghost(
+                              enabled: !saving,
+                              onPressed: saving ? null : _handleBack,
+                              child: Text(widget.readOnly ? 'Back' : 'Cancel'),
                             ),
+                            if (widget.onDelete != null)
+                              _deleteAction(saving: saving),
                           ],
                         ),
-                        if (_defenseStageId != null) ...[
-                          const SizedBox(height: 6),
-                          Row(
+                        if (!widget.readOnly)
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
                             children: [
-                              Icon(
-                                Icons.link_rounded,
-                                size: 14,
-                                color: DefensysTokens.maroonOf(context),
+                              ShadButton.outline(
+                                enabled: !saving,
+                                onPressed: saving ? null : () => _save('draft'),
+                                child: const Text('Save as Draft'),
                               ),
-                              const SizedBox(width: 6),
-                              Expanded(
+                              ShadButton(
+                                enabled: !saving,
+                                backgroundColor: DefensysTokens.maroonOf(
+                                  context,
+                                ),
+                                foregroundColor: Colors.white,
+                                onPressed: saving
+                                    ? null
+                                    : () => _save('published'),
+                                leading: const Icon(
+                                  LucideIcons.check,
+                                  size: 16,
+                                ),
                                 child: Text(
-                                  'Saving will automatically assign this rubric to the selected Defense Stage.',
-                                  style: TextStyle(
-                                    fontFamily: DefensysUi.fontFamily,
-                                    fontSize: _helperSize,
-                                    fontWeight: FontWeight.w600,
-                                    color: DefensysTokens.maroonOf(context),
-                                  ),
+                                  saving ? 'Saving...' : 'Publish Rubric',
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                        const SizedBox(height: 14),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _labeledControl(
-                                'EVALUATION TYPE',
-                                DropdownButtonFormField<String>(
-                                  key: ValueKey('eval-$_evaluationType'),
-                                  initialValue: _evaluationType,
-                                  isExpanded: true,
-                                  style: _dropdownFieldStyle,
-                                  decoration: _outlineInputDec(),
-                                  items: evalItems,
-                                  onChanged: canEdit
-                                      ? (v) {
-                                          setState(
-                                            () {
-                                              _evaluationType =
-                                                  v ?? _evaluationType;
-                                              if (_evaluationType == 'peer') {
-                                                _targetType = 'individual';
-                                              }
-                                              _syncDefaultRubricNameIfAuto(
-                                                defenseStages: state.defenseStages,
-                                                pitYear: pitYear,
-                                              );
-                                            },
-                                          );
-                                          _markDirty();
-                                        }
-                                      : null,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: _labeledControl(
-                                'EVALUATION SCALE',
-                                DropdownButtonFormField<String>(
-                                  key: ValueKey('scale-$_rubricScale'),
-                                  initialValue: _rubricScale,
-                                  isExpanded: true,
-                                  style: _dropdownFieldStyle,
-                                  decoration: _outlineInputDec(),
-                                  items: _scales.map((s) {
-                                    return DropdownMenuItem<String>(
-                                      value: s,
-                                      child: Text(
-                                        _scaleDisplayLabel(s),
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          fontSize: _bodySize,
-                                          color: _textPrimaryColor,
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: canEdit
-                                      ? (v) {
-                                          if (v != null) _onRubricScaleChanged(v);
-                                        }
-                                      : null,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _scoringTargetControl(
-                                DropdownButtonFormField<String>(
-                                  key: ValueKey('target-$_targetType'),
-                                  initialValue: _targetType,
-                                  isExpanded: true,
-                                  style: _dropdownFieldStyle,
-                                  decoration: _outlineInputDec(),
-                                  items: [
-                                    DropdownMenuItem(
-                                      value: 'team',
-                                      child: Text(
-                                        'Team (Entire team shares the grade)',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          fontSize: _bodySize,
-                                          color: _textPrimaryColor,
-                                        ),
-                                      ),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'individual',
-                                      child: Text(
-                                        'Individual (Students graded individually)',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          fontSize: _bodySize,
-                                          color: _textPrimaryColor,
-                                        ),
-                                      ),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'both',
-                                      child: Text(
-                                        'Both (Team & Individual)',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          fontSize: _bodySize,
-                                          color: _textPrimaryColor,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  onChanged: canEdit && _evaluationType != 'peer'
-                                      ? (v) {
-                                          setState(() => _targetType = v ?? 'team');
-                                          _markDirty();
-                                        }
-                                      : null,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            const Expanded(child: SizedBox.shrink()),
-                          ],
-                        ),
-                      ] else ...[
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _labeledControl(
-                                'SEMESTER',
-                                DropdownButtonFormField<int?>(
-                                  key: ValueKey('sem-$_semesterId'),
-                                  initialValue: _semesterId,
-                                  isExpanded: true,
-                                  style: _dropdownFieldStyle,
-                                  decoration: _outlineInputDec(
-                                    hint: '— Select semester —',
-                                  ),
-                                  items: [
-                                    DropdownMenuItem<int?>(
-                                      value: null,
-                                      child: Text(
-                                        '— Select semester —',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          color: const Color(0xFF9CA3AF),
-                                          fontSize: _bodySize,
-                                        ),
-                                      ),
-                                    ),
-                                    ...filteredSemesters.map(
-                                      (semester) {
-                                        final semId = _asInt(semester['id']);
-                                        final isActive = semester['is_active'] == true ||
-                                            semId == _asInt(state.activeSemester?['id']);
-                                        final displayName =
-                                            semester['display_name']?.toString() ?? '';
-                                        final labelText = isActive
-                                            ? '$displayName (Active)'
-                                            : displayName;
-                                        return DropdownMenuItem<int?>(
-                                          value: semId,
-                                          child: Text(
-                                            labelText,
-                                            style: TextStyle(
-                                              fontFamily: DefensysUi.fontFamily,
-                                              fontSize: _bodySize,
-                                              color: _textPrimaryColor,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                  onChanged: canEdit
-                                      ? (v) {
-                                          setState(() {
-                                            _semesterId = v;
-                                            _pitEventId = null;
-                                          });
-                                          _markDirty();
-                                        }
-                                      : null,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: _labeledControl(
-                                'EVALUATION TYPE',
-                                DropdownButtonFormField<String>(
-                                  key: ValueKey('eval-$_evaluationType'),
-                                  initialValue: _evaluationType,
-                                  isExpanded: true,
-                                  style: _dropdownFieldStyle,
-                                  decoration: _outlineInputDec(),
-                                  items: evalItems,
-                                  onChanged: canEdit
-                                      ? (v) {
-                                          setState(
-                                            () {
-                                              _evaluationType =
-                                                  v ?? _evaluationType;
-                                              if (_evaluationType == 'peer') {
-                                                _targetType = 'individual';
-                                              }
-                                              _syncDefaultRubricNameIfAuto(
-                                                defenseStages: state.defenseStages,
-                                                pitYear: pitYear,
-                                              );
-                                            },
-                                          );
-                                          _markDirty();
-                                        }
-                                      : null,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _labeledControl(
-                                'EVALUATION SCALE',
-                                DropdownButtonFormField<String>(
-                                  key: ValueKey('scale-$_rubricScale'),
-                                  initialValue: _rubricScale,
-                                  isExpanded: true,
-                                  style: _dropdownFieldStyle,
-                                  decoration: _outlineInputDec(),
-                                  items: _scales.map((s) {
-                                    return DropdownMenuItem<String>(
-                                      value: s,
-                                      child: Text(
-                                        _scaleDisplayLabel(s),
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          fontSize: _bodySize,
-                                          color: _textPrimaryColor,
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: canEdit
-                                      ? (v) {
-                                          if (v != null) _onRubricScaleChanged(v);
-                                        }
-                                      : null,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: _scoringTargetControl(
-                                DropdownButtonFormField<String>(
-                                  key: ValueKey('target-$_targetType'),
-                                  initialValue: _targetType,
-                                  isExpanded: true,
-                                  style: _dropdownFieldStyle,
-                                  decoration: _outlineInputDec(),
-                                  items: [
-                                    DropdownMenuItem(
-                                      value: 'team',
-                                      child: Text(
-                                        'Team (Entire team shares the grade)',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          fontSize: _bodySize,
-                                          color: _textPrimaryColor,
-                                        ),
-                                      ),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'individual',
-                                      child: Text(
-                                        'Individual (Students graded individually)',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          fontSize: _bodySize,
-                                          color: _textPrimaryColor,
-                                        ),
-                                      ),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'both',
-                                      child: Text(
-                                        'Both (Team & Individual)',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          fontSize: _bodySize,
-                                          color: _textPrimaryColor,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  onChanged: canEdit && _evaluationType != 'peer'
-                                      ? (v) {
-                                          setState(() => _targetType = v ?? 'team');
-                                          _markDirty();
-                                        }
-                                      : null,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
-                      if (_targetType == 'both') ...[
-                        const SizedBox(height: 8),
-                        Builder(
-                          builder: (context) {
-                            final hasTeam =
-                                _criteria.any((c) => c.targetType == 'team');
-                            final hasIndiv = _criteria
-                                .any((c) => c.targetType == 'individual');
-                            final hasBothTargets = hasTeam && hasIndiv;
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: hasBothTargets
-                                    ? const Color(0xFFEFF6FF)
-                                    : const Color(0xFFFFFBEB),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: hasBothTargets
-                                      ? const Color(0xFFBFDBFE)
-                                      : const Color(0xFFFDE68A),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    hasBothTargets
-                                        ? Icons.info_outline_rounded
-                                        : Icons.warning_amber_rounded,
-                                    size: 16,
-                                    color: hasBothTargets
-                                        ? const Color(0xFF1D4ED8)
-                                        : const Color(0xFFB45309),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      hasBothTargets
-                                          ? "Rubrics set to 'Both' contain both Team and Individual criteria."
-                                          : "Rubrics set to 'Both (Team & Individual)' must contain at least 1 Team criterion and 1 Individual criterion. Update criteria target types or set Scoring Target to 'Team'.",
-                                      style: TextStyle(
-                                        fontFamily: DefensysUi.fontFamily,
-                                        fontSize: _helperSize,
-                                        fontWeight: FontWeight.w600,
-                                        color: hasBothTargets
-                                            ? const Color(0xFF1E40AF)
-                                            : const Color(0xFF92400E),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                      if (_scope == 'pit') ...[
-                        const SizedBox(height: 14),
-                        _pitEventControl(state, canEdit: canEdit),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Assign panel or peer criteria to an existing PIT event here. Manage event details and grade weights in PIT Events Setup.',
-                          style: TextStyle(
-                            fontFamily: DefensysUi.fontFamily,
-                            fontSize: _helperSize,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 18),
-                      Divider(height: 1, color: _borderColor),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text('RUBRIC NAME', style: _staticLabelStyle),
-                          if (_isCustomName && canEdit)
-                            InkWell(
-                              borderRadius: BorderRadius.circular(4),
-                              onTap: () {
-                                setState(() {
-                                  _isCustomName = false;
-                                  _syncDefaultRubricNameIfAuto(
-                                    defenseStages: state.defenseStages,
-                                    pitYear: pitYear,
-                                  );
-                                });
-                                _markDirty();
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.refresh_rounded,
-                                      size: 13,
-                                      color: DefensysTokens.maroonOf(context),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Reset to default',
-                                      style: TextStyle(
-                                        fontFamily: DefensysUi.fontFamily,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: DefensysTokens.maroonOf(context),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _name,
-                        enabled: canEdit,
-                        onChanged: (val) {
-                          if (!_isCustomName) {
-                            setState(() {
-                              _isCustomName = true;
-                            });
-                          }
-                          _markDirty();
-                        },
-                        style: TextStyle(
-                          fontFamily: DefensysUi.fontFamily,
-                          fontSize: _bodySize,
-                          color: _textPrimaryColor,
-                        ),
-                        decoration: _outlineInputDec(
-                          hint: _scope == 'pit'
-                              ? 'e.g. $pitYear PIT — Panel Rubric'
-                              : 'e.g. Concept Proposal — Panel Rubric',
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Icon(
-                            _isCustomName ? Icons.edit_note_rounded : Icons.auto_awesome_rounded,
-                            size: 14,
-                            color: _isCustomName
-                                ? _textSecondaryColor
-                                : DefensysTokens.maroonOf(context),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              _isCustomName
-                                  ? 'Custom title applied.'
-                                  : 'Default title based on your stage and evaluation type selections.',
-                              style: TextStyle(
-                                fontFamily: DefensysUi.fontFamily,
-                                fontSize: _helperSize,
-                                fontWeight: _isCustomName ? FontWeight.w500 : FontWeight.w600,
-                                color: _isCustomName
-                                    ? _textSecondaryColor
-                                    : DefensysTokens.maroonOf(context),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-                _sectionCard(
-                  icon: Icons.view_list_rounded,
-                  title: 'Evaluation Criteria (${_criteria.length})',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildWeightAssistantBar(),
-                      ..._criteria.asMap().entries.map((e) {
-                        final i = e.key;
-                        final d = e.value;
-                        return _criterionCard(
-                          d,
-                          i,
-                          enabled: canEdit,
-                          onRemove: !canEdit || _criteria.length == 1
-                              ? null
-                              : () {
-                                  setState(() {
-                                    d.dispose();
-                                    _criteria.removeAt(i);
-                                    _reassignDisplayOrders();
-                                  });
-                                  _attachCriteriaListeners();
-                                  _markDirty();
-                                },
-                          onChanged: () {
-                            setState(() {});
-                            _markDirty();
-                          },
-                        );
-                      }),
-                      if (canEdit) ...[
-                        const SizedBox(height: 6),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              String defaultTarget = 'team';
-                              if (_targetType == 'both') {
-                                final hasTeam = _criteria
-                                    .any((c) => c.targetType == 'team');
-                                final hasIndiv = _criteria
-                                    .any((c) => c.targetType == 'individual');
-                                if (hasTeam && !hasIndiv) {
-                                  defaultTarget = 'individual';
-                                }
-                              }
-                              setState(() {
-                                _criteria.add(
-                                  RubricCriterionDraft(
-                                    scales: _scales,
-                                    name: '',
-                                    scale: _rubricScale,
-                                    maxScore: _defaultMaxForScale(_rubricScale),
-                                    weight: 10,
-                                    displayOrder: _criteria.length,
-                                    targetType: defaultTarget,
-                                  ),
-                                );
-                              });
-                              _attachCriteriaListeners();
-                              _markDirty();
-                            },
-                            icon: const Icon(Icons.add_rounded, size: 16),
-                            label: const Text('Add Criterion'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: DefensysTokens.maroonOf(context),
-                              side: BorderSide(
-                                color: DefensysTokens.maroonOf(context),
-                                width: 1.5,
-                              ),
-                              backgroundColor: _surfaceColor,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 28),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    TextButton(
-                      onPressed: saving ? null : widget.onBack,
-                      style: TextButton.styleFrom(
-                        foregroundColor: DefensysUi.primaryMaroon,
-                        textStyle: TextStyle(
-                          fontFamily: DefensysUi.fontFamily,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                      child: Text(widget.readOnly ? 'Back' : 'Cancel'),
                     ),
-                    if (widget.onDelete != null) ...[
-                      const SizedBox(width: 8),
-                      Builder(
-                        builder: (context) {
-                          final canDelete = widget.rubric?['can_delete'] != false;
-                          final lockReason = widget.rubric?['lock_reason']?.toString();
-                          final isAssigned = widget.rubric?['is_assigned'] == true;
-                          final assignedContext = widget.rubric?['assigned_context_name']?.toString();
-                          final isDisabled = saving || !canDelete;
-
-                          final buttonWidget = TextButton(
-                            onPressed: isDisabled ? null : widget.onDelete,
-                            style: TextButton.styleFrom(
-                              foregroundColor: isDisabled
-                                  ? const Color(0xFF9CA3AF)
-                                  : AppColors.danger,
-                              textStyle: TextStyle(
-                                fontFamily: DefensysUi.fontFamily,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 12,
-                              ),
-                            ),
-                            child: Text(
-                              !canDelete ? 'Delete rubric (Locked)' : 'Delete rubric',
-                            ),
-                          );
-
-                          final scope = widget.rubric?['scope']?.toString() ?? _scope;
-                          if (!canDelete && lockReason != null && lockReason.isNotEmpty) {
-                            return Tooltip(
-                              message: lockReason,
-                              child: buttonWidget,
-                            );
-                          } else if (isAssigned && assignedContext != null && assignedContext.isNotEmpty) {
-                            return Tooltip(
-                              message: scope == 'pit'
-                                  ? 'Rubric is assigned to PIT Event "$assignedContext" and cannot be deleted.'
-                                  : 'Rubric is assigned to Defense Stage "$assignedContext". Deleting will remove assignment.',
-                              child: buttonWidget,
-                            );
-                          }
-                          return buttonWidget;
-                        },
-                      ),
-                    ],
-                    const Spacer(),
-                    if (!widget.readOnly) ...[
-                      OutlinedButton(
-                        onPressed: saving ? null : () => _save('draft'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: DefensysTokens.maroonOf(context),
-                          side: BorderSide(
-                            color:
-                                DefensysTokens.maroonOf(context).withValues(alpha: 0.85),
-                            width: 1.5,
-                          ),
-                          backgroundColor: _surfaceColor,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: Text(
-                          'Save as Draft',
-                          style: TextStyle(
-                            fontFamily: DefensysUi.fontFamily,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      ElevatedButton.icon(
-                        onPressed: saving ? null : () => _save('published'),
-                        icon: const Icon(
-                          Icons.check_circle_outline_rounded,
-                          color: DefensysUi.accentGold,
-                          size: 17,
-                        ),
-                        label: const Text(
-                          'Publish Rubric',
-                          style: TextStyle(
-                            fontFamily: DefensysUi.fontFamily,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: DefensysTokens.maroonOf(context),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-                const SizedBox(height: 24),
-              ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _deleteAction({required bool saving}) {
+    final canDelete = widget.rubric?['can_delete'] != false;
+    final lockReason = widget.rubric?['lock_reason']?.toString();
+    final assignedContext = widget.rubric?['assigned_context_name']?.toString();
+    final tooltip = !canDelete && lockReason != null && lockReason.isNotEmpty
+        ? lockReason
+        : widget.rubric?['is_assigned'] == true && assignedContext != null
+        ? (_scope == 'pit'
+              ? 'Rubric is assigned to PIT Event "$assignedContext" and cannot be deleted.'
+              : 'Rubric is assigned to Defense Stage "$assignedContext". Deleting will remove assignment.')
+        : 'Delete rubric';
+    return ShadTooltip(
+      builder: (_) => Text(tooltip),
+      child: ShadButton.ghost(
+        enabled: !saving && canDelete,
+        onPressed: saving || !canDelete ? null : widget.onDelete,
+        foregroundColor: AppColors.danger,
+        child: Text(canDelete ? 'Delete rubric' : 'Delete rubric (Locked)'),
       ),
     );
   }
@@ -2667,17 +1568,17 @@ class RubricCriterionDraft {
     int displayOrder = 0,
     String targetType = 'team',
   }) : this._(
-          name: TextEditingController(text: name),
-          description: TextEditingController(text: description),
-          scale: scale ?? defaultScale(scales),
-          maxScore: TextEditingController(
-            text: (maxScore ?? _scaleMax(scale ?? defaultScale(scales)))
-                .toString(),
-          ),
-          weight: TextEditingController(text: weight.toString()),
-          displayOrder: TextEditingController(text: displayOrder.toString()),
-          targetType: targetType,
-        );
+         name: TextEditingController(text: name),
+         description: TextEditingController(text: description),
+         scale: scale ?? defaultScale(scales),
+         maxScore: TextEditingController(
+           text: (maxScore ?? _scaleMax(scale ?? defaultScale(scales)))
+               .toString(),
+         ),
+         weight: TextEditingController(text: weight.toString()),
+         displayOrder: TextEditingController(text: displayOrder.toString()),
+         targetType: targetType,
+       );
 
   RubricCriterionDraft._({
     required this.name,
@@ -2697,8 +1598,7 @@ class RubricCriterionDraft {
       scale: item['scale']?.toString(),
       maxScore: int.tryParse(item['max_score']?.toString() ?? ''),
       weight: num.tryParse(item['weight']?.toString() ?? '') ?? 1,
-      displayOrder:
-          int.tryParse(item['display_order']?.toString() ?? '') ?? 0,
+      displayOrder: int.tryParse(item['display_order']?.toString() ?? '') ?? 0,
       targetType: item['target_type']?.toString() ?? 'team',
     );
   }
@@ -2761,570 +1661,261 @@ class _CloneRubricDialog extends StatefulWidget {
 }
 
 class _CloneRubricDialogState extends State<_CloneRubricDialog> {
-  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
-  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB);
-  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF111827);
-  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF6B7280);
-
+  String _evaluationLabel(String? value) => switch (value) {
+    'peer' => 'Peer',
+    'adviser' => 'Adviser',
+    _ => 'Panel',
+  };
   String _searchQuery = '';
   String _selectedScope = 'all';
-  String? _selectedSemester;
+  String _selectedSemester = 'all';
   Map<String, dynamic>? _selectedRubric;
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isDesktop = screenWidth > 800;
-
+    final size = MediaQuery.sizeOf(context);
+    final desktop = size.width >= 800;
     final semesters = widget.availableRubrics
         .map((r) => r['display_semester']?.toString() ?? '')
         .where((s) => s.isNotEmpty)
         .toSet()
         .toList();
-
     final filtered = widget.availableRubrics.where((r) {
-      if (_searchQuery.isNotEmpty) {
-        final name = r['name']?.toString().toLowerCase() ?? '';
-        final sem = r['display_semester']?.toString().toLowerCase() ?? '';
-        final query = _searchQuery.toLowerCase();
-        if (!name.contains(query) && !sem.contains(query)) {
-          return false;
-        }
-      }
-      if (_selectedScope != 'all') {
-        if (r['scope'] != _selectedScope) return false;
-      }
-      if (_selectedSemester != null) {
-        if (r['display_semester']?.toString() != _selectedSemester) return false;
-      }
-      return true;
+      final query = _searchQuery.trim().toLowerCase();
+      final name = r['name']?.toString().toLowerCase() ?? '';
+      final semester = r['display_semester']?.toString() ?? '';
+      return (query.isEmpty ||
+              name.contains(query) ||
+              semester.toLowerCase().contains(query)) &&
+          (_selectedScope == 'all' || r['scope'] == _selectedScope) &&
+          (_selectedSemester == 'all' || semester == _selectedSemester);
     }).toList();
-
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        width: isDesktop ? 950 : screenWidth * 0.9,
-        height: 600,
-        color: _surfaceColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    final list = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ShadInput(
+          placeholder: const Text('Search by name or semester...'),
+          leading: const Icon(LucideIcons.search, size: 16),
+          onChanged: (value) => setState(() => _searchQuery = value),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
           children: [
-            _buildHeader(context),
-            Divider(height: 1, color: _borderColor),
-            Expanded(
-              child: isDesktop
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          flex: 11,
-                          child: _buildLeftPane(filtered, semesters),
-                        ),
-                        VerticalDivider(width: 1, color: _borderColor),
-                        Expanded(
-                          flex: 12,
-                          child: _buildRightPane(),
-                        ),
-                      ],
-                    )
-                  : Column(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: _buildLeftPane(filtered, semesters),
-                        ),
-                        Divider(height: 1, color: _borderColor),
-                        Expanded(
-                          flex: 2,
-                          child: _buildRightPane(),
-                        ),
-                      ],
-                    ),
+            ShadSelect<String>(
+              initialValue: _selectedScope,
+              selectedOptionBuilder: (_, value) => Text(
+                {
+                  'all': 'All programs',
+                  'capstone': 'Capstone',
+                  'pit': 'PIT',
+                }[value]!,
+              ),
+              options: const [
+                ShadOption(value: 'all', child: Text('All programs')),
+                ShadOption(value: 'capstone', child: Text('Capstone')),
+                ShadOption(value: 'pit', child: Text('PIT')),
+              ],
+              onChanged: (value) =>
+                  setState(() => _selectedScope = value ?? 'all'),
+            ),
+            ShadSelect<String>(
+              initialValue: _selectedSemester,
+              maxWidth: desktop ? 220 : size.width - 96,
+              selectedOptionBuilder: (_, value) => Text(
+                value == 'all' ? 'All semesters' : value,
+                overflow: TextOverflow.ellipsis,
+              ),
+              options: [
+                const ShadOption(value: 'all', child: Text('All semesters')),
+                for (final semester in semesters)
+                  ShadOption(value: semester, child: Text(semester)),
+              ],
+              onChanged: (value) =>
+                  setState(() => _selectedSemester = value ?? 'all'),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Select Rubric to Clone',
-                style: TextStyle(
-                  fontFamily: DefensysUi.fontFamily,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: DefensysTokens.maroonOf(context),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Browse and preview templates before applying criteria.',
-                style: TextStyle(
-                  fontFamily: DefensysUi.fontFamily,
-                  fontSize: 12,
-                  color: _textSecondaryColor,
-                ),
-              ),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.grey),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLeftPane(List<Map<String, dynamic>> filtered, List<String> semesters) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            onChanged: (val) => setState(() => _searchQuery = val),
-            style: TextStyle(fontSize: 13, fontFamily: DefensysUi.fontFamily, color: _textPrimaryColor),
-            decoration: InputDecoration(
-              hintText: 'Search by name or semester...',
-              hintStyle: TextStyle(color: _textSecondaryColor, fontSize: 13),
-              prefixIcon: Icon(Icons.search, size: 18, color: _textSecondaryColor),
-              filled: true,
-              fillColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: _borderColor),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: _borderColor),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _buildScopeTab('all', 'All'),
-              const SizedBox(width: 6),
-              _buildScopeTab('capstone', 'Capstone'),
-              const SizedBox(width: 6),
-              _buildScopeTab('pit', 'PIT'),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _borderColor),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String?>(
-                    value: _selectedSemester,
-                    dropdownColor: _surfaceColor,
-                    hint: Text('All Semesters', style: TextStyle(fontSize: 11, fontFamily: DefensysUi.fontFamily, color: _textSecondaryColor)),
-                    isDense: true,
-                    style: TextStyle(fontSize: 11, color: _textPrimaryColor, fontFamily: DefensysUi.fontFamily),
-                    onChanged: (val) => setState(() {
-                      _selectedSemester = val;
-                    }),
-                    items: [
-                      DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('All Semesters', style: TextStyle(color: _textPrimaryColor)),
-                      ),
-                      ...semesters.map((s) => DropdownMenuItem<String?>(
-                        value: s,
-                        child: Text(s, style: TextStyle(color: _textPrimaryColor)),
-                      )),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: filtered.isEmpty
-                ? Center(
-                    child: Text(
-                      'No matching rubrics found',
-                      style: TextStyle(color: _textSecondaryColor, fontSize: 13, fontFamily: DefensysUi.fontFamily),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final r = filtered[index];
-                      final isSelected = _selectedRubric?['id'] == r['id'];
-                      final displaySem = r['display_semester']?.toString() ?? '';
-                      final isPit = r['scope'] == 'pit';
-                      final criteriaCount = (r['criteria'] as List?)?.length ?? 0;
-                      
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              _selectedRubric = r;
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: isSelected ? DefensysTokens.maroonOf(context).withValues(alpha: _isDark ? 0.2 : 0.05) : _surfaceColor,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: isSelected ? DefensysTokens.maroonOf(context) : _borderColor,
-                                width: isSelected ? 1.5 : 1,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  r['name']?.toString() ?? '',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13.5,
-                                    color: _textPrimaryColor,
-                                    fontFamily: DefensysUi.fontFamily,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: ProgramColors.of(context, isCapstone: !isPit).tint,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        isPit ? 'PIT' : 'Capstone',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: ProgramColors.of(context, isCapstone: !isPit).text,
-                                          fontFamily: DefensysUi.fontFamily,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFF3F4F6),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        _evaluationLabel(r['evaluation_type']?.toString()),
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w500,
-                                          color: Color(0xFF4B5563),
-                                          fontFamily: DefensysUi.fontFamily,
-                                        ),
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    if (displaySem.isNotEmpty)
-                                      Text(
-                                        displaySem,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey[500],
-                                          fontFamily: DefensysUi.fontFamily,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '$criteriaCount Criteria',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: Colors.grey[600],
-                                    fontWeight: FontWeight.w500,
-                                    fontFamily: DefensysUi.fontFamily,
-                                  ),
-                                ),
-                              ],
+        const SizedBox(height: 16),
+        Expanded(
+          child: filtered.isEmpty
+              ? const Center(child: Text('No matching rubrics found'))
+              : ListView.separated(
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, index) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final rubric = filtered[index];
+                    final selected = _selectedRubric?['id'] == rubric['id'];
+                    final semester =
+                        rubric['display_semester']?.toString() ?? '';
+                    return ShadButton.outline(
+                      height: 84,
+                      expands: true,
+                      backgroundColor: selected
+                          ? DefensysTokens.surfaceHigherOf(context)
+                          : null,
+                      onPressed: () => setState(() => _selectedRubric = rubric),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            rubric['name']?.toString() ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: DefensysTokens.body.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
+                          const SizedBox(height: 6),
+                          Text(
+                            '${rubric['scope'] == 'pit' ? 'PIT' : 'Capstone'} / ${_evaluationLabel(rubric['evaluation_type']?.toString())}'
+                            '${semester.isEmpty ? '' : ' / $semester'}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: DefensysTokens.caption.copyWith(
+                              color: DefensysTokens.textSecondaryOf(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+    return ShadDialog(
+      constraints: const BoxConstraints(maxWidth: 960),
+      title: const Text('Copy from an existing rubric'),
+      description: const Text(
+        'Preview the criteria and settings before copying.',
+      ),
+      actions: [
+        ShadButton(
+          enabled: _selectedRubric != null,
+          onPressed: _selectedRubric == null
+              ? null
+              : () => widget.onClone(_selectedRubric!),
+          child: const Text('Copy rubric'),
+        ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.only(top: 20),
+        child: SizedBox(
+          width: 880,
+          height: (size.height - 280).clamp(200.0, 520.0),
+          child: desktop
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: list),
+                    const SizedBox(width: 24),
+                    Expanded(child: _preview(context)),
+                  ],
+                )
+              : _selectedRubric == null
+              ? list
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ShadButton.ghost(
+                        onPressed: () => setState(() => _selectedRubric = null),
+                        leading: const Icon(LucideIcons.arrowLeft, size: 16),
+                        child: const Text('Choose another rubric'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(child: _preview(context)),
+                  ],
+                ),
+        ),
       ),
     );
   }
 
-  Widget _buildScopeTab(String scope, String label) {
-    final active = _selectedScope == scope;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedScope = scope),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: active ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08) : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: active ? DefensysTokens.maroonOf(context) : _borderColor,
-            width: active ? 1.2 : 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-            color: active ? DefensysTokens.maroonOf(context) : _textSecondaryColor,
-            fontFamily: DefensysUi.fontFamily,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRightPane() {
-    if (_selectedRubric == null) {
+  Widget _preview(BuildContext context) {
+    final rubric = _selectedRubric;
+    if (rubric == null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.assignment_outlined, size: 54, color: _textSecondaryColor.withValues(alpha: 0.5)),
-            const SizedBox(height: 12),
-            Text(
-              'Select a rubric template',
-              style: TextStyle(
-                color: _textSecondaryColor,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-                fontFamily: DefensysUi.fontFamily,
-              ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Select a rubric to preview its criteria.',
+            textAlign: TextAlign.center,
+            style: DefensysTokens.body.copyWith(
+              color: DefensysTokens.textSecondaryOf(context),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Select a rubric from the list to preview its evaluation criteria.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _textSecondaryColor,
-                fontSize: 11.5,
-                fontFamily: DefensysUi.fontFamily,
-              ),
-            ),
-          ],
+          ),
         ),
       );
     }
-
-    final rubric = _selectedRubric!;
-    final name = rubric['name']?.toString() ?? '';
-    final criteria = rubric['criteria'] as List? ?? [];
-    
-    num totalWeight = 0;
-    for (final c in criteria) {
-      if (c is Map) {
-        totalWeight += num.tryParse(c['weight']?.toString() ?? '') ?? 0;
-      }
-    }
-
-    return Container(
-      color: DefensysTokens.backgroundOf(context),
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: _textPrimaryColor,
-                        fontFamily: DefensysUi.fontFamily,
-                      ),
+    final criteria = (rubric['criteria'] as List? ?? [])
+        .whereType<Map>()
+        .toList();
+    final total = criteria.fold<num>(
+      0,
+      (total, c) => total + (num.tryParse(c['weight']?.toString() ?? '') ?? 0),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          rubric['name']?.toString() ?? '',
+          style: DefensysTokens.sectionTitle.copyWith(
+            color: DefensysTokens.textPrimaryOf(context),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '${criteria.length} criteria / $total% total weight',
+          style: DefensysTokens.caption.copyWith(
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: ListView.separated(
+            itemCount: criteria.length,
+            separatorBuilder: (_, index) => const Divider(height: 32),
+            itemBuilder: (_, index) {
+              final criterion = criteria[index];
+              final description = criterion['description']?.toString() ?? '';
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    criterion['name']?.toString() ?? '',
+                    style: DefensysTokens.body.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
-                    const SizedBox(height: 4),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${criterion['weight']}% weight / ${criterion['max_score'] ?? 10} points maximum / ${criterion['target_type'] ?? 'team'}',
+                    style: DefensysTokens.caption.copyWith(
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 8),
                     Text(
-                      'Total Weight: ${totalWeight.toStringAsFixed(0)}% · ${criteria.length} Criteria',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _textSecondaryColor,
-                        fontWeight: FontWeight.w500,
-                        fontFamily: DefensysUi.fontFamily,
+                      description,
+                      style: DefensysTokens.body.copyWith(
+                        color: DefensysTokens.textSecondaryOf(context),
                       ),
                     ),
                   ],
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           ),
-          const SizedBox(height: 16),
-          Divider(height: 1, color: _borderColor),
-          const SizedBox(height: 12),
-          Expanded(
-            child: ListView.builder(
-              itemCount: criteria.length,
-              itemBuilder: (context, index) {
-                final c = criteria[index] as Map? ?? {};
-                final critName = c['name']?.toString() ?? 'Criterion ${index + 1}';
-                final desc = c['description']?.toString() ?? '';
-                final weight = c['weight']?.toString() ?? '0';
-                final maxScore = c['max_score']?.toString() ?? '0';
-                final targetType = c['target_type'] == 'individual' ? 'Individual' : 'Team';
-                final scale = c['scale']?.toString() ?? '';
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _surfaceColor,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _borderColor),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              critName,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: _textPrimaryColor,
-                                fontFamily: DefensysUi.fontFamily,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: _isDark ? const Color(0xFF451A03) : const Color(0xFFFFF7ED),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: _isDark ? const Color(0xFF9A3412) : const Color(0xFFFFEDD5)),
-                            ),
-                            child: Text(
-                              'Weight: $weight%',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: _isDark ? const Color(0xFFFB923C) : const Color(0xFFC2410C),
-                                fontFamily: DefensysUi.fontFamily,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (desc.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          desc,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: _textSecondaryColor,
-                            height: 1.3,
-                            fontFamily: DefensysUi.fontFamily,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(Icons.assessment_outlined, size: 12, color: _textSecondaryColor),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Scale: $scale (Max: $maxScore)',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              color: _textSecondaryColor,
-                              fontFamily: DefensysUi.fontFamily,
-                            ),
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                            child: Text(
-                              targetType,
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w600,
-                                color: _textSecondaryColor,
-                                fontFamily: DefensysUi.fontFamily,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: DefensysTokens.maroonOf(context),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              elevation: 0,
-            ),
-            onPressed: () => widget.onClone(rubric),
-            child: const Text(
-              'Clone Criteria & Configuration',
-              style: TextStyle(
-                fontFamily: DefensysUi.fontFamily,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
-  }
-
-  String _evaluationLabel(String? value) {
-    return switch (value) {
-      'adviser' => 'Adviser',
-      'peer' => 'Peer',
-      _ => 'Panel',
-    };
   }
 }

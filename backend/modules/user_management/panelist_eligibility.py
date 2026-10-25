@@ -59,7 +59,7 @@ def _notify(recipient, actor, item, title, message):
         workspace='admin' if is_admin_user(recipient) else 'pit_lead',
         action_route=(
             f'/admin/users?tab=faculty&view=panelists&section=requests&request={item.pk}'
-            if is_admin_user(recipient) else f'/faculty/defense-board?panelistRequest={item.pk}'
+            if is_admin_user(recipient) else f'/faculty/cohort?tab=panelists&section=requests&request={item.pk}'
         ),
         action_payload={'panelist_eligibility': True, 'action_kind': 'panelist_request', 'request_id': item.pk},
     )

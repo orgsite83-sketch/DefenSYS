@@ -22,6 +22,8 @@ class SemesterSerializer(serializers.ModelSerializer):
             'id',
             'label',
             'is_active',
+            'starts_on',
+            'ends_on',
             'school_year_id',
             'school_year',
             'display_name',
@@ -95,27 +97,44 @@ class SchoolYearUpdateSerializer(serializers.Serializer):
         return instance
 
 
-class SemesterCreateSerializer(serializers.Serializer):
-    label = serializers.ChoiceField(choices=[choice[0] for choice in Semester.TERM_CHOICES])
+class SemesterCalendarSerializer(serializers.Serializer):
+    starts_on = serializers.DateField()
+    ends_on = serializers.DateField()
 
     def validate(self, attrs):
+        from .calendar import validate_calendar
+        instance = self.context.get('semester')
+        validate_calendar(attrs.get('starts_on', getattr(instance, 'starts_on', None)),
+                          attrs.get('ends_on', getattr(instance, 'ends_on', None)))
+        return attrs
+
+
+class SemesterCreateSerializer(SemesterCalendarSerializer):
+    label = serializers.ChoiceField(choices=[choice[0] for choice in Semester.TERM_CHOICES])
+    set_active = serializers.BooleanField(default=False)
+    is_active = serializers.BooleanField(required=False, write_only=True)
+    active = serializers.BooleanField(required=False, write_only=True)
+    force = serializers.BooleanField(default=False)
+    reason = serializers.CharField(required=False, allow_blank=True, default='', max_length=3000)
+    decisions = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    preview_revision = serializers.CharField(required=False, allow_blank=True, default='', max_length=64)
+    request_id = serializers.CharField(required=False, allow_null=True, max_length=64)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        aliases = [attrs.pop(name) for name in ('is_active', 'active') if name in attrs]
+        if aliases:
+            if len(set(aliases)) != 1 or ('set_active' in self.initial_data and attrs['set_active'] != aliases[0]):
+                raise serializers.ValidationError({'set_active': 'Provide one consistent activation choice.'})
+            attrs['set_active'] = aliases[0]
         school_year = self.context['school_year']
         label = attrs['label']
-        if Semester.objects.filter(school_year=school_year, label=label).exists():
+        if (not attrs.get('set_active') and
+                Semester.objects.filter(school_year=school_year, label=label).exists()):
             raise serializers.ValidationError({'label': 'This semester already exists for the selected school year.'})
         return attrs
 
     def create(self, validated_data):
-        from .capstone_mode import default_capstone_flags_for_label, normalize_capstone_flags
-
-        label = validated_data['label']
-        creation_enabled, phase = default_capstone_flags_for_label(label)
-        semester = Semester.objects.create(
-            school_year=self.context['school_year'],
-            label=label,
-            capstone_program_phase=phase,
-            capstone_team_creation_enabled=creation_enabled,
-        )
-        normalize_capstone_flags(semester)
-        semester.save(update_fields=['capstone_program_phase', 'capstone_team_creation_enabled'])
-        return semester
+        from .services import create_semester
+        return create_semester(self.context['school_year'], self.context['request'].user,
+                               **validated_data)

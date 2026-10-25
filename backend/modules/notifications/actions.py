@@ -77,7 +77,7 @@ def resolve_actions(notifications, actor):
                     pending = False
                 action = _state('pending' if pending else 'completed', label,
                     (f'/admin/users?tab=faculty&view=panelists&section=requests&request={pk}' if admin else
-                     f'/faculty/defense-board?panelistRequest={pk}') if route_kind == 'panelist' else
+                     f'/faculty/cohort?tab=panelists&section=requests&request={pk}') if route_kind == 'panelist' else
                     f'/{base}/defense-board/requests/{route_kind}/{pk}',
                     ('Review panelist request' if route_kind == 'panelist' else 'Review evaluator request')
                     if pending and admin else 'View request', item.reviewed_at)

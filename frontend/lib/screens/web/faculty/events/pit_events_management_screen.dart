@@ -24,6 +24,26 @@ import '../../admin/defense_stages/widgets/stage_deliverable_presets_bar.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_presets.dart';
 import '../../admin/defense_stages/widgets/stage_setup_actions.dart';
 
+String? _pitRubricName(
+  Map<String, dynamic>? config,
+  String role,
+  dynamic id,
+  List<Map<String, dynamic>> choices,
+) {
+  if (id == null) return null;
+  // Published choices exclude assigned drafts; the event still knows their names.
+  final choiceName = choices
+      .where((rubric) => rubric['id']?.toString() == id.toString())
+      .firstOrNull?['name']
+      ?.toString();
+  if (choiceName != null && choiceName.trim().isNotEmpty) return choiceName;
+  if (config?['${role}_rubric_id']?.toString() == id.toString()) {
+    final savedName = config?['${role}_rubric_name']?.toString();
+    if (savedName != null && savedName.trim().isNotEmpty) return savedName;
+  }
+  return 'Selected rubric (unavailable)';
+}
+
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
   const PitEventsManagementScreen({super.key});
 
@@ -702,17 +722,6 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     final rubricsReady =
         config['panel_rubric_id'] != null &&
         (peerWeight == 0 || config['peer_rubric_id'] != null);
-    String? rubricName(dynamic id, List<Map<String, dynamic>> rubrics) {
-      if (id == null) return null;
-      return rubrics
-              .firstWhere(
-                (rubric) => rubric['id']?.toString() == id.toString(),
-                orElse: () => const {},
-              )['name']
-              ?.toString() ??
-          'Unknown Rubric';
-    }
-
     final rubrics = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -733,13 +742,13 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
         const SizedBox(height: 10),
         SetupRubricCard(
           role: 'panel',
-          name: rubricName(config['panel_rubric_id'], state.rubrics),
+          name: _pitRubricName(config, 'panel', config['panel_rubric_id'], state.rubrics),
           isRequired: true,
           isReady: rubricsReady,
         ),
         SetupRubricCard(
           role: 'peer',
-          name: rubricName(config['peer_rubric_id'], state.peerRubrics),
+          name: _pitRubricName(config, 'peer', config['peer_rubric_id'], state.peerRubrics),
           isRequired: peerWeight > 0,
           isReady: rubricsReady,
         ),
@@ -2394,12 +2403,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               roles: [
                                 GradingRoleSetup(role: 'panel', label: 'Panel', weightController: _panelWeightController,
                                   rubrics: panelRubrics, rubricId: _panelRubricId,
-                                  rubricName: state.rubrics.where((r) => int.tryParse('${r['id']}') == _panelRubricId).firstOrNull?['name']?.toString(),
+                                  rubricName: _pitRubricName(widget.config, 'panel', _panelRubricId, state.rubrics),
                                   onWeightChanged: _onPanelWeightChanged,
                                   onRubricChanged: (value) { setState(() => _panelRubricId = value); _markDirty(); }),
                                 GradingRoleSetup(role: 'peer', label: 'Peer', weightController: _peerWeightController,
                                   rubrics: peerRubrics, rubricId: _peerRubricId,
-                                  rubricName: state.peerRubrics.where((r) => int.tryParse('${r['id']}') == _peerRubricId).firstOrNull?['name']?.toString(),
+                                  rubricName: _pitRubricName(widget.config, 'peer', _peerRubricId, state.peerRubrics),
                                   onWeightChanged: _onPeerWeightChanged,
                                   onRubricChanged: (value) { setState(() => _peerRubricId = value); _markDirty(); }),
                               ],

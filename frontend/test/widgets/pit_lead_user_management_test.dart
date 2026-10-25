@@ -248,7 +248,7 @@ void main() {
   tearDown(dismissFeedbackToasts);
   setUpAll(loadPreviewFonts);
   testWidgets(
-    'PitLeadCohortScreen renders User Management layout with 2 tabs and metric cards',
+    'PitLeadCohortScreen renders User Management layout with 3 tabs and metric cards',
     (tester) async {
       tester.view.physicalSize = const Size(1400, 900);
       tester.view.devicePixelRatio = 1.0;
@@ -290,6 +290,7 @@ void main() {
       // Pill Tab Bar
       expect(find.text('Students & Enrollment'), findsOneWidget);
       expect(find.text('Section Instructors'), findsOneWidget);
+      expect(find.text('Panelists & Requests'), findsOneWidget);
 
       // 4 Metric cards on Students Tab
       expect(find.text('All Records'), findsOneWidget);

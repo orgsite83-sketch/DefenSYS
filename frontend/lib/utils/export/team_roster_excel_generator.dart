@@ -1,15 +1,18 @@
 import 'package:excel/excel.dart';
 import '../import/team_bulk_import_file.dart';
+import '../import/team_roster_template_layout.dart';
 
 String officialTeamRosterCsv({
   required bool isCapstone,
   String? assignedSection,
   String? instructorName,
+  bool instructorWorkspace = false,
 }) => teamXlsxToCsv(
   generateOfficialTeamRosterExcelBytes(
     isCapstone: isCapstone,
     assignedSection: assignedSection,
     instructorName: instructorName,
+    instructorWorkspace: instructorWorkspace,
   ),
   preserveTeamGroups: false,
 );
@@ -18,7 +21,11 @@ List<int> generateOfficialTeamRosterExcelBytes({
   required bool isCapstone,
   String? assignedSection,
   String? instructorName,
+  bool instructorWorkspace = false,
 }) {
+  final layout = TeamRosterTemplateLayout(
+    instructorWorkspace: instructorWorkspace && !isCapstone,
+  );
   final excel = Excel.createExcel();
   final sheetName = isCapstone
       ? 'defensys_team_roster_template'
@@ -80,18 +87,24 @@ List<int> generateOfficialTeamRosterExcelBytes({
   );
 
   // Set column widths matching Excel layout (Col A is margin, Col G is spacer)
-  sheet.setColumnWidth(0, 4.0); // Col A: Margin
-  sheet.setColumnWidth(1, 24.0); // Col B: Team Name
-  sheet.setColumnWidth(2, 46.0); // Col C: Project / Module
-  sheet.setColumnWidth(3, 14.0); // Col D: Section
-  sheet.setColumnWidth(4, 24.0); // Col E: Adviser / Instructor
-  sheet.setColumnWidth(5, 24.0); // Col F: Team Members
-  sheet.setColumnWidth(6, 4.0); // Col G: Separator spacer
-  sheet.setColumnWidth(7, 24.0); // Col H: Team Name / Meta Label
-  sheet.setColumnWidth(8, 30.0); // Col I: Module / Meta Value
-  sheet.setColumnWidth(9, 14.0); // Col J: Section
-  sheet.setColumnWidth(10, 24.0); // Col K: Adviser / Instructor
-  sheet.setColumnWidth(11, 24.0); // Col L: Team Members
+  void setWidth(int column, double width) {
+    if (layout.contains(column)) {
+      sheet.setColumnWidth(layout.column(column), width);
+    }
+  }
+
+  setWidth(0, 4.0); // Col A: Margin
+  setWidth(1, 24.0); // Team Name
+  setWidth(2, 46.0); // Project / Module
+  setWidth(3, 14.0); // Section
+  setWidth(4, 24.0); // Adviser / Instructor
+  setWidth(5, 24.0); // Team Members
+  setWidth(6, 4.0); // Separator spacer
+  setWidth(7, 24.0); // Team Name / Meta Label
+  setWidth(8, 30.0); // Module / Meta Value
+  setWidth(9, 14.0); // Section
+  setWidth(10, 24.0); // Adviser / Instructor
+  setWidth(11, 24.0); // Team Members
 
   // Data definitions
   final leftTeams = isCapstone ? _capstone4ATeams : _pit2ATeams;
@@ -107,6 +120,8 @@ List<int> generateOfficialTeamRosterExcelBytes({
   final adviserColTitle = isCapstone ? 'Adviser' : 'Instructor';
 
   void setCell(int col, int row, String text, CellStyle style) {
+    if (!layout.contains(col)) return;
+    col = layout.column(col);
     final cell = sheet.cell(
       CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row),
     );
@@ -122,6 +137,7 @@ List<int> generateOfficialTeamRosterExcelBytes({
     HorizontalAlign align = HorizontalAlign.Left,
   }) {
     final mergeBlock = col == 1 || col == 7;
+    col = layout.column(col);
     if (mergeBlock) {
       // Merging removes the covered cells, so apply perimeter styles afterward.
       sheet.merge(
@@ -158,6 +174,7 @@ List<int> generateOfficialTeamRosterExcelBytes({
     required List<String> members,
     HorizontalAlign align = HorizontalAlign.Left,
   }) {
+    col = layout.column(col);
     for (var r = startRow; r <= endRow; r++) {
       final cellStyle = CellStyle(
         bold: false,
@@ -171,7 +188,11 @@ List<int> generateOfficialTeamRosterExcelBytes({
       );
       final mIdx = r - startRow;
       final text = mIdx < members.length ? members[mIdx] : '';
-      setCell(col, r, text, cellStyle);
+      final cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: r),
+      );
+      cell.value = TextCellValue(text);
+      cell.cellStyle = cellStyle;
     }
   }
 
@@ -237,6 +258,8 @@ List<int> generateOfficialTeamRosterExcelBytes({
     required int endRow,
     required String text,
   }) {
+    if (!layout.contains(col)) return;
+    col = layout.column(col);
     // 1. Merge first so spannedItems registers the merged cell range
     sheet.merge(
       CellIndex.indexByColumnRow(columnIndex: col, rowIndex: startRow),

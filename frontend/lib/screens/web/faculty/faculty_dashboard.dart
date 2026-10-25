@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/navigation/panelist_routes.dart';
+import 'package:defensys/services/admin/panelist_pool_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../navigation/admin_route_paths.dart';
@@ -330,6 +332,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             break;
         }
       case 'cohort':
+        if (GoRouterState.of(context).uri.queryParameters['tab'] ==
+            'panelists') {
+          ref.read(panelistPoolProvider.notifier).fetch();
+        }
         ref.read(pitLeadCohortProvider.notifier).fetchCohort();
         ref.read(pitInstructorProvider.notifier).fetchAssignments();
         ref.read(academicPeriodProvider.notifier).fetchPeriods();
@@ -1502,20 +1508,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                   () => _goToSection('grade_center'),
                 ),
               ),
-              _FacultyNavEntry(
-                section: 'curriculum_analytics',
-                icon: Icons.analytics_outlined,
-                label: 'Curriculum Analytics',
-                isActive: _activeSection == 'curriculum_analytics',
-                onTap: () => _afterSidebarAction(
-                  isWide,
-                  () => _goToSection('curriculum_analytics'),
-                ),
-              ),
             ],
           ),
           _FacultyNavGroup(
-            title: 'Archives & Audit',
+            title: 'Analytics & Audit',
             entries: [
               _FacultyNavEntry(
                 section: 'project_archive',
@@ -1527,6 +1523,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 onTap: () => _afterSidebarAction(
                   isWide,
                   () => _goToSection('project_archive'),
+                ),
+              ),
+              _FacultyNavEntry(
+                section: 'curriculum_analytics',
+                icon: Icons.manage_search_rounded,
+                label: 'Curriculum Analytics',
+                isActive: _activeSection == 'curriculum_analytics',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('curriculum_analytics'),
                 ),
               ),
               _FacultyNavEntry(
@@ -1813,9 +1819,46 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           color: DefensysTokens.surfaceOf(context),
           child: PitLeadCohortScreen(
             onCreateTeam: () => _goToSection('student_teams'),
-            initialInstructors: routerState.uri.queryParameters['tab'] == 'instructors',
-            onInstructorTabChanged: (instructors) => _goToSection('cohort',
-              queryParameters: {'tab': instructors ? 'instructors' : 'students'}),
+            initialInstructors:
+                routerState.uri.queryParameters['tab'] == 'instructors',
+            initialTab: routerState.uri.queryParameters['tab'],
+            initialPanelistSection:
+                const {
+                  'requests',
+                  'history',
+                }.contains(routerState.uri.queryParameters['section'])
+                ? routerState.uri.queryParameters['section']!
+                : 'faculty',
+            initialPanelistRequestId: int.tryParse(
+              routerState.uri.queryParameters['request'] ?? '',
+            ),
+            initialFacultyIds: PanelistRoutes.facultyIds(
+              routerState.uri.queryParameters['faculty'],
+            ),
+            returnTo: routerState.uri.queryParameters['returnTo'],
+            onTabChanged: (tab) =>
+                _goToSection('cohort', queryParameters: {'tab': tab}),
+            onPanelistSectionChanged: (section) => _goToSection(
+              'cohort',
+              queryParameters: {
+                ...routerState.uri.queryParameters,
+                'tab': 'panelists',
+                'section': section,
+              }..remove('request'),
+            ),
+            onPanelistRequestChanged: (id) => _goToSection(
+              'cohort',
+              queryParameters: {
+                ...routerState.uri.queryParameters,
+                'tab': 'panelists',
+                if (id != null)
+                  'section':
+                      routerState.uri.queryParameters['section'] == 'history'
+                      ? 'history'
+                      : 'requests',
+                if (id != null) 'request': '$id',
+              }..removeWhere((key, _) => key == 'request' && id == null),
+            ),
           ),
         );
       case 'pit_student_import':

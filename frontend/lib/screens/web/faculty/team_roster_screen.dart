@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:excel/excel.dart' as xl;
 import 'package:defensys/widgets/team_import_format_guide.dart';
+import 'package:defensys/widgets/team_import_review.dart';
 import 'package:defensys/screens/web/admin/widgets/team_bulk_import_review_table.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,7 +17,9 @@ import '../../../utils/import/team_bulk_import_csv.dart';
 import '../../../widgets/shadcn/defensys_action_menu.dart';
 import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../widgets/shadcn/defensys_workflow_widgets.dart';
+import '../../../widgets/shadcn/workflow_step_progress.dart';
 import '../admin/student_teams/team_creation_page.dart';
+import 'team_roster_students_step.dart';
 
 Future<bool?> openTeamRoster(
   BuildContext context, {
@@ -84,12 +87,22 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
   String? year, section, action, error, message, fileName;
   String selected = 'current', source = 'current', method = 'alphabetical';
   int groupSize = 4, requestVersion = 0;
+  int generationStep = 1;
+  List<int> generationStudents = [];
   StreamSubscription? _dropSubscription;
   final _statusTooltip = ShadTooltipController();
   bool _wasVisible = true;
   bool dragging = false;
   bool busy = false, changed = false, carryProjects = true, missingOnly = false;
   List<Map<String, dynamic>> importRows = [];
+  final _importFiles = <String, String>{};
+  Map<String, dynamic>? importValidation;
+  Timer? _validationTimer;
+  int _validationVersion = 0;
+  bool importChecking = false;
+  String importFilter = 'all';
+  final _reviewAnchor = GlobalKey();
+  final _reviewTable = GlobalKey<TeamBulkImportReviewTableState>();
   final setupTeams = <int>{};
   final projectModes = <int, String>{};
   List<Map<String, dynamic>> get rosters => _maps(data?['rosters']);
@@ -140,6 +153,8 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
 
   @override
   void dispose() {
+    _validationVersion++;
+    _validationTimer?.cancel();
     requestVersion++;
     _dropSubscription?.cancel();
     _statusTooltip.dispose();
@@ -207,12 +222,21 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
             (existingProject(team).isEmpty ? 'new' : 'continue');
 
   void begin(String next, {int? teamId}) {
+    _validationVersion++;
+    _validationTimer?.cancel();
     setState(() {
+      importValidation = null;
+      importChecking = false;
+      importFilter = 'all';
       action = next;
       review = null;
       error = null;
       message = null;
       missingOnly = false;
+      if (next == 'generate') {
+        generationStep = 1;
+        generationStudents = [];
+      }
       source = keyFor(
         rosters.firstWhere(
           (r) => keyFor(r) != selected,
@@ -251,21 +275,197 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
   Future<void> processFiles(List<PickedTabularFile> files) async {
     if (!mounted || busy || files.isEmpty) return;
     await run(() async {
-      final parsed = parseTeamBulkCsv(readTeamImportFiles(files));
+      final parsed = parseTeamBulkCsv(
+        readTeamImportFiles(files, includeFileSources: true),
+      );
       if (parsed.rows.isEmpty) {
         throw const FormatException('No team rows were found in this file.');
       }
       setState(() {
         importRows = parsed.rows
-            .map((r) => Map<String, dynamic>.from(r))
+            .map(
+              (r) => {
+                ...r,
+                'section': '${r['section'] ?? ''}'.trim().isEmpty
+                    ? section
+                    : r['section'],
+              },
+            )
             .toList();
         fileName = files.map((f) => f.name).join(', ');
+        _importFiles
+          ..clear()
+          ..addEntries(
+            files.indexed.map(
+              (entry) => MapEntry('file${entry.$1}', entry.$2.name),
+            ),
+          );
         review = null;
       });
     });
+    if (mounted && error == null && importRows.isNotEmpty) {
+      scheduleImportValidation();
+    }
   }
 
+  void removeImportFile(String fileKey) {
+    if (busy || !_importFiles.containsKey(fileKey)) return;
+    _validationTimer?.cancel();
+    _validationVersion++;
+    setState(() {
+      importRows.removeWhere((row) => row['import_file_key'] == fileKey);
+      _importFiles.remove(fileKey);
+      fileName = _importFiles.isEmpty ? null : _importFiles.values.join(', ');
+      review = null;
+      importValidation = null;
+      importChecking = false;
+      importFilter = 'all';
+      error = null;
+      message = null;
+    });
+    if (importRows.isNotEmpty) scheduleImportValidation();
+  }
+
+  Widget uploadedImportFiles() => Column(
+    key: const ValueKey('roster-uploaded-files'),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SizedBox(height: 12),
+      const Text(
+        'Uploaded files',
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+      for (final file in _importFiles.entries)
+        Padding(
+          key: ValueKey('roster-uploaded-${file.key}'),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: Icon(
+                  Icons.description_outlined,
+                  size: 18,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      file.value,
+                      style: const TextStyle(fontSize: 12, height: 1.4),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Teams staged: ${importRows.where((row) => row['import_file_key'] == file.key).length}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Remove ${file.value}',
+                child: ShadButton.ghost(
+                  key: ValueKey('remove-roster-file-${file.key}'),
+                  size: ShadButtonSize.sm,
+                  enabled: !busy,
+                  leading: const Icon(Icons.close, size: 14),
+                  onPressed: () => removeImportFile(file.key),
+                  child: const Text('Remove'),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ],
+  );
+
+  void scheduleImportValidation() {
+    _validationTimer?.cancel();
+    final version = ++_validationVersion;
+    setState(() {
+      review = null;
+      importValidation = null;
+      error = null;
+      importChecking = importRows.isNotEmpty;
+    });
+    if (importRows.isEmpty) return;
+    _validationTimer = Timer(
+      const Duration(milliseconds: 400),
+      () => validateImport(version),
+    );
+  }
+
+  Future<void> validateImport(int version) async {
+    final contextKey = '$year/$section/$selected';
+    try {
+      final result = await ref.read(teamRosterServiceProvider).preview({
+        ...target,
+        'operation': 'import',
+        'validation_only': true,
+        'teams': importRows,
+      });
+      if (!mounted ||
+          version != _validationVersion ||
+          action != 'import' ||
+          contextKey != '$year/$section/$selected') {
+        return;
+      }
+      setState(() {
+        importValidation = result;
+        importChecking = false;
+      });
+    } catch (e) {
+      if (!mounted ||
+          version != _validationVersion ||
+          action != 'import' ||
+          contextKey != '$year/$section/$selected') {
+        return;
+      }
+      setState(() {
+        error = '$e'.replaceFirst('Exception: ', '');
+        importChecking = false;
+      });
+    }
+  }
+
+  Widget importToolbar() => TeamImportValidationToolbar(
+    rows: importRows,
+    previewRows: _maps(importValidation?['rows']),
+    filter: importFilter,
+    checking: importChecking,
+    error: error,
+    onRetry: busy ? null : scheduleImportValidation,
+    onFilter: (value) => setState(() => importFilter = value),
+    onFirstIssue: () {
+      setState(() => importFilter = 'all');
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _reviewTable.currentState?.goToFirstIssue(),
+      );
+    },
+    action: ShadButton(
+      size: ShadButtonSize.sm,
+      enabled:
+          !busy &&
+          error == null &&
+          !importChecking &&
+          importValidation?['ready'] == true,
+      onPressed: preview,
+      child: const Text('Review replacement'),
+    ),
+  );
+
   Future<void> preview() => run(() async {
+    final version = _validationVersion;
+    final contextKey = '$year/$section/$selected';
     final result = await ref.read(teamRosterServiceProvider).preview({
       ...target,
       'operation': action,
@@ -277,9 +477,20 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
       if (action == 'copy' && source != 'current')
         'source_event_id': int.parse(source),
       if (action == 'import') 'teams': importRows,
-      if (action == 'generate') ...{'group_size': groupSize, 'method': method},
+      if (action == 'generate') ...{
+        'group_size': groupSize,
+        'method': method,
+        'confirmed_student_ids': generationStudents,
+      },
     });
-    if (mounted) setState(() => review = result);
+    if (!mounted) return;
+    if (action == 'import' &&
+        (version != _validationVersion ||
+            importChecking ||
+            contextKey != '$year/$section/$selected')) {
+      return;
+    }
+    setState(() => review = result);
   });
 
   Future<void> apply() => run(() async {
@@ -296,6 +507,7 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
       action = null;
       importRows = [];
       fileName = null;
+      _importFiles.clear();
     });
     await load();
     if (mounted && error == null) {
@@ -1215,6 +1427,32 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
     );
   }
 
+  Widget prepareGeneration() => panel(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Generate new teams',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 6),
+        Text('Target: ${roster?['name']} · $section'),
+        const SizedBox(height: 20),
+        TeamRosterStudentsStep(
+          key: ValueKey('generation-students-$year-$section'),
+          year: year!,
+          section: section!,
+          onBusyChanged: (value) => setState(() => busy = value),
+          onCancel: () => setState(() => action = null),
+          onConfirmed: (ids) => setState(() {
+            generationStudents = ids;
+            generationStep = 2;
+          }),
+        ),
+      ],
+    ),
+  );
+
   Widget configure() => panel(
     Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1267,6 +1505,7 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
             builder: (context, constraints) {
               final guide = TeamImportFormatGuide(
                 isCapstone: false,
+                instructorWorkspace: widget.instructor,
                 contextLabel: '$year PIT · $section',
                 section: section,
                 onDownload: busy
@@ -1276,6 +1515,7 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                           filename: 'PIT-$section-team-roster-template.xlsx',
                           bytes: generateOfficialTeamRosterExcelBytes(
                             isCapstone: false,
+                            instructorWorkspace: widget.instructor,
                             assignedSection: section,
                           ),
                         );
@@ -1300,6 +1540,7 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                     fileLabel: fileName,
                     teamCount: importRows.length,
                   ),
+                  if (_importFiles.isNotEmpty) uploadedImportFiles(),
                 ],
               );
               return constraints.maxWidth >= 1000
@@ -1318,42 +1559,62 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
             },
           ),
           const SizedBox(height: 18),
+          if (error != null && importRows.isEmpty)
+            WorkflowNotice(
+              title: 'Unable to read spreadsheet',
+              message: error!,
+              error: true,
+            ),
           if (importRows.isNotEmpty) ...[
+            SizedBox(key: _reviewAnchor),
+            importToolbar(),
+            const SizedBox(height: 14),
             const Text(
               'Review teams',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             TeamBulkImportReviewTable(
+              key: _reviewTable,
               rows: importRows,
-              previewRows: const [],
+              previewRows: _maps(importValidation?['rows']),
+              sectionSummaries: _maps(importValidation?['section_summaries']),
+              isValidating: importChecking,
+              statusFilter: importFilter,
               isCapstoneAdmin: false,
               pitLeadYear: year,
               showIssuesOnly: false,
               lockAssignments: true,
               sectionOptions: [if (section != null) section!],
-              onRowChanged: (_) => setState(() => review = null),
-              onDeleteRow: (index) => setState(() {
-                importRows.removeAt(index);
-                review = null;
-              }),
-              onAddRow: () => setState(() {
-                importRows.add({
-                  'group_key':
-                      'manual/${DateTime.now().microsecondsSinceEpoch}',
-                  'team_name': '',
-                  'project_title': '',
-                  'section': section ?? '',
-                  'member_ids': <String>[],
-                  'leader_id': '',
+              onRowChanged: (_) => scheduleImportValidation(),
+              onDeleteRow: (index) {
+                setState(() => importRows.removeAt(index));
+                scheduleImportValidation();
+              },
+              onAddRow: () {
+                setState(() {
+                  importRows.add({
+                    'group_key':
+                        'manual/${DateTime.now().microsecondsSinceEpoch}',
+                    'team_name': '',
+                    'project_title': '',
+                    'section': section ?? '',
+                    'member_ids': <String>[],
+                    'leader_id': '',
+                  });
                 });
-                review = null;
-              }),
+                scheduleImportValidation();
+              },
             ),
             const SizedBox(height: 18),
           ],
         ],
         if (action == 'generate') ...[
+          Text(
+            '${generationStudents.length} confirmed students · $section',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 16),
           WorkflowSelect(
             label: 'Students per team',
             value: '$groupSize',
@@ -1419,19 +1680,37 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            secondary(
-              'Cancel',
-              Icons.close,
-              () => setState(() {
-                action = null;
-                review = null;
-              }),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                if (action == 'generate')
+                  secondary(
+                    'Back to students',
+                    Icons.arrow_back,
+                    () => setState(() {
+                      generationStep = 1;
+                      generationStudents = [];
+                    }),
+                  ),
+                secondary(
+                  'Cancel',
+                  Icons.close,
+                  () => setState(() {
+                    action = null;
+                    review = null;
+                  }),
+                ),
+              ],
             ),
             ShadButton(
               height: 0,
               enabled:
                   !busy &&
-                  (action != 'import' || importRows.isNotEmpty) &&
+                  (action != 'import' ||
+                      error == null &&
+                          !importChecking &&
+                          importValidation?['ready'] == true) &&
                   (action != 'projects' || setupTeams.isNotEmpty),
               onPressed: preview,
               child: Flexible(
@@ -1652,8 +1931,16 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
                   ),
                 ),
               const SizedBox(height: 20),
+              for (final summary in _maps(review!['section_summaries']))
+                TeamImportSharedDetails(summary: summary),
               teamTable(_maps(review!['teams']), preview: true),
               const SizedBox(height: 20),
+              if (error != null)
+                WorkflowNotice(
+                  title: 'Unable to apply this roster',
+                  message: error!,
+                  error: true,
+                ),
               Wrap(
                 alignment: WrapAlignment.spaceBetween,
                 spacing: 10,
@@ -1683,130 +1970,161 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
 
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(
-    child: PopScope(
-      canPop: !busy,
-      child: ColoredBox(
-        color: DefensysTokens.backgroundOf(context),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                spacing: 14,
-                runSpacing: 14,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Team roster',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w600,
-                          color: DefensysTokens.textPrimaryOf(context),
+    child: TeamImportStickyReview(
+      anchor: _reviewAnchor,
+      toolbar: importToolbar(),
+      enabled: action == 'import' && review == null && importRows.isNotEmpty,
+      child: PopScope(
+        canPop: !busy,
+        child: ColoredBox(
+          color: DefensysTokens.backgroundOf(context),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: 14,
+                  runSpacing: 14,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Team roster',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.textPrimaryOf(context),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${section ?? 'Choose a section'} · ${year ?? 'PIT'}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: DefensysTokens.textSecondaryOf(context),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${section ?? 'Choose a section'} · ${year ?? 'PIT'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: DefensysTokens.textSecondaryOf(context),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  secondary('Back to PIT Teams', Icons.arrow_back, back),
-                ],
-              ),
-              const SizedBox(height: 22),
-              if (error != null)
-                WorkflowNotice(
-                  title: 'Unable to complete this action',
-                  message: error!,
-                  error: true,
+                      ],
+                    ),
+                    secondary('Back to PIT Teams', Icons.arrow_back, back),
+                  ],
                 ),
-              if (error != null && data != null)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: secondary('Refresh roster', Icons.refresh, () {
-                      setState(() {
-                        action = null;
-                        review = null;
-                      });
-                      load();
-                    }),
+                const SizedBox(height: 22),
+                if (error != null && action != 'import')
+                  WorkflowNotice(
+                    title: 'Unable to complete this action',
+                    message: error!,
+                    error: true,
                   ),
-                ),
-              if (message != null)
-                WorkflowNotice(title: 'Roster updated', message: message!),
-              if (data == null) ...[
-                if (busy)
-                  const Padding(
-                    padding: EdgeInsets.all(40),
-                    child: Center(child: CircularProgressIndicator()),
+                if (error != null && data != null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: secondary('Refresh roster', Icons.refresh, () {
+                        setState(() {
+                          action = null;
+                          review = null;
+                        });
+                        load();
+                      }),
+                    ),
                   ),
-                if (!busy) secondary('Try again', Icons.refresh, load),
-              ] else ...[
-                rosterToolbar(),
-                if (busy)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 14),
-                    child: LinearProgressIndicator(),
-                  ),
-                if (section == null || rosters.isEmpty)
-                  emptySections()
-                else
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final content = review != null
-                          ? reviewPanel()
-                          : action != null
-                          ? configure()
-                          : browse();
-                      if (constraints.maxWidth < 820) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                if (message != null)
+                  WorkflowNotice(title: 'Roster updated', message: message!),
+                if (data == null) ...[
+                  if (busy)
+                    const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  if (!busy) secondary('Try again', Icons.refresh, load),
+                ] else ...[
+                  rosterToolbar(),
+                  if (busy)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 14),
+                      child: LinearProgressIndicator(),
+                    ),
+                  if (section == null || rosters.isEmpty)
+                    emptySections()
+                  else
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final body = review != null
+                            ? reviewPanel()
+                            : action == 'generate' && generationStep == 1
+                            ? prepareGeneration()
+                            : action != null
+                            ? configure()
+                            : browse();
+                        final content = action == 'generate'
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  WorkflowStepProgress(
+                                    currentStep: review != null
+                                        ? 3
+                                        : generationStep,
+                                    labels: const [
+                                      'Import & confirm students',
+                                      'Choose grouping',
+                                      'Review & apply teams',
+                                    ],
+                                    compactLabels: const [
+                                      'Students',
+                                      'Grouping',
+                                      'Review',
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  body,
+                                ],
+                              )
+                            : body;
+                        if (constraints.maxWidth < 820) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              WorkflowSelect(
+                                label: 'Roster',
+                                value: selected,
+                                options: {
+                                  for (final r in rosters)
+                                    keyFor(r): '${r['name']}',
+                                },
+                                searchable: false,
+                                enabled: !busy && rosters.length > 1,
+                                onChanged: (value) => setState(() {
+                                  selected = value;
+                                  action = null;
+                                  review = null;
+                                  missingOnly = false;
+                                  error = null;
+                                  message = null;
+                                }),
+                              ),
+                              content,
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            WorkflowSelect(
-                              label: 'Roster',
-                              value: selected,
-                              options: {
-                                for (final r in rosters)
-                                  keyFor(r): '${r['name']}',
-                              },
-                              searchable: false,
-                              enabled: !busy && rosters.length > 1,
-                              onChanged: (value) => setState(() {
-                                selected = value;
-                                action = null;
-                                review = null;
-                                missingOnly = false;
-                                error = null;
-                                message = null;
-                              }),
-                            ),
-                            content,
+                            SizedBox(width: 220, child: rosterList()),
+                            const SizedBox(width: 20),
+                            Expanded(child: content),
                           ],
                         );
-                      }
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(width: 220, child: rosterList()),
-                          const SizedBox(width: 20),
-                          Expanded(child: content),
-                        ],
-                      );
-                    },
-                  ),
+                      },
+                    ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

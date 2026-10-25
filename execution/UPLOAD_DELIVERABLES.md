@@ -1,16 +1,89 @@
 # Upload sample deliverable files without chat
 
-Run `upload_deliverables.py` yourself from the DefenSYS repository folder. It uses the normal API and does not need an AI subscription or API key. Start your DefenSYS backend first.
+Run `upload_deliverables.py` yourself. It uses the normal API and does not need an AI subscription or API key. Start your DefenSYS backend first.
 
 The script uploads distinct files for each team's PIT event or Capstone stage. It supports single files, named documents, concept-paper slots and multiple attachments. It reads the configured requirements and the selected teams' actual access state.
 
-## Student batch uploads (recommended for demo data)
+## Simple command (recommended)
+
+Like the evaluation scripts, this command uploads through student accounts automatically. Add `--dry-run` to preview; remove it to upload. No prepare step, manifest filename or PowerShell loop is required.
+
+With the backend virtual environment active, run from `execution/`:
+
+```powershell
+python upload_deliverables.py --all-teams --year 1 --files "../sample_file/PIT1" --dry-run
+```
+
+This defaults to PIT and all pre-defense deliverables. The configured event is selected automatically only when exactly one is available for the selected year. Otherwise add `--stage "System Concept Pitching"`. For Capstone use `--scope capstone --stage "Concept Proposal"`. `--team-id 7 8` can replace `--all-teams`.
+
+Put the pre-deliverables into folders named with their configured IDs or labels:
+
+```text
+sample_file/PIT1/
+  D1/
+    AlphaWave_Concept_Paper.pdf
+    ApexCode_Concept_Paper.pdf
+  D2/
+    05_AlphaWave_Pitch_Deck.pptx
+    06_ApexCode_Pitch_Deck.pptx
+```
+
+The folder chooses the deliverable; filenames identify the teams. The text after the team name does not choose the deliverable. A leading word `Team` and sample numbering such as `05_` are optional; numbers never determine the team. Duplicate/ambiguous matches are reported. All files remain distinct for their teams.
+
+You may use exact configured labels (for example `Pitch Deck`) or folder names starting with an ID (for example `D1 - Concept Paper`). For other folder names, add `--folder "D1=your/path"` relative to `--files`. A PDF requirement can use a `PDF` subfolder to separate it from editable versions. Grouped documents use subfolders named for document keys or labels under their deliverable folder.
+
+To upload only one deliverable, point directly to its files:
+
+```powershell
+python upload_deliverables.py --all-teams --year 1 --deliverable D1 --files "../sample_file/PIT1/D1" --dry-run
+```
+
+Use `--slot "c1:paper"` when choosing one document from a grouped/concept deliverable. Use `--timing post` or `--timing all` to include post-defense files. Existing team-folder layouts also continue to work for multi-deliverable batches.
+
+For the current first-year sample folders, all pre-deliverables can be previewed without moving or renaming files:
+
+```powershell
+python upload_deliverables.py --all-teams --year 1 --files "../Defensys_sample files/sample_file/16_Teams_1st_Year/1st Sem" --folder "D1=Concept Paper/PDF" --dry-run
+```
+
+`--folder` is needed here because D1 is currently labelled `Cocept Paper` in the live configuration, while the sample folder is `Concept Paper`. The script does not change that configuration or guess misspellings. D2 automatically matches `Pitch Deck`.
+
+Remove `--dry-run` from the same command to upload. Uploads retain student permissions, workflow locks and deadlines. Existing occupied targets are skipped, so rerunning only fills missing targets. The command keeps its mapping in memory and writes result logs under the repository's `.tmp/` automatically. It does not require saving or maintaining a manifest.
+
+## Advanced saved-plan workflow
+
+The existing `prepare` and `run` commands remain available when you want to review or edit a saved plan. In this advanced workflow, `run` previews by default and `run --apply` uploads; it is separate from the simple command's `--dry-run` convention.
 
 Use `--student-leaders` when preparing your plan. Like the evaluation automation, this trusted local mode scans the active cohort and makes ordinary API requests authenticated as each team's real student leader. The application records that student as **Uploaded by**, with the actual upload time. There is no admin upload followed by relabeling.
 
 It reads your local Django configuration/database and creates short-lived student access tokens in memory. It never resets passwords, creates refresh-token records, changes team membership or grants new upload permissions. Run it from the same backend environment as your local demo. No new impersonation API is added to the application.
 
-Keep **a folder for each team**, using the team's name from the selected event/stage. Inside, use the configured deliverable names:
+To upload **one deliverable for all teams**, put that deliverable's files in one folder and start each filename with its team name:
+
+```text
+sample_file/ConceptPapers/
+  AlphaWave_Concept_Paper.pdf
+  ApexCode_Concept_Paper.pdf
+  DevCraft_any_filename.pdf
+```
+
+Choose the destination with `--deliverable`, using its configured label or ID:
+
+```powershell
+.\backend\venv\Scripts\python.exe execution/upload_deliverables.py prepare --student-leaders --scope pit --stage "System Concept Pitching" --deliverable "Concept Paper" --all-teams --files-root "sample_file/ConceptPapers" --manifest ".tmp/concept-papers.json"
+.\backend\venv\Scripts\python.exe execution/upload_deliverables.py run --manifest ".tmp/concept-papers.json"
+.\backend\venv\Scripts\python.exe execution/upload_deliverables.py run --manifest ".tmp/concept-papers.json" --apply
+```
+
+The command selects the deliverable. Only the team-name prefix identifies who owns each file; the suffix does not select or validate the deliverable. `AlphaWave.pdf` also works. Case, spaces and punctuation in team names are normalized, so `AlphaWave` can match `Alpha Wave`. The full team name must be at the start, followed by a separator or the filename extension; `Alpha` does not match `AlphaWave`. Matching never uses sorting. Keep only the intended deliverable's files in this batch folder.
+
+The roster's leading word `Team` is optional in filenames: `AlphaWave_Concept_Paper.pdf` matches `Team AlphaWave`. Both the full roster name and this shorter form are checked for ambiguity; the script never guesses between two teams with the same matching name.
+
+A single-file requirement needs one matching file per team. Multiple candidates leave that team's mapping blank; missing matches are blocked in preview. A filename matching more than one team stops preparation with an ambiguity message. Grouped/concept requirements with several documents also need `--slot` (the configured key or label), for example `--deliverable "Concept Papers" --slot "c1:paper"`. That command selects the document; its filename suffix still does not matter. Multiple-attachment requirements accept all matching team files. All uploads use each team's student leader and retain the server's normal permissions, format checks and workflow locks.
+
+For post-defense batches, add `--timing post`. For Capstone, use `--scope capstone` and the exact stage name. Preview and upload use the saved plan, so neither needs `--deliverable` again.
+
+Alternatively, to prepare **several deliverables together**, omit `--deliverable` and keep **a folder for each team**, using the team's name from the selected event/stage. Inside, use the configured deliverable names:
 
 ```text
 sample_file/UploadBatch/

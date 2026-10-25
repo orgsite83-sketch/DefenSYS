@@ -25,6 +25,8 @@ def entry_haystack(entry: Dict[str, Any]) -> str:
     topics = entry.get('topics') or []
     if topics:
         parts.append(' '.join(str(topic) for topic in topics))
+    for tags in entry.get('library_tags', {}).values():
+        parts.extend(tag.get('label', '') for tag in tags)
     return ' '.join(str(part) for part in parts if part).lower()
 
 
@@ -161,6 +163,9 @@ def filter_and_rank_entries(
 
 
 def _apply_standard_filters(entry: Dict[str, Any], query_params) -> bool:
+    from .public_taxonomy import matches_public_tags
+    if not matches_public_tags(entry, query_params):
+        return False
     def get_param(key):
         if hasattr(query_params, 'get'):
             return (query_params.get(key) or '').strip()

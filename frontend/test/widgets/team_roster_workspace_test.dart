@@ -1,6 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:defensys/utils/csv_file_io.dart';
+import 'package:defensys/widgets/team_import_review.dart';
 import 'package:defensys/screens/web/faculty/team_roster_screen.dart';
 import 'package:defensys/services/academic/team_roster_service.dart';
+import 'package:defensys/services/academic/team_formation_service.dart';
+import 'package:defensys/screens/web/admin/student_teams/components/team_roster_import_panel.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,7 +35,55 @@ Map<String, dynamic> _team(int id, String name) => {
   'setup_opened': false,
 };
 
+class _Formation extends Fake implements TeamFormationService {
+  bool empty = false, fail = false;
+  final loads = <String>[];
+
+  @override
+  Future<Map<String, dynamic>> options(String level, String? event) async {
+    loads.add(level);
+    if (fail) throw Exception('Class list unavailable');
+    return {
+      'sections': [
+        {'name': 'BSIT-1B'},
+      ],
+      'can_manage_policy': false,
+      'students': [
+        if (!empty)
+          for (final id in [10, 11, 20, 21])
+            {
+              'id': id,
+              'name': 'Student $id',
+              'username': 'student-$id',
+              'section': 'BSIT-1B',
+              'assigned': true,
+            },
+        {'id': 99, 'name': 'Other section', 'section': 'BSIT-1A'},
+      ],
+    };
+  }
+}
+
+Future<void> _confirmStudents(WidgetTester tester) async {
+  final checkbox = find.byKey(const ValueKey('confirm-generation-students'));
+  await tester.ensureVisible(checkbox);
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find.descendant(
+      of: checkbox,
+      matching: find.textContaining('I confirm these'),
+    ),
+  );
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(find.text('Continue to grouping'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Continue to grouping'));
+  await tester.pumpAndSettle();
+}
+
 class _Service extends Fake implements TeamRosterService {
+  final pendingValidation = <Completer<Map<String, dynamic>>>[];
+  bool deferValidation = false;
   bool canGenerate = true;
   bool noSections = false;
   final loads = <Map<String, dynamic>>[];
@@ -111,6 +164,31 @@ class _Service extends Fake implements TeamRosterService {
   Future<Map<String, dynamic>> preview(Map<String, dynamic> data) async {
     submitted = data;
     pending = data;
+    if (data['validation_only'] == true) {
+      if (deferValidation) {
+        final pending = Completer<Map<String, dynamic>>();
+        pendingValidation.add(pending);
+        return pending.future;
+      }
+      final rows = (data['teams'] as List).cast<Map<String, dynamic>>();
+      final results = [
+        for (var i = 0; i < rows.length; i++)
+          {
+            'row': i + 1,
+            'group_key': rows[i]['group_key'],
+            'ready': !(rows[i]['member_ids'] as List).contains('Unknown'),
+            'issues': (rows[i]['member_ids'] as List).contains('Unknown')
+                ? ['Student account was not found.']
+                : <String>[],
+            'warnings': <String>[],
+          },
+      ];
+      return {
+        'rows': results,
+        'ready': results.every((r) => r['ready'] == true),
+        'section_summaries': teamImportSummaries(rows, []),
+      };
+    }
     if (data['operation'] == 'projects') {
       final selected = rosters.firstWhere((r) => r['id'] == data['event_id']);
       final ids = data['team_ids'] as List;
@@ -149,6 +227,11 @@ class _Service extends Fake implements TeamRosterService {
     }
     return {
       'preview_token': 'signed-review',
+      if (data['operation'] == 'import')
+        'section_summaries': teamImportSummaries(
+          (data['teams'] as List).cast<Map<String, dynamic>>(),
+          [],
+        ),
       'teams': [_team(1, 'Team FreshStart')],
       'target': data['event_id'] == null ? 'Current roster' : '1st Year Expo',
       'confirmation': data['event_id'] == null
@@ -194,6 +277,7 @@ class _Service extends Fake implements TeamRosterService {
 }
 
 void main() {
+  setUpAll(() => loadPreviewFonts(force: true));
   testWidgets(
     'unsectioned PIT cohort shows setup guidance and recovers after refresh',
     (tester) async {
@@ -415,6 +499,115 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'instructor import validates automatically and shows shared details in confirmation',
+    (tester) async {
+      final service = _Service();
+      await pumpDefensysWidget(
+        tester,
+        const TeamRosterScreen(instructor: true, initialEvent: '1st Year Expo'),
+        overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+      );
+      await tester.tap(find.text('Import teams'));
+      await tester.pumpAndSettle();
+      final dynamic page = tester.state(find.byType(TeamRosterScreen));
+      await page.processFiles([
+        const PickedTabularFile(
+          name: 'shared.csv',
+          extension: 'csv',
+          bytes: [],
+          text:
+              'System Name:,Societree\nProject Manager:,Ana Reyes\n'
+              'Team Name,Module,Section,Team Members\nCore,Directory,BSIT-1B,Ana Reyes\n'
+              'Auth,Sign in,BSIT-1B,Luis Santos\n',
+        ),
+      ]);
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pumpAndSettle();
+      expect(service.submitted?['workspace'], 'instructor');
+      expect(service.submitted?['validation_only'], isTrue);
+      expect(find.text('Shared system · BSIT-1B'), findsOneWidget);
+      expect(find.text('Societree'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('shared-system-BSIT-1B')),
+          matching: find.text('Ana Reyes'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Ready'), findsNWidgets(2));
+      await tester.ensureVisible(find.text('Review replacement').first);
+      await tester.tap(find.text('Review replacement').first);
+      await tester.pumpAndSettle();
+      expect(service.submitted?['validation_only'], isNull);
+      expect(find.text('Shared system · BSIT-1B'), findsOneWidget);
+      expect(find.text('Societree'), findsOneWidget);
+      expect(service.applied, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'instructor edits discard out-of-order validation and block replacement',
+    (tester) async {
+      final service = _Service()..deferValidation = true;
+      await pumpDefensysWidget(
+        tester,
+        const TeamRosterScreen(instructor: true, initialEvent: '1st Year Expo'),
+        overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+      );
+      await tester.tap(find.text('Import teams'));
+      await tester.pumpAndSettle();
+      final dynamic page = tester.state(find.byType(TeamRosterScreen));
+      await page.processFiles([
+        const PickedTabularFile(
+          name: 'teams.csv',
+          extension: 'csv',
+          bytes: [],
+          text:
+              'Team Name,PIT Project,Section,Team Members\nCore,Directory,BSIT-1B,Ana Reyes\n',
+        ),
+      ]);
+      await tester.pump(const Duration(milliseconds: 450));
+      final key = (page.importRows as List).first['group_key'];
+      page.scheduleImportValidation();
+      await tester.pump(const Duration(milliseconds: 450));
+      service.pendingValidation.last.complete({
+        'ready': false,
+        'rows': [
+          {
+            'row': 1,
+            'group_key': key,
+            'ready': false,
+            'issues': ['Student account was not found.'],
+            'warnings': <String>[],
+          },
+        ],
+      });
+      await tester.pumpAndSettle();
+      service.pendingValidation.first.complete({
+        'ready': true,
+        'rows': [
+          {
+            'row': 1,
+            'group_key': key,
+            'ready': true,
+            'issues': <String>[],
+            'warnings': <String>[],
+          },
+        ],
+      });
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Student account was not found.'),
+        findsOneWidget,
+      );
+      expect((page.importValidation as Map)['ready'], isFalse);
+      expect(service.applied, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('Lead all-section import follows the selected Current roster', (
     tester,
   ) async {
@@ -465,6 +658,139 @@ void main() {
     expect(importContext?.queryParameters.containsKey('event'), isFalse);
   });
 
+  testWidgets(
+    'removing an instructor file clears staging and ignores its pending validation',
+    (tester) async {
+      final service = _Service()..deferValidation = true;
+      await pumpDefensysWidget(
+        tester,
+        const TeamRosterScreen(instructor: true, initialEvent: '1st Year Expo'),
+        overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+      );
+      await tester.tap(find.text('Import teams'));
+      await tester.pumpAndSettle();
+      final dynamic page = tester.state(find.byType(TeamRosterScreen));
+      const file = PickedTabularFile(
+        name: 'section-roster.csv',
+        extension: 'csv',
+        bytes: [],
+        text:
+            'Team Name,PIT Project,Section,Team Members\nCore,Directory,BSIT-1B,Ana Reyes\n',
+      );
+      await page.processFiles([file]);
+      await tester.pump(const Duration(milliseconds: 450));
+      final key = (page.importRows as List).single['group_key'];
+      final remove = find.byKey(const ValueKey('remove-roster-file-file0'));
+      expect(
+        find.byKey(const ValueKey('roster-uploaded-files')),
+        findsOneWidget,
+      );
+      expect(find.text('Teams staged: 1'), findsOneWidget);
+      await tester.ensureVisible(remove);
+      await tester.tap(remove);
+      await tester.pumpAndSettle();
+      service.pendingValidation.single.complete({
+        'ready': true,
+        'rows': [
+          {
+            'row': 1,
+            'group_key': key,
+            'ready': true,
+            'issues': <String>[],
+            'warnings': <String>[],
+          },
+        ],
+      });
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('roster-uploaded-files')), findsNothing);
+      expect(
+        find.text('Drop a spreadsheet here or choose a file'),
+        findsOneWidget,
+      );
+      expect(page.fileName, isNull);
+      expect(page.importRows, isEmpty);
+      expect(page.importValidation, isNull);
+      expect(page.importChecking, isFalse);
+      expect(page.review, isNull);
+      expect(service.applied, isNull);
+      expect(service.rosters.last['team_count'], 2);
+      service.deferValidation = false;
+      await page.processFiles([file]);
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('roster-uploaded-files')),
+        findsOneWidget,
+      );
+      expect((page.importValidation as Map)['ready'], isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'removing one instructor upload preserves other files and edited teams',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final service = _Service();
+      await pumpDefensysWidget(
+        tester,
+        const TeamRosterScreen(instructor: true, initialEvent: '1st Year Expo'),
+        overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+      );
+      await tester.tap(find.text('Import teams'));
+      await tester.pumpAndSettle();
+      final dynamic page = tester.state(find.byType(TeamRosterScreen));
+      const remainingName =
+          'PIT-BSIT-1B-shared-system-team-roster-with-reviewed-modules.csv';
+      await page.processFiles([
+        const PickedTabularFile(
+          name: 'first.csv',
+          extension: 'csv',
+          bytes: [],
+          text:
+              'Team Name,PIT Project,Section,Team Members\nCore,Directory,BSIT-1B,Ana Reyes\n',
+        ),
+        const PickedTabularFile(
+          name: remainingName,
+          extension: 'csv',
+          bytes: [],
+          text:
+              'Team Name,PIT Project,Section,Team Members\nAuth,Sign in,BSIT-1B,Luis Santos\n',
+        ),
+      ]);
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pumpAndSettle();
+      (page.importRows as List).last['team_name'] = 'Edited Auth';
+      final remove = find.byKey(const ValueKey('remove-roster-file-file0'));
+      await tester.ensureVisible(remove);
+      await tester.pumpAndSettle();
+      await capturePreview(
+        tester,
+        find.byType(TeamRosterScreen),
+        'instructor-uploaded-files-390',
+        viewport: true,
+      );
+      await tester.tap(remove);
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('roster-uploaded-file0')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('roster-uploaded-file1')),
+        findsOneWidget,
+      );
+      expect(page.fileName, remainingName);
+      expect((page.importRows as List).single['team_name'], 'Edited Auth');
+      expect((page.importRows as List).single['member_ids'], ['Luis Santos']);
+      expect((page.importValidation as Map)['ready'], isTrue);
+      expect((service.submitted?['teams'] as List), hasLength(1));
+      expect(service.applied, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('completed roster exposes export but no replacement or setup', (
     tester,
   ) async {
@@ -493,11 +819,33 @@ void main() {
       await pumpDefensysWidget(
         tester,
         const TeamRosterScreen(),
-        overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+        overrides: [
+          teamRosterServiceProvider.overrideWithValue(service),
+          teamFormationServiceProvider.overrideWithValue(_Formation()),
+        ],
       );
       await tester.ensureVisible(find.text('Generate teams'));
       await tester.tap(find.text('Generate teams'));
       await tester.pumpAndSettle();
+      expect(find.text('Import & confirm students'), findsOneWidget);
+      expect(find.text('Students per team'), findsNothing);
+      expect(find.text('2. Configure grouping'), findsNothing);
+      expect(service.submitted, isNull);
+      expect(
+        tester
+            .widget<ShadButton>(
+              find.byKey(const ValueKey('continue-generation-grouping')),
+            )
+            .enabled,
+        isFalse,
+      );
+      final panel = tester.widget<TeamRosterImportPanel>(
+        find.byType(TeamRosterImportPanel),
+      );
+      expect(panel.section, 'BSIT-1B');
+      expect(panel.students.map((s) => s['id']), [10, 11, 20, 21]);
+      await _confirmStudents(tester);
+      expect(find.text('Students per team'), findsOneWidget);
       await tester.ensureVisible(find.text('Review roster'));
       await tester.tap(find.text('Review roster'));
       await tester.pumpAndSettle();
@@ -514,8 +862,145 @@ void main() {
         findsOneWidget,
       );
       expect(service.submitted?['operation'], 'generate');
+      expect(service.submitted?['confirmed_student_ids'], [10, 11, 20, 21]);
+      expect(service.applied, isNull);
+      await tester.ensureVisible(find.text('Back').last);
+      await tester.tap(find.text('Back').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Students per team'), findsOneWidget);
+      await tester.ensureVisible(find.text('Back to students'));
+      await tester.tap(find.text('Back to students'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TeamRosterImportPanel), findsOneWidget);
+      expect(
+        tester
+            .widget<ShadCheckbox>(
+              find.byKey(const ValueKey('confirm-generation-students')),
+            )
+            .value,
+        isFalse,
+      );
     },
   );
+
+  testWidgets('empty section must import students before grouping', (
+    tester,
+  ) async {
+    final service = _Service();
+    final formation = _Formation()..empty = true;
+    await pumpDefensysWidget(
+      tester,
+      const TeamRosterScreen(instructor: true),
+      overrides: [
+        teamRosterServiceProvider.overrideWithValue(service),
+        teamFormationServiceProvider.overrideWithValue(formation),
+      ],
+    );
+    await tester.tap(find.text('Generate teams'));
+    await tester.pumpAndSettle();
+    expect(find.text('Import students first'), findsOneWidget);
+    expect(find.text('Import Class List'), findsOneWidget);
+    expect(find.text('Students per team'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('confirm-generation-students')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<ShadButton>(
+            find.byKey(const ValueKey('continue-generation-grouping')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(service.submitted, isNull);
+
+    // The shared importer refreshes this step only after committing section assignments.
+    formation.empty = false;
+    final importer = tester.widget<TeamRosterImportPanel>(
+      find.byType(TeamRosterImportPanel),
+    );
+    await importer.onImported();
+    await tester.pumpAndSettle();
+    expect(find.text('Import students first'), findsNothing);
+    expect(formation.loads, ['1st Year PIT', '1st Year PIT']);
+    await _confirmStudents(tester);
+    expect(find.text('4 confirmed students · BSIT-1B'), findsOneWidget);
+    expect(service.submitted, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('class-list errors and staged imports block grouping', (
+    tester,
+  ) async {
+    final formation = _Formation()..fail = true;
+    await pumpDefensysWidget(
+      tester,
+      const TeamRosterScreen(),
+      overrides: [
+        teamRosterServiceProvider.overrideWithValue(_Service()),
+        teamFormationServiceProvider.overrideWithValue(formation),
+      ],
+    );
+    await tester.tap(find.text('Generate teams'));
+    await tester.pumpAndSettle();
+    expect(find.text('Class list unavailable'), findsOneWidget);
+    expect(
+      tester
+          .widget<ShadButton>(
+            find.byKey(const ValueKey('continue-generation-grouping')),
+          )
+          .enabled,
+      isFalse,
+    );
+    formation.fail = false;
+    await tester.ensureVisible(find.text('Retry class list'));
+    await tester.tap(find.text('Retry class list'));
+    await tester.pumpAndSettle();
+    final checkbox = find.byKey(const ValueKey('confirm-generation-students'));
+    await tester.ensureVisible(checkbox);
+    await tester.tap(checkbox);
+    await tester.pumpAndSettle();
+    final importer = tester.widget<TeamRosterImportPanel>(
+      find.byType(TeamRosterImportPanel),
+    );
+    importer.onDirtyChanged!(true);
+    await tester.pumpAndSettle();
+    expect(tester.widget<ShadCheckbox>(checkbox).value, isFalse);
+    expect(
+      tester
+          .widget<ShadButton>(
+            find.byKey(const ValueKey('continue-generation-grouping')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(
+      find.text('Apply or remove the staged class list before continuing.'),
+      findsOneWidget,
+    );
+    importer.onDirtyChanged!(false);
+    importer.onBusyChanged!(true);
+    formation.fail = true;
+    await importer.onImported();
+    await tester.pumpAndSettle();
+    expect(find.text('Class list unavailable'), findsOneWidget);
+    expect(
+      tester
+          .widget<ShadButton>(
+            find.widgetWithText(ShadButton, 'Retry class list'),
+          )
+          .enabled,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<ShadButton>(find.widgetWithText(ShadButton, 'Cancel'))
+          .enabled,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('project setup targets the event and selected section teams', (
     tester,
@@ -779,7 +1264,7 @@ void main() {
       testWidgets('roster fits ${width.toInt()}px ${dark ? 'dark' : 'light'}', (
         tester,
       ) async {
-        tester.view.physicalSize = Size(width, 1600);
+        tester.view.physicalSize = Size(width, width >= 820 ? 900 : 1600);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
@@ -792,7 +1277,10 @@ void main() {
             instructor: true,
           ),
           theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
-          overrides: [teamRosterServiceProvider.overrideWithValue(service)],
+          overrides: [
+            teamRosterServiceProvider.overrideWithValue(service),
+            teamFormationServiceProvider.overrideWithValue(_Formation()),
+          ],
         );
         await capturePreview(
           tester,
@@ -846,9 +1334,41 @@ void main() {
         await tester.ensureVisible(find.text('Generate teams'));
         await tester.tap(find.text('Generate teams'));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Team roster'));
+        await tester.pumpAndSettle();
+        await capturePreview(
+          tester,
+          find.byType(TeamRosterScreen),
+          'team-roster-students-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.text('View Roster (4)'));
+        await tester.tap(find.text('View Roster (4)'));
+        await tester.pumpAndSettle();
+        expect(find.text('Student 10 (student-10)'), findsOneWidget);
+        expect(find.text('Other section'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await _confirmStudents(tester);
+        await tester.ensureVisible(find.text('Team roster'));
+        await tester.pumpAndSettle();
+        await capturePreview(
+          tester,
+          find.byType(TeamRosterScreen),
+          'team-roster-grouping-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
         await tester.ensureVisible(find.text('Review roster'));
         await tester.tap(find.text('Review roster'));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Team roster'));
+        await tester.pumpAndSettle();
+        await capturePreview(
+          tester,
+          find.byType(TeamRosterScreen),
+          'team-roster-generated-review-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
         expect(tester.takeException(), isNull);
       });
     }

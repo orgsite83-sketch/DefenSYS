@@ -55,6 +55,9 @@ typedef LibrarySearchQuery = ({
   String type,
   String year,
   String documentKind,
+  String subject,
+  String technology,
+  String language,
 });
 final repositoryLibrarySearchProvider = FutureProvider.autoDispose
     .family<List<VaultEntry>, LibrarySearchQuery>((ref, query) async {
@@ -64,6 +67,9 @@ final repositoryLibrarySearchProvider = FutureProvider.autoDispose
           if (query.search.isNotEmpty) 'search': query.search,
           if (query.type.isNotEmpty) 'type': query.type,
           if (query.year.isNotEmpty) 'academic_year': query.year,
+          if (query.subject.isNotEmpty) 'subject': query.subject,
+          if (query.technology.isNotEmpty) 'technology': query.technology,
+          if (query.language.isNotEmpty) 'language': query.language,
           if (query.documentKind.isNotEmpty)
             'document_kind': query.documentKind,
         },

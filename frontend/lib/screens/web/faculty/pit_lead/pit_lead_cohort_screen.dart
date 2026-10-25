@@ -1,6 +1,9 @@
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:defensys/navigation/panelist_routes.dart';
+import '../../admin/user_management/access_control/panelist_eligibility_view.dart';
 
 import '../../../../services/academic/student_academic_records_provider.dart';
 import '../../../../services/academic_period_provider.dart';
@@ -19,17 +22,33 @@ import '../../admin/user_management/dialogs/download_sample_csv_dialog.dart';
 import '../../admin/user_management/dialogs/student_profile_details_dialog.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 
-enum _PitUserManagementTab { students, instructors }
+enum _PitUserManagementTab { students, instructors, panelists }
+
 enum _SubView { none, studentBatchHub }
 
 class PitLeadCohortScreen extends ConsumerStatefulWidget {
   final VoidCallback? onCreateTeam;
   final bool initialInstructors;
   final ValueChanged<bool>? onInstructorTabChanged;
+  final String? initialTab;
+  final String initialPanelistSection;
+  final int? initialPanelistRequestId;
+  final Set<int> initialFacultyIds;
+  final String? returnTo;
+  final ValueChanged<String>? onTabChanged, onPanelistSectionChanged;
+  final ValueChanged<int?>? onPanelistRequestChanged;
 
   const PitLeadCohortScreen({
     super.key, this.onCreateTeam, this.initialInstructors = false,
     this.onInstructorTabChanged,
+    this.initialTab,
+    this.initialPanelistSection = 'faculty',
+    this.initialPanelistRequestId,
+    this.initialFacultyIds = const {},
+    this.returnTo,
+    this.onTabChanged,
+    this.onPanelistSectionChanged,
+    this.onPanelistRequestChanged,
   });
 
   @override
@@ -65,12 +84,33 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
 
   final List<int> _rowsPerPageOptions = const [10, 25, 50, 100];
 
+  _PitUserManagementTab get _initialTab => switch (widget.initialTab) {
+    'panelists' => _PitUserManagementTab.panelists,
+    'instructors' => _PitUserManagementTab.instructors,
+    'students' => _PitUserManagementTab.students,
+    _ =>
+      widget.initialInstructors
+          ? _PitUserManagementTab.instructors
+          : _PitUserManagementTab.students,
+  };
+
+  void _changeTab(_PitUserManagementTab tab) {
+    if (tab == _currentTab) return;
+    setState(() => _currentTab = tab);
+    if (widget.onTabChanged != null) {
+      widget.onTabChanged!(tab.name);
+    } else {
+      widget.onInstructorTabChanged?.call(
+        tab == _PitUserManagementTab.instructors,
+      );
+    }
+    _refreshAllData();
+  }
+
   @override
   void initState() {
     super.initState();
-    _currentTab = widget.initialInstructors
-        ? _PitUserManagementTab.instructors
-        : _PitUserManagementTab.students;
+    _currentTab = _initialTab;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshAllData();
     });
@@ -79,10 +119,9 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
   @override
   void didUpdateWidget(covariant PitLeadCohortScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initialInstructors != oldWidget.initialInstructors) {
-      _currentTab = widget.initialInstructors
-          ? _PitUserManagementTab.instructors
-          : _PitUserManagementTab.students;
+    if (widget.initialInstructors != oldWidget.initialInstructors ||
+        widget.initialTab != oldWidget.initialTab) {
+      _currentTab = _initialTab;
       _subView = _SubView.none;
     }
   }
@@ -335,36 +374,95 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
           const SizedBox(height: 20),
 
           // Primary Tab Bar Switcher
-          DefensysSegmentedControl<_PitUserManagementTab>(
-            value: _currentTab,
-            items: [
-              DefensysSegmentItem(
-                value: _PitUserManagementTab.students,
-                label: 'Students & Enrollment',
-                badgeLabel: '$studentCount',
-                icon: Icons.school_rounded,
-              ),
-              DefensysSegmentItem(
-                value: _PitUserManagementTab.instructors,
-                label: 'Section Instructors',
-                badgeLabel: '$activeInstructorsCount',
-                icon: Icons.assignment_ind_rounded,
-              ),
-            ],
-            onChanged: (tab) {
-              if (tab == _currentTab) return;
-              setState(() => _currentTab = tab);
-              widget.onInstructorTabChanged?.call(tab == _PitUserManagementTab.instructors);
-              _refreshAllData();
-            },
+          LayoutBuilder(
+            builder: (context, constraints) => constraints.maxWidth < 680
+                ? DropdownButtonFormField<_PitUserManagementTab>(
+                    initialValue: _currentTab,
+                    key: ValueKey(_currentTab),
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: 'Manage',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: _PitUserManagementTab.students,
+                        child: Text('Students & Enrollment'),
+                      ),
+                      DropdownMenuItem(
+                        value: _PitUserManagementTab.instructors,
+                        child: Text('Section Instructors'),
+                      ),
+                      DropdownMenuItem(
+                        value: _PitUserManagementTab.panelists,
+                        child: Text('Panelists & Requests'),
+                      ),
+                    ],
+                    onChanged: (tab) {
+                      if (tab != null) _changeTab(tab);
+                    },
+                  )
+                : DefensysSegmentedControl<_PitUserManagementTab>(
+                    value: _currentTab,
+                    items: [
+                      DefensysSegmentItem(
+                        value: _PitUserManagementTab.students,
+                        label: 'Students & Enrollment',
+                        badgeLabel: '$studentCount',
+                        icon: Icons.school_rounded,
+                      ),
+                      DefensysSegmentItem(
+                        value: _PitUserManagementTab.instructors,
+                        label: 'Section Instructors',
+                        badgeLabel: '$activeInstructorsCount',
+                        icon: Icons.assignment_ind_rounded,
+                      ),
+                      const DefensysSegmentItem(
+                        value: _PitUserManagementTab.panelists,
+                        label: 'Panelists & Requests',
+                        icon: Icons.how_to_reg_outlined,
+                      ),
+                    ],
+                    onChanged: _changeTab,
+                  ),
           ),
           const SizedBox(height: 20),
 
           // Tab Content
           if (_currentTab == _PitUserManagementTab.students)
             _buildStudentsView(cohortState, instructorState)
-          else
+          else if (_currentTab == _PitUserManagementTab.instructors)
             _buildInstructorsView(instructorState, cohortState),
+          if (_currentTab == _PitUserManagementTab.panelists) ...[
+            if (PanelistRoutes.importReturn(widget.returnTo)
+                case final destination?)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: TextButton.icon(
+                  onPressed: () => context.go(destination),
+                  icon: const Icon(Icons.arrow_back, size: 18),
+                  label: const Text('Back to schedule import'),
+                ),
+              ),
+            SizedBox(
+              height: (MediaQuery.sizeOf(context).height - 300).clamp(
+                480.0,
+                820.0,
+              ),
+              child: PanelistEligibilityDirectory(
+                standalone: true,
+                initialTab: widget.initialPanelistSection,
+                initialRequestId: widget.initialPanelistRequestId,
+                initialFacultyIds: widget.initialFacultyIds,
+                onTabChanged: widget.onPanelistSectionChanged,
+                onSelectRequest: widget.onPanelistRequestChanged,
+                onRequestClosed: () =>
+                    widget.onPanelistRequestChanged?.call(null),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -374,6 +472,9 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
     PitLeadCohortState cohortState,
     PitInstructorState instructorState,
   ) {
+    if (_currentTab == _PitUserManagementTab.panelists) {
+      return const SizedBox.shrink();
+    }
     if (_currentTab == _PitUserManagementTab.students) {
       return Wrap(
         spacing: 12,

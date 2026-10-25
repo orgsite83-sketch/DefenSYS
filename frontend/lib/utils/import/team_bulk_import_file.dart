@@ -7,7 +7,10 @@ import '../excel_safe_decode.dart';
 import 'team_bulk_import_csv.dart';
 
 /// Read a batch atomically so a failed file is never silently omitted.
-String readTeamImportFiles(List<PickedTabularFile> files) {
+String readTeamImportFiles(
+  List<PickedTabularFile> files, {
+  bool includeFileSources = false,
+}) {
   final rows = <Map<String, dynamic>>[];
   final errors = <String>[];
   for (var fileIndex = 0; fileIndex < files.length; fileIndex++) {
@@ -28,7 +31,17 @@ String readTeamImportFiles(List<PickedTabularFile> files) {
           'No team rows were found. Use the DefenSYS team roster template.',
         );
       }
-      rows.addAll(parsed.rows);
+      rows.addAll([
+        for (final entry in parsed.rows.indexed)
+          {
+            ...entry.$2,
+            if (includeFileSources) ...{
+              'import_file_key': 'file$fileIndex',
+              'group_key':
+                  'file$fileIndex/${entry.$2['group_key'] ?? 'row${entry.$1}'}',
+            },
+          },
+      ]);
     } catch (error) {
       final detail = error is FormatException ? error.message : '$error';
       errors.add('${file.name}: $detail');
@@ -41,7 +54,7 @@ String readTeamImportFiles(List<PickedTabularFile> files) {
   }
   // Normalize each file independently. Concatenating raw sheets can align a
   // second file's unrelated columns with the first file's table blocks.
-  const fields = [
+  final fields = [
     'team_name',
     'project_title',
     'level',
@@ -54,6 +67,8 @@ String readTeamImportFiles(List<PickedTabularFile> files) {
     'system_name',
     'project_manager',
     'group_key',
+    'project_kind',
+    if (includeFileSources) 'import_file_key',
   ];
   String cell(dynamic value) {
     final text = value is List ? value.join('|') : value?.toString() ?? '';

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/utils/semester_calendar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -1045,6 +1046,9 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
           label: 'Defense date',
           child: ShadDatePicker(
             selected: _date,
+            fromMonth: SemesterCalendarWindow.fromMap(widget.schedule ?? _context?['active_semester'])?.start,
+            toMonth: SemesterCalendarWindow.fromMap(widget.schedule ?? _context?['active_semester'])?.end,
+            selectableDayPredicate: (date) => SemesterCalendarWindow.fromMap(widget.schedule ?? _context?['active_semester'])?.contains(date) ?? false,
             enabled: !_busy,
             closeOnSelection: true,
             allowDeselection: false,

@@ -1,4 +1,9 @@
+import 'dart:convert';
 import 'package:defensys/l10n/app_localizations.dart';
+import 'package:defensys/utils/import/schedule_import_draft.dart';
+import 'package:defensys/utils/defense_schedule_import_parser.dart';
+import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/services/network/connectivity_provider.dart';
 import 'package:defensys/navigation/app_router.dart';
 import 'package:defensys/notifications/notification_request_screen.dart';
 import 'package:defensys/services/authenticated_client.dart';
@@ -28,6 +33,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/capture_preview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:riverpod/misc.dart' show Override;
 import 'package:defensys/screens/web/faculty/team_roster_screen.dart';
 import 'package:defensys/screens/web/faculty/pit_lead/pit_lead_cohort_screen.dart';
@@ -130,10 +136,64 @@ class _Board extends DefenseBoardNotifier {
 }
 
 class _ActionClient implements AuthenticatedHttpClient {
+  _ActionClient({this.lead = false});
+  final bool lead;
+  bool requested = false, eligible = false;
+  int nominations = 0;
   final calls = <Uri>[];
   @override
   Future<http.Response> get(Uri uri, {Map<String, String>? headers}) async {
     calls.add(uri);
+    if (uri.path == '/api/users/panelist-pool/') {
+      return http.Response(
+        jsonEncode({
+          'faculty': [
+            {
+              'id': 1,
+              'name': 'Requested Faculty',
+              'username': 'FAC-1',
+              'is_panelist': eligible,
+            },
+            {
+              'id': 2,
+              'name': 'Other Faculty',
+              'username': 'FAC-2',
+              'is_panelist': true,
+            },
+          ],
+          'panelist_requests': requested && !eligible
+              ? [
+                  {'id': 42, 'faculty_id': 1, 'status': 'pending'},
+                ]
+              : [],
+          'can_approve_panelists': !lead,
+        }),
+        200,
+      );
+    }
+    if (uri.path == '/api/users/panelist-requests/') {
+      return http.Response(
+        jsonEncode({
+          'panelist_requests':
+              requested &&
+                  !eligible &&
+                  uri.queryParameters['status'] == 'pending'
+              ? [
+                  {
+                    'id': 42,
+                    'faculty_id': 1,
+                    'faculty_name': 'Requested Faculty',
+                    'status': 'pending',
+                    'requested_by_name': 'PIT Lead',
+                    'pit_year': '3rd Year',
+                  },
+                ]
+              : [],
+          'pending_count': requested && !eligible ? 1 : 0,
+        }),
+        200,
+      );
+    }
     if (uri.path == '/api/users/1/') {
       return http.Response(
         '{"user":{"id":1,"name":"Requested Faculty","role":"faculty","is_panelist":true,"is_adviser":true,"is_pit_lead":false,"is_documenter":false}}',
@@ -141,9 +201,21 @@ class _ActionClient implements AuthenticatedHttpClient {
       );
     }
     return http.Response(
-      '{"request":{"id":42,"faculty_id":1,"faculty_name":"Requested Faculty","status":"approved","requested_by_name":"PIT Lead","reviewed_by_name":"Administrator"},"can_review":true}',
+      '{"request":{"id":42,"faculty_id":1,"faculty_name":"Requested Faculty","status":"${requested && !eligible ? 'pending' : 'approved'}","requested_by_name":"PIT Lead","reviewed_by_name":"Administrator"},"can_review":${!lead}}',
       200,
     );
+  }
+
+  @override
+  Future<http.Response> post(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+  }) async {
+    calls.add(uri);
+    nominations++;
+    requested = true;
+    return http.Response('{"request":{"id":42}}', 201);
   }
 
   @override
@@ -152,12 +224,63 @@ class _ActionClient implements AuthenticatedHttpClient {
 
 class _Schedules extends DefenseSchedulerNotifier {
   @override
+  Future<void> refreshPanelistPool() async {}
+  @override
+  Future<List<Map<String, dynamic>>> fetchImportConflictSchedules() async => [];
+  @override
   Future<void> fetchSchedules({
     String? search,
     String? scope,
     String? status,
     String? successMessage,
   }) async {}
+}
+
+class _Online extends ConnectivityNotifier {
+  @override
+  bool build() => true;
+}
+
+class _ImportSchedules extends DefenseSchedulerNotifier {
+  @override
+  Future<void> fetchSchedules({
+    String? search,
+    String? scope,
+    String? status,
+    String? successMessage,
+  }) async {}
+  @override
+  Future<List<Map<String, dynamic>>> fetchImportConflictSchedules() async => [];
+  @override
+  Future<Map<String, dynamic>?> fetchPitEventConfig({
+    required String eventName,
+    int? semesterId,
+  }) async => {'panel_rubric_id': 10, 'peer_rubric_id': 20};
+  @override
+  DefenseSchedulerState build() => const DefenseSchedulerState(
+    requiresPanelistApproval: true,
+    activeSemester: {'id': 1},
+    faculty: [
+      {'id': 1, 'name': 'Requested Faculty', 'is_panelist': false},
+      {'id': 2, 'name': 'Other Faculty', 'is_panelist': true},
+    ],
+    pitEvents: [
+      {
+        'event_name': 'PIT 1',
+        'year_level': '3rd Year',
+        'requires_endorsement': false,
+      },
+    ],
+    teams: [
+      {
+        'id': 99,
+        'name': 'Team Aurora',
+        'project_title': 'Prototype',
+        'level': '3rd Year PIT',
+        'year_level': '3rd Year',
+      },
+    ],
+  );
 }
 
 class _Auth extends AuthNotifier {
@@ -338,9 +461,13 @@ void main() {
     double width = 1600,
     AuthenticatedHttpClient? client,
     List<Override> overrides = const [],
+    Map<String, Object> preferences = const {},
+    bool dark = false,
+    DefenseSchedulerNotifier? scheduler,
   }) async {
     await loadPreviewFonts(force: true);
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues(preferences);
+    FlutterSecureStorage.setMockInitialValues({});
     tester.view.physicalSize = Size(width, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -350,13 +477,14 @@ void main() {
         if (client != null)
           authenticatedHttpClientProvider.overrideWithValue(client),
         authProvider.overrideWith(() => _Auth(faculty)),
+        connectivityProvider.overrideWith(_Online.new),
         dashboardProvider('admin').overrideWith(() => _Dashboard('admin')),
         dashboardProvider('faculty').overrideWith(() => _Dashboard('faculty')),
         academicPeriodProvider.overrideWith(_Periods.new),
         notificationsProvider.overrideWith2(_Notifications.new),
         defenseStagesProvider.overrideWith(_Stages.new),
         defenseBoardProvider.overrideWith(_Board.new),
-        defenseSchedulerProvider.overrideWith(_Schedules.new),
+        defenseSchedulerProvider.overrideWith(() => scheduler ?? _Schedules()),
         studentTeamsProvider.overrideWith(_Teams.new),
         teamDetailProvider(1).overrideWith(_Team.new),
         gradeCenterProvider.overrideWith(_Grades.new),
@@ -371,6 +499,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp.router(
+          theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
           routerConfig: router,
           localizationsDelegates: const [
             AppLocalizations.delegate,
@@ -495,14 +624,174 @@ void main() {
   });
 
   testWidgets(
+    'PIT import issue opens the affected faculty and returns to a refreshed draft',
+    (tester) async {
+      final client = _ActionClient(lead: true);
+      final draft = ScheduleImportDraft(
+        parsed: ParsedScheduleImport(
+          stage: 'PIT 1',
+          rows: const [
+            ParsedScheduleImportRow(
+              sheetRow: 7,
+              time: '08:00 - 09:00',
+              startTime: '08:00',
+              endTime: '09:00',
+              teamName: 'Team Aurora',
+              projectTitle: 'Prototype',
+              adviser: '',
+              members: [],
+              chair: 'Requested Faculty',
+              panelMembers: ['Other Faculty'],
+              documenter: '',
+              room: 'Lab 1',
+              date: '2026-11-27',
+              stage: 'PIT 1',
+              slotDuration: 60,
+            ),
+          ],
+        ),
+        scope: 'pit',
+        eventName: 'PIT 1',
+        semesterId: 1,
+        panelRubricId: 10,
+        peerRubricId: 20,
+        savedAt: DateTime(2026, 10, 25),
+      );
+      final container = await pumpWorkspace(
+        tester,
+        '/faculty/defense-board/import',
+        faculty: true,
+        client: client,
+        scheduler: _ImportSchedules(),
+        preferences: {
+          'defense_schedule_import_draft_pit': jsonEncode(draft.toJson()),
+        },
+        overrides: [
+          pitLeadCohortProvider.overrideWith(_PitCohort.new),
+          pitInstructorProvider.overrideWith(_PitInstructors.new),
+          studentAcademicRecordsProvider.overrideWith(_Records.new),
+          userManagementProvider.overrideWith(_Users.new),
+        ],
+      );
+      final router = container.read(appRouterProvider);
+      final warning = find.byTooltip('View panelist eligibility and requests');
+      final importState = tester.state(
+        find.byType(DefenseScheduleBulkImportView),
+      );
+      expect(warning, findsOneWidget);
+      await tester.ensureVisible(warning);
+      await tester.tap(warning);
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, '/faculty/cohort');
+      expect(router.state.uri.queryParameters['tab'], 'panelists');
+      expect(router.state.uri.queryParameters['faculty'], '1');
+      expect(find.text('Requested Faculty'), findsOneWidget);
+      expect(find.text('Other Faculty'), findsNothing);
+      expect(find.text('Back to schedule import'), findsOneWidget);
+      final saved = await loadScheduleImportDraft(scope: 'pit', semesterId: 1);
+      expect(saved!.parsed.rows.single.chair, 'Requested Faculty');
+      expect(saved.parsed.rows.single.date, '2026-11-27');
+      await tester.tap(find.text('Request eligibility'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Submit request'));
+      await tester.pumpAndSettle();
+      expect(client.nominations, 1);
+      expect(find.text('Request pending'), findsOneWidget);
+      // Simulate the administrator approving from a separate session.
+      client.eligible = true;
+      await tester.tap(find.text('Back to schedule import'));
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, '/faculty/defense-board/import');
+      expect(find.byType(DefenseScheduleBulkImportView), findsOneWidget);
+      expect(
+        tester.state(find.byType(DefenseScheduleBulkImportView)),
+        same(importState),
+      );
+      expect(
+        find.byTooltip('View panelist eligibility and requests'),
+        findsNothing,
+      );
+      expect(find.text('Team Aurora'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final width in [390.0, 1280.0]) {
+    testWidgets(
+      'PIT panelist requests work without a schedule at width $width',
+      (tester) async {
+        final client = _ActionClient(lead: true);
+        final container = await pumpWorkspace(
+          tester,
+          '/faculty/cohort?tab=panelists',
+          faculty: true,
+          client: client,
+          width: width,
+          dark: width == 390,
+          overrides: [
+            pitLeadCohortProvider.overrideWith(_PitCohort.new),
+            pitInstructorProvider.overrideWith(_PitInstructors.new),
+            studentAcademicRecordsProvider.overrideWith(_Records.new),
+            userManagementProvider.overrideWith(_Users.new),
+          ],
+        );
+        expect(find.text('Approval needed'), findsOneWidget);
+        expect(find.text('Eligible panelist'), findsOneWidget);
+        expect(find.text('Assign Section Instructor'), findsNothing);
+        await capturePreview(
+          tester,
+          find.byType(PitLeadCohortScreen),
+          'pit-panelists-${width.toInt()}',
+          viewport: true,
+        );
+        await tester.ensureVisible(find.text('Request eligibility'));
+        await tester.tap(find.text('Request eligibility'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Submit request'));
+        await tester.pumpAndSettle();
+        expect(client.nominations, 1);
+        expect(find.text('Request pending'), findsOneWidget);
+        final requestsTab = find.text(
+          width < 600 ? 'Requests' : 'My requests (1)',
+        );
+        await tester.ensureVisible(requestsTab);
+        await tester.tap(requestsTab);
+        await tester.pumpAndSettle();
+        expect(
+          container
+              .read(appRouterProvider)
+              .state
+              .uri
+              .queryParameters['section'],
+          'requests',
+        );
+        expect(find.text('Awaiting approval'), findsOneWidget);
+        expect(find.text('Declined'), findsNothing);
+        expect(find.text('View request'), findsOneWidget);
+        expect(
+          client.calls.any((uri) => uri.path.startsWith('/api/defense/')),
+          isFalse,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
     'legacy faculty request link opens its sheet in the existing workspace',
     (tester) async {
-      final client = _ActionClient();
+      final client = _ActionClient(lead: true);
       final container = await pumpWorkspace(
         tester,
         '/faculty/defense-board/requests/panelist/42',
         faculty: true,
         client: client,
+        overrides: [
+          pitLeadCohortProvider.overrideWith(_PitCohort.new),
+          pitInstructorProvider.overrideWith(_PitInstructors.new),
+          studentAcademicRecordsProvider.overrideWith(_Records.new),
+          userManagementProvider.overrideWith(_Users.new),
+        ],
       );
       expect(
         container
@@ -511,7 +800,7 @@ void main() {
             .value
             .uri
             .path,
-        '/faculty/defense-board',
+        '/faculty/cohort',
       );
       expect(
         find.byKey(const ValueKey('panelist-request-sheet')),
@@ -520,9 +809,21 @@ void main() {
       expect(find.text('Requested Faculty'), findsOneWidget);
       await tester.tap(find.text('Close request'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Close'));
+      expect(find.byType(PitLeadCohortScreen), findsOneWidget);
+      container
+          .read(appRouterProvider)
+          .go('/faculty/defense-board?panelistRequest=42');
       await tester.pumpAndSettle();
-      expect(find.byType(DefenseBoardScreen), findsOneWidget);
+      expect(
+        container.read(appRouterProvider).state.uri.path,
+        '/faculty/cohort',
+      );
+      expect(
+        find.byKey(const ValueKey('panelist-request-sheet')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Close request'));
+      await tester.pumpAndSettle();
       expect(
         container
             .read(appRouterProvider)
@@ -530,7 +831,7 @@ void main() {
             .value
             .uri
             .queryParameters
-            .containsKey('panelistRequest'),
+            .containsKey('request'),
         false,
       );
     },

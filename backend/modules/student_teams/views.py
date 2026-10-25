@@ -640,11 +640,14 @@ class BulkImportTeamsPreviewView(APIView):
                 'project_manager_error': pm_error,
             }
 
+        from .import_review import section_import_summaries
         return Response({
             'rows': preview_rows,
             'summary': summary,
             'adviser_filter': adviser_filter,
             'section_assignment': section_assignment,
+            'section_summaries': section_import_summaries(rows, preview_rows, active_semester(),
+                import_section=effective_section, metadata=section_meta, user=request.user),
         })
 
 

@@ -38,6 +38,45 @@ class PanelistEligibilityTests(APITestCase):
         data.update(changes)
         return data
 
+    def test_pool_is_available_without_an_active_term_or_schedule(self):
+        Semester.objects.update(is_active=False)
+        self.client.force_authenticate(self.lead)
+        before = DefenseSchedule.objects.count()
+        response = self.client.get('/api/users/panelist-pool/')
+        self.assertEqual(response.status_code, 200)
+        faculty = {item['id']: item for item in response.data['faculty']}
+        self.assertIn(self.faculty.pk, faculty)
+        self.assertNotIn(self.student.pk, faculty)
+        self.assertFalse(faculty[self.faculty.pk]['is_panelist'])
+        self.assertFalse(response.data['can_approve_panelists'])
+        self.assertEqual(DefenseSchedule.objects.count(), before)
+
+    def test_pool_pending_ids_are_complete_and_requester_scoped(self):
+        people = User.objects.bulk_create([
+            User(username=f'pool-faculty-{index}', role='faculty')
+            for index in range(105)
+        ])
+        PanelistEligibilityRequest.objects.bulk_create([
+            PanelistEligibilityRequest(faculty=person, requested_by=self.lead, pit_year='1st Year')
+            for person in people
+        ])
+        other = PanelistEligibilityRequest.objects.create(
+            faculty=self.faculty, requested_by=self.other_lead, pit_year='2nd Year',
+        )
+        self.client.force_authenticate(self.lead)
+        response = self.client.get('/api/users/panelist-pool/')
+        self.assertEqual(len(response.data['panelist_requests']), 105)
+        self.assertNotIn(other.pk, [item['id'] for item in response.data['panelist_requests']])
+        self.client.force_authenticate(self.admin)
+        response = self.client.get('/api/users/panelist-pool/')
+        self.assertTrue(response.data['can_approve_panelists'])
+        self.assertEqual(len(response.data['panelist_requests']), 106)
+
+    def test_pool_rejects_students_and_faculty_without_lead_scope(self):
+        for actor in (self.student, self.faculty):
+            self.client.force_authenticate(actor)
+            self.assertEqual(self.client.get('/api/users/panelist-pool/').status_code, 403)
+
     def nominate(self, actor=None):
         self.client.force_authenticate(actor or self.lead)
         response = self.client.post(REQUESTS, {'faculty_id': self.faculty.pk, 'reason': 'Relevant project expertise'}, format='json')

@@ -209,6 +209,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('assigned draft names remain visible outside published choices', (tester) async {
+    await openPeerSetup(tester, config: {
+      ...sampleConfig,
+      'panel_rubric_name': '2nd Year PIT — Panel Rubric',
+      'peer_rubric_name': 'PIT — Peer Rubric',
+    });
+    expect(find.text('2nd Year PIT — Panel Rubric'), findsOneWidget);
+    expect(find.text('PIT — Peer Rubric'), findsOneWidget);
+    // Assigned drafts are displayed without adding them to selectable options.
+    for (final select in tester.widgetList<ShadSelect<int>>(find.byType(ShadSelect<int>))) {
+      expect(select.options!.whereType<ShadOption<int>>().map((option) => option.value), [0]);
+    }
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pit-event-requirements-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('2nd Year PIT — Panel Rubric'), findsOneWidget);
+    expect(find.text('PIT — Peer Rubric'), findsOneWidget);
+    expect(find.text('Unknown Rubric'), findsNothing);
+    expect(find.text('Selected rubric (unavailable)'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('rubric assignments refresh with scheduler before editing an event', (tester) async {
     final scheduler = await openPeerSetup(tester, config: {
       ...sampleConfig,

@@ -9,7 +9,9 @@ import 'package:defensys/widgets/table/defensys_table_column.dart';
 import 'package:go_router/go_router.dart';
 import 'package:defensys/notifications/notification_request_screen.dart';
 import 'package:defensys/services/admin/panelist_requests_provider.dart';
+import 'package:defensys/services/admin/panelist_pool_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
+import 'package:defensys/navigation/panelist_routes.dart';
 import 'panelist_requests_view.dart';
 
 class PanelistEligibilityView extends StatelessWidget {
@@ -46,6 +48,22 @@ class PanelistEligibilityView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          if (PanelistRoutes.importReturn(
+                GoRouter.maybeOf(context)
+                    ?.routeInformationProvider
+                    .value
+                    .uri
+                    .queryParameters['returnTo'],
+              )
+              case final destination?)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ShadButton.ghost(
+                onPressed: () => context.go(destination),
+                leading: const Icon(LucideIcons.arrowLeft, size: 16),
+                child: const Text('Back to schedule import'),
+              ),
+            ),
           Expanded(
             child: Container(
               padding: const EdgeInsets.all(20),
@@ -56,6 +74,13 @@ class PanelistEligibilityView extends StatelessWidget {
               ),
               child: PanelistEligibilityDirectory(
                 centralized: true,
+                initialFacultyIds: PanelistRoutes.facultyIds(
+                  GoRouter.maybeOf(context)
+                      ?.routeInformationProvider
+                      .value
+                      .uri
+                      .queryParameters['faculty'],
+                ),
                 initialTab: initialTab,
                 initialRequestId: initialRequestId,
                 onEditRoles: onEditRoles,
@@ -83,9 +108,13 @@ class PanelistEligibilityDirectory extends ConsumerStatefulWidget {
     this.onSelectRequest,
     this.onRequestClosed,
     this.onTabChanged,
+    this.standalone = false,
+    this.initialFacultyIds = const {},
   });
   final VoidCallback? onClose;
   final bool centralized;
+  final bool standalone;
+  final Set<int> initialFacultyIds;
   final String initialTab;
   final int? initialRequestId;
   final ValueChanged<int>? onEditRoles, onSelectRequest;
@@ -109,6 +138,23 @@ class _PanelistEligibilityDirectoryState
   bool _busy = false;
   String? _error;
   GoRouter? _router;
+  bool _filterFaculty = true;
+
+  PanelistPoolState get _pool {
+    if (widget.standalone) return ref.read(panelistPoolProvider);
+    final scheduler = ref.read(defenseSchedulerProvider);
+    return PanelistPoolState(
+      faculty: scheduler.faculty.isNotEmpty
+          ? scheduler.faculty
+          : [
+              for (final person in scheduler.panelists)
+                {...person, 'is_panelist': true},
+            ],
+      requests: scheduler.panelistRequests,
+      canApprovePanelists: scheduler.canApprovePanelists,
+      error: scheduler.error,
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -125,11 +171,15 @@ class _PanelistEligibilityDirectoryState
     final id = widget.initialRequestId;
     if (id == null || uri == null || _sheetOpen) return;
     final requestedId = int.tryParse(
-      uri.queryParameters[widget.centralized ? 'request' : 'panelistRequest'] ??
+      uri.queryParameters[widget.centralized || widget.standalone
+              ? 'request'
+              : 'panelistRequest'] ??
           '',
     );
     final expectedPath = widget.centralized
         ? '/admin/users'
+        : widget.standalone
+        ? '/faculty/cohort'
         : '/faculty/defense-board';
     if (uri.path != expectedPath || requestedId != id) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -158,6 +208,10 @@ class _PanelistEligibilityDirectoryState
   void didUpdateWidget(covariant PanelistEligibilityDirectory oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialTab != widget.initialTab) _tab = widget.initialTab;
+    if (oldWidget.initialFacultyIds.join(',') !=
+        widget.initialFacultyIds.join(',')) {
+      _filterFaculty = true;
+    }
     if (oldWidget.initialRequestId != widget.initialRequestId) {
       if (widget.initialRequestId != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -192,7 +246,7 @@ class _PanelistEligibilityDirectoryState
     final sheetHost = _contentKey.currentContext;
     if (sheetHost == null) return;
     final canEditRoles =
-        ref.read(defenseSchedulerProvider).canApprovePanelists ||
+        _pool.canApprovePanelists ||
         ref.read(authProvider).user?['role'] == 'admin';
     final router = GoRouter.maybeOf(context);
     final openingUri = router?.routeInformationProvider.value.uri;
@@ -260,7 +314,7 @@ class _PanelistEligibilityDirectoryState
   }
 
   Future<void> _refresh() => _mutate(() async {
-    if (widget.centralized || _tab != 'faculty') {
+    if (widget.centralized || widget.standalone || _tab != 'faculty') {
       await ref.read(panelistRequestsProvider('pending').notifier).fetch();
       if (!mounted) return false;
       if (_tab == 'history') {
@@ -268,9 +322,13 @@ class _PanelistEligibilityDirectoryState
         if (!mounted) return false;
       }
     }
-    await ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+    if (widget.standalone) {
+      await ref.read(panelistPoolProvider.notifier).fetch();
+    } else {
+      await ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+    }
     if (!mounted) return false;
-    return ref.read(defenseSchedulerProvider).error == null;
+    return _pool.error == null;
   });
 
   Future<void> _mutate(Future<bool> Function() action) async {
@@ -283,11 +341,8 @@ class _PanelistEligibilityDirectoryState
     if (!mounted) return;
     setState(() {
       _busy = false;
-      if (!ok) {
-        _error =
-            ref.read(defenseSchedulerProvider).error ??
-            'Unable to update panelist eligibility.';
-      }
+      _error =
+          _pool.error ?? (ok ? null : 'Unable to update panelist eligibility.');
     });
   }
 
@@ -338,21 +393,25 @@ class _PanelistEligibilityDirectoryState
     );
     if (note == null || !mounted) return;
     await _mutate(
-      () => ref
-          .read(defenseSchedulerProvider.notifier)
-          .requestPanelistEligibility((faculty['id'] as num).toInt(), note),
+      () => widget.standalone
+          ? ref
+                .read(panelistPoolProvider.notifier)
+                .nominate((faculty['id'] as num).toInt(), note)
+          : ref
+                .read(defenseSchedulerProvider.notifier)
+                .requestPanelistEligibility(
+                  (faculty['id'] as num).toInt(),
+                  note,
+                ),
     );
   }
 
-  List<Map<String, dynamic>> _requestsFor(int id) => ref
-      .read(defenseSchedulerProvider)
-      .panelistRequests
-      .where((request) => request['faculty_id'] == id)
-      .toList();
+  List<Map<String, dynamic>> _requestsFor(int id) =>
+      _pool.requests.where((request) => request['faculty_id'] == id).toList();
 
   Widget _identity(Map<String, dynamic> person) {
     final id = (person['id'] as num).toInt();
-    final declined = ref.read(defenseSchedulerProvider).isEligiblePanelist(id)
+    final declined = _pool.isEligiblePanelist(id)
         ? null
         : _requestsFor(
             id,
@@ -393,7 +452,7 @@ class _PanelistEligibilityDirectoryState
     );
   }
 
-  Widget _status(Map<String, dynamic> person, DefenseSchedulerState state) {
+  Widget _status(Map<String, dynamic> person, PanelistPoolState state) {
     final id = (person['id'] as num).toInt();
     final eligible = state.isEligiblePanelist(id);
     final pending = _requestsFor(id).any((r) => r['status'] == 'pending');
@@ -421,6 +480,8 @@ class _PanelistEligibilityDirectoryState
                   ? 'Eligible panelist'
                   : pending
                   ? 'Approval pending'
+                  : widget.standalone
+                  ? 'Approval needed'
                   : 'Not eligible',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -431,7 +492,7 @@ class _PanelistEligibilityDirectoryState
     );
   }
 
-  Widget _actions(Map<String, dynamic> person, DefenseSchedulerState state) {
+  Widget _actions(Map<String, dynamic> person, PanelistPoolState state) {
     final id = (person['id'] as num).toInt();
     final eligible = state.isEligiblePanelist(id);
     final pending = _requestsFor(id).any((r) => r['status'] == 'pending');
@@ -466,7 +527,7 @@ class _PanelistEligibilityDirectoryState
 
   Widget _facultyList(
     List<Map<String, dynamic>> people,
-    DefenseSchedulerState state,
+    PanelistPoolState state,
     bool narrow,
   ) {
     if (!narrow) {
@@ -521,18 +582,27 @@ class _PanelistEligibilityDirectoryState
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(defenseSchedulerProvider);
-    final queue = widget.centralized || _tab != 'faculty'
+    if (widget.standalone) {
+      ref.watch(panelistPoolProvider);
+    } else {
+      ref.watch(defenseSchedulerProvider);
+    }
+    final state = _pool;
+    final queue = widget.centralized || widget.standalone || _tab != 'faculty'
         ? ref.watch(panelistRequestsProvider('pending'))
         : null;
-    final pool = state.faculty.isNotEmpty ? state.faculty : state.panelists;
+    final pool = state.faculty;
     final query = _search.trim().toLowerCase();
     final people = pool
         .where(
-          (p) => '${p['name']} ${p['username']}'.toLowerCase().contains(query),
+          (p) =>
+              '${p['name']} ${p['username']}'.toLowerCase().contains(query) &&
+              (!_filterFaculty ||
+                  widget.initialFacultyIds.isEmpty ||
+                  widget.initialFacultyIds.contains(p['id'])),
         )
         .toList();
-    final pending = state.panelistRequests
+    final pending = state.requests
         .where((r) => r['status'] == 'pending')
         .toList();
     final showRequests = _tab == 'requests' || _tab == 'history';
@@ -553,7 +623,9 @@ class _PanelistEligibilityDirectoryState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.centralized
+                        widget.standalone
+                            ? 'Panelists & requests'
+                            : widget.centralized
                             ? 'Panelist access'
                             : 'Panelist pool',
                         style: TextStyle(
@@ -564,7 +636,9 @@ class _PanelistEligibilityDirectoryState
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        state.canApprovePanelists
+                        widget.standalone
+                            ? 'Request admin approval for future defense assignments. Approval does not create a schedule.'
+                            : state.canApprovePanelists
                             ? 'Panelist eligibility follows the assigned RBAC role. Review nominations and past decisions here.'
                             : 'Browse eligible faculty or request approval for a new panelist.',
                         style: TextStyle(
@@ -575,6 +649,12 @@ class _PanelistEligibilityDirectoryState
                     ],
                   ),
                 ),
+                if (constraints.maxWidth < 600)
+                  IconButton(
+                    tooltip: 'Refresh pool',
+                    onPressed: _busy ? null : _refresh,
+                    icon: const Icon(LucideIcons.refreshCw, size: 16),
+                  ),
                 if (widget.onClose != null)
                   Tooltip(
                     message: 'Close',
@@ -595,7 +675,7 @@ class _PanelistEligibilityDirectoryState
               children: [
                 SizedBox(
                   width: constraints.maxWidth < 600
-                      ? constraints.maxWidth - 44
+                      ? constraints.maxWidth
                       : 440,
                   child: ShadTabs<String>(
                     scrollable: false,
@@ -610,7 +690,9 @@ class _PanelistEligibilityDirectoryState
                         value: 'faculty',
                         child: Flexible(
                           child: Text(
-                            'Faculty (${pool.length})',
+                            constraints.maxWidth < 600
+                                ? 'Faculty'
+                                : 'Faculty (${pool.length})',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -620,7 +702,9 @@ class _PanelistEligibilityDirectoryState
                         value: 'requests',
                         child: Flexible(
                           child: Text(
-                            'Requests (${queue?.pending ?? pending.length})',
+                            constraints.maxWidth < 600
+                                ? 'Requests'
+                                : '${widget.standalone ? 'My requests' : 'Requests'} (${queue?.pending ?? pending.length})',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -639,22 +723,41 @@ class _PanelistEligibilityDirectoryState
                     ],
                   ),
                 ),
-                Tooltip(
-                  message: 'Refresh pool',
-                  child: ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    onPressed: _busy ? null : _refresh,
-                    leading: constraints.maxWidth < 400
-                        ? null
-                        : const Icon(LucideIcons.refreshCw, size: 15),
-                    child: constraints.maxWidth < 400
-                        ? const Icon(LucideIcons.refreshCw, size: 16)
-                        : const Text('Refresh pool'),
+                if (constraints.maxWidth >= 600)
+                  Tooltip(
+                    message: 'Refresh pool',
+                    child: ShadButton.ghost(
+                      size: ShadButtonSize.sm,
+                      onPressed: _busy ? null : _refresh,
+                      leading: constraints.maxWidth < 400
+                          ? null
+                          : const Icon(LucideIcons.refreshCw, size: 15),
+                      child: constraints.maxWidth < 400
+                          ? const Icon(LucideIcons.refreshCw, size: 16)
+                          : const Text('Refresh pool'),
+                    ),
                   ),
-                ),
               ],
             ),
             const SizedBox(height: 16),
+            if (!showRequests &&
+                _filterFaculty &&
+                widget.initialFacultyIds.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  children: [
+                    const Text('Faculty from your schedule import'),
+                    ShadButton.ghost(
+                      size: ShadButtonSize.sm,
+                      onPressed: () => setState(() => _filterFaculty = false),
+                      child: const Text('Show all faculty'),
+                    ),
+                  ],
+                ),
+              ),
             if (!showRequests)
               ShadInput(
                 placeholder: Text(
@@ -679,6 +782,7 @@ class _PanelistEligibilityDirectoryState
                   ? PanelistRequestsView(
                       key: ValueKey(_tab),
                       reviewed: _tab == 'history',
+                      requesterView: widget.standalone,
                       onOpen: _openRequest,
                     )
                   : _busy && pool.isEmpty

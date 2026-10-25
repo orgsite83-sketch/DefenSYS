@@ -286,6 +286,10 @@ def _validate_conflicts(items, new_panels, externals):
 
 @transaction.atomic
 def execute_operation(actor, data, request=None):
+    # Match activation's period-before-roster lock order. Calendar changes and
+    # schedule commits cannot race after a preview has been validated.
+    from academic_period_management.models import Semester
+    list(Semester.objects.select_for_update().order_by('pk'))
     items = selection(actor, data)
     if data['action'] == 'preview_delete':
         return deletion_preview(items)
@@ -409,6 +413,10 @@ def execute_operation(actor, data, request=None):
             offset = serializers.IntegerField(min_value=-1440, max_value=1440).run_validation(changes['shift_minutes'])
             shifted = datetime.combine(schedule.scheduled_date, schedule.start_time) + timedelta(minutes=offset)
             schedule.scheduled_date, schedule.start_time = shifted.date(), shifted.time()
+        if (str(schedule.scheduled_date) != old_values[schedule.pk]['scheduled_date']
+                or 'scheduled_date' in changes or 'shift_minutes' in changes):
+            from academic_period_management.calendar import validate_defense_date
+            validate_defense_date(schedule.semester, schedule.scheduled_date)
         if (str(schedule.scheduled_date) != old_values[schedule.pk]['scheduled_date'] or
                 str(schedule.start_time) != old_values[schedule.pk]['start_time']):
             schedule.clear_material_deadlines()

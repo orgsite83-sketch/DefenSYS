@@ -7,11 +7,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
 
 void main() {
-  for (final isCapstone in [true, false]) {
-    final scope = isCapstone ? 'Capstone' : 'PIT';
+  for (final variant in [(true, false), (false, false), (false, true)]) {
+    final (isCapstone, instructorWorkspace) = variant;
+    final scope = isCapstone
+        ? 'Capstone'
+        : instructorWorkspace
+        ? 'Instructor'
+        : 'PIT';
     test('$scope XLSX retains every merged block perimeter', () {
       final archive = ZipDecoder().decodeBytes(
-        generateOfficialTeamRosterExcelBytes(isCapstone: isCapstone),
+        generateOfficialTeamRosterExcelBytes(
+          isCapstone: isCapstone,
+          instructorWorkspace: instructorWorkspace,
+        ),
       );
       XmlDocument readXml(String path) => XmlDocument.parse(
         utf8.decode(archive.findFile(path)!.content as List<int>),
@@ -40,7 +48,12 @@ void main() {
           .toList();
       expect(
         mergedRanges,
-        containsAll(['B5:B8', 'B33:B36', 'H7:H10', 'H35:H38']),
+        containsAll([
+          'B5:B8',
+          'B33:B36',
+          instructorWorkspace ? 'G7:G10' : 'H7:H10',
+          instructorWorkspace ? 'G35:G38' : 'H35:H38',
+        ]),
       );
 
       for (final range in mergedRanges) {

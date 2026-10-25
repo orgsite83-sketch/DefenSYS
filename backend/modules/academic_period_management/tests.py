@@ -88,7 +88,7 @@ class AcademicPeriodApiTests(APITestCase):
 
         response = self.client.post(
             f'/api/academic-periods/{school_year.id}/semesters/',
-            {'label': Semester.FIRST},
+            {'label': Semester.FIRST, 'starts_on': '2026-01-01', 'ends_on': '2026-12-31'},
             format='json',
         )
 
@@ -99,8 +99,8 @@ class AcademicPeriodApiTests(APITestCase):
     def test_activation_keeps_only_one_semester_active(self):
         first_year = SchoolYear.objects.create(label='2026-2027')
         second_year = SchoolYear.objects.create(label='2027-2028')
-        first = Semester.objects.create(school_year=first_year, label=Semester.FIRST)
-        second = Semester.objects.create(school_year=second_year, label=Semester.SECOND)
+        first = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=first_year, label=Semester.FIRST)
+        second = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=second_year, label=Semester.SECOND)
 
         first_response = self.client.patch(
             f'/api/academic-periods/semesters/{first.id}/',
@@ -127,12 +127,12 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_transition_preview_returns_impacts_and_clickable_routes(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        current = Semester.objects.create(
+        current = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.FIRST,
             is_active=True,
         )
-        target = Semester.objects.create(school_year=school_year, label=Semester.SECOND)
+        target = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=school_year, label=Semester.SECOND)
         team = self._team(current)
         stage = self._stage()
         DefenseSchedule.objects.create(
@@ -160,12 +160,12 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_activation_blocks_unfinished_workflows(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        current = Semester.objects.create(
+        current = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.FIRST,
             is_active=True,
         )
-        target = Semester.objects.create(school_year=school_year, label=Semester.SECOND)
+        target = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=school_year, label=Semester.SECOND)
         team = self._team(current)
         stage = self._stage()
         TeamGrade.objects.create(
@@ -191,12 +191,12 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_forced_activation_requires_reason_and_logs_transition(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        current = Semester.objects.create(
+        current = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.FIRST,
             is_active=True,
         )
-        target = Semester.objects.create(school_year=school_year, label=Semester.SECOND)
+        target = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=school_year, label=Semester.SECOND)
         self._team(current)
 
         missing_reason = self.client.post(
@@ -224,7 +224,7 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_student_cannot_preview_or_activate_semester_transition(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(school_year=school_year, label=Semester.FIRST)
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=school_year, label=Semester.FIRST)
         student = self._student('student-transition')
         self.client.force_authenticate(user=student)
 
@@ -242,12 +242,12 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_incomplete_official_pit_workflow_blocks_activation(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        current = Semester.objects.create(
+        current = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.FIRST,
             is_active=True,
         )
-        target = Semester.objects.create(school_year=school_year, label=Semester.SECOND)
+        target = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=school_year, label=Semester.SECOND)
         team = self._team(current, name='PIT Team', level=StudentTeam.LEVEL_3_PIT)
         panel = self._pit_rubric(current, Rubric.EVAL_PANEL, 'PIT Panel')
         peer = self._pit_rubric(current, Rubric.EVAL_PEER, 'PIT Peer')
@@ -286,7 +286,7 @@ class AcademicPeriodApiTests(APITestCase):
             role='student',
         )
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(school_year=school_year, label=Semester.FIRST)
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=school_year, label=Semester.FIRST)
 
         self.client.force_authenticate(user=student)
         response = self.client.patch(
@@ -313,7 +313,7 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_list_includes_capstone_mode_on_active_semester(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        Semester.objects.create(
+        Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.SECOND,
             is_active=True,
@@ -330,7 +330,7 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_patch_semester_evaluation_flags(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.SECOND,
             is_active=True,
@@ -356,7 +356,7 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_student_cannot_patch_evaluation_flags(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.SECOND,
             is_active=True,
@@ -376,7 +376,7 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_admin_dashboard_reads_active_semester(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        Semester.objects.create(
+        Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.FIRST,
             is_active=True,
@@ -396,7 +396,7 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_delete_school_year_with_semesters_blocked(self):
         sy = SchoolYear.objects.create(label='2028-2029')
-        Semester.objects.create(school_year=sy, label=Semester.FIRST)
+        Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=sy, label=Semester.FIRST)
         response = self.client.delete(f'/api/academic-periods/{sy.id}/')
         self.assertEqual(response.status_code, 400)
         self.assertTrue(SchoolYear.objects.filter(id=sy.id).exists())
@@ -423,21 +423,21 @@ class AcademicPeriodApiTests(APITestCase):
 
     def test_delete_empty_inactive_semester_succeeds(self):
         sy = SchoolYear.objects.create(label='2028-2029')
-        sem = Semester.objects.create(school_year=sy, label=Semester.SUMMER, is_active=False)
+        sem = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=sy, label=Semester.SUMMER, is_active=False)
         response = self.client.delete(f'/api/academic-periods/semesters/{sem.id}/')
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Semester.objects.filter(id=sem.id).exists())
 
     def test_delete_active_semester_blocked(self):
         sy = SchoolYear.objects.create(label='2028-2029')
-        sem = Semester.objects.create(school_year=sy, label=Semester.FIRST, is_active=True)
+        sem = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=sy, label=Semester.FIRST, is_active=True)
         response = self.client.delete(f'/api/academic-periods/semesters/{sem.id}/')
         self.assertEqual(response.status_code, 400)
         self.assertTrue(Semester.objects.filter(id=sem.id).exists())
 
     def test_delete_semester_with_teams_blocked(self):
         sy = SchoolYear.objects.create(label='2028-2029')
-        sem = Semester.objects.create(school_year=sy, label=Semester.FIRST, is_active=False)
+        sem = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31', school_year=sy, label=Semester.FIRST, is_active=False)
         self._team(sem, name='Protected Team')
         response = self.client.delete(f'/api/academic-periods/semesters/{sem.id}/')
         self.assertEqual(response.status_code, 400)

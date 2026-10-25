@@ -15,6 +15,7 @@ import '../../../../utils/universal_file_viewer.dart';
 
 import '../../../../models/repository_library.dart';
 import '../../../../widgets/repository/library_components.dart';
+import '../../../../widgets/repository/library_discovery.dart';
 import '../../../../widgets/repository/repository_video_viewer.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 
@@ -296,7 +297,10 @@ class _BookDetailsSheetState extends ConsumerState<_BookDetailsSheet> {
                               entry.outputLabel,
                               style: TextStyle(
                                 fontSize: 9.5,
-                                color: ProgramColors.of(context, isCapstone: isCapstone).text,
+                                color: ProgramColors.of(
+                                  context,
+                                  isCapstone: isCapstone,
+                                ).text,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.4,
                               ),
@@ -459,41 +463,8 @@ class _BookDetailsSheetState extends ConsumerState<_BookDetailsSheet> {
                             ),
                           ),
                         ),
-                      if (entry.topics.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: entry.topics
-                              .map(
-                                (t) => Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 2.5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: DefensysTokens.surfaceOf(context),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: DefensysTokens.borderOf(context),
-                                      width: 0.7,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '#$t',
-                                    style: TextStyle(
-                                      fontSize: 9.5,
-                                      color: DefensysTokens.textSecondaryOf(
-                                        context,
-                                      ),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ],
+                      const SizedBox(height: 14),
+                      LibraryProjectTags(entry: entry),
                     ],
                   ),
                 ),

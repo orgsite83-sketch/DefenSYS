@@ -1193,7 +1193,9 @@ def stage_payload(team, stage_label, evaluator=None):
                 'name': display_name(stage_sched.documenter),
                 'username': stage_sched.documenter.username,
             }
+        from academic_period_management.calendar import schedule_time_payload
         schedule_data = {
+            **schedule_time_payload(stage_sched),
             'id': stage_sched.id,
             'stage': stage_sched.stage_label,
             'date': stage_sched.scheduled_date.isoformat() if stage_sched.scheduled_date else None,

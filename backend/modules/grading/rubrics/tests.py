@@ -76,6 +76,41 @@ class RubricEngineApiTests(APITestCase):
         self.assertEqual(response.data['rubric']['criteria_count'], 2)
         self.assertEqual(Rubric.objects.get().criteria.count(), 2)
 
+    def test_custom_scale_round_trips_and_sets_each_criterion_maximum(self):
+        payload = self.rubric_payload(scale=Rubric.SCALE_CUSTOM, custom_max_score=25)
+        for criterion in payload['criteria']:
+            criterion.pop('max_score')
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        saved = response.data['rubric']
+        self.assertEqual(saved['custom_max_score'], 25)
+        self.assertTrue(all(c['max_score'] == 25 and c['scale'] == Rubric.SCALE_CUSTOM for c in saved['criteria']))
+
+        payload['custom_max_score'] = 50
+        response = self.client.patch(f"/api/grading/rubrics/{saved['id']}/", payload, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['rubric']['custom_max_score'], 50)
+        self.assertTrue(all(c['max_score'] == 50 for c in response.data['rubric']['criteria']))
+
+        payload = self.rubric_payload(scale=Rubric.SCALE_5, custom_max_score=50)
+        response = self.client.patch(f"/api/grading/rubrics/{saved['id']}/", payload, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(response.data['rubric']['custom_max_score'])
+
+    def test_custom_scale_requires_valid_whole_number_and_matching_criteria(self):
+        for invalid in (None, 0, -1, 1.5, 32768):
+            with self.subTest(maximum=invalid):
+                payload = self.rubric_payload(scale=Rubric.SCALE_CUSTOM, custom_max_score=invalid)
+                response = self.client.post('/api/grading/rubrics/', payload, format='json')
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIn('custom_max_score', response.data)
+        response = self.client.post('/api/grading/rubrics/', self.rubric_payload(
+            scale=Rubric.SCALE_CUSTOM, custom_max_score=25,
+        ), format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('criteria', response.data)
+        self.assertEqual(Rubric.objects.count(), 0)
+
     def test_create_rubric_requires_scope(self):
         payload = self.rubric_payload()
         payload.pop('scope')

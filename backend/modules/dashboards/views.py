@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, Min, Prefetch, Q
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -17,6 +17,7 @@ from user_management.permissions import (
 )
 
 from academic_period_management.models import SchoolYear, Semester
+from academic_period_management.calendar import schedule_time_payload
 from academic_period_management.serializers import SemesterSerializer
 from academic_period_management.services import active_semester
 from authentication_access_control.models import SystemAuditLog
@@ -38,7 +39,7 @@ from repository.project_archive.services import (
     repository_pending_count,
 )
 from grading.rubrics.models import Rubric
-from user_management.models import SectionInstructorAssignment
+from user_management.models import PanelistEligibilityRequest, SectionInstructorAssignment
 from user_management.academic_records.models import StudentAcademicRecord
 from user_management.academic_records.rollover import next_academic_step
 from user_management.academic_records.serializers import StudentAcademicRecordSerializer
@@ -951,6 +952,7 @@ def _schedule_payload(schedule):
     if schedule is None:
         return None
     return {
+        **schedule_time_payload(schedule),
         'id': schedule.id,
         'stage': schedule.stage_label,
         'date': schedule.scheduled_date,
@@ -1129,6 +1131,28 @@ class AdminDashboardView(APIView):
 
         # Action items for Admin
         action_items = []
+
+        # Approval work comes from the request records, independently of whether
+        # any admin has opened or marked its notification as read.
+        panelist_requests = PanelistEligibilityRequest.objects.filter(
+            status=PanelistEligibilityRequest.PENDING,
+        ).aggregate(count=Count('pk'), request_id=Min('pk'))
+        if panelist_requests['count']:
+            count = panelist_requests['count']
+            route = '/admin/users?tab=faculty&view=panelists&section=requests'
+            if count == 1:
+                route += f"&request={panelist_requests['request_id']}"
+            action_items.append({
+                'id': 'pending_panelist_requests',
+                'title': f'{count} Panelist {"Request" if count == 1 else "Requests"} Awaiting Approval',
+                'description': 'Review faculty nominations for the approved panelist pool.',
+                'category_label': 'PANELIST APPROVAL',
+                'severity': 'action',
+                'count': count,
+                'target_section': 'userManagement',
+                'target_route': route,
+                'button_label': 'Review Request' if count == 1 else 'Review Requests',
+            })
 
         if not period_configured:
             action_items.append({
@@ -1493,7 +1517,7 @@ class StudentDashboardView(APIView):
                 raise ValidationError({'team_id': 'Choose a valid team.'})
             team = get_object_or_404(owned_teams, pk=int(selected_id))
         else:
-            team = owned_teams.first()
+            team = apply_team_scope(owned_teams, 'active', user=user).first()
         academic_record = _latest_academic_record(user)
         team_payload = _team_payload(team) if team else None
         # Query active schedule scoped to team's current defense stage, fallback to most recent schedule of current stage
@@ -1502,7 +1526,8 @@ class StudentDashboardView(APIView):
         if team and curr_stage:
             schedule = (
                 DefenseSchedule.objects.select_related('team', 'defense_stage')
-                .filter(team=team, status=DefenseSchedule.STATUS_SCHEDULED)
+                .filter(team=team, semester=team.semester, project_version=team.project_version,
+                        status=DefenseSchedule.STATUS_SCHEDULED)
                 .filter(Q(defense_stage__label=curr_stage) | Q(event_name=curr_stage))
                 .order_by('scheduled_date', 'start_time')
                 .first()
@@ -1510,7 +1535,7 @@ class StudentDashboardView(APIView):
             if schedule is None:
                 schedule = (
                     DefenseSchedule.objects.select_related('team', 'defense_stage')
-                    .filter(team=team)
+                    .filter(team=team, semester=team.semester, project_version=team.project_version)
                     .filter(Q(defense_stage__label=curr_stage) | Q(event_name=curr_stage))
                     .order_by('-scheduled_date', '-start_time', '-id')
                     .first()

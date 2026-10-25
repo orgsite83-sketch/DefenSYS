@@ -17,6 +17,7 @@ import '../../services/academic/student_teams_provider.dart';
 import '../../services/repository_provider.dart';
 import '../../services/app/data_refresh_provider.dart';
 import '../../theme/defensys_tokens.dart';
+import '../../widgets/branding/defensys_mobile_brand.dart';
 import '../../l10n/l10n_ext.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/defensys_skeleton.dart';
@@ -391,30 +392,32 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                 onPressed: () => Scaffold.of(ctx).openDrawer(),
               ),
             ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  tabTitle,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 17,
-                    letterSpacing: -0.2,
+            title: DefensysMobileBrand.usesMobileHeader(context)
+                ? const DefensysMobileBrand()
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        tabTitle,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        tabSubtitle,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  tabSubtitle,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
             actions: [
               const NotificationsBell(
                 workspace: 'student',

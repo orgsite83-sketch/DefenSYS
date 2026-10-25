@@ -418,6 +418,10 @@ class ScheduleImportConflictSerializer(serializers.ModelSerializer):
 
 
 class DefenseScheduleSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        from academic_period_management.calendar import schedule_time_payload
+        return {**super().to_representation(instance), **schedule_time_payload(instance)}
+
     latest_change = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
@@ -741,6 +745,9 @@ class ScheduleBaseSerializer(serializers.Serializer):
         attrs['room'] = attrs['room'].strip()
         attrs['event_name'] = (attrs.get('event_name') or '').strip()
         attrs['semester'] = self._resolve_semester(attrs)
+        from academic_period_management.calendar import validate_defense_date
+        if not attrs.get('sessions'):
+            validate_defense_date(attrs['semester'], attrs['scheduled_date'])
         self._validate_scheduler_scope_open(attrs)
         attrs['defense_stage'] = self._resolve_defense_stage(attrs)
         attrs['panelists'] = self._resolve_panelists(attrs['panelist_ids'])
@@ -1077,6 +1084,9 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        from academic_period_management.calendar import validate_defense_date
+        validated_data['semester'] = validate_defense_date(
+            validated_data['semester'], validated_data['scheduled_date'], lock=True)
         # Adviser assignment may have changed since the request was validated.
         validated_data['team'] = StudentTeam.objects.select_for_update().get(
             pk=validated_data['team'].pk,
@@ -1304,6 +1314,8 @@ class SchedulePlanSerializer(ScheduleBaseSerializer):
                     raise serializers.ValidationError({'sessions': 'A team can only belong to one session in this plan.'})
                 selected_ids.update(session['team_ids'])
             current = {**attrs, **session}
+            from academic_period_management.calendar import validate_defense_date
+            validate_defense_date(attrs['semester'], current['scheduled_date'], field='sessions')
             current['panelists'] = self._resolve_panelists(current['panelist_ids'])
             current['external_evaluators'] = resolve_evaluators(current.get('external_evaluator_ids', []), actor)
             current['documenter'] = self._resolve_documenter(current)
@@ -1552,6 +1564,8 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
     @transaction.atomic
     def save(self):
         attrs = self.validated_data
+        from academic_period_management.models import Semester
+        attrs['semester'] = Semester.objects.select_for_update().get(pk=attrs['semester'].pk)
         # Serialize confirmations for the same teams and recheck the preview
         # after acquiring locks; validation alone may precede another save.
         list(StudentTeam.objects.select_for_update().filter(
@@ -1854,7 +1868,7 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
     from .models import PitEventGradingConfig
     from .pit_config import pit_event_config_payload
     pit_events_qs = (
-        PitEventGradingConfig.objects.filter(semester=semester)
+        PitEventGradingConfig.objects.select_related('panel_rubric', 'peer_rubric').filter(semester=semester)
         .prefetch_related('deliverables')
         .order_by('event_name')
         if semester
@@ -1862,7 +1876,7 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
     )
     from .event_scope import pit_events_for_user
     if user:
-        pit_events_qs = pit_events_for_user(user, semester=semester).prefetch_related('deliverables') if semester else pit_events_qs.none()
+        pit_events_qs = pit_events_for_user(user, semester=semester).select_related('panel_rubric', 'peer_rubric').prefetch_related('deliverables') if semester else pit_events_qs.none()
     pit_events_data = [pit_event_config_payload(cfg) for cfg in pit_events_qs]
 
     return {

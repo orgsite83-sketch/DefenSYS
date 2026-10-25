@@ -5,7 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Future<void> loadPreviewFonts({bool force = false}) async {
-  if (!force && Platform.environment['DEFENSYS_CAPTURE_PREVIEW'] != '1') return;
+  if (!force &&
+      Platform.environment['DEFENSYS_CAPTURE_PREVIEW'] != '1' &&
+      !const bool.fromEnvironment('DEFENSYS_CAPTURE_PREVIEW')) {
+    return;
+  }
   for (final entry in {
     'Inter': 'assets/fonts/Inter-Regular.ttf',
     'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
@@ -22,7 +26,10 @@ Future<void> capturePreview(
   String name, {
   bool viewport = false,
 }) async {
-  if (Platform.environment['DEFENSYS_CAPTURE_PREVIEW'] != '1') return;
+  if (Platform.environment['DEFENSYS_CAPTURE_PREVIEW'] != '1' &&
+      !const bool.fromEnvironment('DEFENSYS_CAPTURE_PREVIEW')) {
+    return;
+  }
   final boundary = viewport
       ? null
       : tester.renderObject<RenderRepaintBoundary>(finder);

@@ -24,11 +24,12 @@ class EvaluationAutomationTests(unittest.TestCase):
     def peer_args(self, **overrides):
         values = dict(students=None, all_students=True, team_id=None, limit=None,
             min_score=6, max_score=9, base_url='http://example.test', http_login=False,
-            dry_run=False, password=None, stage=None, delay=0, session_id=None, semester_id=None)
+            dry_run=False, password=None, stage=None, delay=0, session_id=None, semester_id=None, year=None)
         return SimpleNamespace(**{**values, **overrides})
 
     def peer_dashboard(self, **overrides):
-        return {'student': {'id': 1}, 'team': {'id': 2, 'name': 'Team Test', 'members': [{'id': 1}, {'id': 3}]},
+        return {'student': {'id': 1}, 'team': {'id': 2, 'name': 'Team Test', 'yearLevel': '1st Year',
+            'members': [{'id': 1}, {'id': 3}]},
             'current_stage': 'Project Proposal', 'peerCriteria': [{'name': 'Contribution', 'maxScore': 10}],
             'peerEvalEnabled': True, 'myPeerSubmissions': [],
             'peerEvalContext': {'session_id': 'session-a', 'semester_id': 1}, **overrides}
@@ -55,6 +56,37 @@ class EvaluationAutomationTests(unittest.TestCase):
         client = self.run_peer(self.peer_args(session_id='session-a', semester_id=1), self.peer_dashboard())
         client.submit_evaluation.assert_called_once()
 
+    def test_peer_year_cli_accepts_numbers_and_labels_and_rejects_unknown_years(self):
+        for value, expected in [('1', '1st Year'), ('2nd Year', '2nd Year'), ('3', '3rd Year'), ('4', '4th Year')]:
+            with self.subTest(value=value), patch.object(sys, 'argv', ['auto_peer_eval.py', '--all-students', '--year', value]):
+                self.assertEqual(auto_peer_eval.parse_args().year, expected)
+        for value in ['0', '5', 'first']:
+            with self.subTest(value=value), patch.object(sys, 'argv', ['auto_peer_eval.py', '--all-students', '--year', value]), \
+                    patch('sys.stderr', new=StringIO()), self.assertRaises(SystemExit) as error:
+                auto_peer_eval.parse_args()
+            self.assertEqual(error.exception.code, 2)
+
+    def test_peer_year_uses_the_live_team_instead_of_the_students_academic_year(self):
+        dashboard = self.peer_dashboard(academic_record={'year_level': '2nd Year'})
+        client = self.run_peer(self.peer_args(year='1st Year', session_id='session-a', semester_id=1), dashboard)
+        client.submit_evaluation.assert_called_once()
+        self.assertEqual(client.submit_evaluation.call_args.args[0]['teamId'], 2)
+
+    def test_peer_year_rechecks_dashboard_and_skips_other_or_unknown_cohorts(self):
+        for year in ['2nd Year', None, '']:
+            for dry_run in [False, True]:
+                with self.subTest(year=year, dry_run=dry_run):
+                    dashboard = self.peer_dashboard()
+                    dashboard['team']['yearLevel'] = year
+                    client = self.run_peer(self.peer_args(year='1st Year', dry_run=dry_run), dashboard)
+                    client.submit_evaluation.assert_not_called()
+
+    def test_peer_year_filter_preserves_availability_and_completed_evaluations(self):
+        for overrides in [{'peerEvalEnabled': False}, {'myPeerSubmissions': [{'evaluateeId': 3}]}]:
+            with self.subTest(overrides=overrides):
+                client = self.run_peer(self.peer_args(year='1st Year'), self.peer_dashboard(**overrides))
+                client.submit_evaluation.assert_not_called()
+
     def test_closed_adviser_form_is_skipped_even_with_a_grade_and_rubric(self):
         args = SimpleNamespace(advisers=None, all_advisers=True, team_id=None, min_score=6,
             max_score=9, base_url='http://example.test', dry_run=False, delay=0,
@@ -76,9 +108,9 @@ class EvaluationAutomationTests(unittest.TestCase):
             panelists=None, all_panelists=True, team_id=None, min_score=7,
             max_score=9, base_url='http://example.test', dry_run=False, delay=0,
             stage=None, session_id=None, semester_id=None, scope=None,
-            verdict='approved', verdict_remarks=None, revision_deadline=None,
+            verdict='auto', verdict_remarks=None, revision_deadline=None,
             redefense_verification=False, no_verdict=False, verdict_only=False,
-            external_only=False, exclude_external=False,
+            external_only=False, exclude_external=False, year=None, include_drafts=False,
         )
         return SimpleNamespace(**{**values, **overrides})
 
@@ -95,6 +127,9 @@ class EvaluationAutomationTests(unittest.TestCase):
             'is_posted': False,
             'grading_available': True,
             'grading_unavailable_reason': '',
+            'is_chair': True,
+            'can_issue_verdict': True,
+            'year_level': '1st Year',
             'evaluation_context': 'ctx-signature',
             'panel_rubric': {
                 'target_type': 'team',
@@ -199,6 +234,8 @@ class EvaluationAutomationTests(unittest.TestCase):
         session = Mock()
         session.get.return_value.status_code = 200
         session.get.return_value.json.return_value = {'teams': overrides.pop('teams', [self.panelist_schedule_payload()])}
+        if 'get_payloads' in overrides:
+            session.get.side_effect = [Mock(status_code=200, json=Mock(return_value=data)) for data in overrides.pop('get_payloads')]
         session.post.return_value.status_code = overrides.pop('status_code', 200)
         session.post.return_value.json.return_value = {'panel_score': '90.00'}
         guests = overrides.pop('guests', [{'id': 3, 'name': 'External Expert', 'unavailable_reason': ''}])
@@ -207,8 +244,8 @@ class EvaluationAutomationTests(unittest.TestCase):
                 patch.object(auto_panelist_eval, 'fetch_external_panelists', return_value=guests), \
                 patch.object(auto_panelist_eval, 'get_guest_jwt_token', return_value='guest-token') as guest_token, \
                 patch.object(auto_panelist_eval, 'get_jwt_token_for_user', return_value='faculty-token'), \
-                patch.object(auto_panelist_eval, 'get_schedule_chair_username', return_value='chair'), \
-                patch.object(auto_panelist_eval, 'submit_schedule_verdict', return_value={'status': 'ok'}) as verdict, \
+                patch.object(auto_panelist_eval, 'get_schedule_chair_username', return_value=overrides.pop('chair', 'chair')), \
+                patch.object(auto_panelist_eval, 'submit_schedule_verdict', return_value=overrides.pop('verdict_result', {'status': 'ok'})) as verdict, \
                 patch.object(auto_panelist_eval.requests, 'Session', return_value=session), redirect_stdout(StringIO()) as output:
             result = auto_panelist_eval.run()
         return session, guest_token, verdict, result, output.getvalue()
@@ -216,7 +253,8 @@ class EvaluationAutomationTests(unittest.TestCase):
     def test_external_uses_guest_api_and_preserves_evaluation_context(self):
         session, token, verdict, result, output = self.run_panel()
         token.assert_called_once_with(3)
-        self.assertTrue(session.get.call_args.args[0].endswith('/guest-assignments/'))
+        self.assertTrue(session.get.call_args_list[0].args[0].endswith('/guest-assignments/'))
+        self.assertTrue(session.get.call_args_list[-1].args[0].endswith('/panelist-assignments/'))
         self.assertTrue(session.post.call_args.args[0].endswith('/guest-submit-grades/'))
         payload = session.post.call_args.kwargs['json']
         self.assertEqual(payload['evaluation_context'], 'ctx-signature')
@@ -289,7 +327,7 @@ class EvaluationAutomationTests(unittest.TestCase):
         self.assertEqual([r['criteria_scores'][0]['score'] for r in rows], [8, 4, 4, 8, 4, 4])
         verdict.assert_not_called()
         self.assertEqual(result, 0)
-        self.assertIn('chair must select a qualifying concept', output)
+        self.assertIn('chair must review the concepts', output)
 
     def test_invalid_cli_ranges_and_conflicting_modes_are_rejected_before_discovery(self):
         for flags in [
@@ -301,6 +339,132 @@ class EvaluationAutomationTests(unittest.TestCase):
                     redirect_stdout(StringIO()), patch('sys.stderr', new=StringIO()), self.assertRaises(SystemExit) as error:
                 auto_panelist_eval.parse_args()
             self.assertEqual(error.exception.code, 2)
+
+    def test_year_selects_the_requested_cohort_and_cli_defaults_to_api_outcome(self):
+        args = auto_panelist_eval.parse_args(['--all-panelists', '--scope', 'pit', '--year', '1'])
+        self.assertEqual(args.year, '1st Year')
+        self.assertEqual(args.verdict, 'auto')
+        session, _, verdict, _, _ = self.run_panel(args={'year': '2nd Year'})
+        session.post.assert_not_called()
+        verdict.assert_not_called()
+
+    def test_drafts_are_skipped_unless_explicitly_preserved_and_completed(self):
+        team = self.panelist_schedule_payload(draft={'submissions': [
+            {'student_id': None, 'criteria_scores': [{'criterion_id': 1, 'score': 0}], 'remarks': 'My saved feedback.'}]})
+        session, _, _, result, output = self.run_panel(teams=[team])
+        session.post.assert_not_called()
+        self.assertEqual(result, 2)
+        self.assertIn('--include-drafts', output)
+        session, _, _, _, _ = self.run_panel(teams=[team], args={'include_drafts': True})
+        row = session.post.call_args.kwargs['json']['submissions'][0]
+        self.assertEqual(row['criteria_scores'], [{'criterion_id': 1, 'score': 0}])
+        self.assertEqual(row['remarks'], 'My saved feedback.')
+
+    def test_individual_draft_keeps_existing_scores_and_fills_missing_members(self):
+        team = self.panelist_schedule_payload(panel_rubric={'target_type': 'individual', 'criteria': [
+            {'id': 1, 'max_score': 5}, {'id': 2, 'max_score': 100}]},
+            members=[{'id': 11}, {'id': 12}], draft={'submissions': [
+                {'student_id': 11, 'criteria_scores': [{'criterion_id': 1, 'score': 0}], 'remarks': 'Saved'}]})
+        rows = auto_panelist_eval.build_submissions(team, 8, 8, 'Generated', include_drafts=True)
+        self.assertEqual(rows[0], {'student_id': 11, 'criteria_scores': [
+            {'criterion_id': 1, 'score': 0}, {'criterion_id': 2, 'score': 80}], 'remarks': 'Saved'})
+        self.assertEqual(rows[1]['student_id'], 12)
+        self.assertEqual(rows[1]['criteria_scores'][0]['score'], 4)
+
+    def test_invalid_or_obsolete_draft_scores_are_never_submitted(self):
+        for scores in [[{'criterion_id': 999, 'score': 8}], [{'criterion_id': 1, 'score': float('nan')}],
+                       [{'criterion_id': 1, 'score': 11}], [{'criterion_id': 1, 'score': 8}] * 2]:
+            with self.subTest(scores=scores):
+                team = self.panelist_schedule_payload(draft={'submissions': [
+                    {'student_id': None, 'criteria_scores': scores}]})
+                session, _, verdict, result, _ = self.run_panel(teams=[team], args={'include_drafts': True})
+                session.post.assert_not_called()
+                verdict.assert_not_called()
+                self.assertEqual(result, 2)
+
+    def test_missing_members_or_concept_keys_cannot_create_incomplete_grades(self):
+        for team in [self.panelist_schedule_payload(members=[], panel_rubric={
+                    'target_type': 'individual', 'criteria': [{'id': 1, 'max_score': 10}]}),
+                    self.panelist_schedule_payload(assessment_policy={'version': 1, 'per_concept': True})]:
+            with self.subTest(team=team):
+                session, _, _, result, _ = self.run_panel(teams=[team])
+                session.post.assert_not_called()
+                self.assertEqual(result, 2)
+
+    def test_legacy_concept_hearing_is_also_left_for_the_chair(self):
+        team = self.panelist_schedule_payload(assessment_concepts=[], assessment_policy={'version': 0},
+            grade_record={'workflow': {'concept_workflow': {'concepts': [{'key': 'c1'}]}}})
+        session, _, verdict, result, _ = self.run_panel(teams=[team])
+        session.post.assert_called_once()
+        self.assertNotIn('concept_key', session.post.call_args.kwargs['json']['submissions'][0])
+        verdict.assert_not_called()
+        self.assertEqual(result, 0)
+
+    def test_current_context_and_completed_state_are_refreshed_before_submission(self):
+        original = self.panelist_schedule_payload()
+        fresh = self.panelist_schedule_payload(evaluation_context='new-context')
+        session, _, _, _, _ = self.run_panel(args={'no_verdict': True}, get_payloads=[
+            {'teams': [original]}, {'teams': [fresh]}])
+        self.assertEqual(session.post.call_args.kwargs['json']['evaluation_context'], 'new-context')
+        session, _, _, result, _ = self.run_panel(args={'no_verdict': True}, get_payloads=[
+            {'teams': [original]}, {'teams': [self.panelist_schedule_payload(is_posted=True)]}])
+        session.post.assert_not_called()
+        self.assertEqual(result, 0)
+
+    def test_disappearing_assignment_does_not_post_a_stale_grade(self):
+        session, _, verdict, result, _ = self.run_panel(get_payloads=[
+            {'teams': [self.panelist_schedule_payload()]}, {'teams': []}])
+        session.post.assert_not_called()
+        verdict.assert_not_called()
+        self.assertEqual(result, 1)
+
+    def test_verdict_uses_current_api_allowed_outcome(self):
+        for allowed, chosen in [(['approved', 'approved_with_revisions'], 'approved'), (['for_redefense'], 'for_redefense')]:
+            with self.subTest(allowed=allowed):
+                team = self.panelist_schedule_payload(assessment_policy={'version': 1}, grade_record={'workflow': {
+                    'outcome_rule': {'panel_complete': True, 'allowed_verdicts': allowed}}})
+                _, _, verdict, result, _ = self.run_panel(teams=[team])
+                self.assertEqual(verdict.call_args.kwargs['verdict'], chosen)
+                self.assertEqual(result, 0)
+
+    def test_incomplete_cutoff_or_disallowed_verdict_stays_pending(self):
+        for row, requested in [
+            (self.panelist_schedule_payload(can_issue_verdict=False), 'auto'),
+            (self.panelist_schedule_payload(assessment_policy={'version': 1}), 'auto'),
+            (self.panelist_schedule_payload(grade_record={'workflow': {'outcome_rule': {
+                'panel_complete': False, 'allowed_verdicts': []}}}), 'auto'),
+            (self.panelist_schedule_payload(grade_record={'workflow': {'outcome_rule': {
+                'panel_complete': True, 'allowed_verdicts': ['for_redefense']}}}), 'approved'),
+        ]:
+            with self.subTest(row=row, requested=requested):
+                _, _, verdict, result, _ = self.run_panel(teams=[row], args={'verdict': requested})
+                verdict.assert_not_called()
+                self.assertEqual(result, 2)
+
+    def test_no_chair_does_not_use_an_admin_fallback(self):
+        _, _, verdict, result, output = self.run_panel(chair=None)
+        verdict.assert_not_called()
+        self.assertEqual(result, 2)
+        self.assertIn('Assign one active panel chair', output)
+
+    def test_rate_limit_or_auth_failure_stops_remaining_evaluators_and_verdicts(self):
+        for status in (401, 429):
+            with self.subTest(status=status):
+                session, _, verdict, result, output = self.run_panel(status_code=status,
+                    faculty=['panelist-a', 'panelist-b'])
+                session.post.assert_called_once()
+                verdict.assert_not_called()
+                self.assertEqual(result, 1)
+                self.assertIn('[STOPPED]', output)
+
+    def test_rate_limit_during_verdict_stops_remaining_verdicts(self):
+        auto_panelist_eval.fetch_target_schedule_ids.return_value = [101, 102]
+        _, _, verdict, result, output = self.run_panel(args={'verdict_only': True}, teams=[
+            self.panelist_schedule_payload(schedule_id=101), self.panelist_schedule_payload(schedule_id=102)],
+            verdict_result={'status': 'error', 'code': 429, 'detail': 'Rate limited.'})
+        verdict.assert_called_once()
+        self.assertEqual(result, 1)
+        self.assertIn('[STOPPED]', output)
 
 
 if __name__ == '__main__':

@@ -10,8 +10,10 @@ class PanelistRequestsView extends ConsumerStatefulWidget {
     super.key,
     required this.reviewed,
     required this.onOpen,
+    this.requesterView = false,
   });
   final bool reviewed;
+  final bool requesterView;
   final ValueChanged<int> onOpen;
   @override
   ConsumerState<PanelistRequestsView> createState() =>
@@ -101,6 +103,8 @@ class _PanelistRequestsViewState extends ConsumerState<PanelistRequestsView> {
                                   ? 'No matching requests'
                                   : widget.reviewed
                                   ? 'No reviewed requests yet'
+                                  : widget.requesterView
+                                  ? 'No pending requests'
                                   : 'All requests reviewed',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
@@ -110,6 +114,8 @@ class _PanelistRequestsViewState extends ConsumerState<PanelistRequestsView> {
                             Text(
                               widget.reviewed
                                   ? 'Approval and decline decisions appear here.'
+                                  : widget.requesterView
+                                  ? 'Request eligibility from the Faculty tab and track it here.'
                                   : 'New PIT lead nominations appear here.',
                               style: TextStyle(fontSize: 12, color: secondary),
                             ),
@@ -195,7 +201,9 @@ class _PanelistRequestsViewState extends ConsumerState<PanelistRequestsView> {
                                   ),
                                   child: Text(
                                     status == 'pending'
-                                        ? 'Review request'
+                                        ? widget.requesterView
+                                              ? 'View request'
+                                              : 'Review request'
                                         : 'View decision',
                                   ),
                                 ),

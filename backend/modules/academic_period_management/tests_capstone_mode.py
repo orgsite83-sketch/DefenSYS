@@ -31,7 +31,7 @@ class CapstoneModeTests(APITestCase):
 
     def test_operating_mode_capstone_2_on_first_semester_without_teams(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.FIRST,
             is_active=True,
@@ -43,7 +43,7 @@ class CapstoneModeTests(APITestCase):
 
     def test_operating_mode_capstone_1_intake(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.SECOND,
             is_active=True,
@@ -55,7 +55,7 @@ class CapstoneModeTests(APITestCase):
 
     def test_operating_mode_capstone_2_when_fourth_year_teams_exist(self):
         school_year = SchoolYear.objects.create(label='2027-2028')
-        first = Semester.objects.create(
+        first = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.FIRST,
             is_active=True,
@@ -89,7 +89,7 @@ class CapstoneModeTests(APITestCase):
 
         first = self.client.post(
             f'/api/academic-periods/{school_year.id}/semesters/',
-            {'label': Semester.FIRST},
+            {'label': Semester.FIRST, 'starts_on': '2026-01-01', 'ends_on': '2026-12-31'},
             format='json',
         )
         self.assertEqual(first.status_code, 201)
@@ -98,7 +98,7 @@ class CapstoneModeTests(APITestCase):
 
         second = self.client.post(
             f'/api/academic-periods/{school_year.id}/semesters/',
-            {'label': Semester.SECOND},
+            {'label': Semester.SECOND, 'starts_on': '2027-01-01', 'ends_on': '2027-06-30'},
             format='json',
         )
         self.assertEqual(second.status_code, 201)
@@ -107,7 +107,7 @@ class CapstoneModeTests(APITestCase):
 
     def test_derive_phase_second_sem_always_capstone_1(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        second = Semester.objects.create(
+        second = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.SECOND,
         )
@@ -119,7 +119,7 @@ class CapstoneModeTests(APITestCase):
 
     def test_derive_phase_first_sem_with_fourth_year_teams(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        first = Semester.objects.create(
+        first = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.FIRST,
         )
@@ -144,7 +144,7 @@ class CapstoneModeTests(APITestCase):
 
     def test_normalize_second_semester(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.SECOND,
             capstone_program_phase=Semester.PHASE_NONE,
@@ -164,7 +164,7 @@ class CapstoneModeTests(APITestCase):
         )
         self.client.force_authenticate(user=admin)
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.SECOND,
             is_active=False,
@@ -191,7 +191,7 @@ class CapstoneModeTests(APITestCase):
         )
         self.client.force_authenticate(user=admin)
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.SECOND,
             is_active=True,
@@ -217,7 +217,7 @@ class CapstoneModeTests(APITestCase):
         )
         self.client.force_authenticate(user=admin)
         school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        semester = Semester.objects.create(starts_on='2000-01-01', ends_on='2199-12-31',
             school_year=school_year,
             label=Semester.SECOND,
             is_active=True,

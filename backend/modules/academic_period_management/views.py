@@ -17,6 +17,7 @@ from .serializers import (
     SemesterCreateSerializer,
     SemesterSerializer,
     SemesterActivationSerializer,
+    SemesterCalendarSerializer,
 )
 from .services import build_semester_transition_preview, switch_active_semester, active_semester
 
@@ -112,7 +113,7 @@ class SemesterCreateView(APIView):
         school_year = get_object_or_404(SchoolYear, pk=school_year_id)
         serializer = SemesterCreateSerializer(
             data=request.data,
-            context={'school_year': school_year},
+            context={'school_year': school_year, 'request': request},
         )
         serializer.is_valid(raise_exception=True)
         semester = serializer.save()
@@ -129,6 +130,30 @@ class SemesterStatusView(APIView):
     def patch(self, request, semester_id):
         semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
         update_fields = []
+        if 'starts_on' in request.data or 'ends_on' in request.data:
+            if 'is_active' in request.data or 'active' in request.data:
+                raise ValidationError('Save calendar dates before starting a semester activation review.')
+            from django.db import transaction
+            from .calendar import calendar_schedule_issues
+            with transaction.atomic():
+                semester = Semester.objects.select_for_update().get(pk=semester_id)
+                old_calendar = {'starts_on': str(semester.starts_on) if semester.starts_on else None,
+                                'ends_on': str(semester.ends_on) if semester.ends_on else None}
+                calendar = SemesterCalendarSerializer(data=request.data, partial=True, context={'semester': semester})
+                calendar.is_valid(raise_exception=True)
+                for name, value in calendar.validated_data.items():
+                    setattr(semester, name, value)
+                semester.save(update_fields=list(calendar.validated_data))
+                issues = calendar_schedule_issues(semester)
+                from authentication_access_control.audit import log_high_impact_action
+                from authentication_access_control.models import SystemAuditLog
+                log_high_impact_action(category=SystemAuditLog.CATEGORY_ACADEMIC_PERIOD,
+                    action='semester.calendar_updated', target=semester, actor=request.user, request=request,
+                    old_values=old_calendar,
+                    new_values={'starts_on': semester.starts_on.isoformat(), 'ends_on': semester.ends_on.isoformat(),
+                                'out_of_range_schedule_ids': issues['schedule_ids']}, strict=True)
+            return Response({'semester': SemesterSerializer(semester).data,
+                             'active_semester': active_semester_payload(), 'calendar_issues': issues})
 
         if 'is_active' in request.data or 'active' in request.data:
             is_active = request.data.get('is_active', request.data.get('active'))
@@ -228,6 +253,20 @@ class SemesterStatusView(APIView):
             'school_years': SchoolYearSerializer(school_years, many=True).data,
             'active_semester': active_semester_payload(),
         }, status=status.HTTP_200_OK)
+
+
+class SemesterCreatePreviewView(APIView):
+    permission_classes = [IsAuthenticated, IsSystemAdmin]
+
+    def post(self, request, school_year_id):
+        from .services import proposed_semester
+        school_year = get_object_or_404(SchoolYear, pk=school_year_id)
+        serializer = SemesterCreateSerializer(data=request.data,
+            context={'school_year': school_year, 'request': request})
+        serializer.is_valid(raise_exception=True)
+        if Semester.objects.filter(school_year=school_year, label=serializer.validated_data['label']).exists():
+            raise ValidationError({'label': 'This semester already exists for the selected school year.'})
+        return Response(build_semester_transition_preview(proposed_semester(school_year, **serializer.validated_data)))
 
 
 class SemesterTransitionPreviewView(APIView):

@@ -5,10 +5,13 @@ import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../models/repository_library.dart';
+import '../../../../models/library_filters.dart';
+import '../../../../toasts/feedback_toast.dart';
 import '../../../../services/repository_review_provider.dart';
+import '../../../../services/repository_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/repository/library_components.dart';
-import '../../../../widgets/shadcn/defensys_workflow_widgets.dart';
+import '../../../../widgets/repository/library_discovery.dart';
 import 'library_project_screen.dart';
 import 'repository_entry_view.dart';
 
@@ -17,11 +20,12 @@ class LibrarySearchScreen extends ConsumerStatefulWidget {
     super.key,
     this.browse = LibraryBrowse.projects,
     this.type = '',
-    this.year = '',
+    this.selection = const LibraryFilterSelection(),
     this.years = const [],
   });
   final LibraryBrowse browse;
-  final String type, year;
+  final String type;
+  final LibraryFilterSelection selection;
   final List<String> years;
   @override
   ConsumerState<LibrarySearchScreen> createState() =>
@@ -32,17 +36,18 @@ class _LibrarySearchScreenState extends ConsumerState<LibrarySearchScreen> {
   final _controller = TextEditingController();
   Timer? _debounce;
   String _query = '';
-  late String _type, _year;
+  late String _type;
+  late LibraryFilterSelection _selection;
+  bool _loadingFilters = false;
   late LibraryBrowse _browse;
   late bool _projects;
-  bool _filters = false;
   @override
   void initState() {
     super.initState();
     _browse = widget.browse;
     _projects = _browse == LibraryBrowse.projects;
     _type = widget.type;
-    _year = widget.year;
+    _selection = widget.selection;
   }
 
   @override
@@ -59,19 +64,89 @@ class _LibrarySearchScreenState extends ConsumerState<LibrarySearchScreen> {
     });
   }
 
+  List<VaultEntry> get _all =>
+      ref.read(repositoryProvider).entries.map(VaultEntry.fromJson).toList();
+
+  LibrarySearchQuery _key({bool facetSource = false}) => (
+    search: _query,
+    type: _type,
+    year: facetSource ? '' : _selection.year,
+    documentKind: _browse.value,
+    subject: facetSource ? '' : _selection.query(LibraryFilterGroup.subject),
+    technology: facetSource
+        ? ''
+        : _selection.query(LibraryFilterGroup.technology),
+    language: facetSource ? '' : _selection.query(LibraryFilterGroup.language),
+  );
+
+  Future<void> _filter() async {
+    setState(() => _loadingFilters = true);
+    final baseKey = _key(facetSource: true);
+    List<VaultEntry> entries;
+    try {
+      entries = _query.isEmpty && _all.isNotEmpty
+          ? _all
+                .where(
+                  (entry) =>
+                      (_type.isEmpty || entry.type == _type) &&
+                      _browse.matches(entry),
+                )
+                .toList()
+          : await ref.read(repositoryLibrarySearchProvider(baseKey).future);
+    } catch (_) {
+      if (mounted) {
+        showErrorToast(
+          context,
+          'Could not load the available filters. Please try again.',
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _loadingFilters = false);
+    }
+    if (!mounted || baseKey != _key(facetSource: true)) return;
+    final selection = await showLibraryPanel<LibraryFilterSelection>(
+      context,
+      title: 'Refine this shelf',
+      desktopDialog: true,
+      builder: (context) => LibraryFilterPanel(
+        entries: entries,
+        selection: _selection,
+        onApply: (value) => Navigator.pop(context, value),
+      ),
+    );
+    if (mounted && selection != null) setState(() => _selection = selection);
+  }
+
+  Future<void> _shelves() async {
+    final selection = await showLibraryPanel<LibraryBrowse>(
+      context,
+      title: 'Browse shelves',
+      builder: (context) => SingleChildScrollView(
+        child: LibraryShelfDirectory(
+          entries: _all,
+          onSelected: (shelf) => Navigator.pop(context, shelf),
+        ),
+      ),
+    );
+    if (mounted && selection != null) {
+      setState(() {
+        _browse = selection;
+        _projects = selection == LibraryBrowse.projects;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(
     child: Builder(builder: (context) => _build(context)),
   );
 
   Widget _build(BuildContext context) {
-    final key = (
-      search: _query,
-      type: _type,
-      year: _year,
-      documentKind: _browse.value,
-    );
-    final result = ref.watch(repositoryLibrarySearchProvider(key));
+    final key = _key();
+    final result = ref
+        .watch(repositoryLibrarySearchProvider(key))
+        .whenData((entries) => entries.where(_selection.matches).toList());
     return Scaffold(
       appBar: AppBar(
         title: const Text('Search library'),
@@ -134,39 +209,31 @@ class _LibrarySearchScreenState extends ConsumerState<LibrarySearchScreen> {
                       ),
                     ),
                     ShadButton.outline(
-                      onPressed: () => setState(() => _filters = !_filters),
+                      enabled: !_loadingFilters,
+                      onPressed: _loadingFilters ? null : _filter,
                       leading: const Icon(Icons.tune, size: 16),
-                      child: const Text('Filter'),
+                      child: Text(_loadingFilters ? 'Loading…' : 'Filter'),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                LibraryBrowsePicker(
-                  value: _browse,
-                  onChanged: (value) => setState(() {
-                    _browse = value;
-                    _projects = value == LibraryBrowse.projects;
-                  }),
+                ShadButton.ghost(
+                  leading: const Icon(Icons.menu_book_outlined, size: 17),
+                  trailing: const Icon(Icons.chevron_right, size: 16),
+                  onPressed: _shelves,
+                  child: Text(_browse.label),
                 ),
-                if (_filters) ...[
-                  const SizedBox(height: 12),
-                  LibraryCategoryPicker(
-                    value: _type,
-                    onChanged: (value) => setState(() => _type = value),
+                const SizedBox(height: 8),
+                LibraryCategoryPicker(
+                  value: _type,
+                  onChanged: (value) => setState(() => _type = value),
+                ),
+                if (!_selection.isEmpty)
+                  LibraryActiveFilters(
+                    selection: _selection,
+                    entries: _all,
+                    onChanged: (value) => setState(() => _selection = value),
                   ),
-                  const SizedBox(height: 12),
-                  WorkflowSelect(
-                    label: 'School year',
-                    value: _year,
-                    searchable: false,
-                    options: {
-                      '': 'All years',
-                      for (final year in widget.years) year: 'SY $year',
-                      if (_year.isNotEmpty) _year: 'SY $_year',
-                    },
-                    onChanged: (value) => setState(() => _year = value),
-                  ),
-                ],
                 const SizedBox(height: 20),
                 result.when(
                   data: (entries) => entries.isEmpty

@@ -10,6 +10,7 @@ import 'package:defensys/services/network/connectivity_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:defensys/widgets/branding/defensys_mobile_brand.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -83,6 +84,10 @@ void main() {
     'student loads tabs on demand and revalidates retained tabs on return',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
+      tester.view.physicalSize = const Size(390, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final dashboard = _Dashboard();
       final library = _Library();
       await pumpDefensysWidget(
@@ -98,6 +103,7 @@ void main() {
         ],
       );
       expect(dashboard.reads, 1);
+      expect(find.byType(DefensysMobileBrand), findsOneWidget);
       expect(library.reads, 0);
       expect(find.byType(RepositoryTab, skipOffstage: false), findsNothing);
       expect(find.byType(StudentEventsTab, skipOffstage: false), findsNothing);
@@ -110,6 +116,7 @@ void main() {
 
       await select(2);
       expect(library.reads, 1);
+      expect(find.byType(DefensysMobileBrand), findsOneWidget);
       await select(0);
       expect(dashboard.reads, 2);
       expect(find.byType(RepositoryTab, skipOffstage: false), findsOneWidget);
