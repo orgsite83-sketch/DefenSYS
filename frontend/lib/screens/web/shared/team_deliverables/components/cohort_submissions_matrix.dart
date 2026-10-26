@@ -1,5 +1,7 @@
 import 'package:defensys/widgets/repository/document_group.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
+import 'package:defensys/widgets/repository/proposal_title_summary.dart';
+import 'package:defensys/widgets/repository/shared_concept_review.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -579,7 +581,12 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                                               ),
                                             ),
                                             const SizedBox(height: 3),
-                                            Text(
+                                            if (hasOpenConceptProposals(activeStage?['concept_workflow'] as Map?))
+                                              ProposalTitleSummary(
+                                                rows: conceptRows((activeStage!['concept_workflow'] as Map)['concepts']),
+                                                collapsible: true,
+                                              )
+                                            else Text(
                                               projectTitle,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
@@ -974,7 +981,11 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                           ),
                         ],
                       ),
-                      if (projectTitle.isNotEmpty) ...[
+                      if (hasOpenConceptProposals(activeStage['concept_workflow'] as Map?)) ...[
+                        const SizedBox(height: 2),
+                        Text('Concept selection · ${conceptRows((activeStage['concept_workflow'] as Map)['concepts']).length} required proposals',
+                          style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context))),
+                      ] else if (projectTitle.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(
                           projectTitle,

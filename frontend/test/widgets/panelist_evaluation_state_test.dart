@@ -39,6 +39,7 @@ TeamData _team({
   bool isCapstone = true,
   bool longNames = false,
   bool canIssue = false,
+  List<TeamMember>? roster,
   List<Map<String, dynamic>> drafts = const [],
   List<Map<String, dynamic>> materials = const [],
   List<Map<String, dynamic>> concepts = const [],
@@ -58,22 +59,26 @@ TeamData _team({
   scheduledDate: date ?? TeamData.manilaToday,
   startTime: '23:30',
   room: 'Room 301',
-  members: longNames
-      ? const ['Adrian Christopher Valdez', 'Stephanie Alexandra Yap']
-      : const ['Alice', 'Bob'],
-  memberDetails: longNames
-      ? const [
-          TeamMember(
-            id: '1',
-            name: 'Adrian Christopher Valdez',
-            isLeader: true,
-          ),
-          TeamMember(id: '2', name: 'Stephanie Alexandra Yap'),
-        ]
-      : const [
-          TeamMember(id: '1', name: 'Alice', isLeader: true),
-          TeamMember(id: '2', name: 'Bob'),
-        ],
+  members:
+      roster?.map((member) => member.name).toList() ??
+      (longNames
+          ? const ['Adrian Christopher Valdez', 'Stephanie Alexandra Yap']
+          : const ['Alice', 'Bob']),
+  memberDetails:
+      roster ??
+      (longNames
+          ? const [
+              TeamMember(
+                id: '1',
+                name: 'Adrian Christopher Valdez',
+                isLeader: true,
+              ),
+              TeamMember(id: '2', name: 'Stephanie Alexandra Yap'),
+            ]
+          : const [
+              TeamMember(id: '1', name: 'Alice', isLeader: true),
+              TeamMember(id: '2', name: 'Bob'),
+            ]),
   criteria: [],
   isPosted: false,
   isChair: true,
@@ -127,6 +132,14 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
   await tester.pumpAndSettle();
   await tester.tap(finder);
   await tester.pumpAndSettle();
+}
+
+Future<void> _chooseMember(WidgetTester tester, String id) async {
+  await _tapVisible(
+    tester,
+    find.byKey(const ValueKey('choose-evaluation-member')),
+  );
+  await _tapVisible(tester, find.byKey(ValueKey('student-selector-$id')));
 }
 
 Future<_HttpClient> _showSheet(
@@ -382,13 +395,15 @@ void main() {
         await _tapScore(tester, criterion, '7');
         expect(team.progressFor('1').complete, isTrue);
         expect(team.progressFor('2').entered, 0);
-        await _tapVisible(
-          tester,
-          find.byKey(const ValueKey('student-selector-2')),
-        );
+        await _chooseMember(tester, '2');
         expect(_value(tester, criterion), isNull);
-        expect(find.text('Viewing'), findsOneWidget);
-        expect(find.text('1 of 2 members complete'), findsOneWidget);
+        expect(find.text('Member 2 of 2'), findsOneWidget);
+        expect(
+          find.text(
+            target == 'both' ? '1 of 2 members' : '1 of 2 members complete',
+          ),
+          findsOneWidget,
+        );
         await _tapScore(tester, criterion, '9');
         expect(
           find.textContaining(
@@ -397,10 +412,7 @@ void main() {
           findsOneWidget,
         );
         expect(team.evaluationProgress.complete, isTrue);
-        await _tapVisible(
-          tester,
-          find.byKey(const ValueKey('student-selector-1')),
-        );
+        await _chooseMember(tester, '1');
         expect(_value(tester, criterion), 7);
         if (target == 'both') {
           await _tapVisible(tester, _targetTab('Team'));
@@ -411,6 +423,232 @@ void main() {
     );
   }
 
+  testWidgets(
+    'guided grading keeps four member drafts and reaches review without submitting',
+    (tester) async {
+      final team = _team(
+        target: 'both',
+        isCapstone: false,
+        roster: const [
+          TeamMember(id: '1', name: 'Alden VELASQUEZ', isLeader: true),
+          TeamMember(id: '2', name: 'Karen EVANGELISTA'),
+          TeamMember(id: '3', name: 'Ron VELASCO'),
+          TeamMember(id: '4', name: 'Rona MORATALLA'),
+        ],
+      );
+      team.panelRubric!['criteria'] = <Map<String, dynamic>>[
+        ...(team.panelRubric!['criteria'] as List).cast<Map<String, dynamic>>(),
+        {
+          'id': 3,
+          'name': 'System functionality',
+          'max_score': 10,
+          'target_type': 'team',
+        },
+        {
+          'id': 4,
+          'name': 'Technical understanding',
+          'max_score': 10,
+          'target_type': 'individual',
+        },
+      ];
+      final client = await _showSheet(tester, [team]);
+      await _tapScore(tester, 'Clarity', '0');
+      await _tapScore(tester, 'System functionality', '9');
+      expect(find.text('Member 1 of 4'), findsNothing);
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      expect(find.text('Member 1 of 4'), findsOneWidget);
+      expect(find.byKey(const ValueKey('student-selector-2')), findsNothing);
+      await tester.ensureVisible(find.text('Proposal rubric'));
+      await tester.pumpAndSettle();
+      await capturePreview(
+        tester,
+        find.byKey(const ValueKey('grading-preview')),
+        'guided-grading-members-light',
+      );
+      await _tapScore(tester, 'Contribution', '0');
+      await _tapScore(tester, 'Technical understanding', '7');
+      expect(find.text('Scoring Alden VELASQUEZ'), findsOneWidget);
+      await _tapVisible(tester, find.text('Optional feedback'));
+      final feedback = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == 'Feedback for Alden VELASQUEZ',
+      );
+      await tester.ensureVisible(feedback);
+      await tester.enterText(feedback, 'Explain the implementation decisions.');
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      expect(find.text('Scoring Karen EVANGELISTA'), findsOneWidget);
+      expect(_value(tester, 'Contribution'), isNull);
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('previous-evaluation-member')),
+      );
+      expect(_value(tester, 'Contribution'), 0);
+      expect(_value(tester, 'Technical understanding'), 7);
+      await _tapVisible(tester, find.text('Optional feedback'));
+      expect(
+        tester.widget<TextField>(feedback).controller!.text,
+        'Explain the implementation decisions.',
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      for (var member = 2; member <= 4; member++) {
+        await _tapScore(tester, 'Contribution', '8');
+        await _tapScore(tester, 'Technical understanding', '9');
+        if (member < 4) {
+          await _tapVisible(
+            tester,
+            find.byKey(const ValueKey('next-evaluation-member')),
+          );
+        }
+      }
+      expect(team.evaluationProgress.required, 10);
+      expect(team.evaluationProgress.complete, isTrue);
+      expect(
+        find.byKey(const ValueKey('next-evaluation-member')),
+        findsNothing,
+      );
+      expect(
+        team.draftSubmissions.firstWhere(
+          (row) => row['student_id'] == 1,
+        )['remarks'],
+        'Explain the implementation decisions.',
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('review-evaluation')),
+      );
+      expect(
+        tester
+            .widget<ShadButton>(
+              find.byKey(const ValueKey('submit-reviewed-grades')),
+            )
+            .enabled,
+        isTrue,
+      );
+      expect(team.isPosted, isFalse);
+      final requests = verify(
+        () => client.post(captureAny(), body: any(named: 'body')),
+      ).captured.cast<Uri>();
+      expect(
+        requests.every((uri) => uri.path.endsWith('/grade-draft/')),
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'failed and pending draft saves keep the current target and member',
+    (tester) async {
+      final team = _team(target: 'both');
+      final client = await _showSheet(tester, [team]);
+      final pending = Completer<http.Response>();
+      when(
+        () => client.post(any(), body: any(named: 'body')),
+      ).thenAnswer((_) => pending.future);
+      await _tapScore(tester, 'Clarity', '0');
+      await _tapVisible(tester, _targetTab('Individuals'));
+      expect(_picker('Clarity'), findsOneWidget);
+      expect(
+        tester
+            .widget<ShadButton>(
+              find.byKey(const ValueKey('next-evaluation-member')),
+            )
+            .enabled,
+        isFalse,
+      );
+      final tabs = tester.widget<ShadTabs<bool>>(
+        find.descendant(
+          of: find.byKey(const ValueKey('evaluation-target-tabs')),
+          matching: find.byType(ShadTabs<bool>),
+        ),
+      );
+      expect(tabs.value, isFalse);
+      pending.complete(http.Response('{"detail":"Offline"}', 503));
+      await tester.pumpAndSettle();
+      expect(_value(tester, 'Clarity'), 0);
+      expect(find.textContaining('Couldn’t save draft'), findsOneWidget);
+      when(
+        () => client.post(any(), body: any(named: 'body')),
+      ).thenAnswer((_) async => _saved());
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      expect(find.text('Scoring Alice'), findsOneWidget);
+      await _tapScore(tester, 'Contribution', '7');
+      when(
+        () => client.post(any(), body: any(named: 'body')),
+      ).thenAnswer((_) async => http.Response('{"detail":"Offline"}', 503));
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      expect(find.text('Scoring Alice'), findsOneWidget);
+      expect(_value(tester, 'Contribution'), 7);
+      expect(team.hasUnsavedChanges, isTrue);
+      when(
+        () => client.post(any(), body: any(named: 'body')),
+      ).thenAnswer((_) async => _saved());
+      await _chooseMember(tester, '2');
+      expect(find.text('Scoring Bob'), findsOneWidget);
+      expect(_value(tester, 'Contribution'), isNull);
+      expect(team.isPosted, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'next unscored preserves the previous concept and opens the next incomplete assessment',
+    (tester) async {
+      final team = _team(
+        target: 'both',
+        concepts: [
+          {'key': 'c1', 'title': 'First concept'},
+          {'key': 'c2', 'title': 'Second concept'},
+        ],
+      );
+      await _showSheet(tester, [team]);
+      await _tapScore(tester, 'Clarity', '0');
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      await _tapScore(tester, 'Contribution', '7');
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      await _tapScore(tester, 'Contribution', '9');
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('more-grading-actions')),
+      );
+      await _tapVisible(tester, find.text('Next unscored'));
+      expect(
+        find.byKey(const ValueKey('concept-assessment-c2')),
+        findsOneWidget,
+      );
+      expect(_value(tester, 'Clarity'), isNull);
+      expect(
+        team.draftSubmissions
+            .where((row) => row['concept_key'] == 'c1')
+            .expand((row) => row['criteria_scores'] as List)
+            .map((row) => row['score']),
+        [0, 7, 9],
+      );
+      expect(team.evaluationProgress.entered, 3);
+      expect(team.evaluationProgress.required, 6);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets(
     'Only the named review confirmation submits and locks the exact scores',
     (tester) async {

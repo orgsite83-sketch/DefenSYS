@@ -3,8 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:defensys/screens/web/admin/team_detail_page.dart';
 import 'package:defensys/services/team_detail_provider.dart';
+import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/widgets/repository/proposal_title_summary.dart';
 
 import '../helpers/pump_app.dart';
+import '../helpers/capture_preview.dart';
 
 class _FakeTeamDetailNotifier extends TeamDetailNotifier {
   _FakeTeamDetailNotifier() : super(1);
@@ -35,6 +38,97 @@ class _FakeTeamDetailNotifier extends TeamDetailNotifier {
 }
 
 void main() {
+  for (final width in [1440.0, 650.0]) {
+    for (final dark in [false, true]) {
+      testWidgets(
+        'Overview presents imported and pending proposals inside the project card at $width dark=$dark',
+        (tester) async {
+          tester.view.physicalSize = Size(width, 1000);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await loadPreviewFonts(force: true);
+          await pumpDefensysWidget(
+            tester,
+            TeamDetailPage(
+              teamId: 1,
+              canManage: false,
+              isPitLead: false,
+              onBack: () {},
+            ),
+            overrides: [
+              teamDetailProvider(
+                1,
+              ).overrideWith(_FakeProposalTeamDetailNotifier.new),
+            ],
+            theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+          );
+          final card = find.byKey(
+            const ValueKey('team-project-information-card'),
+          );
+          expect(
+            find.descendant(of: card, matching: find.text('Concept proposals')),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: card,
+              matching: find.text('Smart Campus Navigator'),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(of: card, matching: find.text('Pending proposal')),
+            findsNWidgets(2),
+          );
+          expect(
+            find.descendant(
+              of: card,
+              matching: find.byType(ProposalTitleProgressBadge),
+            ),
+            findsOneWidget,
+          );
+          expect(find.text('Smart Campus Navigator'), findsOneWidget);
+          expect(
+            find.text('Concept selection · 1 of 3 titles provided'),
+            findsOneWidget,
+          );
+          expect(find.text('1 of 3 titles provided'), findsOneWidget);
+          expect(find.byType(EditableText), findsNothing);
+          await capturePreview(
+            tester,
+            card,
+            'team-overview-concepts-${width.toInt()}-${dark ? 'dark' : 'light'}',
+            viewport: true,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets('approved concept retains the selected project presentation', (
+    tester,
+  ) async {
+    await pumpDefensysWidget(
+      tester,
+      TeamDetailPage(
+        teamId: 1,
+        canManage: false,
+        isPitLead: false,
+        onBack: () {},
+      ),
+      overrides: [
+        teamDetailProvider(
+          1,
+        ).overrideWith(() => _FakeProposalTeamDetailNotifier(approved: true)),
+      ],
+    );
+    expect(find.text('Smart Campus Navigator'), findsNWidgets(2));
+    expect(find.byType(ProposalTitleSummary), findsNothing);
+    expect(find.text('Concept proposals'), findsNothing);
+  });
+
   testWidgets('TeamDetailPage opens in read-only view with Edit team button', (
     tester,
   ) async {
@@ -196,6 +290,33 @@ void main() {
         router.go('/$role/student-teams/1');
         await tester.pumpAndSettle();
         expect(find.text('ACADEMIC PROGRESS'), findsOneWidget);
+      },
+    );
+  }
+}
+
+class _FakeProposalTeamDetailNotifier extends _FakeTeamDetailNotifier {
+  _FakeProposalTeamDetailNotifier({this.approved = false});
+  final bool approved;
+
+  @override
+  TeamDetailState build() {
+    final original = super.build();
+    return original.copyWith(
+      team: {
+        ...original.team!,
+        'project_pending': false,
+        'defense_context': {
+          'current_stage': 'Concept Proposal',
+          'concept_workflow': {
+            'enabled': true,
+            'status': approved ? 'approved' : 'concepts_needed',
+            'concepts': [
+              for (var i = 1; i <= 3; i++)
+                {'key': 'c$i', 'title': i == 1 ? 'Smart Campus Navigator' : ''},
+            ],
+          },
+        },
       },
     );
   }

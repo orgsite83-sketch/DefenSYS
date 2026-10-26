@@ -8,6 +8,7 @@ from .views import (
     GradeCorrectionsView,
     GradeCenterGroupSettingsView,
     GradeCenterListView,
+    GradeMasterlistView,
     GradeCenterPublishView,
     GradeCenterSyncView,
     TeamGradeVerdictView,
@@ -17,6 +18,7 @@ from .views import (
 
 urlpatterns = [
     path('', GradeCenterListView.as_view(), name='grade_center'),
+    path('masterlist/', GradeMasterlistView.as_view(), name='grade_masterlist'),
     path('sync/', GradeCenterSyncView.as_view(), name='grade_center_sync'),
     path(
         'evaluation-settings/',

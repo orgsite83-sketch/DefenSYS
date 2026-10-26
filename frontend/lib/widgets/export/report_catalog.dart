@@ -66,6 +66,23 @@ class ReportDefinition {
 abstract final class ReportCatalog {
   static const reports = [
     ReportDefinition(
+      'student-grade-masterlist',
+      'Student Grade Masterlist',
+      'Every student in the selected cohort, including pending and unassigned students. Summary or full grading evidence.',
+      'grading',
+      endpoint: 'grade-masterlist',
+      filters: ['semester_id', 'scope', 'coverage', 'detail_level', 'stage_id', 'pit_event_config_id', 'year_level', 'section', 'search', 'status'],
+      icon: Icons.table_chart_outlined,
+    ),
+    ReportDefinition(
+      'team-grade-masterlist',
+      'Team Grade Masterlist',
+      'Recorded team grades, evaluator evidence and individual member results for an assessment or semester.',
+      'grading',
+      filters: ['semester_id', 'scope', 'coverage', 'detail_level', 'stage_id', 'pit_event_config_id', 'year_level', 'section', 'search', 'status'],
+      icon: Icons.groups_outlined,
+    ),
+    ReportDefinition(
       'concept-projects',
       'Concept Project Register',
       'Concept titles and recorded decisions across PIT and Capstone. Export a 3rd Year PIT roster for fresh Capstone intake.',
@@ -385,6 +402,8 @@ abstract final class ReportCatalog {
         'semester': 'Semester',
         'evaluation_type': 'Evaluator type',
         'coverage': 'Assessment coverage',
+        'detail_level': 'Report detail',
+        'defense_stage_id': 'Defense stage',
         'review_status': 'Review status',
       }[key] ??
       key

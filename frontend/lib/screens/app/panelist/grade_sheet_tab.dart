@@ -22,10 +22,10 @@ import '../../../widgets/tactile_button.dart';
 import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import 'widgets/evaluation_score_picker.dart';
 import 'widgets/evaluation_review_screen.dart';
+import 'widgets/evaluation_navigation.dart';
 import 'widgets/team_grade_chooser.dart';
 import 'widgets/defense_team_summary.dart';
 import 'widgets/defense_materials_card.dart';
-import 'widgets/panelist_segmented_tabs.dart';
 
 class GradeSheetTab extends ConsumerStatefulWidget {
   final List<TeamData> teams;
@@ -61,6 +61,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   bool _isSubmittingGrades = false;
   bool _isReviewingGrades = false;
   bool _isChoosingTeam = false;
+  bool _isNavigatingEvaluation = false;
   bool _showIndividualCriteria = false;
   String? _verifiedTeamIdentity;
   String? _draftSaveError;
@@ -86,6 +87,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   bool _isSubmittingVerdict = false;
   bool _isSubmittingPitDecision = false;
   int _selectedStudentIndex = 0;
+  bool get _hasStudentCriteria =>
+      _studentCriteria.values.any((cs) => cs.isNotEmpty);
+  bool get _showingStudents =>
+      _hasStudentCriteria && (_showIndividualCriteria || _criteria.isEmpty);
   String _identity(TeamData team) => json.encode([
     team.scheduleId,
     team.teamId,
@@ -497,6 +502,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Future<bool> _chooseTeam({TeamData? initialPreview}) async {
     if (_isChoosingTeam ||
+        _isNavigatingEvaluation ||
         _isReviewingGrades ||
         _isSubmittingGrades ||
         _isSubmittingVerdict ||
@@ -598,7 +604,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     ),
                   )
                   .toList(),
-              onChanged: _isSubmittingGrades || _isReviewingGrades
+              onChanged:
+                  _isSubmittingGrades ||
+                      _isReviewingGrades ||
+                      _isNavigatingEvaluation
                   ? null
                   : (key) {
                       if (key == null || key == _activeConceptKey) return;
@@ -750,6 +759,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     !_isSubmittingGrades &&
                     !_isReviewingGrades &&
                     !_isChoosingTeam &&
+                    !_isNavigatingEvaluation &&
                     !_isSubmittingVerdict,
                 onPressed: () => _chooseTeam(),
                 child: const Text(
@@ -759,7 +769,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
             ],
           ),
-          if (_showIndividualCriteria &&
+          if (_showingStudents &&
               team.memberDetails.isNotEmpty &&
               (team.isPosted || _isVerified(team))) ...[
             const SizedBox(height: 8),
@@ -860,7 +870,12 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         _isSubmittingGrades ||
         _isReviewingGrades ||
         _isChoosingTeam ||
+        _isNavigatingEvaluation ||
         _isSubmittingVerdict;
+    final guided = _hasStudentCriteria && !team.isPosted;
+    final hasNext =
+        !_showingStudents ||
+        _selectedStudentIndex < team.memberDetails.length - 1;
     final saveLabel = team.isPosted
         ? 'Submitted'
         : _draftSaveError != null
@@ -931,25 +946,38 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                ShadButton(
-                  key: const ValueKey('review-evaluation'),
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  enabled: !busy && required.isNotEmpty && team.hasValidScope,
-                  backgroundColor: DefensysTokens.maroonOf(context),
-                  foregroundColor: Colors.white,
-                  onPressed: () => _confirmPost(team),
-                  child: Text(
-                    _isSubmittingGrades
-                        ? 'Submitting…'
-                        : team.isPosted
-                        ? 'View scores'
-                        : complete
-                        ? 'Review & Submit'
-                        : 'Review grades',
-                    style: const TextStyle(fontSize: 12),
+                if (guided && hasNext)
+                  ShadButton.ghost(
+                    key: const ValueKey('review-evaluation'),
+                    height: 40,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    enabled: !busy && required.isNotEmpty && team.hasValidScope,
+                    onPressed: () => _confirmPost(team),
+                    child: const Text(
+                      'Review grades',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  )
+                else if (!guided)
+                  ShadButton(
+                    key: const ValueKey('review-evaluation'),
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    enabled: !busy && required.isNotEmpty && team.hasValidScope,
+                    backgroundColor: DefensysTokens.maroonOf(context),
+                    foregroundColor: Colors.white,
+                    onPressed: () => _confirmPost(team),
+                    child: Text(
+                      _isSubmittingGrades
+                          ? 'Submitting…'
+                          : team.isPosted
+                          ? 'View scores'
+                          : complete
+                          ? 'Review & Submit'
+                          : 'Review grades',
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ),
-                ),
                 if (!team.isPosted) ...[
                   const SizedBox(width: 4),
                   ShadPopover(
@@ -1006,6 +1034,55 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 ],
               ],
             ),
+            if (guided) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  ShadButton.outline(
+                    key: const ValueKey('previous-evaluation-member'),
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    enabled:
+                        !busy &&
+                        _showingStudents &&
+                        (_selectedStudentIndex > 0 || _criteria.isNotEmpty),
+                    onPressed: () => _previousEvaluationTarget(team),
+                    child: const Text(
+                      'Previous',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ShadButton(
+                      key: ValueKey(
+                        hasNext
+                            ? 'next-evaluation-member'
+                            : 'review-evaluation',
+                      ),
+                      height: 44,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      enabled:
+                          !busy && required.isNotEmpty && team.hasValidScope,
+                      backgroundColor: DefensysTokens.maroonOf(context),
+                      foregroundColor: Colors.white,
+                      onPressed: () => hasNext
+                          ? _advanceEvaluationTarget(team)
+                          : _confirmPost(team),
+                      child: Text(
+                        hasNext
+                            ? _showingStudents
+                                  ? 'Next member →'
+                                  : 'Continue to individuals →'
+                            : 'Review grades',
+                        style: const TextStyle(fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (_draftSaveError != null) ...[
               const SizedBox(height: 6),
               Semantics(
@@ -1026,31 +1103,97 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     );
   }
 
-  void _goToNextUnscored(TeamData team) {
-    if (team.assessmentConcepts.isNotEmpty &&
-        _requiredCriteria(team).every((c) => c.isScored)) {
-      _rememberDraft();
-      final missing = team.assessmentConcepts.where((concept) {
-        final key = concept['key'].toString();
-        if (!team.progressFor(null, conceptKey: key).complete &&
-            team.targetType != 'individual') {
-          return true;
+  Future<void> _navigateEvaluation(
+    TeamData team,
+    VoidCallback change, {
+    GlobalKey? Function()? scrollTarget,
+  }) async {
+    if (_isNavigatingEvaluation ||
+        _isChoosingTeam ||
+        _isReviewingGrades ||
+        _isSubmittingGrades ||
+        _isSubmittingVerdict) {
+      return;
+    }
+    final identity = _identity(team);
+    final generation = _formGeneration;
+    setState(() => _isNavigatingEvaluation = true);
+    try {
+      if (!team.isPosted && !await savePendingChanges()) return;
+      if (!mounted ||
+          _lastTeam == null ||
+          _identity(_lastTeam!) != identity ||
+          _formGeneration != generation) {
+        return;
+      }
+      FocusScope.of(context).unfocus();
+      setState(change);
+      _revealEvaluation(scrollTarget);
+    } finally {
+      if (mounted) setState(() => _isNavigatingEvaluation = false);
+    }
+  }
+
+  void _revealEvaluation([GlobalKey? Function()? scrollTarget]) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target =
+          scrollTarget?.call()?.currentContext ?? _evaluationKey.currentContext;
+      if (mounted && target != null) {
+        Scrollable.ensureVisible(
+          target,
+          alignment: 0,
+          duration: const Duration(milliseconds: 200),
+        );
+      }
+    });
+  }
+
+  Future<void> _advanceEvaluationTarget(TeamData team) =>
+      _navigateEvaluation(team, () {
+        if (!_showingStudents) {
+          final next = team.memberDetails.indexWhere(
+            (member) => (_studentCriteria[member.id] ?? []).any(
+              (criterion) => !criterion.isScored,
+            ),
+          );
+          _selectedStudentIndex = next < 0 ? 0 : next;
+          _showIndividualCriteria = true;
+        } else if (_selectedStudentIndex < team.memberDetails.length - 1) {
+          _selectedStudentIndex++;
         }
-        return team.targetType != 'team' &&
-            team.memberDetails.any(
-              (m) => !team.progressFor(m.id, conceptKey: key).complete,
-            );
-      }).firstOrNull;
-      if (missing != null) {
-        setState(() {
+      });
+
+  Future<void> _previousEvaluationTarget(TeamData team) =>
+      _navigateEvaluation(team, () {
+        if (_selectedStudentIndex > 0) {
+          _selectedStudentIndex--;
+        } else if (_criteria.isNotEmpty) {
+          _showIndividualCriteria = false;
+        }
+      });
+
+  Future<void> _goToNextUnscored(TeamData team) {
+    Criterion? next;
+    return _navigateEvaluation(team, () {
+      if (team.assessmentConcepts.isNotEmpty &&
+          _requiredCriteria(team).every((c) => c.isScored)) {
+        final missing = team.assessmentConcepts.where((concept) {
+          final key = concept['key'].toString();
+          if (!team.progressFor(null, conceptKey: key).complete &&
+              team.targetType != 'individual') {
+            return true;
+          }
+          return team.targetType != 'team' &&
+              team.memberDetails.any(
+                (m) => !team.progressFor(m.id, conceptKey: key).complete,
+              );
+        }).firstOrNull;
+        if (missing != null) {
           _activeConceptKey = missing['key'].toString();
           _lastTeam = null;
           _syncRubricForCurrentTeam();
-        });
+        }
       }
-    }
-    Criterion? next;
-    setState(() {
       if (_criteria.any((criterion) => !criterion.isScored)) {
         _showIndividualCriteria = false;
         next = _criteria.where((criterion) => !criterion.isScored).first;
@@ -1068,17 +1211,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               .first;
         }
       }
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final target =
-          _criterionKeys[next]?.currentContext ?? _evaluationKey.currentContext;
-      if (mounted && target != null) {
-        Scrollable.ensureVisible(
-          target,
-          duration: const Duration(milliseconds: 200),
-        );
-      }
-    });
+    }, scrollTarget: () => _criterionKeys[next]);
   }
 
   Widget _buildAvailabilityNotice(TeamData team) {
@@ -1156,12 +1289,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         _isSubmittingGrades ||
         _isReviewingGrades ||
         _isChoosingTeam;
-    final hasStudents = _studentCriteria.values.any(
-      (criteria) => criteria.isNotEmpty,
-    );
+    final hasStudents = _hasStudentCriteria;
     final member = team.memberDetails.elementAtOrNull(_selectedStudentIndex);
-    final showStudents =
-        hasStudents && (_showIndividualCriteria || _criteria.isEmpty);
+    final showStudents = _showingStudents;
     final visible = showStudents && member != null
         ? _studentCriteria[member.id] ?? <Criterion>[]
         : _criteria;
@@ -1235,45 +1365,68 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           ),
           const SizedBox(height: 18),
           if (_criteria.isNotEmpty && hasStudents) ...[
-            PanelistSegmentedTabs<String>(
+            EvaluationTargetTabs(
               key: const ValueKey('evaluation-target-tabs'),
-              value: showStudents ? 'students' : 'team',
-              secondary: true,
-              onChanged: (value) =>
-                  setState(() => _showIndividualCriteria = value == 'students'),
-              segments: [
-                PanelistSegment(
-                  value: 'team',
-                  label: 'Team',
-                  icon: Icons.groups_outlined,
-                ),
-                PanelistSegment(
-                  value: 'students',
-                  label: 'Individuals',
-                  icon: Icons.person_outline_rounded,
-                ),
-              ],
+              individuals: showStudents,
+              teamEntered: _criteria.where((c) => c.isScored).length,
+              teamRequired: _criteria.length,
+              membersComplete: _studentCriteria.values
+                  .where((cs) => cs.isNotEmpty && cs.every((c) => c.isScored))
+                  .length,
+              membersRequired: team.memberDetails.length,
+              enabled:
+                  !_isNavigatingEvaluation &&
+                  !_isChoosingTeam &&
+                  !_isReviewingGrades &&
+                  !_isSubmittingGrades &&
+                  !_isSubmittingVerdict,
+              onChanged: (value) => _navigateEvaluation(
+                team,
+                () => _showIndividualCriteria = value,
+              ),
             ),
             const SizedBox(height: 14),
           ],
           if (showStudents) ...[
-            Text(
-              '${_studentCriteria.values.where((cs) => cs.isNotEmpty && cs.every((c) => c.isScored)).length} of ${team.memberDetails.length} members complete',
-              style: TextStyle(
-                fontSize: 12,
-                color: DefensysTokens.textSecondaryOf(context),
+            if (_criteria.isEmpty)
+              Text(
+                '${_studentCriteria.values.where((cs) => cs.isNotEmpty && cs.every((c) => c.isScored)).length} of ${team.memberDetails.length} members complete',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            const SizedBox(height: 10),
+            EvaluationMemberNavigator(
+              key: ValueKey('evaluation-members-$_formGeneration'),
+              members: team.memberDetails,
+              criteria: _studentCriteria,
+              selectedIndex: _selectedStudentIndex,
+              enabled:
+                  !_isNavigatingEvaluation &&
+                  !_isChoosingTeam &&
+                  !_isReviewingGrades &&
+                  !_isSubmittingGrades &&
+                  !_isSubmittingVerdict,
+              onSelected: (index) => _navigateEvaluation(
+                team,
+                () => _selectedStudentIndex = index,
               ),
             ),
-            const SizedBox(height: 10),
-            _buildStudentSelector(team),
             const SizedBox(height: 16),
           ],
           Text(
             showStudents && member != null ? member.name : 'Team criteria',
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: showStudents ? 16 : 14,
+              fontWeight: FontWeight.w600,
+            ),
           ),
+          const SizedBox(height: 4),
           Text(
-            '$entered/${visible.length} scored${visible.isNotEmpty && entered == visible.length ? ' · Scores complete' : ''}',
+            showStudents && member != null
+                ? '${member.isLeader ? 'Team leader' : 'Team member'} · $entered of ${visible.length} criteria scored'
+                : '$entered/${visible.length} scored${visible.isNotEmpty && entered == visible.length ? ' · Scores complete' : ''}',
             style: TextStyle(
               fontSize: 12,
               color: DefensysTokens.textSecondaryOf(context),
@@ -1289,6 +1442,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           for (final criterion in visible) _criterionRow(criterion, locked),
           if (visible.isNotEmpty)
             ExpansionTile(
+              key: ValueKey(
+                'evaluation-feedback-$_formGeneration-${showStudents ? member?.id : 'team'}',
+              ),
               tilePadding: EdgeInsets.zero,
               title: const Text(
                 'Optional feedback',
@@ -1302,7 +1458,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   controller: showStudents && member != null
                       ? _studentRemarksControllers[member.id]
                       : _teamRemarksController,
-                  readOnly: locked,
+                  readOnly: locked || _isNavigatingEvaluation,
                   maxLines: 3,
                   onChanged: (_) => setState(_rememberDraft),
                   decoration: InputDecoration(
@@ -1327,6 +1483,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Future<void> _confirmPost(TeamData team) async {
     if (_isReviewingGrades ||
+        _isNavigatingEvaluation ||
         _isSubmittingGrades ||
         _isSubmittingVerdict ||
         _isChoosingTeam ||
@@ -1374,7 +1531,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             if (index >= 0) _selectedStudentIndex = index;
           }
         });
-        if (_scrollController.hasClients) _scrollController.jumpTo(0);
+        _revealEvaluation();
       }
     } finally {
       if (mounted) setState(() => _isReviewingGrades = false);
@@ -1496,11 +1653,13 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               label: criterion.name,
               maximum: criterion.maxScore,
               value: criterion.score,
+              enabled: !_isNavigatingEvaluation,
               onChanged: (score) {
                 if (!mounted ||
                     _lastTeam == null ||
                     !_isVerified(_lastTeam!) ||
                     !_lastTeam!.gradingAvailable ||
+                    _isNavigatingEvaluation ||
                     _isReviewingGrades ||
                     _isChoosingTeam) {
                   return;
@@ -1542,136 +1701,6 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       fileName: fileName,
     );
   }
-
-  Widget _buildStudentSelector(TeamData team) => Column(
-    children: [
-      for (final entry in team.memberDetails.asMap().entries) ...[
-        Builder(
-          builder: (context) {
-            final member = entry.value;
-            final criteria = _studentCriteria[member.id] ?? <Criterion>[];
-            final entered = criteria.where((c) => c.isScored).length;
-            final selected = entry.key == _selectedStudentIndex;
-            final complete = criteria.isNotEmpty && entered == criteria.length;
-            return Semantics(
-              button: true,
-              selected: selected,
-              label: '${member.name}, $entered of ${criteria.length} scored',
-              child: Material(
-                color: selected
-                    ? DefensysTokens.maroonOf(context).withValues(alpha: .05)
-                    : DefensysTokens.surfaceOf(context),
-                borderRadius: BorderRadius.circular(10),
-                child: InkWell(
-                  key: ValueKey('student-selector-${member.id}'),
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () =>
-                      setState(() => _selectedStudentIndex = entry.key),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 11,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: selected
-                            ? DefensysTokens.maroonOf(context)
-                            : DefensysTokens.borderOf(context),
-                        width: selected ? 1.4 : 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 17,
-                          backgroundColor: selected
-                              ? DefensysTokens.maroonOf(context)
-                              : DefensysTokens.surfaceHigherOf(context),
-                          child: Text(
-                            member.name.isEmpty
-                                ? '?'
-                                : member.name[0].toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: selected
-                                  ? Colors.white
-                                  : DefensysTokens.textSecondaryOf(context),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                member.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: DefensysTokens.textPrimaryOf(context),
-                                ),
-                              ),
-                              Text(
-                                member.isLeader ? 'Team leader' : 'Team member',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: DefensysTokens.textSecondaryOf(
-                                    context,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (complete)
-                              Icon(
-                                Icons.check_circle_outline_rounded,
-                                size: 16,
-                                color: DefensysTokens.successText,
-                              )
-                            else
-                              Text(
-                                '$entered/${criteria.length}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: selected
-                                      ? DefensysTokens.maroonTextOf(context)
-                                      : DefensysTokens.textSecondaryOf(context),
-                                ),
-                              ),
-                            const SizedBox(height: 2),
-                            Text(
-                              selected ? 'Viewing' : 'scored',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: DefensysTokens.textSecondaryOf(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-        if (entry.key < team.memberDetails.length - 1)
-          const SizedBox(height: 7),
-      ],
-    ],
-  );
 
   Widget _buildChairVerdictCard(TeamData team) {
     final hasVerdict = team.hasVerdict;

@@ -25,6 +25,35 @@ class SectionConceptService {
   Future<Map<String, dynamic>> get(int id) async =>
       decode(await client.get(Uri.parse('$base/$id/')));
 
+  Future<Map<String, dynamic>> imported(
+    int teamId, {
+    String? stageLabel,
+  }) async => decode(
+    await client.get(
+      Uri.parse('$base/imported/').replace(
+        queryParameters: {
+          'team_id': '$teamId',
+          if (stageLabel?.isNotEmpty == true) 'stage_label': stageLabel!,
+        },
+      ),
+    ),
+  );
+
+  Future<Map<String, dynamic>> saveImported(
+    Map<String, dynamic> project,
+    List<Map<String, dynamic>> titles,
+  ) async => decode(
+    await client.post(
+      Uri.parse('$base/imported/'),
+      body: jsonEncode({
+        'team_id': project['team_id'],
+        'stage_label': project['stage_label'],
+        'review_token': project['review_token'],
+        'concepts': titles,
+      }),
+    ),
+  );
+
   Future<Map<String, dynamic>> tasks() async =>
       decode(await client.get(Uri.parse('$base/?tasks_only=1')));
 
@@ -54,6 +83,18 @@ class SectionConceptService {
     Uint8List bytes, {
     String purpose = 'proposal',
   }) async {
+    if (project['imported'] == true) {
+      project = decode(
+        await client.post(
+          Uri.parse('$base/imported/'),
+          body: jsonEncode({
+            'team_id': project['team_id'],
+            'stage_label': project['stage_label'],
+            'review_token': project['review_token'],
+          }),
+        ),
+      );
+    }
     final request =
         http.MultipartRequest(
             'POST',

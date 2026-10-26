@@ -244,7 +244,8 @@ def _write_xlsx_sheet(wb, title, metadata, columns, rows, *, name, generated_by=
             
     last_col = get_column_letter(len(columns))
     last_row = header_row_idx + len(rows)
-    ws.freeze_panes = f'A{header_row_idx + 1}'
+    frozen_columns = max((index for index, col in enumerate(columns, start=1) if col.get('freeze')), default=0)
+    ws.freeze_panes = f'{get_column_letter(frozen_columns + 1)}{header_row_idx + 1}'
     ws.auto_filter.ref = f'A{header_row_idx}:{last_col}{last_row}'
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.sheet_view.zoomScale = 100

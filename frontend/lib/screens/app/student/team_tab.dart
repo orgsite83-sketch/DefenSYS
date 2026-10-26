@@ -11,6 +11,7 @@ import '../../../services/academic/team_formation_service.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/app/data_refresh_provider.dart';
 import '../../../widgets/repository/team_concept_title_editor.dart';
+import '../../../widgets/repository/shared_concept_review.dart' show systemLetter;
 import 'student_stage_data.dart';
 
 /// Screen 1: Academic Defense Overview & Student Team Workspace.
@@ -309,8 +310,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
         .map((c) => Map<String, dynamic>.from(c))
         .toList();
     final isSharedSystem = conceptWorkflow?['section_project_id'] != null ||
-        team['section_project_id'] != null ||
-        (team['system_name'] != null && team['system_name'].toString().isNotEmpty);
+        conceptWorkflow?['shared_import_pending'] == true ||
+        conceptWorkflow?['selection_mode'] == 'shared_module' ||
+        team['section_project_id'] != null;
     final hasConceptWorkflow = conceptWorkflow != null && concepts.isNotEmpty;
     final isPendingSelection = team['project_pending'] == true ||
         rawProjectTitle.trim().isEmpty ||
@@ -426,7 +428,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     ref.read(dataRefreshProvider.notifier).markChanged(const [DataArea.dashboard, DataArea.teams, DataArea.deliverables]);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
       (workflow['concepts'] as List? ?? []).whereType<Map>().any((c) => '${c['title'] ?? ''}'.trim().isEmpty)
-        ? 'Draft saved. Complete the remaining titles before review.' : 'Concept titles saved.')));
+        ? 'Draft saved. Complete the remaining titles before review.' :
+          workflow['section_project_id'] != null || workflow['shared_import_pending'] == true
+            ? 'Module titles saved.' : 'Concept titles saved.')));
     await widget.onRefresh?.call();
   }
 
@@ -684,8 +688,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     required VoidCallback onEdit,
     required void Function(int index, {int? subTabIndex})? onSelectTab,
   }) {
+    final canEditTitles = isLeader && StudentTaskBadgeHelper.canEditConceptTitles(workflow);
     final status = switch (workflow['status']) {
-      'concepts_needed' => 'Concepts needed',
+      'concepts_needed' => isSharedSystem ? 'Modules needed' : 'Concepts needed',
       'replacement_concepts_needed' => 'Replacement needed',
       'concept_review_pending' => 'Review pending',
       'concept_endorsement_pending' => 'Awaiting endorsement',
@@ -695,7 +700,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       'ready_to_schedule' => 'Ready to schedule',
       'scheduled' => 'Hearing scheduled',
       'approved' => 'Approved',
-      _ => 'Concept Stage',
+      _ => isSharedSystem ? 'Module stage' : 'Concept Stage',
     };
 
     return Container(
@@ -734,7 +739,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Proposed Concepts',
+                  isSharedSystem ? 'Proposed Modules' : 'Proposed Concepts',
                   style: TextStyle(
                     fontSize: 14.5,
                     fontWeight: FontWeight.bold,
@@ -761,12 +766,12 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: isSharedSystem ? 24 : 12),
           if (concepts.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                'No concepts configured for this stage yet.',
+                isSharedSystem ? 'No modules configured for this stage yet.' : 'No concepts configured for this stage yet.',
                 style: TextStyle(
                   fontSize: 12,
                   color: DefensysTokens.textSecondaryOf(context),
@@ -778,15 +783,16 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             Builder(
               builder: (context) {
                 final c = concepts[i];
-                final letter = String.fromCharCode(65 + i);
                 final modTitle = c['title']?.toString().trim() ?? '';
+                final systemTitle = '${c['system_title'] ?? ''}'.trim();
                 final docStatus = c['documents_status']?.toString() ?? '';
                 final confirmed = c['faculty_confirmed'] == true;
 
                 return Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                  decoration: BoxDecoration(
+                  margin: EdgeInsets.only(bottom: isSharedSystem ? 0 : 6),
+                  padding: isSharedSystem ? EdgeInsets.zero
+                      : const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: isSharedSystem ? null : BoxDecoration(
                     color: DefensysTokens.panelOf(context),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
@@ -797,17 +803,28 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (isSharedSystem && i > 0)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Divider(height: 1, color: DefensysTokens.borderOf(context)),
+                        ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Container(
+                          if (isSharedSystem)
+                            Expanded(child: Text(
+                              'System ${systemLetter(c['key'])}',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                                color: DefensysTokens.textPrimaryOf(context)),
+                            ))
+                          else Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                             decoration: BoxDecoration(
                               color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              isSharedSystem ? 'System $letter' : 'Concept ${i + 1}',
+                              'Concept ${i + 1}',
                               style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.bold,
@@ -815,6 +832,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                               ),
                             ),
                           ),
+                          const SizedBox(width: 12),
                           if (confirmed)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -873,19 +891,31 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                             ),
                         ],
                       ),
-                      const SizedBox(height: 5),
+                      if (isSharedSystem) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          systemTitle.isEmpty ? 'System name not yet provided' : systemTitle,
+                          style: TextStyle(fontSize: 13, height: 1.5,
+                            color: DefensysTokens.textSecondaryOf(context)),
+                        ),
+                        const SizedBox(height: 16),
+                        Text('Module title', style: TextStyle(fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: DefensysTokens.textPrimaryOf(context))),
+                      ],
+                      SizedBox(height: isSharedSystem ? 8 : 5),
                       Text(
                         modTitle.isNotEmpty
                             ? modTitle
                             : (isSharedSystem ? 'Module title not yet proposed' : 'Concept title not yet proposed'),
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: isSharedSystem ? 14 : 13,
                           fontWeight: FontWeight.w600,
                           color: modTitle.isNotEmpty
                               ? DefensysTokens.textPrimaryOf(context)
                               : DefensysTokens.steelGrey,
                           fontStyle: modTitle.isEmpty ? FontStyle.italic : FontStyle.normal,
-                          height: 1.25,
+                          height: isSharedSystem ? 1.5 : 1.25,
                         ),
                       ),
                     ],
@@ -894,29 +924,50 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               },
             ),
           ],
-          const SizedBox(height: 8),
-          if (isLeader && StudentTaskBadgeHelper.canEditConceptTitles(workflow))
-            SizedBox(width: double.infinity, child: FilledButton.icon(
-              key: const ValueKey('edit-team-concepts'), onPressed: onEdit,
-              style: FilledButton.styleFrom(backgroundColor: DefensysTokens.maroonOf(context), foregroundColor: Colors.white),
-              icon: const Icon(Icons.edit_outlined, size: 16),
-              label: Text(isSharedSystem ? 'Edit module titles' : 'Edit concept titles'))),
-          Row(
-            children: [
-              Expanded(child: TextButton.icon(onPressed: () => onSelectTab?.call(1, subTabIndex: 1),
-                icon: const Icon(Icons.description_outlined, size: 14), label: const Text('View deliverables'))),
-              if (isSharedSystem) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SizedBox(
-                    height: 34,
+          if (isSharedSystem)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Divider(height: 1, color: DefensysTokens.borderOf(context)),
+            )
+          else const SizedBox(height: 8),
+          SizedBox(
+              height: 44,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (canEditTitles) ...[
+                    Expanded(
+                      child: FilledButton.icon(
+                        key: const ValueKey('edit-team-concepts'),
+                        onPressed: onEdit,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: DefensysTokens.maroonOf(context),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.edit_outlined, size: 14),
+                        label: Text(
+                          isSharedSystem ? 'Edit module titles' : 'Edit concept titles',
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => onSelectTab?.call(3),
-                      icon: Icon(Icons.hub_outlined, size: 14, color: DefensysTokens.maroonOf(context)),
+                      onPressed: () => isSharedSystem
+                          ? onSelectTab?.call(3)
+                          : onSelectTab?.call(1, subTabIndex: 1),
+                      icon: Icon(isSharedSystem ? Icons.hub_outlined : Icons.description_outlined,
+                        size: 14, color: DefensysTokens.maroonOf(context)),
                       label: Text(
-                        'Integration →',
+                        isSharedSystem ? 'Integration →' : 'View deliverables',
                         style: TextStyle(
-                          fontSize: 11.5,
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: DefensysTokens.maroonOf(context),
                         ),
@@ -926,16 +977,16 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: DefensysTokens.maroonOf(context),
                         side: BorderSide(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.3)),
-                        backgroundColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.04),
+                        backgroundColor: isSharedSystem
+                            ? DefensysTokens.maroonOf(context).withValues(alpha: 0.04)
+                            : null,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ],
+                ],
+              ),
           ),
         ],
       ),

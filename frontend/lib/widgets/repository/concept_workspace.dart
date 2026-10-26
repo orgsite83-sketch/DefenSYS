@@ -23,12 +23,16 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
     required this.stage,
     this.onOpenSharedReview,
     this.paperContent,
+    this.showTitleCard = true,
   });
   final int teamId;
   final String stageLabel;
   final Map<String, dynamic> stage;
   final ValueChanged<int>? onOpenSharedReview;
   final Widget? paperContent;
+
+  /// Student title management lives in the Team tab; retain hearing context here.
+  final bool showTitleCard;
   @override
   ConsumerState<ConceptWorkspace> createState() => _ConceptWorkspaceState();
 }
@@ -438,11 +442,12 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     final namesMissing = concepts.any(
       (c) => '${c['title'] ?? ''}'.trim().isEmpty,
     );
-    if (assigned &&
-        !shared &&
-        '${(workflow['config'] as Map?)?['assigned_title'] ?? ''}'
-            .trim()
-            .isNotEmpty) {
+    if (!widget.showTitleCard ||
+        (assigned &&
+            !shared &&
+            '${(workflow['config'] as Map?)?['assigned_title'] ?? ''}'
+                .trim()
+                .isNotEmpty)) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

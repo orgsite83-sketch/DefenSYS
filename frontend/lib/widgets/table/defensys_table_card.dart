@@ -158,13 +158,15 @@ class DefensysTableCard extends StatelessWidget {
                     color: Color(0xFF94A3B8),
                   ),
                   SizedBox(width: 6),
-                  Text(
-                    'Scroll horizontally to view all table columns',
-                    style: TextStyle(
-                      fontFamily: DefensysTokens.fontFamily,
-                      color: Color(0xFF94A3B8),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
+                  Expanded(
+                    child: Text(
+                      'Scroll horizontally to view all table columns',
+                      style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamily,
+                        color: Color(0xFF94A3B8),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],

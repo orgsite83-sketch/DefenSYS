@@ -83,9 +83,12 @@ class SchedulerSessionEditor extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
+            const SizedBox(width: 12),
             Flexible(
+              fit: FlexFit.tight,
               child: Text(
                 '${draft.teamIds.length} / ${draft.capacity} slots filled',
+                textAlign: TextAlign.right,
                 style: TextStyle(
                   fontSize: 12,
                   color: DefensysTokens.textSecondaryOf(context),

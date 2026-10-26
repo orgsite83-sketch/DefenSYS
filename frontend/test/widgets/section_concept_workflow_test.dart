@@ -250,8 +250,8 @@ void main() {
         ),
         overrides: authTestOverrides(),
       );
-      expect(find.textContaining('3 modules proposed'), findsOneWidget);
-      expect(find.textContaining('A. Campus Management'), findsOneWidget);
+      expect(find.text('Concept selection · 3 of 3 titles provided'), findsOneWidget);
+      expect(find.text('Campus Management'), findsOneWidget);
       expect(find.byType(SectionConceptWorkspace), findsNothing);
       expect(find.text('Shared system proposals · PIT Design'), findsOneWidget);
       expect(requests, isEmpty);

@@ -14,6 +14,8 @@ import '../screens/web/faculty/pit_lead_cohort_section_detail_screen.dart';
 import '../services/dashboard_provider.dart';
 import '../services/rubric_engine_provider.dart';
 import '../services/unsaved_changes_provider.dart';
+import '../services/grading/grade_masterlist_provider.dart';
+import '../screens/web/admin/grade_center/grade_masterlist.dart';
 import 'admin_route_paths.dart';
 
 class AdminTeamDetailRoute extends ConsumerWidget {
@@ -67,6 +69,8 @@ class AdminGradeTeamDetailRoute extends StatelessWidget {
     final isFaculty = uri.path.startsWith('/faculty/');
     return GradeCenterTeamDetailScreen(
       gradeId: gradeId,
+      initialStudentId: int.tryParse(uri.queryParameters['student_id'] ?? ''),
+      initialFullBreakdown: uri.queryParameters['detail'] == 'full',
       isLocked: locked,
       returnToTeam: returnTeamId != null,
       onBack: () {
@@ -87,6 +91,36 @@ class AdminGradeTeamDetailRoute extends StatelessWidget {
             context.go(AdminRoutes.gradeCenter);
           }
         }
+      },
+    );
+  }
+}
+
+/// A refreshable, authorized empty state for a cohort member without a grade.
+class GradeMasterlistPendingRoute extends ConsumerWidget {
+  const GradeMasterlistPendingRoute({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final params = Map<String, String>.from(GoRouterState.of(context).uri.queryParameters);
+    final data = ref.watch(gradeMasterlistDataProvider(masterlistQueryKey(params)));
+    return data.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => Padding(padding: const EdgeInsets.all(24), child: Text(error.toString())),
+      data: (payload) {
+        final rows = gradeMaps(payload['rows']);
+        if (rows.isEmpty) return const Padding(padding: EdgeInsets.all(24), child: Text('This academic record is unavailable.'));
+        final row = rows.first;
+        final cell = gradeMaps(row['assessments']).firstOrNull ?? <String, dynamic>{};
+        final gradeId = gradeNumber(cell['grade_id'])?.toInt();
+        if (gradeId != null) {
+          return GradeCenterTeamDetailScreen(
+          gradeId: gradeId, isLocked: cell['is_locked'] == true,
+          initialStudentId: gradeNumber(row['student_id'])?.toInt(),
+          onBack: () => context.pop(),
+        );
+        }
+        return GradePendingDetails(row: row, cell: cell, contextData: gradeMap(payload['context']));
       },
     );
   }

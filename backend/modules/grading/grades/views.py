@@ -211,6 +211,14 @@ class GradeCenterListView(APIView):
         return Response(grade_center_payload(request, queryset))
 
 
+class GradeMasterlistView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .masterlist import build_masterlist
+        return Response(build_masterlist(request))
+
+
 class GradeCenterSyncView(APIView):
     permission_classes = [CanManageModule]
 
@@ -229,7 +237,7 @@ class GradeCenterDetailView(APIView):
     def get(self, request, grade_id):
         grade = get_object_or_404(workspace_grades_for(request.user,
             request.query_params.get('workspace'), include_previous_projects=True), pk=grade_id)
-        return Response({'grade': TeamGradeSerializer(grade).data})
+        return Response({'grade': TeamGradeSerializer(grade, context={'request': request}).data})
 
     def patch(self, request, grade_id):
         if not IsSystemAdmin().has_permission(request, self):

@@ -138,6 +138,7 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     panel_evaluators_submitted = serializers.SerializerMethodField()
     panel_evaluators_required = serializers.SerializerMethodField()
     peer_per_student = StudentStageGradeSerializer(source='student_grades', many=True, read_only=True)
+    peer_rating_evidence = serializers.SerializerMethodField()
     published_by_name = serializers.SerializerMethodField()
     verdict_by_name = serializers.SerializerMethodField()
     attempt_history = GradeAttemptHistorySerializer(many=True, read_only=True)
@@ -208,6 +209,7 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'breakdowns',
             'panel_evaluation_scores',
             'peer_per_student',
+            'peer_rating_evidence',
             'members',
             'peer_eval_complete',
             'peer_submissions_submitted',
@@ -252,6 +254,16 @@ class TeamGradeSerializer(serializers.ModelSerializer):
                     'revision_deadline': None,
                 })
         return data
+
+    def get_peer_rating_evidence(self, obj):
+        from .masterlist import can_view_peer_evidence
+        request = self.context.get('request')
+        if not request or not can_view_peer_evidence(request.user, obj.scope, obj.team.year_level):
+            return []
+        rows = obj.peer_evaluation_submissions.filter(is_void=False, attempt_number=obj.attempt_count).select_related('evaluator', 'evaluatee')
+        return [{'id': row.pk, 'student_id': row.evaluatee_id, 'student_name': display_name(row.evaluatee),
+                 'evaluator_name': display_name(row.evaluator), 'is_self': row.evaluator_id == row.evaluatee_id,
+                 'rating': row.weighted_score, 'criteria': row.breakdown} for row in rows]
 
     def get_members(self, obj):
         if not obj.team_id:

@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../config/api_config.dart';
 import '../../services/auth_provider.dart';
 import '../../services/network/authenticated_client.dart';
 import '../../services/reports_provider.dart';
 import '../../toasts/feedback_toast.dart';
 import '../../theme/defensys_tokens.dart';
+import '../shadcn/defensys_shadcn_scope.dart';
 import 'defensys_export_dialog.dart';
 import 'defensys_export_models.dart';
 import 'report_catalog.dart';
@@ -20,11 +22,30 @@ Future<bool?> showReportExportConfiguration({
 }) {
   return showDialog<bool>(
     context: context,
-    builder: (_) => _ReportConfiguration(
-      report: report,
-      params: params,
-      initialFormat: initialFormat,
-    ),
+    builder: (dialogContext) {
+      final content = _ReportConfiguration(
+        report: report,
+        params: params,
+        initialFormat: initialFormat,
+      );
+      if (!report.id.endsWith('grade-masterlist')) return content;
+      final neutral = DefensysTokens.surfaceHigherOf(dialogContext);
+      return Theme(
+        data: Theme.of(dialogContext).copyWith(
+          hoverColor: neutral,
+          focusColor: neutral,
+          highlightColor: Colors.transparent,
+          splashColor: Colors.transparent,
+          colorScheme: Theme.of(dialogContext).colorScheme.copyWith(
+            primary: DefensysTokens.maroonOf(dialogContext),
+            primaryContainer: neutral,
+            secondary: DefensysTokens.saveActionBg,
+            secondaryContainer: neutral,
+          ),
+        ),
+        child: DefensysShadcnScope(child: content),
+      );
+    },
   );
 }
 
@@ -91,6 +112,11 @@ class _ReportConfigurationState extends ConsumerState<_ReportConfiguration> {
             (value == 'all' && key != 'coverage' && key != 'term_context'),
       );
     if (widget.report.scope.isNotEmpty) params['scope'] = widget.report.scope;
+    if (widget.report.id.endsWith('grade-masterlist')) {
+      params.putIfAbsent('scope', () => 'capstone');
+      params.putIfAbsent('coverage', () => 'assessment');
+      params.putIfAbsent('detail_level', () => 'summary');
+    }
     if (params['coverage'] != 'specific') params.remove('grade_id');
     final user = ref.read(authProvider).user;
     if (user?['is_pit_lead'] == true &&
@@ -249,7 +275,9 @@ class _ReportFiltersState extends State<_ReportFilters> {
         'grade_id',
         'stage',
         'pit_event',
+        'stage_label',
         'stage_id',
+        'defense_stage_id',
         'pit_event_config_id',
       ]) {
         next.remove(selector);
@@ -257,12 +285,21 @@ class _ReportFiltersState extends State<_ReportFilters> {
       if (next['coverage'] == 'specific') next['coverage'] = 'latest';
     }
     if (key == 'coverage' && value != 'specific') next.remove('grade_id');
-    if (key == 'year_level') next.remove('pit_event_config_id');
+    if (key == 'year_level') {
+      next.remove('pit_event_config_id');
+      next.remove('stage_label');
+    }
     if (key == 'pit_event_config_id' && value.isNotEmpty) {
       next.remove('stage_id');
+      next.remove('defense_stage_id');
+      next.remove('stage_label');
     }
     if (key == 'stage_id' && value.isNotEmpty) {
       next.remove('pit_event_config_id');
+      next.remove('stage_label');
+    }
+    if (key == 'defense_stage_id' && value.isNotEmpty) {
+      next.remove('stage_label');
     }
     if (key == 'layout' && value == 'roster') {
       next.remove('concept_status');
@@ -272,6 +309,29 @@ class _ReportFiltersState extends State<_ReportFilters> {
   }
 
   List<Map<String, String>>? _choices(String key) {
+    final masterlist = widget.report.id.endsWith('grade-masterlist');
+    final masterlistChoices = masterlist
+        ? <String, Map<String, String>>{
+            'coverage': {
+              'assessment': 'Selected assessment',
+              'semester': 'Whole semester',
+            },
+            'detail_level': {'summary': 'Summary', 'full': 'Full breakdown'},
+            'status': {
+              'pending': 'Pending publication',
+              'published': 'Published',
+              'awaiting_peers': 'Awaiting peers',
+              'awaiting_evaluations': 'Awaiting evaluations',
+              'not_assessed': 'Not assessed',
+              'no_team': 'No team',
+            },
+          }[key]
+        : null;
+    if (masterlistChoices != null) {
+      return masterlistChoices.entries
+          .map((entry) => {'value': entry.key, 'label': entry.value})
+          .toList();
+    }
     if (key == 'stage' || key == 'pit_event') {
       final scope = widget.report.id == 'defense-stage-setup'
           ? 'capstone'
@@ -319,6 +379,7 @@ class _ReportFiltersState extends State<_ReportFilters> {
       'team_id': 'teams',
       'student_id': 'students',
       'stage_id': 'stages',
+      'defense_stage_id': 'stages',
       'pit_event_config_id': 'pit_events',
     }[key];
     // Choices are filtered locally so changing period or scope cannot offer stale records.
@@ -415,6 +476,13 @@ class _ReportFiltersState extends State<_ReportFilters> {
           'custom_filename',
           'source_context',
           'view',
+          'entity',
+          'workspace',
+          'ordering',
+          'page',
+          'page_size',
+          'stage_label',
+          'source',
         ].contains(key),
       ),
     };
@@ -459,7 +527,16 @@ class _ReportFiltersState extends State<_ReportFilters> {
             child: const Text('Retry selections'),
           ),
         ],
-        for (final key in fields) ...[
+        for (final key in fields.where(
+          (key) =>
+              !widget.report.id.endsWith('grade-masterlist') ||
+              !((key == 'stage_id' || key == 'defense_stage_id') &&
+                      widget.params['scope'] == 'pit') &&
+                  !(key == 'pit_event_config_id' &&
+                      widget.params['scope'] == 'capstone') &&
+                  !(key == 'stage_id' &&
+                      (widget.params['defense_stage_id'] ?? '').isNotEmpty),
+        )) ...[
           Text(
             ReportCatalog.filterLabel(key).toUpperCase(),
             style: TextStyle(
@@ -473,21 +550,25 @@ class _ReportFiltersState extends State<_ReportFilters> {
           _field(key),
           const SizedBox(height: 16),
         ],
-        OutlinedButton.icon(
-          icon: const Icon(Icons.refresh_rounded, size: 15),
-          label: const Text('Reset All Filters'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: DefensysTokens.maroonOf(context),
-            side: BorderSide(
-              color: DefensysTokens.maroonOf(context).withValues(alpha: .3),
+        if (widget.report.id.endsWith('grade-masterlist'))
+          ShadButton.outline(
+            onPressed: widget.onReset,
+            child: const Text('Reset filters'),
+          )
+        else
+          OutlinedButton.icon(
+            icon: const Icon(Icons.refresh_rounded, size: 15),
+            label: const Text('Reset All Filters'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: DefensysTokens.maroonOf(context),
+              side: BorderSide(color: DefensysTokens.borderOf(context)),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+              ),
             ),
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-            ),
+            onPressed: widget.onReset,
           ),
-          onPressed: widget.onReset,
-        ),
       ],
     );
   }
@@ -520,6 +601,31 @@ class _ReportFiltersState extends State<_ReportFilters> {
               : current,
         });
       }
+      if (widget.report.id.endsWith('grade-masterlist')) {
+        final required = ['coverage', 'detail_level', 'scope'].contains(key);
+        return ShadSelect<String>(
+          key: ValueKey('$key:$current:${widget.loading}'),
+          initialValue: current,
+          options: [
+            if (!required)
+              const ShadOption(value: '', child: Text('All / default')),
+            ...choices.map(
+              (choice) => ShadOption(
+                value: choice['value']!,
+                child: Text(choice['label']!),
+              ),
+            ),
+          ],
+          selectedOptionBuilder: (_, value) => Text(
+            choices
+                    .where((choice) => choice['value'] == value)
+                    .firstOrNull?['label'] ??
+                'All / default',
+            overflow: TextOverflow.ellipsis,
+          ),
+          onChanged: (value) => _change(key, value ?? ''),
+        );
+      }
       return DropdownButtonFormField<String>(
         key: ValueKey('$key:$current:${widget.loading}'),
         initialValue: current,
@@ -540,6 +646,16 @@ class _ReportFiltersState extends State<_ReportFilters> {
           ),
         ],
         onChanged: (value) => _change(key, value ?? ''),
+      );
+    }
+    if (widget.report.id.endsWith('grade-masterlist')) {
+      return ShadInput(
+        key: ValueKey('report-filter-$key'),
+        controller: _controllers.putIfAbsent(
+          key,
+          () => TextEditingController(text: widget.params[key] ?? ''),
+        ),
+        onChanged: (value) => _change(key, value),
       );
     }
     return TextField(

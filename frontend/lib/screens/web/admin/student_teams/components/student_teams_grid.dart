@@ -1,13 +1,13 @@
 import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
 import 'package:defensys/widgets/table/table.dart';
-import 'package:defensys/widgets/repository/section_concept_workspace.dart';
+import 'package:defensys/widgets/repository/proposal_title_summary.dart';
+import 'package:defensys/widgets/repository/shared_concept_review.dart';
 import 'package:defensys/utils/section_instructors.dart';
 
 import 'student_teams_stage_summary.dart';
@@ -224,19 +224,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
       _isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey;
 
   Widget _sharedProposalNames(Map workflow) {
-    final systems = (workflow['system_concepts'] as List? ?? [])
-        .whereType<Map>()
-        .where((s) => '${s['title'] ?? ''}'.trim().isNotEmpty);
-    final names = systems
-        .map(
-          (s) =>
-              '${s['key'] == 'c1'
-                  ? 'A'
-                  : s['key'] == 'c2'
-                  ? 'B'
-                  : 'C'}. ${s['title']}',
-        )
-        .join('\n');
+    final systems = conceptRows(workflow['system_concepts']);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Container(
@@ -245,21 +233,25 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           border: Border.all(color: DefensysTokens.borderOf(context)),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: ListTile(
-          leading: Icon(
+        child: Padding(padding: const EdgeInsets.all(16), child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [Icon(
             Icons.account_tree_outlined,
             size: 20,
             color: DefensysTokens.maroonTextOf(context),
           ),
-          title: Text(
-            'Shared system proposals · ${workflow['stage_label']}',
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-          subtitle: Text(
-            names.isEmpty ? 'No proposed system titles yet.' : names,
-            style: TextStyle(fontSize: 12, height: 1.6, color: _textSecondary),
-          ),
-        ),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Wrap(spacing: 16, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              Text('Shared system proposals · ${workflow['stage_label']}',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                  color: DefensysTokens.textPrimaryOf(context))),
+              ProposalTitleProgressBadge(rows: systems),
+            ]),
+            const SizedBox(height: 4),
+            ProposalTitleSummary(rows: systems, title: 'Shared systems', systems: true, showHeading: false),
+          ])),
+        ])),
       ),
     );
   }
@@ -284,7 +276,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
         : <String, dynamic>{};
     final proposals = (workflow['concepts'] as List? ?? [])
         .whereType<Map>()
-        .where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty)
+        .map((c) => Map<String, dynamic>.from(c))
         .toList();
 
     return Column(
@@ -327,18 +319,13 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
               style: TextStyle(fontSize: 11, color: _textSecondary),
             ),
           ),
-        Tooltip(
-          message: proposals
-              .map((c) => '${c['key']}: ${c['title']}')
-              .join('\n'),
-          child: Text(
-            team['project_pending'] == true && proposals.isNotEmpty
-                ? '${proposals.length} ${workflow['section_project_id'] != null ? 'modules' : 'concepts'} proposed · Awaiting selection'
+          Text(
+            hasOpenConceptProposals(workflow)
+                ? 'Concept selection · ${proposals.where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty).length} of ${proposals.length} titles provided'
                 : projectTitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: _textSecondary, fontSize: 12),
-          ),
         ),
         if (!isPit) ...[
           const SizedBox(height: 4),
@@ -588,15 +575,15 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
         final managerName =
             sectionTeams.first['project_manager_name']?.toString().trim() ?? '';
         final instructors = sectionInstructorsForTeam(sectionTeams.first);
-        final sharedWorkflows = <int, Map>{};
+        final sharedWorkflows = <String, Map>{};
         for (final team in sectionTeams) {
           final defense = team['defense_context'];
           final workflow = defense is Map ? defense['concept_workflow'] : null;
           final projectId = workflow is Map
               ? _asInt(workflow['section_project_id'])
               : null;
-          if (workflow is Map && projectId != null) {
-            sharedWorkflows[projectId] = {
+          if (workflow is Map && (projectId != null || workflow['shared_import_pending'] == true)) {
+            sharedWorkflows[projectId == null ? 'imported:$section' : '$projectId'] = {
               ...workflow,
               'stage_label': defense is Map
                   ? defense['event_label'] ?? defense['current_stage'] ?? ''
@@ -693,23 +680,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                       : const Color(0xFFE5E7EB),
                 ),
                 for (final entry in sharedWorkflows.entries)
-                  if (widget.sharedProposalNamesOnly)
-                    _sharedProposalNames(entry.value)
-                  else
-                    Consumer(
-                      builder: (context, ref, _) => SectionConceptOverview(
-                        key: ValueKey('section-system-${entry.key}'),
-                        projectId: entry.key,
-                        stageLabel: '${entry.value['stage_label']}',
-                        onChanged: () => ref
-                            .read(studentTeamsProvider.notifier)
-                            .fetchTeams(),
-                        systems: (entry.value['system_concepts'] as List? ?? [])
-                            .whereType<Map>()
-                            .map((s) => Map<String, dynamic>.from(s))
-                            .toList(),
-                      ),
-                    ),
+                  _sharedProposalNames(entry.value),
                 if (isPit || systemName.isNotEmpty || managerName.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -729,7 +700,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                 fontSize: 12,
                               ),
                             ),
-                          if (systemName.isNotEmpty)
+                          if (systemName.isNotEmpty && sharedWorkflows.isEmpty)
                             Text(
                               'Shared system: $systemName',
                               style: TextStyle(

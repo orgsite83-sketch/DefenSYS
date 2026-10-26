@@ -2,8 +2,11 @@ from django.urls import path
 from . import views
 from .catalog_reports import BUILDERS, CatalogReportView, CatalogOptionsView
 from .faculty_reports import FacultyTeamsOverviewView, FacultyTeamSummaryView
+from .masterlist_reports import GradeMasterlistReportView
 
 urlpatterns = [
+    path('grade-masterlist/', GradeMasterlistReportView.as_view(), name='report_grade_masterlist'),
+    path('team-grade-masterlist/', GradeMasterlistReportView.as_view(), {'entity': 'teams'}, name='report_team_grade_masterlist'),
     path('faculty-teams-overview/', FacultyTeamsOverviewView.as_view(), name='report_faculty_teams_overview'),
     path('faculty-team/<int:team_id>/', FacultyTeamSummaryView.as_view(), name='report_faculty_team_summary'),
     path('catalog-options/', CatalogOptionsView.as_view(), name='report_catalog_options'),

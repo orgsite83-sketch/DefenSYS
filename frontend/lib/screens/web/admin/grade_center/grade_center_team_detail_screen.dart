@@ -14,6 +14,7 @@ import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../widgets/defensys_admin_shell.dart';
 import 'grade_center_shared.dart';
 import 'defense_workflow_panel.dart';
+import 'grade_peer_evidence.dart';
 
 class GradeCenterTeamDetailScreen extends ConsumerStatefulWidget {
   const GradeCenterTeamDetailScreen({
@@ -22,12 +23,16 @@ class GradeCenterTeamDetailScreen extends ConsumerStatefulWidget {
     required this.isLocked,
     required this.onBack,
     this.returnToTeam = false,
+    this.initialStudentId,
+    this.initialFullBreakdown = false,
   });
 
   final int gradeId;
   final bool isLocked;
   final VoidCallback onBack;
   final bool returnToTeam;
+  final int? initialStudentId;
+  final bool initialFullBreakdown;
 
   @override
   ConsumerState<GradeCenterTeamDetailScreen> createState() =>
@@ -43,6 +48,8 @@ class _GradeCenterTeamDetailScreenState
   @override
   void initState() {
     super.initState();
+    _selectedStudentId = widget.initialStudentId;
+    if (widget.initialStudentId != null) _activeViewIndex = 1;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(gradeCenterProvider.notifier).refreshGrade(widget.gradeId);
     });
@@ -60,6 +67,26 @@ class _GradeCenterTeamDetailScreenState
 
   @override
   Widget build(BuildContext context) {
+    final neutral = DefensysTokens.surfaceHigherOf(context);
+    return Theme(
+      data: Theme.of(context).copyWith(
+        hoverColor: neutral,
+        focusColor: neutral,
+        highlightColor: Colors.transparent,
+        splashColor: Colors.transparent,
+        colorScheme: Theme.of(context).colorScheme.copyWith(
+          primary: DefensysTokens.maroonOf(context),
+          primaryContainer: neutral,
+          secondaryContainer: neutral,
+        ),
+      ),
+      child: DefensysShadcnScope(
+        child: Builder(builder: _buildContent),
+      ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final state = ref.watch(gradeCenterProvider);
     final grade = gradeById(state, widget.gradeId);
@@ -189,8 +216,8 @@ class _GradeCenterTeamDetailScreenState
             ? (panelSum / panelCount)
             : (asDouble(peerRecord?['panel_score']) ?? asDouble(grade['panel_score']));
         final aScore = isPit ? null : (asDouble(peerRecord?['adviser_score']) ?? asDouble(grade['adviser_score']));
-        final prScore = asDouble(peerRecord?['peer_score']) ?? asDouble(grade['peer_score']);
-        final fGrade = asDouble(peerRecord?['final_grade']) ?? asDouble(grade['final_grade']);
+        final prScore = asDouble(peerRecord?['peer_score']);
+        final fGrade = asDouble(peerRecord?['final_grade']);
 
         students.add(_StudentDetailData(
           studentId: sid,
@@ -232,8 +259,8 @@ class _GradeCenterTeamDetailScreenState
             ? (panelSum / panelCount)
             : (asDouble(p['panel_score']) ?? asDouble(grade['panel_score']));
         final aScore = isPit ? null : (asDouble(p['adviser_score']) ?? asDouble(grade['adviser_score']));
-        final prScore = asDouble(p['peer_score']) ?? asDouble(grade['peer_score']);
-        final fGrade = asDouble(p['final_grade']) ?? asDouble(grade['final_grade']);
+        final prScore = asDouble(p['peer_score']);
+        final fGrade = asDouble(p['final_grade']);
 
         students.add(_StudentDetailData(
           studentId: sid,
@@ -251,6 +278,16 @@ class _GradeCenterTeamDetailScreenState
       }
     }
 
+    if (widget.initialStudentId != null && !students.any((student) => student.studentId == widget.initialStudentId)) {
+      return Padding(
+        padding: DefensysUi.contentPadding,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('This student is not part of the selected assessment.', style: TextStyle(color: DefensysTokens.textPrimaryOf(context))),
+          const SizedBox(height: 12),
+          DefensysShadcnScope(child: ShadButton.outline(onPressed: widget.onBack, child: const Text('Back to grades'))),
+        ]),
+      );
+    }
     // Default selected student to leader or first student
     if (_selectedStudentId == null && students.isNotEmpty) {
       final leader = students.firstWhere((s) => s.isLeader, orElse: () => students.first);
@@ -456,6 +493,12 @@ class _GradeCenterTeamDetailScreenState
               peerWeight: peerWeight,
               isPit: isPit,
               isDark: isDark,
+            ),
+
+          if (grade['peer_rating_evidence'] is List && (grade['peer_rating_evidence'] as List).isNotEmpty)
+            GradePeerEvidence(
+              evidence: (grade['peer_rating_evidence'] as List).whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList(),
+              studentId: _activeViewIndex == 1 ? _selectedStudentId : null,
             ),
 
           const SizedBox(height: 32),

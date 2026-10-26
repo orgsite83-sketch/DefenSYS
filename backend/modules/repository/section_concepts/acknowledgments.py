@@ -49,8 +49,8 @@ def fingerprint(state):
 
 
 def available(state):
-    return (len(state['systems']) == 3 and all(s['title'].strip() for s in state['systems'])
-        and len(state['papers']) == 3
+    return (bool(state['systems']) and all(s['title'].strip() for s in state['systems'])
+        and len(state['papers']) == len(state['systems'])
         and {p['concept_id'] for p in state['papers']} == {s['id'] for s in state['systems']})
 
 
@@ -65,7 +65,7 @@ def acknowledged(round, faculty_id, *, state=None):
     # Confirming names or another faculty member's acceptance alone is insufficient.
     return (not round.systems.exclude(confirmed=True).exists()
         and SectionConceptPaper.objects.filter(pk__in=[p['id'] for p in state['papers']],
-            reviewed_by_id=faculty_id, status='accepted').count() == 3)
+            reviewed_by_id=faculty_id, status='accepted').count() == len(state['systems']))
 
 
 def summary(round, *, team=None, actor=None):

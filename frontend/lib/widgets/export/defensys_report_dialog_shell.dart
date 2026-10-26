@@ -107,7 +107,7 @@ class DefensysReportDialogShell extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: maroon.withValues(alpha: .12),
+              color: DefensysTokens.surfaceHigherOf(context),
               borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
             ),
             child: Icon(icon, color: maroon, size: 22),
@@ -140,7 +140,7 @@ class DefensysReportDialogShell extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: maroon.withValues(alpha: .12),
+                        color: DefensysTokens.surfaceHigherOf(context),
                         borderRadius: BorderRadius.circular(
                           DefensysTokens.radiusSm,
                         ),

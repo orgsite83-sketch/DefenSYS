@@ -130,6 +130,7 @@ class ConfiguredSharedConceptTests(APITestCase):
             shared.review(project, self.first, paper.pk, 'accepted')
             self.assertEqual(shared.shared_clearance(shared.latest(project)), i == 4)
         self.assertEqual(resolve_policy(self.module_team, event)['required_count'], 4)
+        self.assertTrue(shared.payload(project, self.first)['shared_review']['acknowledged'])
 
     def test_shared_expansion_keeps_rows_and_module_file_versions(self):
         current = concepts.get_round(self.team, self.event)

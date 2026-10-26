@@ -70,6 +70,52 @@ class _TestDefenses extends TeamDefenseNotifier {
 
 void main() {
   for (final dark in [false, true]) {
+    testWidgets('shared imports use module labels before the PM opens a shared round ${dark ? 'dark' : 'light'}', (tester) async {
+      tester.view.physicalSize = const Size(390, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await loadPreviewFonts(force: true);
+      int? selectedTab;
+      await pumpDefensysWidget(tester, TeamTab(studentData: {
+        'student': {'id': 10, 'is_leader': true},
+        'team': {'id': 1, 'isCapstone': true, 'name': 'Team AgriPulse',
+          'projectTitle': 'Imported soil sensor module', 'currentStage': 'Colloquium'},
+        'stage_options': ['Colloquium'],
+        'stages': [{'stage_label': 'Colloquium', 'concept_workflow': {
+          'enabled': true, 'status': 'concepts_needed', 'shared_import_pending': true,
+          'concepts': [for (var i = 1; i <= 3; i++) {
+            'key': 'c$i',
+            'title': i == 1 ? 'Autonomous Soil Sensor & Dynamic Drip Irrigation Module' : '',
+            'system_title': i == 1 ? 'Smart Agro-Industrial IoT & Sustainable Supply Platform' : '',
+          }],
+        }}],
+      }, onSelectTab: (tab, {subTabIndex}) { selectedTab = tab; }), theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+        overrides: [capstoneDeliverablesProvider.overrideWith(_TestDeliverablesNotifier.new)]);
+      expect(find.text('Proposed Modules'), findsOneWidget);
+      expect(find.text('Modules needed'), findsOneWidget);
+      expect(find.text('System A'), findsOneWidget);
+      expect(find.text('System C'), findsOneWidget);
+      expect(find.text('Smart Agro-Industrial IoT & Sustainable Supply Platform'), findsOneWidget);
+      expect(find.text('System name not yet provided'), findsNWidgets(2));
+      expect(find.text('Module title not yet proposed'), findsNWidgets(2));
+      expect(find.text('Edit module titles'), findsOneWidget);
+      expect(find.text('1 of 3 module titles provided'), findsOneWidget);
+      expect(find.text('Proposed Concepts'), findsNothing);
+      expect(find.text('View deliverables'), findsNothing);
+      await tester.ensureVisible(find.text('Integration →'));
+      await tester.tap(find.text('Integration →'));
+      expect(selectedTab, 3);
+      final editButton = tester.widget<FilledButton>(find.byKey(const ValueKey('edit-team-concepts')));
+      expect((editButton.style!.shape!.resolve({}) as RoundedRectangleBorder).borderRadius,
+        BorderRadius.circular(8));
+      await capturePreview(tester, find.byType(TeamTab),
+        'shared-module-team-${dark ? 'dark' : 'light'}', viewport: true);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final dark in [false, true]) {
     testWidgets('imported title shows actual configured progress on phone ${dark ? 'dark' : 'light'}', (tester) async {
       await tester.binding.setSurfaceSize(const Size(390, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -99,6 +145,7 @@ void main() {
       await tester.tap(find.text('View deliverables'));
       expect(selectedTab, 1);
       expect(selectedSubTab, 1);
+      expect(find.text('Integration →'), findsNothing);
       await capturePreview(tester, find.byKey(const ValueKey('configured-concepts-phone')), 'configured-concepts-phone-${dark ? 'dark' : 'light'}');
       expect(tester.takeException(), isNull);
     });

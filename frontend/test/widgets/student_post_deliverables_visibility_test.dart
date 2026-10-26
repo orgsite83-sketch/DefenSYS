@@ -108,6 +108,50 @@ Future<void> _pumpDeliverables(
 
 void main() {
   for (final isCapstone in [false, true]) {
+    for (final shared in [false, true]) {
+      testWidgets(
+        '${isCapstone ? 'Capstone' : 'PIT'} deliverables omit the duplicate ${shared ? 'module' : 'concept'} title card',
+        (tester) async {
+          final notifier = _PostDeliverablesNotifier({
+            ..._stage(),
+            'concept_workflow': {
+              'enabled': true,
+              'can_edit': true,
+              'can_edit_titles': true,
+              'status': 'concepts_needed',
+              'round': 2,
+              if (shared) 'section_project_id': 9,
+              'concepts': [
+                {
+                  'key': 'c1',
+                  'title': 'Imported soil sensor',
+                  'panel_feedback': 'Clarify water usage.',
+                  'requested_action': 'revise',
+                },
+                {'key': 'c2', 'title': ''},
+                {'key': 'c3', 'title': ''},
+              ],
+              'history': [
+                {'round': 1, 'verdict': 'for_redefense', 'concepts': []},
+              ],
+            },
+          });
+          await _pumpDeliverables(tester, notifier, isCapstone: isCapstone);
+
+          expect(find.text('Concept hearing'), findsNothing);
+          expect(find.text('Team module concepts'), findsNothing);
+          expect(find.text('Save concept titles'), findsNothing);
+          expect(find.byType(EditableText), findsNothing);
+          expect(find.text('Concept Paper'), findsOneWidget);
+          expect(find.text('Clarify water usage.'), findsOneWidget);
+          expect(find.textContaining('Attempt 1'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  for (final isCapstone in [false, true]) {
     for (final dark in [false, true]) {
       testWidgets(
         'locked ${isCapstone ? 'Capstone' : 'PIT'} post files stay hidden in ${dark ? 'dark' : 'light'} mode',

@@ -100,6 +100,31 @@ class SectionProjectListView(SectionAPIView):
         return Response(services.payload(project, request.user), status=status.HTTP_201_CREATED)
 
 
+class ImportedSectionProjectView(SectionAPIView):
+    def target(self, request, data):
+        from repository.deliverables.views import get_allowed_team
+        from . import imported
+        team_id = serializers.IntegerField(min_value=1).run_validation(data.get('team_id'))
+        team = get_allowed_team(request, team_id)
+        label = serializers.CharField(max_length=120, allow_blank=True).run_validation(data.get('stage_label', ''))
+        return team, imported.context(team, label)
+
+    def get(self, request):
+        from . import imported
+        team, stage = self.target(request, request.query_params)
+        return Response(imported.preview(team, stage, request.user))
+
+    @transaction.atomic
+    def post(self, request):
+        from . import imported
+        team, stage = self.target(request, request.data)
+        token = serializers.CharField(max_length=64).run_validation(request.data.get('review_token'))
+        titles = (serializers.ListField(child=serializers.DictField(), max_length=10).run_validation(request.data['concepts'])
+            if 'concepts' in request.data else None)
+        project = imported.save(team, stage, request.user, titles, token)
+        return Response(services.payload(project, request.user), status=201)
+
+
 class SectionProjectDetailView(SectionAPIView):
     def get(self, request, project_id):
         return Response(services.payload(self.project(request, project_id), request.user))

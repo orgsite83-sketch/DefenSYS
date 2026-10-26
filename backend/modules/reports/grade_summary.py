@@ -1,7 +1,6 @@
 """Shared presentation of semester grade scores and recorded defense outcomes."""
 
 from collections import Counter
-from decimal import Decimal
 
 from grading.constants import PASS_GRADE_THRESHOLD
 
@@ -75,29 +74,14 @@ def assessment_scope_label(grade):
 
 def student_assessment_scores(grade, student_grade=None):
     """Use the stored final grade; missing required ratings remain pending."""
-    scores = {
-        name: getattr(student_grade, f'{name}_score', None)
-        if student_grade is not None else None
-        for name in ('panel', 'adviser', 'peer')
-    }
-    for name in scores:
-        if scores[name] is None:
-            scores[name] = getattr(grade, f'{name}_score')
-    required = ['panel', 'peer']
-    if grade.is_capstone and grade.adviser_weight > 0:
-        required.append('adviser')
-    final = student_grade.final_grade if student_grade is not None else grade.final_grade
-    if any(scores[name] is None for name in required):
-        final = None
+    from grading.grades.masterlist import component_values
+    components, final = component_values(grade, student_grade, individual=True)
+    scores = {name: values['score'] for name, values in components.items()}
     scores['final'] = final
     scores['status'] = (
         'Pending grading' if final is None
         else 'Grade passed' if final >= PASS_GRADE_THRESHOLD else 'Grade failed'
     )
     for name in ('panel', 'adviser', 'peer'):
-        value = scores[name]
-        scores[f'{name}_weighted'] = (
-            (value * Decimal(getattr(grade, f'{name}_weight')) / Decimal('100')).quantize(Decimal('0.01'))
-            if value is not None else None
-        )
+        scores[f'{name}_weighted'] = components[name]['weighted']
     return scores

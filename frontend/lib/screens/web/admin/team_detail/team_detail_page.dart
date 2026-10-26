@@ -13,6 +13,8 @@ import '../../../../services/app/data_refresh_provider.dart';
 import '../../../../utils/universal_file_viewer.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/widgets.dart';
+import '../../../../widgets/repository/proposal_title_summary.dart';
+import '../../../../widgets/repository/shared_concept_review.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../grade_center_shared.dart';
 import 'academic_progress_card.dart';
@@ -242,6 +244,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   Widget _buildHeader(Map<String, dynamic>? team) {
     final title = team?['name']?.toString() ?? 'Team';
     final project = team?['project_title']?.toString() ?? '';
+    final workflow = _overviewConceptWorkflow(team);
+    final proposals = conceptRows(workflow['concepts']);
 
     return Row(
       children: [
@@ -254,13 +258,16 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: DefensysUi.pageTitle),
-              if (project.isNotEmpty)
-                Text(project, style: DefensysUi.subtitle, maxLines: 2),
+              Text(title, style: DefensysUi.pageTitle.copyWith(color: DefensysTokens.maroonTextOf(context))),
+              if (hasOpenConceptProposals(workflow))
+                Text('Concept selection · ${proposals.where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty).length} of ${proposals.length} titles provided',
+                  style: DefensysUi.subtitle.copyWith(fontSize: 14, color: DefensysTokens.textSecondaryOf(context)))
+              else if (project.isNotEmpty)
+                Text(project, style: DefensysUi.subtitle.copyWith(color: DefensysTokens.textSecondaryOf(context)), maxLines: 2),
               if (!_isEditing)
-                const Text(
+                Text(
                   'Team workspace — submissions and roster',
-                  style: TextStyle(color: _muted, fontSize: 12),
+                  style: TextStyle(color: DefensysTokens.textSecondaryOf(context), fontSize: 13),
                 ),
             ],
           ),
@@ -303,6 +310,18 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         ],
       ],
     );
+  }
+
+  Map<String, dynamic> _overviewConceptWorkflow(Map<String, dynamic>? team) {
+    final defense = team?['defense_context'] as Map?;
+    if (defense?.containsKey('concept_workflow') == true) {
+      return Map<String, dynamic>.from(defense?['concept_workflow'] as Map? ?? {});
+    }
+    final workspace = ref.read(teamDetailProvider(widget.teamId)).deliverableTeam;
+    final label = defense?['current_stage'] ?? defense?['event_label'] ?? workspace?['current_stage'];
+    final stages = (workspace?['stages'] as List? ?? []).whereType<Map>();
+    final stage = stages.where((s) => s['stage_label'] == label).firstOrNull;
+    return Map<String, dynamic>.from(stage?['concept_workflow'] as Map? ?? {});
   }
 
   void _cancelEditing() {
@@ -385,7 +404,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: _muted),
+        Icon(icon, size: 18, color: DefensysTokens.textSecondaryOf(context)),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -393,20 +412,20 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             children: [
               Text(
                 label.toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
-                  color: _muted,
+                  color: DefensysTokens.textSecondaryOf(context),
                   letterSpacing: 0.5,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 value,
-                style: const TextStyle(
-                  fontSize: 13.5,
+                style: TextStyle(
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: _ink,
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
               ),
             ],
@@ -467,22 +486,43 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   ) {
     final project = team['project_title']?.toString() ?? '—';
     final status = team['status']?.toString() ?? 'Pending';
+    final workflow = _overviewConceptWorkflow(team);
+    final proposalMode = hasOpenConceptProposals(workflow);
+    final proposals = conceptRows(workflow['concepts']);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Project Overview Card
         Container(
+          key: const ValueKey('team-project-information-card'),
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: DefensysTokens.surfaceOf(context),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _line),
+            border: Border.all(color: DefensysTokens.borderOf(context)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              if (proposalMode) ...[
+                Wrap(alignment: WrapAlignment.spaceBetween, spacing: 20, runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('PROJECT INFORMATION', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
+                        letterSpacing: .8, color: DefensysTokens.textSecondaryOf(context))),
+                      const SizedBox(height: 8),
+                      Text('Concept proposals', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700,
+                        color: DefensysTokens.textPrimaryOf(context))),
+                    ]),
+                    ProposalTitleProgressBadge(rows: proposals),
+                  ]),
+                const SizedBox(height: 12),
+                Text('These proposals are awaiting concept selection.',
+                  style: TextStyle(fontSize: 14, color: DefensysTokens.textSecondaryOf(context), height: 1.45)),
+                const SizedBox(height: 8),
+                ProposalTitleSummary(rows: proposals, showHeading: false),
+              ] else Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -490,22 +530,22 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'PROJECT INFORMATION',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.8,
-                            color: _muted,
+                            color: DefensysTokens.textSecondaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           project,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
-                            color: _ink,
+                            color: DefensysTokens.textPrimaryOf(context),
                             height: 1.3,
                           ),
                         ),
@@ -517,7 +557,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 ],
               ),
               const SizedBox(height: 16),
-              const Divider(color: _line, height: 1),
+              Divider(color: DefensysTokens.borderOf(context), height: 1),
               const SizedBox(height: 16),
               Row(
                 children: [

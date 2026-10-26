@@ -474,7 +474,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ConceptWorkspace(teamId: team['id'] as int, stageLabel: state.selectedStage, stage: selectedStage),
+                        ConceptWorkspace(
+                          teamId: team['id'] as int,
+                          stageLabel: state.selectedStage,
+                          stage: selectedStage,
+                          showTitleCard: false,
+                        ),
                         _buildRequiredProgressBlock(pre.where((item) => item['requirement_timing'] != 'defense').toList()),
                         const SizedBox(height: 16),
                         _sectionTitle(

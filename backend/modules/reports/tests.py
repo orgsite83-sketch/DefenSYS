@@ -123,6 +123,12 @@ class ReportsApiTests(APITestCase):
         output.mkdir(exist_ok=True)
         self.student.first_name, self.student.last_name = 'Adrian', 'Valdez'
         self.student.save(update_fields=['first_name', 'last_name'])
+        # This test checks numeric workbook layout, so supply an actual individual
+        # assessment rather than inheriting a team final for a missing record.
+        from grading.grades.models import StudentStageGrade
+        StudentStageGrade.objects.update_or_create(team_grade=self.grade_other, student=self.student,
+            defaults={'panel_score': self.grade_other.panel_score, 'adviser_score': self.grade_other.adviser_score,
+                      'peer_score': self.grade_other.peer_score, 'final_grade': self.grade_other.final_grade})
         for index, (first, last) in enumerate((('Stephanie', 'Yap'), ('Jerome', 'De Leon'), ('Camille', 'Roxas')), 1):
             member = User.objects.create_user(username=f'workbook-preview-student-{index}', role='student', first_name=first, last_name=last)
             TeamMembership.objects.create(team=self.team_other, student=member)

@@ -178,13 +178,16 @@ class DefensysExportFormatBar extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        hoverColor: DefensysTokens.surfaceHigherOf(context),
+        highlightColor: Colors.transparent,
+        splashColor: Colors.transparent,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
             color: selected
-                ? color.withValues(alpha: .08)
+                ? DefensysTokens.surfaceHigherOf(context)
                 : DefensysTokens.surfaceOf(context),
             borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
             border: Border.all(

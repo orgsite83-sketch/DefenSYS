@@ -98,7 +98,7 @@ class EndorsementPhaseOneTests(APITestCase):
         self.assertIn('acknowledge', services.scheduling_blocker(self.module_team, self.event,
             concepts.latest_round(self.module_team, self.event)))
         self.assertTrue(services.payload(self.project, self.other)['shared_review']['can_acknowledge'])
-        self.assertFalse(services.payload(self.project, self.other)['can_review'])
+        self.assertTrue(services.payload(self.project, self.other)['can_review'])
         self.assertEqual(services.task_payload(self.other)[0]['status'], 'awaiting_shared_acknowledgment')
         response = self.action('acknowledge', self.other)
         self.assertEqual(response.status_code, 200, response.data)

@@ -523,6 +523,13 @@ def payload(team, stage, *, history=True, actor=None):
         status = 'concept_endorsement_pending'
     else:
         status = 'concept_review_pending'
+    from repository.section_concepts.imported import system_titles
+    display_systems = (system_titles(team, stage, policy) if shared_policy or
+        status not in ('approved', 'approved_with_revisions', 'failed', 'project_rejected') else [])
+    shared_import_pending = bool(display_systems and not shared_policy)
+    if shared_import_pending:
+        names = {s['key']: s['title'] for s in display_systems}
+        concepts = [{**c, 'system_title': names.get(c['key'], '')} for c in concepts]
     from .pit_decisions import decision_payload
     return {'enabled': True, 'config': policy, 'round': current.number if current else 1,
         'selection_mode': 'shared_module' if shared_policy else 'team_concept',
@@ -536,6 +543,8 @@ def payload(team, stage, *, history=True, actor=None):
         **(decision_payload(team, stage, current, actor) if team.is_pit else {}),
         'module_review_token': module_review_token(team, stage),
         'section_project_id': policy.get('section_project_id'),
+        'shared_import_pending': shared_import_pending,
+        'system_concepts': display_systems,
         'shared_review': shared_review,
         'section_selected_key': shared_round.selected_key if shared_round else '',
         'section_presenting': bool(shared_round and shared_round.presentation_started_at),
@@ -595,10 +604,14 @@ def summary(team, stage):
             status = 'ready_to_schedule_redefense' if number > 1 else 'ready_to_schedule'
         else:
             status = 'concept_endorsement_pending' if required_complete(team, stage.label) else 'concept_review_pending'
+    from repository.section_concepts.imported import system_titles
+    systems = (system_titles(team, stage, policy) if policy.get('section_project_id') or
+        status not in ('approved', 'approved_with_revisions', 'failed', 'project_rejected') else [])
     return {'enabled': True, 'round': number, 'status': status,
         'title_progress': title_progress(policy, current),
         'section_project_id': policy.get('section_project_id'),
-        'system_concepts': policy.get('system_concepts', []),
+        'system_concepts': systems,
+        'shared_import_pending': bool(systems and not policy.get('section_project_id')),
         'concepts': [{k: c.get(k, '') for k in ('key', 'title', 'decision')}
             for c in (current.concepts if current else initial_concepts(policy))],
         'assigned': policy.get('mode') == 'assigned', 'required_count': policy['required_count'],

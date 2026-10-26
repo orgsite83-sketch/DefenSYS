@@ -260,6 +260,7 @@ void main() {
     });
     addTearDown(client.close);
     await _openReport(tester, client, openDialog: false, pitLead: true);
+    await tester.ensureVisible(find.text('Team Roster Report'));
     await tester.tap(find.text('Team Roster Report'));
     await tester.pumpAndSettle();
     Uri rosterRequest() => requests.where((url) => url.path.endsWith('/team-roster/')).last;
@@ -360,7 +361,7 @@ void main() {
     expect(find.text('Team Roster Report'), findsOneWidget);
     expect(find.text('Team Grade Report Card'), findsNothing);
     expect(find.text('Audit Trail Export'), findsNothing);
-    expect(find.text('2 of 22 reports'), findsOneWidget);
+    expect(find.text('2 of 24 reports'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, 'missing report');
     await tester.pumpAndSettle();
@@ -386,12 +387,12 @@ void main() {
     expect(find.text('Team Roster Report'), findsOneWidget);
     expect(find.text('Team Grade Report Card'), findsNothing);
     expect(find.text('Audit Trail Export'), findsNothing);
-    expect(find.text('5 of 22 reports'), findsOneWidget);
+    expect(find.text('5 of 24 reports'), findsOneWidget);
 
     await tester.tap(find.text('PIT').first);
     await tester.enterText(find.byType(TextField).first, 'roster');
     await tester.pumpAndSettle();
-    expect(find.text('1 of 21 reports'), findsOneWidget);
+    expect(find.text('1 of 23 reports'), findsOneWidget);
 
     await tester.tap(find.text('Clear Filters'));
     await tester.pumpAndSettle();

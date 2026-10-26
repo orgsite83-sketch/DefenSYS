@@ -34,6 +34,9 @@ def is_pm(user, project):
 
 def is_reviewer(user, project):
     from .acknowledgments import pit_reviewer_id
+    if (not project.pit_event_config_id and getattr(user, 'role', '') == 'faculty'
+            and user.is_active and active_links(project).filter(team__adviser=user).exists()):
+        return True
     reviewer_id = pit_reviewer_id(project) if project.pit_event_config_id else project.reviewer_id
     return admin(user) or (getattr(user, 'role', '') == 'faculty' and user.pk == reviewer_id)
 
@@ -233,13 +236,13 @@ def review_summary(round, *, team=None, actor=None):
         ('needs_review', 'Shared papers awaiting review') if 'pending' in statuses else
         ('needs_review', 'Shared titles awaiting confirmation'))
     from .acknowledgments import summary as acknowledgment_summary
-    reviewer = effective_reviewer(round.project)
+    reviewers = review_faculty(round.project)
     return {'project_id': round.project_id, 'round_id': round.pk, 'round': round.number,
         'section': round.project.section.section, 'stage_label': round.project.context.label,
         'cleared': cleared, 'status': code, 'status_label': label,
         'review_progress': progress, 'systems': state['systems'],
         'project_manager_name': round.project.project_manager.get_full_name() or round.project.project_manager.username,
-        'reviewer_name': (reviewer.get_full_name() or reviewer.username) if reviewer else 'Section instructor assignment needed',
+        'reviewer_name': ', '.join(r['name'] for r in reviewers) if reviewers else 'Section instructor assignment needed',
         **acknowledgment_summary(round, team=team, actor=actor)}
 
 
@@ -348,6 +351,18 @@ def policy_for(team, context):
         'title_mode': project.title_mode, 'system_concepts': sorted(round.systems.values('id', 'key', 'title'), key=lambda s: int(s['key'][1:]))}
 
 
+@read_memoize(copy=True)
+def review_faculty(project):
+    if project.pit_event_config_id:
+        reviewer = effective_reviewer(project)
+        users = [reviewer] if reviewer else []
+    else:
+        ids = active_links(project).filter(team__adviser__is_active=True).values_list('team__adviser_id', flat=True)
+        users = get_user_model().objects.filter(Q(pk=project.reviewer_id) | Q(pk__in=ids),
+            role='faculty', is_active=True).order_by('pk')
+    return [{'id': u.pk, 'name': u.get_full_name() or u.username} for u in users]
+
+
 @transaction.atomic
 def reconcile_requirements(project, actor, *, expected_count=None):
     require_active(project)
@@ -398,6 +413,12 @@ def team_display(team, label=None):
 def module_blocker(team, context, current):
     project = project_for(team, context)
     if not project:
+        from student_teams.models import SectionAssignment
+        from student_teams.concept_policy import context_key
+        from .imported import source_context_key
+        if source_context_key(team) == context_key(context) and SectionAssignment.objects.filter(semester_id=team.semester_id, section=team.section,
+                year_level=team.year_level, project_manager__isnull=False).exclude(system_name='').exists():
+            return 'The section Project Manager must open the imported shared system proposals before module endorsement.'
         return ''
     round = latest(project)
     if not current or current.section_round_id != round.pk:
@@ -1117,6 +1138,7 @@ def payload(project, actor):
         'scope': 'pit' if project.pit_event_config_id else 'capstone', 'round': round.number,
         'round_id': round.pk, 'title_mode': project.title_mode,
         'project_manager_id': project.project_manager_id, 'project_manager_name': project.project_manager.get_full_name() or project.project_manager.username,
+        'reviewers': review_faculty(project),
         'reviewer_id': reviewer.pk if reviewer else None, 'reviewer_name': shared_review['reviewer_name'],
         'reviewer_automatic': bool(project.pit_event_config_id and len(list(pit_instructors(project))) == 1),
         'systems': systems, 'teams': teams, 'selected_key': round.selected_key, 'verdict': round.verdict,

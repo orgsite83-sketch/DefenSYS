@@ -402,6 +402,7 @@ List<GoRoute> _adminSectionRoutes() {
       path: 'grade-center',
       pageBuilder: _adminSectionPage,
       routes: [
+        GoRoute(path: 'pending', builder: (_, _) => const GradeMasterlistPendingRoute()),
         GoRoute(
           path: 'grades/:gradeId',
           builder: (_, state) {
@@ -550,6 +551,7 @@ List<GoRoute> _facultySectionRoutes() {
       path: 'grade-center',
       pageBuilder: _facultySectionPage,
       routes: [
+        GoRoute(path: 'pending', builder: (_, _) => const GradeMasterlistPendingRoute()),
         GoRoute(
           path: 'grades/:gradeId',
           builder: (_, state) {
