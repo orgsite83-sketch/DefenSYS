@@ -31,10 +31,14 @@ class ReportExportMenu extends ConsumerStatefulWidget {
     required this.reportId,
     this.params = const {},
     this.enabled = true,
+    this.configureExport = false,
   });
   final String reportId;
   final Map<String, String> params;
   final bool enabled;
+
+  /// Open advanced export settings here instead of navigating to Report Center.
+  final bool configureExport;
 
   @override
   ConsumerState<ReportExportMenu> createState() => _ReportExportMenuState();
@@ -64,6 +68,16 @@ class _ReportExportMenuState extends ConsumerState<ReportExportMenu> {
       params['year_level'] = user?['pit_lead_year']?.toString() ?? '';
     }
     if (choice == 'report_center') {
+      if (widget.configureExport) {
+        await showReportExportConfiguration(
+          context: context,
+          ref: ref,
+          report: report,
+          params: params,
+          initialFormat: 'xlsx',
+        );
+        return;
+      }
       final source = GoRouterState.of(context).uri.toString();
       context.push(
         reportCenterLocation(
@@ -120,6 +134,9 @@ class _ReportExportMenuState extends ConsumerState<ReportExportMenu> {
     return ExportDropdownButton(
       enabled: widget.enabled,
       isLoading: _downloading,
+      reportCenterLabel: widget.configureExport
+          ? 'Configure export'
+          : 'Report Center',
       onSelected: _select,
     );
   }

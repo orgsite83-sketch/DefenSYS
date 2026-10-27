@@ -563,7 +563,11 @@ def is_presentation_stage(team, stage_label):
 def stage_deliverables_configured(team, stage_label):
     if is_presentation_stage(team, stage_label):
         return True
-    return bool(get_deliverable_definitions_for_team(team, stage_label))
+    if get_deliverable_definitions_for_team(team, stage_label):
+        return True
+    from repository.section_concepts.shared_deliverables import resolve
+    profile = resolve(team, document_context(team, stage_label))
+    return bool(profile and profile['definitions'])
 
 
 @read_memoize
@@ -593,6 +597,11 @@ def required_complete(team, stage_label):
 
 @read_memoize
 def post_deliverables_complete(team, stage_label):
+    from repository.section_concepts.shared_deliverables import resolve, required_complete as shared_complete
+    from .concepts import stage_for
+    profile = resolve(team, stage_for(team, stage_label))
+    if profile and not shared_complete(profile, 'post'):
+        return False
     if is_presentation_stage(team, stage_label):
         return True
     definitions = get_deliverable_definitions_for_team(team, stage_label)
@@ -1232,6 +1241,8 @@ def stage_payload(team, stage_label, evaluator=None):
 
     from .concepts import payload as concept_payload
     concept_workflow = concept_payload(team, concept_context, actor=evaluator)
+    from repository.section_concepts.shared_deliverables import summary as shared_summary
+    shared_checklist = shared_summary(team, concept_context) if concept_context else None
     from .redefense import preparing
     repeat_preparation = bool(is_capstone and stage_grade and stage_grade.verdict == 'for_redefense'
                               and (preparing(team, concept_context) or (
@@ -1242,6 +1253,7 @@ def stage_payload(team, stage_label, evaluator=None):
     return {
         'stage_label': stage_label,
         'concept_workflow': concept_workflow,
+        'shared_deliverables_summary': shared_checklist,
         'hearing_history': (hearing_history(team, concept_context)
                             if not concept_workflow and concept_context else []),
         'assessment_progress': assessment_progress,

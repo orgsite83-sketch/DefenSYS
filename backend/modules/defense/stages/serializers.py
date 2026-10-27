@@ -79,6 +79,9 @@ def check_stage_locked(stage, semester=None):
     config = stage.grading_configs.filter(semester=semester).first()
     if config and config.is_officially_complete:
         return True, 'This stage is officially complete for the active semester.'
+    from repository.section_concepts.models import SharedDeliverableSet
+    if SharedDeliverableSet.objects.filter(defense_stage=stage, section__semester=semester).exists():
+        return True, 'A section has started shared deliverable submissions for this stage.'
     from repository.section_concepts.models import SectionConceptProject
     if SectionConceptProject.objects.filter(defense_stage=stage, section__semester=semester).exists():
         return True, 'A section has already started shared system concepts for this stage.'
@@ -96,6 +99,11 @@ def check_stage_locked(stage, semester=None):
 
 
 class DefenseStageSerializer(serializers.ModelSerializer):
+    shared_deliverables = serializers.SerializerMethodField()
+
+    def get_shared_deliverables(self, obj):
+        from defense.shared_deliverables import shared_definitions
+        return shared_definitions(obj)
     # Keep the response key for older clients without exposing a retired mode.
     is_presentation_only = serializers.SerializerMethodField()
     system_deliverables = serializers.SerializerMethodField()
@@ -124,6 +132,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'is_active',
             'is_presentation_only',
             'concept_config',
+            'shared_deliverables',
             'qualifying_score',
             'score_carryover',
             'minutes_required',
@@ -341,7 +350,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DefenseStage
-        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'qualifying_score', 'score_carryover', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'deliverables']
+        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'deliverables']
         extra_kwargs = {
             'code': {'required': False, 'allow_blank': True},
             'display_order': {'required': False},
@@ -422,6 +431,12 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 attrs['concept_config'] = config
         except DjangoValidationError as exc:
             raise serializers.ValidationError({'concept_config': exc.messages}) from exc
+        if 'shared_deliverables' in attrs:
+            from defense.shared_deliverables import validate_shared_deliverables
+            try:
+                attrs['shared_deliverables'] = validate_shared_deliverables(attrs['shared_deliverables'], config)
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError({'shared_deliverables': exc.messages}) from exc
         items = attrs.get('deliverables')
         if items is None:
             items = list(self.instance.deliverables.values()) if self.instance else []

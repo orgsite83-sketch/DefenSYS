@@ -690,8 +690,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 children: [
                   _WebInputField(
                     controller: _emailCtrl,
-                    label: 'Username or Institutional Email',
-                    hintText: 'Enter your username or email',
+                    label: 'Username',
+                    hintText: 'Enter your username',
                     prefixIcon: const Icon(Icons.person_outline, size: 20),
                     validator: (v) => v == null || v.trim().isEmpty
                         ? 'Enter your username'
@@ -1167,7 +1167,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Student ID or Email',
+                'Username',
                 style: TextStyle(
                   fontFamily: 'Poppins',
                   fontSize: 13,
@@ -1186,7 +1186,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   color: _palette.primaryText,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Student ID or Username',
+                  hintText: 'Enter your username',
                   hintStyle: TextStyle(
                     fontFamily: 'Poppins',
                     color: _palette.muted,

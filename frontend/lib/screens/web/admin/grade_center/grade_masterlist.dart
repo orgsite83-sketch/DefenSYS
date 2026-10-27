@@ -9,12 +9,9 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../services/grading/grade_masterlist_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
-import '../../../../widgets/export/report_catalog.dart';
-import '../../../../widgets/export/report_export_configuration.dart';
 import '../../../../widgets/export/report_export_menu.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../../widgets/table/table.dart';
-import '../widgets/defensys_admin_shell.dart';
 import 'grade_center_team_detail_screen.dart';
 import 'grade_table_values.dart';
 export 'grade_table_values.dart';
@@ -28,14 +25,19 @@ class GradeMasterlist extends ConsumerStatefulWidget {
     required this.stageLabel,
     this.initialYear = '',
     this.initialSemesterId,
-    this.assessmentControls,
+    this.initialAssessmentId,
+    this.readinessSummary = '',
+    this.onRefresh,
     this.onBack,
+    this.headerActions = const [],
   });
 
   final String groupKey, scope, stageLabel, initialYear;
-  final int? initialSemesterId;
-  final Widget? assessmentControls;
+  final int? initialSemesterId, initialAssessmentId;
+  final String readinessSummary;
+  final VoidCallback? onRefresh;
   final VoidCallback? onBack;
+  final List<Widget> headerActions;
 
   @override
   ConsumerState<GradeMasterlist> createState() => _GradeMasterlistState();
@@ -51,35 +53,51 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
   String? _lastActor;
 
   String get _session =>
-      '${ref.read(authProvider).user?['id']}|${widget.scope}|${widget.groupKey}';
+      '${ref.read(authProvider).user?['id']}|${widget.scope}|${widget.groupKey}|${widget.initialSemesterId}|${widget.initialAssessmentId}';
   bool get _students => (_params['entity'] ?? 'students') == 'students';
-  bool get _semester => _params['coverage'] == 'semester';
   bool get _full => _params['detail_level'] == 'full';
 
   @override
   void initState() {
     super.initState();
-    _params = Map<String, String>.from(
-      ref.read(gradeMasterlistSessionsProvider)[_session] ??
-          {
-            'scope': widget.scope,
-            'workspace':
-                ref.read(authProvider).user?['role'] == 'admin' ||
-                    ref.read(authProvider).user?['is_pit_lead'] == true
-                ? 'operations'
-                : '',
-            'entity': 'students',
-            'coverage': 'assessment',
-            'detail_level': 'summary',
-            'stage_label': widget.stageLabel,
-            if (widget.initialYear.isNotEmpty) 'year_level': widget.initialYear,
-            if (widget.initialSemesterId != null)
-              'semester_id': '${widget.initialSemesterId}',
-            'page': '1',
-            'page_size': '25',
-            'ordering': 'name',
-          },
-    );
+    final saved =
+        ref.read(gradeMasterlistSessionsProvider)[_session] ??
+        const <String, String>{};
+    // Only table preferences survive navigation; the opened assessment owns scope.
+    _params = {
+      'entity': 'students',
+      'detail_level': 'summary',
+      'page': '1',
+      'page_size': '25',
+      'ordering': 'name',
+      for (final key in const [
+        'entity',
+        'detail_level',
+        'page',
+        'page_size',
+        'ordering',
+        'search',
+        'section',
+        'status',
+        '_scroll',
+      ])
+        if (saved[key] != null) key: saved[key]!,
+      'scope': widget.scope,
+      'workspace':
+          ref.read(authProvider).user?['role'] == 'admin' ||
+              ref.read(authProvider).user?['is_pit_lead'] == true
+          ? 'operations'
+          : '',
+      'coverage': 'assessment',
+      if (widget.initialYear.isNotEmpty) 'year_level': widget.initialYear,
+      if (widget.initialSemesterId != null)
+        'semester_id': '${widget.initialSemesterId}',
+      if (widget.initialAssessmentId != null)
+        widget.scope == 'pit' ? 'pit_event_config_id' : 'defense_stage_id':
+            '${widget.initialAssessmentId}'
+      else
+        'stage_label': widget.stageLabel,
+    };
     _search.text = _params['search'] ?? '';
     final offset = double.tryParse(_params.remove('_scroll') ?? '');
     if (offset != null) {
@@ -104,7 +122,7 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
   void _set(Map<String, String> changes, {bool resetPage = true}) {
     _debounce?.cancel();
     setState(() {
-      _params = {..._params, ...changes};
+      _params = {..._params, 'search': _search.text, ...changes};
       if (resetPage) _params['page'] = '1';
     });
     ref.read(gradeMasterlistSessionsProvider.notifier).save(_session, _params);
@@ -288,7 +306,9 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
       final contribution = gradeNumber(values['weighted']);
       return _text(
         contribution?.toStringAsFixed(2) ?? '—',
-        secondary: '${values['weight'] ?? '—'}% weight',
+        secondary: values['weight'] == null
+            ? null
+            : '${values['weight']}% weight',
         number: true,
       );
     }
@@ -308,7 +328,6 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
 
   List<DefensysTableColumn<GradeRow>> _columns(
     List<GradeRow> rows,
-    List<GradeRow> assessments,
     GradeRow contextData,
   ) {
     GradeRow first(GradeRow row) =>
@@ -341,17 +360,20 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
           final identity = _students
               ? row['student_number']?.toString()
               : gradeMap(cell['team'])['project_title']?.toString();
-          return _semester
-              ? _text(row['name'], secondary: identity)
-              : Semantics(
-                  button: true,
-                  child: ShadButton.link(
-                    padding: EdgeInsets.zero,
-                    height: null,
-                    onPressed: () => _open(row, cell, contextData),
-                    child: _text(row['name'], secondary: identity),
-                  ),
-                );
+          return Semantics(
+            button: true,
+            child: LayoutBuilder(
+              builder: (_, constraints) => ShadButton.link(
+                padding: EdgeInsets.zero,
+                height: null,
+                onPressed: () => _open(row, cell, contextData),
+                child: SizedBox(
+                  width: constraints.maxWidth,
+                  child: _text(row['name'], secondary: identity),
+                ),
+              ),
+            ),
+          );
         },
         width: _students ? 205 : 265,
       ),
@@ -364,36 +386,6 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
           width: 165,
         ),
     ];
-    if (_semester) {
-      for (final assessment in assessments) {
-        columns.add(
-          column(
-            assessment['label'].toString(),
-            '',
-            (row) {
-              final cell = gradeMaps(row['assessments'])
-                  .where((c) => c['assessment_key'] == assessment['key'])
-                  .firstOrNull;
-              if (cell == null) return _text('N/A');
-              return ShadButton.link(
-                padding: EdgeInsets.zero,
-                height: null,
-                onPressed: () => _open(row, cell, contextData),
-                child: _text(
-                  gradePercent(cell['final_grade']),
-                  secondary: cell['status_label']?.toString(),
-                  number: true,
-                ),
-              );
-            },
-            width: 195,
-            number: true,
-            sortable: false,
-          ),
-        );
-      }
-      return columns;
-    }
     if (_full) {
       final count = rows.fold<int>(
         gradeNumber(contextData['evaluator_slots'])?.toInt() ?? 0,
@@ -469,90 +461,386 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
     return columns;
   }
 
-  Widget _viewTabs() {
-    void change(String value) {
-      _search.clear();
-      _set({'entity': value, 'status': '', 'search': ''});
-    }
+  void _changeEntity(String value) {
+    _search.clear();
+    _set({'entity': value, 'status': '', 'search': ''});
+  }
 
+  Widget _viewTabs() => LayoutBuilder(
+    builder: (_, constraints) {
+      if (constraints.maxWidth < 340) {
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final value in const ['students', 'teams'])
+              Semantics(
+                selected: (_students ? 'students' : 'teams') == value,
+                child: (_students ? 'students' : 'teams') == value
+                    ? ShadButton(
+                        onPressed: () {},
+                        child: Text(
+                          value == 'students'
+                              ? 'Student Grades'
+                              : 'Team Grades',
+                        ),
+                      )
+                    : ShadButton.outline(
+                        onPressed: () => _changeEntity(value),
+                        child: Text(
+                          value == 'students'
+                              ? 'Student Grades'
+                              : 'Team Grades',
+                        ),
+                      ),
+              ),
+          ],
+        );
+      }
+      return DefensysSegmentedControl<String>(
+        value: _students ? 'students' : 'teams',
+        items: const [
+          DefensysSegmentItem(
+            value: 'students',
+            label: 'Student Grades',
+            icon: Icons.people_outline,
+          ),
+          DefensysSegmentItem(
+            value: 'teams',
+            label: 'Team Grades',
+            icon: Icons.groups_outlined,
+          ),
+        ],
+        onChanged: _changeEntity,
+      );
+    },
+  );
+
+  Widget _modeToggle() => Wrap(
+    spacing: 6,
+    runSpacing: 6,
+    children: [
+      for (final mode in const ['summary', 'full'])
+        Semantics(
+          selected: (_full ? 'full' : 'summary') == mode,
+          child: (_full ? 'full' : 'summary') == mode
+              ? ShadButton(
+                  onPressed: () {},
+                  child: Text(mode == 'summary' ? 'Summary' : 'Full breakdown'),
+                )
+              : ShadButton.outline(
+                  onPressed: () => _set({'detail_level': mode}),
+                  child: Text(mode == 'summary' ? 'Summary' : 'Full breakdown'),
+                ),
+        ),
+    ],
+  );
+
+  Map<String, String> _exportParams(GradeRow contextData) {
+    final assessmentId = contextData['assessment_id'];
+    return {
+      ..._params,
+      'search': _search.text,
+      if (contextData['semester_id'] != null)
+        'semester_id': '${contextData['semester_id']}',
+      'year_level': contextData['year_level']?.toString() ?? widget.initialYear,
+      if (assessmentId != null)
+        widget.scope == 'pit' ? 'pit_event_config_id' : 'defense_stage_id':
+            '$assessmentId',
+      if (assessmentId == null)
+        'stage_label':
+            contextData['assessment_label']?.toString() ?? widget.stageLabel,
+    }..removeWhere(
+      (key, _) =>
+          ['page', 'page_size', '_scroll'].contains(key) ||
+          key == 'stage_label' && assessmentId != null,
+    );
+  }
+
+  Widget _header(GradeRow contextData, String query, {required bool ready}) {
+    final metadata = [
+      widget.scope == 'pit' ? 'PIT' : 'Capstone',
+      if (contextData['academic_period'] != null)
+        '${contextData['academic_period']}',
+      if ((contextData['year_level']?.toString() ?? widget.initialYear)
+          .isNotEmpty)
+        contextData['year_level']?.toString() ?? widget.initialYear,
+    ].join(' · ');
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.stageLabel,
+          style: TextStyle(
+            fontSize: 22,
+            height: 1.25,
+            fontWeight: FontWeight.w700,
+            color: DefensysTokens.textPrimaryOf(context),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          metadata,
+          style: TextStyle(
+            fontSize: 12,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+        if (widget.readinessSummary.isNotEmpty) ...[
+          const SizedBox(height: 5),
+          Text(
+            widget.readinessSummary,
+            style: TextStyle(
+              fontSize: 12,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+      ],
+    );
+    final back = widget.onBack == null
+        ? null
+        : ShadButton.outline(
+            onPressed: widget.onBack,
+            leading: const Icon(Icons.arrow_back_rounded, size: 16),
+            child: const Text('Back'),
+          );
+    final actions = [
+      ...widget.headerActions,
+      ReportExportMenu(
+        reportId: _students
+            ? 'student-grade-masterlist'
+            : 'team-grade-masterlist',
+        params: _exportParams(contextData),
+        enabled: ready,
+        configureExport: true,
+      ),
+      Tooltip(
+        message: 'Refresh grades',
+        child: ShadButton.outline(
+          width: 40,
+          padding: EdgeInsets.zero,
+          onPressed: () {
+            ref.invalidate(gradeMasterlistDataProvider(query));
+            widget.onRefresh?.call();
+          },
+          child: const Icon(Icons.refresh_rounded, size: 18),
+        ),
+      ),
+    ];
     return LayoutBuilder(
       builder: (_, constraints) {
-        if (constraints.maxWidth < 330) {
-          return Wrap(
-            spacing: 8,
-            runSpacing: 8,
+        if (constraints.maxWidth <
+            (widget.headerActions.isEmpty ? 900 : 1100)) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final value in const ['students', 'teams'])
-                if ((_students ? 'students' : 'teams') == value)
-                  ShadButton(
-                    onPressed: () {},
-                    child: Text(
-                      value == 'students' ? 'Student Grades' : 'Team Grades',
-                    ),
-                  )
-                else
-                  ShadButton.outline(
-                    onPressed: () => change(value),
-                    child: Text(
-                      value == 'students' ? 'Student Grades' : 'Team Grades',
-                    ),
-                  ),
+              if (back != null) ...[back, const SizedBox(height: 12)],
+              title,
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: actions,
+              ),
             ],
           );
         }
-        return DefensysSegmentedControl<String>(
-          value: _students ? 'students' : 'teams',
-          items: const [
-            DefensysSegmentItem(
-              value: 'students',
-              label: 'Student Grades',
-              icon: Icons.people_outline,
-            ),
-            DefensysSegmentItem(
-              value: 'teams',
-              label: 'Team Grades',
-              icon: Icons.groups_outlined,
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (back != null) ...[back, const SizedBox(width: 14)],
+            Expanded(child: title),
+            const SizedBox(width: 20),
+            Wrap(
+              spacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: actions,
             ),
           ],
-          onChanged: change,
         );
       },
     );
   }
 
-  Widget _header(GradeRow contextData) {
-    final title = _semester
-        ? '${widget.scope.toUpperCase()} · Semester grades'
-        : '${widget.scope.toUpperCase()} · ${contextData['assessment_label'] ?? widget.stageLabel}';
-    const subtitle =
-        'Student and team evaluation records. Select a name for the complete assessment.';
-    final back = ShadButton.outline(
-      onPressed: widget.onBack,
-      child: const Text('Back to Evaluation & Grades'),
-    );
-    return LayoutBuilder(
-      builder: (_, constraints) {
-        if (constraints.maxWidth < 650) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              DefensysPageHeader(
-                icon: Icons.star_rounded,
-                title: title,
-                subtitle: subtitle,
-              ),
-              const SizedBox(height: 12),
-              back,
-            ],
-          );
-        }
-        return DefensysPageHeader(
-          icon: Icons.star_rounded,
-          title: title,
-          subtitle: subtitle,
-          actions: back,
-        );
+  Widget _searchField() => Semantics(
+    label: _students
+        ? 'Search students, IDs or teams'
+        : 'Search teams or projects',
+    child: ShadInput(
+      controller: _search,
+      leading: const Icon(Icons.search_rounded, size: 16),
+      placeholder: Text(
+        _students
+            ? 'Search students, IDs or teams…'
+            : 'Search teams or projects…',
+      ),
+      onChanged: (value) {
+        // The clear action should appear immediately while the query is debounced.
+        setState(() {});
+        _debounce?.cancel();
+        _debounce = Timer(const Duration(milliseconds: 350), () {
+          if (mounted) _set({'search': value});
+        });
       },
+    ),
+  );
+
+  bool get _hasFilters =>
+      _search.text.isNotEmpty ||
+      (_params['search'] ?? '').isNotEmpty ||
+      (_params['section'] ?? '').isNotEmpty ||
+      (_params['status'] ?? '').isNotEmpty;
+
+  Widget _filters(GradeRow options) => LayoutBuilder(
+    builder: (_, constraints) {
+      final section = _select(
+        'Section',
+        _params['section'] ?? '',
+        {
+          '': 'All sections',
+          for (final item in options['sections'] as List? ?? [])
+            '$item': '$item',
+        },
+        (value) => _set({'section': value}),
+        width: 160,
+      );
+      final status = _select(
+        'Grading status',
+        _params['status'] ?? '',
+        {
+          '': 'All statuses',
+          for (final item in gradeMaps(options['statuses']))
+            '${item['value']}': '${item['label']}',
+        },
+        (value) => _set({'status': value}),
+        width: 195,
+      );
+      final clear = _hasFilters
+          ? ShadButton.ghost(
+              onPressed: () {
+                _search.clear();
+                _set({'search': '', 'section': '', 'status': ''});
+              },
+              child: const Text('Clear filters'),
+            )
+          : null;
+      if (constraints.maxWidth >= 860) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(child: _searchField()),
+            const SizedBox(width: 12),
+            section,
+            const SizedBox(width: 12),
+            status,
+            if (clear != null) ...[const SizedBox(width: 8), clear],
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _searchField(),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.end,
+            children: [section, status, if (clear != null) clear],
+          ),
+        ],
+      );
+    },
+  );
+
+  Widget _tableWorkspace(GradeRow data, {required bool loading}) {
+    final rows = gradeMaps(data['rows']);
+    final contextData = gradeMap(data['context']);
+    return DefensysTableCard(
+      key: const ValueKey('grade-table-workspace'),
+      showScrollHint: _overflow,
+      pagination: DefensysTablePagination(
+        currentPage: (gradeNumber(data['page'])?.toInt() ?? 1) - 1,
+        totalItems: gradeNumber(data['total'])?.toInt() ?? 0,
+        rowsPerPage: gradeNumber(data['page_size'])?.toInt() ?? 25,
+        itemLabel: _students ? 'students' : 'teams',
+        onPageChanged: (page) =>
+            _set({'page': '${page + 1}'}, resetPage: false),
+        onRowsPerPageChanged: (size) => _set({'page_size': '$size'}),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            key: const ValueKey('grade-table-controls'),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LayoutBuilder(
+                  builder: (_, constraints) {
+                    if (constraints.maxWidth < 760) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _viewTabs(),
+                          const SizedBox(height: 12),
+                          _modeToggle(),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(child: _viewTabs()),
+                        const SizedBox(width: 16),
+                        _modeToggle(),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                _filters(gradeMap(data['options'])),
+                const SizedBox(height: 14),
+                Text(
+                  '${data['total']} ${_students ? 'students' : 'teams'}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          if (loading)
+            LinearProgressIndicator(
+              minHeight: 2,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          AbsorbPointer(
+            absorbing: loading,
+            child: DefensysDataTable<GradeRow>(
+              items: rows,
+              columns: _columns(rows, contextData),
+              rowMinHeight: 64,
+              headerHeight: 58,
+              horizontalScrollController: _horizontal,
+              onScrollHintChanged: (value) {
+                if (mounted && _overflow != value) {
+                  setState(() => _overflow = value);
+                }
+              },
+              onRowTap: (row) => _open(
+                row,
+                gradeMaps(row['assessments']).firstOrNull ?? {},
+                contextData,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -575,10 +863,12 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.onBack != null) ...[
-            _header(gradeMap(_lastData?['context'])),
-            const SizedBox(height: 20),
-          ],
+          _header(
+            gradeMap(_lastData?['context']),
+            query,
+            ready: !result.isLoading && !result.hasError,
+          ),
+          const SizedBox(height: 20),
           displayed.when(
             loading: () => const Padding(
               padding: EdgeInsets.all(32),
@@ -596,332 +886,7 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
                 ),
               ],
             ),
-            data: (data) {
-              final rows = gradeMaps(data['rows']);
-              final options = gradeMap(data['options']);
-              final contextData = gradeMap(data['context']);
-              final assessments = gradeMaps(data['assessments']);
-              final user = ref.watch(authProvider).user;
-              final lead =
-                  user?['is_pit_lead'] == true &&
-                  user?['role'] != 'admin' &&
-                  user?['is_superuser'] != true;
-              final selectedAssessment =
-                  contextData['assessment_id']?.toString() ??
-                  contextData['assessment_key']?.toString() ??
-                  '';
-              final exportParams =
-                  <String, String>{
-                    ..._params,
-                    'semester_id': '${contextData['semester_id']}',
-                    'year_level': contextData['year_level']?.toString() ?? '',
-                    if (gradeNumber(selectedAssessment) != null)
-                      widget.scope == 'pit'
-                              ? 'pit_event_config_id'
-                              : 'defense_stage_id':
-                          selectedAssessment,
-                    if (gradeNumber(selectedAssessment) == null)
-                      'stage_label':
-                          contextData['assessment_label']?.toString() ??
-                          _params['stage_label'] ??
-                          '',
-                  }..removeWhere(
-                    (key, _) =>
-                        ['page', 'page_size', '_scroll'].contains(key) ||
-                        key == 'stage_label' &&
-                            gradeNumber(selectedAssessment) != null,
-                  );
-              final reportId = _students
-                  ? 'student-grade-masterlist'
-                  : 'team-grade-masterlist';
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (result.isLoading) ...[
-                    LinearProgressIndicator(
-                      minHeight: 2,
-                      color: DefensysTokens.textSecondaryOf(context),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  if (widget.assessmentControls != null &&
-                      !_semester &&
-                      '${contextData['semester_id']}' ==
-                          '${widget.initialSemesterId}' &&
-                      assessments.length == 1 &&
-                      assessments.first['label'] == widget.stageLabel &&
-                      (widget.initialYear.isEmpty ||
-                          assessments.first['year_level'] ==
-                              widget.initialYear ||
-                          widget.scope == 'capstone')) ...[
-                    widget.assessmentControls!,
-                    const SizedBox(height: 20),
-                  ],
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    crossAxisAlignment: WrapCrossAlignment.end,
-                    children: [
-                      _select(
-                        'Academic period',
-                        '${contextData['semester_id']}',
-                        {
-                          for (final term in gradeMaps(options['semesters']))
-                            '${term['id']}': '${term['label']}',
-                        },
-                        (value) => _set({
-                          'semester_id': value,
-                          'pit_event_config_id': '',
-                          'defense_stage_id': '',
-                          'stage_label': '',
-                          'section': '',
-                        }),
-                        width: 260,
-                      ),
-                      _select(
-                        'Coverage',
-                        _params['coverage'] ?? 'assessment',
-                        const {
-                          'assessment': 'Selected assessment',
-                          'semester': 'Whole semester',
-                        },
-                        (value) => _set({'coverage': value, 'status': ''}),
-                        width: 215,
-                      ),
-                      if (!lead)
-                        _select(
-                          'Year level',
-                          _params['year_level'] ?? '',
-                          const {
-                            '': 'All eligible years',
-                            '1st Year': '1st Year',
-                            '2nd Year': '2nd Year',
-                            '3rd Year': '3rd Year',
-                            '4th Year': '4th Year',
-                          },
-                          (value) => _set({
-                            'year_level': value,
-                            'pit_event_config_id': '',
-                            'defense_stage_id': '',
-                            'stage_label': '',
-                            'section': '',
-                          }),
-                          width: 160,
-                        ),
-                      if (!_semester &&
-                          gradeMaps(options['assessments']).isNotEmpty)
-                        _select(
-                          widget.scope == 'pit' ? 'PIT event' : 'Defense stage',
-                          selectedAssessment,
-                          {
-                            for (final a in gradeMaps(options['assessments']))
-                              a['id']?.toString() ?? '${a['key']}':
-                                  '${a['label']}${!lead && widget.scope == 'pit' ? ' · ${a['year_level']}' : ''}',
-                          },
-                          (value) {
-                            final choice = gradeMaps(options['assessments'])
-                                .firstWhere(
-                                  (a) =>
-                                      (a['id']?.toString() ?? '${a['key']}') ==
-                                      value,
-                                );
-                            _set({
-                              widget.scope == 'pit'
-                                      ? 'pit_event_config_id'
-                                      : 'defense_stage_id':
-                                  choice['id']?.toString() ?? '',
-                              'stage_label': choice['id'] == null
-                                  ? '${choice['label']}'
-                                  : '',
-                              'status': '',
-                            });
-                          },
-                          width: 285,
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  _viewTabs(),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      if (!_semester) ...[
-                        if (!_full)
-                          ShadButton(
-                            onPressed: () {},
-                            child: const Text('Summary'),
-                          )
-                        else
-                          ShadButton.outline(
-                            onPressed: () => _set({'detail_level': 'summary'}),
-                            child: const Text('Summary'),
-                          ),
-                        if (_full)
-                          ShadButton(
-                            onPressed: () {},
-                            child: const Text('Full breakdown'),
-                          )
-                        else
-                          ShadButton.outline(
-                            onPressed: () => _set({'detail_level': 'full'}),
-                            child: const Text('Full breakdown'),
-                          ),
-                      ],
-                      ReportExportMenu(
-                        reportId: reportId,
-                        params: exportParams,
-                      ),
-                      ShadButton.outline(
-                        onPressed: () => showReportExportConfiguration(
-                          context: context,
-                          ref: ref,
-                          report: ReportCatalog.find(reportId)!,
-                          params: exportParams,
-                          initialFormat: 'xlsx',
-                        ),
-                        child: const Text('Configure export'),
-                      ),
-                      ShadButton.ghost(
-                        onPressed: () =>
-                            ref.invalidate(gradeMasterlistDataProvider(query)),
-                        child: const Text('Refresh'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (_, constraints) => Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      crossAxisAlignment: WrapCrossAlignment.end,
-                      children: [
-                        SizedBox(
-                          width: math.min(320, constraints.maxWidth),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _students
-                                    ? 'Search students, IDs or teams'
-                                    : 'Search teams or projects',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: DefensysTokens.textSecondaryOf(
-                                    context,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              ShadInput(
-                                controller: _search,
-                                placeholder: const Text('Search grades…'),
-                                onChanged: (value) {
-                                  _debounce?.cancel();
-                                  _debounce = Timer(
-                                    const Duration(milliseconds: 350),
-                                    () {
-                                      if (mounted) _set({'search': value});
-                                    },
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        _select(
-                          'Section',
-                          _params['section'] ?? '',
-                          {
-                            '': 'All sections',
-                            for (final section
-                                in options['sections'] as List? ?? [])
-                              '$section': '$section',
-                          },
-                          (value) => _set({'section': value}),
-                          width: 155,
-                        ),
-                        _select(
-                          _semester
-                              ? 'Any assessment status'
-                              : 'Grading status',
-                          _params['status'] ?? '',
-                          {
-                            '': 'All statuses',
-                            for (final status in gradeMaps(options['statuses']))
-                              '${status['value']}': '${status['label']}',
-                          },
-                          (value) => _set({'status': value}),
-                          width: 195,
-                        ),
-                        ShadButton.ghost(
-                          onPressed: () {
-                            _search.clear();
-                            _set({'search': '', 'section': '', 'status': ''});
-                          },
-                          child: const Text('Clear filters'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '${data['total']} ${_students ? 'students · Includes pending and unassigned students' : 'teams'} · ${contextData['academic_period']}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: DefensysTokens.textSecondaryOf(context),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  DefensysTableCard(
-                    showScrollHint: _overflow,
-                    pagination: DefensysTablePagination(
-                      currentPage:
-                          (gradeNumber(data['page'])?.toInt() ?? 1) - 1,
-                      totalItems: gradeNumber(data['total'])?.toInt() ?? 0,
-                      rowsPerPage:
-                          gradeNumber(data['page_size'])?.toInt() ?? 25,
-                      itemLabel: _students ? 'students' : 'teams',
-                      onPageChanged: (page) =>
-                          _set({'page': '${page + 1}'}, resetPage: false),
-                      onRowsPerPageChanged: (size) =>
-                          _set({'page_size': '$size'}),
-                    ),
-                    child: DefensysDataTable<GradeRow>(
-                      items: rows,
-                      columns: _columns(rows, assessments, contextData),
-                      rowMinHeight: 64,
-                      headerHeight: 58,
-                      horizontalScrollController: _horizontal,
-                      onScrollHintChanged: (value) {
-                        if (mounted && _overflow != value) {
-                          setState(() => _overflow = value);
-                        }
-                      },
-                      onRowTap: _semester
-                          ? null
-                          : (row) => _open(
-                              row,
-                              gradeMaps(row['assessments']).firstOrNull ?? {},
-                              contextData,
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    _semester
-                        ? 'Select an assessment grade for its complete evaluation. No semester total is configured.'
-                        : 'Select a ${_students ? 'student' : 'team'} for rubric marks, feedback and evaluation history. Exports include every matching page.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: DefensysTokens.textSecondaryOf(context),
-                    ),
-                  ),
-                ],
-              );
-            },
+            data: (data) => _tableWorkspace(data, loading: result.isLoading),
           ),
         ],
       ),

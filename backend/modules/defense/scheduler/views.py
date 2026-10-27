@@ -349,6 +349,7 @@ class PitEventConfigLookupView(APIView):
                 deliverables=deliverables,
                 peer_grading_enabled=peer_grading_enabled,
                 concept_config=request.data.get('concept_config'),
+                shared_deliverables=request.data.get('shared_deliverables'),
                 project_setup_policy=request.data.get('project_setup_policy'),
             )
             return Response({'config': pit_event_config_payload(config)}, status=status.HTTP_200_OK)

@@ -60,11 +60,18 @@ def can_read_media(user, name):
 
     guest = getattr(user, 'is_guest_panelist', False)
     admin = is_admin_user(user)
+    from repository.section_concepts.models import SharedDeliverableFile
+    from repository.section_concepts.shared_deliverables import can_read_file
+    shared_file = (SharedDeliverableFile.objects.select_related('submission_set__section__semester',
+        'submission_set__pit_event_config', 'submission_set__defense_stage').filter(file=name).first()
+        if name.startswith('shared_deliverables/') else None)
+    if shared_file:
+        return can_read_file(user, shared_file)
     from repository.section_concepts.models import SectionConceptPaper
-    from repository.section_concepts.services import can_read as can_read_section
+    from repository.section_concepts.shared_deliverables import can_read_legacy_file
     paper = SectionConceptPaper.objects.select_related('concept__round__project__section__semester').filter(file=name).first()
     if paper:
-        return can_read_section(user, paper.concept.round.project)
+        return can_read_legacy_file(user, paper)
     submissions = DeliverableSubmission.objects.filter(
         Q(file=name) | Q(files__file=name),
     ).select_related('team', 'team__semester').distinct()

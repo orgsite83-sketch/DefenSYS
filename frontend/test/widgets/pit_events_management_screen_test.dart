@@ -9,8 +9,10 @@ import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
+import 'package:defensys/widgets/repository/shared_deliverables_editor.dart';
 import 'package:defensys/widgets/setup/setup_requirement_panels.dart';
 import '../helpers/capture_preview.dart';
 
@@ -144,6 +146,73 @@ void main() {
       await tester.pumpAndSettle();
     }
     return scheduler;
+  }
+
+  for (final size in [const Size(1440, 1200), const Size(360, 1100)]) {
+    for (final dark in [false, true]) {
+      testWidgets('shared requirements belong inside their pre/post section at ${size.width} dark=$dark', (tester) async {
+        final scheduler = await openPeerSetup(tester, tab: 2, size: size, dark: dark, config: {
+          ...sampleConfig,
+          'shared_deliverables': [
+            {'deliverable_id': 'SHARED_PRE', 'label': 'Shared proposal', 'deliverable_type': 'pre',
+              'required': true, 'file_format': 'pdf', 'file_policy': {'mode': 'single'}},
+            {'deliverable_id': 'SHARED_POST', 'label': 'Shared final report', 'deliverable_type': 'post',
+              'required': true, 'file_format': 'pdf', 'file_policy': {'mode': 'single'}},
+          ],
+        });
+        final pre = find.byKey(const ValueKey('pre-defense-deliverables-section'));
+        final post = find.byKey(const ValueKey('post-defense-deliverables-section'));
+        final preShared = find.descendant(of: pre, matching: find.byType(SharedDeliverablesEditor));
+        final postShared = find.descendant(of: post, matching: find.byType(SharedDeliverablesEditor));
+        expect(preShared, findsOneWidget);
+        expect(postShared, findsOneWidget);
+        for (final section in [pre, post]) {
+          expect((tester.widget<Container>(section).decoration as BoxDecoration).color,
+            dark ? DefensysTokens.mistSurface : DefensysTokens.surface);
+        }
+        expect(tester.widget<SharedDeliverablesEditor>(preShared).deliverableType, 'pre');
+        expect(tester.widget<SharedDeliverablesEditor>(postShared).deliverableType, 'post');
+        expect(find.text('Pre-defense: 3'), findsOneWidget);
+        expect(find.text('Post-defense: 2'), findsOneWidget);
+
+        final expand = find.descendant(of: preShared, matching: find.text('Shared system deliverables'));
+        await tester.ensureVisible(expand);
+        await tester.tap(expand);
+        await tester.pumpAndSettle();
+        final summary = find.descendant(of: preShared, matching: find.text('Shared proposal'));
+        await tester.ensureVisible(summary);
+        await tester.tap(summary);
+        await tester.pumpAndSettle();
+        final name = find.byKey(const ValueKey('shared-name-SHARED_PRE'));
+        await tester.ensureVisible(name);
+        final nameInput = find.descendant(of: name, matching: find.byType(TextField));
+        expect(tester.widget<TextField>(nameInput).decoration?.labelText, 'Pre-Defense Requirement Name *');
+        final options = find.descendant(of: preShared, matching: find.text('More options'));
+        if (size.width >= 1000) {
+          expect((tester.getRect(name).center.dy - tester.getRect(options).center.dy).abs(), lessThan(2));
+        } else {
+          expect(tester.getRect(options).top, greaterThan(tester.getRect(name).bottom));
+        }
+        await capturePreview(tester, find.byType(Dialog),
+          'shared-setup-nested-${size.width.toInt()}-${dark ? 'dark' : 'light'}', viewport: true);
+        expect(tester.takeException(), isNull);
+
+        if (size.width >= 1000 && !dark) {
+          await tester.enterText(name, 'Section proposal');
+          final done = find.descendant(of: preShared, matching: find.text('Done editing'));
+          await tester.ensureVisible(done);
+          await tester.tap(done);
+          await tester.pumpAndSettle();
+          expect(find.byKey(const ValueKey('shared-name-SHARED_PRE')), findsNothing);
+          await tester.tap(find.text('Save Changes'));
+          await tester.pumpAndSettle();
+          final shared = (scheduler.saved?['shared_deliverables'] as List).cast<Map>();
+          expect(shared.first['label'], 'Section proposal');
+          expect(shared.last['deliverable_type'], 'post');
+          expect((scheduler.saved?['deliverables'] as List).cast<Map>().first['label'], 'Concept Paper');
+        }
+      });
+    }
   }
 
   for (final dark in [false, true]) {

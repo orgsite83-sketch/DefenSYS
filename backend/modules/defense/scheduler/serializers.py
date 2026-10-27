@@ -1191,6 +1191,11 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
                 from repository.deliverables.services import required_complete
                 if not pit_event_endorsed(team, attrs['event_name']) or not required_complete(team, attrs['event_name']):
                     raise serializers.ValidationError({'team_id': f'Team {team.name} is not endorsed for {attrs["event_name"]}.'})
+        from repository.section_concepts.shared_deliverables import resolve, required_complete as shared_complete
+        shared_context = attrs.get('pit_event_config') if attrs['scope'] == DefenseSchedule.SCOPE_PIT else attrs.get('defense_stage')
+        profile = resolve(team, shared_context)
+        if profile and not shared_complete(profile):
+            raise serializers.ValidationError({'team_id': 'Complete the required shared system deliverables before scheduling.'})
         return team
 
     def _validate_duplicate(self, attrs):
@@ -1500,6 +1505,11 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                     if not pit_event_endorsed(team, attrs['event_name']) or not required_complete(team, attrs['event_name']):
                         raise serializers.ValidationError({'slots': f'{team.name} is not endorsed for {attrs["event_name"]}.'})
 
+            from repository.section_concepts.shared_deliverables import resolve, required_complete as shared_complete
+            shared_context = attrs.get('pit_event_config') if attrs['scope'] == DefenseSchedule.SCOPE_PIT else attrs.get('defense_stage')
+            profile = resolve(team, shared_context)
+            if profile and not shared_complete(profile):
+                raise serializers.ValidationError({'slots': f'{team.name} needs its required shared system deliverables.'})
             active_existing = DefenseSchedule.objects.filter(
                 scope=attrs['scope'],
                 semester=attrs['semester'],

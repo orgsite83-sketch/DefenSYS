@@ -488,7 +488,8 @@ void main() {
 
       expect(find.text('Concept Proposal'), findsOneWidget);
       expect(find.text('Final Defense'), findsOneWidget);
-      expect(find.byIcon(Icons.visibility_outlined), findsNWidgets(2));
+      expect(find.byIcon(Icons.visibility_outlined), findsNothing);
+      expect(find.text('Open grades'), findsNWidgets(2));
       expect(find.text('Mark Complete'), findsNWidgets(2));
 
       searchController.dispose();
@@ -803,7 +804,8 @@ void main() {
       expect(find.text('PIT Expos & Event Stages'), findsOneWidget);
       expect(find.text('1st Year Concept Pitch'), findsOneWidget);
       expect(find.text('Peer grading open'), findsOneWidget);
-      expect(find.byIcon(Icons.visibility_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.visibility_outlined), findsNothing);
+      expect(find.text('Open grades'), findsOneWidget);
       expect(find.text('Mark Complete'), findsOneWidget);
       expect(find.text('ENROLLED TEAMS'), findsOneWidget);
       expect(find.text('EVALUATION READINESS'), findsOneWidget);
@@ -909,7 +911,8 @@ void main() {
       expect(find.text('Capstone · Concept Proposal'), findsOneWidget);
       expect(find.text('PIT · 1st Year Concept Pitch'), findsOneWidget);
       expect(find.text('Peer grading open'), findsOneWidget);
-      expect(find.byIcon(Icons.visibility_outlined), findsNWidgets(2));
+      expect(find.byIcon(Icons.visibility_outlined), findsNothing);
+      expect(find.text('Open grades'), findsNWidgets(2));
       expect(find.text('Mark Complete'), findsNWidgets(2));
 
       searchController.dispose();

@@ -120,6 +120,7 @@ class StageDeliverable(models.Model):
 
 
 class DefenseStage(models.Model):
+    shared_deliverables = models.JSONField(null=True, blank=True, default=None)
     from django.core.validators import MinValueValidator, MaxValueValidator
     qualifying_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0), MaxValueValidator(100)])

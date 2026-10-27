@@ -147,7 +147,8 @@ class SharedSystemConceptTests(APITestCase):
             services.review(self.project, self.first, paper.pk, 'accepted')
         state = services.payload(self.project, self.first)
         self.assertEqual(state['review_progress'], {'required': 3, 'names_confirmed': 0,
-            'papers_uploaded': 3, 'papers_accepted': 3})
+            'papers_uploaded': 3, 'papers_accepted': 3,
+            'documents_required': 3, 'documents_uploaded': 3, 'documents_accepted': 3})
         self.assertFalse(state['can_endorse'])
         services.save_system_titles(self.project, self.first, self.titles())
         self.assertTrue(services.payload(self.project, self.first)['cleared'])
@@ -305,6 +306,20 @@ class SharedSystemConceptTests(APITestCase):
         invitation.save()
         self.assertEqual(self.client.get(f'{URL}{self.project.pk}/papers/{row.pk}/').status_code, 401)
         self.client.credentials()
+
+    def test_panelist_file_access_honors_shared_defense_material_setting(self):
+        self.hearing(evaluated=False)
+        hearing = services.latest(self.project)
+        requirements = hearing.shared_requirements_snapshot
+        requirements[0]['is_defense_material'] = False
+        hearing.shared_requirements_snapshot = requirements
+        hearing.save(update_fields=['shared_requirements_snapshot'])
+        paper = SectionConceptPaper.objects.filter(concept__round=hearing).first()
+        self.client.force_authenticate(self.panelist)
+        for route in (f'{URL}{self.project.pk}/papers/{paper.pk}/', f'/api/media/files/{paper.file.name}'):
+            self.assertEqual(self.client.get(route).status_code, 404)
+        self.client.force_authenticate(self.pm)
+        self.assertEqual(self.client.get(f'{URL}{self.project.pk}/papers/{paper.pk}/').status_code, 200)
 
     def test_paper_replacement_keeps_history_and_requires_fresh_review(self):
         self.prepare_shared()

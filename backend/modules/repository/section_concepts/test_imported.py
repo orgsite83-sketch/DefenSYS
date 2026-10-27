@@ -41,6 +41,23 @@ class ImportedSharedProposalTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         return response.data
 
+    def test_configured_section_form_activates_imported_proposals_only_on_pm_upload(self):
+        from . import shared_deliverables as shared
+        from defense.shared_deliverables import validate_shared_deliverables
+        self.stage.shared_deliverables = validate_shared_deliverables([{
+            'deliverable_id': 'SECTION_FORM', 'label': 'Section form', 'required': True,
+            'deliverable_type': 'pre', 'file_format': 'pdf', 'file_policy': {'mode': 'single'}}], self.stage.concept_config)
+        self.stage.save(update_fields=['shared_deliverables'])
+        profile = shared.resolve(self.team, self.stage)
+        self.assertIsNotNone(profile['pending_import'])
+        self.assertEqual(len(profile['systems']), 3)
+        self.assertFalse(SectionConceptProject.objects.exists())
+        state = shared.payload(profile, self.student)
+        shared.upload(self.team, self.stage, self.student, 'SECTION_FORM', 'primary',
+            SimpleUploadedFile('section.pdf', b'%PDF-1.4 section form'), state['review_token'])
+        self.assertTrue(SectionConceptProject.objects.exists())
+        self.assertEqual(len(shared.resolve(self.team, self.stage)['systems']), 3)
+
     def save(self, state, **values):
         return self.client.post(URL, {'team_id': self.team.pk, 'stage_label': self.stage.label,
             'review_token': state['review_token'], **values}, format='json')

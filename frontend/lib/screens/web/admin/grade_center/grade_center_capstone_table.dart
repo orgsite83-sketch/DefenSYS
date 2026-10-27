@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../services/grade_center_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/dialogs/confirm_dialog.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import 'grade_center_shared.dart';
 import '../widgets/defensys_admin_shell.dart';
 
@@ -660,7 +662,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                           scale: 0.75,
                           child: Switch(
                             value: row.peerGradingEnabled,
-                            activeColor: const Color(0xFF047857),
+                            activeThumbColor: const Color(0xFF047857),
                             onChanged: (!state.isSaving && !isComplete)
                                 ? (val) => onPeerGradingChanged!(row, val)
                                 : null,
@@ -671,36 +673,16 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                     ),
                   ],
 
-                  // Quick Inspection Action: View Details
+                  // Open the event's grade workspace; workflow actions stay here.
                   Tooltip(
-                    message: 'View Stage Details',
+                    message: 'Open grades',
                     waitDuration: const Duration(milliseconds: 300),
-                    child: InkWell(
-                      onTap: () => onOpenStage(row),
-                      borderRadius: BorderRadius.circular(7),
-                      child: Container(
+                    child: DefensysShadcnScope(
+                      child: ShadButton.outline(
                         height: 36,
-                        width: 36,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? DefensysTokens.mistInputFill
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(7),
-                          border: Border.all(
-                            color: isDark
-                                ? DefensysTokens.mistBorder
-                                : const Color(0xFFD0D5DD),
-                            width: 1,
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.visibility_outlined,
-                          size: 17,
-                          color: isDark
-                              ? DefensysTokens.mistTextPrimary
-                              : const Color(0xFF344054),
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        onPressed: () => onOpenStage(row),
+                        child: const Text('Open grades'),
                       ),
                     ),
                   ),

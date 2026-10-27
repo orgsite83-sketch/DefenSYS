@@ -86,7 +86,7 @@ void main() {
 
     // Verify State 2: Login Form Card
     expect(find.text('Welcome back'), findsOneWidget);
-    expect(find.text('Student ID or Email'), findsOneWidget);
+    expect(find.text('Username'), findsOneWidget);
     expect(find.text('Password'), findsWidgets);
     expect(find.text('Sign In'), findsOneWidget);
 

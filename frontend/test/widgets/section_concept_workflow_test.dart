@@ -109,6 +109,34 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(resetApiHttpClientForTesting);
 
+  testWidgets('assigned shared systems load configured uploads without requiring concept selection', (tester) async {
+    final requests = <String>[];
+    setApiHttpClientForTesting(MockClient((request) async {
+      requests.add(request.url.path);
+      return http.Response(jsonEncode({'projects': [], 'tasks': [], 'shared_contexts': [{
+        'team_id': 5, 'section': 'BSIT-2A', 'stage_label': 'Project Proposal', 'context_id': 8,
+        'scope': 'pit', 'imported': false, 'concept_selection_enabled': false,
+        'project_manager_id': 1, 'project_manager_name': 'Gabriel Navarro',
+        'systems': [{'key': 'assigned', 'title': 'Existing shared system'}],
+        'requirements': [{'deliverable_id': 'FORM', 'label': 'Section endorsement', 'required': true,
+          'deliverable_type': 'pre', 'status': 'missing', 'file_policy': {'mode': 'single'},
+          'documents': [{'key': 'primary', 'label': 'Section endorsement', 'file_format': 'pdf',
+            'max_file_size': 52428800, 'can_upload': true}]}],
+      }]}), 200);
+    }));
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pumpDefensysWidget(tester, const SectionIntegrationTab(studentData: {
+      'student': {'is_project_manager': true}, 'team': {'id': 5, 'section': 'BSIT-2A'},
+    }), overrides: [authProvider.overrideWith(_Student.new), studentTeamsProvider.overrideWith(_IntegrationTeams.new)]);
+    expect(requests, ['/api/repository/section-concepts/']);
+    expect(find.text('Upload Section endorsement'), findsOneWidget);
+    expect(find.text('Existing shared system'), findsOneWidget);
+    expect(find.text('PM: Gabriel Navarro'), findsOneWidget);
+    expect(find.textContaining('Attempt'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shared progress and names follow four configured alternatives', (tester) async {
     final project = projectFixture()
       ..['endorsed'] = false

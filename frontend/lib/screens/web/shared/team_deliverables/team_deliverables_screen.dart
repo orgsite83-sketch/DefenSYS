@@ -16,6 +16,7 @@ import 'components/faculty_teams_overview_export.dart';
 import 'components/cohort_submissions_matrix.dart';
 import 'deliverables_view_types.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
+import 'package:defensys/widgets/repository/shared_deliverables_panel.dart';
 import 'package:defensys/widgets/repository/requirement_summary.dart';
 import 'package:defensys/models/team_workflow_status.dart';
 import '../../faculty/team_roster_screen.dart';
@@ -232,6 +233,15 @@ class _TeamDeliverablesScreenState
           return (stage['concept_workflow'] as Map?)?['enabled'] == true ||
               TeamWorkflowStatus.items(stage).any(isConceptRequirement);
         });
+    final sharedChecklists = <String, Map<String, dynamic>>{};
+    for (final team in state.teams) {
+      final stage = DeliverablesTriageHelper.resolveActiveStage(team);
+      final summary = stage?['shared_deliverables_summary'];
+      if (summary is Map && (stage?['concept_workflow'] as Map?)?['enabled'] != true) {
+        final row = Map<String, dynamic>.from(summary);
+        sharedChecklists['${row['section_id']}-${row['context_id']}'] = row;
+      }
+    }
 
     final String pageTitle;
     final String pageSubtitle;
@@ -502,6 +512,9 @@ class _TeamDeliverablesScreenState
                       .fetchDeliverables(),
                 ),
               ),
+          for (final summary in sharedChecklists.values)
+            SharedDeliverablesSection(key: ValueKey('${summary['section_id']}-${summary['context_id']}'),
+              teamId: summary['team_id'] as int, stageLabel: '${summary['stage_label']}', summary: summary),
           state.isLoading
               ? const Center(
                   child: Padding(

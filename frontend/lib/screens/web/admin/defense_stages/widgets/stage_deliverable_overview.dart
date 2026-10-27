@@ -1,7 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../../theme/defensys_tokens.dart';
 import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+
+class StageDeliverableSectionHeader extends StatelessWidget {
+  const StageDeliverableSectionHeader({
+    super.key,
+    required this.heading,
+    this.action,
+  });
+
+  final Widget heading;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (constraints.maxWidth < 600) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            heading,
+            if (action != null) ...[const SizedBox(height: 8), action!],
+          ],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: heading),
+          if (action != null) ...[const SizedBox(width: 8), action!],
+        ],
+      );
+    },
+  );
+}
 
 class StageDeliverableCounts extends StatelessWidget {
   const StageDeliverableCounts({
@@ -21,27 +54,26 @@ class StageDeliverableCounts extends StatelessWidget {
     final post = deliverables
         .where((item) => item['deliverable_type'] == 'post')
         .length;
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
         children: [
-          _count(theme, 'Pre-defense', pre),
-          _count(theme, 'Post-defense', post),
-          if (minutesRequired) _count(theme, 'Signed minutes', 1),
+          _count(context, 'Pre-defense', pre),
+          _count(context, 'Post-defense', post),
+          if (minutesRequired) _count(context, 'Signed minutes', 1),
         ],
       ),
     );
   }
 
-  Widget _count(ThemeData theme, String label, int count) => Container(
+  Widget _count(BuildContext context, String label, int count) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: DefensysTokens.surfaceOf(context),
       borderRadius: BorderRadius.circular(7),
-      border: Border.all(color: const Color(0xFFE2E8F0)),
+      border: Border.all(color: DefensysTokens.borderOf(context)),
       boxShadow: const [
         BoxShadow(
           color: Color(0x06000000),
@@ -52,10 +84,10 @@ class StageDeliverableCounts extends StatelessWidget {
     ),
     child: Text(
       '$label: $count',
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        color: Color(0xFF334155),
+        color: DefensysTokens.textSecondaryOf(context),
       ),
     ),
   );
@@ -72,6 +104,8 @@ class StageDeliverableOverview extends StatelessWidget {
     required this.onSelect,
     required this.buildEditor,
     this.showDoneEditingButton = true,
+    this.showGroupHeading = true,
+    this.showReviewHint = true,
   });
 
   final List<Map<String, dynamic>> items;
@@ -80,6 +114,8 @@ class StageDeliverableOverview extends StatelessWidget {
   final ValueChanged<Map<String, dynamic>?> onSelect;
   final Widget Function(Map<String, dynamic> item, int index) buildEditor;
   final bool showDoneEditingButton;
+  final bool showGroupHeading;
+  final bool showReviewHint;
 
   @override
   Widget build(BuildContext context) {
@@ -92,23 +128,24 @@ class StageDeliverableOverview extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final (title, groupItems) in groups) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
-            child: Text(
-              '$title (${groupItems.length})',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: const Color(0xFF475569),
-                fontWeight: FontWeight.w700,
+          if (showGroupHeading)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+              child: Text(
+                '$title (${groupItems.length})',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: DefensysTokens.textSecondaryOf(context),
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
-          if (!isPost && groupItems.isNotEmpty)
+          if (showReviewHint && !isPost && groupItems.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
               child: Text(
                 'Required files need faculty acceptance before endorsement and scheduling.',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFF64748B),
+                  color: DefensysTokens.textSecondaryOf(context),
                 ),
               ),
             ),
@@ -227,21 +264,25 @@ class StageCompactRecordRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: Color(0xFFE2E8F0)),
+          side: BorderSide(color: DefensysTokens.borderOf(context)),
         ),
         elevation: 0,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(8),
-          hoverColor: const Color(0xFFF8FAFC),
+          hoverColor: DefensysTokens.backgroundOf(context),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             child: Row(
               children: [
-                Icon(icon, size: 18, color: const Color(0xFF475569)),
+                Icon(
+                  icon,
+                  size: 18,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -251,10 +292,10 @@ class StageCompactRecordRow extends StatelessWidget {
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -262,9 +303,9 @@ class StageCompactRecordRow extends StatelessWidget {
                         summary,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11.5,
-                          color: Color(0xFF64748B),
+                          color: DefensysTokens.textSecondaryOf(context),
                         ),
                       ),
                     ],

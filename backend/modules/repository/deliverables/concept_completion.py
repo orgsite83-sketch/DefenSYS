@@ -81,5 +81,5 @@ def final_paper_complete(team, stage, *, required=False):
 
 
 def shared_final_complete(round):
-    return bool(round.selected_key and round.systems.filter(key=round.selected_key,
-        papers__purpose='final', papers__is_current=True, papers__status='accepted').exists())
+    from repository.section_concepts.shared_deliverables import round_complete
+    return bool(round.selected_key and round_complete(round, 'post'))

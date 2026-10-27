@@ -5,6 +5,7 @@ from grading.rubrics.models import Rubric
 
 from .models import PitEventGradingConfig, PitEventDeliverable
 from defense.deliverable_timing import validate_timing
+from defense.shared_deliverables import shared_definitions
 
 
 DEFAULT_PIT_PANEL_WEIGHT = 80
@@ -73,6 +74,9 @@ def check_pit_event_locked(config, semester=None):
 
     if config.is_officially_complete:
         return True, 'This PIT event is officially complete for the active semester.'
+    from repository.section_concepts.models import SharedDeliverableSet
+    if SharedDeliverableSet.objects.filter(pit_event_config=config).exists():
+        return True, 'A section has started shared deliverable submissions for this PIT event.'
     from repository.deliverables.models import ConceptRound
     from repository.section_concepts.models import SectionConceptProject
     if SectionConceptProject.objects.filter(pit_event_config=config).exists():
@@ -122,6 +126,7 @@ def upsert_pit_event_config(
     deliverables=None,
     peer_grading_enabled=None,
     concept_config=None,
+    shared_deliverables=None,
     project_setup_policy=None,
     user=None,
     request=None,
@@ -190,6 +195,13 @@ def upsert_pit_event_config(
     from defense.document_policy import validate_concept_config, validate_file_policy, with_concept_papers
     concept_config = validate_concept_config(
         concept_config if concept_config is not None else getattr(existing_config, 'concept_config', {}))
+    if shared_deliverables is not None:
+        from defense.shared_deliverables import validate_shared_deliverables, shared_definitions
+        shared_deliverables = validate_shared_deliverables(shared_deliverables, concept_config)
+        if existing_config:
+            shared_locked, shared_reason = check_pit_event_locked(existing_config)
+            if shared_locked and shared_deliverables != validate_shared_deliverables(shared_definitions(existing_config), existing_config.concept_config):
+                raise ValidationError(f'Cannot modify shared deliverables: {shared_reason}')
     concept_deliverables = deliverables if deliverables is not None else (
         list(existing_config.deliverables.values())
         if existing_config else [])
@@ -284,6 +296,8 @@ def upsert_pit_event_config(
         'panel_weight': panel_weight,
         'peer_weight': peer_weight,
     }
+    if shared_deliverables is not None:
+        defaults['shared_deliverables'] = shared_deliverables
     if project_setup_policy is not None:
         defaults['project_setup_policy'] = project_setup_policy
     if event_code is not None:
@@ -503,6 +517,7 @@ def pit_event_config_payload(config):
         'is_officially_complete': config.is_officially_complete,
         'peer_grading_enabled': config.peer_grading_enabled,
         'concept_config': config.concept_config,
+        'shared_deliverables': shared_definitions(config),
         'team_membership_policy': config.team_membership_policy,
         'project_setup_policy': config.project_setup_policy,
         'roster_setup_opened': config.section_rosters.filter(started_at__isnull=False).exists(),

@@ -87,6 +87,7 @@ class DeliverableUploadTile extends StatelessWidget {
     required this.onUpload,
     this.status,
     this.enabled = true,
+    this.maxFileSizeMb = 50,
   });
 
   final String title;
@@ -94,6 +95,7 @@ class DeliverableUploadTile extends StatelessWidget {
   final VoidCallback onUpload;
   final String? status;
   final bool enabled;
+  final int maxFileSizeMb;
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +142,7 @@ class DeliverableUploadTile extends StatelessWidget {
                         ),
                       TextSpan(
                         text:
-                            '${status == null ? 'Accepted: ' : ''}$formats · Max 50 MB',
+                            '${status == null ? 'Accepted: ' : ''}$formats · Max $maxFileSizeMb MB',
                       ),
                     ],
                   ),

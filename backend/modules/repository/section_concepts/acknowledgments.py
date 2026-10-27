@@ -37,8 +37,11 @@ def can_acknowledge(actor, project):
 
 @read_memoize(copy=True)
 def version_snapshot(round):
+    from .shared_deliverables import content_snapshot, round_complete
     # Status/reviewer changes and roster additions do not change the content read.
     return {'round_id': round.pk,
+        'shared_documents': content_snapshot(round, include_status=False),
+        'shared_available': round_complete(round, accepted=None),
         'systems': list(round.systems.order_by('key').values('id', 'key', 'title')),
         'papers': list(SectionConceptPaper.objects.filter(concept__round=round, is_current=True)
                       .order_by('concept__key').values('id', 'concept_id', 'revision'))}
@@ -49,6 +52,8 @@ def fingerprint(state):
 
 
 def available(state):
+    if 'shared_available' in state:
+        return bool(state['systems'] and all(s['title'].strip() for s in state['systems']) and state['shared_available'])
     return (bool(state['systems']) and all(s['title'].strip() for s in state['systems'])
         and len(state['papers']) == len(state['systems'])
         and {p['concept_id'] for p in state['papers']} == {s['id'] for s in state['systems']})
@@ -61,11 +66,18 @@ def acknowledged(round, faculty_id, *, state=None):
         return False
     if round.acknowledgments.filter(faculty_id=faculty_id, fingerprint=fingerprint(state)).exists():
         return True
+    # Existing acknowledgments hashed the original titles/papers contract.
+    # Honor them only for identical content, with no new generic documents.
+    if all(row['legacy'] for row in state.get('shared_documents', [])):
+        legacy_state = {key: value for key, value in state.items() if key not in ('shared_documents', 'shared_available')}
+        if round.acknowledgments.filter(faculty_id=faculty_id, fingerprint=fingerprint(legacy_state)).exists():
+            return True
     # The assigned reviewer has already read these exact papers by accepting them.
     # Confirming names or another faculty member's acceptance alone is insufficient.
-    return (not round.systems.exclude(confirmed=True).exists()
-        and SectionConceptPaper.objects.filter(pk__in=[p['id'] for p in state['papers']],
-            reviewed_by_id=faculty_id, status='accepted').count() == len(state['systems']))
+    from .shared_deliverables import content_snapshot, round_complete
+    files = content_snapshot(round)
+    return (not round.systems.exclude(confirmed=True).exists() and round_complete(round)
+        and all(row['status'] == 'accepted' and row['reviewed_by_id'] == faculty_id for row in files))
 
 
 def summary(round, *, team=None, actor=None):

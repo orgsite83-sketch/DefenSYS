@@ -93,12 +93,67 @@ class _Options extends AuthenticatedHttpClient {
           'teams': [],
           'students': [],
           'stages': [],
+          'pit_events': [
+            {
+              'id': 8,
+              'label': 'Prototype showcase',
+              'semester_id': 3,
+              'year_level': '2nd Year',
+              'scope': 'pit',
+            },
+          ],
         }),
         200,
       );
 }
 
 void main() {
+  testWidgets(
+    'event masterlist configures exports locally with current filters',
+    (tester) async {
+      tester.view.physicalSize = const Size(1440, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final reports = _Reports();
+      await pumpDefensysWidget(
+        tester,
+        const ReportExportMenu(
+          reportId: 'student-grade-masterlist',
+          configureExport: true,
+          params: {
+            'scope': 'pit',
+            'semester_id': '3',
+            'pit_event_config_id': '8',
+            'year_level': '2nd Year',
+            'coverage': 'assessment',
+            'detail_level': 'full',
+            'search': 'Karen',
+          },
+        ),
+        overrides: [
+          authProvider.overrideWith(() => FakeAuthNotifier({'role': 'admin'})),
+          academicPeriodProvider.overrideWith(FakeAcademicPeriodNotifier.new),
+          reportsProvider.overrideWith(() => reports),
+          authenticatedHttpClientProvider.overrideWith((ref) => _Options(ref)),
+        ],
+      );
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Configure export'));
+      await tester.pumpAndSettle();
+      expect(find.text('EXPORT FILTERS'), findsOneWidget);
+      expect(reports.endpoint, 'grade-masterlist/');
+      expect(reports.params?['semester_id'], '3');
+      expect(reports.params?['pit_event_config_id'], '8');
+      expect(reports.params?['coverage'], 'assessment');
+      expect(reports.params?['detail_level'], 'full');
+      expect(reports.params?['search'], 'Karen');
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Cancel').last);
+      await tester.pumpAndSettle();
+    },
+  );
   testWidgets(
     'Projects & Concepts appears in the Report Center category and search',
     (tester) async {

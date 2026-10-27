@@ -51,7 +51,7 @@ class TeamWorkflowStatus {
     'concept_review_pending' =>
       'Review the current concept papers and resolve any requested corrections.',
     'shared_clearance_pending' =>
-      'Team endorsed. Waiting for the required shared papers to be accepted.',
+      'Team endorsed. Waiting for the required shared documents to be accepted.',
     'shared_acknowledgment_pending' =>
       'Team endorsed. The assigned adviser/instructor needs to review and acknowledge the current shared proposals.',
     'ready_to_schedule_redefense' =>
@@ -450,6 +450,7 @@ class TeamWorkflowStatus {
       );
     }
     final missingPostFiles =
+        (stage['shared_deliverables_summary'] is Map && stage['shared_deliverables_summary']['post_complete'] == false) ||
         stage['archive_complete'] == false ||
         items(stage).any(
           (item) =>
@@ -539,6 +540,10 @@ class TeamWorkflowStatus {
     if (stage['endorsed'] == true ||
         const {'endorsed', 'ready', 'scheduling_eligible'}.contains(detail) ||
         scope == 'pit' && stage['endorsement_required'] == false) {
+      final shared = stage['shared_deliverables_summary'];
+      if (shared is Map && shared['pre_complete'] == false) {
+        return const TeamWorkflowStatus('shared_clearance_pending', 'Shared documents pending', WorkflowStatusTone.attention);
+      }
       return describe('ready_to_schedule');
     }
 

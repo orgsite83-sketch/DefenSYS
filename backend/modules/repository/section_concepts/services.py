@@ -189,7 +189,12 @@ def invalidate(round, *, modules=False):
 
 @read_memoize(copy=True)
 def snapshot(round):
-    return {'teams': list(active_links(round.project).order_by('team_id').values('team_id', 'project_version')),
+    from .shared_deliverables import content_snapshot, for_round
+    profile = for_round(round)
+    teams = ([{'team_id': item['id'], 'project_version': item['version']} for item in profile['team_snapshot']]
+        if profile and profile.get('historical') else list(active_links(round.project).order_by('team_id').values('team_id', 'project_version')))
+    return {'teams': teams,
+        'shared_documents': content_snapshot(round),
         'systems': sorted(round.systems.values('id', 'key', 'title', 'confirmed'), key=lambda s: int(s['key'][1:])),
         'papers': list(SectionConceptPaper.objects.filter(concept__round=round, purpose='proposal', is_current=True).order_by(
             'concept__key').values('id', 'concept_id', 'revision', 'status'))}
@@ -205,13 +210,16 @@ def shared_clearance(round, *, state=None):
         return False
     state = state if state is not None else snapshot(round)
     if round.verdict == 'approved_with_revisions':
-        return bool(round.revisions_cleared_at and round.endorsement_snapshot == state)
+        stored = round.endorsement_snapshot
+        comparable = state
+        if 'shared_documents' not in stored and all(row['legacy'] for row in state['shared_documents']):
+            comparable = {key: value for key, value in state.items() if key != 'shared_documents'}
+        return bool(round.revisions_cleared_at and stored == comparable)
+    from .shared_deliverables import round_complete
     systems = state['systems']
-    papers = state['papers']
     return bool(systems and {s['key'] for s in systems} == set(round_keys(round))
         and all(s['confirmed'] and s['title'].strip() for s in systems)
-        and len(papers) == len(systems) and {p['concept_id'] for p in papers} == {s['id'] for s in systems}
-        and all(p['status'] == 'accepted' for p in papers))
+        and round_complete(round))
 
 
 @read_memoize(copy=True)
@@ -222,8 +230,13 @@ def review_summary(round, *, team=None, actor=None):
         'names_confirmed': sum(bool(s['confirmed'] and s['title'].strip()) for s in state['systems']),
         'papers_uploaded': len(state['papers']),
         'papers_accepted': sum(p['status'] == 'accepted' for p in state['papers'])}
+    from .shared_deliverables import document_progress, for_round
+    profile = for_round(round)
+    if profile:
+        progress.update(document_progress(profile))
     cleared = shared_clearance(round, state=state)
-    statuses = [p['status'] for p in state['papers']]
+    from .shared_deliverables import round_complete
+    statuses = [p['status'] for p in state['shared_documents']]
     code, label = (
         ('failed', 'Shared system not approved') if round.verdict in ('failed', 'project_rejected') else
         ('revisions_pending', 'Shared system revisions pending') if round.verdict == 'approved_with_revisions' and not round.revisions_cleared_at else
@@ -232,7 +245,7 @@ def review_summary(round, *, team=None, actor=None):
         ('selected', 'Shared system selected') if round.verdict == 'approved' and cleared else
         ('cleared', 'Shared papers cleared for hearing') if cleared else
         ('changes_requested', 'Shared paper corrections requested') if 'rejected' in statuses else
-        ('awaiting_files', 'Shared papers awaiting upload') if len(statuses) < len(state['systems']) else
+        ('awaiting_files', 'Shared documents awaiting upload') if not round_complete(round, accepted=False) else
         ('needs_review', 'Shared papers awaiting review') if 'pending' in statuses else
         ('needs_review', 'Shared titles awaiting confirmation'))
     from .acknowledgments import summary as acknowledgment_summary
@@ -407,6 +420,16 @@ def team_display(team, label=None):
         return {'system_name': selected.title if selected else '',
                 'project_manager_name': project.project_manager.get_full_name() or project.project_manager.username,
                 'section_project_id': project.pk}
+    if context_label:
+        from repository.deliverables.concepts import stage_for
+        from .shared_deliverables import resolve
+        profile = resolve(team, stage_for(team, context_label))
+        if profile and profile['round'] and profile['round'].selected_key:
+            selected = next((s for s in profile['systems'] if s['key'] == profile['round'].selected_key), None)
+            if selected:
+                return {'system_name': selected['title'],
+                    'project_manager_name': profile['manager'].get_full_name() or profile['manager'].username,
+                    'section_project_id': profile['project'].pk}
     return {}
 
 
@@ -586,7 +609,9 @@ def review(project, actor, paper_id, status, feedback=''):
     if row.purpose == 'proposal':
         invalidate(round)
     elif status == 'accepted' and round.verdict == 'approved_with_revisions' and not round.revisions_cleared_at:
-        clear_revisions(project, actor, feedback.strip() or 'Accepted the approved shared system concept paper and verified the required corrections.')
+        from .shared_deliverables import round_complete
+        if round_complete(round, 'post'):
+            clear_revisions(project, actor, feedback.strip() or 'Accepted the approved shared system concept paper and verified the required corrections.')
     audit(actor, 'paper_reviewed', row, status=status, feedback=feedback)
 
 
@@ -602,8 +627,9 @@ def clear_revisions(project, actor, remarks):
         raise ValidationError('Record how the panel’s shared system revisions were satisfied.')
     paper = SectionConceptPaper.objects.filter(concept__round=round, concept__key=round.selected_key, purpose='final',
         is_current=True, status='accepted').first()
-    if not paper:
-        raise ValidationError('Review and accept the final approved concept paper for the selected system first.')
+    from .shared_deliverables import round_complete
+    if not round_complete(round, 'post'):
+        raise ValidationError('Review and accept all required shared post-defense documents first.')
     from student_teams.models import StudentTeam
     # A concurrent module verdict locks its team before reading shared clearance.
     # Lock participants before reading their grades to avoid applying stale outcomes.
@@ -619,7 +645,7 @@ def clear_revisions(project, actor, remarks):
         if grade:
             _apply_team_result_from_grade(grade)
             maybe_auto_finalize_passed_grade(grade, user=actor)
-    audit(actor, 'shared_revisions_cleared', round, remarks=remarks, paper_id=paper.pk)
+    audit(actor, 'shared_revisions_cleared', round, remarks=remarks, paper_id=paper.pk if paper else None)
 
 
 def module_pass_allowed(grade):
@@ -987,7 +1013,7 @@ def task_payload(user):
                 tasks.append({'project_id': project.pk, 'section': project.section.section,
                     'stage_label': project.context.label, 'round': round.number,
                     'role': 'project_manager' if manager else 'reviewer',
-                    'title': 'Submit approved shared concept paper' if manager else 'Review approved shared concept paper',
+                    'title': 'Submit shared post-defense documents' if manager else 'Review shared post-defense documents',
                     'status': 'final_paper_pending' if access['unlocked'] else 'section_defense_pending',
                     'status_label': 'Final paper pending' if access['unlocked'] else 'Waiting for section defense completion'})
             continue
@@ -995,10 +1021,11 @@ def task_payload(user):
         reviewer = getattr(user, 'role', '') == 'faculty' and is_reviewer(user, project)
         if manager or reviewer or acknowledgment_pending:
             state = snapshot(round)
-            statuses = [paper['status'] for paper in state['papers']]
+            from .shared_deliverables import round_complete
+            statuses = [paper['status'] for paper in state['shared_documents']]
             status = ('awaiting_shared_acknowledgment' if shared_clearance(round) and acknowledgment_pending else
                 'shared_revisions_pending' if round.verdict == 'approved_with_revisions' else
-                'papers_missing' if len(statuses) < len(state['systems']) else 'corrections_requested' if 'rejected' in statuses else
+                'papers_missing' if not round_complete(round, accepted=None) else 'corrections_requested' if 'rejected' in statuses else
                 'awaiting_faculty_review' if 'pending' in statuses else
                 'awaiting_name_confirmation' if not all(c['confirmed'] for c in state['systems']) else
                 'cleared')
@@ -1007,9 +1034,9 @@ def task_payload(user):
                 'role': 'project_manager' if manager else 'reviewer' if reviewer else 'adviser',
                 'title': (('Submit revised shared system paper' if manager else 'Review and clear shared system revisions')
                     if round.verdict == 'approved_with_revisions' else
-                    f'Submit {len(state["systems"])} shared system concept papers' if manager else
+                    'Submit configured shared system documents' if manager else
                     'Review and acknowledge shared system alignment' if acknowledgment_pending and not reviewer else
-                    'Confirm system names and review shared concept papers'),
+                    'Confirm system names and review shared documents'),
                 'status': status, 'status_label': status.replace('_', ' ')})
     return tasks
 
@@ -1125,7 +1152,13 @@ def payload(project, actor):
         manager_options = [{'id': u.pk, 'name': u.get_full_name() or u.username} for u in managers.order_by('username')]
         reviewer_options = [{'id': u.pk, 'name': u.get_full_name() or u.username} for u in reviewers.order_by('username')]
     shared_review = review_summary(round, actor=actor)
+    progress = shared_review['review_progress']
     reviewer = effective_reviewer(project)
+    from . import shared_deliverables
+    shared_profile = shared_deliverables.for_round(round)
+    shared_documents = shared_deliverables.payload(shared_profile, actor) if shared_profile and actor and (
+        shared_deliverables.staff_access(actor, shared_profile) or shared_deliverables.member_access(actor, shared_profile)
+        or shared_deliverables.panel_access(actor, shared_profile)) else None
     from .acknowledgments import pit_instructors
     return {'id': project.pk, 'section': project.section.section, 'year_level': project.section.year_level,
         'configured_count': context.concept_config.get('required_count', 3),
@@ -1147,6 +1180,7 @@ def payload(project, actor):
         'post_unlocked': post_access['unlocked'], 'post_unavailable_reason': post_access['reason'],
         'shared_final_archived': shared_final_complete(round),
         'shared_review': shared_review, 'editable': editable_now,
+        'shared_deliverables': shared_documents,
         'review_progress': progress,
         'can_endorse': False,
         'shared_revisions_pending': round.verdict == 'approved_with_revisions' and not round.revisions_cleared_at,

@@ -2,6 +2,7 @@ import 'widgets/stage_minutes_settings.dart';
 import 'widgets/stage_outcome_settings.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
+import '../../../../widgets/repository/shared_deliverables_editor.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -82,6 +83,7 @@ class _DefenseStageEditorScreenState
   String? _error;
   int? _semesterId;
   List<Map<String, dynamic>> _deliverables = [];
+  List<Map<String, dynamic>> _sharedDeliverables = [];
   Map<String, dynamic>? _selectedDeliverable;
   bool _minutesExpanded = false;
   Map<String, dynamic>? _stage;
@@ -128,6 +130,7 @@ class _DefenseStageEditorScreenState
       'minutes_deliverable_id': _minutesNumber.text,
       'minutes_deliverable_label': _minutesName.text,
       'deliverables': _deliverables,
+      'shared_deliverables': sharedDeliverablePayload(_sharedDeliverables),
       'rubric_assignment_changes': _editedRubricRoles.toList(),
       'rubric_assignment_base': _serverRubricIds,
       'grading_config': {
@@ -416,6 +419,8 @@ class _DefenseStageEditorScreenState
     _orderPosition = _asInt(stage['display_order']) ?? 1;
     _isActive = stage['is_active'] != false;
     _conceptConfig = Map<String, dynamic>.from(stage['concept_config'] as Map? ?? {});
+    _sharedDeliverables = sharedDeliverableValues(stage['shared_deliverables'] ??
+        (_conceptConfig['enabled'] == true ? defaultSharedDeliverables() : []));
     _qualifyingScore.text = stage['qualifying_score']?.toString() ?? '';
     _scoreCarryover = stage['score_carryover']?.toString() ?? _conceptConfig['score_carryover']?.toString() ?? 'reassess';
     _minutesRequired = stage['minutes_required'] == true;
@@ -571,6 +576,7 @@ class _DefenseStageEditorScreenState
             'minutes_deliverable_id': _minutesNumber.text.trim(),
             'minutes_deliverable_label': _minutesName.text.trim(),
             'deliverables': _deliverables,
+            'shared_deliverables': sharedDeliverablePayload(_sharedDeliverables),
             if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
           },
         );
@@ -843,7 +849,7 @@ class _DefenseStageEditorScreenState
                       child: _buildTabBar(
                         activeTab: _activeTab,
                         hasWeightError: hasWeightError,
-                        deliverableCount: _deliverables.length + (_minutesRequired == true ? 1 : 0),
+                        deliverableCount: _deliverables.length + _sharedDeliverables.length + (_minutesRequired == true ? 1 : 0),
                         onTabSelected: (tab) => setState(() => _activeTab = tab),
                       ),
                     ),
@@ -909,6 +915,9 @@ class _DefenseStageEditorScreenState
                               const SizedBox(height: 12),
                               ConceptSettings(value: _conceptConfig, enabled: !_isLocked, onChanged: (value) {
                                 setState(() {
+                                  if (_conceptConfig['enabled'] != true && value['enabled'] == true && _sharedDeliverables.isEmpty) {
+                                    _sharedDeliverables = defaultSharedDeliverables();
+                                  }
                                   _conceptConfig = value;
                                   ensureConceptPapers(_deliverables, value);
                                   if (!_deliverables.contains(_selectedDeliverable)) _selectedDeliverable = null;
@@ -1037,7 +1046,7 @@ class _DefenseStageEditorScreenState
                                 },
                               ),
                               StageDeliverableCounts(
-                                deliverables: _deliverables,
+                                deliverables: [..._deliverables, ..._sharedDeliverables],
                                 minutesRequired: _minutesRequired == true,
                               ),
                               _buildDeliverableSection(
@@ -1047,7 +1056,7 @@ class _DefenseStageEditorScreenState
                                 accentColor: const Color(0xFF0F172A),
                                 bgHeaderColor: const Color(0xFFF8FAFC),
                                 borderColor: const Color(0xFFE2E8F0),
-                                count: preDeliverables.length,
+                                count: preDeliverables.length + _sharedDeliverables.where((row) => row['deliverable_type'] == 'pre').length,
                                 buttonText: 'Add Pre-Defense',
                                 onAdd: _isLocked
                                     ? () {}
@@ -1077,6 +1086,7 @@ class _DefenseStageEditorScreenState
                                 emptyPlaceholderText: 'No pre-defense gatekeepers configured yet. (e.g. Proposal Manuscript Draft, Similarity Report)',
                                 items: preDeliverables,
                                 isPost: false,
+                                sharedChecklist: _buildSharedDeliverables('pre'),
                               ),
                               const SizedBox(height: 18),
                               _buildDeliverableSection(
@@ -1086,7 +1096,7 @@ class _DefenseStageEditorScreenState
                                 accentColor: const Color(0xFF0F172A),
                                 bgHeaderColor: const Color(0xFFF8FAFC),
                                 borderColor: const Color(0xFFE2E8F0),
-                                count: postDeliverables.length,
+                                count: postDeliverables.length + _sharedDeliverables.where((row) => row['deliverable_type'] == 'post').length,
                                 buttonText: 'Add Post-Defense',
                                 onAdd: _isLocked
                                     ? () {}
@@ -1114,6 +1124,7 @@ class _DefenseStageEditorScreenState
                                 emptyPlaceholderText: 'No post-defense deliverables configured yet. (e.g. Final Manuscript PDF, Source Code Zip, Demo Video)',
                                 items: postDeliverables,
                                 isPost: true,
+                                sharedChecklist: _buildSharedDeliverables('post'),
                                 stageDefaultNamingWidget: postDeliverables.length >= 2
                                     ? _buildStageDefaultNamingDropdown(postDeliverables)
                                     : null,
@@ -1432,6 +1443,13 @@ class _DefenseStageEditorScreenState
 
 
 
+  Widget _buildSharedDeliverables(String type) => SharedDeliverablesEditor(
+    value: _sharedDeliverables, teamDeliverables: _deliverables, deliverableType: type,
+    enabled: !_isLocked, conceptsEnabled: _conceptConfig['enabled'] == true,
+    stageLabel: _label.text,
+    onChanged: (value) { setState(() => _sharedDeliverables = value); _markDirty(); },
+  );
+
   Widget _buildDeliverableSection({
     required String title,
     required String subtitle,
@@ -1446,22 +1464,28 @@ class _DefenseStageEditorScreenState
     required List<Map<String, dynamic>> items,
     required bool isPost,
     Widget? stageDefaultNamingWidget,
+    Widget? sharedChecklist,
   }) {
     final effectiveAccent = _isDark
         ? (isPost ? const Color(0xFFF87171) : const Color(0xFF60A5FA))
         : accentColor;
     final effectiveBgHeader = _isDark
         ? (isPost
-            ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
-            : const Color(0xFF1E3A8A).withValues(alpha: 0.25))
+              ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+              : const Color(0xFF1E3A8A).withValues(alpha: 0.25))
         : bgHeaderColor;
     final effectiveBorder = _isDark
         ? (isPost
-            ? const Color(0xFFEF4444).withValues(alpha: 0.35)
-            : const Color(0xFF3B82F6).withValues(alpha: 0.35))
+              ? const Color(0xFFEF4444).withValues(alpha: 0.35)
+              : const Color(0xFF3B82F6).withValues(alpha: 0.35))
         : borderColor;
 
     return Container(
+      key: ValueKey(
+        isPost
+            ? 'post-defense-deliverables-section'
+            : 'pre-defense-deliverables-section',
+      ),
       decoration: BoxDecoration(
         color: _panelBgColor,
         borderRadius: BorderRadius.circular(10),
@@ -1474,66 +1498,76 @@ class _DefenseStageEditorScreenState
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: effectiveBgHeader,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(9),
+              ),
               border: Border(bottom: BorderSide(color: effectiveBorder)),
             ),
-            child: Row(
-              children: [
-                Icon(icon, size: 17, color: effectiveAccent),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w800,
-                              color: effectiveAccent,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: effectiveAccent.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '$count item${count == 1 ? '' : 's'}',
+            child: StageDeliverableSectionHeader(
+              heading: Row(
+                children: [
+                  Icon(icon, size: 17, color: effectiveAccent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              title,
                               style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
                                 color: effectiveAccent,
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: _textSecondaryColor,
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: effectiveAccent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '$count item${count == 1 ? '' : 's'}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: effectiveAccent,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!_isLocked)
-                  DefensysShadcnScope(
-                    child: ShadButton.outline(
-                      size: ShadButtonSize.sm,
-                      onPressed: onAdd,
-                      leading: const Icon(Icons.add, size: 14),
-                      child: Text(buttonText),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: _textSecondaryColor,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-              ],
+                ],
+              ),
+              action: _isLocked
+                  ? null
+                  : DefensysShadcnScope(
+                      child: ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        onPressed: onAdd,
+                        leading: const Icon(Icons.add, size: 14),
+                        child: Text(buttonText),
+                      ),
+                    ),
             ),
           ),
           if (stageDefaultNamingWidget != null) ...[
@@ -1544,74 +1578,93 @@ class _DefenseStageEditorScreenState
           ],
           Padding(
             padding: const EdgeInsets.all(12),
-            child: items.isEmpty
-                ? InkWell(
-                    onTap: _isLocked ? null : onAdd,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: _inputFillColor,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                items.isEmpty
+                    ? InkWell(
+                        onTap: _isLocked ? null : onAdd,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _borderColor),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            isPost ? Icons.inventory_2_outlined : Icons.folder_open_rounded,
-                            size: 16,
-                            color: _textSecondaryColor,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
                           ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              emptyPlaceholderText,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
+                          decoration: BoxDecoration(
+                            color: _inputFillColor,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: _borderColor),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                isPost
+                                    ? Icons.inventory_2_outlined
+                                    : Icons.folder_open_rounded,
+                                size: 16,
                                 color: _textSecondaryColor,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  emptyPlaceholderText,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _textSecondaryColor,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
+                      )
+                    : StageDeliverableOverview(
+                        items: items,
+                        isPost: isPost,
+                        selectedItem: _selectedDeliverable,
+                        onSelect: (item) => setState(() {
+                          _selectedDeliverable = item;
+                          if (item != null) _minutesExpanded = false;
+                          _error = null;
+                        }),
+                        showDoneEditingButton: false,
+                        buildEditor: (item, index) {
+                          final validationError = _deliverableErrorFor(item);
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (validationError != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Text(
+                                    validationError,
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
+                                    ),
+                                  ),
+                                ),
+                              _deliverableRow(
+                                item,
+                                isPost,
+                                index: index,
+                                onDone: () =>
+                                    setState(() => _selectedDeliverable = null),
+                              ),
+                            ],
+                          );
+                        },
                       ),
-                    ),
-                  )
-                : StageDeliverableOverview(
-                    items: items,
-                    isPost: isPost,
-                    selectedItem: _selectedDeliverable,
-                    onSelect: (item) => setState(() {
-                      _selectedDeliverable = item;
-                      if (item != null) _minutesExpanded = false;
-                      _error = null;
-                    }),
-                    showDoneEditingButton: false,
-                    buildEditor: (item, index) {
-                      final validationError = _deliverableErrorFor(item);
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (validationError != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Text(
-                                validationError,
-                                style: TextStyle(color: Theme.of(context).colorScheme.error),
-                              ),
-                            ),
-                          _deliverableRow(
-                            item,
-                            isPost,
-                            index: index,
-                            onDone: () => setState(() => _selectedDeliverable = null),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                if (sharedChecklist != null) ...[
+                  Divider(height: 20, color: _borderColor),
+                  sharedChecklist,
+                ],
+              ],
+            ),
           ),
         ],
       ),

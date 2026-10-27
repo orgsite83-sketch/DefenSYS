@@ -372,6 +372,7 @@ class SchedulePanelist(models.Model):
 
 
 class PitEventGradingConfig(models.Model):
+    shared_deliverables = models.JSONField(null=True, blank=True, default=None)
     semester = models.ForeignKey(
         'academic_period_management.Semester',
         related_name='pit_event_grading_configs',

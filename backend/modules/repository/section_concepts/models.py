@@ -40,6 +40,7 @@ class SectionProjectTeam(models.Model):
 
 
 class SectionConceptRound(models.Model):
+    shared_requirements_snapshot = models.JSONField(null=True, blank=True, default=None)
     project = models.ForeignKey(SectionConceptProject, on_delete=models.PROTECT, related_name='rounds')
     number = models.PositiveIntegerField(default=1)
     selected_key = models.CharField(max_length=10, blank=True, default='')
@@ -64,6 +65,12 @@ class SectionConceptRound(models.Model):
                               related_name='chaired_section_rounds')
     schedules = models.ManyToManyField('defense.DefenseSchedule', blank=True, related_name='section_concept_hearings')
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.shared_requirements_snapshot is None:
+            from defense.shared_deliverables import shared_definitions
+            self.shared_requirements_snapshot = shared_definitions(self.project.context)
+        return super().save(*args, **kwargs)
 
     class Meta:
         app_label = 'repository'
@@ -121,4 +128,58 @@ class SectionConceptPaper(models.Model):
         constraints = [
             models.UniqueConstraint(fields=['concept', 'purpose'], condition=models.Q(is_current=True), name='section_paper_current_unique'),
             models.UniqueConstraint(fields=['concept', 'purpose', 'revision'], name='section_paper_revision_unique'),
+        ]
+
+
+class SharedDeliverableSet(models.Model):
+    """A context's captured shared requirements and participating project versions."""
+    section = models.ForeignKey('student_teams.SectionAssignment', on_delete=models.PROTECT)
+    defense_stage = models.ForeignKey('defense.DefenseStage', null=True, blank=True, on_delete=models.PROTECT)
+    pit_event_config = models.ForeignKey('defense.PitEventGradingConfig', null=True, blank=True, on_delete=models.PROTECT)
+    source_project = models.ForeignKey(SectionConceptProject, null=True, blank=True, on_delete=models.PROTECT)
+    source_round = models.ForeignKey(SectionConceptRound, null=True, blank=True, on_delete=models.PROTECT)
+    identity = models.CharField(max_length=64)
+    requirements = models.JSONField(default=list)
+    team_snapshot = models.JSONField(default=list)
+    system_snapshot = models.JSONField(default=list)
+    project_manager = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                       related_name='shared_deliverable_sets')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'repository'
+        constraints = [
+            models.CheckConstraint(condition=(models.Q(defense_stage__isnull=False, pit_event_config__isnull=True) |
+                models.Q(defense_stage__isnull=True, pit_event_config__isnull=False)), name='shared_set_one_context'),
+            models.UniqueConstraint(fields=['section', 'defense_stage', 'identity'], name='shared_set_stage_identity'),
+            models.UniqueConstraint(fields=['section', 'pit_event_config', 'identity'], name='shared_set_event_identity'),
+        ]
+
+
+class SharedDeliverableFile(models.Model):
+    """Append-only files; section-wide and per-concept slots share one contract."""
+    submission_set = models.ForeignKey(SharedDeliverableSet, on_delete=models.PROTECT, related_name='files')
+    deliverable_id = models.CharField(max_length=40)
+    slot_key = models.CharField(max_length=90)
+    file = models.FileField(upload_to='shared_deliverables/%Y/%m/')
+    file_name = models.CharField(max_length=255)
+    file_size = models.PositiveBigIntegerField()
+    revision = models.PositiveIntegerField(default=1)
+    is_current = models.BooleanField(default=True)
+    status = models.CharField(max_length=20, default='pending', choices=SectionConceptPaper._meta.get_field('status').choices)
+    feedback = models.TextField(blank=True, default='')
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                    related_name='shared_deliverable_uploads')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.PROTECT, related_name='shared_deliverable_reviews')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        app_label = 'repository'
+        constraints = [
+            models.UniqueConstraint(fields=['submission_set', 'deliverable_id', 'slot_key'],
+                condition=models.Q(is_current=True), name='shared_file_current_unique'),
+            models.UniqueConstraint(fields=['submission_set', 'deliverable_id', 'slot_key', 'revision'],
+                name='shared_file_revision_unique'),
         ]

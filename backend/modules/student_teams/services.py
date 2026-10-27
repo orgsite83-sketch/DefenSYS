@@ -122,6 +122,10 @@ def is_stage_ready(team, stage):
     from repository.deliverables.concepts import clearance_blocker
     if clearance_blocker(team, stage):
         return False
+    from repository.section_concepts.shared_deliverables import resolve, required_complete as shared_complete
+    shared_profile = resolve(team, stage)
+    if shared_profile and not shared_complete(shared_profile):
+        return False
     from repository.deliverables.services import required_complete, get_deliverable_definitions_for_team
     if get_deliverable_definitions_for_team(team, stage.label) and not required_complete(team, stage.label):
         return False

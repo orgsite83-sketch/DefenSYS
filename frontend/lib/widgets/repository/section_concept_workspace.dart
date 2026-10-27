@@ -11,6 +11,7 @@ import '../../theme/defensys_button_styles.dart';
 import '../../models/team_workflow_status.dart';
 import 'workflow_status_style.dart';
 import 'shared_concept_review.dart';
+import 'shared_deliverables_panel.dart';
 import 'deliverable_file_widgets.dart';
 import 'proposal_names_editor.dart';
 import '../export/defensys_pdf_viewer.dart';
@@ -403,7 +404,7 @@ class SectionConceptOverviewState extends State<SectionConceptOverview> {
               ),
               subtitle: Text(
                 progress != null && !showReview
-                    ? '${progress['papers_accepted']}/${progress['required'] ?? 3} papers accepted · ${summary?['status_label'] ?? ''}'
+                    ? '${progress['documents_accepted'] ?? progress['papers_accepted']}/${progress['documents_required'] ?? progress['required'] ?? 3} ${progress['documents_required'] == null ? 'papers' : 'documents'} accepted · ${summary?['status_label'] ?? ''}'
                     : names.isEmpty
                     ? 'Waiting for the section project manager to propose system names.'
                     : names
@@ -758,6 +759,7 @@ class _SectionConceptWorkspaceState
   );
 
   Widget finalPaper(Map<String, dynamic> p, {bool inline = false}) {
+    if (p['shared_deliverables'] is Map) return const SizedBox.shrink();
     final selected = _rows(
       p['systems'],
     ).where((s) => s['key'] == p['selected_key']).firstOrNull;
@@ -823,6 +825,18 @@ class _SectionConceptWorkspaceState
   }
 
   Widget _sharedAcknowledgment(Map<String, dynamic> p) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _sharedFacultyAcknowledgment(p),
+      if (p['shared_deliverables'] is Map) SharedDeliverablesPanel(
+        group: Map<String, dynamic>.from(p['shared_deliverables'] as Map),
+        selectedSystemKey: selectedSystem,
+        onSystemChanged: (value) => setState(() => selectedSystem = value),
+        onChanged: (value) {setState(() => project!['shared_deliverables'] = value); load();},
+      ),
+    ]);
+  }
+
+  Widget _sharedFacultyAcknowledgment(Map<String, dynamic> p) {
     final shared = p['shared_review'] as Map? ?? {};
     if (shared['can_review_shared_context'] != true) {
       return const SizedBox.shrink();
@@ -982,7 +996,7 @@ class _SectionConceptWorkspaceState
                             const SizedBox(height: 12),
                             _sharedAcknowledgment(p),
                             if ('${p['verdict'] ?? ''}'.isEmpty && p['endorsed'] != true)
-                              Text('${(p['review_progress'] as Map?)?['papers_accepted'] ?? 0} of ${_rows(p['systems']).length} papers accepted'),
+                              Text('${(p['review_progress'] as Map?)?['documents_accepted'] ?? (p['review_progress'] as Map?)?['papers_accepted'] ?? 0} of ${(p['review_progress'] as Map?)?['documents_required'] ?? _rows(p['systems']).length} ${(p['review_progress'] as Map?)?['documents_required'] == null ? 'papers' : 'documents'} accepted'),
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
@@ -1263,7 +1277,7 @@ class _SectionConceptWorkspaceState
         systems.firstOrNull;
     final progress = p['review_progress'] as Map? ?? {};
     final accepted =
-        progress['papers_accepted'] ??
+        progress['documents_accepted'] ?? progress['papers_accepted'] ??
         systems
             .where(
               (s) => _rows(s['papers']).any(
@@ -1341,7 +1355,7 @@ class _SectionConceptWorkspaceState
               SharedSystemSelectionBanner(project: p),
               const SizedBox(height: 16),
             ],
-            Align(
+            if (p['shared_deliverables'] is! Map) Align(
               alignment: Alignment.centerLeft,
               child: IntrinsicWidth(
                 child: ShadTabs<String>(
@@ -1374,9 +1388,9 @@ class _SectionConceptWorkspaceState
                   ? 'Shared papers are cleared for hearing. Each team needs its own module review and endorsement.'
                   : !namesConfirmed
                   ? 'Confirm all required system names, then accept their current concept papers.'
-                  : accepted != systems.length
-                  ? 'Accept all required current concept papers to clear the shared papers for hearing.'
-                  : 'Confirmed titles and accepted current papers automatically clear the shared set for hearing.',
+                  : accepted != (progress['documents_required'] ?? systems.length)
+                  ? 'Accept all required current shared documents to clear the section for hearing.'
+                  : 'Confirmed titles and accepted required documents automatically clear the shared set for hearing.',
               style: TextStyle(fontSize: 12, height: 1.5, color: secondary),
             ),
             const SizedBox(height: 10),
@@ -1503,6 +1517,9 @@ class _SectionConceptWorkspaceState
   String _letter(dynamic key) => systemLetter(key);
 
   Widget _inlineSystem(Map<String, dynamic> system) {
+    if (project?['shared_deliverables'] is Map) {
+      return const SizedBox.shrink();
+    }
     final isFinal = system['paper_purpose'] == 'final';
     final papers = _rows(system['papers']);
     final paper = papers.where((p) => p['is_current'] == true).firstOrNull;
@@ -1703,6 +1720,9 @@ class _SectionConceptWorkspaceState
   }
 
   Widget _system(Map<String, dynamic> system) {
+    if (project?['shared_deliverables'] is Map) {
+      return const SizedBox.shrink();
+    }
     final isFinal = system['paper_purpose'] == 'final';
     final papers = _rows(system['papers']);
     final current = papers.where((p) => p['is_current'] == true).firstOrNull;

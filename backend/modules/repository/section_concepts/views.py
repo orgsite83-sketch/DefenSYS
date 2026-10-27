@@ -83,8 +83,17 @@ class SectionProjectListView(SectionAPIView):
         if request.query_params.get('team_id'):
             team_id = serializers.IntegerField(min_value=1).run_validation(request.query_params['team_id'])
         projects = services.visible_projects(request.user, team_id=team_id)
+        shared_contexts = []
+        if team_id:
+            from repository.deliverables.views import get_allowed_team
+            from .shared_deliverables import groups_for_team
+            try:
+                team = get_allowed_team(request, team_id)
+            except Http404:
+                team = None
+            shared_contexts = groups_for_team(team, request.user) if team else []
         return Response({'projects': [services.payload(p, request.user) for p in projects],
-                         'tasks': services.task_payload(request.user)})
+                         'shared_contexts': shared_contexts, 'tasks': services.task_payload(request.user)})
 
     @transaction.atomic
     def post(self, request):
@@ -127,7 +136,12 @@ class ImportedSectionProjectView(SectionAPIView):
 
 class SectionProjectDetailView(SectionAPIView):
     def get(self, request, project_id):
-        return Response(services.payload(self.project(request, project_id), request.user))
+        project = self.project(request, project_id)
+        value = services.payload(project, request.user)
+        from .shared_deliverables import groups_for_team
+        link = services.active_links(project).first()
+        value['shared_contexts'] = groups_for_team(link.team, request.user) if link else []
+        return Response(value)
 
     @transaction.atomic
     def post(self, request, project_id):
@@ -220,7 +234,8 @@ class SectionPaperFileView(SectionAPIView):
     def get(self, request, project_id, paper_id):
         project = self.project(request, project_id)
         row = get_object_or_404(SectionConceptPaper, pk=paper_id, concept__round__project=project)
-        if not row.file or not row.file.storage.exists(row.file.name):
+        from .shared_deliverables import can_read_legacy_file
+        if not can_read_legacy_file(request.user, row) or not row.file or not row.file.storage.exists(row.file.name):
             raise Http404()
         response = FileResponse(row.file.open('rb'), content_type='application/pdf', filename=row.file_name)
         response['Cache-Control'] = 'private, no-store'
