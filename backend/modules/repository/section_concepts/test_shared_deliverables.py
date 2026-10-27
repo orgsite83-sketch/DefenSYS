@@ -203,6 +203,109 @@ class SharedDeliverableTests(APITestCase):
         with self.assertRaises(ValidationError):
             validate_shared_deliverables([self.definition(mode='concepts')], {})
 
+    def test_one_configuration_synchronizes_team_and_pm_definitions_without_combining_files(self):
+        team = self.definition('D1', label='Team and system paper', is_defense_material=True)
+        pm = self.definition('SHARED_D1', label='Old label', team_deliverable_id='D1', required=False)
+        definitions = validate_shared_deliverables([pm], {}, [team])
+        self.assertEqual(definitions[0]['team_deliverable_id'], 'D1')
+        self.assertEqual(definitions[0]['label'], team['label'])
+        self.assertTrue(definitions[0]['required'])
+        self.assertTrue(definitions[0]['is_defense_material'])
+        self.assertEqual(definitions[0]['deliverable_id'], 'SHARED_D1')
+        self.assertEqual(pm['label'], 'Old label')
+        with self.assertRaises(ValidationError):
+            validate_shared_deliverables([pm], {}, [])
+        with self.assertRaises(ValidationError):
+            validate_shared_deliverables([pm, {**pm, 'deliverable_id': 'SHARED_D2'}], {}, [team])
+
+    def test_linked_team_and_pm_requirement_round_trips_capstone_setup(self):
+        from defense.stages.serializers import DefenseStageWriteSerializer, DefenseStageSerializer
+        serializer = DefenseStageWriteSerializer(data={
+            'label': 'Unified requirements',
+            'deliverables': [self.definition('D1', label='Concept Paper')],
+            'shared_deliverables': [self.definition('SHARED_D1', team_deliverable_id='D1')],
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        stage = serializer.save()
+        result = DefenseStageSerializer(stage).data
+        self.assertEqual(len(result['deliverables']), 1)
+        self.assertEqual(result['shared_deliverables'][0]['team_deliverable_id'], 'D1')
+        self.assertEqual(result['shared_deliverables'][0]['label'], 'Concept Paper')
+        update = DefenseStageWriteSerializer(stage, data={
+            'deliverables': [self.definition('D1', label='Updated requirement')],
+        }, partial=True)
+        self.assertTrue(update.is_valid(), update.errors)
+        updated = update.save()
+        self.assertEqual(updated.shared_deliverables[0]['label'], 'Updated requirement')
+
+    def test_pm_only_automatic_papers_are_not_recreated_as_team_requirements(self):
+        from defense.document_policy import with_concept_papers
+        from defense.stages.serializers import DefenseStageWriteSerializer
+        papers = with_concept_papers([], {'enabled': True})
+        shared_papers = [{**row, 'deliverable_id': f'SHARED_D{index}'} for index, row in enumerate(papers, 1)]
+        serializer = DefenseStageWriteSerializer(data={
+            'label': 'PM concept papers only', 'concept_config': {'enabled': True},
+            'deliverables': [], 'shared_deliverables': shared_papers,
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        stage = serializer.save()
+        self.assertFalse(stage.deliverables.exists())
+        self.assertEqual(len(stage.shared_deliverables), 2)
+        self.assertEqual(with_concept_papers([], stage.concept_config, shared_items=stage.shared_deliverables), [])
+
+    def test_linked_team_and_pm_requirement_round_trips_pit_setup(self):
+        from defense.scheduler.pit_config import upsert_pit_event_config, pit_event_config_payload
+        event = upsert_pit_event_config(semester=self.semester, year_level=self.team.year_level,
+            event_name='Unified later event', user=self.admin,
+            deliverables=[self.definition('D1', label='System and module report')],
+            shared_deliverables=[self.definition('SHARED_D1', team_deliverable_id='D1')])
+        state = pit_event_config_payload(event)
+        self.assertEqual(len(state['deliverables']), 1)
+        self.assertEqual(state['shared_deliverables'][0]['team_deliverable_id'], 'D1')
+        self.assertEqual(state['shared_deliverables'][0]['label'], 'System and module report')
+
+    def test_team_and_pm_files_require_their_own_submissions_and_acceptance(self):
+        from defense.scheduler.models import PitEventDeliverable
+        from repository.deliverables.services import upsert_submission, review_submission, required_complete
+        definition = self.definition('D1', label='Team and system report')
+        shared_definitions = validate_shared_deliverables([
+            self.definition('SHARED_D1', team_deliverable_id='D1')], {}, [definition])
+        event = self.next_event(shared_definitions)
+        PitEventDeliverable.objects.create(pit_event_config=event, **definition)
+        self.upload('SHARED_D1', context=event)
+        self.accept('SHARED_D1', context=event)
+        self.assertTrue(self.state(context=event)['pre_complete'])
+        self.assertFalse(required_complete(self.team, event.event_name))
+        submission = upsert_submission(self.team, event.event_name, 'D1', 'team-report.pdf',
+            '20 B', self.team.leader, file=SimpleUploadedFile('team-report.pdf', b'%PDF-1.4 team evidence'))
+        self.assertFalse(required_complete(self.team, event.event_name))
+        review_submission(self.team, event.event_name, 'D1', 'accepted', '', self.first,
+            file_id=submission.files.get(is_current=True).pk)
+        self.assertTrue(required_complete(self.team, event.event_name))
+        self.assertFalse(required_complete(self.module_team, event.event_name))
+
+    def test_pm_only_requirements_do_not_assign_uploads_to_an_independent_team(self):
+        from defense.stages.serializers import DefenseStageWriteSerializer
+        from student_teams.models import StudentTeam
+        from repository.deliverables.services import stage_deliverables_configured, required_complete
+        team = StudentTeam.objects.create(name='Independent capstone', semester=self.semester,
+            leader=self.team.leader, level=StudentTeam.LEVEL_3_CAPSTONE, year_level='3rd Year', section='INDEPENDENT')
+        serializer = DefenseStageWriteSerializer(data={'label':'PM forms only', 'deliverables':[],
+            'shared_deliverables':[self.definition('PM_FORM')]})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        stage = serializer.save()
+        self.assertIsNone(shared.resolve(team, stage))
+        self.assertTrue(stage_deliverables_configured(team, stage.label))
+        self.assertTrue(required_complete(team, stage.label))
+
+    def test_malformed_shared_settings_stay_validation_errors(self):
+        from defense.stages.serializers import DefenseStageWriteSerializer
+        for definitions in ([None], 'invalid', [self.definition(file_policy=[])]):
+            serializer = DefenseStageWriteSerializer(data={'label':'Invalid shared setup',
+                'concept_config':{'enabled':True}, 'shared_deliverables':definitions})
+            self.assertFalse(serializer.is_valid())
+            self.assertIn('shared_deliverables', serializer.errors)
+
     def test_configured_shared_only_event_and_setup_lock(self):
         from defense.scheduler.pit_config import upsert_pit_event_config, pit_event_config_payload, check_pit_event_locked
         later = self.next_event([self.definition()])

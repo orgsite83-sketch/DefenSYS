@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../../widgets/repository/title_review_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -100,8 +101,12 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
     setState(() {
       sectionProject = updated;
       if (updated['shared_deliverables'] is Map) {
-        final group = Map<String, dynamic>.from(updated['shared_deliverables'] as Map);
-        final index = _sharedGroups.indexWhere((row) => row['stage_label'] == group['stage_label']);
+        final group = Map<String, dynamic>.from(
+          updated['shared_deliverables'] as Map,
+        );
+        final index = _sharedGroups.indexWhere(
+          (row) => row['stage_label'] == group['stage_label'],
+        );
         if (index >= 0) _sharedGroups[index] = group;
       }
     });
@@ -139,14 +144,18 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
       Map<String, dynamic>? p;
       if (sectionProjectId != null) {
         p = await ref.read(sectionConceptServiceProvider).get(sectionProjectId);
-        groups = (p['shared_contexts'] as List? ?? []).whereType<Map>()
-            .map((row) => Map<String, dynamic>.from(row)).toList();
+        groups = (p['shared_contexts'] as List? ?? [])
+            .whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row))
+            .toList();
       } else {
         final listResult = await ref
             .read(sectionConceptServiceProvider)
             .list(teamId: teamId);
-        groups = (listResult['shared_contexts'] as List? ?? []).whereType<Map>()
-            .map((row) => Map<String, dynamic>.from(row)).toList();
+        groups = (listResult['shared_contexts'] as List? ?? [])
+            .whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row))
+            .toList();
         final userSection =
             widget.studentData['student']?['managed_section'] ??
             widget.studentData['team']?['section'] ??
@@ -160,19 +169,33 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
             .firstOrNull;
         if (match != null) {
           p = match;
-        } else if (teamId != null && (groups.isEmpty || groups.any((group) => group['imported'] == true))) {
-          final pending = groups.where((group) => group['imported'] == true).firstOrNull;
-          p = await ref.read(sectionConceptServiceProvider).imported(teamId,
-            stageLabel: pending?['stage_label']?.toString());
+        } else if (teamId != null &&
+            (groups.isEmpty ||
+                groups.any((group) => group['imported'] == true))) {
+          final pending = groups
+              .where((group) => group['imported'] == true)
+              .firstOrNull;
+          p = await ref
+              .read(sectionConceptServiceProvider)
+              .imported(
+                teamId,
+                stageLabel: pending?['stage_label']?.toString(),
+              );
         }
       }
       if (mounted && revision == _loadRevision) {
         setState(() {
           _sharedGroups = groups;
           if (!groups.any((group) => group['stage_label'] == _sharedStage)) {
-            final current = widget.studentData['team']?['current_defense_stage'] ?? p?['stage_label'];
-            _sharedStage = groups.where((group) => group['stage_label'] == current).firstOrNull?['stage_label']?.toString()
-                ?? groups.firstOrNull?['stage_label']?.toString();
+            final current =
+                widget.studentData['team']?['current_defense_stage'] ??
+                p?['stage_label'];
+            _sharedStage =
+                groups
+                    .where((group) => group['stage_label'] == current)
+                    .firstOrNull?['stage_label']
+                    ?.toString() ??
+                groups.firstOrNull?['stage_label']?.toString();
           }
         });
       }
@@ -266,8 +289,12 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
         .where((s) => '${s['key']}' == _selectedSystemKey)
         .firstOrNull;
     final activeLetter = systemLetter(_selectedSystemKey);
-    final sharedGroup = _sharedGroups.where((group) => group['stage_label'] == _sharedStage).firstOrNull;
-    final showConcept = sharedGroup == null || sharedGroup['stage_label'] == sectionProject?['stage_label'];
+    final sharedGroup = _sharedGroups
+        .where((group) => group['stage_label'] == _sharedStage)
+        .firstOrNull;
+    final showConcept =
+        sharedGroup == null ||
+        sharedGroup['stage_label'] == sectionProject?['stage_label'];
 
     // Extract all teams from sectionProject or fallback to sectionTeams
     final rawTeams = (sectionProject?['teams'] as List? ?? [])
@@ -323,7 +350,9 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                     // 1. Architecture Hero Banner Card
                     _buildHeroBanner(
                       userSection: userSection.toString(),
-                      project: showConcept ? sectionProject ?? sharedGroup : sharedGroup,
+                      project: showConcept
+                          ? sectionProject ?? sharedGroup
+                          : sharedGroup,
                     ),
                     if (loadingProject) const LinearProgressIndicator(),
                     if (projectError != null) ...[
@@ -343,86 +372,142 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                     if (_sharedGroups.length > 1) ...[
                       DropdownButtonFormField<String>(
                         initialValue: _sharedStage,
-                        decoration: const InputDecoration(labelText: 'Stage / event', isDense: true),
-                        items: _sharedGroups.map((group) => DropdownMenuItem<String>(
-                          value: '${group['stage_label']}', child: Text('${group['stage_label']}'))).toList(),
-                        onChanged: (value) => setState(() => _sharedStage = value),
+                        decoration: const InputDecoration(
+                          labelText: 'Stage / event',
+                          isDense: true,
+                        ),
+                        items: _sharedGroups
+                            .map(
+                              (group) => DropdownMenuItem<String>(
+                                value: '${group['stage_label']}',
+                                child: Text('${group['stage_label']}'),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) =>
+                            setState(() => _sharedStage = value),
                       ),
                       const SizedBox(height: 16),
                     ],
                     if (showConcept) _buildSystemToolbar(systems),
                     const SizedBox(height: 16),
-                    if (sharedGroup != null) SharedDeliverablesPanel(
-                      key: ValueKey('${sharedGroup['scope']}-${sharedGroup['context_id']}'),
-                      group: sharedGroup, selectedSystemKey: _selectedSystemKey,
-                      onSystemChanged: (value) => setState(() => _selectedSystemKey = value),
-                      onChanged: (value) {
-                        setState(() {
-                        final index = _sharedGroups.indexOf(sharedGroup);
-                        if (index >= 0) _sharedGroups[index] = value;
-                        });
-                        if (sectionProject?['imported'] == true && value['source_project_id'] != null) _loadProject();
-                      },
-                    ),
+                    if (sharedGroup != null)
+                      SharedDeliverablesPanel(
+                        key: ValueKey(
+                          '${sharedGroup['scope']}-${sharedGroup['context_id']}',
+                        ),
+                        group: sharedGroup,
+                        selectedSystemKey: _selectedSystemKey,
+                        systemHeaderBuilder:
+                            sectionProject?['title_workflow_version'] == 2
+                            ? (row) {
+                                final item =
+                                    systems
+                                        .where((s) => s['key'] == row['key'])
+                                        .firstOrNull ??
+                                    row;
+                                final snapshot = Map<String, dynamic>.from(
+                                  sectionProject!,
+                                );
+                                return TitleReviewCard(
+                                  concept: item,
+                                  system: true,
+                                  onAction: (action, title, reason) async {
+                                    await ref
+                                        .read(sectionConceptServiceProvider)
+                                        .titleAction(snapshot, action, {
+                                          'concept_key': item['key'],
+                                          if (title != null) 'title': title,
+                                          if (reason != null) 'remarks': reason,
+                                        });
+                                    await _loadProject();
+                                    ref
+                                        .read(dataRefreshProvider.notifier)
+                                        .markChanged(const [
+                                          DataArea.dashboard,
+                                          DataArea.teams,
+                                          DataArea.deliverables,
+                                        ]);
+                                    return mounted;
+                                  },
+                                );
+                              }
+                            : null,
+                        onSystemChanged: (value) =>
+                            setState(() => _selectedSystemKey = value),
+                        onChanged: (value) {
+                          setState(() {
+                            final index = _sharedGroups.indexOf(sharedGroup);
+                            if (index >= 0) _sharedGroups[index] = value;
+                          });
+                          if (sectionProject?['imported'] == true &&
+                              value['source_project_id'] != null) {
+                            _loadProject();
+                          }
+                        },
+                      ),
 
                     // 2. Shared System Segmented Switcher (Systems A, B, C)
-                    if (showConcept && sharedGroup == null) _buildSystemTabs(systems),
+                    if (showConcept && sharedGroup == null)
+                      _buildSystemTabs(systems),
                     const SizedBox(height: 16),
 
                     // 3. Active System Overview Card (Paper status & blueprint info)
-                    if (showConcept && sharedGroup == null) _buildActiveSystemCard(
-                      system: activeSystem,
-                      letter: activeLetter,
-                      project: sectionProject,
-                      isPM: isPM,
-                    ),
+                    if (showConcept && sharedGroup == null)
+                      _buildActiveSystemCard(
+                        system: activeSystem,
+                        letter: activeLetter,
+                        project: sectionProject,
+                        isPM: isPM,
+                      ),
                     const SizedBox(height: 24),
 
                     // 4. Proposed Modules for Active System Header
-                    if (showConcept) Row(
-                      children: [
-                        Container(
-                          width: 4,
-                          height: 18,
-                          decoration: BoxDecoration(
-                            color: DefensysTokens.maroonOf(context),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Proposed Modules for System $activeLetter',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: DefensysTokens.textPrimaryOf(context),
+                    if (showConcept)
+                      Row(
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.maroonOf(context),
+                              borderRadius: BorderRadius.circular(2),
                             ),
                           ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: DefensysTokens.panelOf(context),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: DefensysTokens.borderOf(context),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Proposed Modules for System $activeLetter',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: DefensysTokens.textPrimaryOf(context),
+                              ),
                             ),
                           ),
-                          child: Text(
-                            '${projectTeams.length} Teams',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: DefensysTokens.textSecondaryOf(context),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.panelOf(context),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: DefensysTokens.borderOf(context),
+                              ),
+                            ),
+                            child: Text(
+                              '${projectTeams.length} Teams',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: DefensysTokens.textSecondaryOf(context),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
                     const SizedBox(height: 8),
 
                     // 5. Team Modules List
@@ -1408,7 +1493,8 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                 ],
               ),
             ),
-            if (sectionProject?['can_edit_names'] == true) ...[
+            if (sectionProject?['can_edit_names'] == true &&
+                sectionProject?['title_workflow_version'] != 2) ...[
               const SizedBox(width: 12),
               ShadButton.outline(
                 key: const ValueKey('edit-shared-system-titles'),

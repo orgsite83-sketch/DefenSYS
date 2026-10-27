@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
 import '../../../../widgets/repository/shared_deliverables_editor.dart';
+import '../../../../widgets/repository/deliverable_submission_settings.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -946,7 +947,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     if (jsonEncode(_conceptConfig) != jsonEncode(widget.config?['concept_config'] ?? {})) return true;
     final initialShared = widget.config?['shared_deliverables'] ??
         ((widget.config?['concept_config'] as Map?)?['enabled'] == true ? defaultSharedDeliverables() : []);
-    if (jsonEncode(sharedDeliverablePayload(_sharedDeliverables)) != jsonEncode(initialShared)) return true;
+    if (jsonEncode(configuredSharedDeliverables(_deliverables, _sharedDeliverables)) != jsonEncode(initialShared)) return true;
 
     if (_deliverables.length != initialDelList.length) return true;
 
@@ -1058,7 +1059,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     _panelWeightController.dispose();
     _peerWeightController.dispose();
 
-    for (final item in _deliverables) {
+    for (final item in deliverableSetupItems(_deliverables, _sharedDeliverables)) {
       (item['_labelController'] as TextEditingController?)?.dispose();
       (item['_templateController'] as TextEditingController?)?.dispose();
     }
@@ -1150,7 +1151,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       if (identical(_selectedDeliverable, item)) {
         _selectedDeliverable = null;
       }
-      _deliverables.remove(item);
+      removeConfiguredDeliverable(item, _deliverables, _sharedDeliverables);
       (item['_labelController'] as TextEditingController?)?.dispose();
       (item['_templateController'] as TextEditingController?)?.dispose();
     });
@@ -1172,8 +1173,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       return;
     }
 
-    for (int i = 0; i < _deliverables.length; i++) {
-      final d = _deliverables[i];
+    final configuredItems = deliverableSetupItems(_deliverables, _sharedDeliverables);
+    for (int i = 0; i < configuredItems.length; i++) {
+      final d = configuredItems[i];
       final ctrl = d['_labelController'] as TextEditingController?;
       final lbl = (ctrl != null ? ctrl.text : d['label']?.toString() ?? '').trim();
       if (lbl.isEmpty) {
@@ -1226,7 +1228,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
       'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': deliverablesPayload,
-      'shared_deliverables': sharedDeliverablePayload(_sharedDeliverables),
+      'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables),
     };
 
     final success = await ref.read(defenseSchedulerProvider.notifier).savePitEventConfig(payload);
@@ -1272,7 +1274,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         fontFamily: DefensysTokens.fontFamily,
       ),
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
+      fillColor: DefensysTokens.surfaceHigherOf(context),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -1443,14 +1445,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     required Color bgHeaderColor,
     required Color borderColor,
     required int count,
-    required String buttonText,
     required VoidCallback onAdd,
     required String emptyPlaceholderText,
     required List<Map<String, dynamic>> items,
     required bool isPost,
     required String pitYear,
     required bool isLocked,
-    Widget? sharedChecklist,
   }) {
     final dark = DefensysTokens.isDark(context);
     final sectionAccent = dark
@@ -1551,12 +1551,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                   ),
                 ],
               ),
+
               action: DefensysShadcnScope(
                 child: ShadButton.outline(
                   size: ShadButtonSize.sm,
                   onPressed: isLocked ? null : onAdd,
                   leading: const Icon(Icons.add_rounded, size: 14),
-                  child: Text(buttonText),
+                  child: const Text('Add deliverable'),
                 ),
               ),
             ),
@@ -1613,6 +1614,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         selectedItem: _selectedDeliverable,
                         onSelect: (item) =>
                             setState(() => _selectedDeliverable = item),
+                        showGroupHeading: true,
+                        showReviewHint: false,
                         showDoneEditingButton: false,
                         buildEditor: (item, index) => _buildDeliverableItemCard(
                           item: item,
@@ -1624,10 +1627,6 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               setState(() => _selectedDeliverable = null),
                         ),
                       ),
-                if (sharedChecklist != null) ...[
-                  Divider(height: 20, color: DefensysTokens.borderOf(context)),
-                  sharedChecklist,
-                ],
               ],
             ),
           ),
@@ -1644,14 +1643,19 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     required int index,
     VoidCallback? onDone,
   }) {
-    final labelController = item['_labelController'] as TextEditingController? ??
-        (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
-    final templateController = item['_templateController'] as TextEditingController? ??
+    final labelController =
+        item['_labelController'] as TextEditingController? ??
+        (item['_labelController'] = TextEditingController(
+          text: item['label']?.toString() ?? '',
+        ));
+    final templateController =
+        item['_templateController'] as TextEditingController? ??
         (item['_templateController'] = TextEditingController(
           text: item['archive_file_template']?.toString() ?? '',
         ));
 
-    const legacyDefault = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}';
+    const legacyDefault =
+        '{year}.{course}.{project}.{stage}.{deliverable}.{semester}';
     if (templateController.text.trim() == legacyDefault) {
       templateController.text = '';
       item['archive_file_template'] = '';
@@ -1675,7 +1679,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
               'label': label?.isNotEmpty == true ? label : 'Concept paper',
               'file_format': format,
               'required': req,
-            }
+            },
           ];
         } else {
           for (final s in slots) {
@@ -1692,9 +1696,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x06000000),
@@ -1709,31 +1713,34 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
           // 1. Item Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
+            decoration: BoxDecoration(
+              color: DefensysTokens.backgroundOf(context),
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(9),
                 topRight: Radius.circular(9),
               ),
-              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              border: Border(
+                bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+              ),
             ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2.5,
+                  ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: DefensysTokens.backgroundOf(context),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: const Color(0xFFCBD5E1),
-                    ),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
                   ),
                   child: Text(
                     '#$index',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF334155),
+                      color: DefensysTokens.textPrimaryOf(context),
                       fontFamily: DefensysTokens.fontFamily,
                     ),
                   ),
@@ -1744,10 +1751,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                     labelController.text.trim().isNotEmpty
                         ? 'Deliverable #$index • ${labelController.text.trim()}'
                         : 'Deliverable #$index',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: DefensysTokens.textPrimaryOf(context),
                       fontFamily: DefensysTokens.fontFamily,
                     ),
                     maxLines: 1,
@@ -1757,14 +1764,22 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 const SizedBox(width: 8),
                 IconButton(
                   onPressed: isLocked ? null : () => _removeDeliverable(item),
-                  icon: Icon(Icons.delete_outline_rounded, color: isLocked ? Colors.grey : AppColors.danger, size: 18),
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    color: isLocked ? Colors.grey : AppColors.danger,
+                    size: 18,
+                  ),
                   tooltip: 'Remove Deliverable #$index',
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   style: IconButton.styleFrom(
-                    hoverColor: isLocked ? Colors.transparent : AppColors.danger.withValues(alpha: 0.08),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    hoverColor: isLocked
+                        ? Colors.transparent
+                        : AppColors.danger.withValues(alpha: 0.08),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                   ),
                 ),
               ],
@@ -1783,12 +1798,18 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       controller: labelController,
                       readOnly: isLocked,
                       decoration: _dialogInputDecoration(
-                        labelText: isPost ? 'Post-Defense Deliverable Name *' : 'Pre-Defense Deliverable Name *',
+                        labelText: isPost
+                            ? 'Post-Defense Deliverable Name *'
+                            : 'Pre-Defense Deliverable Name *',
                         hintText: isPost
                             ? 'e.g. Final Manuscript PDF, Source Code Archive'
                             : 'e.g. Project Proposal Manuscript, Pitch Deck',
                       ),
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: DefensysTokens.fontFamily,
+                      ),
                       onChanged: (value) {
                         item['label'] = value.trim();
                         syncPolicySlot();
@@ -1814,7 +1835,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       child: ShadCheckbox(
                         value: item['required'] == true,
                         enabled: !isLocked,
-                        label: const Text('Required'),
+                        label: Text('Required'),
                         onChanged: (value) {
                           setState(() {
                             item['required'] = value == true;
@@ -1825,14 +1846,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       ),
                     );
 
-                    final hasAdvancedSettings = isPost
-                        ? (item['is_restricted'] == true ||
-                            (item['archive_file_template'] != null &&
-                                item['archive_file_template'].toString().trim().isNotEmpty &&
-                                item['archive_file_template'] != '{project}' &&
-                                item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true);
-                    final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
+                    final isAdvancedExpanded =
+                        item['_expandedAdvanced'] as bool? ?? false;
 
                     final moreOptionsBtn = DefensysShadcnScope(
                       child: ShadButton.outline(
@@ -1843,7 +1858,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           });
                         },
                         leading: Icon(
-                          isAdvancedExpanded ? Icons.expand_less_rounded : Icons.tune_rounded,
+                          isAdvancedExpanded
+                              ? Icons.expand_less_rounded
+                              : Icons.tune_rounded,
                           size: 14,
                         ),
                         child: Text(
@@ -1862,7 +1879,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                 spacing: 12,
                                 runSpacing: 8,
                                 crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [formatField, requiredField, moreOptionsBtn],
+                                children: [
+                                  formatField,
+                                  requiredField,
+                                  moreOptionsBtn,
+                                ],
                               ),
                             ],
                           )
@@ -1882,83 +1903,102 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
                 Builder(
                   builder: (context) {
-                    final hasAdvancedSettings = isPost
-                        ? (item['is_restricted'] == true ||
-                            (item['archive_file_template'] != null &&
-                                item['archive_file_template'].toString().trim().isNotEmpty &&
-                                item['archive_file_template'] != '{project}' &&
-                                item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true);
-                    final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
+                    final isAdvancedExpanded =
+                        item['_expandedAdvanced'] as bool? ?? false;
 
-                    if (!isAdvancedExpanded) {
-                      final summaryText = isPost
-                          ? '${item['required'] == true ? 'Required' : 'Optional'} after defense${item['is_restricted'] == true ? ' · Restricted archive' : ''}'
-                          : 'Faculty review before scheduling${item['is_defense_material'] == true ? ' · Panel material' : ''}';
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.info_outline_rounded, size: 12, color: Color(0xFF64748B)),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    summaryText,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Color(0xFF475569),
-                                      fontWeight: FontWeight.w600,
-                                      fontFamily: DefensysTokens.fontFamily,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
+                    if (!isAdvancedExpanded) return const SizedBox.shrink();
 
                     return Container(
                       margin: const EdgeInsets.only(top: 10),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: DefensysTokens.backgroundOf(context),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(
+                          color: DefensysTokens.borderOf(context),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.tune_rounded, size: 14, color: Color(0xFF475569)),
+                              Icon(
+                                Icons.tune_rounded,
+                                size: 14,
+                                color: DefensysTokens.textSecondaryOf(context),
+                              ),
                               const SizedBox(width: 6),
-                              Text(
-                                isPost ? 'Post-Defense Rules & Archiving' : 'Panel access',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF334155),
-                                  fontFamily: DefensysTokens.fontFamily,
+                              Expanded(
+                                child: Text(
+                                  isPost
+                                      ? 'Post-Defense Rules & Archiving'
+                                      : 'Pre-defense options',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: DefensysTokens.textPrimaryOf(
+                                      context,
+                                    ),
+                                    fontFamily: DefensysTokens.fontFamily,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 10),
+                          DeliverableSubmissionPicker(
+                            value: deliverableSubmissionAudience(item),
+                            enabled: !isLocked,
+                            onChanged: (value) {
+                              setState(
+                                () => setDeliverableSubmissionAudience(
+                                  item,
+                                  value,
+                                  _deliverables,
+                                  _sharedDeliverables,
+                                ),
+                              );
+                              _markDirty();
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          Divider(
+                            height: 1,
+                            color: DefensysTokens.borderOf(context),
+                          ),
+                          const SizedBox(height: 8),
+                          DocumentPolicyEditor(
+                            value: Map<String, dynamic>.from(
+                              item['file_policy'] as Map? ?? {},
+                            ),
+                            enabled: !isLocked,
+                            allowConcepts:
+                                (_conceptConfig['enabled'] == true) &&
+                                (!isPost ||
+                                    deliverableSubmissionAudience(item) ==
+                                        'pm'),
+                            deliverableLabel: labelController.text,
+                            fileFormat: currentFormat,
+                            required: item['required'] == true,
+                            onChanged: (value) {
+                              setState(() => item['file_policy'] = value);
+                              _markDirty();
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          Divider(
+                            height: 1,
+                            color: DefensysTokens.borderOf(context),
+                          ),
+                          const SizedBox(height: 10),
                           if (!isPost) ...[
                             const DeliverableTimingFields(),
                             const SizedBox(height: 10),
-                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            Divider(
+                              height: 1,
+                              color: DefensysTokens.borderOf(context),
+                            ),
                             const SizedBox(height: 10),
                             DefenseMaterialToggle(
                               value: item['is_defense_material'] == true,
@@ -1971,70 +2011,60 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               },
                             ),
                             const SizedBox(height: 10),
-                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                            const SizedBox(height: 8),
-                            DocumentPolicyEditor(
-                              value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
-                              enabled: !isLocked,
-                              allowConcepts: !isPost && _conceptConfig['enabled'] == true,
-                              deliverableLabel: labelController.text,
-                              fileFormat: currentFormat,
-                              required: item['required'] == true,
-                              onChanged: (value) {
-                                setState(() => item['file_policy'] = value);
-                                _markDirty();
-                              },
+                            Divider(
+                              height: 1,
+                              color: DefensysTokens.borderOf(context),
                             ),
+                            const SizedBox(height: 8),
                           ],
                           if (isPost) ...[
                             Row(
                               children: [
-                                DefensysShadcnScope(
-                                  child: ShadCheckbox(
-                                    value: item['is_restricted'] == true,
-                                    enabled: !isLocked,
-                                    onChanged: (value) {
-                                      setState(() {
-                                        item['is_restricted'] = value == true;
-                                      });
-                                      _markDirty();
-                                    },
-                                    label: const Text(
-                                      'Restricted / Private in Institutional Archive',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.textPrimary,
-                                        fontFamily: DefensysTokens.fontFamily,
+                                Expanded(
+                                  child: DefensysShadcnScope(
+                                    child: ShadCheckbox(
+                                      value: item['is_restricted'] == true,
+                                      enabled: !isLocked,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          item['is_restricted'] = value == true;
+                                        });
+                                        _markDirty();
+                                      },
+                                      label: Text(
+                                        'Restricted / Private in Institutional Archive',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: DefensysTokens.textPrimaryOf(
+                                            context,
+                                          ),
+                                          fontFamily: DefensysTokens.fontFamily,
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 4),
-                                const Tooltip(
-                                  message: 'Private for faculty and admin records only; hidden from students.',
+                                Tooltip(
+                                  message:
+                                      'Private for faculty and admin records only; hidden from students.',
                                   constraints: BoxConstraints(maxWidth: 240),
-                                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                                  child: Icon(
+                                    Icons.help_outline_rounded,
+                                    size: 14,
+                                    color: DefensysTokens.textSecondaryOf(
+                                      context,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 10),
-                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                            const SizedBox(height: 8),
-                            DocumentPolicyEditor(
-                              value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
-                              enabled: !isLocked,
-                              allowConcepts: false,
-                              deliverableLabel: labelController.text,
-                              fileFormat: currentFormat,
-                              required: item['required'] == true,
-                              onChanged: (value) {
-                                setState(() => item['file_policy'] = value);
-                                _markDirty();
-                              },
+                            Divider(
+                              height: 1,
+                              color: DefensysTokens.borderOf(context),
                             ),
-                            const SizedBox(height: 10),
-                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
                             const SizedBox(height: 8),
                             RepositoryArchiveNamingPanel(
                               templateController: templateController,
@@ -2044,10 +2074,28 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               isPit: true,
                               pitYear: pitYear,
                               stageOrEventLabel: _eventNameController.text,
-                              siblingDeliverables: _deliverables.where((d) => d['deliverable_type'] == 'post').toList(),
-                              currentIndex: _deliverables.where((d) => d['deliverable_type'] == 'post').toList().indexOf(item),
+                              siblingDeliverables:
+                                  deliverableSetupItems(
+                                        _deliverables,
+                                        _sharedDeliverables,
+                                      )
+                                      .where(
+                                        (d) => d['deliverable_type'] == 'post',
+                                      )
+                                      .toList(),
+                              currentIndex:
+                                  deliverableSetupItems(
+                                        _deliverables,
+                                        _sharedDeliverables,
+                                      )
+                                      .where(
+                                        (d) => d['deliverable_type'] == 'post',
+                                      )
+                                      .toList()
+                                      .indexOf(item),
                               onChanged: () {
-                                item['archive_file_template'] = templateController.text.trim();
+                                item['archive_file_template'] =
+                                    templateController.text.trim();
                                 setState(() {});
                                 _markDirty();
                               },
@@ -2066,8 +2114,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       child: ShadButton.outline(
                         size: ShadButtonSize.sm,
                         onPressed: onDone,
-                        leading: const Icon(Icons.check_rounded, size: 14),
-                        child: const Text('Done editing'),
+                        leading: Icon(Icons.check_rounded, size: 14),
+                        child: Text('Done editing'),
                       ),
                     ),
                   ),
@@ -2147,8 +2195,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     final panelRubrics = state.rubrics.where((r) => isEligibleRubric(r, 'panel')).toList();
     final peerRubrics = state.peerRubrics.where((r) => isEligibleRubric(r, 'peer')).toList();
 
-    final preDeliverables = _deliverables.where((d) => d['deliverable_type'] == 'pre').toList();
-    final postDeliverables = _deliverables.where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault').toList();
+    final preDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables).where((d) => d['deliverable_type'] == 'pre').toList();
+    final postDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables).where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault').toList();
 
     return PopScope(
       canPop: !_isDirty || _allowPop,
@@ -2225,7 +2273,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 // 2. Segmented Step Tab Bar
                 _buildDialogTabBar(
                   activeTab: _activeTab,
-                  deliverableCount: _deliverables.length + _sharedDeliverables.length,
+                  deliverableCount: deliverableSetupItems(_deliverables, _sharedDeliverables).length,
                   totalWeight: _panelWeight + _peerWeight,
                   onTabSelected: (index) {
                     setState(() => _activeTab = index);
@@ -2421,9 +2469,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                 setState(() {
                                   if (_conceptConfig['enabled'] != true && value['enabled'] == true && _sharedDeliverables.isEmpty) {
                                     _sharedDeliverables = defaultSharedDeliverables();
+                                    ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables);
+                                    linkNewSharedConceptDefaults(_deliverables, _sharedDeliverables);
                                   }
                                   _conceptConfig = value;
-                                  ensureConceptPapers(_deliverables, value);
+                                  ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables);
                                   if (!_deliverables.contains(_selectedDeliverable)) _selectedDeliverable = null;
                                 });
                                 _markDirty();
@@ -2491,19 +2541,18 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   'deliverables': e['deliverables'] ?? [],
                                 }),
                               ],
-                              currentDeliverables: _deliverables,
+                              currentDeliverables: deliverablePresetItems(_deliverables, _sharedDeliverables),
                               enabled: !isLocked,
                               onApplyDeliverables: (newDeliverables) {
                                 setState(() {
-                                  _deliverables.clear();
-                                  _deliverables.addAll(newDeliverables);
+                                  applyDeliverablePresetItems(newDeliverables, _deliverables, _sharedDeliverables);
                                   _selectedDeliverable = _deliverables.isNotEmpty ? _deliverables.first : null;
                                 });
                                 _markDirty();
                               },
                             ),
                             StageDeliverableCounts(
-                              deliverables: [..._deliverables, ..._sharedDeliverables],
+                              deliverables: deliverableSetupItems(_deliverables, _sharedDeliverables),
                               minutesRequired: false,
                             ),
                             _buildDeliverableSection(
@@ -2513,18 +2562,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               accentColor: const Color(0xFF0F172A),
                               bgHeaderColor: const Color(0xFFF8FAFC),
                               borderColor: const Color(0xFFE2E8F0),
-                              count: preDeliverables.length + _sharedDeliverables.where((row) => row['deliverable_type'] == 'pre').length,
-                              buttonText: 'Add Pre-Defense',
+                              count: preDeliverables.length,
                               onAdd: () => _addDeliverable(type: 'pre'),
                               emptyPlaceholderText: 'No pre-defense gatekeepers configured yet. (e.g. Project Proposal Manuscript, Pitch Deck)',
                               items: preDeliverables,
                               isPost: false,
                               pitYear: pitYear,
                               isLocked: isLocked,
-                              sharedChecklist: SharedDeliverablesEditor(value: _sharedDeliverables, teamDeliverables: _deliverables,
-                                deliverableType: 'pre', enabled: !isLocked, conceptsEnabled: _conceptConfig['enabled'] == true,
-                                isPit: true, stageLabel: _eventNameController.text,
-                                onChanged: (value) { setState(() => _sharedDeliverables = value); _markDirty(); }),
                             ),
                             const SizedBox(height: 16),
                             _buildDeliverableSection(
@@ -2534,18 +2578,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               accentColor: const Color(0xFF0F172A),
                               bgHeaderColor: const Color(0xFFF8FAFC),
                               borderColor: const Color(0xFFE2E8F0),
-                              count: postDeliverables.length + _sharedDeliverables.where((row) => row['deliverable_type'] == 'post').length,
-                              buttonText: 'Add Post-Defense',
+                              count: postDeliverables.length,
                               onAdd: () => _addDeliverable(type: 'post'),
                               emptyPlaceholderText: 'No post-defense deliverables configured yet. (e.g. Final Manuscript PDF, Source Code Archive, Demo Video)',
                               items: postDeliverables,
                               isPost: true,
                               pitYear: pitYear,
                               isLocked: isLocked,
-                              sharedChecklist: SharedDeliverablesEditor(value: _sharedDeliverables, teamDeliverables: _deliverables,
-                                deliverableType: 'post', enabled: !isLocked, conceptsEnabled: _conceptConfig['enabled'] == true,
-                                isPit: true, stageLabel: _eventNameController.text,
-                                onChanged: (value) { setState(() => _sharedDeliverables = value); _markDirty(); }),
                             ),
                           ],
                         ),

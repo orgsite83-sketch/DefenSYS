@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:defensys/models/team_workflow_status.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/components/deliverables_table.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/components/faculty_requirements_pane.dart';
@@ -43,6 +45,26 @@ class _Reviews extends CapstoneDeliverablesNotifier {
   final reviewed = <int?>[];
   final names = <Map<String, dynamic>>[];
   @override
+  Future<bool> confirmConceptTitle(
+    int teamId,
+    String stageLabel, {
+    required String conceptKey,
+    required int roundId,
+    required String reviewToken,
+    String? title,
+  }) async {
+    names.add({
+      'team_id': teamId,
+      'action': 'confirm_title',
+      'concept_key': conceptKey,
+      'round_id': roundId,
+      'review_token': reviewToken,
+      'title': title,
+    });
+    return succeed;
+  }
+
+  @override
   CapstoneDeliverablesState build() => const CapstoneDeliverablesState();
   @override
   Future<bool> reviewDeliverable({
@@ -80,21 +102,21 @@ class _Reviews extends CapstoneDeliverablesNotifier {
 void main() {
   setUpAll(() => loadPreviewFonts(force: true));
   test(
-    'per-concept decks stay out of project papers and mixed slots keep only papers',
+    'concept membership follows structure and preserves every configured slot',
     () {
       expect(
         isConceptRequirement({
           'label': 'Pitch Deck',
           'file_policy': {'mode': 'concepts'},
         }),
-        isFalse,
+        isTrue,
       );
       expect(
         isConceptRequirement({
           'file_format': 'pptx',
           'file_policy': {'mode': 'concepts'},
         }),
-        isFalse,
+        isTrue,
       );
       final item = <String, dynamic>{
         'id': 'CONCEPTS',
@@ -119,11 +141,12 @@ void main() {
         },
       };
       expect(isConceptRequirement(item), isTrue);
-      final papers = conceptPaperRequirement(item);
+      final papers = conceptRequirementForKey(item, 'c1');
       expect(papers['id'], 'CONCEPTS');
       expect((papers['document_slots'] as List).length, 2);
       expect((papers['submission'] as Map)['files'], [
         {'id': 1, 'slot_key': 'c1:paper'},
+        {'id': 2, 'slot_key': 'c1:deck'},
       ]);
       expect((item['submission'] as Map)['files'].length, 2);
     },
@@ -294,13 +317,33 @@ void main() {
       await tester.tap(find.text('All deliverables'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Deliverable actions'), findsOneWidget);
+      await capturePreview(
+        tester,
+        find.byType(FacultyRequirementsPane),
+        'requirement-list-returned',
+        viewport: true,
+      );
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('requirement-row-PITCH'))),
+      );
+      await tester.pumpAndSettle();
+      await capturePreview(
+        tester,
+        find.byType(FacultyRequirementsPane),
+        'requirement-list-hover',
+        viewport: true,
+      );
+      await mouse.removePointer();
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },
   );
 
   for (final shared in [false, true]) {
     testWidgets(
-      'concept workspace shows papers only and confirms names inline (shared=$shared)',
+      'concept workspace shows configured documents and confirms names in context (shared=$shared)',
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(1500, 1000));
         addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -334,6 +377,8 @@ void main() {
           'round': 2,
           'clearance_valid': true,
           'module_review_token': 'current-module-content',
+          'round_id': 12,
+          'can_confirm_titles': shared,
           if (shared) 'section_project_id': 7,
           'concepts': [
             for (var i = 1; i <= count; i++)
@@ -367,6 +412,13 @@ void main() {
                             {
                               ..._requirement(),
                               'file_policy': {'mode': 'concepts'},
+                              'document_slots': [
+                                for (var i = 1; i <= count; i++)
+                                  {
+                                    'key': 'c$i:deck',
+                                    'label': 'Concept $i · Deck',
+                                  },
+                              ],
                             },
                           ],
                           'concept_workflow': workflow,
@@ -388,7 +440,7 @@ void main() {
             capstoneDeliverablesProvider.overrideWith(() => reviews),
           ],
         );
-        expect(find.text('Pitch Deck'), findsNothing);
+        expect(find.text('Pitch Deck'), findsOneWidget);
         expect(find.text('All deliverables'), findsNothing);
         expect(find.text('concept_1.pdf'), findsOneWidget);
         expect(find.text('Project concept 1'), findsOneWidget);
@@ -398,28 +450,42 @@ void main() {
           'concept-workspace-${shared ? 'shared' : 'independent'}',
         );
         await tester.tap(
-          find.text(shared ? 'Confirm module names' : 'Edit concept names'),
+          find.text(shared ? 'Edit name' : 'Edit concept names'),
         );
         await tester.pumpAndSettle();
-        expect(find.text('concept_1.pdf'), findsNothing);
+        expect(find.text('concept_1.pdf'), findsOneWidget);
         expect(find.byType(AlertDialog), findsNothing);
         await tester.enterText(
           find.byType(EditableText).first,
           'Confirmed project name',
         );
         reviews.succeed = false;
-        await tester.tap(find.text('Confirm names'));
+        await tester.tap(
+          find.text(shared ? 'Save and confirm name' : 'Confirm names'),
+        );
         await tester.pumpAndSettle();
-        expect(find.text('Back to papers'), findsOneWidget);
+        expect(
+          find.text(shared ? 'Save and confirm name' : 'Back to papers'),
+          findsOneWidget,
+        );
         reviews.succeed = true;
-        await tester.tap(find.text('Confirm names'));
+        await tester.tap(
+          find.text(shared ? 'Save and confirm name' : 'Confirm names'),
+        );
         await tester.pumpAndSettle();
         expect(find.text('concept_1.pdf'), findsOneWidget);
-        expect(reviews.names.last['concepts'].length, count);
-        expect(
-          reviews.names.last['concepts'][0]['title'],
-          'Confirmed project name',
-        );
+        if (shared) {
+          expect(reviews.names.last['concept_key'], 'c1');
+          expect(reviews.names.last['round_id'], 12);
+          expect(reviews.names.last['title'], 'Confirmed project name');
+          expect(reviews.names.last.containsKey('concepts'), isFalse);
+        } else {
+          expect(reviews.names.last['concepts'].length, count);
+          expect(
+            reviews.names.last['concepts'][0]['title'],
+            'Confirmed project name',
+          );
+        }
         expect(
           reviews.names.last['review_token'],
           shared ? 'current-module-content' : null,
@@ -430,6 +496,163 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'By team opens the selected concept without duplicate review controls',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1500, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final reviews = _Reviews();
+      final requirement = <String, dynamic>{
+        ..._requirement(id: 'CONCEPTS'),
+        'label': 'Concept Papers',
+        'file_policy': {'mode': 'concepts'},
+        'document_slots': [
+          for (var i = 1; i <= 3; i++)
+            {'key': 'c$i:paper', 'label': 'Concept $i', 'required': true},
+        ],
+        'submission': {
+          'files': [
+            for (var i = 1; i <= 3; i++)
+              {
+                'id': i,
+                'slot_key': 'c$i:paper',
+                'file_name': 'concept_$i.pdf',
+                'status': 'pending',
+              },
+          ],
+        },
+      };
+      final stage = <String, dynamic>{
+        'stage_label': 'Mini Capstone',
+        'pre': [requirement],
+        'post': [],
+        'deliverables_configured': true,
+        'can_faculty_review': true,
+        'concept_workflow': {
+          'enabled': true,
+          'can_edit': true,
+          'round': 1,
+          'round_id': 12,
+          'section_project_id': 7,
+          'can_confirm_titles': true,
+          'module_review_token': 'module-content',
+          'shared_review': {
+            'project_id': 7,
+            'status': 'cleared',
+            'status_label': 'Shared papers cleared for hearing',
+            'cleared': true,
+            'review_progress': {
+              'documents_required': 3,
+              'documents_accepted': 3,
+            },
+          },
+          'concepts': [
+            for (var i = 1; i <= 3; i++)
+              {
+                'key': 'c$i',
+                'title': 'Module proposal $i',
+                'system_title': 'Shared system $i',
+                'faculty_confirmed': false,
+              },
+          ],
+        },
+      };
+      var conceptView = false;
+      String? fileKey;
+      String? requirementId;
+      int? openedShared;
+      await pumpDefensysWidget(
+        tester,
+        StatefulBuilder(
+          builder: (context, setView) => SingleChildScrollView(
+            child: DeliverablesTablePane(
+              state: CapstoneDeliverablesState(
+                scope: 'pit',
+                selectedStage: 'Mini Capstone',
+                teams: [
+                  {
+                    'id': 8,
+                    'name': 'AgroTrade',
+                    'members': [],
+                    'stages': [stage],
+                  },
+                  {
+                    'id': 9,
+                    'name': 'New module team',
+                    'members': [],
+                    'stages': [stage],
+                  },
+                ],
+              ),
+              isAdviser: false,
+              isPitInstructor: true,
+              compactFaculty: true,
+              conceptReview: conceptView,
+              initialConceptRequirementId: requirementId,
+              initialConceptFileKey: fileKey,
+              onOpenConceptReview: (id, label, requirement, key) {
+                expect(id, 8);
+                expect(label, 'Mini Capstone');
+                setView(() {
+                  conceptView = true;
+                  requirementId = requirement;
+                  fileKey = key;
+                });
+              },
+              onReturnToTeam: () => setView(() => conceptView = false),
+              onOpenSharedReview: (id) => openedShared = id,
+            ),
+          ),
+        ),
+        overrides: [
+          ...authTestOverrides(),
+          capstoneDeliverablesProvider.overrideWith(() => reviews),
+        ],
+      );
+      expect(find.text('Shared documents: 3/3 accepted'), findsNothing);
+      expect(find.text('Shared papers cleared for hearing'), findsNothing);
+      await tester.tap(find.text('Open shared review'));
+      expect(openedShared, 7);
+      await tester.tap(find.text('Concept Papers').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Concept 3').first);
+      await tester.pumpAndSettle();
+      expect(find.text('concept_3.pdf'), findsOneWidget);
+      expect(find.text('Accept'), findsOneWidget);
+      expect(find.text('Accept & next'), findsNothing);
+      expect(find.text('Request revision'), findsOneWidget);
+      await tester.tap(find.text('Review title'));
+      await tester.pumpAndSettle();
+      expect(fileKey, 'c3:paper');
+      expect(requirementId, 'CONCEPTS');
+      expect(find.text('Module proposal 3'), findsOneWidget);
+      expect(find.text('concept_3.pdf'), findsOneWidget);
+      expect(find.text('Confirm module name'), findsOneWidget);
+      expect(find.text('Accept'), findsNothing);
+      expect(find.text('Request revision'), findsNothing);
+      await tester.tap(find.text('Confirm module name'));
+      await tester.pumpAndSettle();
+      expect(reviews.names.single['concept_key'], 'c3');
+      expect(reviews.names.single['round_id'], 12);
+      expect(reviews.reviewed, isEmpty);
+      await tester.tap(find.text('Open team workspace'));
+      await tester.pumpAndSettle();
+      expect(conceptView, isFalse);
+      expect(find.text('concept_3.pdf'), findsOneWidget);
+      // Returning from one team's title review must not open that same
+      // deliverable when choosing a different team.
+      await tester.tap(find.byKey(const ValueKey('faculty-team-choice-t9')));
+      await tester.pumpAndSettle();
+      expect(find.text('All deliverables'), findsNothing);
+      expect(find.text('concept_3.pdf'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('requirement-row-CONCEPTS')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final scope in ['pit', 'capstone']) {
     testWidgets('$scope post-defense rows follow completed assessment evidence', (

@@ -33,7 +33,7 @@ def shared_definitions(context):
     return deepcopy(default_shared_deliverables(context.concept_config) if configured is None else configured)
 
 
-def validate_shared_deliverables(value, config):
+def validate_shared_deliverables(value, config, team_deliverables=None):
     from .stages.models import StageDeliverable
     from .deliverable_timing import validate_timing
     from rest_framework.exceptions import ValidationError as ApiValidationError
@@ -46,6 +46,26 @@ def validate_shared_deliverables(value, config):
     for index, raw in enumerate(value):
         if not isinstance(raw, dict):
             raise ValidationError('Each shared deliverable must be a document requirement.')
+        raw = deepcopy(raw)
+        team_number = raw.get('team_deliverable_id')
+        if team_number is not None:
+            if not isinstance(team_number, str) or not team_number.strip() or len(team_number) > 20:
+                raise ValidationError('Choose a valid team requirement for the shared submission.')
+            if any(row.get('team_deliverable_id') == team_number for row in result):
+                raise ValidationError('A team requirement can have only one project-manager submission.')
+            if team_deliverables is not None:
+                team = next((row for row in team_deliverables if row.get('deliverable_id') == team_number), None)
+                if team is None:
+                    raise ValidationError('The linked team requirement no longer exists.')
+                # One setup entry defines both records. Never allow their format,
+                # required slots or review/privacy rules to diverge on an API edit.
+                for key in ('label', 'deliverable_type', 'required', 'file_format', 'file_policy',
+                            'archive_note', 'archive_file_template', 'is_restricted', 'is_defense_material',
+                            'verdict_condition', 'requirement_timing', 'deadline_hours_before'):
+                    if key in team:
+                        raw[key] = deepcopy(team[key])
+                    else:
+                        raw.pop(key, None)
         number = raw.get('deliverable_id', '')
         if not isinstance(number, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', number) or number in ids:
             raise ValidationError('Shared deliverable numbers must be unique letters, numbers, dashes or underscores.')
@@ -76,6 +96,8 @@ def validate_shared_deliverables(value, config):
         item.update(deliverable_id=number, label=label.strip(), deliverable_type=dtype,
                     required=raw.get('required', False), file_format=fmt, file_policy=policy,
                     display_order=index + 1)
+        if team_number is not None:
+            item['team_deliverable_id'] = team_number
         try:
             item.update(validate_timing(item))
         except ApiValidationError as exc:

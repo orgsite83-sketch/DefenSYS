@@ -185,6 +185,8 @@ class DeliverableUploadedFileTile extends StatelessWidget {
     this.onRevision,
     this.revisionEnabled = true,
     this.trailing,
+    this.compact = false,
+    this.subtitle,
   });
 
   final String fileName;
@@ -192,14 +194,18 @@ class DeliverableUploadedFileTile extends StatelessWidget {
   final VoidCallback? onRevision;
   final bool revisionEnabled;
   final Widget? trailing;
+  final bool compact;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
     final format = DeliverableFormatInfo.fromFileName(fileName);
-    final surface = Color.alphaBlend(
-      DefensysTokens.surfaceHigherOf(context).withValues(alpha: .5),
-      DefensysTokens.surfaceOf(context),
-    );
+    final surface = compact
+        ? DefensysTokens.surfaceOf(context)
+        : Color.alphaBlend(
+            DefensysTokens.surfaceHigherOf(context).withValues(alpha: .5),
+            DefensysTokens.surfaceOf(context),
+          );
     return Material(
       color: surface,
       borderRadius: BorderRadius.circular(8),
@@ -217,7 +223,19 @@ class DeliverableUploadedFileTile extends StatelessWidget {
             builder: (context, constraints) {
               final document = Row(
                 children: [
-                  DeliverableFileTypeBadge(format: format, fileName: fileName),
+                  if (compact)
+                    Icon(
+                      format.icon,
+                      size: 16,
+                      color: DefensysTokens.isDark(context)
+                          ? Color.lerp(format.color, Colors.white, .35)
+                          : format.color,
+                    )
+                  else
+                    DeliverableFileTypeBadge(
+                      format: format,
+                      fileName: fileName,
+                    ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -239,7 +257,7 @@ class DeliverableUploadedFileTile extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          format.label,
+                          subtitle ?? format.label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -262,9 +280,15 @@ class DeliverableUploadedFileTile extends StatelessWidget {
                         ? onRevision
                         : null,
                     style: OutlinedButton.styleFrom(
-                      backgroundColor: DefensysTokens.surfaceHigherOf(context),
+                      backgroundColor: compact
+                          ? DefensysTokens.surfaceOf(context)
+                          : DefensysTokens.surfaceHigherOf(context),
                       foregroundColor: DefensysTokens.textPrimaryOf(context),
-                      side: BorderSide(color: DefensysTokens.borderOf(context)),
+                      side: BorderSide(
+                        color: compact
+                            ? Colors.transparent
+                            : DefensysTokens.borderOf(context),
+                      ),
                       minimumSize: const Size(0, 28),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 9,
@@ -284,7 +308,9 @@ class DeliverableUploadedFileTile extends StatelessWidget {
                         const SizedBox(width: 3),
                         Icon(
                           onRevision == null
-                              ? Icons.chevron_right_rounded
+                              ? compact
+                                    ? Icons.visibility_outlined
+                                    : Icons.chevron_right_rounded
                               : Icons.upload_file_outlined,
                           size: 14,
                         ),

@@ -108,6 +108,8 @@ class ReviewEndorseSerializer(DeliverableActionSerializer):
 
 
 class DeliverableReviewSerializer(serializers.Serializer):
+    revision_scope = serializers.ChoiceField(choices=['paper', 'title_and_paper'], default='paper')
+    title_review_token = serializers.CharField(required=False, max_length=64)
     file_id = serializers.IntegerField(required=False, allow_null=True)
     team_id = serializers.IntegerField()
     stage_label = serializers.CharField(max_length=120)

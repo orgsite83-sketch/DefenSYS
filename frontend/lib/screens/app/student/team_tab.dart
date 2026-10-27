@@ -11,8 +11,12 @@ import '../../../services/academic/team_formation_service.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/app/data_refresh_provider.dart';
 import '../../../widgets/repository/team_concept_title_editor.dart';
-import '../../../widgets/repository/shared_concept_review.dart' show systemLetter;
+import '../../../widgets/repository/shared_concept_review.dart'
+    show systemLetter;
 import 'student_stage_data.dart';
+import '../../../services/academic/team_concept_service.dart';
+import '../../../widgets/repository/title_review_card.dart';
+import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
 
 /// Screen 1: Academic Defense Overview & Student Team Workspace.
 /// Features clean, professional white surfaces, crisp hairline borders,
@@ -53,9 +57,13 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       final isCapstone = team['isCapstone'] == true;
       final yearLevel = widget.studentData?['year_level']?.toString().trim();
 
-      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+      ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .fetchDeliverables(
             scope: isCapstone ? 'capstone' : 'pit',
-            yearLevel: isCapstone ? null : (yearLevel?.isNotEmpty == true ? yearLevel : null),
+            yearLevel: isCapstone
+                ? null
+                : (yearLevel?.isNotEmpty == true ? yearLevel : null),
           );
     });
   }
@@ -63,7 +71,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
   @override
   void didUpdateWidget(TeamTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.studentData, widget.studentData)) _conceptOverrides.clear();
+    if (!identical(oldWidget.studentData, widget.studentData)) {
+      _conceptOverrides.clear();
+    }
     if (widget.onRefresh == null) return;
     final oldTeam = oldWidget.studentData?['team'];
     final newTeam = widget.studentData?['team'] as Map<String, dynamic>?;
@@ -72,9 +82,13 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             oldTeam?['isCapstone'] != newTeam['isCapstone'])) {
       final isCapstone = newTeam['isCapstone'] == true;
       final yearLevel = widget.studentData?['year_level']?.toString().trim();
-      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+      ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .fetchDeliverables(
             scope: isCapstone ? 'capstone' : 'pit',
-            yearLevel: isCapstone ? null : (yearLevel?.isNotEmpty == true ? yearLevel : null),
+            yearLevel: isCapstone
+                ? null
+                : (yearLevel?.isNotEmpty == true ? yearLevel : null),
           );
     }
   }
@@ -98,11 +112,14 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (onRefresh != null) StudentTeamSetupTasks(onRefresh: onRefresh),
+              if (onRefresh != null)
+                StudentTeamSetupTasks(onRefresh: onRefresh),
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(
+                    context,
+                  ).withValues(alpha: 0.08),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -165,49 +182,60 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     }
 
     final delivState = ref.watch(capstoneDeliverablesProvider);
-    final teamData = delivState.teams.where((t) => t['id'] == team['id']).firstOrNull;
+    final teamData = delivState.teams
+        .where((t) => t['id'] == team['id'])
+        .firstOrNull;
 
     final teamName = team['name']?.toString() ?? 'Team Project';
-    final rawProjectTitle = team['projectTitle']?.toString() ??
+    final rawProjectTitle =
+        team['projectTitle']?.toString() ??
         team['project_title']?.toString() ??
         '';
-    final projectTitle = team['project_pending'] == true || rawProjectTitle.trim().isEmpty
-        ? 'Project not selected' : rawProjectTitle;
+    final projectTitle =
+        team['project_pending'] == true || rawProjectTitle.trim().isEmpty
+        ? 'Project not selected'
+        : rawProjectTitle;
     final semester = team['semester']?.toString() ?? '';
     final schoolYear = team['schoolYear']?.toString() ?? '';
-    final section = team['section']?.toString() ??
+    final section =
+        team['section']?.toString() ??
         widget.studentData?['section']?.toString() ??
         '';
-    final yearLevel = team['yearLevel']?.toString() ??
+    final yearLevel =
+        team['yearLevel']?.toString() ??
         widget.studentData?['year_level']?.toString() ??
         '';
     final adviserName =
         team['adviserName']?.toString() ?? (isCapstone ? 'Unassigned' : 'N/A');
 
     // Dynamic stage resolution
-    final backendStageOptions = (widget.studentData?['stage_options'] as List?)
+    final backendStageOptions =
+        (widget.studentData?['stage_options'] as List?)
             ?.map((e) => e.toString().trim())
             .where((s) => s.isNotEmpty)
             .toList() ??
         const <String>[];
 
-    final stagesList = (widget.studentData?['stages'] as List? ??
-            teamData?['stages'] as List? ??
-            [])
-        .cast<Map<String, dynamic>>();
+    final stagesList =
+        (widget.studentData?['stages'] as List? ??
+                teamData?['stages'] as List? ??
+                [])
+            .cast<Map<String, dynamic>>();
 
     final stagesListOptions = stagesList
         .map((s) => s['stage_label']?.toString().trim() ?? '')
         .where((s) => s.isNotEmpty)
         .toList();
 
-    final stageOptions = widget.studentData?.containsKey('stage_options') == true
+    final stageOptions =
+        widget.studentData?.containsKey('stage_options') == true
         ? backendStageOptions
         : (delivState.stageOptions.isNotEmpty
-            ? delivState.stageOptions
-            : stagesListOptions);
+              ? delivState.stageOptions
+              : stagesListOptions);
 
-    final rawActiveStageName = teamData?['current_stage']?.toString() ??
+    final rawActiveStageName =
+        teamData?['current_stage']?.toString() ??
         teamData?['current_defense_stage']?.toString() ??
         teamData?['ready_for_stage']?.toString() ??
         team['currentStage']?.toString() ??
@@ -218,9 +246,13 @@ class _TeamTabState extends ConsumerState<TeamTab> {
 
     final activeStageName = stageOptions.isEmpty
         ? ''
-        : (stageOptions.any((s) => s.trim().toLowerCase() == rawActiveStageName.trim().toLowerCase())
-            ? rawActiveStageName
-            : stageOptions.first);
+        : (stageOptions.any(
+                (s) =>
+                    s.trim().toLowerCase() ==
+                    rawActiveStageName.trim().toLowerCase(),
+              )
+              ? rawActiveStageName
+              : stageOptions.first);
 
     final schedule = studentStageRecord(
       stage: activeStageName,
@@ -236,7 +268,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     );
 
     // Calculate deliverables file count
-    final deliverables = (studentData?['deliverables'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final deliverables =
+        (studentData?['deliverables'] as List?)?.cast<Map<String, dynamic>>() ??
+        [];
     int fileCount = 0;
     for (final d in deliverables) {
       final files = d['files'] as List?;
@@ -250,34 +284,48 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       fileCount = deliverables.length;
     }
 
-    final hasPendingPeer = StudentTaskBadgeHelper.hasPendingPeerEval(studentData);
-    final peerEvalComplete = !hasPendingPeer &&
+    final hasPendingPeer = StudentTaskBadgeHelper.hasPendingPeerEval(
+      studentData,
+    );
+    final peerEvalComplete =
+        !hasPendingPeer &&
         (studentData?['myPeerEvalComplete'] == true ||
             studentData?['peerEvalComplete'] == true);
 
     // Extract set of evaluated teammate IDs/names
-    final mySubmissions = (studentData?['myPeerSubmissions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final mySubmissions =
+        (studentData?['myPeerSubmissions'] as List?)
+            ?.cast<Map<String, dynamic>>() ??
+        [];
     final evaluatedTeammateKeys = <String>{};
     for (final sub in mySubmissions) {
-      final id = sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
+      final id =
+          sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
       if (id != null && id.isNotEmpty) evaluatedTeammateKeys.add(id);
-      final name = sub['evaluateeName']?.toString() ?? sub['evaluatee_name']?.toString();
+      final name =
+          sub['evaluateeName']?.toString() ?? sub['evaluatee_name']?.toString();
       if (name != null && name.trim().isNotEmpty) {
         evaluatedTeammateKeys.add(name.trim().toLowerCase());
       }
     }
     if (evaluatedTeammateKeys.isEmpty) {
-      final stages = (studentData?['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final stages =
+          (studentData?['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       for (final s in stages) {
         if (s['stage_label']?.toString().trim().toLowerCase() !=
             activeStageName.trim().toLowerCase()) {
           continue;
         }
-        final stageSubs = (s['my_peer_submissions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        final stageSubs =
+            (s['my_peer_submissions'] as List?)?.cast<Map<String, dynamic>>() ??
+            [];
         for (final sub in stageSubs) {
-          final id = sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
+          final id =
+              sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
           if (id != null && id.isNotEmpty) evaluatedTeammateKeys.add(id);
-          final name = sub['evaluateeName']?.toString() ?? sub['evaluatee_name']?.toString();
+          final name =
+              sub['evaluateeName']?.toString() ??
+              sub['evaluatee_name']?.toString();
           if (name != null && name.trim().isNotEmpty) {
             evaluatedTeammateKeys.add(name.trim().toLowerCase());
           }
@@ -285,45 +333,63 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       }
     }
 
-    final needsName = team['needs_name'] == true || team['setup_pending'] == true;
+    final needsName =
+        team['needs_name'] == true || team['setup_pending'] == true;
     final isLeader = StudentTaskBadgeHelper.isTeamLeader(widget.studentData);
 
-    final leaderMember = members.where((m) => m['isLeader'] == true || m['is_leader'] == true).firstOrNull;
-    final leaderName = team['leader_name']?.toString() ??
+    final leaderMember = members
+        .where((m) => m['isLeader'] == true || m['is_leader'] == true)
+        .firstOrNull;
+    final leaderName =
+        team['leader_name']?.toString() ??
         leaderMember?['name']?.toString() ??
         leaderMember?['first_name']?.toString() ??
         '';
 
     Map<String, dynamic>? conceptWorkflow;
     for (final s in stagesList) {
-      if ('${s['stage_label']}'.trim().toLowerCase() != activeStageName.trim().toLowerCase()) continue;
+      if ('${s['stage_label']}'.trim().toLowerCase() !=
+          activeStageName.trim().toLowerCase()) {
+        continue;
+      }
       if (s['team_id'] != null && s['team_id'] != team['id']) continue;
       final cw = s['concept_workflow'];
-      if (cw is Map && (cw['enabled'] == true || (cw['concepts'] as List? ?? []).isNotEmpty)) {
+      if (cw is Map &&
+          (cw['enabled'] == true ||
+              (cw['concepts'] as List? ?? []).isNotEmpty)) {
         conceptWorkflow = Map<String, dynamic>.from(cw);
         break;
       }
     }
-    conceptWorkflow = _conceptOverrides['${team['id']}:$activeStageName'] ?? conceptWorkflow;
+    conceptWorkflow =
+        _conceptOverrides['${team['id']}:$activeStageName'] ?? conceptWorkflow;
     final concepts = (conceptWorkflow?['concepts'] as List? ?? [])
         .whereType<Map>()
         .map((c) => Map<String, dynamic>.from(c))
         .toList();
-    final isSharedSystem = conceptWorkflow?['section_project_id'] != null ||
+    final isSharedSystem =
+        conceptWorkflow?['section_project_id'] != null ||
         conceptWorkflow?['shared_import_pending'] == true ||
         conceptWorkflow?['selection_mode'] == 'shared_module' ||
         team['section_project_id'] != null;
     final hasConceptWorkflow = conceptWorkflow != null && concepts.isNotEmpty;
-    final isPendingSelection = team['project_pending'] == true ||
+    final isPendingSelection =
+        team['project_pending'] == true ||
         rawProjectTitle.trim().isEmpty ||
         conceptWorkflow?['status'] != 'approved';
 
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (onRefresh != null || team['setup_pending'] == true || team['project_pending'] == true)
-          StudentTeamSetupTasks(onOpenRepository: () => onSelectTab?.call(1, subTabIndex: 1),
-            onRefresh: onRefresh, refreshKey: delivState.teams, showConceptTasks: false),
+        if (onRefresh != null ||
+            team['setup_pending'] == true ||
+            team['project_pending'] == true)
+          StudentTeamSetupTasks(
+            onOpenRepository: () => onSelectTab?.call(1, subTabIndex: 1),
+            onRefresh: onRefresh,
+            refreshKey: delivState.teams,
+            showConceptTasks: false,
+          ),
         // 1. TEAM & PROJECT OVERVIEW (CLEAN WHITE CARD)
         _buildTeamHeaderCard(
           teamName: teamName,
@@ -339,7 +405,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           leaderName: leaderName,
           teamId: team['id'] as int?,
           hasConceptWorkflow: hasConceptWorkflow,
-          conceptProgress: '${concepts.where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty).length} of ${concepts.length} ${isSharedSystem ? 'module' : 'concept'} titles provided',
+          conceptProgress:
+              '${concepts.where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty).length} of ${concepts.length} ${isSharedSystem ? 'module' : 'concept'} titles provided',
           isPendingSelection: isPendingSelection,
           isSharedSystem: isSharedSystem,
         ),
@@ -347,10 +414,13 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           const SizedBox(height: 12),
           _buildProposedConceptsCard(
             workflow: conceptWorkflow,
+            teamId: team['id'] as int,
+            stageLabel: activeStageName,
             concepts: concepts,
             isSharedSystem: isSharedSystem,
             isLeader: isLeader,
-            onEdit: () => _editConceptTitles(team['id'] as int, activeStageName),
+            onEdit: () =>
+                _editConceptTitles(team['id'] as int, activeStageName),
             onSelectTab: onSelectTab,
           ),
         ],
@@ -409,7 +479,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     final name = await showTeamNameDialog(context, initialName: currentName);
     if (name == null || name.trim().isEmpty || !mounted) return;
     try {
-      await ref.read(teamFormationServiceProvider).completeName(teamId, name.trim());
+      await ref
+          .read(teamFormationServiceProvider)
+          .completeName(teamId, name.trim());
       await widget.onRefresh?.call();
     } catch (e) {
       if (mounted) {
@@ -421,16 +493,35 @@ class _TeamTabState extends ConsumerState<TeamTab> {
   }
 
   Future<void> _editConceptTitles(int teamId, String stageLabel) async {
-    final workflow = await editTeamConceptTitles(context, teamId: teamId, stageLabel: stageLabel);
+    final workflow = await editTeamConceptTitles(
+      context,
+      teamId: teamId,
+      stageLabel: stageLabel,
+    );
     if (workflow == null || !mounted) return;
     setState(() => _conceptOverrides['$teamId:$stageLabel'] = workflow);
-    ref.read(dashboardProvider('student').notifier).applyStudentConceptWorkflow(teamId, stageLabel, workflow);
-    ref.read(dataRefreshProvider.notifier).markChanged(const [DataArea.dashboard, DataArea.teams, DataArea.deliverables]);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-      (workflow['concepts'] as List? ?? []).whereType<Map>().any((c) => '${c['title'] ?? ''}'.trim().isEmpty)
-        ? 'Draft saved. Complete the remaining titles before review.' :
-          workflow['section_project_id'] != null || workflow['shared_import_pending'] == true
-            ? 'Module titles saved.' : 'Concept titles saved.')));
+    ref
+        .read(dashboardProvider('student').notifier)
+        .applyStudentConceptWorkflow(teamId, stageLabel, workflow);
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
+      DataArea.teams,
+      DataArea.deliverables,
+    ]);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          (workflow['concepts'] as List? ?? []).whereType<Map>().any(
+                (c) => '${c['title'] ?? ''}'.trim().isEmpty,
+              )
+              ? 'Draft saved. Complete the remaining titles before review.'
+              : workflow['section_project_id'] != null ||
+                    workflow['shared_import_pending'] == true
+              ? 'Module titles saved.'
+              : 'Concept titles saved.',
+        ),
+      ),
+    );
     await widget.onRefresh?.call();
   }
 
@@ -460,7 +551,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
         .replaceAll('2nd Semester', '2nd Sem')
         .replaceAll('Summer Semester', 'Summer');
     final compactSchoolYear = schoolYear.contains('-') && schoolYear.length >= 9
-        ? schoolYear.split('-').map((y) => y.length == 4 ? y.substring(2) : y).join('-')
+        ? schoolYear
+              .split('-')
+              .map((y) => y.length == 4 ? y.substring(2) : y)
+              .join('-')
         : schoolYear;
     final termText = compactSemester.isNotEmpty && compactSchoolYear.isNotEmpty
         ? '$compactSemester, AY $compactSchoolYear'
@@ -495,10 +589,16 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: ProgramColors.of(context, data: widget.studentData?['team'] as Map?).accent.withValues(alpha: 0.08),
+                  color: ProgramColors.of(
+                    context,
+                    data: widget.studentData?['team'] as Map?,
+                  ).accent.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: ProgramColors.of(context, data: widget.studentData?['team'] as Map?).accent.withValues(alpha: 0.2),
+                    color: ProgramColors.of(
+                      context,
+                      data: widget.studentData?['team'] as Map?,
+                    ).accent.withValues(alpha: 0.2),
                   ),
                 ),
                 child: Center(
@@ -507,7 +607,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
-                      color: ProgramColors.of(context, data: widget.studentData?['team'] as Map?).text,
+                      color: ProgramColors.of(
+                        context,
+                        data: widget.studentData?['team'] as Map?,
+                      ).text,
                       letterSpacing: 0.5,
                     ),
                   ),
@@ -538,16 +641,29 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                             onTap: () => _handleNameTeam(teamId, teamName),
                             borderRadius: BorderRadius.circular(6),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
-                                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                                color: DefensysTokens.maroonOf(
+                                  context,
+                                ).withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.3)),
+                                border: Border.all(
+                                  color: DefensysTokens.maroonOf(
+                                    context,
+                                  ).withValues(alpha: 0.3),
+                                ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.edit_outlined, size: 12, color: DefensysTokens.maroonOf(context)),
+                                  Icon(
+                                    Icons.edit_outlined,
+                                    size: 12,
+                                    color: DefensysTokens.maroonOf(context),
+                                  ),
                                   const SizedBox(width: 4),
                                   Text(
                                     'Name team',
@@ -565,7 +681,13 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                           const SizedBox(width: 6),
                           Tooltip(
                             message: 'Official team name finalized',
-                            child: Icon(Icons.lock_outline_rounded, size: 13, color: DefensysTokens.steelGrey.withValues(alpha: 0.6)),
+                            child: Icon(
+                              Icons.lock_outline_rounded,
+                              size: 13,
+                              color: DefensysTokens.steelGrey.withValues(
+                                alpha: 0.6,
+                              ),
+                            ),
                           ),
                         ],
                       ],
@@ -682,21 +804,85 @@ class _TeamTabState extends ConsumerState<TeamTab> {
 
   Widget _buildProposedConceptsCard({
     required Map<String, dynamic> workflow,
+    required int teamId,
+    required String stageLabel,
     required List<Map<String, dynamic>> concepts,
     required bool isSharedSystem,
     required bool isLeader,
     required VoidCallback onEdit,
     required void Function(int index, {int? subTabIndex})? onSelectTab,
   }) {
-    final canEditTitles = isLeader && StudentTaskBadgeHelper.canEditConceptTitles(workflow);
+    if (workflow['title_workflow_version'] == 2) {
+      return DefensysShadcnScope(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: DefensysTokens.surfaceOf(context),
+            border: Border.all(color: DefensysTokens.borderOf(context)),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                isSharedSystem
+                    ? 'Proposed module titles'
+                    : 'Proposed concept titles',
+                style: DefensysTokens.body,
+              ),
+              for (final concept in concepts)
+                TitleReviewCard(
+                  key: ValueKey('student-title-$teamId-${concept['key']}'),
+                  concept: concept,
+                  onAction: (action, title, reason) async {
+                    final updated = await ref
+                        .read(teamConceptServiceProvider)
+                        .titleAction(
+                          teamId,
+                          stageLabel,
+                          workflow,
+                          '${concept['key']}',
+                          action,
+                          title,
+                          reason,
+                        );
+                    if (!mounted) return false;
+                    setState(
+                      () => _conceptOverrides['$teamId:$stageLabel'] = updated,
+                    );
+                    ref
+                        .read(dashboardProvider('student').notifier)
+                        .applyStudentConceptWorkflow(
+                          teamId,
+                          stageLabel,
+                          updated,
+                        );
+                    ref.read(dataRefreshProvider.notifier).markChanged(const [
+                      DataArea.dashboard,
+                      DataArea.teams,
+                      DataArea.deliverables,
+                    ]);
+                    await widget.onRefresh?.call();
+                    return true;
+                  },
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    final canEditTitles =
+        isLeader && StudentTaskBadgeHelper.canEditConceptTitles(workflow);
     final status = switch (workflow['status']) {
-      'concepts_needed' => isSharedSystem ? 'Modules needed' : 'Concepts needed',
+      'concepts_needed' =>
+        isSharedSystem ? 'Modules needed' : 'Concepts needed',
       'replacement_concepts_needed' => 'Replacement needed',
       'concept_review_pending' => 'Review pending',
       'concept_endorsement_pending' => 'Awaiting endorsement',
       'module_confirmation_pending' => 'Awaiting module confirmation',
       'shared_clearance_pending' => 'Team endorsed · Shared papers pending',
-      'shared_acknowledgment_pending' => 'Team endorsed · Adviser shared review pending',
+      'shared_acknowledgment_pending' =>
+        'Team endorsed · Adviser shared review pending',
       'ready_to_schedule' => 'Ready to schedule',
       'scheduled' => 'Hearing scheduled',
       'approved' => 'Approved',
@@ -771,7 +957,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                isSharedSystem ? 'No modules configured for this stage yet.' : 'No concepts configured for this stage yet.',
+                isSharedSystem
+                    ? 'No modules configured for this stage yet.'
+                    : 'No concepts configured for this stage yet.',
                 style: TextStyle(
                   fontSize: 12,
                   color: DefensysTokens.textSecondaryOf(context),
@@ -790,61 +978,89 @@ class _TeamTabState extends ConsumerState<TeamTab> {
 
                 return Container(
                   margin: EdgeInsets.only(bottom: isSharedSystem ? 0 : 6),
-                  padding: isSharedSystem ? EdgeInsets.zero
+                  padding: isSharedSystem
+                      ? EdgeInsets.zero
                       : const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                  decoration: isSharedSystem ? null : BoxDecoration(
-                    color: DefensysTokens.panelOf(context),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: confirmed ? const Color(0xFF86EFAC) : DefensysTokens.borderOf(context),
-                      width: 1.0,
-                    ),
-                  ),
+                  decoration: isSharedSystem
+                      ? null
+                      : BoxDecoration(
+                          color: DefensysTokens.panelOf(context),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: confirmed
+                                ? const Color(0xFF86EFAC)
+                                : DefensysTokens.borderOf(context),
+                            width: 1.0,
+                          ),
+                        ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (isSharedSystem && i > 0)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 24),
-                          child: Divider(height: 1, color: DefensysTokens.borderOf(context)),
+                          child: Divider(
+                            height: 1,
+                            color: DefensysTokens.borderOf(context),
+                          ),
                         ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           if (isSharedSystem)
-                            Expanded(child: Text(
-                              'System ${systemLetter(c['key'])}',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                                color: DefensysTokens.textPrimaryOf(context)),
-                            ))
-                          else Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'Concept ${i + 1}',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
-                                color: DefensysTokens.maroonOf(context),
+                            Expanded(
+                              child: Text(
+                                'System ${systemLetter(c['key'])}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: DefensysTokens.textPrimaryOf(context),
+                                ),
+                              ),
+                            )
+                          else
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.maroonOf(
+                                  context,
+                                ).withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'Concept ${i + 1}',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: DefensysTokens.maroonOf(context),
+                                ),
                               ),
                             ),
-                          ),
                           const SizedBox(width: 12),
                           if (confirmed)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFDCFCE7),
                                 borderRadius: BorderRadius.circular(5),
-                                border: Border.all(color: const Color(0xFF86EFAC)),
+                                border: Border.all(
+                                  color: const Color(0xFF86EFAC),
+                                ),
                               ),
                               child: const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.check_rounded, size: 10, color: Color(0xFF15803D)),
+                                  Icon(
+                                    Icons.check_rounded,
+                                    size: 10,
+                                    color: Color(0xFF15803D),
+                                  ),
                                   SizedBox(width: 3),
                                   Text(
                                     'Confirmed',
@@ -857,35 +1073,50 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                                 ],
                               ),
                             )
-                          else if (docStatus == 'uploaded' || docStatus == 'ready')
+                          else if (docStatus == 'uploaded' ||
+                              docStatus == 'ready')
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: DefensysTokens.surfaceOf(context),
                                 borderRadius: BorderRadius.circular(5),
-                                border: Border.all(color: DefensysTokens.borderOf(context)),
+                                border: Border.all(
+                                  color: DefensysTokens.borderOf(context),
+                                ),
                               ),
                               child: Text(
                                 'Paper ready',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,
-                                  color: DefensysTokens.textSecondaryOf(context),
+                                  color: DefensysTokens.textSecondaryOf(
+                                    context,
+                                  ),
                                 ),
                               ),
                             )
                           else
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: DefensysTokens.surfaceOf(context),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                docStatus.isNotEmpty ? docStatus.replaceAll('_', ' ') : 'Pending',
+                                docStatus.isNotEmpty
+                                    ? docStatus.replaceAll('_', ' ')
+                                    : 'Pending',
                                 style: TextStyle(
                                   fontSize: 10,
-                                  color: DefensysTokens.textSecondaryOf(context),
+                                  color: DefensysTokens.textSecondaryOf(
+                                    context,
+                                  ),
                                 ),
                               ),
                             ),
@@ -894,27 +1125,41 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       if (isSharedSystem) ...[
                         const SizedBox(height: 8),
                         Text(
-                          systemTitle.isEmpty ? 'System name not yet provided' : systemTitle,
-                          style: TextStyle(fontSize: 13, height: 1.5,
-                            color: DefensysTokens.textSecondaryOf(context)),
+                          systemTitle.isEmpty
+                              ? 'System name not yet provided'
+                              : systemTitle,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.5,
+                            color: DefensysTokens.textSecondaryOf(context),
+                          ),
                         ),
                         const SizedBox(height: 16),
-                        Text('Module title', style: TextStyle(fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: DefensysTokens.textPrimaryOf(context))),
+                        Text(
+                          'Module title',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.textPrimaryOf(context),
+                          ),
+                        ),
                       ],
                       SizedBox(height: isSharedSystem ? 8 : 5),
                       Text(
                         modTitle.isNotEmpty
                             ? modTitle
-                            : (isSharedSystem ? 'Module title not yet proposed' : 'Concept title not yet proposed'),
+                            : (isSharedSystem
+                                  ? 'Module title not yet proposed'
+                                  : 'Concept title not yet proposed'),
                         style: TextStyle(
                           fontSize: isSharedSystem ? 14 : 13,
                           fontWeight: FontWeight.w600,
                           color: modTitle.isNotEmpty
                               ? DefensysTokens.textPrimaryOf(context)
                               : DefensysTokens.steelGrey,
-                          fontStyle: modTitle.isEmpty ? FontStyle.italic : FontStyle.normal,
+                          fontStyle: modTitle.isEmpty
+                              ? FontStyle.italic
+                              : FontStyle.normal,
                           height: isSharedSystem ? 1.5 : 1.25,
                         ),
                       ),
@@ -927,66 +1172,93 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           if (isSharedSystem)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Divider(height: 1, color: DefensysTokens.borderOf(context)),
+              child: Divider(
+                height: 1,
+                color: DefensysTokens.borderOf(context),
+              ),
             )
-          else const SizedBox(height: 8),
+          else
+            const SizedBox(height: 8),
           SizedBox(
-              height: 44,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (canEditTitles) ...[
-                    Expanded(
-                      child: FilledButton.icon(
-                        key: const ValueKey('edit-team-concepts'),
-                        onPressed: onEdit,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: DefensysTokens.maroonOf(context),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        ),
-                        icon: const Icon(Icons.edit_outlined, size: 14),
-                        label: Text(
-                          isSharedSystem ? 'Edit module titles' : 'Edit concept titles',
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
+            height: 44,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (canEditTitles) ...[
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => isSharedSystem
-                          ? onSelectTab?.call(3)
-                          : onSelectTab?.call(1, subTabIndex: 1),
-                      icon: Icon(isSharedSystem ? Icons.hub_outlined : Icons.description_outlined,
-                        size: 14, color: DefensysTokens.maroonOf(context)),
-                      label: Text(
-                        isSharedSystem ? 'Integration →' : 'View deliverables',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: DefensysTokens.maroonOf(context),
+                    child: FilledButton.icon(
+                      key: const ValueKey('edit-team-concepts'),
+                      onPressed: onEdit,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: DefensysTokens.maroonOf(context),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
                       ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: DefensysTokens.maroonOf(context),
-                        side: BorderSide(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.3)),
-                        backgroundColor: isSharedSystem
-                            ? DefensysTokens.maroonOf(context).withValues(alpha: 0.04)
-                            : null,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      icon: const Icon(Icons.edit_outlined, size: 14),
+                      label: Text(
+                        isSharedSystem
+                            ? 'Edit module titles'
+                            : 'Edit concept titles',
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        style: const TextStyle(fontSize: 12),
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                 ],
-              ),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => isSharedSystem
+                        ? onSelectTab?.call(3)
+                        : onSelectTab?.call(1, subTabIndex: 1),
+                    icon: Icon(
+                      isSharedSystem
+                          ? Icons.hub_outlined
+                          : Icons.description_outlined,
+                      size: 14,
+                      color: DefensysTokens.maroonOf(context),
+                    ),
+                    label: Text(
+                      isSharedSystem ? 'Integration →' : 'View deliverables',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: DefensysTokens.maroonOf(context),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: DefensysTokens.maroonOf(context),
+                      side: BorderSide(
+                        color: DefensysTokens.maroonOf(
+                          context,
+                        ).withValues(alpha: 0.3),
+                      ),
+                      backgroundColor: isSharedSystem
+                          ? DefensysTokens.maroonOf(
+                              context,
+                            ).withValues(alpha: 0.04)
+                          : null,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1005,7 +1277,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       children: [
         Expanded(
           child: InkWell(
-            onTap: () => onSelectTab?.call(2), // Directly opens Tab 2 (Repository)
+            onTap: () =>
+                onSelectTab?.call(2), // Directly opens Tab 2 (Repository)
             borderRadius: BorderRadius.circular(14),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1072,7 +1345,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
         const SizedBox(width: 10),
         Expanded(
           child: InkWell(
-            onTap: () => onSelectTab?.call(1, subTabIndex: 2), // Directly opens Tab 1, Sub-tab 2 (Peer Eval)
+            onTap: () => onSelectTab?.call(
+              1,
+              subTabIndex: 2,
+            ), // Directly opens Tab 1, Sub-tab 2 (Peer Eval)
             borderRadius: BorderRadius.circular(14),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1096,7 +1372,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                          color: DefensysTokens.maroonOf(
+                            context,
+                          ).withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
@@ -1115,7 +1393,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                             decoration: BoxDecoration(
                               color: Colors.redAccent,
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 1.5),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.5,
+                              ),
                             ),
                           ),
                         ),
@@ -1128,16 +1409,18 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       children: [
                         Row(
                           children: [
-                            Flexible(child: Text(
-                              'Peer Eval',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.bold,
-                                color: DefensysTokens.textPrimaryOf(context),
+                            Flexible(
+                              child: Text(
+                                'Peer Eval',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: DefensysTokens.textPrimaryOf(context),
+                                ),
                               ),
-                            )),
+                            ),
                             if (hasPendingPeer) ...[
                               const SizedBox(width: 5),
                               Container(
@@ -1156,7 +1439,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                           peerEvalComplete ? 'Completed ✓' : 'Review Peers',
                           style: TextStyle(
                             fontSize: 10.5,
-                            color: peerEvalComplete ? const Color(0xFF15803D) : DefensysTokens.maroonTextOf(context),
+                            color: peerEvalComplete
+                                ? const Color(0xFF15803D)
+                                : DefensysTokens.maroonTextOf(context),
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -1208,7 +1493,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             ),
             const SizedBox(height: 12),
             Text(
-              isCapstone ? 'No defense stages configured yet' : 'No PIT events configured yet',
+              isCapstone
+                  ? 'No defense stages configured yet'
+                  : 'No PIT events configured yet',
               style: TextStyle(
                 fontSize: 14.5,
                 fontWeight: FontWeight.bold,
@@ -1220,19 +1507,28 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               isCapstone
                   ? 'Your schedule and defense status will appear after an administrator adds a stage.'
                   : 'Your event and schedule will appear after an administrator adds a PIT event.',
-              style: TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondaryOf(context)),
+              style: TextStyle(
+                fontSize: 11.5,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
             ),
           ],
         ),
       );
     }
 
-    final scheduledDate = schedule?['date']?.toString() ?? schedule?['scheduled_date']?.toString();
-    final startTime = schedule?['start_time']?.toString() ?? schedule?['time']?.toString();
+    final scheduledDate =
+        schedule?['date']?.toString() ??
+        schedule?['scheduled_date']?.toString();
+    final startTime =
+        schedule?['start_time']?.toString() ?? schedule?['time']?.toString();
     final room = schedule?['room']?.toString();
-    final hasSchedule = scheduledDate != null && scheduledDate.trim().isNotEmpty;
-    final panelChair = schedule?['chair']?.toString() ?? schedule?['panel_chair']?.toString();
-    final isPassed = grades != null &&
+    final hasSchedule =
+        scheduledDate != null && scheduledDate.trim().isNotEmpty;
+    final panelChair =
+        schedule?['chair']?.toString() ?? schedule?['panel_chair']?.toString();
+    final isPassed =
+        grades != null &&
         (grades['is_published'] == true || grades['status'] == 'published') &&
         grades['result']?.toString().toUpperCase() == 'PASSED';
 
@@ -1244,7 +1540,20 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           final parts = scheduledDate.split('-');
           if (parts.length == 3) {
             final m = int.tryParse(parts[1]) ?? 1;
-            const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+            const months = [
+              'JAN',
+              'FEB',
+              'MAR',
+              'APR',
+              'MAY',
+              'JUN',
+              'JUL',
+              'AUG',
+              'SEP',
+              'OCT',
+              'NOV',
+              'DEC',
+            ];
             monthLabel = (m >= 1 && m <= 12) ? months[m - 1] : 'DATE';
             dayLabel = parts[2].split(' ')[0];
           }
@@ -1252,7 +1561,20 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           final parts = scheduledDate.split('/');
           if (parts.length == 3) {
             final m = int.tryParse(parts[0]) ?? 1;
-            const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+            const months = [
+              'JAN',
+              'FEB',
+              'MAR',
+              'APR',
+              'MAY',
+              'JUN',
+              'JUL',
+              'AUG',
+              'SEP',
+              'OCT',
+              'NOV',
+              'DEC',
+            ];
             monthLabel = (m >= 1 && m <= 12) ? months[m - 1] : 'DATE';
             dayLabel = parts[1];
           }
@@ -1260,10 +1582,15 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       } catch (_) {}
     }
 
-    final cardTitle = isCapstone ? 'Current Defense Stage' : 'Upcoming PIT Event';
+    final cardTitle = isCapstone
+        ? 'Current Defense Stage'
+        : 'Upcoming PIT Event';
 
     return InkWell(
-      onTap: () => onSelectTab?.call(1, subTabIndex: 0), // Directly opens Tab 1, Sub-tab 0 (Schedule)
+      onTap: () => onSelectTab?.call(
+        1,
+        subTabIndex: 0,
+      ), // Directly opens Tab 1, Sub-tab 0 (Schedule)
       borderRadius: BorderRadius.circular(16),
       child: Container(
         width: double.infinity,
@@ -1331,7 +1658,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     decoration: BoxDecoration(
                       color: DefensysTokens.surfaceOf(context),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: DefensysTokens.borderOf(context)),
+                      border: Border.all(
+                        color: DefensysTokens.borderOf(context),
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.03),
@@ -1347,7 +1676,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                           padding: const EdgeInsets.symmetric(vertical: 2.5),
                           decoration: BoxDecoration(
                             color: DefensysTokens.maroonOf(context),
-                            borderRadius: BorderRadius.vertical(top: Radius.circular(9)),
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(9),
+                            ),
                           ),
                           child: Text(
                             monthLabel,
@@ -1408,7 +1739,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       const SizedBox(height: 3),
                       if (isPassed)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFDCFCE7),
                             borderRadius: BorderRadius.circular(4),
@@ -1533,7 +1867,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 2.5,
+                ),
                 decoration: BoxDecoration(
                   color: peerEvalComplete
                       ? const Color(0xFFDCFCE7)
@@ -1545,7 +1882,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                   style: TextStyle(
                     fontSize: 9.5,
                     fontWeight: FontWeight.w600,
-                    color: peerEvalComplete ? const Color(0xFF15803D) : DefensysTokens.dangerText,
+                    color: peerEvalComplete
+                        ? const Color(0xFF15803D)
+                        : DefensysTokens.dangerText,
                   ),
                 ),
               ),
@@ -1557,7 +1896,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 'No teammates listed yet.',
-                style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
               ),
             )
           else
@@ -1573,20 +1915,32 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               itemBuilder: (context, index) {
                 final m = members[index];
                 final name = m['name']?.toString().trim() ?? 'Student';
-                final isLeader = m['isLeader'] == true || m['is_leader'] == true;
-                final username = m['username']?.toString() ?? m['id']?.toString() ?? '—';
-                final isCurrent = m['id']?.toString() == studentInfo?['id']?.toString() ||
-                    m['username']?.toString() == studentInfo?['username']?.toString();
+                final isLeader =
+                    m['isLeader'] == true || m['is_leader'] == true;
+                final username =
+                    m['username']?.toString() ?? m['id']?.toString() ?? '—';
+                final isCurrent =
+                    m['id']?.toString() == studentInfo?['id']?.toString() ||
+                    m['username']?.toString() ==
+                        studentInfo?['username']?.toString();
 
                 final mId = m['id']?.toString() ?? '';
                 final mName = name.toLowerCase();
                 final mUsername = m['username']?.toString() ?? '';
-                final isEvaluated = evaluatedTeammateKeys.contains(mId) ||
+                final isEvaluated =
+                    evaluatedTeammateKeys.contains(mId) ||
                     evaluatedTeammateKeys.contains(mName) ||
-                    (mUsername.isNotEmpty && evaluatedTeammateKeys.contains(mUsername));
+                    (mUsername.isNotEmpty &&
+                        evaluatedTeammateKeys.contains(mUsername));
 
                 final initials = name.isNotEmpty
-                    ? name.split(' ').where((w) => w.isNotEmpty).map((e) => e[0]).take(2).join().toUpperCase()
+                    ? name
+                          .split(' ')
+                          .where((w) => w.isNotEmpty)
+                          .map((e) => e[0])
+                          .take(2)
+                          .join()
+                          .toUpperCase()
                     : 'S';
 
                 return Row(
@@ -1595,13 +1949,17 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       radius: 14,
                       backgroundColor: isLeader
                           ? const Color(0xFF7F1D1D)
-                          : DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                          : DefensysTokens.maroonOf(
+                              context,
+                            ).withValues(alpha: 0.1),
                       child: Text(
                         initials,
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: isLeader ? Colors.white : DefensysTokens.maroonTextOf(context),
+                          color: isLeader
+                              ? Colors.white
+                              : DefensysTokens.maroonTextOf(context),
                         ),
                       ),
                     ),
@@ -1618,7 +1976,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: DefensysTokens.textPrimaryOf(context),
+                                    color: DefensysTokens.textPrimaryOf(
+                                      context,
+                                    ),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1635,11 +1995,16 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                               if (isLeader) ...[
                                 const SizedBox(width: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1.5,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFFEF3C7),
                                     borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: const Color(0xFFFDE68A)),
+                                    border: Border.all(
+                                      color: const Color(0xFFFDE68A),
+                                    ),
                                   ),
                                   child: const Text(
                                     'Leader',
@@ -1666,7 +2031,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     ),
                     if (isCurrent)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: DefensysTokens.surfaceHigherOf(context),
                           borderRadius: BorderRadius.circular(4),
@@ -1682,16 +2050,20 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       )
                     else if (isEvaluated)
                       InkWell(
-                        onTap: () => onSelectTab?.call(1, subTabIndex: 2), // Directly opens Tab 1, Sub-tab 2 (Peer Eval)
+                        onTap: () => onSelectTab?.call(
+                          1,
+                          subTabIndex: 2,
+                        ), // Directly opens Tab 1, Sub-tab 2 (Peer Eval)
                         borderRadius: BorderRadius.circular(6),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3.5,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFDCFCE7),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: const Color(0xFF86EFAC),
-                            ),
+                            border: Border.all(color: const Color(0xFF86EFAC)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1716,15 +2088,25 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       )
                     else
                       InkWell(
-                        onTap: () => onSelectTab?.call(1, subTabIndex: 2), // Directly opens Tab 1, Sub-tab 2 (Peer Eval)
+                        onTap: () => onSelectTab?.call(
+                          1,
+                          subTabIndex: 2,
+                        ), // Directly opens Tab 1, Sub-tab 2 (Peer Eval)
                         borderRadius: BorderRadius.circular(6),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3.5,
+                          ),
                           decoration: BoxDecoration(
-                            color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                            color: DefensysTokens.maroonOf(
+                              context,
+                            ).withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
+                              color: DefensysTokens.maroonOf(
+                                context,
+                              ).withValues(alpha: 0.2),
                             ),
                           ),
                           child: Row(
@@ -1760,13 +2142,20 @@ class _TeamTabState extends ConsumerState<TeamTab> {
   // ─── HELPER: EXTRACT TEAM MONOGRAM ─────────────────────────────────────────
 
   static String _extractTeamMonogram(String name) {
-    final clean = name.replaceFirst(RegExp(r'^Team\s+', caseSensitive: false), '').trim();
+    final clean = name
+        .replaceFirst(RegExp(r'^Team\s+', caseSensitive: false), '')
+        .trim();
     if (clean.isEmpty) return 'TM';
-    final parts = clean.split(RegExp(r'[\s\-_]+')).where((p) => p.isNotEmpty).toList();
+    final parts = clean
+        .split(RegExp(r'[\s\-_]+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
     if (parts.length >= 2) {
       return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     }
-    final matches = RegExp(r'[A-Z]').allMatches(clean).map((m) => m.group(0)!).toList();
+    final matches = RegExp(
+      r'[A-Z]',
+    ).allMatches(clean).map((m) => m.group(0)!).toList();
     if (matches.length >= 2) {
       return '${matches[0]}${matches[1]}'.toUpperCase();
     }

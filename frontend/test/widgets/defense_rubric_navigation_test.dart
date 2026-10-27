@@ -16,6 +16,7 @@ import 'package:defensys/services/app/data_refresh_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/services/rubric_engine_provider.dart';
+import 'package:defensys/services/network/connectivity_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/utils/stage_setup_draft.dart';
@@ -28,6 +29,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/auth_test_overrides.dart';
+import '../helpers/capture_preview.dart';
 
 const _stage = <String, dynamic>{
   'id': 7,
@@ -39,6 +41,11 @@ const _stage = <String, dynamic>{
   'qualifying_score': 75,
 };
 
+class _Online extends ConnectivityNotifier {
+  @override
+  bool build() => true;
+}
+
 class _Stages extends DefenseStagesNotifier {
   int adds = 0;
   Map<String, dynamic>? savedUpdate;
@@ -47,6 +54,7 @@ class _Stages extends DefenseStagesNotifier {
   int? savedStageId;
   bool gradingSucceeds = true;
   bool locked = false;
+  Map<String, dynamic> stageFields = {};
   @override
   DefenseStagesState build() => const DefenseStagesState(stages: [_stage]);
 
@@ -58,7 +66,7 @@ class _Stages extends DefenseStagesNotifier {
     int stageId, {
     int? semesterId,
   }) async => {
-    'stage': {..._stage, 'id': stageId, 'is_locked': locked},
+    'stage': {..._stage, 'id': stageId, 'is_locked': locked, ...stageFields},
     'grading_config': gradingConfig,
   };
 
@@ -158,6 +166,7 @@ void main() {
     String initialLocation = AdminRoutes.defenseStages,
     Map<String, dynamic> gradingConfig = const {},
     List<Map<String, dynamic>> rubricOptions = const [],
+    Map<String, dynamic> stageFields = const {},
   }) async {
     final previousUrlOption = GoRouter.optionURLReflectsImperativeAPIs;
     GoRouter.optionURLReflectsImperativeAPIs = true;
@@ -172,7 +181,10 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         ...authTestOverrides(),
-        defenseStagesProvider.overrideWith(() => _Stages()..gradingConfig = gradingConfig),
+        connectivityProvider.overrideWith(_Online.new),
+        defenseStagesProvider.overrideWith(() => _Stages()
+          ..gradingConfig = gradingConfig
+          ..stageFields = stageFields),
         academicPeriodProvider.overrideWith(_Periods.new),
         rubricEngineProvider.overrideWith(() => _Rubrics(rubrics: rubricOptions)),
         dashboardProvider('admin').overrideWith(_Dashboard.new),
@@ -510,7 +522,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'Reloadable concept');
     await tester.tap(find.text('3. Deliverables'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add Pre-Defense'));
+    await tester.tap(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextFormField).first,
@@ -646,7 +658,7 @@ void main() {
       await tester.tap(find.text('Minutes not required'));
       await tester.tap(find.text('3. Deliverables'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Add Pre-Defense'));
+      await tester.tap(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byWidgetPredicate(
@@ -778,6 +790,51 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('scheduled stage can edit unused deliverables while submitted files stay protected', (tester) async {
+    await loadPreviewFonts();
+    await pumpWorkspace(tester, initialLocation: AdminRoutes.defenseStageEdit(7), stageFields: {
+      'structure_locked': true,
+      'structure_lock_reason': 'This stage has scheduled defenses.',
+      'deliverables': [
+        {'id': 1, 'deliverable_id': 'D1', 'label': 'Submitted manuscript',
+          'deliverable_type': 'post', 'file_format': 'pdf', 'required': true,
+          'has_data': true, 'is_locked': true, 'lock_reason': 'Submission history is protected.'},
+        {'id': 2, 'deliverable_id': 'D2', 'label': 'Unused presentation',
+          'deliverable_type': 'post', 'file_format': 'presentation', 'required': true},
+      ],
+    });
+    expect(find.text('Stage Settings Protected'), findsOneWidget);
+    await tester.tap(find.text('3. Deliverables'));
+    await tester.pumpAndSettle();
+    expect(find.text('Apply Naming Pattern to All Post-Defense Deliverables'), findsNothing);
+    await tester.ensureVisible(find.text('Submitted manuscript'));
+    await tester.tap(find.text('Submitted manuscript'));
+    await tester.pumpAndSettle();
+    final usedName = find.byWidgetPredicate((widget) => widget is TextFormField &&
+        widget.controller?.text == 'Submitted manuscript');
+    expect(tester.widget<TextField>(find.descendant(of: usedName, matching: find.byType(TextField))).readOnly, isTrue);
+    final usedDelete = find.widgetWithIcon(IconButton, Icons.delete_outline_rounded);
+    expect(tester.widget<IconButton>(usedDelete).onPressed, isNull);
+    expect(find.text('Submission history is protected.'), findsOneWidget);
+    await capturePreview(tester, find.byType(DefenseStageEditorScreen), 'stage-deliverable-integrity', viewport: true);
+    await tester.ensureVisible(find.text('Unused presentation'));
+    await tester.tap(find.text('Unused presentation'));
+    await tester.pumpAndSettle();
+    final unusedName = find.byWidgetPredicate((widget) => widget is TextFormField &&
+        widget.controller?.text == 'Unused presentation');
+    expect(tester.widget<TextField>(find.descendant(of: unusedName, matching: find.byType(TextField))).readOnly, isFalse);
+    await tester.enterText(unusedName, 'Updated presentation');
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    final stages = ProviderScope.containerOf(tester.element(find.byType(DefenseStagesScreen)))
+        .read(defenseStagesProvider.notifier) as _Stages;
+    expect(stages.savedUpdate!['label'], isNull);
+    expect((stages.savedUpdate!['deliverables'] as List).last['label'], 'Updated presentation');
+    expect(stages.savedGrading, isNull);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('a browser draft cannot override a stage locked by the server', (
     tester,

@@ -16,7 +16,6 @@ class FacultyRequirementsViewState {
   String filter = 'all';
   String? selected;
   String? selectedFileKey;
-  String? lastOpened;
 }
 
 class FacultyRequirementsPane extends ConsumerStatefulWidget {
@@ -69,7 +68,6 @@ class _FacultyRequirementsPaneState
         entries.firstOrNull;
     setState(() {
       selected = identity(item);
-      view.lastOpened = selected;
       view.selectedFileKey = fileKey ?? first?['key']?.toString();
     });
   }
@@ -89,19 +87,13 @@ class _FacultyRequirementsPaneState
     required bool saving,
   }) => Semantics(
     button: true,
-    selected: view.lastOpened == identity(item),
-    child: Ink(
-      color: view.lastOpened == identity(item)
-          ? DefensysTokens.surfaceHigherOf(context)
-          : Colors.transparent,
-      child: InkWell(
-        key: ValueKey('requirement-row-${identity(item)}'),
-        onTap: saving ? null : () => open(item),
-        hoverColor: DefensysTokens.surfaceHigherOf(context),
-        focusColor: DefensysTokens.surfaceHigherOf(context),
-        highlightColor: DefensysTokens.borderOf(context),
-        child: child,
-      ),
+    child: InkWell(
+      key: ValueKey('requirement-row-${identity(item)}'),
+      onTap: saving ? null : () => open(item),
+      hoverColor: DefensysTokens.surfaceHigherOf(context),
+      focusColor: DefensysTokens.surfaceHigherOf(context),
+      highlightColor: DefensysTokens.borderOf(context),
+      child: child,
     ),
   );
 
@@ -278,43 +270,44 @@ class _FacultyRequirementsPaneState
               widget.defenseReadiness!,
             widget.buildRequirement(active),
             const SizedBox(height: 12),
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                Text(
-                  queueIndex < 0
-                      ? 'No file uploaded'
-                      : 'File ${queueIndex + 1} of ${queue.length}',
-                  style: DefensysTokens.caption.copyWith(
-                    color: DefensysTokens.textSecondaryOf(context),
+            if (queue.length > 1)
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  Text(
+                    queueIndex < 0
+                        ? 'No file uploaded'
+                        : 'File ${queueIndex + 1} of ${queue.length}',
+                    style: DefensysTokens.caption.copyWith(
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
                   ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ShadButton.ghost(
-                      size: ShadButtonSize.sm,
-                      enabled: !saving && previous != null,
-                      onPressed: saving || previous == null
-                          ? null
-                          : () => navigate(previous),
-                      child: const Text('Previous'),
-                    ),
-                    ShadButton.outline(
-                      size: ShadButtonSize.sm,
-                      enabled: !saving && next != null,
-                      onPressed: saving || next == null
-                          ? null
-                          : () => navigate(next),
-                      child: const Text('Next file'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ShadButton.ghost(
+                        size: ShadButtonSize.sm,
+                        enabled: !saving && previous != null,
+                        onPressed: saving || previous == null
+                            ? null
+                            : () => navigate(previous),
+                        child: const Text('Previous'),
+                      ),
+                      ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        enabled: !saving && next != null,
+                        onPressed: saving || next == null
+                            ? null
+                            : () => navigate(next),
+                        child: const Text('Next file'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
           ],
         ),
       );

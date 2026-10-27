@@ -40,6 +40,7 @@ class SectionProjectTeam(models.Model):
 
 
 class SectionConceptRound(models.Model):
+    title_workflow_version = models.PositiveSmallIntegerField(default=1)
     shared_requirements_snapshot = models.JSONField(null=True, blank=True, default=None)
     project = models.ForeignKey(SectionConceptProject, on_delete=models.PROTECT, related_name='rounds')
     number = models.PositiveIntegerField(default=1)
@@ -79,6 +80,7 @@ class SectionConceptRound(models.Model):
 
 
 class SectionSystemConcept(models.Model):
+    title_review = models.JSONField(default=dict, blank=True)
     round = models.ForeignKey(SectionConceptRound, on_delete=models.PROTECT, related_name='systems')
     key = models.CharField(max_length=10)
     title = models.CharField(max_length=255, blank=True, default='')
@@ -108,6 +110,7 @@ class SectionConceptAcknowledgment(models.Model):
 
 
 class SectionConceptPaper(models.Model):
+    title_review_context = models.JSONField(default=dict, blank=True)
     concept = models.ForeignKey(SectionSystemConcept, on_delete=models.PROTECT, related_name='papers')
     purpose = models.CharField(max_length=10, default='proposal', choices=[('proposal', 'Proposal'), ('final', 'Approved concept paper')])
     file = models.FileField(upload_to='section_concepts/%Y/%m/')
@@ -157,6 +160,7 @@ class SharedDeliverableSet(models.Model):
 
 
 class SharedDeliverableFile(models.Model):
+    title_review_context = models.JSONField(default=dict, blank=True)
     """Append-only files; section-wide and per-concept slots share one contract."""
     submission_set = models.ForeignKey(SharedDeliverableSet, on_delete=models.PROTECT, related_name='files')
     deliverable_id = models.CharField(max_length=40)

@@ -10,6 +10,7 @@ import 'package:defensys/widgets/repository/deliverable_file_widgets.dart';
 import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:defensys/widgets/repository/concept_revision_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/models/team_workflow_status.dart';
 import 'package:defensys/widgets/repository/workflow_status_style.dart';
@@ -90,6 +91,26 @@ class DeliverablesTablePane extends ConsumerStatefulWidget {
   final int? conceptReviewProjectId;
   final ValueChanged<int>? onSelectedTeamChanged;
   final VoidCallback? onReturnToTeam;
+  final void Function(
+    int teamId,
+    String stageLabel,
+    String requirementId,
+    String? fileKey,
+  )?
+  onOpenConceptReview;
+  final void Function(
+    int teamId,
+    String stage,
+    String requirement,
+    String? slot,
+  )?
+  onOpenFiles;
+  final void Function(int projectId, String systemKey, bool files)?
+  onOpenSharedContext;
+  final String? sharedSystemKey;
+  final String? initialConceptRequirementId;
+  final String? initialConceptFileKey;
+  final int fileReviewRequestId;
 
   const DeliverablesTablePane({
     super.key,
@@ -105,6 +126,13 @@ class DeliverablesTablePane extends ConsumerStatefulWidget {
     this.conceptReviewProjectId,
     this.onSelectedTeamChanged,
     this.onReturnToTeam,
+    this.onOpenConceptReview,
+    this.onOpenFiles,
+    this.onOpenSharedContext,
+    this.sharedSystemKey,
+    this.initialConceptRequirementId,
+    this.initialConceptFileKey,
+    this.fileReviewRequestId = 0,
   });
 
   @override
@@ -161,6 +189,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       if (widget.initialTab != null) {
         _cardActiveTabs[widget.initialTeamId!] = widget.initialTab!;
       }
+    }
+    if (oldWidget.fileReviewRequestId != widget.fileReviewRequestId &&
+        widget.initialConceptRequirementId != null) {
+      final teamId = widget.initialTeamId ?? _selectedTeamId;
+      if (teamId != null) _cardActiveTabs[teamId] = 0;
+      _lastFileHandoff = null;
     }
   }
 
@@ -652,6 +686,34 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     int? fileId,
     bool requestRevision = false,
   }) async {
+    final workflow =
+        _stagePayload(_stageList(team), stageLabel)['concept_workflow']
+            as Map? ??
+        {};
+    if (workflow['title_workflow_version'] == 2 &&
+        isConceptRequirement(item) &&
+        fileId != null) {
+      final snapshot = Map<String, dynamic>.from(workflow);
+      final result = await showConceptRevisionDialog(
+        context,
+        description: '${item['label']}',
+        titleAvailable: true,
+      );
+      if (result == null || !mounted) return;
+      await ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .reviewConceptFile(
+            teamId: parseAsInt(team['id']),
+            stageLabel: stageLabel,
+            deliverableId: '${item['id']}',
+            status: 'rejected',
+            fileId: fileId,
+            reviewToken: '${snapshot['module_review_token']}',
+            feedback: result.feedback,
+            revisionScope: result.scope,
+          );
+      return;
+    }
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
     final isDefense = !isPost && item['requirement_timing'] == 'defense';
     final actionLabel = requestRevision
@@ -905,19 +967,42 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     Map<String, dynamic> team,
     String stageLabel,
     Map<String, dynamic> item,
-    void Function(void Function()) setDialogState,
-  ) {
+    void Function(void Function()) setDialogState, {
+    bool hideConceptContext = false,
+    String? initialFileKey,
+  }) {
     if (usesGroupedDocumentCard(item)) {
+      final linkToReview =
+          widget.compactFaculty &&
+          !widget.conceptReview &&
+          widget.onOpenConceptReview != null &&
+          isConceptRequirement(item);
       return DocumentGroup(
         key: ValueKey(
           'files-${team['id']}-$stageLabel-${item['id']}-${widget.conceptReview}',
         ),
         teamId: team['id'] as int,
         stageLabel: stageLabel,
-        item: item,
+        item: {...item, if (widget.conceptReview) 'can_faculty_review': false},
+        titleWorkflow: Map<String, dynamic>.from(
+          _stagePayload(_stageList(team), stageLabel)['concept_workflow']
+                  as Map? ??
+              {},
+        ),
         programScope: programTrack(scope: widget.state.scope, data: team).name,
         focused: widget.compactFaculty,
-        projectContext: widget.conceptReview,
+        framed: widget.conceptReview && hideConceptContext ? true : null,
+        projectContext: widget.conceptReview && !hideConceptContext,
+        showConceptContext: !hideConceptContext,
+        initialSlotKey: initialFileKey,
+        onOpenConceptReview: linkToReview
+            ? (slot) => widget.onOpenConceptReview!(
+                parseAsInt(team['id']),
+                stageLabel,
+                '${item['id']}',
+                slot,
+              )
+            : null,
         concepts:
             ((_stagePayload(_stageList(team), stageLabel)['concept_workflow']
                             as Map?)?['concepts']
@@ -1632,6 +1717,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final selectedStage = _effectiveSelectedStage(team);
 
     final stage = _stagePayload(stages, selectedStage);
+    final sharedReview = sharedReviewForTeam(team, stageLabel: selectedStage);
     final gradingState = ref.watch(adviserGradingProvider);
     final gradingStatus = AdviserGradingStatus.fromGrade(
       adviserGradeForTeam(team, selectedStage, gradingState.grades),
@@ -1815,12 +1901,24 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             currentStage: team['current_stage']?.toString(),
           ),
         ] else if (activeTab == 0 && widget.compactFaculty) ...[
+          if (sharedReview != null && widget.onOpenSharedReview != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ShadButton.ghost(
+                  size: ShadButtonSize.sm,
+                  onPressed: () => widget.onOpenSharedReview!(
+                    parseAsInt(sharedReview['project_id']),
+                  ),
+                  leading: const Icon(Icons.account_tree_outlined, size: 16),
+                  child: const Text('Open shared review'),
+                ),
+              ),
+            ),
           FacultyRequirementsPane(
             key: ValueKey('requirements-$teamId-$selectedStage'),
-            viewState: _requirementViews.putIfAbsent(
-              '$teamId:$selectedStage',
-              FacultyRequirementsViewState.new,
-            ),
+            viewState: _requirementsView(teamId, selectedStage),
             items: [
               for (final item in [...pre, if (showPostChecklist) ...vault])
                 {
@@ -1961,6 +2059,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               teamId: team['id'] as int,
               stageLabel: selectedStage,
               stage: stage,
+              showTitleCard: false,
               onOpenSharedReview: widget.onOpenSharedReview,
             ),
             // Deliverables Progress Summary (Required & Post-Defense Archive)
@@ -3569,11 +3668,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
     final paperSummaries = TeamWorkflowStatus.items(stage)
         .where(isConceptRequirement)
-        .map(
-          (item) => RequirementSummary(
-            conceptPaperRequirement(Map<String, dynamic>.from(item)),
-          ),
-        )
+        .where((item) => item['required'] == true)
+        .map((item) => RequirementSummary(Map<String, dynamic>.from(item)))
         .toList();
     final requiredPapers = paperSummaries.fold<int>(
       0,
@@ -3621,8 +3717,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               child: widget.conceptReview
                   ? DeliverableStatusBadge(
                       label: requiredPapers == 0
-                          ? 'No papers configured'
-                          : '$acceptedPapers/$requiredPapers papers accepted',
+                          ? 'No required concept documents'
+                          : '$acceptedPapers/$requiredPapers documents accepted',
                       tone:
                           requiredPapers > 0 && acceptedPapers == requiredPapers
                           ? WorkflowStatusTone.success
@@ -3674,6 +3770,26 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  String? _lastFileHandoff;
+  FacultyRequirementsViewState _requirementsView(int teamId, String stage) {
+    final view = _requirementViews.putIfAbsent(
+      '$teamId:$stage',
+      FacultyRequirementsViewState.new,
+    );
+    // Switching teams or stages must not replay an already consumed request.
+    final handoff =
+        '${widget.fileReviewRequestId}:${widget.initialConceptRequirementId}:${widget.initialConceptFileKey}';
+    if (!widget.conceptReview &&
+        teamId == (widget.initialTeamId ?? _selectedTeamId) &&
+        widget.initialConceptRequirementId != null &&
+        handoff != _lastFileHandoff) {
+      view.selected = widget.initialConceptRequirementId;
+      view.selectedFileKey = widget.initialConceptFileKey;
+      _lastFileHandoff = handoff;
+    }
+    return view;
+  }
+
   Widget _teamConceptReview(Map<String, dynamic> team) {
     final stageLabel = _effectiveSelectedStage(team);
     final stage = _stagePayload(_stageList(team), stageLabel);
@@ -3681,7 +3797,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final concepts = TeamWorkflowStatus.items(stage)
         .where(isConceptRequirement)
         .map((item) => Map<String, dynamic>.from(item))
-        .map(conceptPaperRequirement)
         .toList();
     final papers = concepts.isEmpty
         ? Text(
@@ -3698,6 +3813,31 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 _deliverableRow(team, stageLabel, item, setState),
             ],
           );
+    void reviewFiles(String key) {
+      // Use the selected concept's configured slot, which may differ by title.
+      for (final item in concepts) {
+        final slot = (item['document_slots'] as List? ?? [])
+            .whereType<Map>()
+            .where((slot) => '${slot['key']}'.startsWith('$key:'))
+            .firstOrNull;
+        if (slot != null) {
+          widget.onOpenFiles?.call(
+            parseAsInt(team['id']),
+            stageLabel,
+            '${item['id']}',
+            '${slot['key']}',
+          );
+          return;
+        }
+      }
+      widget.onOpenFiles?.call(
+        parseAsInt(team['id']),
+        stageLabel,
+        concepts.isEmpty ? '' : '${concepts.first['id']}',
+        null,
+      );
+    }
+
     return Container(
       decoration: cardDecoration(context),
       padding: const EdgeInsets.all(16),
@@ -3723,7 +3863,28 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               stageLabel: stageLabel,
               stage: stage,
               onOpenSharedReview: widget.onOpenSharedReview,
-              paperContent: papers,
+              initialConceptKey: widget.initialConceptFileKey?.split(':').first,
+              onReviewFiles: widget.onOpenFiles == null ? null : reviewFiles,
+              paperBuilder: (key) => concepts.isEmpty
+                  ? papers
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final item in concepts)
+                          _deliverableRow(
+                            team,
+                            stageLabel,
+                            conceptRequirementForKey(item, key),
+                            setState,
+                            hideConceptContext: true,
+                            initialFileKey:
+                                widget.initialConceptRequirementId ==
+                                    '${item['id']}'
+                                ? widget.initialConceptFileKey
+                                : null,
+                          ),
+                      ],
+                    ),
             )
           else
             Column(
@@ -3793,6 +3954,91 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  TeamWorkflowStatus _conceptChoiceStatus(Map<String, dynamic> team) {
+    final stage = _stagePayload(
+      _stageList(team),
+      _effectiveSelectedStage(team),
+    );
+    final workflow = stage['concept_workflow'] as Map? ?? {};
+    if (workflow['title_workflow_version'] == 2 &&
+        '${workflow['title_status_label'] ?? ''}'.isNotEmpty) {
+      return TeamWorkflowStatus(
+        '${workflow['status']}',
+        '${workflow['title_status_label']}',
+        workflow['status'] == 'changes_requested'
+            ? WorkflowStatusTone.attention
+            : (workflow['concepts'] as List? ?? []).whereType<Map>().every(
+                (c) => (c['title_review'] as Map?)?['state'] == 'accepted',
+              )
+            ? WorkflowStatusTone.success
+            : WorkflowStatusTone.active,
+      );
+    }
+    final fallback = TeamWorkflowStatus.fromStage(
+      stage,
+      scope: widget.state.scope,
+    );
+    if (workflow['can_edit'] == false ||
+        '${workflow['decision'] ?? ''}'.isNotEmpty) {
+      return fallback;
+    }
+    final concepts = (workflow['concepts'] as List? ?? [])
+        .whereType<Map>()
+        .toList();
+    if (workflow['assigned'] != true &&
+        concepts.any((c) => '${c['title'] ?? ''}'.trim().isEmpty)) {
+      return const TeamWorkflowStatus(
+        'concept_names_needed',
+        'Concept names needed',
+        WorkflowStatusTone.active,
+      );
+    }
+    final unconfirmed =
+        workflow['section_project_id'] != null && workflow['assigned'] != true
+        ? concepts.where((c) => c['faculty_confirmed'] != true).length
+        : 0;
+    final summaries = TeamWorkflowStatus.items(stage)
+        .where(isConceptRequirement)
+        .map((item) => RequirementSummary(Map<String, dynamic>.from(item)))
+        .toList();
+    if (unconfirmed > 0) {
+      return TeamWorkflowStatus(
+        'concept_names_pending',
+        '$unconfirmed ${unconfirmed == 1 ? 'name needs' : 'names need'} confirmation',
+        WorkflowStatusTone.active,
+      );
+    }
+    final pending = summaries.fold(0, (sum, item) => sum + item.pending);
+    if (pending > 0) {
+      return TeamWorkflowStatus(
+        'concept_documents_pending',
+        '$pending ${pending == 1 ? 'file needs' : 'files need'} review',
+        WorkflowStatusTone.active,
+      );
+    }
+    if (summaries.any((s) => s.missing > 0)) {
+      return const TeamWorkflowStatus(
+        'concept_upload_pending',
+        'Awaiting concept files',
+        WorkflowStatusTone.neutral,
+      );
+    }
+    if (summaries.any((s) => s.corrections > 0)) {
+      return const TeamWorkflowStatus(
+        'concept_corrections_pending',
+        'Awaiting corrections',
+        WorkflowStatusTone.attention,
+      );
+    }
+    return summaries.isEmpty
+        ? fallback
+        : const TeamWorkflowStatus(
+            'concept_review_complete',
+            'Concept review complete',
+            WorkflowStatusTone.success,
+          );
+  }
+
   Widget _buildCompactFacultyLayout() {
     final teams = DeliverablesTriageHelper.reviewFirst(
       widget.state.teams.where(
@@ -3805,10 +4051,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             ),
       ),
     );
-    final reviews = sharedReviewsForTeams(
-      teams,
-      stageLabel: widget.state.selectedStage,
-    );
+    final reviews = widget.conceptReview
+        ? sharedReviewsForTeams(teams, stageLabel: widget.state.selectedStage)
+        : <Map<String, dynamic>>[];
     if (!teams.any((team) => parseAsInt(team['id']) == _selectedTeamId)) {
       _selectedTeamId = teams.isEmpty ? null : parseAsInt(teams.first['id']);
     }
@@ -3820,15 +4065,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final team = teams
         .where((team) => parseAsInt(team['id']) == _selectedTeamId)
         .firstOrNull;
-    final selectedReview = widget.conceptReview
-        ? reviews
-              .where(
-                (review) =>
-                    parseAsInt(review['project_id']) ==
-                    _selectedSharedProjectId,
-              )
-              .firstOrNull
-        : null;
+    final selectedReview = reviews
+        .where(
+          (review) =>
+              parseAsInt(review['project_id']) == _selectedSharedProjectId,
+        )
+        .firstOrNull;
     void selectTeam(int id) {
       setState(() {
         _selectedTeamId = id;
@@ -3845,6 +4087,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             projectId: parseAsInt(selectedReview['project_id']),
             embedded: true,
             focused: true,
+            fileReview: true,
+            initialSystemKey: widget.sharedSystemKey,
             onChanged: () => ref
                 .read(capstoneDeliverablesProvider.notifier)
                 .fetchDeliverables(),
@@ -3855,17 +4099,37 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         ? _teamConceptReview(team)
         : _buildTeamDetailPane(team);
     final selections = <String, String>{
-      if (widget.conceptReview)
-        for (final review in reviews)
-          'p${review['project_id']}': 'Shared systems · ${review['section']}',
+      for (final review in reviews)
+        'p${review['project_id']}': 'Shared systems · ${review['section']}',
       for (final team in teams) 't${team['id']}': '${team['name']}',
     };
     final statuses = <String, TeamWorkflowStatus>{
-      for (final team in teams)
-        't${team['id']}': TeamWorkflowStatus.fromStage(
-          DeliverablesTriageHelper.resolveActiveStage(team) ?? {},
-          scope: widget.state.scope,
+      for (final review in reviews)
+        'p${review['project_id']}': TeamWorkflowStatus(
+          review['cleared'] == true &&
+                  review['acknowledgment_required'] != false &&
+                  review['acknowledged'] != true
+              ? 'concept_alignment_pending'
+              : '${review['status'] ?? 'needs_review'}',
+          review['cleared'] == true &&
+                  review['acknowledgment_required'] != false &&
+                  review['acknowledged'] != true
+              ? 'Confirm teams’ alignment'
+              : '${review['status_label'] ?? 'Shared review pending'}',
+          review['status'] == 'titles_accepted' ||
+                  review['cleared'] == true &&
+                      (review['acknowledged'] == true ||
+                          review['acknowledgment_required'] == false)
+              ? WorkflowStatusTone.success
+              : WorkflowStatusTone.active,
         ),
+      for (final team in teams)
+        't${team['id']}': widget.conceptReview
+            ? _conceptChoiceStatus(team)
+            : TeamWorkflowStatus.fromStage(
+                DeliverablesTriageHelper.resolveActiveStage(team) ?? {},
+                scope: widget.state.scope,
+              ),
     };
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3886,8 +4150,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       : null,
                   isExpanded: true,
                   isDense: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Choose team or review',
+                  decoration: InputDecoration(
+                    labelText: widget.conceptReview
+                        ? 'Choose team or review'
+                        : 'Choose team',
                   ),
                   items: [
                     for (final entry in selections.entries)

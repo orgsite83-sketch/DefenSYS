@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../../widgets/repository/deliverable_submission_settings.dart';
 
 enum DeliverablePresetScope { capstone, pit }
 
@@ -341,7 +342,9 @@ class StageDeliverablePresetManager {
     for (int i = 0; i < source.length; i++) {
       final raw = source[i];
       if (raw is! Map) continue;
-      final item = Map<String, dynamic>.from(raw);
+      final original = Map<String, dynamic>.from(raw);
+      final item = cleanDeliverableDefinition(original)..remove('id')..remove('team_deliverable_id');
+      item['submission_audience'] = deliverableSubmissionAudience(original);
       item['deliverable_id'] = 'D${i + 1}';
       item['display_order'] = i + 1;
       item['requirement_timing'] = 'scheduling';
@@ -359,7 +362,10 @@ class StageDeliverablePresetManager {
   static List<Map<String, dynamic>> copyFromSource(Map<String, dynamic> source) {
     final delivs = source['deliverables'];
     if (delivs is List) {
-      return cloneDeliverables(delivs);
+      return cloneDeliverables(deliverablePresetItems(
+        delivs.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList(),
+        (source['shared_deliverables'] as List? ?? []).whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList(),
+      ));
     }
     return [];
   }

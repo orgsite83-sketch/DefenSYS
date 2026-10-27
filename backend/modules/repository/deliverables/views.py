@@ -450,6 +450,8 @@ class CapstoneDeliverableReviewView(APIView):
                 reviewer_user=request.user,
                 clear_defense_revisions=attrs.get('clear_defense_revisions', False),
                 file_id=attrs.get('file_id'),
+                revision_scope=attrs.get('revision_scope', 'paper'),
+                title_review_token=attrs.get('title_review_token'),
             )
         except PermissionError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)

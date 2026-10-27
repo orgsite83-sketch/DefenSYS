@@ -179,11 +179,21 @@ class AssignedConceptTests(APITestCase):
         self.assertFalse(self.stage.deliverables.exists())
 
     def test_disabling_keeps_manually_authored_concept_requirements(self):
-        self.configure()
+        self.configure(assigned=False)
         self.client.force_authenticate(self.admin)
         response = self.client.patch(f'/api/defense/stages/{self.stage.pk}/',
             {'concept_config': {'enabled': False}}, format='json')
         self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(StageDeliverable.objects.filter(pk=self.paper.pk).exists())
+
+    def test_captured_concept_history_blocks_disabling_even_before_a_file_upload(self):
+        self.configure()
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(f'/api/defense/stages/{self.stage.pk}/',
+            {'concept_config': {'enabled': False}}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.stage.refresh_from_db()
+        self.assertTrue(self.stage.concept_config['enabled'])
         self.assertTrue(StageDeliverable.objects.filter(pk=self.paper.pk).exists())
 
     def test_disabling_cannot_remove_automatic_papers_with_submissions(self):

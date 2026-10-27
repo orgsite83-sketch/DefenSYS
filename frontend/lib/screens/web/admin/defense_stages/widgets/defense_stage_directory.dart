@@ -9,7 +9,7 @@ import '../../../../../widgets/status_badge.dart';
 import '../../../../../widgets/setup/setup_requirement_panels.dart';
 
 bool stageSetupLocked(Map<String, dynamic> stage) =>
-    stage['is_locked'] == true || stage['status'] == 'locked';
+    stage['is_locked'] == true || stage['structure_locked'] == true || stage['status'] == 'locked';
 
 bool stagePublished(Map<String, dynamic> stage) => stage['is_active'] is bool
     ? stage['is_active'] == true
@@ -1054,10 +1054,10 @@ class _StageActionsMenuState extends State<_StageActionsMenu> {
             'Delete stage',
             LucideIcons.trash2,
             widget.onDelete,
-            enabled: !locked,
+            enabled: !locked && widget.stage['can_delete'] != false,
             destructive: true,
-            hint: locked
-                ? 'Stages with scheduled defenses or recorded grades cannot be deleted.'
+            hint: locked || widget.stage['can_delete'] == false
+                ? 'Stages with submissions, schedules, grades or team history cannot be deleted.'
                 : 'Delete this stage after confirmation.',
           ),
           if ((widget.stage['code'] ?? '').toString().isNotEmpty)

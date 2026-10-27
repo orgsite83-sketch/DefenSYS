@@ -38,6 +38,13 @@ def completeness(submission, definition, *, accepted=False, stage=None):
             return False
         # Legacy metadata fixtures and historical primary-file records retain their semantics.
         return bool(submission and (not accepted or submission.status == 'accepted'))
+    if accepted and (definition.get('file_policy') or {}).get('mode') == 'concepts' and definition.get('type') != 'post':
+        from repository.title_workflow import team_guard, file_acceptance
+        try:
+            for f in files:
+                file_acceptance(f, team_guard(submission.team, stage, f.slot_key.split(':')[0], accepting=True))
+        except ValidationError:
+            return False
     valid = [f for f in files if f.file and (f.status == 'accepted' if accepted else f.status != 'rejected')]
     mode = definition['file_policy'].get('mode', 'single')
     if mode == 'multiple':
@@ -54,7 +61,7 @@ def file_payload(f):
     return {'id': f.pk, 'slot_key': f.slot_key, 'revision': f.revision,
             'is_current': f.is_current, 'file_name': f.file_name, 'file_size': f.file_size,
             'file_url': f.file.url if f.file else None, 'uploaded_at': f.uploaded_at.isoformat(),
-            'status': f.status, 'feedback': f.feedback,
+            'status': f.status, 'feedback': f.feedback, 'title_review_context': f.title_review_context,
             'concept_round_id': f.concept_round_id, 'selected_concept_key': f.selected_concept_key,
             'reviewed_at': f.reviewed_at.isoformat() if f.reviewed_at else None}
 
@@ -124,6 +131,7 @@ def store_revision(submission, definition, *, file, file_name, file_size, slot_k
         # Preserve the original stored bytes in a separate historical revision.
         row = old[0]
         archive = DeliverableSubmissionFile(submission=submission, slot_key=key, is_current=False,
+            title_review_context=row.title_review_context,
             concept_round_id=row.concept_round_id, selected_concept_key=row.selected_concept_key,
             revision=row.revision, file=row.file, file_name=row.file_name, file_size=row.file_size,
             status=row.status, feedback=row.feedback, reviewed_at=row.reviewed_at, reviewed_by=row.reviewed_by,
@@ -152,6 +160,9 @@ def store_revision(submission, definition, *, file, file_name, file_size, slot_k
         if not hearing or not hearing.schedule_id or not selected:
             raise ValidationError('The chair must record the selected concept before uploading its final paper.')
         row.concept_round, row.selected_concept_key = hearing, selected
+    if mode == 'concepts' and definition.get('type') != 'post':
+        from repository.title_workflow import team_guard
+        row.title_review_context = team_guard(submission.team, stage, key.split(':')[0])
     row.save()
     return row
 
@@ -166,6 +177,10 @@ def review_files(submission, definition, status, feedback, reviewer, *, file_id=
     if status == 'accepted' and not file_id and definition.get('file_policy'):
         if not completeness(submission, definition, stage=stage):
             raise ValueError('Upload all required documents and resolve corrections before accepting the group.')
+    if status == 'accepted' and (definition.get('file_policy') or {}).get('mode') == 'concepts' and definition.get('type') != 'post':
+        from repository.title_workflow import team_guard, file_acceptance
+        for f in targets:
+            file_acceptance(f, team_guard(submission.team, stage, f.slot_key.split(':')[0], accepting=True))
     for f in targets:
         f.status, f.feedback, f.reviewed_by, f.reviewed_at = status, feedback.strip(), reviewer, timezone.now()
         f.save(update_fields=['status', 'feedback', 'reviewed_by', 'reviewed_at'])

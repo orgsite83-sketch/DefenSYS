@@ -71,7 +71,7 @@ Map<String, dynamic> _group() => {
 
 void main() {
   testWidgets(
-    'shared setup is collapsed, copies requirements, and keeps its settings independent',
+    'shared setup is visible, copies requirements, and keeps its settings independent',
     (tester) async {
       var rows = <Map<String, dynamic>>[];
       final team = <Map<String, dynamic>>[
@@ -98,10 +98,14 @@ void main() {
           ),
         ),
       );
-      expect(find.text('None configured'), findsOneWidget);
-      expect(find.text('Copy team checklist'), findsNothing);
-      await tester.tap(find.text('Shared system deliverables'));
-      await tester.pumpAndSettle();
+      expect(find.text('Whole shared system deliverables'), findsOneWidget);
+      expect(
+        find.text('No shared system deliverables configured.'),
+        findsOneWidget,
+      );
+      expect(find.byType(ExpansionTile), findsNothing);
+      expect(find.text('Add shared system deliverable'), findsOneWidget);
+      expect(find.text('Copy team checklist'), findsOneWidget);
       await tester.tap(find.text('Copy team checklist'));
       await tester.pumpAndSettle();
       expect(rows.single['label'], 'Section endorsement');
@@ -116,7 +120,7 @@ void main() {
     },
   );
 
-  testWidgets('post-defense has its own collapsed shared checklist', (
+  testWidgets('post-defense has its own visible shared checklist', (
     tester,
   ) async {
     final rows = defaultSharedDeliverables();
@@ -132,12 +136,8 @@ void main() {
         ),
       ),
     );
-    expect(
-      find.text('1 configured · PM submits once for the section'),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Shared system deliverables'));
-    await tester.pumpAndSettle();
+    expect(find.text('Whole shared system deliverables'), findsOneWidget);
+    expect(find.byType(ExpansionTile), findsNothing);
     await tester.tap(find.text('Approved concept paper').last);
     await tester.pumpAndSettle();
     expect(

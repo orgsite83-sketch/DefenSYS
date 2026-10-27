@@ -12,6 +12,9 @@ import '../../models/defense_workflow_labels.dart';
 import 'pit_concept_decision_panel.dart';
 import 'shared_concept_review.dart';
 import 'proposal_names_editor.dart';
+import 'proposal_name_review.dart';
+import 'title_review_card.dart';
+import 'concept_review_section.dart';
 export 'concept_decision_fields.dart';
 export 'pit_concept_decision_panel.dart';
 
@@ -24,12 +27,18 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
     this.onOpenSharedReview,
     this.paperContent,
     this.showTitleCard = true,
+    this.paperBuilder,
+    this.initialConceptKey,
+    this.onReviewFiles,
   });
   final int teamId;
   final String stageLabel;
   final Map<String, dynamic> stage;
   final ValueChanged<int>? onOpenSharedReview;
   final Widget? paperContent;
+  final Widget Function(String conceptKey)? paperBuilder;
+  final String? initialConceptKey;
+  final ValueChanged<String>? onReviewFiles;
 
   /// Student title management lives in the Team tab; retain hearing context here.
   final bool showTitleCard;
@@ -43,6 +52,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
   String? error;
   bool editingNames = false;
   String? nameReviewToken;
+  String? selectedConcept;
   Map<String, dynamic> get workflow =>
       Map<String, dynamic>.from(widget.stage['concept_workflow'] as Map? ?? {});
   List<Map<String, dynamic>> get concepts =>
@@ -75,11 +85,12 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
   }
 
   String get identity =>
-      '${widget.teamId}:${widget.stageLabel}:${workflow['round']}';
+      '${widget.teamId}:${widget.stageLabel}:${workflow['round_id'] ?? workflow['round']}';
   @override
   void initState() {
     super.initState();
     resetControllers();
+    selectedConcept = widget.initialConceptKey;
   }
 
   void resetControllers() {
@@ -98,9 +109,14 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
   void didUpdateWidget(covariant ConceptWorkspace oldWidget) {
     super.didUpdateWidget(oldWidget);
     final oldWorkflow = oldWidget.stage['concept_workflow'] as Map? ?? {};
-    if ('${oldWidget.teamId}:${oldWidget.stageLabel}:${oldWorkflow['round']}' !=
+    if (oldWidget.initialConceptKey != widget.initialConceptKey &&
+        widget.initialConceptKey != null) {
+      selectedConcept = widget.initialConceptKey;
+    }
+    if ('${oldWidget.teamId}:${oldWidget.stageLabel}:${oldWorkflow['round_id'] ?? oldWorkflow['round']}' !=
             identity ||
-        '${(oldWorkflow['concepts'] as List? ?? []).map((c) => c['key']).toList()}' != '${concepts.map((c) => c['key']).toList()}' ||
+        '${(oldWorkflow['concepts'] as List? ?? []).map((c) => c['key']).toList()}' !=
+            '${concepts.map((c) => c['key']).toList()}' ||
         ((workflow['assigned'] == true ||
                 workflow['section_project_id'] != null) &&
             '${oldWorkflow['concepts']}' != '${workflow['concepts']}')) {
@@ -141,6 +157,127 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
   }
 
   Widget compactReview(bool titlesEditable, bool shared, bool admin) {
+    if (widget.paperBuilder != null && visibleConcepts.isEmpty) {
+      return widget.paperBuilder!('');
+    }
+    if (widget.paperBuilder != null && visibleConcepts.isNotEmpty) {
+      final visible = visibleConcepts;
+      final active =
+          visible.where((c) => c['key'] == selectedConcept).firstOrNull ??
+          visible.first;
+      final reviewSnapshot = workflow;
+      final key = '${active['key']}';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (shared)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Names: ${workflow['module_names_confirmed_count'] ?? concepts.where((c) => c['faculty_confirmed'] == true).length}/${concepts.length} confirmed',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ),
+          if (shared && widget.onOpenSharedReview != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ShadButton.ghost(
+                size: ShadButtonSize.sm,
+                onPressed: openSharedWorkspace,
+                child: const Text('Review shared systems'),
+              ),
+            ),
+          if (visible.length > 1)
+            ShadTabs<String>(
+              scrollable: true,
+              tabBarAlignment: Alignment.centerLeft,
+              value: key,
+              gap: 0,
+              onChanged: (value) => setState(() => selectedConcept = value),
+              tabs: [
+                for (final c in visible)
+                  ShadTab(
+                    value: '${c['key']}',
+                    child: Text(
+                      'Concept ${'${c['key']}'.replaceFirst('c', '')}',
+                    ),
+                  ),
+              ],
+            ),
+          if (shared)
+            ProposalNameReview(
+              key: ValueKey('module-name-$identity-$key'),
+              title: '${active['title'] ?? ''}',
+              linkedSystem: '${active['system_title'] ?? ''}',
+              confirmed: active['faculty_confirmed'] == true,
+              system: false,
+              canConfirm: workflow['can_confirm_titles'] == true && !busy,
+              onConfirm: (title) => perform(
+                () => ref
+                    .read(capstoneDeliverablesProvider.notifier)
+                    .confirmConceptTitle(
+                      widget.teamId,
+                      widget.stageLabel,
+                      conceptKey: key,
+                      title: title,
+                      roundId: reviewSnapshot['round_id'] as int,
+                      reviewToken: '${reviewSnapshot['module_review_token']}',
+                    ),
+              ),
+            )
+          else ...[
+            const SizedBox(height: 10),
+            Text('${active['title'] ?? ''}', style: DefensysTokens.body),
+            if (titlesEditable)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ShadButton.ghost(
+                  size: ShadButtonSize.sm,
+                  onPressed: () => setState(() => editingNames = true),
+                  child: const Text('Edit concept names'),
+                ),
+              ),
+            if (editingNames)
+              ProposalNamesEditor(
+                rows: visible,
+                shared: false,
+                busy: busy,
+                onBack: () => setState(() => editingNames = false),
+                onConfirm: (rows) async {
+                  final ok = await perform(
+                    () => ref
+                        .read(capstoneDeliverablesProvider.notifier)
+                        .conceptAction(
+                          widget.teamId,
+                          widget.stageLabel,
+                          'save_titles',
+                          concepts: rows,
+                        ),
+                  );
+                  if (ok && mounted) setState(() => editingNames = false);
+                },
+              ),
+          ],
+          repeatInstructions(),
+          widget.paperBuilder!(key),
+          if (error != null)
+            Text(
+              error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          if (!shared && workflow['decision_scope'] == 'pit')
+            PitConceptDecisionPanel(
+              teamId: widget.teamId,
+              stageLabel: widget.stageLabel,
+              workflow: workflow,
+            ),
+          ConceptHistory(workflow: workflow),
+        ],
+      );
+    }
     final confirmed =
         concepts.isNotEmpty &&
         concepts.every((c) => c['faculty_confirmed'] == true);
@@ -152,7 +289,11 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             key: ValueKey('names-$identity'),
             rows: visibleConcepts,
             lockedKeys: ref.read(authProvider).user?['role'] == 'student'
-                ? {for (final c in visibleConcepts) if (c['faculty_confirmed'] == true) '${c['key']}'} : {},
+                ? {
+                    for (final c in visibleConcepts)
+                      if (c['faculty_confirmed'] == true) '${c['key']}',
+                  }
+                : {},
             shared: shared,
             busy: busy,
             onBack: () => setState(() => editingNames = false),
@@ -412,8 +553,114 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     }
   }
 
+  Widget titleFirstReview() {
+    final rows = visibleConcepts;
+    if (rows.isEmpty) return const Text('No concept titles are configured.');
+    final active =
+        rows.where((c) => c['key'] == selectedConcept).firstOrNull ??
+        rows.first;
+    final key = '${active['key']}';
+    final snapshot = workflow;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '${rows.where((c) => (c['title_review'] as Map?)?['state'] == 'accepted').length}/${rows.length} titles accepted',
+          style: TextStyle(
+            fontSize: 12,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+        if (workflow['section_project_id'] != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ShadButton.ghost(
+              onPressed: openSharedWorkspace,
+              child: const Text('Review shared systems'),
+            ),
+          ),
+        if (rows.length > 1)
+          ShadTabs<String>(
+            value: key,
+            scrollable: true,
+            tabBarAlignment: Alignment.centerLeft,
+            gap: 0,
+            onChanged: (value) => setState(() => selectedConcept = value),
+            tabs: [
+              for (final row in rows)
+                ShadTab(
+                  value: '${row['key']}',
+                  child: Text(
+                    'Concept ${'${row['key']}'.replaceFirst('c', '')}',
+                  ),
+                ),
+            ],
+          ),
+        const SizedBox(height: 12),
+        ConceptReviewSection(
+          onReviewFiles: widget.onReviewFiles == null
+              ? null
+              : () => widget.onReviewFiles!(key),
+          titleReview: TitleReviewCard(
+            key: ValueKey('title-$identity-$key'),
+            concept: active,
+            onAction: (action, title, reason) => perform(
+              () => ref
+                  .read(capstoneDeliverablesProvider.notifier)
+                  .titleAction(
+                    widget.teamId,
+                    widget.stageLabel,
+                    action,
+                    conceptKey: key,
+                    roundId: snapshot['round_id'] as int?,
+                    reviewToken: '${snapshot['module_review_token']}',
+                    title: title,
+                    reason: reason,
+                  ),
+            ),
+          ),
+          deliverables: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.paperBuilder != null) widget.paperBuilder!(key),
+              if (widget.paperContent != null) widget.paperContent!,
+              if (widget.paperBuilder == null && widget.paperContent == null)
+                Text(
+                  'Review the supporting files in By team.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (error != null)
+          Text(
+            error!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ConceptHistory(workflow: workflow),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!widget.showTitleCard) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.paperContent != null) widget.paperContent!,
+          ConceptHistory(workflow: workflow),
+        ],
+      );
+    }
+    if (workflow['enabled'] == true &&
+        (workflow['title_workflow_version'] == 2 ||
+            concepts.any((concept) => concept['title_review'] is Map))) {
+      return DefensysShadcnScope(child: titleFirstReview());
+    }
     if (workflow['enabled'] != true) {
       return ConceptHistory(
         workflow: {'history': widget.stage['hearing_history']},
@@ -431,7 +678,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                 workflow['module_names_confirmed'] != true));
     final assigned = workflow['assigned'] == true;
     final shared = workflow['section_project_id'] != null;
-    if (widget.paperContent != null) {
+    if (widget.paperContent != null || widget.paperBuilder != null) {
       return DefensysShadcnScope(
         child: compactReview(titlesEditable, shared, admin),
       );

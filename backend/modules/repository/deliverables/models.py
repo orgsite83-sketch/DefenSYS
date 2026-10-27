@@ -237,6 +237,7 @@ class DeliverableSubmission(models.Model):
 
 
 class DeliverableSubmissionFile(models.Model):
+    title_review_context = models.JSONField(default=dict, blank=True)
     concept_round = models.ForeignKey('repository.ConceptRound', null=True, blank=True,
         on_delete=models.PROTECT, related_name='final_papers')
     selected_concept_key = models.CharField(max_length=10, blank=True, default='')
@@ -348,6 +349,7 @@ class DeliverableSubmissionFile(models.Model):
 
 class ConceptRound(models.Model):
     """A concept set and the immutable evidence presented in one hearing."""
+    title_workflow_version = models.PositiveSmallIntegerField(default=1)
     team = models.ForeignKey('student_teams.StudentTeam', on_delete=models.CASCADE, related_name='concept_rounds')
     section_round = models.ForeignKey('repository.SectionConceptRound', null=True, blank=True,
         on_delete=models.PROTECT, related_name='module_rounds')
@@ -389,4 +391,25 @@ class ConceptRound(models.Model):
                 name='unique_team_pit_concept_round'),
         ]
         ordering = ['number', 'id']
+
+
+class ConceptRevisionRequest(models.Model):
+    """One adviser request, shared by title and file views; evidence is append-only."""
+    scope = models.CharField(max_length=20, choices=[('title', 'Title'),
+        ('paper', 'Paper only'), ('title_and_paper', 'Title and paper')])
+    concept_round = models.ForeignKey(ConceptRound, null=True, blank=True,
+        on_delete=models.PROTECT, related_name='revision_requests')
+    section_round = models.ForeignKey('repository.SectionConceptRound', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='revision_requests')
+    concept_key = models.CharField(max_length=10, blank=True, default='')
+    file_kind = models.CharField(max_length=20, blank=True, default='')
+    file_id = models.PositiveBigIntegerField(null=True, blank=True)
+    title_snapshot = models.JSONField(default=dict)
+    feedback = models.TextField()
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='concept_revision_requests')
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'repository'
 

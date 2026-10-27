@@ -42,7 +42,8 @@ class SharedDeliverablesView(SectionAPIView):
             file_id = serializers.IntegerField(min_value=1).run_validation(request.data.get('file_id'))
             legacy = serializers.BooleanField().run_validation(request.data.get('legacy', False))
             state = shared.review(team, context, request.user, number, slot, file_id, legacy,
-                request.data.get('status'), request.data.get('feedback', ''), token)
+                request.data.get('status'), request.data.get('feedback', ''), token,
+                revision_scope=serializers.ChoiceField(choices=['paper', 'title_and_paper']).run_validation(request.data.get('revision_scope', 'paper')))
         else:
             state = shared.upload(team, context, request.user, number, slot, request.FILES.get('file'), token)
         return Response({'shared_deliverables': state}, status=status.HTTP_200_OK)

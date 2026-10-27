@@ -18,6 +18,7 @@ import 'deliverables_view_types.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 import 'package:defensys/widgets/repository/shared_deliverables_panel.dart';
 import 'package:defensys/widgets/repository/requirement_summary.dart';
+import 'package:defensys/widgets/repository/deliverable_review_navigation.dart';
 import 'package:defensys/models/team_workflow_status.dart';
 import '../../faculty/team_roster_screen.dart';
 export 'deliverables_view_types.dart';
@@ -108,6 +109,9 @@ class _TeamDeliverablesScreenState
   int? _activeTeamId;
   bool _showConceptReview = false;
   int? _conceptReviewProjectId;
+  String? _conceptReviewRequirementId;
+  String? _conceptReviewFileKey;
+  int _fileReviewRequestId = 0;
   final _sharedReviewKeys = <int, GlobalKey<SectionConceptOverviewState>>{};
 
   GlobalKey<SectionConceptOverviewState> _sharedReviewKey(int projectId) =>
@@ -115,6 +119,113 @@ class _TeamDeliverablesScreenState
         projectId,
         () => GlobalKey<SectionConceptOverviewState>(),
       );
+
+  String? _sharedSystemKey;
+  Future<void> _openFiles(
+    int teamId,
+    String stage,
+    String requirement,
+    String? slot,
+  ) async {
+    final view = ref.read(capstoneDeliverablesProvider);
+    await _openConceptReview(teamId, stage, requirement, slot);
+    if (!mounted) return;
+    final current = ref.read(capstoneDeliverablesProvider);
+    if (current.workspace == view.workspace &&
+        current.scope == view.scope &&
+        current.selectedStage == stage &&
+        _activeTeamId == teamId &&
+        _conceptReviewRequirementId == requirement &&
+        _conceptReviewFileKey == slot) {
+      setState(() {
+        _showConceptReview = false;
+        _fileReviewRequestId++;
+      });
+    }
+  }
+
+  Future<void> _openNextPendingSubmission() async {
+    final state = ref.read(capstoneDeliverablesProvider);
+    final teams = [
+      ...state.teams.where((team) => team['id'] == _activeTeamId),
+      ...state.teams.where((team) => team['id'] != _activeTeamId),
+    ];
+    for (final team in teams) {
+      final stage = DeliverablesTriageHelper.resolveActiveStage(team);
+      if (stage == null) continue;
+      for (final item in TeamWorkflowStatus.items(stage)) {
+        if (item['type'] == 'post' ||
+            item['deliverable_type'] == 'post' ||
+            !TeamWorkflowStatus.isPendingReview(item)) {
+          continue;
+        }
+        final entries = deliverableReviewEntries(
+          Map<String, dynamic>.from(item),
+        );
+        final pending = entries
+            .where(
+              (entry) =>
+                  entry['file'] is Map &&
+                  TeamWorkflowStatus.isPendingReview({
+                    ...item,
+                    'submission': {
+                      'files': [entry['file']],
+                    },
+                  }),
+            )
+            .firstOrNull;
+        final teamId = int.tryParse('${team['id']}');
+        if (teamId == null) continue;
+        // Navigation can leave a previous local triage filter behind. Keep the
+        // full team list available when opening the selected review target.
+        setState(() => _triageFilter = TeamTriageFilter.all);
+        await _openFiles(
+          teamId,
+          '${stage['stage_label'] ?? state.selectedStage}',
+          '${item['id'] ?? item['deliverable_id'] ?? item['label']}',
+          pending?['key']?.toString(),
+        );
+        return;
+      }
+    }
+  }
+
+  void _openSharedContext(int id, String key, bool files) => setState(() {
+    _conceptReviewProjectId = id;
+    _sharedSystemKey = key;
+    _showConceptReview = true;
+    _viewMode = DeliverablesViewMode.dossier;
+  });
+
+  Future<void> _openConceptReview(
+    int teamId,
+    String stageLabel,
+    String requirementId,
+    String? fileKey,
+  ) async {
+    final currentView = ref.read(capstoneDeliverablesProvider);
+    if (ref.read(capstoneDeliverablesProvider).selectedStage != stageLabel) {
+      await ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .fetchDeliverables(selectedStage: stageLabel);
+      if (!mounted) return;
+      final updatedView = ref.read(capstoneDeliverablesProvider);
+      if (updatedView.scope != currentView.scope ||
+          updatedView.workspace != currentView.workspace ||
+          updatedView.selectedStage != stageLabel ||
+          updatedView.error != null) {
+        return;
+      }
+    }
+    setState(() {
+      _activeTeamId = teamId;
+      _showConceptReview = true;
+      _viewMode = DeliverablesViewMode.dossier;
+      _conceptReviewProjectId = null;
+      _conceptReviewRequirementId = requirementId;
+      _conceptReviewFileKey = fileKey;
+    });
+  }
 
   void _openSharedReview(int projectId) async {
     if (widget.isAdviser || widget.isPitInstructor) {
@@ -237,7 +348,8 @@ class _TeamDeliverablesScreenState
     for (final team in state.teams) {
       final stage = DeliverablesTriageHelper.resolveActiveStage(team);
       final summary = stage?['shared_deliverables_summary'];
-      if (summary is Map && (stage?['concept_workflow'] as Map?)?['enabled'] != true) {
+      if (summary is Map &&
+          (stage?['concept_workflow'] as Map?)?['enabled'] != true) {
         final row = Map<String, dynamic>.from(summary);
         sharedChecklists['${row['section_id']}-${row['context_id']}'] = row;
       }
@@ -476,13 +588,22 @@ class _TeamDeliverablesScreenState
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 if (pendingCount > 0)
-                  TextButton(
-                    onPressed: () => setState(() {
-                      _triageFilter = TeamTriageFilter.needsReview;
-                      _viewMode = DeliverablesViewMode.dossier;
-                      _showConceptReview = false;
-                    }),
-                    child: Text('$pendingCount awaiting review'),
+                  ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    height: 36,
+                    foregroundColor: DefensysTokens.textPrimaryOf(context),
+                    hoverBackgroundColor: DefensysTokens.surfaceHigherOf(
+                      context,
+                    ),
+                    leading: const Icon(Icons.rate_review_outlined, size: 16),
+                    trailing: const Icon(Icons.arrow_forward, size: 14),
+                    onPressed: state.isSaving
+                        ? null
+                        : _openNextPendingSubmission,
+                    enabled: !state.isSaving,
+                    child: Text(
+                      'Review $pendingCount ${pendingCount == 1 ? 'submission' : 'submissions'}',
+                    ),
                   ),
               ],
             ),
@@ -513,8 +634,14 @@ class _TeamDeliverablesScreenState
                 ),
               ),
           for (final summary in sharedChecklists.values)
-            SharedDeliverablesSection(key: ValueKey('${summary['section_id']}-${summary['context_id']}'),
-              teamId: summary['team_id'] as int, stageLabel: '${summary['stage_label']}', summary: summary),
+            SharedDeliverablesSection(
+              key: ValueKey(
+                '${summary['section_id']}-${summary['context_id']}',
+              ),
+              teamId: summary['team_id'] as int,
+              stageLabel: '${summary['stage_label']}',
+              summary: summary,
+            ),
           state.isLoading
               ? const Center(
                   child: Padding(
@@ -566,6 +693,16 @@ class _TeamDeliverablesScreenState
                         initialTab: widget.initialTab,
                         activeTriageFilter: _triageFilter,
                         onOpenSharedReview: _openSharedReview,
+                        onOpenFiles: _openFiles,
+                        onOpenSharedContext: _openSharedContext,
+                        sharedSystemKey: _sharedSystemKey,
+                        onOpenConceptReview: isEvaluator
+                            ? _openConceptReview
+                            : null,
+                        initialConceptRequirementId:
+                            _conceptReviewRequirementId,
+                        initialConceptFileKey: _conceptReviewFileKey,
+                        fileReviewRequestId: _fileReviewRequestId,
                         compactFaculty: isEvaluator,
                         conceptReview:
                             isEvaluator &&

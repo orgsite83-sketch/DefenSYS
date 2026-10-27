@@ -48,6 +48,58 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(resetApiHttpClientForTesting);
 
+  testWidgets(
+    'leader can submit seeded or returned titles without changing their text',
+    (tester) async {
+      for (final returned in [false, true]) {
+        Map? saved;
+        final current = workflow();
+        if (returned) {
+          current['round_id'] = 12;
+          (current['concepts'] as List)[0]['title_review'] = {
+            'state': 'changes_requested',
+          };
+        }
+        setApiHttpClientForTesting(
+          MockClient((request) async {
+              if (request.method == 'POST') {
+              saved = jsonDecode(request.body) as Map;
+              }
+            return http.Response(
+              jsonEncode({'concept_workflow': current}),
+              200,
+            );
+          }),
+        );
+        await pumpDefensysWidget(
+          tester,
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => editTeamConceptTitles(
+                context,
+                teamId: 5,
+                stageLabel: 'Concept Proposal',
+              ),
+              child: const Text('Open editor'),
+            ),
+          ),
+          overrides: [authProvider.overrideWith(_Leader.new)],
+        );
+        await tester.tap(find.text('Open editor'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Save concept titles'));
+        await tester.pumpAndSettle();
+        expect(saved?['action'], 'save_draft_titles');
+        expect(
+          (saved?['concepts'] as List).first['title'],
+          'Imported soil sensor concept',
+        );
+        expect(find.byType(TeamConceptTitleEditor), findsNothing);
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+
   for (final width in [390.0, 1100.0]) {
     for (final dark in [false, true]) {
       testWidgets(

@@ -85,8 +85,10 @@ def get_round(team, stage):
     if current:
         return current
     policy = resolve_policy(team, stage, use_round=False)
+    from repository.title_workflow import version_for_policy
     return ConceptRound.objects.create(team=team, **context_fields(stage), project_version=team.project_version,
-        section_round_id=policy.get('section_round_id'), policy_snapshot=policy, concepts=initial_concepts(policy))
+        section_round_id=policy.get('section_round_id'), policy_snapshot=policy, concepts=initial_concepts(policy),
+        title_workflow_version=version_for_policy(policy))
 
 
 def documents_snapshot(team, stage, *, clearance_only=False):
@@ -170,8 +172,10 @@ def module_review_token(team, stage):
     policy = resolve_policy(team, stage, current=current)
     state = {'round': current.pk if current else None,
              'concepts': current.concepts if current else initial_concepts(policy)}
-    if current and current.section_round_id:
-        state['systems'] = list(current.section_round.systems.order_by('key').values('id', 'title'))
+    shared_id = current.section_round_id if current else policy.get('section_round_id')
+    if shared_id:
+        from repository.section_concepts.models import SectionSystemConcept
+        state['systems'] = list(SectionSystemConcept.objects.filter(round_id=shared_id).order_by('key').values('id', 'title', 'title_review'))
     return sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
 
 
@@ -187,6 +191,10 @@ def clearance_blocker(team, stage):
     if not enabled(stage):
         return ''
     current = latest_round(team, stage)
+    from repository import title_workflow
+    if title_workflow.enabled(current):
+        if any(not title_workflow.accepted(c, title_workflow.parent_for(current, c['key'])) for c in current.concepts):
+            return 'Accept every required concept/module title before file clearance and scheduling.'
     if not titles_complete(current):
         return 'Submit a title and the required documents for every concept.'
     from repository.section_concepts.services import scheduling_blocker
@@ -239,6 +247,9 @@ def endorse(team, stage, actor):
     if not enabled(stage):
         return
     current = get_round(team, stage)
+    from repository import title_workflow
+    if title_workflow.enabled(current) and any(not title_workflow.accepted(c, title_workflow.parent_for(current, c['key'])) for c in current.concepts):
+        raise ValueError('Accept the required concept/module titles before endorsement.')
     if not titles_complete(current):
         raise ValueError('Enter a title for every concept before endorsement.')
     if current.schedule_id:
@@ -377,6 +388,9 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
             concept['title'] = ''
             if current.section_round_id:
                 concept['faculty_confirmed'] = False
+        if current.title_workflow_version >= 2:
+            concept['title_review'] = {'state': 'draft', 'version': (concept.get('title_review') or {}).get('version', 0)}
+            concept['faculty_confirmed'] = False
         next_concepts.append(concept)
     snapshot.update(required_count=len(plan), concept_keys=[p['key'] for p in plan],
                     redefense_plan={'source_round': current.number, 'concepts': plan})
@@ -385,6 +399,7 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
     ConceptRound.objects.create(team=grade.team, **context_fields(stage),
         project_version=grade.project_version, number=current.number + 1,
         section_round_id=current.section_round_id, concepts=next_concepts, review_required=True,
+        title_workflow_version=current.title_workflow_version,
         policy_snapshot=snapshot)
     refresh_files(grade.team, stage)
     if grade.team.ready_for_stage == stage.label:
@@ -393,7 +408,7 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
 
 
 @transaction.atomic
-def save_titles(team, stage, concepts, *, actor=None, draft=False):
+def save_titles(team, stage, concepts, *, actor=None, draft=False, confirm_key=None):
     from student_teams.models import StudentTeam
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
     if actor and getattr(actor, 'role', '') == 'student' and team.leader_id != actor.pk:
@@ -401,6 +416,9 @@ def save_titles(team, stage, concepts, *, actor=None, draft=False):
     if draft and not title_context_is_open(team, stage):
         raise PermissionError('Completed or historical concept titles are read-only.')
     current = get_round(team, stage)
+    from repository.title_workflow import enabled as title_first
+    if title_first(current):
+        raise ValidationError('Use Submit title or the adviser title-review actions for this proposal.')
     policy = resolve_policy(team, stage, current=current)
     from repository.section_concepts.services import can_edit_module_titles, module_title_metadata, require_active
     if current.section_round_id:
@@ -411,14 +429,26 @@ def save_titles(team, stage, concepts, *, actor=None, draft=False):
         raise PermissionError('Assigned project/module titles are managed in Manage sections.')
     if current.schedule_id or current.verdict:
         raise PermissionError('Scheduled concept titles are locked. Prepare changes in the next attempt.')
-    if not isinstance(concepts, list) or len(concepts) != len(current.concepts):
+    expected_keys = {c['key'] for c in current.concepts}
+    if confirm_key is not None:
+        if not current.section_round_id or not module_title_metadata(actor, team, stage).get('faculty_confirmed'):
+            raise PermissionError('Only assigned faculty can confirm this module name.')
+        if confirm_key not in expected_keys:
+            raise ValidationError('Choose a module from the current proposal round.')
+        expected_keys = {confirm_key}
+    if not isinstance(concepts, list) or len(concepts) != len(expected_keys):
         raise ValueError('Enter the configured number of concept titles.')
     keyed = {c.get('key'): c for c in concepts if isinstance(c, dict)}
-    if len(keyed) != len(current.concepts) or set(keyed) != {c['key'] for c in current.concepts}:
+    if len(keyed) != len(expected_keys) or set(keyed) != expected_keys:
         raise ValueError('Enter each configured concept exactly once.')
     updated = deepcopy(current.concepts)
+    changed_title_keys = set()
     selected_key = current.section_round.selected_key if current.section_round_id else ''
+    if confirm_key is not None and selected_key and confirm_key != selected_key:
+        raise ValidationError('Only the module linked to the selected section system can be confirmed.')
     for c in updated:
+        if c['key'] not in keyed:
+            continue
         title = keyed.get(c['key'], {}).get('title', '')
         if not isinstance(title, str) or (not draft and not title.strip()) or len(title.strip()) > 255:
             raise ValueError('Every concept needs a title of up to 255 characters.')
@@ -433,13 +463,25 @@ def save_titles(team, stage, concepts, *, actor=None, draft=False):
             continue
         if metadata.get('faculty_confirmed') and (not c.get('faculty_confirmed') or c['title'] != title.strip()):
             c.update(faculty_confirmed_by=actor.pk, faculty_confirmed_at=timezone.now().isoformat())
+        if c['title'] != title.strip():
+            changed_title_keys.add(c['key'])
         c['title'] = title.strip()
         c.update(metadata)
+        if c.get('title_review'):
+            from repository import title_workflow
+            parent = title_workflow.parent_for(current, c['key'])
+            c['title_review'] = title_workflow.new_review(c['title_review'], c['title'],
+                title_workflow.parent_evidence(parent), actor)
+            if metadata.get('faculty_confirmed'):
+                c['title_review'].update(state='accepted', reviewed_by=actor.pk,
+                    reviewed_at=timezone.now().isoformat())
     if updated != current.concepts:
         previous = deepcopy(current.concepts)
         invalidate_clearance(team, stage.label)
         current.concepts = updated
         current.save(update_fields=['concepts'])
+        if current.section_round_id and changed_title_keys:
+            invalidate_module_title_reviews(team, stage, current, changed_title_keys, actor)
         if current.section_round_id and actor and any(c.get('faculty_confirmed') for c in updated):
             log_high_impact_action(category=SystemAuditLog.CATEGORY_REPOSITORY,
                 action='repository.module_names_confirmed', target=current, actor=actor,
@@ -449,6 +491,46 @@ def save_titles(team, stage, concepts, *, actor=None, draft=False):
             team.current_defense_stage = stage.label
             team.save(update_fields=['current_defense_stage', 'updated_at'])
     return current
+
+
+def invalidate_module_title_reviews(team, stage, current, keys, actor):
+    from django.db.models import Q
+    from .models import DeliverableSubmissionFile
+    from .services import get_deliverable_definitions_for_team
+    from .documents import sync_submission
+    definitions = {d['id']: d for d in get_deliverable_definitions_for_team(team, stage.label)
+                   if d['type'] == 'pre' and (d.get('file_policy') or {}).get('mode') == 'concepts'}
+    touched = {}
+    rows = DeliverableSubmissionFile.objects.filter(submission__team=team,
+        submission__stage_label=stage.label, submission__project_version=team.project_version,
+        submission__deliverable_id__in=definitions, is_current=True, status='accepted').filter(
+            Q(concept_round=current) | Q(concept_round__isnull=True)).select_related('submission')
+    for row in rows:
+        if row.slot_key.split(':')[0] not in keys:
+            continue
+        log_high_impact_action(category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.module_title_review_invalidated', target=row, actor=actor,
+            reason='Module title changed; review this document against the updated name.',
+            old_values={'status': row.status, 'reviewed_by': row.reviewed_by_id,
+                        'reviewed_at': row.reviewed_at.isoformat() if row.reviewed_at else None},
+            new_values={'status': 'pending'}, strict=True)
+        row.status, row.reviewed_by, row.reviewed_at = 'pending', None, None
+        row.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
+        touched[row.submission_id] = row.submission
+    for submission in touched.values():
+        sync_submission(submission, definitions[submission.deliverable_id], stage)
+
+
+@transaction.atomic
+def confirm_title(team, stage, key, title=None, *, actor):
+    from student_teams.models import StudentTeam
+    team = StudentTeam.objects.select_for_update().get(pk=team.pk)
+    current = latest_round(team, stage)
+    concept = next((c for c in current.concepts if c['key'] == key), None) if current else None
+    if not concept:
+        raise ValidationError('Choose a module from the current proposal round.')
+    return save_titles(team, stage, [{'key': key, 'title': concept['title'] if title is None else title}],
+                       actor=actor, confirm_key=key)
 
 
 @transaction.atomic
@@ -493,13 +575,21 @@ def payload(team, stage, *, history=True, actor=None):
     current = rounds[0] if rounds else None
     policy = resolve_policy(team, stage, current=current)
     concepts = current.concepts if current else initial_concepts(policy)
+    from repository import title_workflow
+    title_version = current.title_workflow_version if current else title_workflow.version_for_policy(policy)
+    title_first = title_version >= 2
+    concepts = title_workflow.team_payload(team, stage, current, concepts, actor, policy)
     shared_policy = policy.get('source') == 'section_system'
     shared_round = current.section_round if current and current.section_round_id else None
     shared_review = None
+    can_confirm_titles = False
     if shared_policy:
         from repository.section_concepts.models import SectionConceptRound
         shared_round = shared_round or SectionConceptRound.objects.filter(pk=policy.get('section_round_id')).first()
-        from repository.section_concepts.services import review_summary
+        from repository.section_concepts.services import review_summary, module_title_metadata
+        can_confirm_titles = bool(current and title_context_is_open(team, stage)
+            and not current.schedule_id and not current.verdict and policy.get('mode') != 'assigned'
+            and module_title_metadata(actor, team, stage).get('faculty_confirmed'))
         shared_review = review_summary(shared_round, team=team) if shared_round else None
         names = {s.key: s.title for s in shared_round.systems.all()} if shared_round else {}
         concepts = [{**c, 'system_title': names.get(c['key'], ''),
@@ -530,6 +620,10 @@ def payload(team, stage, *, history=True, actor=None):
     if shared_import_pending:
         names = {s['key']: s['title'] for s in display_systems}
         concepts = [{**c, 'system_title': names.get(c['key'], '')} for c in concepts]
+    if title_first and not (current and (current.schedule_id or current.verdict)):
+        title_status, title_label = title_workflow.next_status(concepts)
+        if title_status != 'titles_accepted':
+            status = title_status
     from .pit_decisions import decision_payload
     return {'enabled': True, 'config': policy, 'round': current.number if current else 1,
         'selection_mode': 'shared_module' if shared_policy else 'team_concept',
@@ -542,6 +636,10 @@ def payload(team, stage, *, history=True, actor=None):
             if shared_round else None),
         **(decision_payload(team, stage, current, actor) if team.is_pit else {}),
         'module_review_token': module_review_token(team, stage),
+        'title_workflow_version': title_version,
+        'title_status_label': title_workflow.next_status(concepts)[1] if title_first else '',
+        'round_id': current.pk if current else None,
+        'can_confirm_titles': can_confirm_titles,
         'section_project_id': policy.get('section_project_id'),
         'shared_import_pending': shared_import_pending,
         'system_concepts': display_systems,
@@ -559,7 +657,7 @@ def payload(team, stage, *, history=True, actor=None):
         'clearance_valid': clearance_valid(team, stage, current),
         'review_required': current.review_required if current else True,
         'redefense_plan': policy.get('redefense_plan'),
-        'next_step': ('The administrator must assign the replacement project/module in Manage sections.'
+        'next_step': (title_workflow.NEXT_STEPS[status] if title_first and status in title_workflow.NEXT_STEPS else 'The administrator must assign the replacement project/module in Manage sections.'
             if policy.get('mode') == 'assigned' and not policy.get('assigned_title') else {
             'concepts_needed': 'Upload the paper for your assigned project/module.' if policy.get('mode') == 'assigned' else 'Enter concept titles and upload the required papers.',
             'replacement_concepts_needed': 'Submit replacement concepts using the panel feedback.',
@@ -607,16 +705,26 @@ def summary(team, stage):
     from repository.section_concepts.imported import system_titles
     systems = (system_titles(team, stage, policy) if policy.get('section_project_id') or
         status not in ('approved', 'approved_with_revisions', 'failed', 'project_rejected') else [])
+    from repository import title_workflow
+    title_first = not current or title_workflow.enabled(current)
+    title_rows = title_workflow.team_payload(team, stage, current,
+        current.concepts if current else initial_concepts(policy), None, policy) if title_first else []
+    if title_first and not (current and (current.schedule_id or current.verdict)):
+        title_status, title_label = title_workflow.next_status(title_rows)
+        if title_status != 'titles_accepted':
+            status = title_status
     return {'enabled': True, 'round': number, 'status': status,
+        'title_workflow_version': current.title_workflow_version if current else 2,
+        'title_status_label': title_workflow.next_status(title_rows)[1] if title_first else '',
         'title_progress': title_progress(policy, current),
         'section_project_id': policy.get('section_project_id'),
         'system_concepts': systems,
         'shared_import_pending': bool(systems and not policy.get('section_project_id')),
-        'concepts': [{k: c.get(k, '') for k in ('key', 'title', 'decision')}
+        'concepts': title_rows if title_first else [{k: c.get(k, '') for k in ('key', 'title', 'decision')}
             for c in (current.concepts if current else initial_concepts(policy))],
         'assigned': policy.get('mode') == 'assigned', 'required_count': policy['required_count'],
         'can_edit': bool(team.semester.is_active and (not current or not current.schedule_id)),
-        'next_step': {
+        'next_step': title_workflow.NEXT_STEPS.get(status) or {
             'replacement_concepts_needed': 'The administrator assigns the replacement project/module.' if policy.get('mode') == 'assigned' else 'Students submit replacement concept titles and papers.',
             'concepts_needed': 'Students submit the required concepts.',
             'concept_review_pending': f'The {reviewer_name(stage)} reviews the current concept papers.',

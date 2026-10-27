@@ -195,19 +195,24 @@ def upsert_pit_event_config(
     from defense.document_policy import validate_concept_config, validate_file_policy, with_concept_papers
     concept_config = validate_concept_config(
         concept_config if concept_config is not None else getattr(existing_config, 'concept_config', {}))
+    concept_deliverables = deliverables if deliverables is not None else (
+        list(existing_config.deliverables.values())
+        if existing_config else [])
+    effective_shared = shared_deliverables if shared_deliverables is not None else getattr(existing_config, 'shared_deliverables', None)
+    generated = with_concept_papers(concept_deliverables, concept_config,
+                                   shared_items=effective_shared if isinstance(effective_shared, list) else [])
+    if generated != concept_deliverables:
+        concept_deliverables = deliverables = generated
+    from defense.shared_deliverables import validate_shared_deliverables, shared_definitions
+    if shared_deliverables is None and existing_config and any(
+            row.get('team_deliverable_id') for row in (existing_config.shared_deliverables or [])):
+        shared_deliverables = existing_config.shared_deliverables
     if shared_deliverables is not None:
-        from defense.shared_deliverables import validate_shared_deliverables, shared_definitions
-        shared_deliverables = validate_shared_deliverables(shared_deliverables, concept_config)
+        shared_deliverables = validate_shared_deliverables(shared_deliverables, concept_config, concept_deliverables)
         if existing_config:
             shared_locked, shared_reason = check_pit_event_locked(existing_config)
             if shared_locked and shared_deliverables != validate_shared_deliverables(shared_definitions(existing_config), existing_config.concept_config):
                 raise ValidationError(f'Cannot modify shared deliverables: {shared_reason}')
-    concept_deliverables = deliverables if deliverables is not None else (
-        list(existing_config.deliverables.values())
-        if existing_config else [])
-    generated = with_concept_papers(concept_deliverables, concept_config)
-    if generated != concept_deliverables:
-        concept_deliverables = deliverables = generated
     concept_items = []
     for item in concept_deliverables:
         policy = validate_file_policy(item.get('file_policy', {}))
@@ -215,9 +220,11 @@ def upsert_pit_event_config(
             concept_items.append(item)
     if any(d.get('deliverable_type', 'pre') != 'pre' for d in concept_items):
         raise ValidationError('Concept documents must be pre-defense requirements.')
+    shared_concepts = [d for d in shared_deliverables or [] if d.get('deliverable_type') == 'pre'
+                       and (d.get('file_policy') or {}).get('mode') == 'concepts']
     if concept_config.get('enabled') and not any(
         d.get('required', True) and d.get('requirement_timing', 'scheduling') == 'scheduling'
-        for d in concept_items
+        for d in concept_items + shared_concepts
     ):
         raise ValidationError('Concept selection needs a required concept-documents deliverable cleared before scheduling.')
 

@@ -27,6 +27,9 @@ class PitConceptTests(APITestCase):
     slot = fixtures.PitYearIsolationTests.slot
 
     def setUp(self):
+        version = self.settings(DEFENSYS_TITLE_WORKFLOW_VERSION=1)
+        version.enable()
+        self.addCleanup(version.disable)
         fixtures.PitYearIsolationTests.setUp(self)
         self.team = self.teams[0]
         root = Path(__file__).resolve().parents[4] / '.tmp'

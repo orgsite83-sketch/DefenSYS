@@ -109,51 +109,116 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(resetApiHttpClientForTesting);
 
-  testWidgets('assigned shared systems load configured uploads without requiring concept selection', (tester) async {
-    final requests = <String>[];
-    setApiHttpClientForTesting(MockClient((request) async {
-      requests.add(request.url.path);
-      return http.Response(jsonEncode({'projects': [], 'tasks': [], 'shared_contexts': [{
-        'team_id': 5, 'section': 'BSIT-2A', 'stage_label': 'Project Proposal', 'context_id': 8,
-        'scope': 'pit', 'imported': false, 'concept_selection_enabled': false,
-        'project_manager_id': 1, 'project_manager_name': 'Gabriel Navarro',
-        'systems': [{'key': 'assigned', 'title': 'Existing shared system'}],
-        'requirements': [{'deliverable_id': 'FORM', 'label': 'Section endorsement', 'required': true,
-          'deliverable_type': 'pre', 'status': 'missing', 'file_policy': {'mode': 'single'},
-          'documents': [{'key': 'primary', 'label': 'Section endorsement', 'file_format': 'pdf',
-            'max_file_size': 52428800, 'can_upload': true}]}],
-      }]}), 200);
-    }));
-    await tester.binding.setSurfaceSize(const Size(1280, 1000));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await pumpDefensysWidget(tester, const SectionIntegrationTab(studentData: {
-      'student': {'is_project_manager': true}, 'team': {'id': 5, 'section': 'BSIT-2A'},
-    }), overrides: [authProvider.overrideWith(_Student.new), studentTeamsProvider.overrideWith(_IntegrationTeams.new)]);
-    expect(requests, ['/api/repository/section-concepts/']);
-    expect(find.text('Upload Section endorsement'), findsOneWidget);
-    expect(find.text('Existing shared system'), findsOneWidget);
-    expect(find.text('PM: Gabriel Navarro'), findsOneWidget);
-    expect(find.textContaining('Attempt'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'assigned shared systems load configured uploads without requiring concept selection',
+    (tester) async {
+      final requests = <String>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          requests.add(request.url.path);
+          return http.Response(
+            jsonEncode({
+              'projects': [],
+              'tasks': [],
+              'shared_contexts': [
+                {
+                  'team_id': 5,
+                  'section': 'BSIT-2A',
+                  'stage_label': 'Project Proposal',
+                  'context_id': 8,
+                  'scope': 'pit',
+                  'imported': false,
+                  'concept_selection_enabled': false,
+                  'project_manager_id': 1,
+                  'project_manager_name': 'Gabriel Navarro',
+                  'systems': [
+                    {'key': 'assigned', 'title': 'Existing shared system'},
+                  ],
+                  'requirements': [
+                    {
+                      'deliverable_id': 'FORM',
+                      'label': 'Section endorsement',
+                      'required': true,
+                      'deliverable_type': 'pre',
+                      'status': 'missing',
+                      'file_policy': {'mode': 'single'},
+                      'documents': [
+                        {
+                          'key': 'primary',
+                          'label': 'Section endorsement',
+                          'file_format': 'pdf',
+                          'max_file_size': 52428800,
+                          'can_upload': true,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      await tester.binding.setSurfaceSize(const Size(1280, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pumpDefensysWidget(
+        tester,
+        const SectionIntegrationTab(
+          studentData: {
+            'student': {'is_project_manager': true},
+            'team': {'id': 5, 'section': 'BSIT-2A'},
+          },
+        ),
+        overrides: [
+          authProvider.overrideWith(_Student.new),
+          studentTeamsProvider.overrideWith(_IntegrationTeams.new),
+        ],
+      );
+      expect(requests, ['/api/repository/section-concepts/']);
+      expect(find.text('Upload Section endorsement'), findsOneWidget);
+      expect(find.text('Existing shared system'), findsOneWidget);
+      expect(find.text('PM: Gabriel Navarro'), findsOneWidget);
+      expect(find.textContaining('Attempt'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
-  testWidgets('shared progress and names follow four configured alternatives', (tester) async {
+  testWidgets('shared progress and names follow four configured alternatives', (
+    tester,
+  ) async {
     final project = projectFixture()
       ..['endorsed'] = false
       ..['can_edit_names'] = true
       ..['can_manage'] = false
       ..['can_review'] = false
       ..['review_progress'] = {'required': 4, 'papers_accepted': 0};
-    (project['systems'] as List).add({'id': 4, 'key': 'c4', 'title': '', 'confirmed': false, 'papers': []});
-    setApiHttpClientForTesting(MockClient((request) async => http.Response(jsonEncode(project), 200)));
-    await pumpDefensysWidget(tester, const SingleChildScrollView(child: SectionConceptWorkspace(projectId: 7, embedded: true)), overrides: [authProvider.overrideWith(_Student.new)]);
+    (project['systems'] as List).add({
+      'id': 4,
+      'key': 'c4',
+      'title': '',
+      'confirmed': false,
+      'papers': [],
+    });
+    setApiHttpClientForTesting(
+      MockClient((request) async => http.Response(jsonEncode(project), 200)),
+    );
+    await pumpDefensysWidget(
+      tester,
+      const SingleChildScrollView(
+        child: SectionConceptWorkspace(projectId: 7, embedded: true),
+      ),
+      overrides: [authProvider.overrideWith(_Student.new)],
+    );
     await tester.pumpAndSettle();
-    expect(find.text('0 of 4 papers accepted'), findsOneWidget);
+    expect(find.text('0 of 4 documents accepted'), findsOneWidget);
     expect(find.text('System D'), findsWidgets);
     await tester.ensureVisible(find.text('Propose system names').first);
     await tester.tap(find.text('Propose system names').first);
     await tester.pumpAndSettle();
-    final inputs = tester.widgetList<TextFormField>(find.byType(TextFormField)).toList();
+    final inputs = tester
+        .widgetList<TextFormField>(find.byType(TextFormField))
+        .toList();
     expect(inputs, hasLength(4));
     expect(inputs.first.enabled, isFalse);
     expect(inputs.last.enabled, isTrue);
@@ -278,7 +343,10 @@ void main() {
         ),
         overrides: authTestOverrides(),
       );
-      expect(find.text('Concept selection · 3 of 3 titles provided'), findsOneWidget);
+      expect(
+        find.text('Concept selection · 3 of 3 titles provided'),
+        findsOneWidget,
+      );
       expect(find.text('Campus Management'), findsOneWidget);
       expect(find.byType(SectionConceptWorkspace), findsNothing);
       expect(find.text('Shared system proposals · PIT Design'), findsOneWidget);
@@ -456,32 +524,183 @@ void main() {
         ),
         overrides: authTestOverrides(),
       );
-      await tester.tap(find.text('Confirm system names'));
+      await tester.tap(find.text('Edit name'));
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);
-      expect(find.text('Back to papers'), findsOneWidget);
-      expect(find.text('Details'), findsNothing);
+      expect(find.text('Save and confirm name'), findsOneWidget);
+      expect(find.text('Details'), findsOneWidget);
       await tester.enterText(
         find.byType(EditableText).first,
         'Confirmed campus system',
       );
-      await tester.tap(find.text('Confirm names'));
+      await tester.tap(find.text('Save and confirm name'));
       await tester.pumpAndSettle();
       expect(find.text('Could not confirm names.'), findsOneWidget);
-      expect(find.text('Back to papers'), findsOneWidget);
+      expect(find.text('Save and confirm name'), findsOneWidget);
       succeed = true;
-      await tester.tap(find.text('Confirm names'));
+      await tester.tap(find.text('Save and confirm name'));
       await tester.pumpAndSettle();
       expect(find.text('Details'), findsOneWidget);
-      expect(actions.last['action'], 'save_titles');
+      expect(actions.last['action'], 'confirm_title');
       expect(actions.last['round_id'], 12);
       expect(actions.last['review_token'], 'reviewed-current-content');
-      expect(actions.last['concepts'][0]['title'], 'Confirmed campus system');
+      expect(actions.last['concept_key'], 'c1');
+      expect(actions.last['title'], 'Confirmed campus system');
+      expect(actions.last.containsKey('concepts'), isFalse);
       expect(tester.takeException(), isNull);
     },
   );
 
+  testWidgets(
+    'configured shared files stay under their system and section-wide files appear once',
+    (tester) async {
+      final project = reviewFixture();
+      project['systems'] = (project['systems'] as List).take(2).toList();
+      project['systems'][0]['confirmed'] = false;
+      project['review_progress'] = {
+        'names_confirmed': 1,
+        'documents_required': 5,
+        'documents_accepted': 0,
+      };
+      final group = <String, dynamic>{
+        'team_id': 5,
+        'stage_label': 'PIT Design',
+        'review_token': 'configured-files',
+        'systems': [
+          for (var i = 1; i <= 2; i++)
+            {'key': 'c$i', 'title': project['systems'][i - 1]['title']},
+        ],
+        'requirements': [
+          {
+            'deliverable_id': 'BUNDLE',
+            'label': 'Shared concept bundle',
+            'deliverable_type': 'pre',
+            'required': true,
+            'file_policy': {'mode': 'concepts'},
+            'status': 'pending',
+            'documents': [
+              for (var i = 1; i <= 2; i++)
+                for (final slot in ['paper', 'brief'])
+                  {
+                    'key': 'c$i:$slot',
+                    'system_key': 'c$i',
+                    'label': slot,
+                    'required': true,
+                    'can_review': true,
+                    'file_format': 'pdf',
+                    'file': {
+                      'id': i * 10 + (slot == 'paper' ? 1 : 2),
+                      'file_name': 'system_${i}_$slot.pdf',
+                      'status': 'pending',
+                      'revision': 1,
+                    },
+                  },
+            ],
+          },
+          {
+            'deliverable_id': 'SECTION',
+            'label': 'Section checklist',
+            'deliverable_type': 'pre',
+            'required': true,
+            'file_policy': {'mode': 'single'},
+            'status': 'pending',
+            'documents': [
+              {
+                'key': 'primary',
+                'label': 'Overview',
+                'can_review': true,
+                'file': {
+                  'id': 50,
+                  'file_name': 'section_overview.pdf',
+                  'status': 'pending',
+                  'revision': 1,
+                },
+              },
+            ],
+          },
+        ],
+      };
+      project['shared_deliverables'] = group;
+      project['shared_review'] = {
+        'can_review_shared_context': true,
+        'papers_available': true,
+        'can_acknowledge': true,
+        'acknowledged': false,
+        'acknowledgment_required': true,
+      };
+      final actions = <Map<String, dynamic>>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          if (request.method == 'POST') {
+            final data = jsonDecode(request.body) as Map<String, dynamic>;
+            actions.add(data);
+            if (data['action'] == 'confirm_title') {
+              project['systems'][0]['confirmed'] = true;
+              project['review_progress']['names_confirmed'] = 2;
+            }
+            if (request.url.path.endsWith('/shared-deliverables/')) {
+              group['requirements'][0]['documents'][0]['file']['status'] =
+                  'accepted';
+              project['review_progress']['documents_accepted'] = 1;
+              return http.Response(
+                jsonEncode({'shared_deliverables': group}),
+                200,
+              );
+            }
+          }
+          return http.Response(jsonEncode(project), 200);
+        }),
+      );
+      await tester.binding.setSurfaceSize(const Size(1280, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      for (final scenario in [(1280.0, false), (390.0, false), (320.0, true)]) {
+        await tester.binding.setSurfaceSize(Size(scenario.$1, 1200));
+        await pumpDefensysWidget(
+          tester,
+          RepaintBoundary(
+            key: const ValueKey('configured-review-capture'),
+            child: const SingleChildScrollView(
+              child: SectionConceptWorkspace(
+                projectId: 7,
+                embedded: true,
+                focused: true,
+              ),
+            ),
+          ),
+          theme: scenario.$2 ? AppTheme.mistDarkTheme : AppTheme.theme,
+          overrides: authTestOverrides(),
+        );
+        expect(find.text('system_1_paper.pdf'), findsOneWidget);
+        expect(find.text('system_1_brief.pdf'), findsOneWidget);
+        expect(find.text('system_2_paper.pdf'), findsNothing);
+        expect(find.text('section_overview.pdf'), findsOneWidget);
+        expect(find.text('Section-wide documents'), findsOneWidget);
+        if (actions.isEmpty) {
+          await tester.ensureVisible(find.text('Confirm system name'));
+          await tester.tap(find.text('Confirm system name'));
+          await tester.pumpAndSettle();
+          expect(actions.single['concept_key'], 'c1');
+          expect(find.text('Required documents: 0/5 accepted'), findsOneWidget);
+          await tester.ensureVisible(find.text('Accept file').first);
+          await tester.tap(find.text('Accept file').first);
+          await tester.pumpAndSettle();
+          expect(actions.last['slot_key'], 'c1:paper');
+          expect(find.text('Required documents: 1/5 accepted'), findsOneWidget);
+        }
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('configured-review-capture')),
+          'concept-review-configured-${scenario.$1.toInt()}-${scenario.$2 ? 'dark' : 'light'}',
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+
   testWidgets('a delayed refresh cannot undo paper acceptance', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final project = reviewFixture();
     final original = jsonEncode(project);
     final refresh = Completer<http.Response>();
@@ -500,19 +719,19 @@ void main() {
     );
     await pumpDefensysWidget(
       tester,
-      const SingleChildScrollView(
-        child: SectionConceptWorkspace(projectId: 7, embedded: true),
-      ),
+      const SectionConceptWorkspace(projectId: 7),
       overrides: authTestOverrides(),
     );
-    await tester.tap(find.text('Refresh'));
+    await tester.tap(find.byTooltip('Refresh'));
     await tester.pump();
-    await tester.tap(find.text('Accept paper'));
+    expect(reads, 2);
+    await tester.ensureVisible(find.text('Accept paper').first);
+    await tester.tap(find.text('Accept paper').first);
     await tester.pumpAndSettle();
-    expect(find.text('Shared papers cleared for hearing'), findsOneWidget);
+    expect(find.text('Accepted'), findsNWidgets(3));
     refresh.complete(http.Response(original, 200));
     await tester.pumpAndSettle();
-    expect(find.text('Shared papers cleared for hearing'), findsOneWidget);
+    expect(find.text('Accepted'), findsNWidgets(3));
   });
 
   testWidgets(
@@ -552,17 +771,15 @@ void main() {
         overrides: authTestOverrides(),
       );
       expect(find.text('Accept paper'), findsNothing);
-      await tester.tap(find.text('Acknowledge shared system alignment'));
+      await tester.ensureVisible(find.text('Confirm alignment for my teams'));
+      await tester.tap(find.text('Confirm alignment for my teams'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Confirm acknowledgment'));
+      await tester.tap(find.text('Confirm alignment'));
       await tester.pumpAndSettle();
       expect(actions.single['action'], 'acknowledge');
       expect(actions.single['round_id'], 12);
       expect(actions.single['review_token'], 'reviewed-current-content');
-      expect(
-        find.text('Your review of the current shared proposals is recorded.'),
-        findsOneWidget,
-      );
+      expect(find.text('Your alignment: Recorded'), findsOneWidget);
       expect(
         (project['systems'] as List).first['papers'][0]['status'],
         'pending',

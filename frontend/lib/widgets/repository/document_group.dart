@@ -11,6 +11,8 @@ import '../shadcn/defensys_shadcn_scope.dart';
 import 'deliverable_file_widgets.dart';
 import 'deliverable_review_navigation.dart';
 import 'workflow_status_style.dart';
+import 'concept_revision_dialog.dart';
+import 'concept_review_section.dart';
 
 class DocumentGroup extends ConsumerStatefulWidget {
   const DocumentGroup({
@@ -20,15 +22,25 @@ class DocumentGroup extends ConsumerStatefulWidget {
     required this.item,
     this.programScope,
     this.focused = false,
+    this.framed,
     this.concepts = const [],
     this.projectContext = false,
+    this.showConceptContext = true,
+    this.initialSlotKey,
+    this.onOpenConceptReview,
+    this.titleWorkflow = const {},
   });
+  final Map<String, dynamic> titleWorkflow;
   final int teamId;
   final String stageLabel;
   final Map<String, dynamic> item;
   final String? programScope;
   final bool focused;
+  final bool? framed;
   final bool projectContext;
+  final bool showConceptContext;
+  final String? initialSlotKey;
+  final ValueChanged<String?>? onOpenConceptReview;
   final List<Map<String, dynamic>> concepts;
   @override
   ConsumerState<DocumentGroup> createState() => _DocumentGroupState();
@@ -38,6 +50,26 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
   bool busy = false;
   String? error;
   String? selectedSlot;
+
+  bool get compactFileReview =>
+      widget.focused &&
+      !widget.projectContext &&
+      DeliverableReviewNavigation.maybeOf(context) != null;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedSlot = widget.initialSlotKey;
+  }
+
+  @override
+  void didUpdateWidget(covariant DocumentGroup oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialSlotKey != widget.initialSlotKey &&
+        widget.initialSlotKey != null) {
+      selectedSlot = widget.initialSlotKey;
+    }
+  }
 
   List<Map<String, dynamic>> get focusEntries =>
       deliverableReviewEntries(widget.item);
@@ -160,6 +192,33 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
 
   Future<bool> review(Map<String, dynamic> file, String status) async {
     var feedback = '';
+    if (widget.titleWorkflow['title_workflow_version'] == 2 &&
+        (widget.item['file_policy'] as Map?)?['mode'] == 'concepts') {
+      final snapshot = Map<String, dynamic>.from(widget.titleWorkflow);
+      final result = status == 'rejected'
+          ? await showConceptRevisionDialog(
+              context,
+              description:
+                  '${file['file_name']} · Revision ${file['revision']}',
+              titleAvailable: true,
+            )
+          : const ConceptRevision('paper', '');
+      if (result == null || !mounted) return false;
+      return perform(
+        () => ref
+            .read(capstoneDeliverablesProvider.notifier)
+            .reviewConceptFile(
+              teamId: widget.teamId,
+              stageLabel: widget.stageLabel,
+              deliverableId: '${widget.item['id']}',
+              fileId: file['id'] as int,
+              status: status,
+              feedback: result.feedback,
+              revisionScope: result.scope,
+              reviewToken: '${snapshot['module_review_token']}',
+            ),
+      );
+    }
     if (status == 'rejected') {
       final controller = TextEditingController();
       final saved = await showDialog<bool>(
@@ -219,12 +278,31 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     String? fileFormat,
   }) {
     final item = widget.item;
+    final title = widget.concepts
+        .where((c) => c['key'] == slot.split(':').first)
+        .firstOrNull;
+    final slotDefinition = (item['document_slots'] as List? ?? [])
+        .whereType<Map>()
+        .where((entry) => entry['key'] == slot)
+        .firstOrNull;
+    final uploadBlocker = '${slotDefinition?['upload_blocker'] ?? ''}';
+    final titleBlocked =
+        widget.titleWorkflow['title_workflow_version'] == 2 &&
+        title != null &&
+        (title['title_review'] as Map?)?['state'] != 'accepted';
     final user = ref.watch(authProvider).user ?? {};
     final faculty = user['role'] != 'student';
     final defenseTimed = item['requirement_timing'] == 'defense';
     final canReview = faculty && item['can_faculty_review'] == true;
     final canUpload =
         item['can_upload'] == true &&
+        uploadBlocker.isEmpty &&
+        (widget.titleWorkflow['title_workflow_version'] != 2 ||
+            title == null ||
+            const [
+              'submitted',
+              'accepted',
+            ].contains((title['title_review'] as Map?)?['state'])) &&
         (user['role'] == 'student' ||
             user['role'] == 'admin' ||
             user['is_superuser'] == true);
@@ -248,6 +326,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     final format = DeliverableFormatInfo.fromFormat(
       fileFormat ?? item['file_format']?.toString(),
     );
+    final compact = compactFileReview;
     if (file == null && canUpload) {
       return Padding(
         padding: const EdgeInsets.only(top: 8),
@@ -304,10 +383,27 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
 
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      padding: widget.focused
+      padding: compact
+          ? const EdgeInsets.all(12)
+          : widget.focused
           ? const EdgeInsets.symmetric(vertical: 12)
           : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: widget.focused
+      decoration: compact
+          ? BoxDecoration(
+              color: DefensysTokens.surfaceOf(context),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: WorkflowStatusStyle.of(
+                  context,
+                  accepted
+                      ? WorkflowStatusTone.success
+                      : file == null
+                      ? WorkflowStatusTone.neutral
+                      : WorkflowStatusTone.active,
+                ).border,
+              ),
+            )
+          : widget.focused
           ? null
           : BoxDecoration(
               color: DefensysTokens.panelOf(context),
@@ -328,7 +424,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
             children: [
               Expanded(
                 child: Text(
-                  file == null
+                  compact || file == null
                       ? label
                       : widget.focused &&
                             DeliverableReviewNavigation.maybeOf(context) !=
@@ -356,17 +452,21 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
             const SizedBox(height: 8),
             DeliverableUploadedFileTile(
               fileName: '${file['file_name']}',
+              compact: compact,
+              subtitle: compact ? 'Revision ${file['revision'] ?? 1}' : null,
               onDetails: showDetails,
               onRevision: rejected && canUpload
                   ? () => upload(slot, file)
                   : null,
               revisionEnabled: !busy,
             ),
-            const SizedBox(height: 8),
-            DeliverableUploadAttribution(
-              uploader: uploader,
-              uploadedAt: file['uploaded_at']?.toString(),
-            ),
+            if (!compact) ...[
+              const SizedBox(height: 8),
+              DeliverableUploadAttribution(
+                uploader: uploader,
+                uploadedAt: file['uploaded_at']?.toString(),
+              ),
+            ],
             if ('${file['feedback'] ?? ''}'.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
@@ -380,6 +480,13 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                 ),
               ),
             ],
+            if (titleBlocked && widget.item['can_faculty_review'] == true)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text(
+                  'Accept the matching title in Concept review before accepting this file.',
+                ),
+              ),
             if (canReview &&
                 (defenseTimed || !(item['type'] == 'post' && accepted))) ...[
               const SizedBox(height: 12),
@@ -390,26 +497,47 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (!accepted && !defenseTimed)
+                    if (compact && !accepted && !defenseTimed)
                       ShadButton.outline(
-                        size: ShadButtonSize.sm,
-                        enabled: !busy,
+                        height: 36,
+                        enabled: !busy && !titleBlocked,
                         onPressed: () async {
                           final saved = await review(file, 'accepted');
-                          if (saved && widget.focused && mounted) nextFile();
+                          if (saved && mounted) nextFile();
                         },
-                        child: Text(
-                          widget.focused && hasNextFile
-                              ? 'Accept & next'
-                              : 'Accept',
-                        ),
+                        child: Text(hasNextFile ? 'Accept & next' : 'Accept'),
                       ),
-                    ShadButton.ghost(
-                      size: ShadButtonSize.sm,
-                      enabled: !busy,
-                      onPressed: () => review(file, 'rejected'),
-                      child: const Text('Request corrections'),
-                    ),
+                    if (compact)
+                      ShadButton.ghost(
+                        height: 36,
+                        enabled: !busy,
+                        onPressed: () => review(file, 'rejected'),
+                        child: const Text('Request revision'),
+                      )
+                    else ...[
+                      ShadButton.outline(
+                        height: 40,
+                        enabled: !busy,
+                        onPressed: () => review(file, 'rejected'),
+                        child: const Text('Request revision'),
+                      ),
+                      if (!accepted && !defenseTimed)
+                        ShadButton(
+                          height: 40,
+                          backgroundColor: DefensysTokens.maroonOf(context),
+                          foregroundColor: Colors.white,
+                          enabled: !busy && !titleBlocked,
+                          onPressed: () async {
+                            final saved = await review(file, 'accepted');
+                            if (saved && widget.focused && mounted) nextFile();
+                          },
+                          child: Text(
+                            widget.focused && hasNextFile
+                                ? 'Accept & next'
+                                : 'Accept',
+                          ),
+                        ),
+                    ],
                   ],
                 ),
               ),
@@ -417,7 +545,16 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
           ] else ...[
             const SizedBox(height: 6),
             Text(
-              'Awaiting team upload',
+              uploadBlocker.isNotEmpty
+                  ? uploadBlocker
+                  : widget.titleWorkflow['title_workflow_version'] == 2 &&
+                        title != null &&
+                        !const [
+                          'submitted',
+                          'accepted',
+                        ].contains((title['title_review'] as Map?)?['state'])
+                  ? 'Submit this title in Team before uploading its file.'
+                  : 'Awaiting team upload',
               style: TextStyle(
                 fontSize: 11,
                 color: DefensysTokens.textSecondaryOf(context),
@@ -442,17 +579,65 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     final selected = entries[index];
     final navigation = DeliverableReviewNavigation.maybeOf(context);
     final showConceptContext =
-        navigation == null ||
-        widget.projectContext ||
-        widget.concepts.length > 1;
+        widget.showConceptContext &&
+        (navigation == null ||
+            widget.projectContext ||
+            widget.concepts.length > 1);
     final conceptKey = '${selected['key']}'.split(':').first;
     final concept = widget.concepts
         .where((concept) => concept['key'] == conceptKey)
         .firstOrNull;
+    final compact = compactFileReview;
+    final nestedReview =
+        compact &&
+        concept != null &&
+        (showConceptContext || widget.onOpenConceptReview != null);
+    final titleReview = concept?['title_review'] as Map?;
+    final titleStatus =
+        titleReview != null || concept?.containsKey('faculty_confirmed') == true
+        ? TitleReviewStatus(
+            label:
+                '${titleReview?['status_label'] ?? (concept?['faculty_confirmed'] == true ? 'Title accepted' : 'Awaiting title review')}',
+            accepted: titleReview != null
+                ? titleReview['state'] == 'accepted'
+                : concept?['faculty_confirmed'] == true,
+          )
+        : null;
+    final reviewTitleButton = widget.onOpenConceptReview == null
+        ? null
+        : ShadButton.ghost(
+            size: ShadButtonSize.sm,
+            onPressed: () => widget.onOpenConceptReview!('${selected['key']}'),
+            trailing: const Icon(Icons.arrow_forward, size: 14),
+            child: const Text('Review title'),
+          );
+    final selectedDocument = documentRow(
+      '${selected['label']}',
+      '${selected['key']}',
+      selected['file'] as Map<String, dynamic>?,
+      required: selected['required'] != false,
+      fileFormat: selected['file_format']?.toString(),
+    );
+    final simpleConceptTabs =
+        compact &&
+        entries.every(
+          (entry) =>
+              entries
+                      .where(
+                        (other) =>
+                            '${other['key']}'.split(':').first ==
+                            '${entry['key']}'.split(':').first,
+                      )
+                      .length ==
+                  1 &&
+              widget.concepts.any(
+                (c) => c['key'] == '${entry['key']}'.split(':').first,
+              ),
+        );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 12),
+        if (!compact) const SizedBox(height: 12),
         if (entries.length > 1)
           Align(
             alignment: Alignment.centerLeft,
@@ -476,7 +661,9 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                     ShadTab(
                       value: '${entry['key']}',
                       child: Text(
-                        widget.projectContext
+                        simpleConceptTabs
+                            ? 'Concept ${'${entry['key']}'.split(':').first.replaceFirst('c', '')}'
+                            : widget.projectContext && widget.showConceptContext
                             ? '${entry['label']}'.split('·').first.trim()
                             : '${entry['label']}',
                       ),
@@ -485,36 +672,109 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
               ),
             ),
           ),
-        if (showConceptContext &&
-            '${concept?['title'] ?? ''}'.trim().isNotEmpty)
+        if (nestedReview)
           Padding(
             padding: const EdgeInsets.only(top: 12),
-            child: Text(
-              '${concept!['title']}',
-              style: DefensysTokens.body.copyWith(
-                color: DefensysTokens.textPrimaryOf(context),
+            child: ConceptReviewSection(
+              titleReview: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${concept['system_title'] ?? ''}'.isNotEmpty
+                              ? 'Proposed module title'
+                              : 'Proposed concept title',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: DefensysTokens.textSecondaryOf(context),
+                          ),
+                        ),
+                      ),
+                      if (titleStatus != null) ...[
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: titleStatus,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '${concept['title'] ?? ''}'.trim().isEmpty
+                        ? 'No proposed title yet'
+                        : '${concept['title']}',
+                    style: DefensysTokens.body.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
+                  ),
+                  if ('${concept['system_title'] ?? ''}'.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Linked to ${concept['system_title']}',
+                      style: DefensysTokens.caption.copyWith(
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                  if (reviewTitleButton != null) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: reviewTitleButton,
+                    ),
+                  ],
+                ],
+              ),
+              deliverables: selectedDocument,
+            ),
+          )
+        else ...[
+          if (compact && reviewTitleButton != null)
+            Align(alignment: Alignment.centerRight, child: reviewTitleButton),
+          if (showConceptContext &&
+              '${concept?['title'] ?? ''}'.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                '${concept!['title']}',
+                style: DefensysTokens.body.copyWith(
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
               ),
             ),
-          ),
-        if (showConceptContext &&
-            '${concept?['system_title'] ?? ''}'.trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              'Linked to ${concept!['system_title']}',
-              style: DefensysTokens.caption.copyWith(
-                color: DefensysTokens.textSecondaryOf(context),
+          if (showConceptContext &&
+              '${concept?['system_title'] ?? ''}'.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Linked to ${concept!['system_title']}',
+                style: DefensysTokens.caption.copyWith(
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
               ),
             ),
-          ),
-        documentRow(
-          '${selected['label']}',
-          '${selected['key']}',
-          selected['file'] as Map<String, dynamic>?,
-          required: selected['required'] != false,
-          fileFormat: selected['file_format']?.toString(),
-        ),
-        if (navigation == null) ...[
+          if (widget.onOpenConceptReview != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (titleStatus != null) titleStatus,
+                  if (!compact && reviewTitleButton != null) reviewTitleButton,
+                ],
+              ),
+            ),
+          selectedDocument,
+        ],
+        if (navigation == null && entries.length > 1) ...[
           const SizedBox(height: 10),
           Wrap(
             alignment: WrapAlignment.spaceBetween,
@@ -649,10 +909,11 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     return DefensysShadcnScope(
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        padding: widget.focused ? EdgeInsets.zero : const EdgeInsets.all(14),
-        decoration: widget.focused
-            ? null
-            : BoxDecoration(
+        padding: (widget.framed ?? !widget.focused)
+            ? const EdgeInsets.all(14)
+            : EdgeInsets.zero,
+        decoration: (widget.framed ?? !widget.focused)
+            ? BoxDecoration(
                 color: DefensysTokens.surfaceOf(context),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: cardBorderColor, width: 1.2),
@@ -663,11 +924,12 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                     offset: const Offset(0, 2),
                   ),
                 ],
-              ),
+              )
+            : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (!widget.projectContext) ...[
+            if (!widget.projectContext && !compactFileReview) ...[
               Row(
                 children: [
                   Expanded(

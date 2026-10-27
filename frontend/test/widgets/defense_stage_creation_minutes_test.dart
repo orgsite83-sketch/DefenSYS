@@ -137,8 +137,8 @@ void main() {
         findsNothing,
       );
       expect(find.text('Demo Report'), findsOneWidget);
-      expect(find.text('Add Pre-Defense'), findsOneWidget);
-      expect(find.text('Add Post-Defense'), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable')), findsOneWidget);
       await tester.tap(find.text('Save changes'));
       await tester.pumpAndSettle();
       expect(stages.saved?['is_presentation_only'], false);
@@ -234,8 +234,8 @@ void main() {
           find.text('Will students submit files for this stage?'),
           findsNothing,
         );
-        expect(find.text('Add Pre-Defense'), findsOneWidget);
-        expect(find.text('Add Post-Defense'), findsOneWidget);
+        expect(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')), findsOneWidget);
+        expect(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable')), findsOneWidget);
         expect(
           find.byType(StageMinutesDeliverableCard),
           requiredMinutes ? findsOneWidget : findsNothing,
@@ -268,7 +268,7 @@ void main() {
           await tester.pumpAndSettle();
         }
         if (requiredMinutes) {
-          await tester.tap(find.text('Add Pre-Defense'));
+          await tester.tap(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')));
           await tester.pumpAndSettle();
           await tester.enterText(
             find.byWidgetPredicate(
@@ -288,8 +288,8 @@ void main() {
           await tester.tap(find.text('Required').last);
           await tester.pumpAndSettle();
 
-          await tester.ensureVisible(find.text('Add Post-Defense'));
-          await tester.tap(find.text('Add Post-Defense'));
+          await tester.ensureVisible(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable')));
+          await tester.tap(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable')));
           await tester.pumpAndSettle();
           await tester.enterText(
             find.byWidgetPredicate(

@@ -11,6 +11,8 @@ import '../../theme/defensys_tokens.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 import 'deliverable_file_widgets.dart';
+import 'concept_revision_dialog.dart';
+import 'concept_review_section.dart';
 
 List<Map<String, dynamic>> _sharedRows(dynamic value) => (value as List? ?? [])
     .whereType<Map>()
@@ -26,11 +28,17 @@ class SharedDeliverablesPanel extends ConsumerStatefulWidget {
     this.onChanged,
     this.selectedSystemKey,
     this.onSystemChanged,
+    this.systemHeaderBuilder,
+    this.onReviewFiles,
+    this.readOnly = false,
   });
   final Map<String, dynamic> group;
+  final bool readOnly;
   final ValueChanged<Map<String, dynamic>>? onChanged;
   final String? selectedSystemKey;
   final ValueChanged<String>? onSystemChanged;
+  final Widget Function(Map<String, dynamic> system)? systemHeaderBuilder;
+  final ValueChanged<String>? onReviewFiles;
   @override
   ConsumerState<SharedDeliverablesPanel> createState() =>
       _SharedDeliverablesPanelState();
@@ -152,43 +160,16 @@ class _SharedDeliverablesPanelState
     Map<String, dynamic> document,
     String status,
   ) async {
-    final feedback = TextEditingController();
-    String? message;
-    if (status == 'rejected') {
-      message = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Request corrections'),
-          content: TextField(
-            controller: feedback,
-            maxLength: 5000,
-            minLines: 2,
-            maxLines: 5,
-            decoration: const InputDecoration(
-              labelText: 'Required corrections',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                if (feedback.text.trim().isNotEmpty) {
-                  Navigator.pop(context, feedback.text.trim());
-                }
-              },
-              child: const Text('Request corrections'),
-            ),
-          ],
-        ),
-      );
-    } else {
-      message = '';
-    }
-    feedback.dispose();
-    if (message == null || !mounted) return;
+    final snapshot = Map<String, dynamic>.from(group);
+    final result = status == 'rejected'
+        ? await showConceptRevisionDialog(
+            context,
+            description:
+                '${(document['file'] as Map)['file_name']} · Revision ${(document['file'] as Map)['revision']}',
+            titleAvailable: document['title_revision_available'] == true,
+          )
+        : const ConceptRevision('paper', '');
+    if (result == null || !mounted) return;
     setState(() {
       busy = true;
       error = null;
@@ -197,12 +178,15 @@ class _SharedDeliverablesPanelState
       final response = await ref
           .read(sectionConceptServiceProvider)
           .reviewShared(
-            group,
+            snapshot,
             '${requirement['deliverable_id']}',
             '${document['key']}',
-            Map<String, dynamic>.from(document['file'] as Map),
+            {
+              ...Map<String, dynamic>.from(document['file'] as Map),
+              'revision_scope': result.scope,
+            },
             status,
-            message,
+            result.feedback,
           );
       if (mounted) changed(response);
     } catch (exception) {
@@ -246,7 +230,12 @@ class _SharedDeliverablesPanelState
         : relevantFiles.isNotEmpty
         ? 'pending'
         : 'missing');
-    final label = status == 'accepted'
+    final defenseTimed =
+        requirement['requirement_timing'] == 'defense' &&
+        requirement['deliverable_type'] != 'post';
+    final label = defenseTimed && status == 'pending'
+        ? 'Uploaded'
+        : status == 'accepted'
         ? 'Accepted'
         : status == 'rejected'
         ? 'Corrections requested'
@@ -313,7 +302,7 @@ class _SharedDeliverablesPanelState
                 fileName: '${(document['file'] as Map)['file_name']}',
                 onDetails: () =>
                     view(Map<String, dynamic>.from(document['file'] as Map)),
-                onRevision: document['can_upload'] == true
+                onRevision: !widget.readOnly && document['can_upload'] == true
                     ? () => upload(requirement, document)
                     : null,
                 revisionEnabled: !busy,
@@ -333,24 +322,37 @@ class _SharedDeliverablesPanelState
                     color: DefensysTokens.textSecondaryOf(context),
                   ),
                 ),
-              if (document['can_review'] == true)
+              if ('${document['title_blocker'] ?? ''}'.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('${document['title_blocker']}'),
+                ),
+              if (!widget.readOnly && document['can_review'] == true)
                 Wrap(
+                  alignment: WrapAlignment.end,
                   spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    TextButton(
-                      onPressed:
-                          busy ||
-                              (document['file'] as Map)['status'] == 'accepted'
-                          ? null
-                          : () => review(requirement, document, 'accepted'),
-                      child: const Text('Accept'),
+                    ShadButton.outline(
+                      height: 40,
+                      enabled: !busy,
+                      onPressed: () =>
+                          review(requirement, document, 'rejected'),
+                      child: const Text('Request revision'),
                     ),
-                    TextButton(
-                      onPressed: busy
-                          ? null
-                          : () => review(requirement, document, 'rejected'),
-                      child: const Text('Request corrections'),
-                    ),
+                    if (!defenseTimed &&
+                        (document['file'] as Map)['status'] != 'accepted')
+                      ShadButton(
+                        height: 40,
+                        backgroundColor: DefensysTokens.maroonOf(context),
+                        foregroundColor: Colors.white,
+                        enabled:
+                            !busy &&
+                            '${document['title_blocker'] ?? ''}'.isEmpty,
+                        onPressed: () =>
+                            review(requirement, document, 'accepted'),
+                        child: const Text('Accept file'),
+                      ),
                   ],
                 ),
             ] else
@@ -362,12 +364,13 @@ class _SharedDeliverablesPanelState
                 maxFileSizeMb:
                     ((document['max_file_size'] as int? ?? 50 * 1024 * 1024) ~/
                     (1024 * 1024)),
-                enabled: !busy && document['can_upload'] == true,
+                enabled:
+                    !widget.readOnly && !busy && document['can_upload'] == true,
                 onUpload: () => upload(requirement, document),
               ),
             const SizedBox(height: 8),
           ],
-          if (mode == 'multiple')
+          if (mode == 'multiple' && !widget.readOnly)
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
@@ -445,11 +448,19 @@ class _SharedDeliverablesPanelState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-        if (systems.length == 1 && repeated.isEmpty && '${active?['title'] ?? ''}'.isNotEmpty) ...[
-          Text('${active!['title']}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
-            color: DefensysTokens.textPrimaryOf(context))),
-          const SizedBox(height: 10),
-        ],
+          if (systems.length == 1 &&
+              repeated.isEmpty &&
+              '${active?['title'] ?? ''}'.isNotEmpty) ...[
+            Text(
+              '${active!['title']}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           if (busy) const LinearProgressIndicator(),
           if (error != null)
             Padding(
@@ -459,7 +470,7 @@ class _SharedDeliverablesPanelState
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
-          if (once.isNotEmpty) ...[
+          if (once.isNotEmpty && widget.systemHeaderBuilder == null) ...[
             Text(
               'For the entire section',
               style: TextStyle(
@@ -471,7 +482,8 @@ class _SharedDeliverablesPanelState
             const SizedBox(height: 10),
             for (final requirement in once) requirementCard(requirement),
           ],
-          if (repeated.isNotEmpty && active != null) ...[
+          if ((repeated.isNotEmpty || widget.systemHeaderBuilder != null) &&
+              active != null) ...[
             if (systems.length > 1)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
@@ -495,17 +507,58 @@ class _SharedDeliverablesPanelState
                   ],
                 ),
               ),
+            if (widget.systemHeaderBuilder != null)
+              ConceptReviewSection(
+                titleReview: widget.systemHeaderBuilder!(active),
+                onReviewFiles: widget.onReviewFiles == null
+                    ? null
+                    : () => widget.onReviewFiles!('${active['key']}'),
+                deliverables: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final requirement in repeated)
+                      requirementCard(requirement, key: '${active['key']}'),
+                    if (repeated.isEmpty)
+                      Text(
+                        'No deliverables are configured for this system.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: DefensysTokens.textSecondaryOf(context),
+                        ),
+                      ),
+                  ],
+                ),
+              )
+            else ...[
+              Text(
+                '${active['title'] == '' ? 'Awaiting system title' : active['title']}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (final requirement in repeated)
+                requirementCard(requirement, key: '${active['key']}'),
+            ],
+          ],
+          if (once.isNotEmpty && widget.systemHeaderBuilder != null) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Section-wide documents',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
             Text(
-              '${active['title'] == '' ? 'Awaiting system title' : active['title']}',
+              'The project manager submits these once for the section.',
               style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: DefensysTokens.textPrimaryOf(context),
+                fontSize: 12,
+                color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
             const SizedBox(height: 10),
-            for (final requirement in repeated)
-              requirementCard(requirement, key: '${active['key']}'),
+            for (final requirement in once) requirementCard(requirement),
           ],
           if (requirements.isEmpty)
             Text(

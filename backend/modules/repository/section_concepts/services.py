@@ -250,17 +250,27 @@ def review_summary(round, *, team=None, actor=None):
         ('needs_review', 'Shared titles awaiting confirmation'))
     from .acknowledgments import summary as acknowledgment_summary
     reviewers = review_faculty(round.project)
+    acknowledgment = acknowledgment_summary(round, team=team, actor=actor)
+    from repository import title_workflow
+    if title_workflow.enabled(round):
+        acknowledgment.update(acknowledged=True, acknowledgment_required=False,
+            can_acknowledge=False, can_review_shared_context=False)
+        if not round.verdict:
+            title_rows = [{'title_review': s.title_review or {'state': 'draft'}} for s in round.systems.all()]
+            title_status, title_label = title_workflow.next_status(title_rows)
+            code, label = title_status, title_label
     return {'project_id': round.project_id, 'round_id': round.pk, 'round': round.number,
+        'title_workflow_version': round.title_workflow_version,
         'section': round.project.section.section, 'stage_label': round.project.context.label,
         'cleared': cleared, 'status': code, 'status_label': label,
         'review_progress': progress, 'systems': state['systems'],
         'project_manager_name': round.project.project_manager.get_full_name() or round.project.project_manager.username,
         'reviewer_name': ', '.join(r['name'] for r in reviewers) if reviewers else 'Section instructor assignment needed',
-        **acknowledgment_summary(round, team=team, actor=actor)}
+        **acknowledgment}
 
 
 def review_token(round):
-    return sha256(json.dumps(snapshot(round), sort_keys=True).encode()).hexdigest()
+    return sha256(json.dumps({'snapshot': snapshot(round), 'titles': list(round.systems.order_by('key').values('key', 'title_review')), 'version': round.title_workflow_version}, sort_keys=True).encode()).hexdigest()
 
 
 @transaction.atomic
@@ -323,7 +333,8 @@ def configure(actor, teams, context, data):
         project = SectionConceptProject.objects.create(section=section, **context_fields(context),
             project_manager=manager, reviewer=reviewer, title_mode=mode)
         require_active(project)
-        round = SectionConceptRound.objects.create(project=project)
+        from repository.title_workflow import new_version
+        round = SectionConceptRound.objects.create(project=project, title_workflow_version=new_version())
         from student_teams.concept_policy import proposal_keys
         SectionSystemConcept.objects.bulk_create([SectionSystemConcept(round=round, key=k,
             title=section.system_name if k == 'c1' else '')
@@ -448,6 +459,9 @@ def module_blocker(team, context, current):
         return 'Submit this team’s modules for the current section system proposals.'
     if round.verdict == 'for_redefense':
         return 'The section needs replacement system concepts.'
+    from repository import title_workflow
+    if title_workflow.enabled(current):
+        return '' if all(title_workflow.accepted(c, title_workflow.parent_for(current, c['key'])) for c in current.concepts) else 'Accept every required module title and its current system connection.'
     if not all(c.get('faculty_confirmed') for c in current.concepts):
         return 'The instructor/adviser must confirm the required module names and system connections.'
     return ''
@@ -468,6 +482,9 @@ def scheduling_blocker(team, context, current):
         return 'Confirm the shared system titles and accept their current papers before scheduling.'
     # Retain already scheduled/historical approvals; acknowledgment gates new slots.
     if current and current.schedule_id and current.schedule.status != 'cancelled':
+        return ''
+    from repository.title_workflow import enabled
+    if enabled(round):
         return ''
     from .acknowledgments import acknowledged, required_faculty_id
     if not acknowledged(round, required_faculty_id(team, project)):
@@ -495,26 +512,38 @@ def module_title_metadata(user, team, context):
 
 
 @transaction.atomic
-def save_system_titles(project, actor, titles):
+def save_system_titles(project, actor, titles, *, confirm_key=None):
     require_active(project)
     round = locked_round(project)
     editable(round)
+    from repository.title_workflow import enabled as title_first
+    if title_first(round):
+        raise ValidationError('Use Submit system title or the assigned reviewer title-review actions.')
     faculty = can_manage(actor, project) or is_reviewer(actor, project)
     if not faculty and not is_pm(actor, project):
         raise PermissionError('Only the designated project manager can propose names; faculty confirms official names.')
     keys = round_keys(round)
+    if confirm_key is not None:
+        if not faculty:
+            raise PermissionError('Only assigned faculty can confirm a system name.')
+        if confirm_key not in keys:
+            raise ValidationError('Choose a system from the current proposal round.')
+        keys = [confirm_key]
     if not isinstance(titles, list) or len(titles) != len(keys) or {c.get('key') for c in titles if isinstance(c, dict)} != set(keys):
         raise ValidationError(f'Enter one title for each of the {len(keys)} shared system proposals.')
     keyed = {c['key']: c for c in titles}
     changed = False
     changed_keys = set()
     for concept in round.systems.all():
+        if concept.key not in keyed:
+            continue
         title = keyed[concept.key].get('title', '')
         if not isinstance(title, str) or not title.strip() or len(title.strip()) > 255:
             raise ValidationError('Every system proposal needs a title of up to 255 characters.')
         if concept.confirmed and not faculty and title.strip() != concept.title:
             raise PermissionError('A faculty-confirmed system name can only be changed by assigned faculty.')
-        if (concept.title, concept.confirmed) != (title.strip(), faculty or concept.confirmed):
+        if ((concept.title, concept.confirmed) != (title.strip(), faculty or concept.confirmed)
+                or concept.title_review.get('state') == 'changes_requested'):
             if concept.title != title.strip():
                 if concept.title.strip():
                     changed_keys.add(concept.key)
@@ -527,8 +556,17 @@ def save_system_titles(project, actor, titles):
                     paper.status, paper.reviewed_by, paper.reviewed_at = 'pending', None, None
                     paper.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
             concept.title, concept.confirmed = title.strip(), faculty or concept.confirmed
-            concept.save(update_fields=['title', 'confirmed'])
+            if concept.title_review:
+                from repository import title_workflow
+                concept.title_review = title_workflow.new_review(concept.title_review, concept.title, {}, actor)
+                if faculty:
+                    concept.title_review.update(state='accepted', reviewed_by=actor.pk,
+                        reviewed_at=timezone.now().isoformat())
+            concept.save(update_fields=['title', 'confirmed', 'title_review'])
             changed = True
+    if changed_keys:
+        from .shared_deliverables import invalidate_title_reviews
+        invalidate_title_reviews(round, changed_keys, actor)
     if changed:
         invalidate(round, modules=bool(changed_keys))
         if changed_keys:
@@ -540,6 +578,17 @@ def save_system_titles(project, actor, titles):
                         module.pop('faculty_confirmed_at', None)
                 module_round.save(update_fields=['concepts'])
     audit(actor, 'system_names_saved', round, systems=list(round.systems.values('key', 'title', 'confirmed')))
+
+
+@transaction.atomic
+def confirm_system_title(project, actor, key, title=None):
+    """Confirm one current proposal without approving its neighbours or files."""
+    current = locked_round(project)
+    concept = current.systems.filter(key=key).first() if current else None
+    if not concept:
+        raise ValidationError('Choose a system from the current proposal round.')
+    save_system_titles(project, actor, [{'key': key, 'title': concept.title if title is None else title}],
+                       confirm_key=key)
 
 
 @transaction.atomic
@@ -568,12 +617,14 @@ def upload(project, actor, key, file, *, purpose='proposal'):
     if not concept:
         raise ValidationError('Choose a system proposal in this section round.')
     prior = concept.papers.filter(purpose=purpose, is_current=True).first()
+    from repository.title_workflow import system_guard
+    title_context = system_guard(concept) if purpose == 'proposal' else {}
     if prior and prior.status == 'accepted':
         raise ValidationError('Ask the reviewer to request corrections before replacing an accepted paper.')
     revision = (concept.papers.filter(purpose=purpose).order_by('-revision').values_list('revision', flat=True).first() or 0) + 1
     concept.papers.filter(purpose=purpose, is_current=True).update(is_current=False)
     row = SectionConceptPaper.objects.create(concept=concept, purpose=purpose, file=file, file_name=Path(file.name).name,
-        revision=revision, uploaded_by=actor)
+        revision=revision, uploaded_by=actor, title_review_context=title_context)
     if purpose == 'proposal':
         invalidate(round)
     audit(actor, 'paper_uploaded', row, round_id=round.pk, key=key, revision=revision, purpose=purpose)
@@ -581,7 +632,7 @@ def upload(project, actor, key, file, *, purpose='proposal'):
 
 
 @transaction.atomic
-def review(project, actor, paper_id, status, feedback=''):
+def review(project, actor, paper_id, status, feedback='', revision_scope='paper'):
     require_active(project)
     round = locked_round(project)
     row = SectionConceptPaper.objects.filter(pk=paper_id, concept__round=round, is_current=True).first()
@@ -603,6 +654,13 @@ def review(project, actor, paper_id, status, feedback=''):
         raise ValidationError('Choose acceptance or corrections and enter valid feedback.')
     if status == 'rejected' and not feedback.strip():
         raise ValidationError('Explain the requested corrections.')
+    if status == 'accepted' and row.purpose == 'proposal':
+        from repository.title_workflow import system_guard, file_acceptance
+        file_acceptance(row, system_guard(row.concept, accepting=True))
+    if status == 'rejected' and row.purpose == 'proposal':
+        from repository import title_workflow
+        if title_workflow.enabled(round):
+            title_workflow.revise_file(round, row.concept.key, actor, feedback, row, revision_scope, 'legacy')
     row.status, row.feedback = status, feedback.strip()
     row.reviewed_by, row.reviewed_at = actor, timezone.now()
     row.save(update_fields=['status', 'feedback', 'reviewed_by', 'reviewed_at'])
@@ -923,7 +981,7 @@ def decide(project, actor, decisions, verdict, remarks, *, team_outcomes=None):
             else:
                 record_verdict(grade, actor=actor, verdict='for_redefense', remarks=remarks,
                     concept_decisions=decisions, replacement_concepts_required=True)
-        next_round = SectionConceptRound.objects.create(project=project, number=round.number + 1)
+        next_round = SectionConceptRound.objects.create(project=project, number=round.number + 1, title_workflow_version=round.title_workflow_version)
         SectionSystemConcept.objects.bulk_create([SectionSystemConcept(round=next_round, key=key) for key in round_keys(round)])
         for module_round in round.module_rounds.filter(schedule__isnull=True):
             module_round.section_round = next_round
@@ -1160,7 +1218,18 @@ def payload(project, actor):
         shared_deliverables.staff_access(actor, shared_profile) or shared_deliverables.member_access(actor, shared_profile)
         or shared_deliverables.panel_access(actor, shared_profile)) else None
     from .acknowledgments import pit_instructors
-    return {'id': project.pk, 'section': project.section.section, 'year_level': project.section.year_level,
+    from repository import title_workflow
+    by_key = {s.key: s for s in round.systems.all()}
+    for system in systems:
+        review = by_key[system['key']].title_review
+        if not title_workflow.enabled(round):
+            review = title_workflow.legacy_review({'title': system['title'], 'title_review': review},
+                saved=True, confirmed=system['confirmed'])
+        system['title_review'] = title_workflow.present({'title': system['title'], 'title_review': review},
+            can_submit=is_pm(actor, project), can_review=is_reviewer(actor, project), editable=editable_now, assigned=project.title_mode == 'faculty_provided')
+    if title_workflow.enabled(round):
+        shared_review.update(acknowledged=True, can_acknowledge=False, can_review_shared_context=False)
+    return {'title_workflow_version': round.title_workflow_version, 'id': project.pk, 'section': project.section.section, 'year_level': project.section.year_level,
         'configured_count': context.concept_config.get('required_count', 3),
         'can_reconcile_requirements': bool(can_write and can_manage(actor, project) and not round.verdict
             and round.number == 1 and not round.module_rounds.filter(schedule__isnull=False).exists()

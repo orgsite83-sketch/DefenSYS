@@ -24,6 +24,30 @@ class TeamConceptService {
   Future<Map<String, dynamic>> load(int teamId, String stage) async =>
       _decode(await client.get(_uri(teamId, stage)));
 
+  Future<Map<String, dynamic>> titleAction(
+    int teamId,
+    String stage,
+    Map<String, dynamic> workflow,
+    String key,
+    String action,
+    String? title,
+    String? reason,
+  ) async => _decode(
+    await client.post(
+      _uri(teamId, stage),
+      body: jsonEncode({
+        'team_id': teamId,
+        'stage_label': stage,
+        'action': action,
+        'concept_key': key,
+        'review_token': workflow['module_review_token'],
+        if (workflow['round_id'] != null) 'round_id': workflow['round_id'],
+        if (title != null) 'title': title,
+        if (reason != null) 'reason': reason,
+      }),
+    ),
+  );
+
   Future<Map<String, dynamic>> save(
     int teamId,
     String stage,

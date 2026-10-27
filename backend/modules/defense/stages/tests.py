@@ -553,7 +553,7 @@ class StageGradingConfigApiTests(APITestCase):
         self.assertEqual(published_grade.adviser_weight, 30)
         self.assertEqual(published_grade.peer_weight, 20)
 
-    def test_stage_with_schedule_is_locked_and_cannot_be_updated_or_deleted(self):
+    def test_stage_with_schedule_protects_structure_but_not_unused_deliverables(self):
         stage = DefenseStage.objects.get(label='Concept Proposal')
 
         student = User.objects.create_user(username='sched-team-lead', password='pass12345', role='student')
@@ -577,7 +577,8 @@ class StageGradingConfigApiTests(APITestCase):
 
         res_get = self.client.get('/api/defense/stages/')
         stage_data = next(s for s in res_get.data['stages'] if s['id'] == stage.id)
-        self.assertTrue(stage_data['is_locked'])
+        self.assertFalse(stage_data['is_locked'])
+        self.assertTrue(stage_data['structure_locked'])
 
         res_patch = self.client.patch(
             f'/api/defense/stages/{stage.id}/',

@@ -127,41 +127,32 @@ class _SharedDeliverablesEditorState extends State<SharedDeliverablesEditor> {
         .where((row) => row['deliverable_type'] == deliverableType)
         .toList();
     return DefensysShadcnScope(
-      child: ExpansionTile(
-        key: PageStorageKey('shared-requirements-$deliverableType-$stageLabel'),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 2),
-        childrenPadding: const EdgeInsets.only(top: 4, bottom: 2),
-        shape: const Border(),
-        collapsedShape: const Border(),
-        title: Text(
-          'Shared system deliverables',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: DefensysTokens.textPrimaryOf(context),
-          ),
-        ),
-        subtitle: Text(
-          rows.isEmpty
-              ? 'None configured'
-              : '${rows.length} configured · PM submits once for the section',
-          style: TextStyle(
-            fontSize: 11.5,
-            color: DefensysTokens.textSecondaryOf(context),
-          ),
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Use one file or attachments for the section, or repeat documents for each proposed system.',
-              style: TextStyle(
-                fontSize: 12,
-                color: DefensysTokens.textSecondaryOf(context),
-              ),
-            ),
+          StageDeliverableGroupHeader(
+            title: 'Whole shared system deliverables',
+            description:
+                'The PM submits files covering the shared system or entire section. Module teams do not upload these separately.',
+            count: rows.length,
+            addLabel: 'Add shared system deliverable',
+            onAdd: enabled
+                ? () {
+                    final row = <String, dynamic>{
+                      'deliverable_id': _nextId(value),
+                      'label': '',
+                      'deliverable_type': deliverableType,
+                      'required': true,
+                      'file_format': 'any',
+                      'requirement_timing': 'scheduling',
+                      'deadline_hours_before': 24,
+                      'file_policy': {'mode': 'single'},
+                    };
+                    setState(() => selectedItem = row);
+                    onChanged([...value, row]);
+                  }
+                : null,
           ),
-          const SizedBox(height: 10),
           StageDeliverableOverview(
             items: rows,
             isPost: deliverableType == 'post',
@@ -170,11 +161,12 @@ class _SharedDeliverablesEditorState extends State<SharedDeliverablesEditor> {
             showGroupHeading: false,
             showReviewHint: false,
             showDoneEditingButton: false,
+            emptyText: 'No shared system deliverables configured.',
             buildEditor: (row, index) => _SharedRequirementEditor(
               key: ValueKey(row['deliverable_id']),
               item: row,
               index: index,
-              enabled: enabled,
+              enabled: enabled && row['is_locked'] != true && row['has_data'] != true,
               conceptsEnabled: conceptsEnabled,
               isPit: isPit,
               stageLabel: stageLabel,
@@ -189,61 +181,40 @@ class _SharedDeliverablesEditorState extends State<SharedDeliverablesEditor> {
               },
             ),
           ),
-          if (enabled)
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                ShadButton.outline(
-                  size: ShadButtonSize.sm,
-                  leading: const Icon(Icons.add, size: 14),
-                  onPressed: () {
-                    final row = <String, dynamic>{
-                      'deliverable_id': _nextId(value),
-                      'label': '',
-                      'deliverable_type': deliverableType,
-                      'required': true,
-                      'file_format': 'any',
-                      'requirement_timing': 'scheduling',
-                      'deadline_hours_before': 24,
-                      'file_policy': {'mode': 'single'},
-                    };
-                    setState(() => selectedItem = row);
-                    onChanged([...value, row]);
-                  },
-                  child: const Text('Add shared deliverable'),
-                ),
-                ShadButton.ghost(
-                  size: ShadButtonSize.sm,
-                  onPressed: () {
-                    final result = List<Map<String, dynamic>>.of(value);
-                    final names = rows
-                        .map((row) => '${row['label']}'.trim().toLowerCase())
-                        .toSet();
-                    Map<String, dynamic>? firstCopy;
-                    for (final source in teamDeliverables.where(
-                      (row) => row['deliverable_type'] == deliverableType,
-                    )) {
-                      if (!names.add(
-                        '${source['label']}'.trim().toLowerCase(),
-                      )) {
-                        continue;
-                      }
-                      final copy = sharedDeliverablePayload([source]).single;
-                      copy.remove('id');
-                      copy.remove('legacy_purpose');
-                      copy['deliverable_id'] = _nextId(result);
-                      result.add(copy);
-                      firstCopy ??= copy;
+          if (enabled &&
+              teamDeliverables.any(
+                (row) => row['deliverable_type'] == deliverableType,
+              ))
+            Align(
+              alignment: Alignment.centerRight,
+              child: ShadButton.ghost(
+                size: ShadButtonSize.sm,
+                onPressed: () {
+                  final result = List<Map<String, dynamic>>.of(value);
+                  final names = rows
+                      .map((row) => '${row['label']}'.trim().toLowerCase())
+                      .toSet();
+                  Map<String, dynamic>? firstCopy;
+                  for (final source in teamDeliverables.where(
+                    (row) => row['deliverable_type'] == deliverableType,
+                  )) {
+                    if (!names.add('${source['label']}'.trim().toLowerCase())) {
+                      continue;
                     }
-                    if (firstCopy != null) {
-                      setState(() => selectedItem = firstCopy);
-                    }
-                    onChanged(result);
-                  },
-                  child: const Text('Copy team checklist'),
-                ),
-              ],
+                    final copy = sharedDeliverablePayload([source]).single;
+                    copy.remove('id');
+                    copy.remove('legacy_purpose');
+                    copy['deliverable_id'] = _nextId(result);
+                    result.add(copy);
+                    firstCopy ??= copy;
+                  }
+                  if (firstCopy != null) {
+                    setState(() => selectedItem = firstCopy);
+                  }
+                  onChanged(result);
+                },
+                child: const Text('Copy team checklist'),
+              ),
             ),
         ],
       ),

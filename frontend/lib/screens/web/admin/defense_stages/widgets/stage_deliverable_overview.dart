@@ -36,6 +36,77 @@ class StageDeliverableSectionHeader extends StatelessWidget {
   );
 }
 
+class StageDeliverableGroupHeader extends StatelessWidget {
+  const StageDeliverableGroupHeader({
+    super.key,
+    required this.title,
+    required this.description,
+    required this.count,
+    required this.addLabel,
+    required this.onAdd,
+    this.showAdd = true,
+  });
+
+  final String title;
+  final String description;
+  final int count;
+  final String addLabel;
+  final VoidCallback? onAdd;
+  final bool showAdd;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: StageDeliverableSectionHeader(
+      heading: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
+              ),
+              Text(
+                '($count)',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style: TextStyle(
+              fontSize: 12,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+      ),
+      action: showAdd
+          ? DefensysShadcnScope(
+              child: ShadButton.outline(
+                size: ShadButtonSize.sm,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                onPressed: onAdd,
+                leading: const Icon(Icons.add, size: 14),
+                child: Text(addLabel, style: const TextStyle(fontSize: 12)),
+              ),
+            )
+          : null,
+    ),
+  );
+}
+
 class StageDeliverableCounts extends StatelessWidget {
   const StageDeliverableCounts({
     super.key,
@@ -106,6 +177,7 @@ class StageDeliverableOverview extends StatelessWidget {
     this.showDoneEditingButton = true,
     this.showGroupHeading = true,
     this.showReviewHint = true,
+    this.emptyText,
   });
 
   final List<Map<String, dynamic>> items;
@@ -116,6 +188,7 @@ class StageDeliverableOverview extends StatelessWidget {
   final bool showDoneEditingButton;
   final bool showGroupHeading;
   final bool showReviewHint;
+  final String? emptyText;
 
   @override
   Widget build(BuildContext context) {
@@ -153,7 +226,10 @@ class StageDeliverableOverview extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
               child: Text(
-                isPost ? 'No archive files yet.' : 'No files in this group.',
+                emptyText ??
+                    (isPost
+                        ? 'No archive files yet.'
+                        : 'No files in this group.'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: const Color(0xFF94A3B8),
                 ),
@@ -240,6 +316,7 @@ class _DeliverableSummaryRow extends StatelessWidget {
       summary: _summary,
       icon: isPost ? Icons.inventory_2_outlined : Icons.description_outlined,
       onTap: onTap,
+      readOnly: item['is_locked'] == true || item['has_data'] == true,
     );
   }
 }
@@ -252,12 +329,14 @@ class StageCompactRecordRow extends StatelessWidget {
     required this.summary,
     required this.icon,
     required this.onTap,
+    this.readOnly = false,
   });
 
   final String title;
   final String summary;
   final IconData icon;
   final VoidCallback onTap;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -312,9 +391,9 @@ class StageCompactRecordRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  'Edit',
-                  style: TextStyle(
+                Text(
+                  readOnly ? 'View' : 'Edit',
+                  style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF2563EB),

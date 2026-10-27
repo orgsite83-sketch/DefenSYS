@@ -362,6 +362,11 @@ class RubricPublishView(APIView):
             rubric_queryset_for_manage(request.user),
             pk=rubric_id,
         )
+        if rubric.scope == Rubric.SCOPE_CAPSTONE and rubric.status != Rubric.STATUS_PUBLISHED:
+            from .serializers import get_rubric_deletion_info
+            info = get_rubric_deletion_info(rubric)
+            if info['has_evaluations'] or info['is_stage_completed']:
+                return Response({'detail': info['lock_reason']}, status=status.HTTP_400_BAD_REQUEST)
         if rubric.criteria.count() == 0:
             return Response(
                 {'criteria': 'At least one criterion is required before publishing.'},

@@ -3,7 +3,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from defensys_backend.read_projection import ReadAPIView as APIView
 
 from academic_period_management.models import Semester
 from academic_period_management.serializers import SemesterSerializer
@@ -81,7 +81,7 @@ class DefenseStageListCreateView(APIView):
         return Response(stage_list_payload(semester))
 
     def post(self, request):
-        from .serializers import check_stage_locked
+        from .serializers import check_stage_structure_locked as check_stage_locked
 
         requested_order = request.data.get('display_order')
         if requested_order is not None:
@@ -159,7 +159,7 @@ class DefenseStageDetailView(APIView):
         return Response(_stage_detail_payload(stage, request))
 
     def patch(self, request, stage_id):
-        from .serializers import check_stage_locked
+        from .serializers import check_stage_structure_locked as check_stage_locked
 
         stage = self.get_object(stage_id)
         locked, reason = check_stage_locked(stage)
@@ -230,10 +230,13 @@ class DefenseStageDetailView(APIView):
 
     def delete(self, request, stage_id):
         from django.db.models import ProtectedError
-        from .serializers import check_stage_locked
+        from .serializers import check_stage_structure_locked as check_stage_locked
+        from defense.configuration_locks import context_deletion_lock
 
         stage = self.get_object(stage_id)
         locked, reason = check_stage_locked(stage)
+        if not locked:
+            locked, reason = context_deletion_lock(stage)
         if locked:
             return Response(
                 {
@@ -262,7 +265,7 @@ class DefenseStageReorderView(APIView):
     permission_classes = [IsSystemAdmin]
 
     def post(self, request):
-        from .serializers import check_stage_locked
+        from .serializers import check_stage_structure_locked as check_stage_locked
 
         stage_ids = request.data.get('stage_ids')
         if not isinstance(stage_ids, list) or len(stage_ids) == 0:
@@ -377,11 +380,22 @@ class StageDeliverableDetailView(APIView):
             partial=True,
         )
         serializer.is_valid(raise_exception=True)
-        deliverable = serializer.save()
+        # Use the same reconciliation as the stage editor so linked shared
+        # requirements and their open checklist snapshots stay synchronized.
+        stage = deliverable.defense_stage
+        rows = list(StageDeliverableSerializer(stage.deliverables.all(), many=True).data)
+        for row in rows:
+            if row['id'] == deliverable.pk:
+                row.update(serializer.validated_data)
+        writer = DefenseStageWriteSerializer(stage, data={'deliverables': rows}, partial=True)
+        writer.is_valid(raise_exception=True)
+        writer.save()
+        deliverable.refresh_from_db()
         return Response(StageDeliverableSerializer(deliverable).data)
 
     def delete(self, request, stage_id, deliverable_id):
         from .serializers import check_stage_locked
+        from defense.configuration_locks import DATA_REASON, requirement_has_data
 
         deliverable = get_object_or_404(
             StageDeliverable,
@@ -394,12 +408,24 @@ class StageDeliverableDetailView(APIView):
                 {'detail': reason or 'Deliverables cannot be deleted because this stage is locked.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if requirement_has_data(deliverable.defense_stage, deliverable.deliverable_id,
+                                policy=deliverable.file_policy):
+            return Response({'detail': DATA_REASON}, status=status.HTTP_409_CONFLICT)
         from defense.document_policy import is_approved_concept
         if deliverable.defense_stage.concept_config.get('enabled') and (
                 (deliverable.file_policy or {}).get('mode') == 'concepts'
                 or is_approved_concept({'file_policy': deliverable.file_policy})):
             return Response({'detail': 'Disable concept selection before removing its required papers.'}, status=status.HTTP_400_BAD_REQUEST)
-        deliverable.delete()
+        stage = deliverable.defense_stage
+        rows = list(StageDeliverableSerializer(stage.deliverables.exclude(pk=deliverable.pk), many=True).data)
+        from defense.shared_deliverables import shared_definitions
+        shared = [row for row in shared_definitions(stage)
+                  if row.get('team_deliverable_id') != deliverable.deliverable_id]
+        writer = DefenseStageWriteSerializer(stage, data={
+            'deliverables': rows, 'shared_deliverables': shared,
+        }, partial=True)
+        writer.is_valid(raise_exception=True)
+        writer.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

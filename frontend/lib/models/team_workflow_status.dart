@@ -284,6 +284,24 @@ class TeamWorkflowStatus {
 
   /// Describes backend facts; never grants review, scheduling or upload access.
   static TeamWorkflowStatus fromStage(Map stage, {String scope = 'capstone'}) {
+    final titleWorkflow = stage['concept_workflow'];
+    if (titleWorkflow is Map &&
+        titleWorkflow['title_workflow_version'] == 2 &&
+        titleWorkflow['can_edit'] == true &&
+        const [
+          'draft',
+          'parent_pending',
+          'submitted',
+          'changes_requested',
+        ].contains(titleWorkflow['status'])) {
+      return TeamWorkflowStatus(
+        '${titleWorkflow['status']}',
+        '${titleWorkflow['title_status_label']}',
+        titleWorkflow['status'] == 'changes_requested'
+            ? WorkflowStatusTone.attention
+            : WorkflowStatusTone.active,
+      );
+    }
     final pending = pendingReviewCount(stage);
     if (pending > 0) {
       return TeamWorkflowStatus(
@@ -450,7 +468,8 @@ class TeamWorkflowStatus {
       );
     }
     final missingPostFiles =
-        (stage['shared_deliverables_summary'] is Map && stage['shared_deliverables_summary']['post_complete'] == false) ||
+        (stage['shared_deliverables_summary'] is Map &&
+            stage['shared_deliverables_summary']['post_complete'] == false) ||
         stage['archive_complete'] == false ||
         items(stage).any(
           (item) =>
@@ -542,7 +561,11 @@ class TeamWorkflowStatus {
         scope == 'pit' && stage['endorsement_required'] == false) {
       final shared = stage['shared_deliverables_summary'];
       if (shared is Map && shared['pre_complete'] == false) {
-        return const TeamWorkflowStatus('shared_clearance_pending', 'Shared documents pending', WorkflowStatusTone.attention);
+        return const TeamWorkflowStatus(
+          'shared_clearance_pending',
+          'Shared documents pending',
+          WorkflowStatusTone.attention,
+        );
       }
       return describe('ready_to_schedule');
     }

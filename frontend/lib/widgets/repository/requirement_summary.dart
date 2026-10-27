@@ -123,55 +123,44 @@ class RequirementSummary {
       status == 'needs_revision';
 }
 
-/// `concepts` means a file is required per proposal; it also applies to decks.
-/// The canonical paper slot is `paper` (including the server's default policy).
+/// Review membership follows configuration, never labels or extensions.
+/// Defense-timed materials retain their upload/correction workflow in By team.
 bool isConceptRequirement(Map item) {
   final policy = item['file_policy'] as Map? ?? {};
-  if (policy['mode'] != 'concepts') return false;
-  // Older per-concept decks also inherit the server's default `paper` key.
-  // Preserve those definitions, but do not present them as project papers.
-  final label = '${item['label'] ?? item['name'] ?? ''}'.toLowerCase();
-  if (!label.contains('paper') &&
-      RegExp(r'\b(deck|slides|presentation)\b').hasMatch(label)) {
-    return false;
-  }
-  bool documentFormat(dynamic format) => const [
-    '',
-    'any',
-    'pdf',
-    'doc',
-    'docx',
-  ].contains('${format ?? ''}'.toLowerCase());
-  final slots = (policy['slots'] as List? ?? []).whereType<Map>();
-  return slots.isEmpty
-      ? documentFormat(item['file_format'])
-      : slots.any(
-          (slot) =>
-              slot['key'] == 'paper' &&
-              documentFormat(slot['file_format'] ?? item['file_format']),
-        );
+  return policy['mode'] == 'concepts' &&
+      item['requirement_timing'] != 'defense' &&
+      item['type'] != 'post' &&
+      item['deliverable_type'] != 'post';
 }
 
-/// Project context shows only paper slots, while By team keeps every file.
-Map<String, dynamic> conceptPaperRequirement(Map<String, dynamic> item) {
-  final slots = (item['document_slots'] as List? ?? [])
-      .whereType<Map>()
-      .where((slot) => '${slot['key']}'.split(':').last == 'paper')
-      .toList();
-  final keys = slots.map((slot) => slot['key']).toSet();
+/// All configured slots for one proposal, including briefs/decks and history.
+Map<String, dynamic> conceptRequirementForKey(
+  Map<String, dynamic> item,
+  String key,
+) {
   final submission = item['submission'] as Map? ?? {};
+  bool belongs(dynamic value) => '$value'.startsWith('$key:');
   return {
     ...item,
-    'document_slots': slots,
+    'document_slots': (item['document_slots'] as List? ?? [])
+        .whereType<Map>()
+        .where((slot) => belongs(slot['key']))
+        .map(
+          (slot) => <String, dynamic>{
+            ...slot,
+            'label': '${slot['label']}'.split('·').last.trim(),
+          },
+        )
+        .toList(),
     'submission': {
       ...submission,
       'files': (submission['files'] as List? ?? [])
           .whereType<Map>()
-          .where((file) => keys.contains(file['slot_key']))
+          .where((f) => belongs(f['slot_key']))
           .toList(),
       'file_history': (submission['file_history'] as List? ?? [])
           .whereType<Map>()
-          .where((file) => keys.contains(file['slot_key']))
+          .where((f) => belongs(f['slot_key']))
           .toList(),
     },
   };

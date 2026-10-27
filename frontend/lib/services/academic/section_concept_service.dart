@@ -57,31 +57,94 @@ class SectionConceptService {
   Future<Map<String, dynamic>> tasks() async =>
       decode(await client.get(Uri.parse('$base/?tasks_only=1')));
 
-  Future<Map<String, dynamic>> sharedDeliverables(int teamId, {String? stageLabel}) async => decode(
-    await client.get(Uri.parse('$base/shared-deliverables/').replace(queryParameters: {
-      'team_id': '$teamId', if (stageLabel?.isNotEmpty == true) 'stage_label': stageLabel!,
-    })),
+  Future<Map<String, dynamic>> sharedDeliverables(
+    int teamId, {
+    String? stageLabel,
+  }) async => decode(
+    await client.get(
+      Uri.parse('$base/shared-deliverables/').replace(
+        queryParameters: {
+          'team_id': '$teamId',
+          if (stageLabel?.isNotEmpty == true) 'stage_label': stageLabel!,
+        },
+      ),
+    ),
   );
 
-  Future<Map<String, dynamic>> uploadShared(Map<String, dynamic> group,
-    String deliverableId, String slotKey, String name, Uint8List bytes) async {
-    final request = http.MultipartRequest('POST', Uri.parse('$base/shared-deliverables/'))
-      ..fields.addAll({'team_id': '${group['team_id']}', 'stage_label': '${group['stage_label']}',
-        'review_token': '${group['review_token']}', 'deliverable_id': deliverableId,
-        'slot_key': slotKey, 'action': 'upload'})
-      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: name));
-    return decode(await http.Response.fromStream(await client.sendAuthenticated(request, retryOn401: false)));
+  Future<Map<String, dynamic>> uploadShared(
+    Map<String, dynamic> group,
+    String deliverableId,
+    String slotKey,
+    String name,
+    Uint8List bytes,
+  ) async {
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$base/shared-deliverables/'))
+          ..fields.addAll({
+            'team_id': '${group['team_id']}',
+            'stage_label': '${group['stage_label']}',
+            'review_token': '${group['review_token']}',
+            'deliverable_id': deliverableId,
+            'slot_key': slotKey,
+            'action': 'upload',
+          })
+          ..files.add(
+            http.MultipartFile.fromBytes('file', bytes, filename: name),
+          );
+    return decode(
+      await http.Response.fromStream(
+        await client.sendAuthenticated(request, retryOn401: false),
+      ),
+    );
   }
 
-  Future<Map<String, dynamic>> reviewShared(Map<String, dynamic> group,
-    String deliverableId, String slotKey, Map<String, dynamic> file, String status, String feedback) async => decode(
-      await client.post(Uri.parse('$base/shared-deliverables/'), body: jsonEncode({
-        'team_id': group['team_id'], 'stage_label': group['stage_label'],
-        'review_token': group['review_token'], 'deliverable_id': deliverableId,
-        'slot_key': slotKey, 'file_id': file['id'], 'legacy': file['legacy'] == true,
-        'status': status, 'feedback': feedback, 'action': 'review',
-      })),
-    );
+  Future<Map<String, dynamic>> reviewShared(
+    Map<String, dynamic> group,
+    String deliverableId,
+    String slotKey,
+    Map<String, dynamic> file,
+    String status,
+    String feedback,
+  ) async => decode(
+    await client.post(
+      Uri.parse('$base/shared-deliverables/'),
+      body: jsonEncode({
+        'team_id': group['team_id'],
+        'stage_label': group['stage_label'],
+        'review_token': group['review_token'],
+        'deliverable_id': deliverableId,
+        'slot_key': slotKey,
+        'file_id': file['id'],
+        'legacy': file['legacy'] == true,
+        'status': status,
+        'feedback': feedback,
+        'action': 'review',
+        'revision_scope': file['revision_scope'] ?? 'paper',
+      }),
+    ),
+  );
+
+  Future<Map<String, dynamic>> titleAction(
+    Map<String, dynamic> project,
+    String action,
+    Map<String, dynamic> values,
+  ) async {
+    if (project['imported'] == true) {
+      return decode(
+        await client.post(
+          Uri.parse('$base/imported/'),
+          body: jsonEncode({
+            'team_id': project['team_id'],
+            'stage_label': project['stage_label'],
+            'review_token': project['review_token'],
+            'action': action,
+            ...values,
+          }),
+        ),
+      );
+    }
+    return this.action(project, action, values);
+  }
 
   Future<Map<String, dynamic>> configure(Map<String, dynamic> data) async =>
       decode(await client.post(Uri.parse('$base/'), body: jsonEncode(data)));

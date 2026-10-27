@@ -20,6 +20,7 @@ class ConceptDocumentTests(APITestCase):
         self.paper.file_policy = {'mode': mode, **extra}
         self.paper.save()
         if mode == 'concepts':
+            concepts.get_round(self.team, self.stage).__class__.objects.filter(team=self.team).update(title_workflow_version=1)
             concepts.save_titles(self.team, self.stage, [
                 {'key': f'c{i}', 'title': f'Candidate project {i}'} for i in range(1, 4)])
 

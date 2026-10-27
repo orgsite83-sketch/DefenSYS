@@ -12,7 +12,7 @@ import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
-import 'package:defensys/widgets/repository/shared_deliverables_editor.dart';
+import 'package:defensys/widgets/repository/deliverable_submission_settings.dart';
 import 'package:defensys/widgets/setup/setup_requirement_panels.dart';
 import '../helpers/capture_preview.dart';
 
@@ -150,7 +150,7 @@ void main() {
 
   for (final size in [const Size(1440, 1200), const Size(360, 1100)]) {
     for (final dark in [false, true]) {
-      testWidgets('shared requirements belong inside their pre/post section at ${size.width} dark=$dark', (tester) async {
+      testWidgets('unified checklist keeps submission and document choices inside More options at ${size.width} dark=$dark', (tester) async {
         final scheduler = await openPeerSetup(tester, tab: 2, size: size, dark: dark, config: {
           ...sampleConfig,
           'shared_deliverables': [
@@ -162,54 +162,71 @@ void main() {
         });
         final pre = find.byKey(const ValueKey('pre-defense-deliverables-section'));
         final post = find.byKey(const ValueKey('post-defense-deliverables-section'));
-        final preShared = find.descendant(of: pre, matching: find.byType(SharedDeliverablesEditor));
-        final postShared = find.descendant(of: post, matching: find.byType(SharedDeliverablesEditor));
-        expect(preShared, findsOneWidget);
-        expect(postShared, findsOneWidget);
         for (final section in [pre, post]) {
           expect((tester.widget<Container>(section).decoration as BoxDecoration).color,
             dark ? DefensysTokens.mistSurface : DefensysTokens.surface);
+          expect(find.descendant(of: section, matching: find.text('Add deliverable')), findsOneWidget);
         }
-        expect(tester.widget<SharedDeliverablesEditor>(preShared).deliverableType, 'pre');
-        expect(tester.widget<SharedDeliverablesEditor>(postShared).deliverableType, 'post');
+        expect(find.text('Whole shared system deliverables'), findsNothing);
+        expect(find.text("Each team's deliverables"), findsNothing);
         expect(find.text('Pre-defense: 3'), findsOneWidget);
         expect(find.text('Post-defense: 2'), findsOneWidget);
-
-        final expand = find.descendant(of: preShared, matching: find.text('Shared system deliverables'));
-        await tester.ensureVisible(expand);
-        await tester.tap(expand);
-        await tester.pumpAndSettle();
-        final summary = find.descendant(of: preShared, matching: find.text('Shared proposal'));
+        final summary = find.descendant(of: pre, matching: find.text('Shared proposal'));
         await tester.ensureVisible(summary);
         await tester.tap(summary);
         await tester.pumpAndSettle();
-        final name = find.byKey(const ValueKey('shared-name-SHARED_PRE'));
+        final name = find.widgetWithText(TextFormField, 'Shared proposal');
         await tester.ensureVisible(name);
-        final nameInput = find.descendant(of: name, matching: find.byType(TextField));
-        expect(tester.widget<TextField>(nameInput).decoration?.labelText, 'Pre-Defense Requirement Name *');
-        final options = find.descendant(of: preShared, matching: find.text('More options'));
-        if (size.width >= 1000) {
-          expect((tester.getRect(name).center.dy - tester.getRect(options).center.dy).abs(), lessThan(2));
-        } else {
-          expect(tester.getRect(options).top, greaterThan(tester.getRect(name).bottom));
-        }
+        expect(find.byType(DeliverableSubmissionPicker), findsNothing);
+        expect(find.byType(DocumentPolicyEditor), findsNothing);
+        final more = find.descendant(of: pre, matching: find.text('More options'));
+        await tester.ensureVisible(more);
         await capturePreview(tester, find.byType(Dialog),
-          'shared-setup-nested-${size.width.toInt()}-${dark ? 'dark' : 'light'}', viewport: true);
+          'deliverables-basic-${size.width.toInt()}-${dark ? 'dark' : 'light'}', viewport: true);
+        await tester.tap(more);
+        await tester.pumpAndSettle();
+        final picker = find.byType(DeliverableSubmissionPicker);
+        expect(tester.widget<DeliverableSubmissionPicker>(picker).value, 'pm');
+        expect(find.byType(DocumentPolicyEditor), findsOneWidget);
+        final both = find.text('Teams and project managers');
+        await tester.ensureVisible(both);
+        await tester.tap(both);
+        await tester.pumpAndSettle();
+        expect(tester.widget<DeliverableSubmissionPicker>(picker).value, 'both');
+        expect(find.text('Pre-defense: 3'), findsOneWidget);
+        await capturePreview(tester, find.byType(Dialog),
+          'deliverables-pre-options-${size.width.toInt()}-${dark ? 'dark' : 'light'}', viewport: true);
+        await tester.ensureVisible(name);
+        await tester.enterText(name, 'Section proposal');
+        final done = find.descendant(of: pre, matching: find.text('Done editing'));
+        await tester.ensureVisible(done);
+        await tester.tap(done);
+        await tester.pumpAndSettle();
+        expect(find.byType(DeliverableSubmissionPicker), findsNothing);
+        final postSummary = find.descendant(of: post, matching: find.text('Shared final report'));
+        await tester.ensureVisible(postSummary);
+        await tester.tap(postSummary);
+        await tester.pumpAndSettle();
+        expect(find.byType(DocumentPolicyEditor), findsNothing);
+        final postMore = find.descendant(of: post, matching: find.text('More options'));
+        await tester.ensureVisible(postMore);
+        await tester.tap(postMore);
+        await tester.pumpAndSettle();
+        expect(find.byType(DeliverableSubmissionPicker), findsOneWidget);
+        expect(find.byType(DocumentPolicyEditor), findsOneWidget);
+        expect(find.text('Restricted / Private in Institutional Archive'), findsOneWidget);
+        await capturePreview(tester, find.byType(Dialog),
+          'deliverables-post-options-${size.width.toInt()}-${dark ? 'dark' : 'light'}', viewport: true);
         expect(tester.takeException(), isNull);
-
         if (size.width >= 1000 && !dark) {
-          await tester.enterText(name, 'Section proposal');
-          final done = find.descendant(of: preShared, matching: find.text('Done editing'));
-          await tester.ensureVisible(done);
-          await tester.tap(done);
-          await tester.pumpAndSettle();
-          expect(find.byKey(const ValueKey('shared-name-SHARED_PRE')), findsNothing);
           await tester.tap(find.text('Save Changes'));
           await tester.pumpAndSettle();
           final shared = (scheduler.saved?['shared_deliverables'] as List).cast<Map>();
-          expect(shared.first['label'], 'Section proposal');
-          expect(shared.last['deliverable_type'], 'post');
-          expect((scheduler.saved?['deliverables'] as List).cast<Map>().first['label'], 'Concept Paper');
+          final teams = (scheduler.saved?['deliverables'] as List).cast<Map>();
+          final linked = shared.singleWhere((row) => row['label'] == 'Section proposal');
+          expect(teams.singleWhere((row) => row['deliverable_id'] == linked['team_deliverable_id'])['label'], 'Section proposal');
+          expect(shared.singleWhere((row) => row['deliverable_id'] == 'SHARED_POST')['deliverable_type'], 'post');
+          expect(teams.first['label'], 'Concept Paper');
         }
       });
     }
@@ -271,7 +288,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(scheduler.saved, isNull);
     expect(find.text('Edit PIT Event'), findsOneWidget);
-    expect(find.text('Add Pre-Defense'), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')), findsOneWidget);
     expect(find.text('Deliverable name cannot be empty (item 1).'), findsOneWidget);
     dismissFeedbackToasts();
     await tester.pumpAndSettle();
@@ -469,6 +486,8 @@ void main() {
       await tester.tap(find.text('3. Deliverables'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Concept Papers').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('More options'));
       await tester.pumpAndSettle();
       final policy = find.byType(DocumentPolicyEditor);
       expect(policy, findsOneWidget);

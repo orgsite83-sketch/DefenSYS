@@ -6,6 +6,7 @@ import '../../services/academic/section_concept_service.dart';
 import '../../theme/defensys_tokens.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 import 'shared_concept_review.dart';
+import 'title_review_card.dart';
 
 Future<Map<String, dynamic>?> editTeamConceptTitles(
   BuildContext context, {
@@ -67,6 +68,16 @@ class _TeamConceptTitleEditorState
   bool get editable => workflow?['can_edit_titles'] == true;
   int get provided =>
       editors.values.where((e) => e.text.trim().isNotEmpty).length;
+  bool get canSave =>
+      dirty ||
+      (!systems &&
+          provided > 0 &&
+          (workflow?['round_id'] == null ||
+              rows.any(
+                (row) =>
+                    (row['title_review'] as Map?)?['state'] ==
+                    'changes_requested',
+              )));
 
   @override
   void initState() {
@@ -99,6 +110,7 @@ class _TeamConceptTitleEditorState
               )
             : await service.get(snapshot['id'] as int);
         value = {
+          'title_workflow_version': systemProject!['title_workflow_version'],
           'can_edit_titles': systemProject!['can_edit_names'] == true,
           'module_review_token': systemProject!['review_token'],
           'concepts': [
@@ -191,7 +203,7 @@ class _TeamConceptTitleEditorState
   }
 
   Future<void> save() async {
-    if (saving || !editable || !dirty) return;
+    if (saving || !editable || !canSave) return;
     if (systems && editors.values.any((e) => e.text.trim().isEmpty)) {
       setState(() => error = 'Enter a title for every shared system.');
       return;
@@ -249,6 +261,72 @@ class _TeamConceptTitleEditorState
 
   @override
   Widget build(BuildContext context) {
+    if (!loading && workflow?['title_workflow_version'] == 2) {
+      return DefensysShadcnScope(
+        child: ShadDialog(
+          title: Text(systems ? 'System titles' : 'Concept titles'),
+          description: Text(widget.stageLabel),
+          constraints: const BoxConstraints(maxWidth: 760),
+          actions: [
+            ShadButton.outline(
+              onPressed: () =>
+                  Navigator.pop(context, systems ? systemProject : workflow),
+              child: const Text('Done'),
+            ),
+          ],
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * .6,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final row in rows)
+                    TitleReviewCard(
+                      key: ValueKey(row['key']),
+                      concept: row,
+                      system: systems,
+                      onAction: (action, title, reason) async {
+                        final value = systems
+                            ? await ref
+                                  .read(sectionConceptServiceProvider)
+                                  .titleAction(systemProject!, action, {
+                                    'concept_key': row['key'],
+                                    if (title != null) 'title': title,
+                                    if (reason != null) 'remarks': reason,
+                                  })
+                            : await ref
+                                  .read(teamConceptServiceProvider)
+                                  .titleAction(
+                                    widget.teamId,
+                                    widget.stageLabel,
+                                    workflow!,
+                                    '${row['key']}',
+                                    action,
+                                    title,
+                                    reason,
+                                  );
+                        if (!mounted) return false;
+                        setState(() {
+                          if (systems) {
+                            systemProject = value;
+                            workflow = {
+                              'title_workflow_version': 2,
+                              'concepts': value['systems'],
+                            };
+                          } else {
+                            workflow = value;
+                          }
+                        });
+                        return true;
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     final phone = MediaQuery.sizeOf(context).width < 600;
     final surface = DefensysTokens.surfaceOf(context);
     final content = DefensysShadcnScope(
@@ -316,7 +394,7 @@ class _TeamConceptTitleEditorState
                             systems && editable
                                 ? 'Complete every system title before saving. These alternatives are shared by all participating teams.'
                                 : editable
-                                ? 'Save your progress at any time. Complete every required title before faculty review.'
+                                ? 'Save each proposed title before uploading its file. Faculty can review saved titles while you complete the remaining alternatives.'
                                 : 'These titles are read-only. Your faculty reviewer manages confirmed names and scheduled hearings.',
                             style: TextStyle(
                               fontSize: 12,
@@ -429,7 +507,7 @@ class _TeamConceptTitleEditorState
                 Expanded(
                   child: ShadButton(
                     expands: true,
-                    onPressed: loading || saving || !editable || !dirty
+                    onPressed: loading || saving || !editable || !canSave
                         ? null
                         : save,
                     child: Text(

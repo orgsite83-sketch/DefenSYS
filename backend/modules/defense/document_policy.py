@@ -19,11 +19,19 @@ def _is_automatic_concept_paper(item):
     )
 
 
-def with_concept_papers(items, config):
+def with_concept_papers(items, config, *, shared_items=None):
     """Reconcile automatic papers while preserving manually authored definitions."""
     items = deepcopy(items)
     if not config.get('enabled'):
         return [item for item in items if not _is_automatic_concept_paper(item)]
+    shared_automatic = [d for d in shared_items or [] if isinstance(d, dict)
+                        and isinstance(d.get('file_policy') or {}, dict)
+                        and (d.get('file_policy') or {}).get('auto_added_for') == 'concept_selection']
+    shared_final = any(d.get('deliverable_type') == 'post' and is_approved_concept(d)
+                       for d in shared_automatic)
+    shared_proposal = any(d.get('deliverable_type') == 'pre' and
+                          (d.get('file_policy') or {}).get('mode') == 'concepts'
+                          for d in shared_automatic)
     finals = [d for d in items if is_approved_concept(d) or (
         d.get('deliverable_type') == 'post' and str(d.get('label', '')).strip().lower() in (
             'approved concept paper', 'approved concept papers'))]
@@ -37,7 +45,7 @@ def with_concept_papers(items, config):
         policy = final.get('file_policy') or {}
         final['file_policy'] = validate_file_policy({**policy, 'mode': policy.get('mode', 'single'),
                                                     'purpose': 'approved_concept'})
-    else:
+    elif not shared_final:
         used = {d.get('deliverable_id') for d in items}
         number, suffix = 'APPROVED_CONCEPT', 1
         while number in used:
@@ -52,6 +60,8 @@ def with_concept_papers(items, config):
     if concept_items:
         for item in concept_items:
             item.update(required=True, deliverable_type='pre', requirement_timing='scheduling')
+        return items
+    if shared_proposal:
         return items
     used = {d.get('deliverable_id') for d in items}
     number, suffix = 'CONCEPT_PAPERS', 1

@@ -120,43 +120,96 @@ class StudentTaskBadgeHelper {
   static bool isTeamLeader(Map<String, dynamic>? data) {
     if (data == null) return false;
     final student = data['student'] as Map? ?? {};
-    if (student['is_leader'] == true || student['isLeader'] == true) return true;
+    if (student['is_leader'] == true || student['isLeader'] == true) {
+      return true;
+    }
     final id = student['id'];
     if (id != null && '${data['team']?['leader_id']}' == '$id') return true;
-    return (data['members'] as List? ?? []).whereType<Map>().any((m) =>
-      id != null && '${m['id']}' == '$id' && (m['isLeader'] == true || m['is_leader'] == true));
-  }
-  static bool canEditConceptTitles(Map workflow) {
-    if (workflow['can_edit_titles'] == false || workflow['can_edit'] == false ||
-        workflow['assigned'] == true || workflow['module_names_confirmed'] == true) { return false; }
-    return !const {'scheduled', 'approved', 'approved_with_revisions', 'failed',
-      'project_rejected', 'for_redefense'}.contains(workflow['status']);
+    return (data['members'] as List? ?? []).whereType<Map>().any(
+      (m) =>
+          id != null &&
+          '${m['id']}' == '$id' &&
+          (m['isLeader'] == true || m['is_leader'] == true),
+    );
   }
 
-  static bool hasPendingTeamTasks(Map<String, dynamic>? data, {Map<String, dynamic>? setup}) {
+  static bool canEditConceptTitles(Map workflow) {
+    if (workflow['can_edit_titles'] == false ||
+        workflow['can_edit'] == false ||
+        workflow['assigned'] == true ||
+        workflow['module_names_confirmed'] == true) {
+      return false;
+    }
+    return !const {
+      'scheduled',
+      'approved',
+      'approved_with_revisions',
+      'failed',
+      'project_rejected',
+      'for_redefense',
+    }.contains(workflow['status']);
+  }
+
+  static bool hasPendingTeamTasks(
+    Map<String, dynamic>? data, {
+    Map<String, dynamic>? setup,
+  }) {
     final teams = (setup?['teams'] as List? ?? []).whereType<Map>();
     final events = (setup?['event_teams'] as List? ?? []).whereType<Map>();
-    final sectionTasks = (setup?['section_tasks'] as List? ?? []).whereType<Map>();
+    final sectionTasks = (setup?['section_tasks'] as List? ?? [])
+        .whereType<Map>();
     if (teams.any((t) => t['needs_name'] == true) ||
-        events.any((t) => t['needs_name'] == true || t['needs_details'] == true) ||
-        sectionTasks.any((t) => t['role'] == 'project_manager' && const {
-          'papers_missing', 'corrections_requested', 'shared_revisions_pending', 'final_paper_pending',
-        }.contains(t['status']))) { return true; }
+        events.any(
+          (t) => t['needs_name'] == true || t['needs_details'] == true,
+        ) ||
+        sectionTasks.any(
+          (t) =>
+              t['role'] == 'project_manager' &&
+              const {
+                'papers_missing',
+                'corrections_requested',
+                'shared_revisions_pending',
+                'final_paper_pending',
+              }.contains(t['status']),
+        )) {
+      return true;
+    }
     if (data == null || data['team'] is! Map) return false;
     final team = data['team'] as Map;
     if (!isTeamLeader(data)) return false;
-    if (team['setup_pending'] == true || team['needs_name'] == true) return true;
+    if (team['setup_pending'] == true || team['needs_name'] == true) {
+      return true;
+    }
     final options = (data['stage_options'] as List? ?? []);
-    final rawLabel = '${team['currentStage'] ?? team['readyForStage'] ?? team['ready_for_stage'] ?? data['current_stage'] ?? ''}';
-    final label = options.isEmpty || options.any((s) => '$s'.trim().toLowerCase() == rawLabel.trim().toLowerCase())
-        ? rawLabel : '${options.first}';
+    final rawLabel =
+        '${team['currentStage'] ?? team['readyForStage'] ?? team['ready_for_stage'] ?? data['current_stage'] ?? ''}';
+    final label =
+        options.isEmpty ||
+            options.any(
+              (s) => '$s'.trim().toLowerCase() == rawLabel.trim().toLowerCase(),
+            )
+        ? rawLabel
+        : '${options.first}';
     for (final stage in (data['stages'] as List? ?? []).whereType<Map>()) {
-      if (label.isNotEmpty && '${stage['stage_label']}'.trim().toLowerCase() != label.trim().toLowerCase()) continue;
+      if (label.isNotEmpty &&
+          '${stage['stage_label']}'.trim().toLowerCase() !=
+              label.trim().toLowerCase()) {
+        continue;
+      }
       if (stage['team_id'] != null && stage['team_id'] != team['id']) continue;
       final workflow = stage['concept_workflow'];
-      if (workflow is! Map || workflow['enabled'] != true || !canEditConceptTitles(workflow)) continue;
-      if ((workflow['concepts'] as List? ?? []).whereType<Map>().any((c) =>
-          c['faculty_confirmed'] != true && '${c['title'] ?? ''}'.trim().isEmpty)) { return true; }
+      if (workflow is! Map ||
+          workflow['enabled'] != true ||
+          !canEditConceptTitles(workflow)) {
+        continue;
+      }
+      if ((workflow['concepts'] as List? ?? []).whereType<Map>().any(
+        (c) =>
+            c['faculty_confirmed'] != true &&
+            '${c['title'] ?? ''}'.trim().isEmpty,
+      )) {
+        return true;
+      }
     }
     return false;
   }
@@ -353,17 +406,27 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     final requestVersion = ++_requestVersion;
     final nextScope = scope ?? state.scope;
     final nextWorkspace = workspace ?? state.workspace;
-    final workspaceChanged = nextWorkspace != state.workspace || nextScope != state.scope;
-    final nextYearLevel = yearLevel ?? (workspaceChanged ? '' : state.yearLevel);
+    final workspaceChanged =
+        nextWorkspace != state.workspace || nextScope != state.scope;
+    final nextYearLevel =
+        yearLevel ?? (workspaceChanged ? '' : state.yearLevel);
     final nextSection = section ?? (workspaceChanged ? '' : state.section);
-    final contextChanged = nextWorkspace != state.workspace || nextScope != state.scope ||
-        nextYearLevel != state.yearLevel || nextSection != state.section;
+    final contextChanged =
+        nextWorkspace != state.workspace ||
+        nextScope != state.scope ||
+        nextYearLevel != state.yearLevel ||
+        nextSection != state.section;
     final nextSearch = search ?? (contextChanged ? '' : state.search);
-    final nextStage = selectedStage ?? (contextChanged ? '' : state.selectedStage);
+    final nextStage =
+        selectedStage ?? (contextChanged ? '' : state.selectedStage);
     final nextStatus = status ?? (contextChanged ? '' : state.status);
     if (contextChanged) {
-      state = CapstoneDeliverablesState(scope: nextScope, workspace: nextWorkspace,
-        yearLevel: nextYearLevel, section: nextSection);
+      state = CapstoneDeliverablesState(
+        scope: nextScope,
+        workspace: nextWorkspace,
+        yearLevel: nextYearLevel,
+        section: nextSection,
+      );
     }
 
     state = state.copyWith(
@@ -435,6 +498,63 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     if (reason != null) 'reason': reason,
     if (reviewToken != null) 'review_token': reviewToken,
   }, successMessage: 'Concept workflow updated.');
+
+  Future<bool> titleAction(
+    int teamId,
+    String stageLabel,
+    String action, {
+    required String conceptKey,
+    required String reviewToken,
+    int? roundId,
+    String? title,
+    String? reason,
+  }) => _postAction('concepts', {
+    'team_id': teamId,
+    'stage_label': stageLabel,
+    'action': action,
+    'concept_key': conceptKey,
+    'review_token': reviewToken,
+    if (roundId != null) 'round_id': roundId,
+    if (title != null) 'title': title,
+    if (reason != null) 'reason': reason,
+  }, successMessage: 'Title review updated.');
+
+  Future<bool> reviewConceptFile({
+    required int teamId,
+    required String stageLabel,
+    required String deliverableId,
+    required String status,
+    required int fileId,
+    required String reviewToken,
+    String feedback = '',
+    String revisionScope = 'paper',
+  }) => _postAction('review', {
+    'team_id': teamId,
+    'stage_label': stageLabel,
+    'deliverable_id': deliverableId,
+    'status': status,
+    'file_id': fileId,
+    'feedback': feedback,
+    'revision_scope': revisionScope,
+    'title_review_token': reviewToken,
+  }, successMessage: 'File review updated.');
+
+  Future<bool> confirmConceptTitle(
+    int teamId,
+    String stageLabel, {
+    required String conceptKey,
+    required int roundId,
+    required String reviewToken,
+    String? title,
+  }) => _postAction('concepts', {
+    'team_id': teamId,
+    'stage_label': stageLabel,
+    'action': 'confirm_title',
+    'concept_key': conceptKey,
+    'round_id': roundId,
+    'review_token': reviewToken,
+    if (title != null) 'title': title,
+  }, successMessage: 'Module name confirmed.');
 
   Future<bool> uploadDocument({
     required int teamId,

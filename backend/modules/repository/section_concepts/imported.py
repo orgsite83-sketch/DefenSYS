@@ -130,13 +130,16 @@ def preview(team, stage, actor):
     from django.contrib.auth import get_user_model
     reviewers = [{'id': u.pk, 'name': u.get_full_name() or u.username}
         for u in get_user_model().objects.filter(pk__in=reviewer_ids).order_by('pk')]
-    return {'id': None, 'imported': True, 'team_id': team.pk, 'section': assignment.section,
+    from repository.title_workflow import present
+    return {'title_workflow_version': 2, 'editable': not blocker, 'id': None, 'imported': True, 'team_id': team.pk, 'section': assignment.section,
         'semester_id': team.semester_id, 'stage_label': stage.label, 'round': 1,
         'review_token': token, 'project_manager_id': assignment.project_manager_id,
         'project_manager_name': assignment.project_manager.get_full_name() or assignment.project_manager.username,
         'reviewers': reviewers, 'reviewer_name': ', '.join(r['name'] for r in reviewers),
         'selected_key': '', 'verdict': '', 'teams': rows,
         'systems': [{'key': k, 'title': assignment.system_name if i == 0 else '',
+            'title_review': present({},
+                can_submit=actor.role == 'student' and actor.pk == assignment.project_manager_id, editable=not blocker),
             'confirmed': False, 'papers': [], 'can_upload': bool(i == 0 and not blocker and
                 actor.role == 'student' and actor.pk == assignment.project_manager_id)} for i, k in enumerate(keys)],
         'can_edit_names': bool(not blocker and actor.role == 'student' and actor.pk == assignment.project_manager_id),
@@ -167,7 +170,8 @@ def save(team, stage, actor, titles, token):
     project = SectionConceptProject.objects.create(section=assignment, **services.context_fields(stage),
         project_manager=assignment.project_manager, reviewer_id=reviewer_ids[0], title_mode='student_proposed')
     services.require_active(project)
-    shared_round = SectionConceptRound.objects.create(project=project)
+    from repository.title_workflow import new_version
+    shared_round = SectionConceptRound.objects.create(project=project, title_workflow_version=new_version())
     SectionSystemConcept.objects.bulk_create([SectionSystemConcept(round=shared_round, key=k,
         title=assignment.system_name if i == 0 else '') for i, k in enumerate(keys)])
     for t in teams:
@@ -181,7 +185,13 @@ def save(team, stage, actor, titles, token):
         t.project_pending = True
         t.save(update_fields=['project_pending', 'updated_at'])
     if titles is not None:
-        services.save_system_titles(project, actor, titles)
+        if shared_round.title_workflow_version >= 2:
+            from repository.title_workflow import system_action
+            for title in titles:
+                if title.get('title', '').strip():
+                    system_action(project, actor, 'draft_title', title.get('key'), title['title'])
+        else:
+            services.save_system_titles(project, actor, titles)
     services.audit(actor, 'imported_proposals_opened', project, team_ids=[t.pk for t in teams],
         imported_system=assignment.system_name, reviewer_ids=reviewer_ids)
     return project

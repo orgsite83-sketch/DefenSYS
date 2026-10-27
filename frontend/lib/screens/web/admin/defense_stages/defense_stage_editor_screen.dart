@@ -3,6 +3,7 @@ import 'widgets/stage_outcome_settings.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
 import '../../../../widgets/repository/shared_deliverables_editor.dart';
+import '../../../../widgets/repository/deliverable_submission_settings.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -130,7 +131,7 @@ class _DefenseStageEditorScreenState
       'minutes_deliverable_id': _minutesNumber.text,
       'minutes_deliverable_label': _minutesName.text,
       'deliverables': _deliverables,
-      'shared_deliverables': sharedDeliverablePayload(_sharedDeliverables),
+      'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables),
       'rubric_assignment_changes': _editedRubricRoles.toList(),
       'rubric_assignment_base': _serverRubricIds,
       'grading_config': {
@@ -314,7 +315,7 @@ class _DefenseStageEditorScreenState
     _panel.dispose();
     _adviser.dispose();
     _peer.dispose();
-    for (final item in _deliverables) {
+    for (final item in deliverableSetupItems(_deliverables, _sharedDeliverables)) {
       (item['_labelController'] as TextEditingController?)?.dispose();
       (item['_templateController'] as TextEditingController?)?.dispose();
     }
@@ -394,11 +395,15 @@ class _DefenseStageEditorScreenState
 
   void _restoreDraft(StageSetupDraft draft) {
     final serverStage = _stage;
-    _applyStage({...?_stage, ...draft.fields});
+    final restored = {...?_stage, if (!_structureLocked) ...draft.fields};
+    for (final key in ['deliverables', 'shared_deliverables']) {
+      restored[key] = restoreProtectedDeliverables(draft.fields[key] ?? restored[key], serverStage?[key]);
+    }
+    _applyStage(restored);
     // Locks and workflow metadata always come from the server.
     _stage = serverStage;
     final grading = draft.fields['grading_config'];
-    if (grading is Map) {
+    if (grading is Map && !_structureLocked) {
       // A saved setup snapshot is not an instruction to undo assignments made
       // in Rubrics since the draft was written. Restore only explicit edits.
       final base = draft.fields['rubric_assignment_base'] as Map? ?? {};
@@ -480,23 +485,9 @@ class _DefenseStageEditorScreenState
     return p + a + r;
   }
 
-  Future<void> _saveOutcomePolicy() async {
-    if (StageOutcomeSettings.validateScore(_qualifyingScore.text) != null) {
-      setState(() => _error = 'Set a qualifying panel score from 0 to 100%.');
-      return;
-    }
-    setState(() { _saving = true; _error = null; });
-    final ok = await ref.read(defenseStagesProvider.notifier).updateStage(widget.stageId, {
-      'qualifying_score': double.parse(_qualifyingScore.text.trim()), 'score_carryover': _scoreCarryover,
-    });
-    if (!mounted) return;
-    setState(() { _saving = false; if (!ok) _error = ref.read(defenseStagesProvider).error; });
-    if (ok) { _clearDirty(); await _load(); }
-  }
-
   Future<void> _save() async {
     if (_isLocked) return;
-    if (StageOutcomeSettings.validateScore(_qualifyingScore.text) != null) {
+    if (!_structureLocked && StageOutcomeSettings.validateScore(_qualifyingScore.text) != null) {
       setState(() { _activeTab = 1; _error = 'Set a qualifying panel score from 0 to 100%.'; });
       return;
     }
@@ -504,18 +495,19 @@ class _DefenseStageEditorScreenState
       setState(() => _error = 'Stage name is required.');
       return;
     }
-    if (_semesterId == null) {
+    if (!_structureLocked && _semesterId == null) {
       setState(() => _error = 'Select a semester for grade weights.');
       return;
     }
-    if (_weightTotal != 100) {
+    if (!_structureLocked && _weightTotal != 100) {
       setState(() => _error = 'Panel, Adviser, and Peer weights must total 100%.');
       return;
     }
 
     // Validate student deliverable labels and archive naming templates.
-    for (int i = 0; i < _deliverables.length; i++) {
-      final d = _deliverables[i];
+    final configuredItems = deliverableSetupItems(_deliverables, _sharedDeliverables);
+    for (int i = 0; i < configuredItems.length; i++) {
+      final d = configuredItems[i];
       final labelVal = d['label']?.toString().trim() ?? '';
       if (labelVal.isEmpty) {
         setState(() {
@@ -563,6 +555,7 @@ class _DefenseStageEditorScreenState
     final stageOk = await ref.read(defenseStagesProvider.notifier).updateStage(
           widget.stageId,
           {
+            if (!_structureLocked) ...{
             'label': _label.text.trim(),
             'code': _code.text.trim(),
             'display_order': _orderPosition,
@@ -575,13 +568,14 @@ class _DefenseStageEditorScreenState
       'score_carryover': _scoreCarryover,
             'minutes_deliverable_id': _minutesNumber.text.trim(),
             'minutes_deliverable_label': _minutesName.text.trim(),
+            },
             'deliverables': _deliverables,
-            'shared_deliverables': sharedDeliverablePayload(_sharedDeliverables),
+            'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables),
             if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
           },
         );
 
-    final weightsOk = stageOk && await ref
+    final weightsOk = stageOk && (_structureLocked || await ref
         .read(defenseStagesProvider.notifier)
         .updateGradingConfig(widget.stageId, _semesterId!, {
           'panel_weight': int.tryParse(_panel.text.trim()) ?? 0,
@@ -590,7 +584,7 @@ class _DefenseStageEditorScreenState
           if (_editedRubricRoles.contains('panel')) 'panel_rubric_id': _panelRubricId,
           if (_editedRubricRoles.contains('adviser')) 'adviser_rubric_id': _adviserRubricId,
           if (_editedRubricRoles.contains('peer')) 'peer_rubric_id': _peerRubricId,
-        });
+        }));
 
     if (!mounted) return;
 
@@ -642,7 +636,7 @@ class _DefenseStageEditorScreenState
     int lastCompletedOrder = 0;
     for (int i = 0; i < allStages.length; i++) {
       final s = allStages[i];
-      final isStageLocked = s['is_locked'] == true || s['status'] == 'locked';
+      final isStageLocked = s['is_locked'] == true || s['structure_locked'] == true || s['status'] == 'locked';
       if (isStageLocked) {
         final order = _asInt(s['display_order']) ?? (i + 1);
         if (order > lastCompletedOrder) {
@@ -651,7 +645,7 @@ class _DefenseStageEditorScreenState
       }
     }
 
-    final minPosition = _isLocked
+    final minPosition = _structureLocked
         ? (initialOrder ?? 1)
         : (lastCompletedOrder + 1);
 
@@ -662,7 +656,7 @@ class _DefenseStageEditorScreenState
       currentStageName: _label.text,
       editing: true,
       initialOrder: initialOrder,
-      isLocked: _isLocked,
+      isLocked: _structureLocked,
       minPosition: minPosition,
       lockReason: _lockReason,
       onPositionChanged: (val) {
@@ -684,7 +678,19 @@ class _DefenseStageEditorScreenState
 
   bool get _isLocked =>
       _stage?['is_locked'] == true || _stage?['status'] == 'locked';
-  String? get _lockReason => _stage?['lock_reason']?.toString();
+  bool get configuredItemsHaveData =>
+      deliverableSetupItems(_deliverables, _sharedDeliverables).any((row) => row['has_data'] == true);
+  bool get _structureLocked => _isLocked || _stage?['structure_locked'] == true;
+  String? get _lockReason =>
+      _stage?[_isLocked ? 'lock_reason' : 'structure_lock_reason']?.toString();
+
+  String _nextDeliverableId() {
+    var number = 1;
+    while (_deliverables.any((row) => row['deliverable_id'] == 'D$number')) {
+      number++;
+    }
+    return 'D$number';
+  }
 
   Widget _buildLockedBanner() {
     return Container(
@@ -716,7 +722,7 @@ class _DefenseStageEditorScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Stage Configuration Locked',
+                  _isLocked ? 'Stage Configuration Locked' : 'Stage Settings Protected',
                   style: TextStyle(
                     color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
                     fontSize: 14,
@@ -725,8 +731,9 @@ class _DefenseStageEditorScreenState
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  _lockReason ??
-                      'Configuration is protected because this stage has scheduled defenses, recorded grades, or has been officially finalized for this semester.',
+                  _isLocked
+                      ? (_lockReason ?? 'Configuration is locked because grading has started.')
+                      : '${_lockReason ?? 'Stage settings are protected.'} You can still add deliverables and edit unused requirements before grading starts.',
                   style: TextStyle(
                     color: _isDark ? const Color(0xFFBFDBFE) : const Color(0xFF1D4ED8),
                     fontSize: 12.5,
@@ -765,8 +772,8 @@ class _DefenseStageEditorScreenState
     final adviserVal = int.tryParse(_adviser.text.trim()) ?? 0;
     final peerVal = int.tryParse(_peer.text.trim()) ?? 0;
     final hasWeightError = (panelVal + adviserVal + peerVal) != 100;
-    final preDeliverables = _deliverables.where((d) => d['deliverable_type'] == 'pre').toList();
-    final postDeliverables = _deliverables.where((d) => d['deliverable_type'] == 'post').toList();
+    final preDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables).where((d) => d['deliverable_type'] == 'pre').toList();
+    final postDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables).where((d) => d['deliverable_type'] == 'post').toList();
 
     return PopScope(
       canPop: !_isDirty,
@@ -811,7 +818,7 @@ class _DefenseStageEditorScreenState
                 ),
               ),
               const SizedBox(height: 20),
-              if (_isLocked) _buildLockedBanner(),
+              if (_structureLocked) _buildLockedBanner(),
               if (_savedDraft != null && !_isLocked) ...[
                 StageSetupDraftNotice(
                   title: 'Stage setup draft saved',
@@ -849,7 +856,7 @@ class _DefenseStageEditorScreenState
                       child: _buildTabBar(
                         activeTab: _activeTab,
                         hasWeightError: hasWeightError,
-                        deliverableCount: _deliverables.length + _sharedDeliverables.length + (_minutesRequired == true ? 1 : 0),
+                        deliverableCount: deliverableSetupItems(_deliverables, _sharedDeliverables).length + (_minutesRequired == true ? 1 : 0),
                         onTabSelected: (tab) => setState(() => _activeTab = tab),
                       ),
                     ),
@@ -872,7 +879,7 @@ class _DefenseStageEditorScreenState
                                     flex: 3,
                                     child: TextField(
                                       controller: _label,
-                                      readOnly: _isLocked,
+                                      readOnly: _structureLocked,
                                       style: TextStyle(color: _textPrimaryColor),
                                       decoration: _inputDecoration(
                                         labelText: 'Stage Name',
@@ -886,7 +893,7 @@ class _DefenseStageEditorScreenState
                                     flex: 2,
                                     child: TextField(
                                       controller: _code,
-                                      readOnly: _isLocked,
+                                      readOnly: _structureLocked,
                                       style: TextStyle(color: _textPrimaryColor),
                                       decoration: _inputDecoration(
                                         labelText: 'Stage Code',
@@ -913,26 +920,28 @@ class _DefenseStageEditorScreenState
                               const SizedBox(height: 4),
                               Text('Enable only the workflows this stage uses.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: _textSecondaryColor)),
                               const SizedBox(height: 12),
-                              ConceptSettings(value: _conceptConfig, enabled: !_isLocked, onChanged: (value) {
+                              ConceptSettings(value: _conceptConfig, enabled: !_structureLocked, onChanged: (value) {
                                 setState(() {
                                   if (_conceptConfig['enabled'] != true && value['enabled'] == true && _sharedDeliverables.isEmpty) {
                                     _sharedDeliverables = defaultSharedDeliverables();
+                                    ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables);
+                                    linkNewSharedConceptDefaults(_deliverables, _sharedDeliverables);
                                   }
                                   _conceptConfig = value;
-                                  ensureConceptPapers(_deliverables, value);
+                                  ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables);
                                   if (!_deliverables.contains(_selectedDeliverable)) _selectedDeliverable = null;
                                 });
                                 _markDirty();
                               }),
                               const SizedBox(height: 20),
                               StageMinutesSettings(
-                                requiredMinutes: _minutesRequired, enabled: !_isLocked,
+                                requiredMinutes: _minutesRequired, enabled: !_structureLocked,
                                 onChanged: (value) { setState(() { _minutesRequired = value; _error = null; }); _markDirty(); },
                               ),
                               const SizedBox(height: 20),
                               TextField(
                                 controller: _description,
-                                readOnly: _isLocked,
+                                readOnly: _structureLocked,
                                 minLines: 2,
                                 maxLines: 4,
                                 style: TextStyle(color: _textPrimaryColor),
@@ -965,7 +974,7 @@ class _DefenseStageEditorScreenState
                                   ),
                                   activeTrackColor: AppColors.maroon,
                                   value: _isActive,
-                                  onChanged: _isLocked
+                                  onChanged: _structureLocked
                                       ? null
                                       : (v) {
                                           setState(() => _isActive = v);
@@ -981,7 +990,7 @@ class _DefenseStageEditorScreenState
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               GradingSetupSection(
-                                enabled: !_saving && !_isLocked,
+                                enabled: !_saving && !_structureLocked,
                                 canManageRubrics: !_saving && !_savingDraft,
                                 onManageRubrics: _openRubrics,
                                 resetLabel: 'Reset to 50 / 30 / 20',
@@ -1014,16 +1023,9 @@ class _DefenseStageEditorScreenState
                                 child: Divider(height: 1, color: _borderColor)),
                               StageOutcomeSettings(scoreController: _qualifyingScore,
                                 scoreCarryover: _scoreCarryover, conceptSelection: _conceptConfig['enabled'] == true,
-                                enabled: !_saving,
+                                enabled: !_saving && !_structureLocked,
                                 onChanged: () { setState(() {}); _markDirty(); },
                                 onCarryoverChanged: (v) { setState(() => _scoreCarryover = v); _markDirty(); }),
-                              if (_isLocked) ...[
-                                const SizedBox(height: 12),
-                                Text('Applies to new hearings only.', style: TextStyle(fontSize: 12, color: _textSecondaryColor)),
-                                DefensysShadcnScope(child: Align(alignment: Alignment.centerLeft,
-                                  child: ShadButton.outline(size: ShadButtonSize.sm, enabled: !_saving,
-                                    onPressed: _saving ? null : _saveOutcomePolicy, child: const Text('Save outcome settings')))),
-                              ],
                             ],
                           ),
 
@@ -1033,12 +1035,11 @@ class _DefenseStageEditorScreenState
                             children: [
                               StageDeliverablePresetsBar(
                                 existingStages: ref.read(defenseStagesProvider).stages,
-                                currentDeliverables: _deliverables,
-                                enabled: !_isLocked,
+                                currentDeliverables: deliverablePresetItems(_deliverables, _sharedDeliverables),
+                                enabled: !_isLocked && !configuredItemsHaveData,
                                 onApplyDeliverables: (newDeliverables) {
                                   setState(() {
-                                    _deliverables.clear();
-                                    _deliverables.addAll(newDeliverables);
+                                    applyDeliverablePresetItems(newDeliverables, _deliverables, _sharedDeliverables);
                                     _selectedDeliverable = _deliverables.isNotEmpty ? _deliverables.first : null;
                                     _error = null;
                                   });
@@ -1046,7 +1047,7 @@ class _DefenseStageEditorScreenState
                                 },
                               ),
                               StageDeliverableCounts(
-                                deliverables: [..._deliverables, ..._sharedDeliverables],
+                                deliverables: deliverableSetupItems(_deliverables, _sharedDeliverables),
                                 minutesRequired: _minutesRequired == true,
                               ),
                               _buildDeliverableSection(
@@ -1056,14 +1057,13 @@ class _DefenseStageEditorScreenState
                                 accentColor: const Color(0xFF0F172A),
                                 bgHeaderColor: const Color(0xFFF8FAFC),
                                 borderColor: const Color(0xFFE2E8F0),
-                                count: preDeliverables.length + _sharedDeliverables.where((row) => row['deliverable_type'] == 'pre').length,
-                                buttonText: 'Add Pre-Defense',
+                                count: preDeliverables.length,
                                 onAdd: _isLocked
                                     ? () {}
                                     : () {
                                         setState(() {
                                           final item = <String, dynamic>{
-                                            'deliverable_id': 'D${_deliverables.length + 1}',
+                                            'deliverable_id': _nextDeliverableId(),
                                             'label': '',
                                             'deliverable_type': 'pre',
                                             'requirement_timing': 'scheduling',
@@ -1086,7 +1086,6 @@ class _DefenseStageEditorScreenState
                                 emptyPlaceholderText: 'No pre-defense gatekeepers configured yet. (e.g. Proposal Manuscript Draft, Similarity Report)',
                                 items: preDeliverables,
                                 isPost: false,
-                                sharedChecklist: _buildSharedDeliverables('pre'),
                               ),
                               const SizedBox(height: 18),
                               _buildDeliverableSection(
@@ -1096,14 +1095,13 @@ class _DefenseStageEditorScreenState
                                 accentColor: const Color(0xFF0F172A),
                                 bgHeaderColor: const Color(0xFFF8FAFC),
                                 borderColor: const Color(0xFFE2E8F0),
-                                count: postDeliverables.length + _sharedDeliverables.where((row) => row['deliverable_type'] == 'post').length,
-                                buttonText: 'Add Post-Defense',
+                                count: postDeliverables.length,
                                 onAdd: _isLocked
                                     ? () {}
                                     : () {
                                         setState(() {
                                           final item = <String, dynamic>{
-                                            'deliverable_id': 'D${_deliverables.length + 1}',
+                                            'deliverable_id': _nextDeliverableId(),
                                             'label': '',
                                             'deliverable_type': 'post',
                                             'required': true,
@@ -1124,15 +1122,11 @@ class _DefenseStageEditorScreenState
                                 emptyPlaceholderText: 'No post-defense deliverables configured yet. (e.g. Final Manuscript PDF, Source Code Zip, Demo Video)',
                                 items: postDeliverables,
                                 isPost: true,
-                                sharedChecklist: _buildSharedDeliverables('post'),
-                                stageDefaultNamingWidget: postDeliverables.length >= 2
-                                    ? _buildStageDefaultNamingDropdown(postDeliverables)
-                                    : null,
                               ),
                               if (_minutesRequired == true) ...[
                                 const SizedBox(height: 18),
                                 StageMinutesDeliverableCard(
-                                  number: _minutesNumber, name: _minutesName, stageName: _label.text, enabled: !_isLocked,
+                                  number: _minutesNumber, name: _minutesName, stageName: _label.text, enabled: !_structureLocked,
                                   expanded: _minutesExpanded,
                                   onToggle: () => setState(() {
                                     _minutesExpanded = !_minutesExpanded;
@@ -1207,7 +1201,7 @@ class _DefenseStageEditorScreenState
                           ],
                           if (!_isLocked)
                             DefensysSaveButton(
-                              onPressed: (hasWeightError || _savingDraft) ? null : _save,
+                              onPressed: ((!_structureLocked && hasWeightError) || _savingDraft) ? null : _save,
                               isSaving: _saving,
                               label: 'Save changes',
                             )
@@ -1443,13 +1437,6 @@ class _DefenseStageEditorScreenState
 
 
 
-  Widget _buildSharedDeliverables(String type) => SharedDeliverablesEditor(
-    value: _sharedDeliverables, teamDeliverables: _deliverables, deliverableType: type,
-    enabled: !_isLocked, conceptsEnabled: _conceptConfig['enabled'] == true,
-    stageLabel: _label.text,
-    onChanged: (value) { setState(() => _sharedDeliverables = value); _markDirty(); },
-  );
-
   Widget _buildDeliverableSection({
     required String title,
     required String subtitle,
@@ -1458,13 +1445,10 @@ class _DefenseStageEditorScreenState
     required Color bgHeaderColor,
     required Color borderColor,
     required int count,
-    required String buttonText,
     required VoidCallback onAdd,
     required String emptyPlaceholderText,
     required List<Map<String, dynamic>> items,
     required bool isPost,
-    Widget? stageDefaultNamingWidget,
-    Widget? sharedChecklist,
   }) {
     final effectiveAccent = _isDark
         ? (isPost ? const Color(0xFFF87171) : const Color(0xFF60A5FA))
@@ -1558,24 +1542,17 @@ class _DefenseStageEditorScreenState
                   ),
                 ],
               ),
-              action: _isLocked
-                  ? null
-                  : DefensysShadcnScope(
-                      child: ShadButton.outline(
-                        size: ShadButtonSize.sm,
-                        onPressed: onAdd,
-                        leading: const Icon(Icons.add, size: 14),
-                        child: Text(buttonText),
-                      ),
-                    ),
+
+              action: DefensysShadcnScope(
+                child: ShadButton.outline(
+                  size: ShadButtonSize.sm,
+                  onPressed: _isLocked ? null : onAdd,
+                  leading: const Icon(Icons.add_rounded, size: 14),
+                  child: const Text('Add deliverable'),
+                ),
+              ),
             ),
           ),
-          if (stageDefaultNamingWidget != null) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-              child: stageDefaultNamingWidget,
-            ),
-          ],
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
@@ -1630,6 +1607,8 @@ class _DefenseStageEditorScreenState
                           if (item != null) _minutesExpanded = false;
                           _error = null;
                         }),
+                        showGroupHeading: true,
+                        showReviewHint: false,
                         showDoneEditingButton: false,
                         buildEditor: (item, index) {
                           final validationError = _deliverableErrorFor(item);
@@ -1659,10 +1638,6 @@ class _DefenseStageEditorScreenState
                           );
                         },
                       ),
-                if (sharedChecklist != null) ...[
-                  Divider(height: 20, color: _borderColor),
-                  sharedChecklist,
-                ],
               ],
             ),
           ),
@@ -1688,156 +1663,27 @@ class _DefenseStageEditorScreenState
     return null;
   }
 
-  Widget _buildStageDefaultNamingDropdown(List<Map<String, dynamic>> postDeliverables) {
-    const presets = {
-      '{project}_{deliverable}': 'Project + Deliverable (Recommended)',
-      '{project}': 'Project Only',
-      '{year}_{course}_{project}_{deliverable}': 'Academic Standard',
-      '{stage}_{project}_{deliverable}': 'Stage Specific',
-      '{semester}_{project}_{deliverable}': 'Semester Standard',
-    };
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: _isDark
-            ? const Color(0xFF1E3A8A).withValues(alpha: 0.15)
-            : const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: _isDark
-              ? const Color(0xFF3B82F6).withValues(alpha: 0.3)
-              : const Color(0xFFBFDBFE),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.tune_rounded,
-                size: 15,
-                color: _isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Apply Naming Pattern to All Post-Defense Deliverables',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
-                    fontFamily: DefensysTokens.fontFamily,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: presets.entries.map((entry) {
-              final isProjectOnly = entry.key == '{project}';
-              final hasCollisionRisk = isProjectOnly && postDeliverables.length >= 2;
-              return InkWell(
-                onTap: _isLocked
-                    ? null
-                    : () {
-                        setState(() {
-                          for (final d in postDeliverables) {
-                            final ctrl = d['_templateController'] as TextEditingController?;
-                            if (ctrl != null) {
-                              ctrl.text = entry.key;
-                            }
-                            d['archive_file_template'] = entry.key;
-                          }
-                        });
-                        _markDirty();
-                      },
-                borderRadius: BorderRadius.circular(6),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: hasCollisionRisk
-                        ? (_isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFEFCE8))
-                        : _surfaceColor,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: hasCollisionRisk
-                          ? (_isDark ? const Color(0xFFD97706) : const Color(0xFFFDE68A))
-                          : _borderColor,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (hasCollisionRisk) ...[
-                        Icon(
-                          Icons.warning_amber_rounded,
-                          size: 13,
-                          color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        entry.value,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: hasCollisionRisk
-                              ? (_isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E))
-                              : _textPrimaryColor,
-                          fontFamily: DefensysTokens.fontFamily,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          if (postDeliverables.length >= 2) ...[
-            const SizedBox(height: 6),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 13,
-                  color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
-                ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    '"Project + Deliverable" is recommended when you have multiple deliverables to avoid filename conflicts.',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: _textSecondaryColor,
-                      fontFamily: DefensysTokens.fontFamily,
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _deliverableRow(Map<String, dynamic> item, bool isPost, {required int index, VoidCallback? onDone}) {
-    final labelController = item['_labelController'] as TextEditingController? ??
-        (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
-    final templateController = item['_templateController'] as TextEditingController? ??
+  Widget _deliverableRow(
+    Map<String, dynamic> item,
+    bool isPost, {
+    required int index,
+    VoidCallback? onDone,
+  }) {
+    final isLocked = _isLocked || item['is_locked'] == true || item['has_data'] == true;
+    final labelController =
+        item['_labelController'] as TextEditingController? ??
+        (item['_labelController'] = TextEditingController(
+          text: item['label']?.toString() ?? '',
+        ));
+    final templateController =
+        item['_templateController'] as TextEditingController? ??
         (item['_templateController'] = TextEditingController(
           text: item['archive_file_template']?.toString() ?? '',
         ));
 
-    const legacyDefault = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}';
-    if (templateController.text.trim() == legacyDefault) {
+    const legacyDefault =
+        '{year}.{course}.{project}.{stage}.{deliverable}.{semester}';
+    if (!isLocked && templateController.text.trim() == legacyDefault) {
       templateController.text = '';
       item['archive_file_template'] = '';
     }
@@ -1881,13 +1727,14 @@ class _DefenseStageEditorScreenState
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2.5,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: const Color(0xFFCBD5E1),
-                    ),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
                   ),
                   child: Text(
                     '#$index',
@@ -1915,29 +1762,50 @@ class _DefenseStageEditorScreenState
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  onPressed: _isLocked
+                  onPressed: isLocked
                       ? null
                       : () {
                           setState(() {
-                            _deliverables.remove(item);
-                            (item['_labelController'] as TextEditingController?)?.dispose();
-                            (item['_templateController'] as TextEditingController?)?.dispose();
+                            removeConfiguredDeliverable(
+                              item,
+                              _deliverables,
+                              _sharedDeliverables,
+                            );
+                            (item['_labelController'] as TextEditingController?)
+                                ?.dispose();
+                            (item['_templateController']
+                                    as TextEditingController?)
+                                ?.dispose();
                           });
                           _markDirty();
                         },
-                  icon: Icon(Icons.delete_outline_rounded, color: _isLocked ? Colors.grey : AppColors.danger, size: 18),
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    color: isLocked ? Colors.grey : AppColors.danger,
+                    size: 18,
+                  ),
                   tooltip: 'Remove Deliverable #$index',
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   style: IconButton.styleFrom(
                     hoverColor: AppColors.danger.withValues(alpha: 0.08),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+
+          if (isLocked)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: Text(item['lock_reason']?.toString() ??
+                  'This requirement is protected because it has submission history or grading has started.',
+                  style: TextStyle(fontSize: 12, color: _textSecondaryColor)),
+            ),
 
           // 2. Card Content Body
           Padding(
@@ -1958,10 +1826,12 @@ class _DefenseStageEditorScreenState
                           policy['slots'] = [
                             {
                               'key': 'paper',
-                              'label': label?.isNotEmpty == true ? label : 'Concept paper',
+                              'label': label?.isNotEmpty == true
+                                  ? label
+                                  : 'Concept paper',
                               'file_format': format,
                               'required': req,
-                            }
+                            },
                           ];
                         } else {
                           for (final s in slots) {
@@ -1976,27 +1846,33 @@ class _DefenseStageEditorScreenState
                     }
 
                     final nameField = TextFormField(
-                        controller: labelController,
-                        readOnly: _isLocked,
-                        decoration: _inputDecoration(
-                          labelText: isPost ? 'Post-Defense Deliverable Name *' : 'Pre-Defense Requirement Name *',
-                          hintText: isPost
-                              ? 'e.g. Final Manuscript PDF, Source Code Zip'
-                              : 'e.g. Manuscript Draft, Endorsement Form',
-                        ),
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _textPrimaryColor),
-                        onChanged: (v) {
-                          item['label'] = v.trim();
-                          syncPolicySlot();
-                          _markDirty();
-                          setState(() {});
-                        },
-                      );
+                      controller: labelController,
+                      readOnly: isLocked,
+                      decoration: _inputDecoration(
+                        labelText: isPost
+                            ? 'Post-Defense Deliverable Name *'
+                            : 'Pre-Defense Requirement Name *',
+                        hintText: isPost
+                            ? 'e.g. Final Manuscript PDF, Source Code Zip'
+                            : 'e.g. Manuscript Draft, Endorsement Form',
+                      ),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _textPrimaryColor,
+                      ),
+                      onChanged: (v) {
+                        item['label'] = v.trim();
+                        syncPolicySlot();
+                        _markDirty();
+                        setState(() {});
+                      },
+                    );
                     final formatField = SizedBox(
                       width: 210,
                       child: StageFileFormatPicker(
                         value: currentFormat,
-                        enabled: !_isLocked,
+                        enabled: !isLocked,
                         onChanged: (val) {
                           setState(() {
                             item['file_format'] = val;
@@ -2009,7 +1885,7 @@ class _DefenseStageEditorScreenState
                     final requiredField = DefensysShadcnScope(
                       child: ShadCheckbox(
                         value: item['required'] == true,
-                        enabled: !_isLocked,
+                        enabled: !isLocked,
                         label: const Text('Required'),
                         onChanged: (value) {
                           setState(() {
@@ -2021,14 +1897,8 @@ class _DefenseStageEditorScreenState
                       ),
                     );
 
-                    final hasAdvancedSettings = isPost
-                        ? (item['is_restricted'] == true ||
-                            (item['archive_file_template'] != null &&
-                                item['archive_file_template'].toString().trim().isNotEmpty &&
-                                item['archive_file_template'] != '{project}' &&
-                                item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true);
-                    final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
+                    final isAdvancedExpanded =
+                        item['_expandedAdvanced'] as bool? ?? false;
 
                     final moreOptionsBtn = DefensysShadcnScope(
                       child: ShadButton.outline(
@@ -2039,7 +1909,9 @@ class _DefenseStageEditorScreenState
                           });
                         },
                         leading: Icon(
-                          isAdvancedExpanded ? Icons.expand_less_rounded : Icons.tune_rounded,
+                          isAdvancedExpanded
+                              ? Icons.expand_less_rounded
+                              : Icons.tune_rounded,
                           size: 14,
                         ),
                         child: Text(
@@ -2058,7 +1930,11 @@ class _DefenseStageEditorScreenState
                                 spacing: 12,
                                 runSpacing: 8,
                                 crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [formatField, requiredField, moreOptionsBtn],
+                                children: [
+                                  formatField,
+                                  requiredField,
+                                  moreOptionsBtn,
+                                ],
                               ),
                             ],
                           )
@@ -2076,61 +1952,12 @@ class _DefenseStageEditorScreenState
                   },
                 ),
 
-                DocumentPolicyEditor(
-                  value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
-                  enabled: !_isLocked,
-                  allowConcepts: !isPost && _conceptConfig['enabled'] == true,
-                  deliverableLabel: labelController.text,
-                  fileFormat: currentFormat,
-                  required: item['required'] == true,
-                  onChanged: (value) {
-                    setState(() => item['file_policy'] = value);
-                    _markDirty();
-                  },
-                ),
-
                 Builder(
                   builder: (context) {
-                    final hasAdvancedSettings = isPost
-                        ? (item['is_restricted'] == true ||
-                            (item['archive_file_template'] != null &&
-                                item['archive_file_template'].toString().trim().isNotEmpty &&
-                                item['archive_file_template'] != '{project}' &&
-                                item['archive_file_template'] != '{project}_{deliverable}'))
-                        : (item['is_defense_material'] == true);
-                    final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
+                    final isAdvancedExpanded =
+                        item['_expandedAdvanced'] as bool? ?? false;
 
-                    if (!isAdvancedExpanded) {
-                      final summaryText = isPost
-                          ? '${item['required'] == true ? 'Required' : 'Optional'} after defense${item['is_restricted'] == true ? ' · Restricted archive' : ''}'
-                          : 'Faculty review before scheduling${item['is_defense_material'] == true ? ' · Panel material' : ''}';
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: _inputFillColor,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: _borderColor),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.info_outline_rounded, size: 12, color: _textSecondaryColor),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    summaryText,
-                                    style: TextStyle(fontSize: 11, color: _textPrimaryColor, fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
+                    if (!isAdvancedExpanded) return const SizedBox.shrink();
 
                     return Container(
                       margin: const EdgeInsets.only(top: 12),
@@ -2145,25 +1972,80 @@ class _DefenseStageEditorScreenState
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.tune_rounded, size: 14, color: _textSecondaryColor),
+                              Icon(
+                                Icons.tune_rounded,
+                                size: 14,
+                                color: _textSecondaryColor,
+                              ),
                               const SizedBox(width: 6),
-                              Text(
-                                isPost ? 'Post-defense options' : 'Panel access',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: _textPrimaryColor,
+                              Expanded(
+                                child: Text(
+                                  isPost
+                                      ? 'Post-defense options'
+                                      : 'Pre-defense options',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: _textPrimaryColor,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 10),
+                          DeliverableSubmissionPicker(
+                            value: deliverableSubmissionAudience(item),
+                            enabled: !isLocked,
+                            onChanged: (value) {
+                              setState(
+                                () => setDeliverableSubmissionAudience(
+                                  item,
+                                  value,
+                                  _deliverables,
+                                  _sharedDeliverables,
+                                ),
+                              );
+                              _markDirty();
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          Divider(
+                            height: 1,
+                            color: DefensysTokens.borderOf(context),
+                          ),
+                          const SizedBox(height: 8),
+                          DocumentPolicyEditor(
+                            value: Map<String, dynamic>.from(
+                              item['file_policy'] as Map? ?? {},
+                            ),
+                            enabled: !isLocked,
+                            allowConcepts:
+                                (_conceptConfig['enabled'] == true) &&
+                                (!isPost ||
+                                    deliverableSubmissionAudience(item) ==
+                                        'pm'),
+                            deliverableLabel: labelController.text,
+                            fileFormat: currentFormat,
+                            required: item['required'] == true,
+                            onChanged: (value) {
+                              setState(() => item['file_policy'] = value);
+                              _markDirty();
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          Divider(
+                            height: 1,
+                            color: DefensysTokens.borderOf(context),
+                          ),
+                          const SizedBox(height: 10),
                           if (!isPost) ...[
                             DefenseMaterialToggle(
                               value: item['is_defense_material'] == true,
-                              enabled: !_isLocked,
+                              enabled: !isLocked,
                               onChanged: (value) {
-                                setState(() => item['is_defense_material'] = value);
+                                setState(
+                                  () => item['is_defense_material'] = value,
+                                );
                                 _markDirty();
                               },
                             ),
@@ -2173,31 +2055,40 @@ class _DefenseStageEditorScreenState
                           if (isPost) ...[
                             Row(
                               children: [
-                                DefensysShadcnScope(
-                                  child: ShadCheckbox(
-                                    value: item['is_restricted'] == true,
-                                    enabled: !_isLocked,
-                                    onChanged: (v) {
-                                      setState(() {
-                                        item['is_restricted'] = v;
-                                      });
-                                      _markDirty();
-                                    },
-                                    label: Text(
-                                      'Restricted (Private Institutional Archive)',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: _textPrimaryColor,
+                                Expanded(
+                                  child: DefensysShadcnScope(
+                                    child: ShadCheckbox(
+                                      value: item['is_restricted'] == true,
+                                      enabled: !isLocked,
+                                      onChanged: (v) {
+                                        setState(() {
+                                          item['is_restricted'] = v;
+                                        });
+                                        _markDirty();
+                                      },
+                                      label: Text(
+                                        'Restricted (Private Institutional Archive)',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: _textPrimaryColor,
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 4),
                                 Tooltip(
-                                  message: 'Private for faculty and admin records only; hidden from students.',
-                                  constraints: const BoxConstraints(maxWidth: 240),
-                                  child: Icon(Icons.help_outline_rounded, size: 14, color: _textSecondaryColor),
+                                  message:
+                                      'Private for faculty and admin records only; hidden from students.',
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 240,
+                                  ),
+                                  child: Icon(
+                                    Icons.help_outline_rounded,
+                                    size: 14,
+                                    color: _textSecondaryColor,
+                                  ),
                                 ),
                               ],
                             ),
@@ -2208,13 +2099,35 @@ class _DefenseStageEditorScreenState
                               templateController: templateController,
                               deliverableLabel: labelController.text,
                               fileFormat: currentFormat,
-                              isLocked: _isLocked,
+                              isLocked: isLocked,
                               isPit: false,
                               stageOrEventLabel: _label.text,
-                              siblingDeliverables: _deliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList(),
-                              currentIndex: _deliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList().indexOf(item),
+                              siblingDeliverables:
+                                  deliverableSetupItems(
+                                        _deliverables,
+                                        _sharedDeliverables,
+                                      )
+                                      .where(
+                                        (d) =>
+                                            d['deliverable_type'] ==
+                                            (isPost ? 'post' : 'pre'),
+                                      )
+                                      .toList(),
+                              currentIndex:
+                                  deliverableSetupItems(
+                                        _deliverables,
+                                        _sharedDeliverables,
+                                      )
+                                      .where(
+                                        (d) =>
+                                            d['deliverable_type'] ==
+                                            (isPost ? 'post' : 'pre'),
+                                      )
+                                      .toList()
+                                      .indexOf(item),
                               onChanged: () {
-                                item['archive_file_template'] = templateController.text.trim();
+                                item['archive_file_template'] =
+                                    templateController.text.trim();
                                 setState(() {});
                                 _markDirty();
                               },

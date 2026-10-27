@@ -29,6 +29,9 @@ from .timing import deadline_for, materials_readiness, stage_schedule
 
 class SubmissionTimingTests(APITestCase):
     def setUp(self):
+        version = self.settings(DEFENSYS_TITLE_WORKFLOW_VERSION=1)
+        version.enable()
+        self.addCleanup(version.disable)
         temporary_root = Path(__file__).resolve().parents[4] / '.tmp'
         temporary_root.mkdir(exist_ok=True)
         self.media = TemporaryDirectory(dir=temporary_root)

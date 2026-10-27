@@ -291,7 +291,7 @@ def legacy_file(profile, definition, slot_key):
 
 def file_payload(row, *, legacy=False, project_id=None):
     return {'id': row.pk, 'legacy': legacy, 'revision': row.revision, 'file_name': row.file_name,
-        'slot_key': getattr(row, 'slot_key', ''),
+        'slot_key': getattr(row, 'slot_key', ''), 'title_review_context': row.title_review_context,
         'file_size': getattr(row, 'file_size', None), 'status': row.status, 'feedback': row.feedback,
         'reviewed_by_id': row.reviewed_by_id, 'is_current': row.is_current,
         'uploaded_at': row.uploaded_at.isoformat(), 'reviewed_at': row.reviewed_at.isoformat() if row.reviewed_at else None,
@@ -312,6 +312,17 @@ def requirement_files(profile, definition):
 
 def complete(profile, definition, *, accepted=True):
     files = requirement_files(profile, definition)
+    from repository import title_workflow
+    if accepted and title_workflow.enabled(profile.get('round')):
+        for slot in slots(profile, definition):
+            row = files.get(slot['key'])
+            if row and row['status'] == 'accepted':
+                try:
+                    context = title_workflow.shared_context(profile, definition, slot['key'], accepting=True)
+                    if context and row.get('title_review_context') != context:
+                        return False
+                except ValidationError:
+                    return False
     valid = {key: row for key, row in files.items() if accepted is None or row['status'] == 'accepted' or (accepted is False and row['status'] != 'rejected')}
     policy = definition.get('file_policy') or {}
     if policy.get('mode') == 'multiple':
@@ -339,10 +350,13 @@ def document_progress(profile, dtype='pre'):
     for definition in profile['definitions']:
         if definition['deliverable_type'] != dtype or not definition.get('required') or not applicable(profile, definition):
             continue
+        if dtype == 'pre' and definition.get('requirement_timing') == 'defense':
+            continue
         files = requirement_files(profile, definition)
         policy = definition.get('file_policy') or {}
         if policy.get('mode') == 'multiple':
-            count = policy.get('min_files', 1)
+            # Every submitted attachment needs review, including those above the minimum.
+            count = max(policy.get('min_files', 1), len(files))
             uploaded = min(count, len(files))
             accepted = min(count, sum(f['status'] == 'accepted' for f in files.values()))
         else:
@@ -391,6 +405,23 @@ def round_complete(hearing, dtype='pre', *, accepted=True):
     return required_complete(profile, dtype, accepted=accepted) if profile else False
 
 
+def invalidate_title_reviews(hearing, keys, actor):
+    """Configured per-system evidence follows the same title binding as legacy papers."""
+    profile = for_round(hearing)
+    if not profile or not profile['captured']:
+        return
+    numbers = [d['deliverable_id'] for d in profile['definitions']
+               if d['deliverable_type'] == 'pre' and (d.get('file_policy') or {}).get('mode') == 'concepts']
+    for row in profile['captured'].files.filter(is_current=True, status='accepted', deliverable_id__in=numbers):
+        if row.slot_key.split(':')[0] not in keys:
+            continue
+        services.audit(actor, 'paper_review_invalidated', row, reason='System title changed',
+                       reviewed_by=row.reviewed_by_id,
+                       reviewed_at=row.reviewed_at.isoformat() if row.reviewed_at else None)
+        row.status, row.reviewed_by, row.reviewed_at = 'pending', None, None
+        row.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
+
+
 def content_snapshot(hearing, *, include_status=True):
     profile = for_round(hearing)
     if not profile:
@@ -410,7 +441,8 @@ def content_snapshot(hearing, *, include_status=True):
 
 def review_token(profile):
     return digest({'identity': profile['identity'], 'requirements': profile['definitions'],
-        'files': {d['deliverable_id']: requirement_files(profile, d) for d in profile['definitions']}})
+        'files': {d['deliverable_id']: requirement_files(profile, d) for d in profile['definitions']},
+        'titles': services.review_token(profile['round']) if profile.get('round') else ''})
 
 
 def payload(profile, actor):
@@ -455,11 +487,23 @@ def payload(profile, actor):
                                  'file_format': definition.get('file_format', 'any'), 'system_key': ''} for key, row in files.items()]
         for slot in configured_slots:
             row = files.get(slot['key'])
-            documents.append({**slot, 'file': row,
+            from repository import title_workflow
+            title_blocker, upload_blocker = '', ''
+            try:
+                title_workflow.shared_context(profile, definition, slot['key'], accepting=True)
+            except ValidationError as exc:
+                title_blocker = ' '.join(exc.messages)
+            try:
+                title_workflow.shared_context(profile, definition, slot['key'])
+            except ValidationError as exc:
+                upload_blocker = ' '.join(exc.messages)
+            documents.append({**slot, 'file': row, 'title_blocker': title_blocker,
+                'title_revision_available': bool((system := title_workflow.shared_system(profile, definition, slot['key'])) and system.title_review.get('state') in ('submitted', 'accepted')),
+                'upload_blocker': upload_blocker,
                 'max_file_size': 25 * 1024 * 1024 if profile['current_project'] and (
                     definition.get('legacy_purpose') == 'final' or (
                     definition.get('legacy_purpose') == 'proposal' and slot['key'].endswith(':paper'))) else MAX_FILE_SIZE,
-                'can_upload': not reason and actor.pk == profile['manager'].pk and (not row or row['status'] != 'accepted'),
+                'can_upload': not reason and not upload_blocker and actor.pk == profile['manager'].pk and (not row or row['status'] != 'accepted'),
                 'can_review': not reason and reviewer_access(actor, profile) and bool(row)})
         history = []
         if profile['captured']:
@@ -556,6 +600,8 @@ def upload(team, context, actor, number, slot_key, file, expected_token):
         raise ValidationError('Choose a configured shared document slot.')
     else:
         slot = configured[slot_key]
+    from repository.title_workflow import shared_context
+    title_context = shared_context(profile, definition, slot_key)
     if slot_key in prior and prior[slot_key]['status'] == 'accepted':
         raise ValidationError('Ask the reviewer to request corrections before replacing an accepted file.')
     if not file or not file.size or file.size > MAX_FILE_SIZE:
@@ -585,7 +631,7 @@ def upload(team, context, actor, number, slot_key, file, expected_token):
         revision = (query.order_by('-revision').values_list('revision', flat=True).first() or 0) + 1
         query.filter(is_current=True).update(is_current=False)
         row = SharedDeliverableFile.objects.create(submission_set=captured, deliverable_id=number, slot_key=slot_key,
-            file=file, file_name=archive_file_name(profile, definition, file.name), file_size=file.size, revision=revision, uploaded_by=actor)
+            file=file, file_name=archive_file_name(profile, definition, file.name), file_size=file.size, revision=revision, uploaded_by=actor, title_review_context=title_context)
         if profile['current_project'] and definition['deliverable_type'] == 'pre':
             services.invalidate(profile['round'])
         if hasattr(context, 'event_name'):
@@ -615,7 +661,7 @@ def archive_file_name(profile, definition, original):
 
 
 @transaction.atomic
-def review(team, context, actor, number, slot_key, file_id, legacy, status, feedback, expected_token):
+def review(team, context, actor, number, slot_key, file_id, legacy, status, feedback, expected_token, revision_scope='paper'):
     profile = lock_profile(team, context, expected_token)
     if not reviewer_access(actor, profile):
         raise PermissionError('Only authorized section reviewers can review shared deliverables.')
@@ -628,11 +674,19 @@ def review(team, context, actor, number, slot_key, file_id, legacy, status, feed
     current = requirement_files(profile, definition).get(slot_key)
     if not current or current['id'] != file_id or current['legacy'] != legacy:
         raise ValidationError('Review the current shared file version.')
+    from repository import title_workflow
+    system = title_workflow.shared_system(profile, definition, slot_key)
+    if revision_scope == 'title_and_paper' and system is None:
+        raise ValidationError('This file does not have a reviewable concept title.')
     if legacy:
-        services.review(profile['current_project'], actor, file_id, status, feedback)
+        services.review(profile['current_project'], actor, file_id, status, feedback, revision_scope=revision_scope)
     else:
         row = SharedDeliverableFile.objects.select_for_update().get(pk=file_id, is_current=True,
             submission_set=profile['captured'], deliverable_id=number, slot_key=slot_key)
+        if status == 'accepted':
+            title_workflow.file_acceptance(row, title_workflow.shared_context(profile, definition, slot_key, accepting=True))
+        elif system:
+            title_workflow.revise_file(profile['round'], system.key, actor, feedback, row, revision_scope, 'shared')
         row.status, row.feedback = status, feedback.strip()
         row.reviewed_by, row.reviewed_at = actor, timezone.now()
         row.save(update_fields=['status', 'feedback', 'reviewed_by', 'reviewed_at'])

@@ -21,9 +21,21 @@ bool _isAutomaticConceptPaper(Map<String, dynamic> item) {
 
 void ensureConceptPapers(
   List<Map<String, dynamic>> items,
-  Map<String, dynamic> config,
-) {
+  Map<String, dynamic> config, {
+  List<Map<String, dynamic>> sharedItems = const [],
+}) {
   if (config['enabled'] != true) {
+    final automaticNumbers = items
+        .where(_isAutomaticConceptPaper)
+        .map((row) => row['deliverable_id'])
+        .toSet();
+    if (sharedItems.isNotEmpty) {
+      sharedItems.removeWhere(
+        (row) =>
+            automaticNumbers.contains(row['team_deliverable_id']) ||
+            _isAutomaticConceptPaper(row),
+      );
+    }
     items.removeWhere((item) {
       if (!_isAutomaticConceptPaper(item)) return false;
       (item['_labelController'] as TextEditingController?)?.dispose();
@@ -53,7 +65,13 @@ void ensureConceptPapers(
         'purpose': 'approved_concept',
       };
     }
-  } else {
+  } else if (!sharedItems.any(
+    (item) =>
+        (item['file_policy'] as Map?)?['auto_added_for'] ==
+            'concept_selection' &&
+        (item['file_policy'] as Map?)?['purpose'] == 'approved_concept' &&
+        item['deliverable_type'] == 'post',
+  )) {
     var id = 'APPROVED_CONCEPT';
     var suffix = 1;
     while (items.any((d) => d['deliverable_id'] == id)) {
@@ -84,6 +102,15 @@ void ensureConceptPapers(
       item['deliverable_type'] = 'pre';
       item['requirement_timing'] = 'scheduling';
     }
+    return;
+  }
+  if (sharedItems.any(
+    (item) =>
+        (item['file_policy'] as Map?)?['auto_added_for'] ==
+            'concept_selection' &&
+        (item['file_policy'] as Map?)?['mode'] == 'concepts' &&
+        item['deliverable_type'] == 'pre',
+  )) {
     return;
   }
   var number = 'CONCEPT_PAPERS';
@@ -372,28 +399,29 @@ class ConceptSettings extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (isPit) SizedBox(
-                          width: fieldWidth,
-                          child: policyField(
-                            isPit
-                                ? 'Peer scores on repeat attempts'
-                                : 'Adviser and peer scores on repeat attempts',
-                            WorkflowChoice(
-                              value:
-                                  value['score_carryover']?.toString() ??
-                                  'reassess',
-                              enabled: enabled,
-                              options: {
-                                'reassess': 'Require fresh assessments',
-                                'retain': isPit
-                                    ? 'Retain peer scores'
-                                    : 'Retain adviser and peer scores',
-                              },
-                              onChanged: (v) =>
-                                  onChanged({...value, 'score_carryover': v}),
+                        if (isPit)
+                          SizedBox(
+                            width: fieldWidth,
+                            child: policyField(
+                              isPit
+                                  ? 'Peer scores on repeat attempts'
+                                  : 'Adviser and peer scores on repeat attempts',
+                              WorkflowChoice(
+                                value:
+                                    value['score_carryover']?.toString() ??
+                                    'reassess',
+                                enabled: enabled,
+                                options: {
+                                  'reassess': 'Require fresh assessments',
+                                  'retain': isPit
+                                      ? 'Retain peer scores'
+                                      : 'Retain adviser and peer scores',
+                                },
+                                onChanged: (v) =>
+                                    onChanged({...value, 'score_carryover': v}),
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     );
                   },

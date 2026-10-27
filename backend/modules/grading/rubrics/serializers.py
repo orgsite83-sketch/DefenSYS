@@ -222,6 +222,14 @@ def get_rubric_deletion_info(instance):
     has_evaluations = PanelistCriterionScore.objects.filter(
         criterion__rubric=instance
     ).exists()
+    if instance.scope == Rubric.SCOPE_CAPSTONE:
+        from defense.configuration_locks import grade_configuration_lock
+        stages = {cfg.defense_stage_id: cfg.defense_stage for cfg in StageGradingConfig.objects.filter(
+            models.Q(panel_rubric=instance) | models.Q(adviser_rubric=instance) | models.Q(peer_rubric=instance)
+        ).select_related('defense_stage')}
+        if instance.defense_stage_id:
+            stages[instance.defense_stage_id] = instance.defense_stage
+        has_evaluations = has_evaluations or any(grade_configuration_lock(stage)[0] for stage in stages.values())
 
     if has_evaluations:
         deletion_tier = 'locked'
@@ -306,6 +314,11 @@ class RubricWriteSerializer(serializers.Serializer):
         attrs['semester'] = self._resolve_semester(attrs)
         scope = attrs.get('scope')
         attrs['defense_stage'] = self._resolve_defense_stage(attrs, scope)
+        if attrs['defense_stage'] is not None:
+            from defense.configuration_locks import grade_configuration_lock
+            locked, reason = grade_configuration_lock(attrs['defense_stage'])
+            if locked:
+                raise serializers.ValidationError({'defense_stage_id': reason})
         attrs['event_name'] = (attrs.get('event_name') or '').strip()
 
         if attrs.get('evaluation_type') == Rubric.EVAL_PEER:

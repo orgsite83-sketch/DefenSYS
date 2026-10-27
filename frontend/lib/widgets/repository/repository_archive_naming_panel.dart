@@ -448,7 +448,7 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                     child: Icon(Icons.archive_outlined, size: 15, color: activeMaroon),
                   ),
                   const SizedBox(width: 8),
-                  Text(
+                  Flexible(child: Text(
                     'Repository Archiving & Naming',
                     style: TextStyle(
                       fontSize: 12.5,
@@ -456,7 +456,7 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                       color: _textPrimaryColor,
                       fontFamily: DefensysTokens.fontFamily,
                     ),
-                  ),
+                  )),
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -468,8 +468,10 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                   ),
                 ],
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
                 children: [
                   // Classification Badge (Manuscript vs Supporting)
                   Tooltip(
@@ -515,7 +517,6 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
                   InkWell(
                     onTap: () => setState(() => _isExpanded = !_isExpanded),
                     borderRadius: BorderRadius.circular(6),

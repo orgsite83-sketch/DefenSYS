@@ -1,16 +1,23 @@
 from django.db.models import Q
 from rest_framework import serializers
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 
 from .models import DefenseStage, StageDeliverable, StageGradingConfig
 from .readiness import stage_setup_readiness
 from defense.deliverable_timing import validate_timing
+from defense.configuration_locks import (
+    DATA_REASON, REQUIREMENT_FIELDS, context_deletion_lock,
+    grade_configuration_lock, requirement_has_data, requirement_lock,
+    shared_definitions_with_locks, validate_shared_changes, sync_shared_requirements,
+)
 
 
 class StageDeliverableSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         from defense.deliverable_policy import faculty_review_definition
-        return faculty_review_definition(super().to_representation(instance))
+        row = faculty_review_definition(super().to_representation(instance))
+        return {**row, **requirement_lock(instance.defense_stage, row)}
 
     class Meta:
         model = StageDeliverable
@@ -49,6 +56,15 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        if self.instance:
+            locked, reason = grade_configuration_lock(self.instance.defense_stage)
+            if locked:
+                raise serializers.ValidationError(reason)
+            if requirement_has_data(self.instance.defense_stage, self.instance.deliverable_id,
+                                    policy=self.instance.file_policy):
+                if any(getattr(self.instance, key) != value for key, value in attrs.items()
+                       if key in REQUIREMENT_FIELDS):
+                    raise serializers.ValidationError(DATA_REASON)
         values = {name: getattr(self.instance, name) for name in (
             'deliverable_type', 'requirement_timing', 'deadline_hours_before')} if self.instance else {}
         values.update(attrs)
@@ -70,31 +86,21 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
 
 
 def check_stage_locked(stage, semester=None):
-    if not semester:
-        from academic_period_management.models import Semester
-        semester = Semester.objects.filter(is_active=True).first()
-    if not semester:
-        return False, None
+    return grade_configuration_lock(stage, semester)
 
-    config = stage.grading_configs.filter(semester=semester).first()
-    if config and config.is_officially_complete:
-        return True, 'This stage is officially complete for the active semester.'
-    from repository.section_concepts.models import SharedDeliverableSet
-    if SharedDeliverableSet.objects.filter(defense_stage=stage, section__semester=semester).exists():
-        return True, 'A section has started shared deliverable submissions for this stage.'
-    from repository.section_concepts.models import SectionConceptProject
-    if SectionConceptProject.objects.filter(defense_stage=stage, section__semester=semester).exists():
-        return True, 'A section has already started shared system concepts for this stage.'
 
+def check_stage_structure_locked(stage, semester=None):
+    locked, reason = check_stage_locked(stage, semester)
+    if locked:
+        return locked, reason
+    if context_deletion_lock(stage)[0]:
+        return True, 'Stage settings are protected because submissions or linked history exist.'
     from defense.scheduler.models import DefenseSchedule
-    from grading.grades.models import TeamGrade
-
-    if DefenseSchedule.objects.filter(defense_stage=stage, semester=semester).exists():
-        return True, 'This stage has scheduled defenses for the active semester.'
-
-    if TeamGrade.objects.filter(defense_stage=stage, semester=semester).exclude(status=TeamGrade.STATUS_PENDING).exists():
-        return True, 'This stage has recorded evaluation grades.'
-
+    from student_teams.models import TeamStageProgress
+    if DefenseSchedule.objects.filter(defense_stage=stage).exists():
+        return True, 'Stage settings are protected because this stage has scheduled defenses.'
+    if TeamStageProgress.all_objects.filter(defense_stage=stage).exclude(status=TeamStageProgress.STATUS_LOCKED).exists():
+        return True, 'Stage settings are protected because teams have recorded progress.'
     return False, None
 
 
@@ -102,8 +108,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     shared_deliverables = serializers.SerializerMethodField()
 
     def get_shared_deliverables(self, obj):
-        from defense.shared_deliverables import shared_definitions
-        return shared_definitions(obj)
+        return shared_definitions_with_locks(obj)
     # Keep the response key for older clients without exposing a retired mode.
     is_presentation_only = serializers.SerializerMethodField()
     system_deliverables = serializers.SerializerMethodField()
@@ -115,6 +120,9 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     is_officially_complete = serializers.SerializerMethodField()
     is_locked = serializers.SerializerMethodField()
     lock_reason = serializers.SerializerMethodField()
+    structure_locked = serializers.SerializerMethodField()
+    structure_lock_reason = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
     endorsed_teams_count = serializers.SerializerMethodField()
     rubric_name = serializers.SerializerMethodField()
     rubric_info = serializers.SerializerMethodField()
@@ -151,6 +159,9 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'is_officially_complete',
             'is_locked',
             'lock_reason',
+            'structure_locked',
+            'structure_lock_reason',
+            'can_delete',
             'endorsed_teams_count',
             'created_at',
             'updated_at',
@@ -300,6 +311,20 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     def get_lock_reason(self, obj):
         return self._lock_info(obj)[1]
 
+    def get_structure_locked(self, obj):
+        return check_stage_structure_locked(obj, self.context.get('semester'))[0]
+
+    def get_structure_lock_reason(self, obj):
+        return check_stage_structure_locked(obj, self.context.get('semester'))[1]
+
+    def get_can_delete(self, obj):
+        from student_teams.models import TeamStageProgress
+        from grading.grades.models import TeamGrade
+        if (TeamStageProgress.all_objects.filter(defense_stage=obj).exists()
+                or TeamGrade.all_objects.filter(defense_stage=obj).exists()):
+            return False
+        return not (check_stage_structure_locked(obj)[0] or context_deletion_lock(obj)[0])
+
     def get_endorsed_teams_count(self, obj):
         from student_teams.models import TeamStageProgress, StudentTeam
         semester = self.context.get('semester')
@@ -431,23 +456,26 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 attrs['concept_config'] = config
         except DjangoValidationError as exc:
             raise serializers.ValidationError({'concept_config': exc.messages}) from exc
-        if 'shared_deliverables' in attrs:
-            from defense.shared_deliverables import validate_shared_deliverables
-            try:
-                attrs['shared_deliverables'] = validate_shared_deliverables(attrs['shared_deliverables'], config)
-            except DjangoValidationError as exc:
-                raise serializers.ValidationError({'shared_deliverables': exc.messages}) from exc
         items = attrs.get('deliverables')
         if items is None:
             items = list(self.instance.deliverables.values()) if self.instance else []
-        generated = with_concept_papers(items, config)
+        shared = attrs.get('shared_deliverables', getattr(self.instance, 'shared_deliverables', None))
+        generated = with_concept_papers(items, config, shared_items=shared if isinstance(shared, list) else [])
         if generated != items:
             items = attrs['deliverables'] = generated
+        from defense.shared_deliverables import validate_shared_deliverables
+        if 'shared_deliverables' in attrs or (shared and any(row.get('team_deliverable_id') for row in shared)):
+            try:
+                attrs['shared_deliverables'] = validate_shared_deliverables(shared, config, items)
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError({'shared_deliverables': exc.messages}) from exc
         concept_items = [d for d in items if (d.get('file_policy') or {}).get('mode') == 'concepts']
         if any(d.get('deliverable_type', 'pre') != 'pre' for d in concept_items):
             raise serializers.ValidationError('Concept-set documents belong to pre-defense requirements.')
         if config.get('enabled'):
-            if not any(d.get('required', True) and d.get('requirement_timing', 'scheduling') == 'scheduling' for d in concept_items):
+            shared_concepts = [d for d in attrs.get('shared_deliverables') or []
+                               if d.get('deliverable_type') == 'pre' and (d.get('file_policy') or {}).get('mode') == 'concepts']
+            if not any(d.get('required', True) and d.get('requirement_timing', 'scheduling') == 'scheduling' for d in concept_items + shared_concepts):
                 raise serializers.ValidationError('Add a required concept-documents deliverable before enabling concept selection.')
         required = attrs.get('minutes_required', getattr(self.instance, 'minutes_required', False))
         number = attrs.get('minutes_deliverable_id', getattr(self.instance, 'minutes_deliverable_id', 'MINUTES')).strip()
@@ -462,39 +490,68 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'minutes_deliverable_id': 'Use a different number from student-upload deliverables.'})
         if 'minutes_deliverable_id' in attrs:
             attrs['minutes_deliverable_id'] = number
+        if self.instance:
+            locked, reason = check_stage_locked(self.instance)
+            if locked:
+                raise serializers.ValidationError(reason)
+            structure_locked, reason = check_stage_structure_locked(self.instance)
+            if structure_locked and any(getattr(self.instance, key) != value for key, value in attrs.items()
+                    if key not in ('deliverables', 'shared_deliverables', 'qualifying_score', 'score_carryover')):
+                raise serializers.ValidationError(reason)
+            if 'shared_deliverables' in attrs:
+                try:
+                    validate_shared_changes(self.instance, attrs['shared_deliverables'])
+                except DjangoValidationError as exc:
+                    raise serializers.ValidationError({'shared_deliverables': exc.messages}) from exc
         return attrs
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         semester = self.context.get('semester')
         locked, reason = check_stage_locked(instance, semester)
-        if locked and not set(validated_data).issubset({'qualifying_score', 'score_carryover'}):
+        if locked:
             raise serializers.ValidationError(
                 {'non_field_errors': [reason or 'This defense stage is locked and cannot be edited.']}
             )
 
         deliverables_data = validated_data.pop('deliverables', None)
-        stage = super().update(instance, validated_data)
-        
+        # Validate every edit/removal before any writes, including bulk saves.
         if deliverables_data is not None:
-            # Stable IDs preserve settings and links when concept selection is toggled.
-            existing = {d.deliverable_id: d for d in instance.deliverables.all()}
-            keep = []
+            existing_rows = list(instance.deliverables.all())
+            existing = {d.deliverable_id: d for d in existing_rows}
+            existing_by_pk = {d.pk: d for d in existing_rows}
+            keep, paired, numbers = set(), [], set()
             for item in deliverables_data:
-                item = {k: v for k, v in item.items() if k not in ('id', 'defense_stage_id')}
-                target = existing.get(item.get('deliverable_id'))
+                pk = item.get('id')
+                target = existing_by_pk.get(pk) if pk is not None else existing.get(item.get('deliverable_id'))
+                if pk is not None and target is None:
+                    raise serializers.ValidationError('Unknown deliverable for this stage. Refresh the stage setup.')
+                number = item.get('deliverable_id')
+                if not number or number in numbers or (target and target.pk in keep):
+                    raise serializers.ValidationError('Deliverable numbers must be present and unique.')
+                numbers.add(number)
+                clean = {k: v for k, v in item.items() if k in REQUIREMENT_FIELDS or k == 'display_order'}
+                if target:
+                    keep.add(target.pk)
+                    if requirement_has_data(instance, target.deliverable_id, policy=target.file_policy) and any(
+                            getattr(target, key) != value for key, value in clean.items() if key in REQUIREMENT_FIELDS):
+                        raise serializers.ValidationError(f'"{target.label}": {DATA_REASON}')
+                paired.append((target, clean))
+            for target in existing_rows:
+                if target.pk not in keep and requirement_has_data(instance, target.deliverable_id, policy=target.file_policy):
+                    raise serializers.ValidationError(f'"{target.label}": {DATA_REASON}')
+        if 'shared_deliverables' in validated_data:
+            sync_shared_requirements(instance, validated_data['shared_deliverables'] or [])
+        stage = super().update(instance, validated_data)
+        if deliverables_data is not None:
+            instance.deliverables.exclude(pk__in=keep).delete()
+            for target, item in paired:
                 if target:
                     for name, value in item.items():
                         setattr(target, name, value)
                     target.save()
                 else:
                     self._create_deliverables(stage, [item])
-                keep.append(item.get('deliverable_id'))
-            removed = instance.deliverables.exclude(deliverable_id__in=keep)
-            from repository.deliverables.models import DeliverableSubmission
-            if DeliverableSubmission.objects.filter(stage_label=stage.label,
-                    deliverable_id__in=removed.values('deliverable_id')).exists():
-                raise serializers.ValidationError('Requirements with submissions cannot be removed. Preserve their documents.')
-            removed.delete()
         
         return stage
 
@@ -576,11 +633,11 @@ class StageGradingConfigSerializer(serializers.ModelSerializer):
         }
 
     def get_is_locked(self, obj):
-        locked, _ = check_stage_locked(obj.defense_stage, obj.semester)
+        locked, _ = check_stage_structure_locked(obj.defense_stage, obj.semester)
         return locked
 
     def get_lock_reason(self, obj):
-        _, reason = check_stage_locked(obj.defense_stage, obj.semester)
+        _, reason = check_stage_structure_locked(obj.defense_stage, obj.semester)
         return reason
 
 
@@ -658,7 +715,7 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
         changing_peer_r = 'peer_rubric_id' in attrs and attrs['peer_rubric_id'] != (config.peer_rubric_id)
 
         if changing_panel_w or changing_adviser_w or changing_peer_w or changing_panel_r or changing_adviser_r or changing_peer_r:
-            locked, reason = check_stage_locked(config.defense_stage, config.semester)
+            locked, reason = check_stage_structure_locked(config.defense_stage, config.semester)
             if locked:
                 raise serializers.ValidationError(
                     {'rubric': reason or 'Stage configuration cannot be changed because defenses are already scheduled or officially completed.'}

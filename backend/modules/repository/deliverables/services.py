@@ -566,8 +566,14 @@ def stage_deliverables_configured(team, stage_label):
     if get_deliverable_definitions_for_team(team, stage_label):
         return True
     from repository.section_concepts.shared_deliverables import resolve
-    profile = resolve(team, document_context(team, stage_label))
-    return bool(profile and profile['definitions'])
+    context = document_context(team, stage_label)
+    profile = resolve(team, context)
+    if profile:
+        return bool(profile['definitions'])
+    # A PM-only checklist is configured even when a particular independent
+    # team has no applicable files. It must not acquire a synthetic team task.
+    from defense.shared_deliverables import shared_definitions
+    return bool(context and shared_definitions(context))
 
 
 @read_memoize
@@ -1126,6 +1132,16 @@ def stage_payload(team, stage_label, evaluator=None):
         if due_before_defense(item):
             can_review_item = upload_window_open and not is_defense_done
 
+        slots = document_slots_for(item, stage=concept_context)
+        if (item.get('file_policy') or {}).get('mode') == 'concepts' and not is_vault:
+            from repository.title_workflow import team_guard
+            for slot in slots:
+                try:
+                    team_guard(team, concept_context, slot['key'].split(':')[0])
+                    slot['upload_blocker'] = ''
+                except ValidationError as exc:
+                    slot['upload_blocker'] = ' '.join(exc.messages)
+
         rows.append({
             'id': item['id'],
             'label': item['label'],
@@ -1134,7 +1150,7 @@ def stage_payload(team, stage_label, evaluator=None):
             'archive_note': item.get('archive_note', ''),
             'file_format': item.get('file_format', 'any'),
             'file_policy': item.get('file_policy', {}),
-            'document_slots': document_slots_for(item, stage=concept_context),
+            'document_slots': slots,
             'suggested_file_name': suggested,
             'uploaded': document_completeness(submission, item, stage=concept_context),
             'locked': not can_upload,
@@ -1838,8 +1854,13 @@ def unendorse_team(team, stage_label):
     return team
 
 
+def check_review_assignment(actor, team):
+    from .views import check_deliverable_write_permission
+    return actor.role != 'student' and check_deliverable_write_permission(actor, team)
+
+
 @transaction.atomic
-def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user, clear_defense_revisions=False, file_id=None):
+def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user, clear_defense_revisions=False, file_id=None, revision_scope='paper', title_review_token=None):
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
     definition = definition_for(team, stage_label, deliverable_id)
     if definition and definition.get('source') == 'defense_minutes':
@@ -1920,6 +1941,20 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
         if not targets.exists() or any(f.concept_round_id != getattr(concept_round, 'pk', None)
                 or f.selected_concept_key != selected for f in targets):
             raise ValueError('Review the final paper uploaded for the current selected concept and hearing.')
+    if not check_review_assignment(reviewer_user, team):
+        raise PermissionError('Only assigned faculty can review this team.')
+    from repository import title_workflow
+    concept_file = (definition or {}).get('file_policy', {}).get('mode') == 'concepts' and not is_post
+    if revision_scope == 'title_and_paper' and (not concept_file or not title_workflow.enabled(concept_round) or not file_id):
+        raise ValueError('Choose a current concept file with a matching title for a combined revision.')
+    if concept_file and title_workflow.enabled(concept_round) and file_id:
+        from .concepts import module_review_token
+        if title_review_token != module_review_token(team, stage):
+            raise ValueError('The title changed. Refresh before reviewing this file.')
+    if status_val == 'rejected' and concept_file and title_workflow.enabled(concept_round):
+        if not current_target:
+            raise ValueError('Choose the exact file to return for revision.')
+        title_workflow.revise_file(concept_round, current_target.slot_key.split(':')[0], reviewer_user, feedback_val or '', current_target, revision_scope, 'team')
     review_files(submission, definition or {}, status_val, feedback_val or '', reviewer_user, file_id=file_id, stage=stage)
     submission.status = status_val
     submission.feedback = (feedback_val or '').strip()
