@@ -740,17 +740,10 @@ class BulkImportUsersMixin:
 
             instructor_warnings = []
             assigned_instructors = []
+            from .instructor_assignments import assign_section_instructor
             if (created or records_created) and require_faculty_match and faculty is not None and not is_capstone_scope(context_year_level, context_semester):
-                instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
-                    faculty=faculty,
-                    semester=context_semester,
-                    year_level=context_year_level,
-                    section=context_section,
-                    defaults={
-                        'assigned_by': request.user,
-                        'is_active': True,
-                    },
-                )
+                instructor_assignment, _assignment_created = assign_section_instructor(
+                    request.user, faculty, context_semester, context_year_level, context_section, request=request)
                 assigned_instructors.append(instructor_assignment)
             elif (created or records_created) and context_semester is not None and section_instructors:
                 for (sec_year, sec_name), instr_name in section_instructors.items():
@@ -760,16 +753,8 @@ class BulkImportUsersMixin:
                         continue
                     matched_faculty, match_status = _match_faculty_by_name(instr_name)
                     if matched_faculty is not None:
-                        assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
-                            faculty=matched_faculty,
-                            semester=context_semester,
-                            year_level=sec_year,
-                            section=sec_name,
-                            defaults={
-                                'assigned_by': request.user,
-                                'is_active': True,
-                            },
-                        )
+                        assignment, _assignment_created = assign_section_instructor(
+                            request.user, matched_faculty, context_semester, sec_year, sec_name, request=request)
                         assigned_instructors.append(assignment)
                         if instructor_assignment is None:
                             instructor_assignment = assignment
@@ -979,6 +964,7 @@ class PitLeadOfficialClassListImportView(APIView):
 
         with transaction.atomic():
             require_pit_import_scope(request.user, active)
+            Semester.objects.select_for_update().get(pk=active.pk)
             for index, username, first_name, last_name, row_section, phone_number, data in validated_rows:
                 user = existing_users_map.get(username)
                 was_created = False
@@ -1039,12 +1025,11 @@ class PitLeadOfficialClassListImportView(APIView):
                 else:
                     records_updated += 1
 
-        instructor_assignment = None
-        if created or updated:
-            instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
-                faculty=faculty, semester=active, year_level=pit_year, section=section,
-                defaults={'assigned_by': request.user, 'is_active': True},
-            )
+            instructor_assignment = None
+            if created or updated:
+                from .instructor_assignments import assign_section_instructor
+                instructor_assignment, _assignment_created = assign_section_instructor(
+                    request.user, faculty, active, pit_year, section, request=request)
 
         return Response({
             'created': [

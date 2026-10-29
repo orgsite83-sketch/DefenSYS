@@ -163,6 +163,13 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
         applied = apply_capstone_transition(current, target, review, actor=user, log=log)
         log.impact_snapshot = {**preview, 'applied_team_ids': applied}
         log.save(update_fields=['impact_snapshot'])
+        from repository.section_concepts.continuation import materialize_section
+        materialized = set()
+        for team in StudentTeam.objects.filter(pk__in=applied).order_by('pk'):
+            key = (team.semester_id, team.section, team.year_level)
+            if key not in materialized:
+                materialize_section(team)
+                materialized.add(key)
         log_high_impact_action(
             category=SystemAuditLog.CATEGORY_ACADEMIC_PERIOD,
             action='semester.active_switch',

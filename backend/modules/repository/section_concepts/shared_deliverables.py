@@ -45,6 +45,17 @@ def resolve(team, context):
     historical = bool(getattr(team, '_recorded_term', None)) or bool(
         getattr(team, '_assessment_semester_id', None) and
         StudentTeam.objects.filter(pk=team.pk).exclude(semester_id=team.semester_id).exists())
+    from . import continuation
+    continued_source = None
+    if not historical and not pit:
+        from student_teams.capstone_context import inherited_stage_ids
+        if context.pk in inherited_stage_ids(team):
+            old = continuation.source_participation(team)
+            if old:
+                from student_teams.capstone_lifecycle import recorded_team
+                return resolve(recorded_team(team, old.semester), context)
+            return None
+        continued_source = continuation.approved_source(team, context)
     if historical:
         captured = SharedDeliverableSet.objects.filter(section__semester_id=team.semester_id,
             **services.context_fields(context),
@@ -61,13 +72,17 @@ def resolve(team, context):
                 'captured': captured, 'identity': captured.identity,
                 'systems': captured.system_snapshot, 'definitions': deepcopy(captured.requirements)}
     section = section_assignment(team.semester_id, team.section, team.year_level)
+    if not section and continued_source:
+        section = continuation.section_for(team, continued_source)
     if not section:
         return None
     project = services.project_for(team, context)
     current_project = project
+    if not historical and not pit and not project and not continued_source and continuation.has_recorded_source(team):
+        return None
     if not project:
-        candidates = SectionConceptProject.objects.filter(section=section, team_links__team=team,
-            team_links__project_version=team.project_version)
+        candidates = SectionConceptProject.objects.filter(section_id=section.pk, team_links__team=team,
+            team_links__project_version=team.project_version) if section.pk else SectionConceptProject.objects.none()
         candidates = candidates.filter(pit_event_config__isnull=False) if pit else candidates.filter(
             defense_stage__display_order__lt=context.display_order)
         approved = []
@@ -80,6 +95,9 @@ def resolve(team, context):
         if len(titles) > 1:
             raise ValidationError('This team has different approved shared systems. Resolve its project assignment first.')
         project = approved[0][0] if approved else None
+        if not project and continued_source:
+            project = continued_source[0]
+    continued = bool(continued_source and project and project.pk == continued_source[0].pk and not current_project)
     hearing = services.latest(project) if project else None
     if historical and hearing and current_project:
         return for_round(hearing, historical=True)
@@ -93,7 +111,8 @@ def resolve(team, context):
         from student_teams.pit_rosters import effective_ids
         teams = teams.filter(pk__in=effective_ids(team.semester_id, team.year_level, context))
     if project:
-        teams = teams.filter(pk__in=services.active_links(project).values('team_id'))
+        teams = teams.filter(pk__in=[member.pk for member in continuation.participants(project, team=team)]
+            if continued else services.active_links(project).values('team_id'))
     teams = list(teams.select_related('semester', 'adviser').order_by('pk'))
     if not any(member.pk == team.pk for member in teams):
         return None
@@ -119,10 +138,11 @@ def resolve(team, context):
                        'assigned_system': section.system_name if not hearing else None,
                        'import': pending_import['token'] if pending_import else None})
     binding = {'section': section, **services.context_fields(context), 'identity': identity}
-    captured = SharedDeliverableSet.objects.filter(**binding).prefetch_related('files').first()
+    captured = SharedDeliverableSet.objects.filter(**binding).prefetch_related('files').first() if section.pk else None
     return {'team': team, 'section': section, 'context': context, 'teams': teams, 'manager': manager,
             'project': project, 'round': hearing, 'current_project': current_project,
             'pending_import': pending_import,
+            'continued': continued,
             'systems': systems, 'team_snapshot': team_snapshot, 'identity': identity,
             'binding': binding, 'captured': captured,
             'definitions': deepcopy(captured.requirements) if captured else (
@@ -151,7 +171,14 @@ def member_access(actor, profile):
     if getattr(actor, 'is_guest_panelist', False):
         return False
     return actor.pk == profile['manager'].pk or any(
-        member.memberships.filter(student=actor).exists() or member.leader_id == actor.pk for member in profile['teams'])
+        team_member(actor, member) for member in profile['teams'])
+
+
+def team_member(actor, team):
+    recorded = getattr(team, '_recorded_term', None)
+    if recorded:
+        return actor.pk in set(recorded.snapshot.get('member_ids', [])) | {recorded.snapshot.get('leader_id')}
+    return team.leader_id == actor.pk or team.memberships.filter(student=actor).exists()
 
 
 def reviewer_access(actor, profile):
@@ -199,11 +226,14 @@ def can_read_file(actor, row):
             getattr(actor, 'role', '') == 'faculty' and actor.pit_lead_year == context.year_level):
         return True
     from student_teams.models import StudentTeam
-    teams = list(StudentTeam.objects.filter(pk__in=[t['id'] for t in captured.team_snapshot],
-        semester_id=captured.section.semester_id).select_related('semester', 'adviser'))
+    from student_teams.capstone_lifecycle import recorded_team
+    versions = {t['id']: t['version'] for t in captured.team_snapshot}
+    teams = [recorded_team(team, captured.section.semester) for team in StudentTeam.objects.filter(
+        pk__in=versions).select_related('semester', 'adviser')]
+    teams = [team for team in teams if team.semester_id == captured.section.semester_id]
     if not getattr(actor, 'is_guest_panelist', False):
         for team in teams:
-            if team.adviser_id == actor.pk or team.memberships.filter(student=actor).exists() or team.leader_id == actor.pk:
+            if team.adviser_id == actor.pk or team_member(actor, team):
                 return True
     section = captured.section
     if captured.pit_event_config_id:
@@ -360,6 +390,24 @@ def required_complete(profile, dtype='pre', *, accepted=True):
         d['deliverable_type'] == dtype and d.get('required') and applicable(profile, d))
 
 
+def scheduling_readiness(profile):
+    """Expose the shared scheduling gate without changing academic state."""
+    requirements = []
+    for definition in profile['definitions']:
+        if (definition['deliverable_type'] != 'pre' or not definition.get('required')
+                or not applicable(profile, definition) or complete(profile, definition)):
+            continue
+        files = requirement_files(profile, definition)
+        status = ('changes_requested' if any(row['status'] == 'rejected' for row in files.values())
+                  else 'awaiting_review' if complete(profile, definition, accepted=None)
+                  else 'awaiting_upload')
+        requirements.append({'id': definition['deliverable_id'], 'label': definition['label'], 'status': status})
+    manager = profile['manager']
+    return {'section': profile['section'].section,
+            'project_manager_name': manager.get_full_name() or manager.username,
+            'complete': not requirements, 'requirements': requirements}
+
+
 def document_progress(profile, dtype='pre'):
     result = {'documents_required': 0, 'documents_uploaded': 0, 'documents_accepted': 0}
     for definition in profile['definitions']:
@@ -428,8 +476,10 @@ def for_round(hearing, *, historical=False):
     team_snapshot = captured.team_snapshot if captured else [
         {'id': item['team_id'], 'version': item['project_version']} for item in recorded]
     from student_teams.models import StudentTeam
+    from student_teams.capstone_lifecycle import recorded_team
     versions = {item['id']: item['version'] for item in team_snapshot}
-    teams = list(StudentTeam.objects.filter(pk__in=versions).select_related('semester', 'adviser'))
+    teams = [recorded_team(team, project.section.semester) for team in
+        StudentTeam.objects.filter(pk__in=versions).select_related('semester', 'adviser')]
     for team in teams:
         team.project_version = versions[team.pk]
     if not teams:
@@ -594,6 +644,9 @@ def payload(profile, actor):
     states = {stage_navigation_states(team).get(context.label, 'upcoming') for team in profile['teams']}
     stage_status = 'complete' if states == {'complete'} else 'current' if 'current' in states else 'upcoming'
     return {'team_id': profile['team'].pk, 'section': profile['section'].section,
+        'semester_id': profile['section'].semester_id,
+        'historical': bool(profile.get('historical')),
+        'continued': bool(profile.get('continued')),
         'imported': bool(profile['pending_import']), 'concept_selection_enabled': bool(context.concept_config.get('enabled')),
         'stage_label': context.label, 'stage_status': stage_status,
         'scope': 'pit' if hasattr(context, 'event_name') else 'capstone',
@@ -626,6 +679,9 @@ def groups_for_team(team, actor):
     else:
         from defense.stages.models import DefenseStage
         contexts = DefenseStage.objects.filter(is_active=True).order_by('display_order', 'pk')
+        if not getattr(team, '_recorded_term', None):
+            from student_teams.capstone_context import phase_requirements
+            contexts = contexts.filter(pk__in=[r['id'] for r in phase_requirements(team)])
     result = []
     for context in contexts:
         profile = resolve(team, context)
@@ -636,6 +692,10 @@ def groups_for_team(team, actor):
 
 def lock_profile(team, context, expected_token):
     from student_teams.models import SectionAssignment, StudentTeam
+    if not SectionAssignment.objects.filter(semester_id=team.semester_id,
+            section=team.section, year_level=team.year_level).exists():
+        from .continuation import materialize_section
+        materialize_section(team)
     # Section lock serializes the first upload as well as later revisions.
     SectionAssignment.objects.select_for_update().get(semester_id=team.semester_id,
         section=team.section, year_level=team.year_level)

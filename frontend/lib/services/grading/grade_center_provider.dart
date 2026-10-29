@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -192,7 +193,8 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     final nextStatus = status ?? state.status;
     final nextScope = scope ?? state.scope;
 
-    if (historySemester == null &&state.isLoading &&
+    if (historySemester == null &&
+        state.isLoading &&
         nextSearch == state.search &&
         nextYearLevel == state.yearLevel &&
         nextStatus == state.status &&
@@ -227,7 +229,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         queryParameters['scope'] = nextScope;
       }
       final uri = Uri.parse(baseUrl).replace(queryParameters: queryParameters);
-      final response = await _client.get(uri);
+      final response = await _client
+          .get(uri)
+          .timeout(const Duration(seconds: 30));
       if (!ref.mounted || version != _fetchVersion) return;
 
       if (response.statusCode == 200) {
@@ -240,6 +244,15 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         isLoading: false,
         isSaving: false,
         error: _errorFromResponse(response),
+      );
+    } on TimeoutException {
+      if (!ref.mounted || version != _fetchVersion) return;
+      _client.discardPendingReads();
+      state = state.copyWith(
+        isLoading: false,
+        isSaving: false,
+        error:
+            'The Grade Center took too long to refresh. Please try refreshing again.',
       );
     } catch (e) {
       if (!ref.mounted || version != _fetchVersion) return;
@@ -431,15 +444,17 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     _completionApprovals.remove(approvalKey);
     state = state.copyWith(isCheckingCompletion: true);
     try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/group-settings/').replace(
-          queryParameters: {
-            'workspace': 'operations',
-            'scope': scope,
-            'stage_label': stageLabel,
-          },
-        ),
-      );
+      final response = await _client
+          .get(
+            Uri.parse('$baseUrl/group-settings/').replace(
+              queryParameters: {
+                'workspace': 'operations',
+                'scope': scope,
+                'stage_label': stageLabel,
+              },
+            ),
+          )
+          .timeout(const Duration(seconds: 30));
       if (response.statusCode != 200) {
         throw Exception(_errorFromResponse(response));
       }
@@ -487,6 +502,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         completionBlocker: payload['completion_blocker']?.toString(),
         onApproved: (approval) => _completionApprovals[approvalKey] = approval,
       );
+    } on TimeoutException {
+      _client.discardPendingReads();
+      throw Exception('The grading check took too long. Please try again.');
     } finally {
       state = state.copyWith(isCheckingCompletion: false);
     }
@@ -519,11 +537,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       if (peerGradingEnabled != null) {
         body['peer_grading_enabled'] = peerGradingEnabled;
       }
-      final response = await _client.patch(
-        _managementUri('group-settings/'),
-
-        body: jsonEncode(body),
-      );
+      final response = await _client
+          .patch(_managementUri('group-settings/'), body: jsonEncode(body))
+          .timeout(const Duration(seconds: 90));
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         final merged = Map<String, Map<String, dynamic>>.from(
@@ -565,6 +581,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
                 payload['auto_finalize'] != null)) {
           await fetchGrades(
             scope: state.scope.isNotEmpty ? state.scope : scope,
+            successMessage: message,
           );
         }
         return true;
@@ -573,6 +590,13 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         isSaving: false,
         error: _errorFromResponse(response),
         incompleteTeams: _incompleteTeamsFromResponse(response),
+      );
+      return false;
+    } on TimeoutException {
+      state = state.copyWith(
+        isSaving: false,
+        error:
+            'The server has not confirmed the update. Refresh the Grade Center to check its status before trying again.',
       );
       return false;
     } catch (e) {

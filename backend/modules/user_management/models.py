@@ -211,6 +211,11 @@ class SectionInstructorAssignment(models.Model):
                 fields=['faculty', 'semester', 'year_level', 'section'],
                 name='unique_section_instructor_assignment',
             ),
+            models.UniqueConstraint(
+                fields=['semester', 'year_level', 'section'],
+                condition=models.Q(is_active=True),
+                name='unique_active_section_instructor',
+            ),
         ]
         indexes = [
             models.Index(

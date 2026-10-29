@@ -1,5 +1,5 @@
 from decimal import Decimal
-from defensys_backend.read_projection import read_memoize
+from defensys_backend.read_projection import read_memoize, read_projection
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
@@ -2193,6 +2193,19 @@ def team_grading_readiness(grade, semester, scope, config=None):
     }
 
 
+def _completion_grade_rows(queryset):
+    """Load the evaluator graph once for the whole completion cohort."""
+    return list(grade_review_queryset(queryset).select_related(
+        'team__semester', 'semester', 'defense_stage', 'pit_event_config__panel_rubric',
+        'schedule__rubric', 'schedule__team',
+    ).prefetch_related(
+        'team__memberships__student', 'student_grades',
+        'schedule__team__memberships', 'schedule__rubric__criteria',
+        'schedule__panel_assignments', 'schedule__guest_invitations',
+        'schedule__guest_panelist_codes', 'panelist_submissions__criterion_scores',
+    ))
+
+
 def cohort_grading_teams_for_group(
     semester,
     scope,
@@ -2201,6 +2214,7 @@ def cohort_grading_teams_for_group(
     config=None,
     year_level=None,
     grades_queryset=None,
+    grade_rows=None,
 ):
     grades = grades_queryset
     if grades is None:
@@ -2211,7 +2225,7 @@ def cohort_grading_teams_for_group(
             config=config,
             year_level=year_level,
         )
-    grades = grade_review_queryset(grades).select_related('team', 'semester', 'defense_stage')
+    grades = grade_rows if grade_rows is not None else _completion_grade_rows(grades)
     teams_list = []
     for grade in grades:
         readiness = team_grading_readiness(grade, semester, scope, config)
@@ -2314,11 +2328,12 @@ def incomplete_grading_teams_for_group(
 
 
 
-def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=None, year_level=None, grades_queryset=None):
+def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=None, year_level=None, grades_queryset=None,
+                                      grade_rows=None):
     group = _grades_for_group(semester, scope, stage_label, config=config, year_level=year_level)
     if grades_queryset is not None:
         group = group.filter(pk__in=grades_queryset.values('pk'))
-    grades = list(grade_review_queryset(group).select_related('team', 'semester'))
+    grades = grade_rows if grade_rows is not None else _completion_grade_rows(group)
     total = len(grades)
     redefense_teams = [
         {'team_id': grade.team_id, 'team_name': grade.team.name}
@@ -2427,15 +2442,16 @@ def group_completion_readiness(*, semester, scope, stage_label, user):
             semester=semester, defense_stage=stage,
         ).first()
 
+    group_grades = _grades_for_group(semester, scope, label, config=config, year_level=year_level)
+    grade_rows = _completion_grade_rows(group_grades)
     counts = grading_readiness_counts_for_group(
-        semester, scope, label, config=config, year_level=year_level,
+        semester, scope, label, config=config, year_level=year_level, grade_rows=grade_rows,
     )
     cohort = cohort_grading_teams_for_group(
-        semester, scope, label, config=config, year_level=year_level,
+        semester, scope, label, config=config, year_level=year_level, grade_rows=grade_rows,
     )
     incomplete = [t for t in cohort if t['missing_components']]
     is_complete = bool(config and config.is_officially_complete)
-    group_grades = _grades_for_group(semester, scope, label, config=config, year_level=year_level)
     has_unscheduled_placeholders = group_grades.exclude(
         pk__in=grade_review_queryset(group_grades).values('pk'),
     ).exists()
@@ -2610,6 +2626,7 @@ class StageCompletionService:
         return None
 
     @classmethod
+    @read_projection()
     def complete_group(cls, *, semester, scope, stage_label, config, user=None, peer_grading_enabled=None,
                        failure_grade_ids=None, closure_reason='', completion_token=None):
         label = (stage_label or '').strip()
@@ -2649,12 +2666,13 @@ class StageCompletionService:
                 raise ValidationError({
                     'stage_label': 'Teams are still ready for scheduling. Schedule their defenses before marking this stage or event officially complete.',
                 })
-            grades = (
+            grades_queryset = (
                 review_grades
                 .select_for_update(of=('self',))
                 .select_related('team', 'schedule', 'semester')
             )
-            if year_level and not grades.exists():
+            grades = _completion_grade_rows(grades_queryset)
+            if year_level and not grades:
                 raise ValidationError({'stage_label': 'No PIT grades found for your assigned year.'})
             audit_year_level = year_level or _single_year_level_for_grades(grades)
             old_values = group_audit_values(
@@ -2665,21 +2683,20 @@ class StageCompletionService:
                 peer_grading_enabled=config.peer_grading_enabled,
             )
 
-            incomplete = incomplete_grading_teams_for_group(
+            cohort = cohort_grading_teams_for_group(
                 semester,
                 scope,
                 label,
                 config=config,
                 year_level=year_level,
-                grades_queryset=grades,
+                grade_rows=grades,
             )
+            incomplete = [row for row in cohort if row['missing_components']]
             if incomplete:
                 raise IncompleteGradingTeamsError(incomplete)
 
             from .outcome_rules import automatic_outcomes
             from .stage_closure import completion_token as make_token, validate_failure_confirmation, finalize_failure
-            cohort = cohort_grading_teams_for_group(semester, scope, label, config=config,
-                year_level=year_level, grades_queryset=grades)
             failures = [row for row in cohort if row.get('closure_failure_eligible')]
             if scope == TeamGrade.SCOPE_CAPSTONE and (failures or any(automatic_outcomes(g.schedule) for g in grades)):
                 if failures and not is_admin_user(user):

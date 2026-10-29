@@ -52,6 +52,31 @@ class EvaluationAutomationTests(unittest.TestCase):
         client = self.run_peer(self.peer_args(session_id='session-b'), self.peer_dashboard())
         client.submit_evaluation.assert_not_called()
 
+    def test_peer_timeout_cli_rejects_unbounded_or_nonpositive_waits(self):
+        self.assertEqual(auto_peer_eval.parse_args(['--all-students', '--request-timeout', '90']).request_timeout, 90)
+        for value in ['0', '-1', '301', 'nan', 'inf']:
+            with self.subTest(value=value), patch('sys.stderr', new=StringIO()), self.assertRaises(SystemExit):
+                auto_peer_eval.parse_args(['--all-students', '--request-timeout', value])
+
+    def test_peer_slow_dashboard_and_submissions_use_configured_timeout_without_retrying_writes(self):
+        session = Mock()
+        session.post.return_value.status_code = 200
+        session.post.return_value.json.return_value = {'access': 'test-token'}
+        session.get.return_value.status_code = 200
+        session.get.return_value.json.return_value = self.peer_dashboard()
+        with patch.object(auto_peer_eval.requests, 'Session', return_value=session):
+            client = auto_peer_eval.StudentClient('http://example.test', 'student', request_timeout=90)
+        self.assertTrue(client.authenticate(use_http_login=True))
+        self.assertEqual(client.get_dashboard(), self.peer_dashboard())
+        self.assertTrue(client.submit_evaluation({'teamId': 2}))
+        self.assertEqual(session.get.call_args.kwargs['timeout'], 90)
+        self.assertTrue(all(call.kwargs['timeout'] == 90 for call in session.post.call_args_list))
+        session.post.reset_mock()
+        session.post.side_effect = auto_peer_eval.requests.Timeout('Slow response')
+        with redirect_stdout(StringIO()):
+            self.assertFalse(client.submit_evaluation({'teamId': 2}))
+        session.post.assert_called_once()
+
     def test_open_peer_submits_in_matching_context(self):
         client = self.run_peer(self.peer_args(session_id='session-a', semester_id=1), self.peer_dashboard())
         self.assertEqual([call.args[0]['evaluateeId'] for call in client.submit_evaluation.call_args_list], [1, 3])

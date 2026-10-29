@@ -276,6 +276,8 @@ class DefenseSchedulerState {
 class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
   static String get baseUrl => ApiConfig.defenseSchedulesUrl;
   static const importRequestTimeout = Duration(seconds: 30);
+  static const planRequestTimeout = Duration(seconds: 30);
+  static const planSaveTimeout = Duration(seconds: 60);
 
   @override
   DefenseSchedulerState build() {
@@ -404,39 +406,20 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     );
 
     try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/generate-plan/'),
-
-        body: jsonEncode(payload),
-      );
+      final response = await _client
+          .post(
+            Uri.parse(
+              '$baseUrl/generate-plan/',
+            ).replace(queryParameters: {'response': 'compact'}),
+            body: jsonEncode(payload),
+          )
+          .timeout(planRequestTimeout);
 
       if (response.statusCode == 200) {
         final data = Map<String, dynamic>.from(jsonDecode(response.body));
         state = state.copyWith(
           isSaving: false,
           generatedSlots: _readMapList(data['slots']),
-          teams: _readMapList(data['teams']),
-          defenseStages: _readMapList(data['defense_stages']),
-          rubrics: _readMapList(data['rubrics']),
-          peerRubrics: _readMapList(data['peer_rubrics']),
-          panelists: _readMapList(data['panelists']),
-          faculty: _readMapList(data['faculty']),
-          panelistRequests: _readMapList(data['panelist_requests']),
-          canApprovePanelists: data['can_approve_panelists'] == true,
-          requiresPanelistApproval: data['requires_panelist_approval'] == true,
-          pitEvents: _readMapList(data['pit_events']),
-          activeSemester: data['active_semester'] is Map
-              ? Map<String, dynamic>.from(data['active_semester'])
-              : state.activeSemester,
-          schedulerMode:
-              data['scheduler_mode']?.toString() ?? state.schedulerMode,
-          pitOperatingMode:
-              data['pit_operating_mode']?.toString() ?? state.pitOperatingMode,
-          operatingMessage: data['operating_message']?.toString(),
-          clearOperatingMessage: data['operating_message'] == null,
-          canSchedulePit: data['can_schedule_pit'] == true,
-          canScheduleCapstone: data['can_schedule_capstone'] == true,
-          allowedScopes: _readStringList(data['allowed_scopes']),
           message:
               '${data['slot_count'] ?? 0} teams assigned · ${data['unassigned_count'] ?? 0} remaining.',
           clearError: true,
@@ -449,6 +432,13 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
         error: _errorFromResponse(response),
       );
       return false;
+    } on TimeoutException {
+      state = state.copyWith(
+        isSaving: false,
+        error:
+            'Schedule preview took too long to respond. No schedules were saved. Please try generating again.',
+      );
+      return false;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;
@@ -458,33 +448,58 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
   Future<bool> confirmPlan(Map<String, dynamic> payload) async {
     state = state.copyWith(
       isSaving: true,
+      createdInvitations: const [],
       clearError: true,
       clearMessage: true,
     );
 
     try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/confirm-plan/'),
-
-        body: jsonEncode(payload),
-      );
+      final response = await _client
+          .post(
+            Uri.parse(
+              '$baseUrl/confirm-plan/',
+            ).replace(queryParameters: {'response': 'compact'}),
+            body: jsonEncode(payload),
+          )
+          .timeout(planSaveTimeout);
 
       if (response.statusCode == 201) {
         final data = Map<String, dynamic>.from(jsonDecode(response.body));
         final created = data['created_count'] ?? 0;
-        _applyPayload(data, successMessage: '$created schedules saved.');
-        state = state.copyWith(generatedSlots: const []);
+        state = state.copyWith(
+          isSaving: false,
+          generatedSlots: const [],
+          createdInvitations: _readMapList(data['created_invitations']),
+          message: '$created schedules saved.',
+          clearError: true,
+        );
         _markDependentDataChanged();
+        // The save succeeded. Refreshing the board must not hold the save open
+        // or turn a confirmed batch into a failed save if that read fails.
+        unawaited(fetchSchedules(successMessage: '$created schedules saved.'));
         return true;
       }
 
       state = state.copyWith(
         isSaving: false,
-        error: _errorFromResponse(response),
+        error: response.statusCode >= 500
+            ? 'The server could not confirm the save. These schedules may already be saved. Check the Defense Board before retrying.'
+            : _errorFromResponse(response),
+      );
+      return false;
+    } on TimeoutException {
+      state = state.copyWith(
+        isSaving: false,
+        error:
+            'Saving took too long to confirm. These schedules may already be saved. Check the Defense Board before retrying.',
       );
       return false;
     } catch (e) {
-      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      state = state.copyWith(
+        isSaving: false,
+        error:
+            'The connection was interrupted while saving. These schedules may already be saved. Check the Defense Board before retrying.',
+      );
       return false;
     }
   }
@@ -904,7 +919,9 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
       documenters: _readMapList(payload['documenters']),
       faculty: _readMapList(payload['faculty']),
       panelistRequests: _readMapList(payload['panelist_requests']),
-      createdInvitations: _readMapList(payload['created_invitations']),
+      createdInvitations: payload.containsKey('created_invitations')
+          ? _readMapList(payload['created_invitations'])
+          : state.createdInvitations,
       canApprovePanelists: payload['can_approve_panelists'] == true,
       requiresPanelistApproval: payload['requires_panelist_approval'] == true,
       pitEvents: _readMapList(payload['pit_events']),

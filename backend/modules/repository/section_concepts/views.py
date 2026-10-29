@@ -147,8 +147,17 @@ class SectionProjectDetailView(SectionAPIView):
         project = self.project(request, project_id)
         value = services.payload(project, request.user)
         from .shared_deliverables import groups_for_team
-        link = services.active_links(project).first()
-        value['shared_contexts'] = groups_for_team(link.team, request.user) if link else []
+        links = list(services.active_links(project))
+        from .continuation import participants
+        teams = [link.team for link in links] if links else participants(project)
+        if request.query_params.get('team_id'):
+            team_id = serializers.IntegerField(min_value=1).run_validation(request.query_params['team_id'])
+            teams = [team for team in teams if team.pk == team_id]
+        elif request.user.role == 'student':
+            own = [team for team in teams if team.leader_id == request.user.pk or
+                team.memberships.filter(student=request.user).exists()]
+            teams = own or teams
+        value['shared_contexts'] = groups_for_team(teams[0], request.user) if teams else []
         return Response(value)
 
     @transaction.atomic

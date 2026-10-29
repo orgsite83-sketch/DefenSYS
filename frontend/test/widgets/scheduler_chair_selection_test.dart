@@ -42,6 +42,7 @@ class _Scheduler extends DefenseSchedulerNotifier {
   final DefenseSchedulerState initial;
   Map<String, dynamic>? payload;
   Map<String, dynamic>? confirmation;
+  String? confirmationError;
   List<Map<String, dynamic>> generated = [];
   int generationCalls = 0;
   @override
@@ -58,6 +59,7 @@ class _Scheduler extends DefenseSchedulerNotifier {
   @override
   Future<bool> confirmPlan(Map<String, dynamic> data) async {
     confirmation = data;
+    state = state.copyWith(error: confirmationError);
     return false;
   }
 }
@@ -383,6 +385,29 @@ void main() {
       );
     await lucide.load();
   });
+
+  testWidgets(
+    'rejected publish keeps its error and the arranged draft visible',
+    (tester) async {
+      final fixture = _Fixture()..panelists = {101};
+      const error =
+          'Team UniConnectClinic needs its required shared system deliverables.';
+      fixture.scheduler.confirmationError = error;
+      fixture.scheduler.generated = [_sessionSlot(1, 'session-1')];
+      await _pump(tester, fixture);
+      _draft(tester).teamIds = {1};
+      await _open(tester, find.text('Generate plan'));
+      await _open(tester, find.text('Proceed to Final Preview'));
+      await _open(tester, find.text('Publish & Save Schedule'));
+      expect(find.text(error), findsOneWidget);
+      expect(fixture.slots, hasLength(1));
+      expect(fixture.preview, isTrue);
+      expect(find.text('Publish & Save Schedule'), findsOneWidget);
+      dismissFeedbackToasts();
+      await tester.pump(const Duration(seconds: 5));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final width in [390.0, 1280.0]) {
     testWidgets(

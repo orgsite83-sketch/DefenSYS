@@ -11,6 +11,59 @@ sys.path[:0] = [str(ROOT / 'backend'), str(ROOT / 'backend' / 'modules')]
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
 
 
+def collect_continuity(section):
+    """Compare live section bindings with preserved links across term changes."""
+    from django.db.models import Q
+    from academic_period_management.models import SemesterTransitionLog
+    from student_teams.models import SectionAssignment, StudentTeam, TeamTermParticipation
+    from repository.deliverables.services import current_stage_for_team
+    from repository.section_concepts.models import SectionConceptProject
+    from repository.section_concepts import services
+
+    teams = list(StudentTeam.objects.filter(section__iexact=section, semester__is_active=True)
+        .select_related('semester__school_year').order_by('pk'))
+    ids = [team.pk for team in teams]
+    projects = SectionConceptProject.objects.filter(team_links__team_id__in=ids).distinct()
+    assignments = SectionAssignment.objects.filter(
+        Q(pk__in=projects.values('section_id')) |
+        Q(section__iexact=section, semester__is_active=True))
+    participations = list(TeamTermParticipation.objects.filter(team_id__in=ids)
+        .select_related('semester__school_year').order_by('team_id', 'pk'))
+    project_rows = []
+    for project in projects.select_related('section__semester__school_year'):
+        hearing = services.latest(project)
+        project_rows.append({'id': project.pk, 'section_id': project.section_id,
+            'section': project.section.section, 'year_level': project.section.year_level,
+            'semester_id': project.section.semester_id,
+            'period': project.section.semester.display_name,
+            'defense_stage_id': project.defense_stage_id,
+            'pit_event_config_id': project.pit_event_config_id,
+            'active_team_ids': list(services.active_links(project).values_list('team_id', flat=True)),
+            'team_links': list(project.team_links.values('team_id', 'project_version')),
+            'round_id': hearing.pk if hearing else None,
+            'selected_key': hearing.selected_key if hearing else '',
+            'verdict': hearing.verdict if hearing else '',
+            'systems': list(hearing.systems.values('key', 'title')) if hearing else []})
+    return {'section': section, 'mode': 'database_enforced_read_only',
+        'teams': [{'id': team.pk, 'name': team.name, 'section': team.section,
+            'semester_id': team.semester_id, 'period': team.semester.display_name,
+            'intake_semester_id': team.intake_semester_id, 'project_version': team.project_version,
+            'stage': (stage := current_stage_for_team(team)),
+            'shared_display': services.team_display(team, stage)} for team in teams],
+        'assignments': list(assignments.order_by('pk').values('id', 'section', 'year_level',
+            'semester_id', 'system_name', 'project_manager_id')),
+        'linked_projects': project_rows,
+        'participations': [{'id': row.pk, 'team_id': row.team_id,
+            'semester_id': row.semester_id, 'period': row.semester.display_name,
+            'project_version': row.project_version, 'section': row.snapshot.get('section'),
+            'outcome': row.outcome, 'closed_at': row.closed_at, 'transition_id': row.transition_id,
+            'continuation_sections': row.snapshot.get('continuation_sections')}
+            for row in participations],
+        'transitions': list(SemesterTransitionLog.objects.filter(
+            pk__in={row.transition_id for row in participations if row.transition_id}).values(
+                'id', 'operation', 'from_semester_id', 'to_semester_id', 'created_at'))}
+
+
 def collect(section):
     from django.contrib.auth import get_user_model
     from django.db import transaction
@@ -103,17 +156,23 @@ def collect(section):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--section', required=True)
+    parser.add_argument('--continuity-only', action='store_true',
+        help='Inspect live and source-term shared-system bindings without API probes.')
     args = parser.parse_args()
     import django
     django.setup()
     from django.db import connection, transaction
-    with transaction.atomic():
+    from defensys_backend.read_projection import read_projection
+    with transaction.atomic(), read_projection():
         with connection.cursor() as cursor:
             cursor.execute('SET TRANSACTION READ ONLY')
-        result = collect(args.section)
-    output = ROOT / '.tmp' / 'section-hearing-state.json'
+        result = collect_continuity(args.section) if args.continuity_only else collect(args.section)
+    output = ROOT / '.tmp' / ('section-shared-continuity.json' if args.continuity_only else 'section-hearing-state.json')
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, default=str), encoding='utf-8')
+    if args.continuity_only:
+        print(json.dumps({'output': str(output), **result}, default=str))
+        return
     print(json.dumps({'output': str(output), 'teams': len(result['teams']),
         'projects': result['projects'], 'readiness': result['readiness'], 'api_statuses': result['api_statuses'],
         'error_count': len(result['projection_errors']), 'projection_errors': result['projection_errors'][:2]}, default=str))

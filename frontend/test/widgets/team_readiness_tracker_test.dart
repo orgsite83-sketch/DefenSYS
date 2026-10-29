@@ -6,6 +6,54 @@ import 'package:defensys/services/defense_scheduler_provider.dart';
 import '../helpers/auth_test_overrides.dart';
 
 void main() {
+  for (final width in [390.0, 1280.0]) {
+    for (final scenario in [
+      ('awaiting_upload', 'Shared files missing', 'upload required'),
+      ('awaiting_review', 'Shared files awaiting review', 'awaiting review'),
+      ('changes_requested', 'Shared changes requested', 'changes requested'),
+    ]) {
+      testWidgets('section and endorsed team show ${scenario.$1} at $width', (tester) async {
+        tester.view.physicalSize = Size(width, 1100);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(ProviderScope(
+          overrides: authTestOverrides(),
+          child: MaterialApp(home: Scaffold(body: SingleChildScrollView(child: TeamReadinessTracker(
+            state: DefenseSchedulerState(
+              teams: [{
+                'id': 1, 'name': 'Team UniConnectClinic',
+                'level': '1st Year PIT', 'year_level': '1st Year', 'section': 'BSIT-1B',
+                'ready_for_stage': 'IT Concept Defense',
+                'shared_readiness': {'IT Concept Defense': {
+                  'section': 'BSIT-1B', 'complete': false, 'project_manager_name': 'Lance San Pedro',
+                  'requirements': [{'label': 'Concept Paper', 'status': scenario.$1}],
+                }},
+              }],
+              pitEvents: const [{
+                'event_name': 'IT Concept Defense', 'year_level': '1st Year',
+                'deliverables': [{'deliverable_type': 'pre', 'required': true}],
+              }],
+            ),
+            scope: 'pit', activeStageOrEventName: 'IT Concept Defense',
+            onReviewTeamDeliverables: (_, _) {}, onSendReminder: (_, _) {}, isSendingReminder: false,
+          )))),
+        ));
+        await tester.pumpAndSettle();
+        expect(find.text(scenario.$2), findsOneWidget);
+        expect(find.textContaining('Concept Paper — ${scenario.$3}'), findsOneWidget);
+        expect(find.text('Ready'), findsNothing);
+        expect(find.text('Needs Endorsement'), findsNothing);
+        await tester.tap(find.text('BSIT-1B'));
+        await tester.pumpAndSettle();
+        final status = find.byKey(const ValueKey('team-defense-status-1-IT Concept Defense'));
+        expect(find.descendant(of: status, matching: find.text(scenario.$2)), findsOneWidget);
+        expect(find.text('Ready to Schedule'), findsNothing);
+        expect(find.text('Awaiting Endorsement'), findsNothing);
+      });
+    }
+  }
+
   testWidgets('PIT concept filters retain only matching teams in the event year', (tester) async {
     tester.view.physicalSize = const Size(1280, 1100);
     tester.view.devicePixelRatio = 1;
@@ -49,7 +97,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('PIT event without scheduling files is ready without endorsement', (
+  testWidgets('PIT event without required pre-defense files is ready without endorsement', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 1000);
@@ -74,9 +122,7 @@ void main() {
                   pitEvents: const [{
                     'event_name': 'System Concept Pitching',
                     'year_level': '1st Year',
-                    'deliverables': [
-                      {'deliverable_type': 'pre', 'required': true, 'requirement_timing': 'defense'},
-                    ],
+                    'deliverables': [],
                   }],
                 ),
                 scope: 'pit',

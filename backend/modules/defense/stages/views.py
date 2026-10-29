@@ -91,7 +91,8 @@ class DefenseStageListCreateView(APIView):
         semester = resolve_semester(request.query_params.get('semester_id'))
         payload = stage_list_payload(semester)
         from student_teams.capstone_history import history_payload, history_teams_for
-        history = history_payload(history_teams_for(request.user), request.query_params, user=request.user)
+        history = history_payload(history_teams_for(request.user), request.query_params,
+            user=request.user, include_details=False)
         payload['capstone_history'] = history['capstone_history']
         grouped = {}
         for row in history['teams']:

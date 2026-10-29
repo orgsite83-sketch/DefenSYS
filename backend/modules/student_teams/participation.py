@@ -9,6 +9,7 @@ from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from defensys_backend.read_projection import read_memoize
 
 from academic_period_management.models import Semester
 from .models import StudentTeam, StudentCapstoneParticipation as Participation, StudentCapstonePlacement as Placement
@@ -47,6 +48,7 @@ def failure_for(team):
     return None
 
 
+@read_memoize
 def closed_failure(team):
     return bool(team.is_capstone and (failure_for(team) or
         team.term_participations.filter(project_version=team.project_version, outcome='failed', closed_at__isnull=False).exists()))

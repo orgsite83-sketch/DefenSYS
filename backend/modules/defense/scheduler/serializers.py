@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
 from django.db.models import Prefetch, Q
 from django.db import transaction
+from defensys_backend.read_projection import read_projection
 from rest_framework import serializers
 
 from academic_period_management.models import Semester
@@ -133,6 +134,29 @@ class PanelistOptionSerializer(serializers.ModelSerializer):
 
 class ScheduleTeamSerializer(serializers.ModelSerializer):
     concept_workflows = serializers.SerializerMethodField()
+    shared_readiness = serializers.SerializerMethodField()
+
+    def get_shared_readiness(self, obj):
+        from repository.section_concepts import shared_deliverables as shared
+        if obj.is_pit:
+            from .event_scope import pit_events_for_team
+            contexts = pit_events_for_team(obj)
+        else:
+            if '_shared_readiness_stages' not in self.context:
+                self.context['_shared_readiness_stages'] = list(DefenseStage.objects.all())
+            contexts = self.context['_shared_readiness_stages']
+        cache = self.context.setdefault('_shared_readiness', {})
+        result = {}
+        for context in contexts:
+            profile = shared.resolve(obj, context)
+            if not profile:
+                continue
+            key = (obj.semester_id, obj.is_pit, context.pk, profile['identity'])
+            if key not in cache:
+                cache[key] = shared.scheduling_readiness(profile)
+            label = context.event_name if obj.is_pit else context.label
+            result[label] = cache[key]
+        return result
 
     def get_concept_workflows(self, obj):
         if not obj.is_capstone:
@@ -181,6 +205,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'stage_verdicts',
             'eligible_stages',
             'concept_workflows',
+            'shared_readiness',
             'project_version',
         ]
 
@@ -236,6 +261,13 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             return (grade.status == TeamGrade.STATUS_PUBLISHED and (passed_and_cleared(grade) or legacy_finalized_pass(grade))
                     and post_deliverables_complete(obj, grade.stage_label))
         completed = set()
+        if obj.is_capstone:
+            # Continuation keeps cleared stages in their source semester. Use
+            # the lifecycle's validated inheritance instead of treating those
+            # stages as pending in the new term's readiness queue.
+            from student_teams.capstone_context import inherited_stage_ids
+            completed.update(DefenseStage.objects.filter(
+                pk__in=inherited_stage_ids(obj)).values_list('label', flat=True))
         for prog in obj.stage_progress.all():
             if prog.semester_id != obj.semester_id or prog.project_version != obj.project_version:
                 continue
@@ -1420,6 +1452,9 @@ class GenerateSchedulePlanSerializer(SchedulePlanSerializer):
 class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
     slots = SchedulePlanSlotSerializer(many=True, min_length=1, max_length=5000)
 
+    # Each validation gets fresh reads, including the second pass after row
+    # locks are acquired in save(). The scope ends before any schedule writes.
+    @read_projection()
     def validate(self, attrs):
         attrs = super().validate(attrs)
         team_ids = []

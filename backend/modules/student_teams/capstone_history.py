@@ -35,11 +35,36 @@ def history_teams_for(user, workspace=None):
     return StudentTeam.objects.filter(Q(pk__in=base.values('pk')) | Q(pk__in=recorded))
 
 
-def history_payload(visible, params, *, user=None):
+def _history_identity(team, term, row):
+    """Fields used to filter/group setup history, without loading team evidence."""
+    from .serializers import display_name
+    if row and row.closed_at:
+        data = dict(row.snapshot)
+        data['status'] = {'completed': 'Completed', 'failed': 'Failed',
+            'needs_review': 'Needs review'}.get(row.outcome, data.get('status', 'Pending'))
+    else:
+        data = {field: getattr(team, field) for field in (
+            'name', 'project_title', 'year_level', 'section', 'status')}
+        data.update(leader_name=display_name(team.leader), adviser_name=display_name(team.adviser))
+    return {**data, 'semester_id': term.pk, 'display_semester': term.display_name}
+
+
+def _matches_history_filters(data, params):
+    if params.get('semester_id') and str(data['semester_id']) != params['semester_id']:
+        return False
+    if any(params.get(k) and str(data.get(k, '')) != params[k] for k in ('year_level', 'section', 'status')):
+        return False
+    search = params.get('search', '').casefold()
+    return not search or search in ' '.join(str(data.get(k, '')) for k in (
+        'name', 'project_title', 'leader_name', 'adviser_name')).casefold()
+
+
+def history_payload(visible, params, *, user=None, include_details=True):
+    """Setup directories only need authorized phase/stage identities, not dossiers."""
     from .models import TeamTermParticipation
     from user_management.academic_records.models import StudentAcademicRecord
     teams = list(visible.filter(level__icontains='Capstone').select_related(
-        'semester__school_year', 'intake_semester__school_year').distinct())
+        'semester__school_year', 'intake_semester__school_year', 'leader', 'adviser').distinct())
     live_authority = None
     if user is not None:
         from authentication_access_control.workspaces import workspace_teams_for
@@ -84,6 +109,13 @@ def history_payload(visible, params, *, user=None):
                 continue
             selected_requirement = next((r for r in requirements if f'{term.pk}:{r["id"]}' == stage_key), None)
             if stage_key and not selected_requirement:
+                continue
+            if not include_details:
+                data = _history_identity(context, term, row)
+                data.update(phase=value, phase_label=label, record_key=f'{team.pk}:{term.pk}',
+                    stage_requirements=requirements)
+                if _matches_history_filters(data, params):
+                    records.append(data)
                 continue
             data = historical_payload(row) if row and row.closed_at else team_snapshot(context)
             projection = copy(context)
@@ -130,12 +162,7 @@ def history_payload(visible, params, *, user=None):
                 student_id__in=data.get('member_ids', [])).values_list('student_id', flat=True))
             data['members'] = [{**m, 'id': m.get('student_id', m.get('id')),
                 'is_enrolled': m.get('student_id', m.get('id')) in enrolled} for m in data.get('members', [])]
-            if params.get('semester_id') and str(term.pk) != params['semester_id']:
-                continue
-            if any(params.get(k) and str(data.get(k, '')) != params[k] for k in ('year_level', 'section', 'status')):
-                continue
-            search = params.get('search', '').casefold()
-            if search and search not in ' '.join(str(data.get(k, '')) for k in ('name', 'project_title', 'leader_name', 'adviser_name')).casefold():
+            if not _matches_history_filters(data, params):
                 continue
             records.append(data)
     options['phases'] = sorted(phases.values(), key=lambda p: p['value'])

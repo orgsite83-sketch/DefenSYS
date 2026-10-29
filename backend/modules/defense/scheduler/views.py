@@ -1,12 +1,12 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, serializers as drf_serializers
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
-from defensys_backend.read_projection import ReadAPIView as APIView
+from defensys_backend.read_projection import ReadAPIView as APIView, read_projection
 
 from grading.grades.models import GradeBreakdown, TeamGrade, PanelistGradeSubmission
 from grading.rubrics.models import Rubric
@@ -358,15 +358,21 @@ class DefenseScheduleGeneratePlanView(APIView):
     permission_classes = [CanManageModule]
 
     def post(self, request):
-        serializer = GenerateSchedulePlanSerializer(data=request.data, context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        slots = serializer.generate_slots()
-        return Response({
-            'slots': slots,
-            'slot_count': sum(slot.get('session_key') is not None for slot in slots),
-            'unassigned_count': sum(slot.get('session_key') is None for slot in slots),
-            **schedule_options_payload(user=request.user),
-        })
+        # A preview is read-only, despite using POST for its configuration.
+        # Reuse pure domain reads only within this request; confirmation still
+        # validates again against fresh data before committing any schedules.
+        with read_projection():
+            serializer = GenerateSchedulePlanSerializer(data=request.data, context={'request': request})
+            serializer.is_valid(raise_exception=True)
+            slots = serializer.generate_slots()
+            payload = {
+                'slots': slots,
+                'slot_count': sum(slot.get('session_key') is not None for slot in slots),
+                'unassigned_count': sum(slot.get('session_key') is None for slot in slots),
+            }
+            if request.query_params.get('response') != 'compact':
+                payload.update(schedule_options_payload(user=request.user))
+            return Response(payload)
 
 
 class DefenseScheduleConfirmPlanView(APIView):
@@ -376,6 +382,18 @@ class DefenseScheduleConfirmPlanView(APIView):
         serializer = ConfirmSchedulePlanSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         schedules = serializer.save()
+        if request.query_params.get('response') == 'compact':
+            # The batch has committed. Return its acknowledgement and guest
+            # access details without serializing the entire operations board.
+            schedule_ids = [schedule.pk for schedule in schedules]
+            invitations = GuestPanelistCode.objects.filter(schedules__pk__in=schedule_ids).distinct().select_related(
+                'evaluator',
+            ).prefetch_related(Prefetch('schedules', queryset=DefenseSchedule.objects.select_related('team', 'defense_stage')))
+            return Response({
+                'created_count': len(schedule_ids),
+                'schedule_ids': schedule_ids,
+                'created_invitations': [invitation_payload(item) for item in invitations],
+            }, status=status.HTTP_201_CREATED)
         base = manageable_schedules_for(request.user)
         schedules = base.filter(pk__in=[schedule.pk for schedule in schedules])
         return Response(

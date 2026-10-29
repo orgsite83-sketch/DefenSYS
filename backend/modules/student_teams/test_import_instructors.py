@@ -65,6 +65,19 @@ class PitImportInstructorTests(APITestCase):
         self.instructor.refresh_from_db()
         self.assertFalse(self.instructor.is_adviser)
 
+    def test_preview_and_commit_reject_an_instructor_conflicting_with_current_section(self):
+        current = get_user_model().objects.create_user(username='current-owner', role='faculty',
+            first_name='Current', last_name='Owner')
+        SectionInstructorAssignment.objects.create(faculty=current, semester=self.semester,
+            year_level='1st Year', section='BSIT-1A')
+        preview = self.post_rows(preview=True)
+        self.assertFalse(preview.data['rows'][0]['ready'], preview.data)
+        self.assertIn('Current Owner', str(preview.data))
+        result = self.post_rows()
+        self.assertEqual(result.data['created_count'], 0, result.data)
+        self.assertFalse(StudentTeam.objects.exists())
+        self.assertEqual(SectionInstructorAssignment.objects.get(is_active=True).faculty, current)
+
     def test_lead_imports_all_sections_and_instructors_before_sections_exist(self):
         StudentAcademicRecord.objects.filter(semester=self.semester).update(section='')
         other = User.objects.create_user(username='second-instructor', role='faculty')

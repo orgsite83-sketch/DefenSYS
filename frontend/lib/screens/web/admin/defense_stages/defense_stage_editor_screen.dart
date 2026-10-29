@@ -335,15 +335,25 @@ class _DefenseStageEditorScreenState
     _editedRubricRoles.clear();
     _serverRubricIds.clear();
 
+    // These reads are independent of the selected semester and stage detail.
+    final supportingData = Future.wait([
+      ref.read(defenseStagesProvider.notifier).fetchStages(),
+      ref.read(rubricEngineProvider.notifier).fetchRubrics(
+            scope: 'capstone',
+            status: '',
+          ),
+    ]);
     await ref.read(academicPeriodProvider.notifier).fetchPeriods();
+    if (!mounted) return;
     final active = ref.read(academicPeriodProvider).activeSemester;
     _semesterId ??= widget.semesterId ?? _asInt(active?['id']);
-
-    await ref.read(defenseStagesProvider.notifier).fetchStages();
 
     final detail = await ref
         .read(defenseStagesProvider.notifier)
         .fetchStageDetail(widget.stageId, semesterId: _semesterId);
+
+    await supportingData;
+    if (!mounted) return;
 
     if (detail != null) {
       final semester = detail['active_semester'];
@@ -351,14 +361,6 @@ class _DefenseStageEditorScreenState
         _semesterId = _asInt(semester['id']);
       }
     }
-
-    // Load Capstone rubrics (published ones are filtered client-side for dropdowns)
-    await ref.read(rubricEngineProvider.notifier).fetchRubrics(
-          scope: 'capstone',
-          status: ''
-        );
-
-    if (!mounted) return;
 
     if (detail != null) {
       final stage = detail['stage'];

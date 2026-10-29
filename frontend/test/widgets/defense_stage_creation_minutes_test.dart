@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/screens/web/admin/defense_stages/defense_stages_screen.dart';
 import 'package:defensys/screens/web/admin/defense_stages/defense_stage_editor_screen.dart';
@@ -103,8 +105,89 @@ class _RubricsNotifier extends RubricEngineNotifier {
   }) async {}
 }
 
+class _DelayedStages extends _StagesNotifier {
+  final ready = Completer<void>();
+  bool started = false;
+  bool detailStarted = false;
+
+  @override
+  Future<void> fetchStages({String? scope, String? intake, String? phase,
+    String? stage, String? successMessage}) async {
+    started = true;
+    await ready.future;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchStageDetail(int stageId, {int? semesterId}) {
+    detailStarted = true;
+    return super.fetchStageDetail(stageId, semesterId: semesterId);
+  }
+}
+
+class _DelayedPeriods extends _PeriodsNotifier {
+  final ready = Completer<void>();
+  bool started = false;
+
+  @override
+  Future<void> fetchPeriods({String? successMessage}) async {
+    started = true;
+    await ready.future;
+  }
+}
+
+class _DelayedRubrics extends _RubricsNotifier {
+  final ready = Completer<void>();
+  bool started = false;
+
+  @override
+  Future<void> fetchRubrics({String? search, String? scope, String? status,
+    String? evaluationType, String? termContext, String? successMessage}) async {
+    started = true;
+    await ready.future;
+  }
+}
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('stage editor starts independent reads together', (tester) async {
+    tester.view.physicalSize = const Size(1440, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final stages = _DelayedStages();
+    final periods = _DelayedPeriods();
+    final rubrics = _DelayedRubrics();
+    addTearDown(() {
+      for (final gate in [stages.ready, periods.ready, rubrics.ready]) {
+        if (!gate.isCompleted) gate.complete();
+      }
+    });
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        ...authTestOverrides(),
+        defenseStagesProvider.overrideWith(() => stages),
+        academicPeriodProvider.overrideWith(() => periods),
+        rubricEngineProvider.overrideWith(() => rubrics),
+      ],
+      child: MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(body: DefenseStageEditorScreen(stageId: 9, onBack: () {})),
+      ),
+    ));
+    await tester.pump();
+    expect(stages.started, isTrue);
+    expect(periods.started, isTrue);
+    expect(rubrics.started, isTrue);
+    expect(stages.detailStarted, isFalse);
+    periods.ready.complete();
+    await tester.pump();
+    expect(stages.detailStarted, isTrue);
+    stages.ready.complete();
+    rubrics.ready.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Legacy Demo Stage'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
     'editing a legacy demo stage keeps file requirements visible and saves them',
     (tester) async {

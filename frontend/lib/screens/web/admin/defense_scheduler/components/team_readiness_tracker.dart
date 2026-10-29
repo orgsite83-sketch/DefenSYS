@@ -89,6 +89,16 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
     );
   }
 
+  Widget _readinessTable(Widget table) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SizedBox(
+        width: constraints.maxWidth < 900 ? 900 : constraints.maxWidth,
+        child: table,
+      ),
+    ),
+  );
+
   Widget _buildSectionStatusBadge({
     required IconData icon,
     required String label,
@@ -116,12 +126,14 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
         children: [
           Icon(icon, color: fgColor, size: 13),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10.5,
-              color: fgColor,
-              fontWeight: FontWeight.bold,
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                color: fgColor,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -177,7 +189,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 12,
             children: [
               Container(
                 padding: const EdgeInsets.all(6),
@@ -203,7 +218,6 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                   letterSpacing: -0.2,
                 ),
               ),
-              const Spacer(),
               ReportExportMenu(reportId: 'readiness', params: {'scope': widget.scope, 'stage': widget.activeStageOrEventName, 'search': _trackerSearchController.text.trim(), 'level': _selectedPitYearLevel ?? ''}),
               const SizedBox(width: 10),
               if (widget.headerAction != null) ...[
@@ -406,6 +420,13 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                             .where(teamReady)
                             .length
                         : 0;
+                    final sharedBlockedTeams = sectionTeams.where((team) =>
+                        hasPendingSharedRequirements(team, activeStageOrEventName) &&
+                        {'pending', 'ready', 'redefense_required'}.contains(
+                            getTeamStageStatus(team, activeStageOrEventName))).toList();
+                    final sectionSharedReadiness = sharedBlockedTeams.isEmpty
+                        ? null
+                        : sharedSchedulingReadiness(sharedBlockedTeams.first, activeStageOrEventName);
                     final sectionPendingCount = sectionTeams.where((team) =>
                         getTeamStageStatus(team, activeStageOrEventName) == 'pending' &&
                         !teamReady(team)).length;
@@ -443,7 +464,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                               size: 18,
                             ),
                           ),
-                          title: Row(
+                          title: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 10,
+                            runSpacing: 6,
                             children: [
                               Text(
                                 section,
@@ -453,7 +477,6 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                   color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
                                 ),
                               ),
-                              const SizedBox(width: 10),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                                 decoration: BoxDecoration(
@@ -473,28 +496,30 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                 ),
                               ),
                               if (isSectionCompleted) ...[
-                                const SizedBox(width: 10),
                                 _buildSectionStatusBadge(
                                   icon: Icons.check_circle_rounded,
                                   label: 'Completed',
                                   isSuccess: true,
                                 ),
+                              ] else if (sectionSharedReadiness != null) ...[
+                                _buildSectionStatusBadge(
+                                  icon: Icons.warning_amber_rounded,
+                                  label: sharedRequirementsStatus(sectionSharedReadiness),
+                                  isSuccess: false,
+                                ),
                               ] else if (isSectionReady) ...[
-                                const SizedBox(width: 10),
                                 _buildSectionStatusBadge(
                                   icon: Icons.auto_awesome_rounded,
                                   label: 'Ready',
                                   isSuccess: true,
                                 ),
                               ] else if (sectionReadyCount > 0) ...[
-                                const SizedBox(width: 10),
                                 _buildSectionStatusBadge(
                                   icon: Icons.auto_awesome_rounded,
                                   label: '$sectionReadyCount Ready',
                                   isSuccess: true,
                                 ),
                               ] else ...[
-                                const SizedBox(width: 10),
                                 _buildSectionStatusBadge(
                                   icon: Icons.warning_amber_rounded,
                                   label: sectionPendingCount > 0
@@ -507,6 +532,13 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                               ],
                             ],
                           ),
+                          subtitle: sectionSharedReadiness == null ? null : Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              sharedRequirementsDetail(sectionSharedReadiness),
+                              style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
+                            ),
+                          ),
                           children: [
                             Divider(height: 1, color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
                             Builder(
@@ -517,7 +549,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                       .firstWhere((inst) => inst.isNotEmpty, orElse: () => '');
                                   return Padding(
                                     padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 4),
-                                    child: Row(
+                                    child: Wrap(
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: 6,
+                                      runSpacing: 4,
                                       children: [
                                         Icon(
                                           Icons.person_outline_rounded,
@@ -718,7 +753,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                             ),
                             Padding(
                               padding: const EdgeInsets.all(12),
-                              child: Table(
+                              child: _readinessTable(Table(
                                 columnWidths: const {
                                   0: FlexColumnWidth(4),
                                   1: FlexColumnWidth(2.5),
@@ -743,6 +778,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                     final isScheduled = stageStatus == 'scheduled';
                                     final isReady = teamReady(team);
                                     final isPending = stageStatus == 'pending' && !isReady;
+                                    final sharedReadiness = sharedSchedulingReadiness(team, activeStageOrEventName);
+                                    final sharedBlocked = sharedReadiness['complete'] == false &&
+                                        {'pending', 'ready', 'redefense_required'}.contains(stageStatus);
                                     final verdict = (team['stage_verdicts'] as Map?)?[activeStageOrEventName]?.toString() ?? '';
                                     final hasVerdict = verdict.isNotEmpty;
 
@@ -772,6 +810,11 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                   ? 'Ready to Schedule'
                                                   : 'Ready for Defense';
                                       statusIcon = Icons.auto_awesome_rounded;
+                                    } else if (sharedBlocked) {
+                                      dotColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
+                                      statusTextColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
+                                      statusText = sharedRequirementsStatus(sharedReadiness);
+                                      statusIcon = Icons.folder_off_outlined;
                                     } else if (isPending) {
                                       dotColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
                                       statusTextColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
@@ -945,6 +988,13 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                       ),
                                                       overflow: TextOverflow.ellipsis,
                                                     ),
+                                                    if (sharedBlocked) ...[
+                                                      const SizedBox(height: 3),
+                                                      Text(
+                                                        sharedRequirementsDetail(sharedReadiness),
+                                                        style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
+                                                      ),
+                                                    ],
                                                     if (hasVerdict && progressText.toLowerCase() != statusText.toLowerCase()) ...[
                                                       const SizedBox(height: 3),
                                                       Text(
@@ -963,7 +1013,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                         ),
                                         Padding(
                                           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                                          child: Row(
+                                          child: Wrap(
+                                            crossAxisAlignment: WrapCrossAlignment.center,
+                                            spacing: 8,
+                                            runSpacing: 4,
                                             children: [
                                               TextButton.icon(
                                                 onPressed: activeStageOrEventName.isEmpty
@@ -1000,7 +1053,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                     );
                                   }),
                                 ],
-                              ),
+                              )),
                             ),
                             ],
                           ),

@@ -362,6 +362,62 @@ void main() {
     });
   }
 
+  testWidgets('continued teams keep two completed milestones in the queue', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      external: _External(),
+      schedules: [],
+      width: 1920,
+      schedulerState: DefenseSchedulerState(
+        schedulerMode: 'capstone',
+        canScheduleCapstone: true,
+        defenseStages: const [
+          {'id': 1, 'label': 'Concept Proposal'},
+          {'id': 2, 'label': 'Project Proposal'},
+          {'id': 3, 'label': 'Final Defense'},
+        ],
+        teams: [
+          for (var id = 1; id <= 16; id++)
+            {
+              'id': id,
+              'name': 'Continued Team $id',
+              'level': '4th Year Capstone',
+              'section': id <= 8 ? 'BSIT-4A' : 'BSIT-4B',
+              'completed_stages': ['Concept Proposal', 'Project Proposal'],
+              'stage_progress': {
+                'Concept Proposal': 'completed',
+                'Project Proposal': 'completed',
+              },
+              'eligible_stages': <String>[],
+            },
+        ],
+      ),
+    );
+    await tester.tap(find.text('Pre-Defense Readiness Queue'));
+    await tester.pumpAndSettle();
+    final queue = find.byType(TeamReadinessTracker);
+    expect(
+      find.descendant(of: queue, matching: find.text('Complete')),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: queue, matching: find.text('16 pending')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Project Proposal'));
+    await tester.pumpAndSettle();
+    expect(find.text('Completed'), findsNWidgets(2));
+    expect(find.text('Needs Endorsement'), findsNothing);
+    final tracker = tester.widget<TeamReadinessTracker>(
+      find.byType(TeamReadinessTracker),
+    );
+    expect(tracker.activeStageOrEventName, 'Project Proposal');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('PIT lead retains PIT readiness and counts', (tester) async {
     await _pump(
       tester,

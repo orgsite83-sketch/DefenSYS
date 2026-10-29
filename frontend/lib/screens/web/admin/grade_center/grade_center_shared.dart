@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:defensys/theme/program_colors.dart';
 import 'grade_correction_dialog.dart';
 import 'incomplete_grading_dialog.dart';
@@ -3417,8 +3419,36 @@ Future<bool> reviewGradeGroupCompletion(
   bool isPit = false,
 }) async {
   late GradeGroupCompletionReadiness readiness;
+  final navigator = Navigator.of(context, rootNavigator: true);
+  final progress = DialogRoute<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const PopScope(
+      canPop: false,
+      child: AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Flexible(child: Text('Checking completion…')),
+          ],
+        ),
+      ),
+    ),
+  );
+  unawaited(navigator.push(progress));
   try {
-    readiness = await checkCompletion();
+    try {
+      readiness = await checkCompletion();
+    } finally {
+      if (navigator.mounted && progress.isActive) {
+        navigator.removeRoute(progress);
+      }
+    }
   } catch (error) {
     if (!context.mounted) return false;
     await showDialog<void>(
@@ -3530,7 +3560,8 @@ Future<bool> reviewGradeGroupCompletion(
     );
     if (reason == null) return false;
     readiness.onApproved?.call({
-      'completion_token': readiness.completionToken,
+      if (readiness.completionToken != null)
+        'completion_token': readiness.completionToken,
       'failure_grade_ids': readiness.failureCandidates
           .map((row) => row['grade_id'])
           .toList(),
@@ -3549,7 +3580,8 @@ Future<bool> reviewGradeGroupCompletion(
 
   if (confirmed == true) {
     readiness.onApproved?.call({
-      'completion_token': readiness.completionToken,
+      if (readiness.completionToken != null)
+        'completion_token': readiness.completionToken,
       'failure_grade_ids': <int>[],
     });
   }

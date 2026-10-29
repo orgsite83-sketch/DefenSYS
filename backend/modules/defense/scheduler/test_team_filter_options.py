@@ -27,18 +27,18 @@ class SchedulerTeamFilterOptionsTests(APITestCase):
             first_name='Maria', last_name='Santos')
         self.assign(self.instructor)
 
-    def test_scheduler_returns_all_actual_section_instructors_with_ids(self):
+    def test_scheduler_returns_the_sole_active_instructor_and_omits_retired_assignment(self):
         self.prepare()
         other = get_user_model().objects.create_user(username='second-instructor', role='faculty',
             first_name='Ramon', last_name='Cruz')
-        self.assign(other)
+        self.assign(other, active=False)
         self.client.force_authenticate(self.first)
         response = self.client.get('/api/defense/schedules/', {'workspace': 'operations', 'scope': 'pit'})
         self.assertEqual(response.status_code, 200, response.data)
         team = next(t for t in response.data['teams'] if t['id'] == self.team.pk)
         self.assertEqual(team['instructors'], [
-            {'id': other.pk, 'name': 'Ramon Cruz'}, {'id': self.instructor.pk, 'name': 'Maria Santos'}])
-        self.assertEqual(team['instructor_name'], 'Ramon Cruz, Maria Santos')
+            {'id': self.instructor.pk, 'name': 'Maria Santos'}])
+        self.assertEqual(team['instructor_name'], 'Maria Santos')
         self.assertIsNone(team['adviser'])
 
     def test_other_term_year_section_and_inactive_assignments_do_not_leak(self):
@@ -49,12 +49,14 @@ class SchedulerTeamFilterOptionsTests(APITestCase):
                 role='faculty')
             self.assign(user, **changes)
         inactive = get_user_model().objects.create_user(username='inactive-instructor', role='faculty', is_active=False)
-        self.assign(inactive)
+        self.assign(inactive, section='BSIT-1C')
         data = ScheduleTeamSerializer(self.team).data
         self.assertEqual(data['instructors'], [{'id': self.instructor.pk, 'name': 'Maria Santos'}])
         self.assertEqual(data['instructor_name'], 'Maria Santos')
         self.teams[2].section = self.team.section
-        self.teams[2].save(update_fields=['section'])
+        # Deliberately malformed legacy data must still respect scope. Normal
+        # model validation correctly rejects this third-year/first-year pairing.
+        StudentTeam.objects.filter(pk=self.teams[2].pk).update(section=self.team.section)
         self.assertEqual(ScheduleTeamSerializer(self.teams[2]).data['instructors'], [])
 
     def test_list_batches_section_assignments_and_keeps_unassigned_teams_explicit(self):
@@ -77,6 +79,10 @@ class SchedulerTeamFilterOptionsTests(APITestCase):
         self.prepare()
         same_name = get_user_model().objects.create_user(username='another-maria', role='faculty',
             first_name='Maria', last_name='Santos')
-        self.assign(same_name)
+        self.assign(same_name, section='BSIT-1B')
         people = ScheduleTeamSerializer(self.team).data['instructors']
-        self.assertEqual({p['id'] for p in people}, {self.instructor.pk, same_name.pk})
+        self.assertEqual({p['id'] for p in people}, {self.instructor.pk})
+        self.team.section = 'BSIT-1B'
+        self.team.save(update_fields=['section'])
+        people = ScheduleTeamSerializer(self.team).data['instructors']
+        self.assertEqual({p['id'] for p in people}, {same_name.pk})

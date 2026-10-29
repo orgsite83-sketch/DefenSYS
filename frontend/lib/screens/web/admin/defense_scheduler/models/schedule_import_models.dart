@@ -158,6 +158,41 @@ List<Map<String, dynamic>> teamsForScope(
   }).toList();
 }
 
+Map<String, dynamic> sharedSchedulingReadiness(
+  Map<String, dynamic> team,
+  String stageLabel,
+) => Map<String, dynamic>.from(
+  (team['shared_readiness'] as Map?)?[stageLabel] as Map? ?? const {},
+);
+
+bool hasPendingSharedRequirements(Map<String, dynamic> team, String stageLabel) =>
+    sharedSchedulingReadiness(team, stageLabel)['complete'] == false;
+
+String sharedRequirementsStatus(Map<String, dynamic> readiness) {
+  final requirements = (readiness['requirements'] as List? ?? []).whereType<Map>();
+  if (requirements.any((row) => row['status'] == 'awaiting_upload')) {
+    return 'Shared files missing';
+  }
+  if (requirements.any((row) => row['status'] == 'changes_requested')) {
+    return 'Shared changes requested';
+  }
+  return 'Shared files awaiting review';
+}
+
+String sharedRequirementsDetail(Map<String, dynamic> readiness) {
+  final requirements = (readiness['requirements'] as List? ?? []).whereType<Map>();
+  final details = requirements.map((row) {
+    final action = switch (row['status']) {
+      'awaiting_upload' => 'upload required',
+      'changes_requested' => 'changes requested',
+      _ => 'awaiting review',
+    };
+    return '${row['label']} — $action';
+  }).join('; ');
+  final manager = readiness['project_manager_name']?.toString() ?? '';
+  return '$details${manager.isEmpty ? '' : '. Project manager: $manager.'}';
+}
+
 /// Returns the stage lifecycle status for a team and milestone:
 /// 'completed' (finalized and passed)
 /// 'scheduled' (defense date set)
@@ -200,6 +235,7 @@ String getTeamStageStatus(Map<String, dynamic> team, String stageLabel) {
       scheduledStages.contains(stageLabel)) {
     return 'scheduled';
   }
+  if (hasPendingSharedRequirements(team, stageLabel)) return 'pending';
   if (progVal == 'ready' ||
       team['ready_for_stage']?.toString().trim() == stageLabel) {
     if (team['eligible_stages'] is List &&
@@ -220,6 +256,7 @@ bool isTeamStageCompleted(Map<String, dynamic> team, String stageLabel) {
 }
 
 bool isTeamStageReady(Map<String, dynamic> team, String stageLabel) {
+  if (hasPendingSharedRequirements(team, stageLabel)) return false;
   if (team['eligible_stages'] is List && (team['level']?.toString().toLowerCase().contains('capstone') ?? false)) {
     return (team['eligible_stages'] as List).contains(stageLabel);
   }
@@ -243,6 +280,7 @@ bool isPitTeamReadyToSchedule(
     return false;
   }
   if (event['is_officially_complete'] == true) return false;
+  if (hasPendingSharedRequirements(team, eventName)) return false;
   if (pitEventRequiresEndorsement(event)) {
     return isTeamStageReady(team, eventName);
   }

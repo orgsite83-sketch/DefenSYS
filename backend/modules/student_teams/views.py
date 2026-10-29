@@ -827,13 +827,9 @@ class BulkImportTeamsView(APIView):
                                 'project_manager': pm_user or (existing.project_manager if existing else None)})
                         audit_section(request, assignment, 'section_assignment.create' if new_section else 'section_assignment.update', old)
                     if result['instructor'] is not None:
-                        SectionInstructorAssignment.objects.update_or_create(
-                            faculty=result['instructor'],
-                            semester=team.semester,
-                            year_level=team.year_level,
-                            section=team.section,
-                            defaults={'assigned_by': request.user, 'is_active': True},
-                        )
+                        from user_management.instructor_assignments import assign_section_instructor
+                        assign_section_instructor(request.user, result['instructor'], team.semester,
+                            team.year_level, team.section, request=request)
             except (PermissionDenied, ValidationError) as exc:
                 errors.append({'row': index, 'sheet_row': index + 1, 'team_name': team_name,
                     'errors': format_bulk_import_errors(exc.detail)})

@@ -133,6 +133,40 @@ void main() {
     expect(calls, 2);
   });
 
+  test(
+    'discarding a stalled read allows retry without evicting the new read',
+    () async {
+      final responses = <Completer<http.Response>>[];
+      setApiHttpClientForTesting(
+        MockClient((request) {
+          final response = Completer<http.Response>();
+          responses.add(response);
+          return response.future;
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final client = container.read(authenticatedHttpClientProvider);
+      final uri = Uri.parse(
+        'http://example.com/api/grading/grades/group-settings/',
+      );
+      final stalled = client.get(uri);
+      await Future<void>.delayed(Duration.zero);
+      client.discardPendingReads();
+      final retry = client.get(uri);
+      await Future<void>.delayed(Duration.zero);
+      expect(responses, hasLength(2));
+      responses[0].complete(http.Response('late', 200));
+      await stalled;
+      final sharedRetry = client.get(uri);
+      await Future<void>.delayed(Duration.zero);
+      expect(responses, hasLength(2));
+      responses[1].complete(http.Response('current', 200));
+      expect((await retry).body, 'current');
+      expect((await sharedRetry).body, 'current');
+    },
+  );
+
   test('401 after failed refresh throws SessionExpiredException', () async {
     SharedPreferences.setMockInitialValues({});
     var refreshCalls = 0;

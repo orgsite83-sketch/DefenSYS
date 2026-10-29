@@ -143,7 +143,9 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
       var groups = <Map<String, dynamic>>[];
       Map<String, dynamic>? p;
       if (sectionProjectId != null) {
-        p = await ref.read(sectionConceptServiceProvider).get(sectionProjectId);
+        p = await ref
+            .read(sectionConceptServiceProvider)
+            .get(sectionProjectId, teamId: teamId);
         groups = (p['shared_contexts'] as List? ?? [])
             .whereType<Map>()
             .map((row) => Map<String, dynamic>.from(row))

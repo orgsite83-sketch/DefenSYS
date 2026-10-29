@@ -367,6 +367,11 @@ def imported_sheet_details(user, term, year, section, raw, *, member_ids=(), wor
         if (workspace == 'instructor' or not (user_is_admin(user) or user_is_pit_lead_only(user))) and instructor.pk != user.pk:
             raise PermissionDenied('An instructor import cannot assign another instructor.')
         instructor_ids.add(instructor.pk)
+    if len(instructor_ids) > 1:
+        raise ValidationError('Use one instructor for this section. Use Change instructor to replace its current assignment.')
+    if instructor_ids:
+        from user_management.instructor_assignments import require_instructor_slot
+        require_instructor_slot(term, year, section, next(iter(instructor_ids)))
     manager = validate_bulk_section_metadata({
         'system_name': system, 'project_manager': next(iter(managers), ''), 'issues': [],
     }, user, term, year, section, member_ids=member_ids) if system or managers else None
@@ -731,10 +736,9 @@ def apply(request, token):
             'project_manager': manager or (existing.project_manager if existing else None)})
         audit_section(request, assignment, 'section_assignment.create' if created_assignment else 'section_assignment.update', old)
     if state['data'].get('workspace') != 'instructor' and (user_is_admin(request.user) or user_is_pit_lead_only(request.user)):
+        from user_management.instructor_assignments import assign_section_instructor
         for instructor_id in instructor_ids:
-            SectionInstructorAssignment.objects.update_or_create(faculty_id=instructor_id,
-                semester=term, year_level=year, section=section,
-                defaults={'assigned_by': request.user, 'is_active': True})
+            assign_section_instructor(request.user, instructor_id, term, year, section, request=request)
     result = {'team_ids': [t.pk for t in created],
         'created_count': 0 if state['data']['operation'] == 'reuse' else len(created),
         'reused_count': len(created) if state['data']['operation'] == 'reuse' else 0, 'preview_id': receipt_key,

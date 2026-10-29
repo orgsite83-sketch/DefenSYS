@@ -64,18 +64,33 @@ def _audit(actor, action, assignment, old, *, request=None, reason='', **extra):
         old_values=old, new_values={**_values(assignment), **extra}, strict=True)
 
 
+def require_instructor_slot(period, year, section, faculty_id, *, exclude_id=None):
+    """All entry points share the same single active section-owner rule."""
+    conflict = SectionInstructorAssignment.objects.filter(semester=period,
+        year_level=year, section=section, is_active=True).exclude(faculty_id=faculty_id)
+    if exclude_id is not None:
+        conflict = conflict.exclude(pk=exclude_id)
+    existing = conflict.select_related('faculty').first()
+    if existing:
+        name = existing.faculty.get_full_name() or existing.faculty.username
+        raise ValidationError({'section': f'{section} already has an active instructor: {name}. '
+            'Use Change instructor to replace the current assignment.'})
+
+
 @transaction.atomic
-def assign_instructor(actor, faculty_id, year, section, *, request=None):
-    period = _current_period(actor, year)
-    faculty = _faculty(faculty_id)
+def assign_section_instructor(actor, faculty, period, year, section, *, request=None):
+    """Idempotent assignment used by management and every import path."""
+    period = Semester.objects.select_for_update().get(pk=period.pk)
+    faculty = _faculty(getattr(faculty, 'pk', faculty))
     section = ' '.join((section or '').strip().split())
     if not section:
         raise ValidationError({'section': 'Section is required.'})
+    require_instructor_slot(period, year, section, faculty.pk)
     assignment = SectionInstructorAssignment.objects.select_for_update().filter(
         faculty=faculty, semester=period, year_level=year, section=section).first()
     old = _values(assignment) if assignment else {}
     if assignment and assignment.is_active:
-        return assignment
+        return assignment, False
     if assignment:
         assignment.is_active = True
         assignment.assigned_by = actor
@@ -84,6 +99,13 @@ def assign_instructor(actor, faculty_id, year, section, *, request=None):
         assignment = SectionInstructorAssignment.objects.create(faculty=faculty, semester=period,
             year_level=year, section=section, assigned_by=actor)
     _audit(actor, 'restore' if old else 'assign', assignment, old, request=request)
+    return assignment, not old
+
+
+@transaction.atomic
+def assign_instructor(actor, faculty_id, year, section, *, request=None):
+    period = _current_period(actor, year)
+    assignment, _ = assign_section_instructor(actor, faculty_id, period, year, section, request=request)
     return assignment
 
 
@@ -101,6 +123,8 @@ def update_instructor_assignment(actor, assignment_id, changes, *, request=None)
         faculty = _faculty(changes.get('faculty_id', changes.get('faculty')))
         if faculty.pk == assignment.faculty_id:
             return assignment, None
+        require_instructor_slot(assignment.semester, assignment.year_level,
+            assignment.section, faculty.pk, exclude_id=assignment.pk)
         replacement = SectionInstructorAssignment.objects.select_for_update().filter(
             faculty=faculty, semester_id=assignment.semester_id,
             year_level=assignment.year_level, section=assignment.section).first()
@@ -139,6 +163,9 @@ def update_instructor_assignment(actor, assignment_id, changes, *, request=None)
                 section=assignment.section).exclude(pk=assignment.pk).exists():
             raise ValidationError({'section': 'This instructor already has an assignment for that section.'})
     if _values(assignment) != old:
+        if assignment.is_active:
+            require_instructor_slot(assignment.semester, assignment.year_level,
+                assignment.section, assignment.faculty_id, exclude_id=assignment.pk)
         assignment.assigned_by = actor
         assignment.save(update_fields=['is_active', 'section', 'assigned_by', 'updated_at'])
         action = 'remove' if not assignment.is_active else 'restore' if not old['is_active'] else 'change'

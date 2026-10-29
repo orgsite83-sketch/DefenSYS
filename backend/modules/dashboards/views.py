@@ -1668,8 +1668,8 @@ class StudentDashboardView(APIView):
         if team:
             if team.is_capstone:
                 from repository.deliverables.services import stage_payload
-                from student_teams.capstone_context import phase_requirements
-                stage_options = [r['label'] for r in phase_requirements(team)]
+                from student_teams.capstone_lifecycle import requirements_for
+                stage_options = [r['label'] for r in requirements_for(team)]
             else:
                 from defense.scheduler.models import PitEventGradingConfig
                 from repository.deliverables.services import stage_payload

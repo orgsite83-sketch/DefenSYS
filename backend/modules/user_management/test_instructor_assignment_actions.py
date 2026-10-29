@@ -64,16 +64,65 @@ class InstructorAssignmentActionTests(APITestCase):
             new_values__previous_faculty_id=self.instructor.pk, new_values__faculty_id=self.replacement.pk).exists())
 
     def test_replacement_reuses_an_existing_assignment_instead_of_duplicating_it(self):
-        for active in (False, True):
-            with self.subTest(active=active):
-                self.assignment.is_active = True
-                self.assignment.save(update_fields=['is_active'])
-                target, _ = SectionInstructorAssignment.objects.update_or_create(faculty=self.replacement,
-                    semester=self.semester, year_level='3rd Year', section='BSIT-3A', defaults={'is_active': active})
-                response = self.client.patch(self.url, {'faculty_id': self.replacement.pk}, format='json')
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.data['assignment']['id'], target.pk)
-                self.assertEqual(SectionInstructorAssignment.objects.filter(is_active=True).count(), 1)
+        target = SectionInstructorAssignment.objects.create(faculty=self.replacement,
+            semester=self.semester, year_level='3rd Year', section='BSIT-3A', is_active=False)
+        response = self.client.patch(self.url, {'faculty_id': self.replacement.pk}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['assignment']['id'], target.pk)
+        self.assertEqual(SectionInstructorAssignment.objects.filter(is_active=True).count(), 1)
+
+    def test_assign_and_restore_cannot_add_a_second_active_instructor(self):
+        response = self.client.post('/api/users/pit-instructors/', {
+            'faculty_id': self.replacement.pk, 'section': 'BSIT-3A'}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('Florencia Dela Torre', str(response.data))
+        self.assertIn('Change instructor', str(response.data))
+        retired = SectionInstructorAssignment.objects.create(faculty=self.replacement,
+            semester=self.semester, year_level='3rd Year', section='BSIT-3A', is_active=False)
+        restore = self.client.patch(f'/api/users/pit-instructors/{retired.pk}/', {'is_active': True}, format='json')
+        self.assertEqual(restore.status_code, 400, restore.data)
+        self.assertEqual(SectionInstructorAssignment.objects.filter(is_active=True).count(), 1)
+
+    def test_moving_to_an_occupied_section_preserves_both_current_assignments(self):
+        admin = get_user_model().objects.create_user(username='assignment-admin', role='admin')
+        other = SectionInstructorAssignment.objects.create(faculty=self.replacement,
+            semester=self.semester, year_level='3rd Year', section='BSIT-3B')
+        self.client.force_authenticate(admin)
+        response = self.client.patch(self.url, {'section': 'BSIT-3B'}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assignment.refresh_from_db()
+        other.refresh_from_db()
+        self.assertEqual(self.assignment.section, 'BSIT-3A')
+        self.assertTrue(self.assignment.is_active)
+        self.assertTrue(other.is_active)
+
+    def test_direct_database_writes_cannot_bypass_the_single_instructor_rule(self):
+        from django.db import IntegrityError, transaction
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            SectionInstructorAssignment.objects.bulk_create([SectionInstructorAssignment(
+                faculty=self.replacement, semester=self.semester, year_level='3rd Year', section='BSIT-3A')])
+        self.assertEqual(SectionInstructorAssignment.objects.filter(is_active=True).count(), 1)
+
+    def test_repeating_the_same_assignment_is_idempotent(self):
+        response = self.client.post('/api/users/pit-instructors/', {
+            'faculty_id': self.instructor.pk, 'section': 'BSIT-3A'}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['assignment']['id'], self.assignment.pk)
+        self.assertEqual(SectionInstructorAssignment.objects.count(), 1)
+
+    def test_official_class_list_conflict_rolls_back_new_student_and_enrollment(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        self.replacement.first_name, self.replacement.last_name = 'Eduardo', 'Padilla'
+        self.replacement.save(update_fields=['first_name', 'last_name'])
+        response = self.client.post('/api/users/pit-lead/official-class-list-import/', {
+            'metadata': {'year_level': '3rd Year', 'section': 'BSIT-3A', 'instructor': 'Eduardo Padilla'},
+            'students': [{'id_number': '2097-conflict-student', 'full_name': 'Student, New', 'email': ''}],
+        }, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('Change instructor', str(response.data))
+        self.assertFalse(get_user_model().objects.filter(username='2097-conflict-student').exists())
+        self.assertFalse(StudentAcademicRecord.objects.exists())
+        self.assertEqual(SectionInstructorAssignment.objects.get(is_active=True).faculty, self.instructor)
 
     def test_invalid_replacement_and_stale_source_do_not_remove_the_current_instructor(self):
         for faculty in ('unknown', True, 999999):

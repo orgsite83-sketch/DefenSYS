@@ -270,7 +270,8 @@ class StageGradingConfigApiTests(APITestCase):
         self.assertEqual(config['panel_weight'], 50)
         self.assertEqual(config['adviser_weight'], 30)
         self.assertEqual(config['peer_weight'], 20)
-        self.assertTrue(
+        # Reading defaults must not allocate configuration in the selected term.
+        self.assertFalse(
             StageGradingConfig.objects.filter(
                 defense_stage=self.stage,
                 semester=self.semester,

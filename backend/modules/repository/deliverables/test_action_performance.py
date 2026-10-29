@@ -116,6 +116,26 @@ class DeliverableActionPerformanceTests(APITestCase):
         self.assertEqual(paper.status, 'accepted')
         self.assertEqual(paper.reviewed_by, self.adviser)
 
+    def test_review_reuses_reads_only_after_the_write_and_returns_fresh_status(self):
+        self.upload('PAPER', 'paper.docx')
+        with self.settings(READ_PROJECTION_CACHE_ENABLED=False):
+            _, uncached_queries, _ = self.action()
+        accepted, cached_queries, _ = self.action()
+        self.assertLess(cached_queries, uncached_queries)
+        paper = next(d for d in accepted['team']['selected_stage']['pre'] if d['id'] == 'PAPER')
+        self.assertEqual(paper['submission']['status'], 'accepted')
+        self.assertEqual(accepted['team']['counts']['ready'], 1)
+
+        self.client.force_authenticate(self.adviser)
+        response = self.client.post('/api/repository/deliverables/review/?response_mode=team', {
+            'team_id': self.team.pk, 'stage_label': self.stage.label,
+            'deliverable_id': 'PAPER', 'status': 'rejected', 'feedback': 'Please revise.',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        paper = next(d for d in response.data['team']['selected_stage']['pre'] if d['id'] == 'PAPER')
+        self.assertEqual(paper['submission']['status'], 'rejected')
+        self.assertEqual(response.data['team']['counts']['ready'], 0)
+
     def test_partial_response_removes_team_from_pending_filter_after_acceptance(self):
         self.upload('PAPER', 'paper.docx')
         result, _, _ = self.action(status='pending_review')

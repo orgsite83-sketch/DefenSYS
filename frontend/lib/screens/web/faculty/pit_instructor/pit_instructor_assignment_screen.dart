@@ -55,7 +55,7 @@ class _PitInstructorAssignmentScreenState
             icon: Icons.assignment_ind_outlined,
             title: 'PIT Instructors',
             subtitle:
-                'Assign faculty instructors to sections in your PIT year.',
+                'Assign one active instructor per section. Use Change to replace an instructor.',
           ),
           const SizedBox(height: 20),
           if (state.error != null) ...[

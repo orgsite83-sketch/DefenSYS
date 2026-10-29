@@ -22,8 +22,13 @@ class SectionConceptService {
     ),
   );
 
-  Future<Map<String, dynamic>> get(int id) async =>
-      decode(await client.get(Uri.parse('$base/$id/')));
+  Future<Map<String, dynamic>> get(int id, {int? teamId}) async => decode(
+    await client.get(
+      Uri.parse('$base/$id/').replace(
+        queryParameters: teamId == null ? null : {'team_id': '$teamId'},
+      ),
+    ),
+  );
 
   Future<Map<String, dynamic>> imported(
     int teamId, {

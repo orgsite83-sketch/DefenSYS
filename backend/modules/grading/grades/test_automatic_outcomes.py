@@ -158,6 +158,23 @@ class AutomaticConceptOutcomeTests(APITestCase):
         return group_completion_readiness(semester=self.semester, scope='capstone',
             stage_label=self.stage.label, user=self.admin)
 
+    def test_api_null_or_blank_token_cannot_bypass_capstone_closure_review(self):
+        self.submit([5, 6, 7])
+        preview = self.closure_preview()
+        self.assertTrue(preview['can_complete'], preview)
+        self.client.force_authenticate(self.admin)
+        for token in (None, ''):
+            with self.subTest(token=token):
+                response = self.client.patch('/api/grading/grades/group-settings/?workspace=operations', {
+                    'scope': 'capstone', 'stage_label': self.stage.label,
+                    'is_officially_complete': True, 'failure_grade_ids': [self.grade.pk],
+                    'closure_reason': 'Assessment window closed.', 'completion_token': token,
+                }, format='json')
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIn('Stage readiness changed', str(response.data))
+                self.grade.refresh_from_db()
+                self.assertFalse(self.grade.closed_as_failed)
+
     def test_admin_closure_preserves_hearing_and_no_official_numeric_grade(self):
         self.submit([5, 6, 7])
         preview = self.closure_preview()

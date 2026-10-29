@@ -405,7 +405,9 @@ class GradeCenterGroupSettingsSerializer(drf_serializers.Serializer):
     peer_grading_enabled = drf_serializers.BooleanField(required=False)
     failure_grade_ids = drf_serializers.ListField(child=drf_serializers.IntegerField(), required=False)
     closure_reason = drf_serializers.CharField(max_length=5000, required=False, allow_blank=True)
-    completion_token = drf_serializers.CharField(required=False, allow_blank=True)
+    # PIT previews have no token. Accept existing clients' explicit null;
+    # configured Capstone closure still validates its token in the service.
+    completion_token = drf_serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     def validate(self, attrs):
         if 'is_officially_complete' not in attrs and 'peer_grading_enabled' not in attrs:

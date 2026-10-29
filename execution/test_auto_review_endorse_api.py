@@ -138,13 +138,13 @@ class ReviewEndorseAutomationApiTests(APITestCase):
         self.assertEqual(self.sessions, [])
         self.assertEqual(DeliverableSubmission.objects.get(team=self.pit).status, 'pending')
 
-    def test_ambiguous_instructors_require_an_explicit_assigned_reviewer(self):
+    def test_second_active_instructor_is_rejected_before_review_automation(self):
         self.prepare_pit()
         other = get_user_model().objects.create_user(username='second-review-instructor', role='faculty')
-        SectionInstructorAssignment.objects.create(faculty=other, semester=self.semester,
-            year_level='1st Year', section=self.pit.section)
-        self.assertEqual(self.run_script(dry_run=True), 2)
-        self.assertEqual(self.sessions, [])
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            SectionInstructorAssignment.objects.create(faculty=other, semester=self.semester,
+                year_level='1st Year', section=self.pit.section)
         self.assertEqual(self.run_script('--reviewers', self.instructor.username), 0)
         self.assertEqual(DeliverableSubmission.objects.get(team=self.pit).reviewed_by_id, self.instructor.pk)
 
@@ -196,7 +196,6 @@ class ReviewEndorseAutomationApiTests(APITestCase):
         from django.utils import timezone
         from defense.stages.models import StageDeliverable
         from defense.scheduler.models import PitEventDeliverable, DefenseSchedule
-        from repository.deliverables.test_submission_timing import create_legacy_schedule
         fields = {'deliverable_id': deliverable, 'label': 'Approved final manuscript',
                   'deliverable_type': 'post', 'file_format': 'pdf', 'required': required}
         if grouped:
@@ -211,7 +210,9 @@ class ReviewEndorseAutomationApiTests(APITestCase):
                 'start_time': '09:00:00', 'room': 'Post review room', 'created_by': self.admin,
                 'status': DefenseSchedule.STATUS_DONE}
             schedule_fields.update(event_name=self.event.event_name) if team.is_pit else schedule_fields.update(defense_stage=self.stage)
-            create_legacy_schedule(**schedule_fields)
+            # These fixtures represent an existing completed legacy defense,
+            # rather than creating a new hearing through today's setup guards.
+            DefenseSchedule.objects.bulk_create([DefenseSchedule(**schedule_fields)])
         return definition
 
     def test_post_pit_group_accepts_files_as_instructor_without_endorsement(self):

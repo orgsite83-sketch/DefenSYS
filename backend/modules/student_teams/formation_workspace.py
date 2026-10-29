@@ -282,9 +282,9 @@ def _team_import_preview(user, data):
                 issues.append('The referenced instructor account is inactive.')
             if instructor and not is_manager(user) and instructor.pk != user.pk:
                 issues.append('An instructor import cannot assign another instructor.')
-            if shared and instructor and SectionInstructorAssignment.objects.filter(semester=term,
+            if instructor and SectionInstructorAssignment.objects.filter(semester=term,
                     year_level=year, section=row['section'], is_active=True).exclude(faculty=instructor).exists():
-                issues.append('This shared section already has a different instructor. Resolve the section instructor assignment before importing its shared project.')
+                issues.append('This section already has a different instructor. Use Change instructor before importing.')
             for record in StudentAcademicRecord.objects.filter(student_id__in=resolved, semester=term).order_by('student_id'):
                 record_state.append([record.student_id, record.year_level, record.section])
                 if record.year_level != year and not ('Capstone' in level and record.year_level in ('3rd Year', '4th Year')):
@@ -416,8 +416,8 @@ class PreparedTeamsCommitView(ImportAPIView):
             if is_manager(request.user) and row.get('instructor_name') and team.section:
                 instructor, _ = resolve_user_by_full_name(row['instructor_name'], role=['faculty', 'admin'], field_label='Instructor')
                 if instructor:
-                    SectionInstructorAssignment.objects.update_or_create(faculty=instructor, semester=term,
-                        year_level=year, section=team.section, defaults={'assigned_by': request.user, 'is_active': True})
+                    from user_management.instructor_assignments import assign_section_instructor
+                    assign_section_instructor(request.user, instructor, term, year, team.section, request=request)
             team_ids.append(team.pk)
             created += existing is None
             updated += existing is not None

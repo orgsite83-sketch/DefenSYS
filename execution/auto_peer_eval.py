@@ -28,6 +28,7 @@ Usage Examples:
 """
 
 import argparse
+import math
 import os
 import random
 import sys
@@ -53,7 +54,7 @@ def init_django():
     django.setup()
 
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Automate peer evaluations across student teams using random scores."
     )
@@ -125,7 +126,12 @@ def parse_args():
         default=0.05,
         help="Delay in seconds between requests (default: 0.05s)",
     )
-    return parser.parse_args()
+    parser.add_argument('--request-timeout', type=float, default=30,
+        help='HTTP request timeout in seconds (default: 30). Writes are never retried automatically.')
+    args = parser.parse_args(argv)
+    if not math.isfinite(args.request_timeout) or not 0 < args.request_timeout <= 300:
+        parser.error('--request-timeout must be a finite number greater than 0 and at most 300 seconds.')
+    return args
 
 
 def fetch_student_records(team_id: Optional[int] = None, specific_usernames: Optional[List[str]] = None,
@@ -180,10 +186,12 @@ def get_jwt_token_for_user(username: str) -> Optional[str]:
 
 
 class StudentClient:
-    def __init__(self, base_url: str, username: str, password: Optional[str] = None):
+    def __init__(self, base_url: str, username: str, password: Optional[str] = None,
+                 *, request_timeout: float = 30):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password or username
+        self.request_timeout = request_timeout
         self.session = requests.Session()
         self.access_token: Optional[str] = None
 
@@ -203,7 +211,7 @@ class StudentClient:
         url = f"{self.base_url}/api/login/"
         payload = {"username": self.username, "password": self.password}
         try:
-            resp = self.session.post(url, json=payload, timeout=10)
+            resp = self.session.post(url, json=payload, timeout=self.request_timeout)
             if resp.status_code == 200:
                 data = resp.json()
                 self.access_token = data.get("access")
@@ -226,7 +234,7 @@ class StudentClient:
     def get_dashboard(self) -> Optional[Dict]:
         url = f"{self.base_url}/api/dashboards/student/"
         try:
-            resp = self.session.get(url, timeout=10)
+            resp = self.session.get(url, timeout=self.request_timeout)
             if resp.status_code == 200:
                 return resp.json()
             else:
@@ -242,7 +250,7 @@ class StudentClient:
 
         url = f"{self.base_url}/api/grading/grades/peer-evaluations/"
         try:
-            resp = self.session.post(url, json=payload, timeout=10)
+            resp = self.session.post(url, json=payload, timeout=self.request_timeout)
             if resp.status_code == 200:
                 return True
             else:
@@ -298,7 +306,8 @@ def run():
 
     for idx, (username, default_pwd) in enumerate(student_records, 1):
         pwd = args.password or default_pwd
-        client = StudentClient(args.base_url, username, pwd)
+        client = StudentClient(args.base_url, username, pwd,
+                               request_timeout=getattr(args, 'request_timeout', 30))
 
         if not client.authenticate(use_http_login=args.http_login):
             continue

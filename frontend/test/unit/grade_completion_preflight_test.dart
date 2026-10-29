@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:defensys/services/grade_center_provider.dart';
@@ -12,10 +13,21 @@ class _ReadinessClient extends AuthenticatedHttpClient {
   final requests = <Uri>[];
   final writes = <Map<String, dynamic>>[];
   bool allowClosure = false;
+  Completer<http.Response>? pendingRead;
+  Completer<http.Response>? pendingWrite;
+  http.Response? writeResponse;
+  int discardedReads = 0;
+
+  @override
+  void discardPendingReads() {
+    discardedReads++;
+    super.discardPendingReads();
+  }
+
   @override
   Future<http.Response> get(Uri uri, {Map<String, String>? headers}) async {
     requests.add(uri);
-    return response;
+    return pendingRead?.future ?? response;
   }
 
   @override
@@ -27,11 +39,109 @@ class _ReadinessClient extends AuthenticatedHttpClient {
   }) async {
     if (!allowClosure) throw StateError('Preflight must not write grades');
     writes.add(Map<String, dynamic>.from(jsonDecode(body as String)));
-    return http.Response('{"group_settings":{}}', 200);
+    return pendingWrite?.future ??
+        writeResponse ??
+        http.Response('{"group_settings":{}}', 200);
   }
 }
 
 void main() {
+  testWidgets('a stalled readiness request times out and releases the button', (
+    tester,
+  ) async {
+    late _ReadinessClient client;
+    final container = ProviderContainer(
+      overrides: [
+        authenticatedHttpClientProvider.overrideWith((ref) {
+          client = _ReadinessClient(ref, http.Response('{}', 200));
+          client.pendingRead = Completer<http.Response>();
+          return client;
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    final request = container
+        .read(gradeCenterProvider.notifier)
+        .checkGroupCompletion(scope: 'pit', stageLabel: 'PIT Expo');
+    final result = expectLater(
+      request,
+      throwsA(
+        predicate(
+          (error) => error.toString().contains('grading check took too long'),
+        ),
+      ),
+    );
+    expect(container.read(gradeCenterProvider).isCheckingCompletion, isTrue);
+    await tester.pump(const Duration(seconds: 31));
+    await result;
+    expect(container.read(gradeCenterProvider).isCheckingCompletion, isFalse);
+    expect(client.writes, isEmpty);
+    expect(client.discardedReads, 1);
+  });
+
+  test('completion success is still shown after grades refresh', () async {
+    final container = ProviderContainer(
+      overrides: [
+        authenticatedHttpClientProvider.overrideWith(
+          (ref) => _ReadinessClient(ref, http.Response('{"grades":[]}', 200))
+            ..allowClosure = true
+            ..writeResponse = http.Response(
+              '{"group_settings":{},"auto_publish":{"published_count":2}}',
+              200,
+            ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    expect(
+      await container
+          .read(gradeCenterProvider.notifier)
+          .updateGroupSettings(
+            scope: 'pit',
+            stageLabel: 'PIT Expo',
+            isOfficiallyComplete: true,
+          ),
+      isTrue,
+    );
+    expect(
+      container.read(gradeCenterProvider).message,
+      contains('marked officially complete'),
+    );
+  });
+
+  testWidgets('a stalled completion asks to refresh before another write', (
+    tester,
+  ) async {
+    late _ReadinessClient client;
+    final container = ProviderContainer(
+      overrides: [
+        authenticatedHttpClientProvider.overrideWith((ref) {
+          client = _ReadinessClient(ref, http.Response('{}', 200))
+            ..allowClosure = true
+            ..pendingWrite = Completer<http.Response>();
+          return client;
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    final request = container
+        .read(gradeCenterProvider.notifier)
+        .updateGroupSettings(
+          scope: 'capstone',
+          stageLabel: 'Concept Proposal',
+          isOfficiallyComplete: true,
+        );
+    expect(container.read(gradeCenterProvider).isSaving, isTrue);
+    await tester.pump(const Duration(seconds: 91));
+    expect(await request, isFalse);
+    expect(container.read(gradeCenterProvider).isSaving, isFalse);
+    expect(
+      container.read(gradeCenterProvider).error,
+      contains('Refresh the Grade Center'),
+    );
+    expect(client.writes, hasLength(1));
+  });
+
   test(
     'closure submits the reviewed identities once and never reuses consent',
     () async {

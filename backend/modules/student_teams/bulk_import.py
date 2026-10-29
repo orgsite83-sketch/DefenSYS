@@ -668,6 +668,17 @@ def validate_bulk_team_row(
                 issues.append(instructor_error)
             elif not instructor.is_active:
                 issues.append(f'Instructor "{instructor_ref}" is inactive.')
+            elif (data.get('section') or '').strip():
+                from .term_scope import get_active_semester
+                from .team_levels import normalize_year_level, level_year
+                from user_management.instructor_assignments import require_instructor_slot
+                from rest_framework.exceptions import ValidationError as InstructorConflict
+                try:
+                    require_instructor_slot(get_active_semester(),
+                        normalize_year_level(data.get('year_level')) or level_year(data.get('level', '')),
+                        ' '.join(data['section'].strip().split()), instructor.pk)
+                except InstructorConflict as exc:
+                    issues.append(str(exc.detail['section']))
             if not (data.get('section') or '').strip():
                 issues.append('A section is required to assign a PIT instructor.')
 

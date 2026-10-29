@@ -128,7 +128,11 @@ Map<String, dynamic> _preview() => {
   ],
 };
 
-Future<void> _pump(WidgetTester tester, {bool dark = false}) async {
+Future<void> _pump(
+  WidgetTester tester, {
+  bool dark = false,
+  Map<String, dynamic>? studentData,
+}) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(390, 1000);
   addTearDown(tester.view.resetPhysicalSize);
@@ -136,12 +140,14 @@ Future<void> _pump(WidgetTester tester, {bool dark = false}) async {
   await loadPreviewFonts(force: true);
   await pumpDefensysWidget(
     tester,
-    const SectionIntegrationTab(
-      studentData: {
-        // The project response establishes the role, even when this cached flag is missing.
-        'student': {'id': 1, 'is_project_manager': false},
-        'team': {'id': 5, 'section': 'BSIT-3A'},
-      },
+    SectionIntegrationTab(
+      studentData:
+          studentData ??
+          const {
+            // The project response establishes the role, even when this cached flag is missing.
+            'student': {'id': 1, 'is_project_manager': false},
+            'team': {'id': 5, 'section': 'BSIT-3A'},
+          },
     ),
     overrides: [
       authProvider.overrideWith(_PM.new),
@@ -494,4 +500,62 @@ void main() {
     expect(find.text('1 of 3 titles provided'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'continued system opens the current stage with its own team context',
+    (tester) async {
+      final requests = <Uri>[];
+      final project = {
+        ..._preview(),
+        'id': 7,
+        'imported': false,
+        'historical': true,
+        'editable': false,
+        'selected_key': 'c1',
+        'can_edit_names': false,
+        'shared_contexts': [
+          {
+            'team_id': 5,
+            'source_project_id': 7,
+            'section': 'BSIT-4A',
+            'stage_label': 'Final Defense',
+            'stage_status': 'current',
+            'scope': 'capstone',
+            'continued': true,
+            'historical': false,
+            'project_manager_id': 1,
+            'project_manager_name': 'Gabriel Navarro',
+            'reviewer_name': 'Eduardo Padilla',
+            'selected_key': 'c1',
+            'systems': [(_preview()['systems'] as List).first],
+            'requirements': [],
+          },
+        ],
+      };
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          requests.add(request.url);
+          return http.Response(jsonEncode(project), 200);
+        }),
+      );
+      await _pump(
+        tester,
+        studentData: const {
+          'student': {'id': 1, 'is_project_manager': false},
+          'team': {
+            'id': 5,
+            'section': 'BSIT-4A',
+            'section_project_id': 7,
+            'current_defense_stage': 'Final Defense',
+          },
+        },
+      );
+      expect(requests.single.queryParameters['team_id'], '5');
+      expect(find.textContaining('Smart Agro-Industrial'), findsWidgets);
+      expect(find.text('Upload Concept Paper (PDF)'), findsNothing);
+      expect(find.text('Edit titles'), findsNothing);
+      expect(find.text('System B'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

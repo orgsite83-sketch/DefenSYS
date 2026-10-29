@@ -46,6 +46,57 @@ class _Deliverables extends CapstoneDeliverablesNotifier {
   }) async {}
 }
 
+const _continuedLabels = ['Concept Proposal', 'Project Proposal', 'Final Defense'];
+
+final _continuedStages = <Map<String, dynamic>>[
+  for (final label in _continuedLabels)
+    {
+      'stage_label': label,
+      'semester_id': label == 'Final Defense' ? 9 : 3,
+      'read_only': label != 'Final Defense',
+      'stage_progress_status': label == 'Final Defense' ? 'locked' : 'passed',
+      'deliverables_configured': true,
+      'endorsed': label != 'Final Defense',
+      'archive_complete': true,
+      'post': <Map<String, dynamic>>[],
+      'deliverables': [
+        if (label != 'Final Defense')
+          {
+            'id': 'PRE', 'label': '$label paper', 'type': 'pre',
+            'required': true, 'uploaded': true, 'can_upload': false,
+            'submission': {'status': 'accepted', 'file_name': 'original-$label.pdf'},
+          },
+      ],
+      if (label != 'Final Defense')
+        'grade': {'schedule_id': label == 'Project Proposal' ? 18 : 17,
+          'status': 'published', 'verdict': 'approved', 'final_grade': 85},
+    },
+];
+
+class _ContinuedDeliverables extends CapstoneDeliverablesNotifier {
+  CapstoneDeliverablesState _forStage(String selected) => CapstoneDeliverablesState(
+    selectedStage: selected,
+    stageOptions: _continuedLabels,
+    teams: [{
+      'id': 7, 'name': 'Team AgriSense', 'project_version': 1,
+      'semester_id': 9, 'current_stage': 'Final Defense',
+      'stages': _continuedStages,
+      'selected_stage': _continuedStages.firstWhere((stage) => stage['stage_label'] == selected),
+    }],
+  );
+
+  @override
+  CapstoneDeliverablesState build() => _forStage('Final Defense');
+
+  @override
+  Future<void> fetchDeliverables({
+    String? workspace, String? search, String? selectedStage, String? status,
+    String? scope, String? yearLevel, String? section, String? successMessage,
+  }) async {
+    state = _forStage(selectedStage ?? state.selectedStage);
+  }
+}
+
 Map<String, dynamic> _record(
   int id, {
   String status = 'scheduled',
@@ -112,6 +163,53 @@ Future<void> _pump(
 );
 
 void main() {
+  for (final dark in [false, true]) {
+    testWidgets('migrated student can inspect earlier stages (${dark ? 'dark' : 'light'})', (tester) async {
+      tester.view.physicalSize = const Size(390, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpDefensysWidget(tester, RepaintBoundary(
+        key: const ValueKey('continued-stages-preview'),
+        child: StudentEventsTab(isCapstone: true, isActive: false, studentData: {
+          'student': {'id': 1},
+          'team': {'id': 7, 'name': 'Team AgriSense', 'semester_id': 9,
+            'project_version': 1, 'currentStage': 'Final Defense'},
+          'members': <Map<String, dynamic>>[],
+          'current_stage': 'Final Defense', 'stage_options': _continuedLabels,
+          'stages': _continuedStages,
+        }),
+      ), theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme, overrides: [
+        capstoneDeliverablesProvider.overrideWith(_ContinuedDeliverables.new),
+        teamDefenseProvider.overrideWith(() => _Defenses([
+          _record(18, status: 'done', progress: 'completed', verdict: 'approved'),
+        ])),
+      ]);
+      expect(find.text('Stage 3 of 3'), findsOneWidget);
+      for (final label in _continuedLabels) {
+        expect(find.text(label), findsWidgets);
+      }
+      expect(find.text('Passed'), findsNWidgets(2));
+      await capturePreview(tester, find.byKey(const ValueKey('continued-stages-preview')),
+        'continued-student-stages-${dark ? 'dark' : 'light'}');
+
+      await tester.tap(find.text('Project Proposal'));
+      await tester.pumpAndSettle();
+      final records = tester.widget<TeamDefenseRecordsView>(find.byType(TeamDefenseRecordsView));
+      expect(records.selectedStage, 'Project Proposal');
+      expect(records.semesterId, 3);
+      expect(find.byKey(const ValueKey('defense-record-18')), findsOneWidget);
+      expect(find.text('Stage 3 of 3'), findsOneWidget);
+
+      await tester.tap(find.text('Deliverables'));
+      await tester.pumpAndSettle();
+      expect(find.text('original-Project Proposal.pdf'), findsOneWidget);
+      expect(find.text('Upload File'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('automatic closure failure displays the final outcome instead of a pending verdict', (tester) async {
     final record = _record(18, status: 'done', progress: 'failed', verdict: 'failed');
     record['assessment'] = <String, dynamic>{

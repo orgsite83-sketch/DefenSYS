@@ -207,11 +207,25 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
                                 backgroundColor: DefensysTokens.successText,
                                 hoverBackgroundColor: const Color(0xFF065F46),
                                 foregroundColor: Colors.white,
-                                leading: const Icon(
-                                  Icons.verified_outlined,
-                                  size: 16,
+                                leading: busy && !state.isLoading
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.verified_outlined,
+                                        size: 16,
+                                      ),
+                                child: Text(
+                                  state.isCheckingCompletion
+                                      ? 'Checking…'
+                                      : state.isSaving
+                                      ? 'Saving…'
+                                      : 'Mark Complete',
                                 ),
-                                child: const Text('Mark Complete'),
                               );
                       },
                     ),

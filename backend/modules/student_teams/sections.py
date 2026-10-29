@@ -64,6 +64,11 @@ def can_manage_concept_policies(user, team):
 def section_payload(team, teams, students, assignment, *, actor=None):
     from .section_concept_policies import policy_context_payload
     from user_management.serializers import SectionInstructorAssignmentSerializer
+    if assignment is None and team.is_capstone:
+        from repository.section_concepts.continuation import approved_source, section_for
+        source = approved_source(team)
+        if source:
+            assignment = section_for(team, source)
     details = SectionAssignmentSerializer(assignment).data if assignment else {
         'section': team.section,
         'semester_id': team.semester_id,
@@ -131,6 +136,10 @@ def update_section(request, team_id, data):
     if data['expected_section'] != old_section:
         raise ValidationError({'section': 'The section has changed. Close and reopen the editor to load its current details.'})
     new_section = data['section']
+    if new_section != old_section and SectionInstructorAssignment.objects.filter(
+            semester_id=team.semester_id, year_level=team.year_level, section=new_section).exists():
+        raise ValidationError({'section': 'This section already has instructor assignment history. '
+            'Choose a different section name instead of merging its assignments.'})
     if team.is_capstone:
         from .section_years import capstone_section_issue
         issue = capstone_section_issue(new_section, team.year_level)

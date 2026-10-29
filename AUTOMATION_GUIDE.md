@@ -152,6 +152,8 @@ Remove `--dry-run` to submit. Every student must rate themselves and every teamm
 
 Other peer options include `--students 4001 4002`, `--team-id 25`, `--session-id UUID`, `--semester-id 2`, and `--limit 5`. Default scores are 6-9 for a 10-point criterion; customize with `--min-score 7 --max-score 9`. The peer script has no `--scope` option.
 
+For slower student dashboards, add `--request-timeout 90` (default: 30 seconds; maximum: 300). This applies to dashboard reads and submissions. A timed-out submission may already have saved; check the saved state before rerunning. The script does not automatically retry evaluation writes.
+
 ## 7. Upload the approved concept paper after defense
 
 In the first-year example, **D3: Approved Concept Paper** is a post-defense requirement. Use the folder containing the final approved PDFs. The script maps filenames; it does not determine whether their contents are the approved versions.

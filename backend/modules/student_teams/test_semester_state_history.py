@@ -69,6 +69,116 @@ class SemesterStateHistoryTests(APITestCase):
         self.assertEqual(response.data['stats']['active_defense_stages'], 0)
         self.assertEqual(list(StageGradingConfig.objects.values()), before)
 
+    def test_readiness_queue_preserves_both_inherited_stage_completions(self):
+        from grading.grades.models import TeamGrade
+
+        self.continue_team()
+        final = DefenseStage.objects.create(label='Implementation review', display_order=3)
+        # Destination configuration placeholders must not reset source results.
+        for stage in (self.first, self.second, final):
+            StageGradingConfig.objects.create(defense_stage=stage, semester=self.normal)
+        before = (list(TeamGrade.all_objects.values()),
+            list(TeamStageProgress.all_objects.values()), list(TeamTermParticipation.objects.values()))
+        response = self.client.get('/api/defense/schedules/')
+        self.assertEqual(response.status_code, 200, response.data)
+        team = next(t for t in response.data['teams'] if t['id'] == self.team.pk)
+        self.assertCountEqual(team['completed_stages'], [self.first.label, self.second.label])
+        for stage in (self.first, self.second):
+            self.assertEqual(team['stage_progress'][stage.label], 'completed')
+            self.assertNotIn(stage.label, team['eligible_stages'])
+        self.assertNotIn(final.label, team['completed_stages'])
+        self.assertEqual(team['stage_progress'].get(final.label, 'pending'), 'pending')
+        self.assertIsNone(team['ready_for_stage'])
+        report = self.client.get('/api/reports/readiness/', {
+            'export_format': 'json', 'scope': 'capstone', 'stage': self.first.label})
+        self.assertEqual(report.status_code, 200, report.data)
+        self.assertEqual(report.data['rows'][0]['status'], 'Completed')
+        self.assertEqual(report.data['rows'][0]['outstanding'], '')
+        self.assertEqual(before, (list(TeamGrade.all_objects.values()),
+            list(TeamStageProgress.all_objects.values()), list(TeamTermParticipation.objects.values())))
+
+    def test_readiness_does_not_inherit_completion_for_a_new_intake(self):
+        from defense.scheduler.serializers import ScheduleTeamSerializer
+
+        self.continue_team()
+        returning = self.make_team('Fresh intake', self.extension)
+        data = ScheduleTeamSerializer(returning).data
+        self.assertEqual(data['completed_stages'], [])
+        self.assertEqual(data['stage_progress'], {})
+
+    def test_readiness_uses_validated_source_evidence_for_older_migrations(self):
+        from defense.scheduler.serializers import ScheduleTeamSerializer
+
+        self.continue_team()
+        participation = self.team.term_participations.get(semester=self.normal)
+        participation.snapshot.pop('inherited_stage_ids')
+        participation.save(update_fields=['snapshot'])
+        before = list(TeamTermParticipation.objects.values())
+        data = ScheduleTeamSerializer(self.team).data
+        self.assertCountEqual(data['completed_stages'], [self.first.label, self.second.label])
+        self.assertEqual(data['stage_progress'], {
+            self.first.label: 'completed', self.second.label: 'completed'})
+        self.assertEqual(list(TeamTermParticipation.objects.values()), before)
+
+    def test_student_stages_keep_source_term_records_after_continuation(self):
+        from grading.grades.models import TeamGrade
+        from repository.deliverables.models import DeliverableSubmission
+
+        self.continue_team()
+        final = DefenseStage.objects.create(label='Implementation review', display_order=3)
+        expected_labels = [self.first.label, self.second.label, final.label]
+        source_file = DeliverableSubmission.objects.get(team=self.team, stage_label=self.first.label)
+        source_file.file_replacement_unlocked = True
+        source_file.save()
+        before = (list(TeamGrade.all_objects.values()), list(DeliverableSubmission.all_objects.values()),
+            list(TeamStageProgress.all_objects.values()), list(TeamTermParticipation.objects.values()))
+        self.client.force_authenticate(self.team.leader)
+
+        dashboard = self.client.get('/api/dashboards/student/')
+        self.assertEqual(dashboard.status_code, 200, dashboard.data)
+        self.assertEqual(dashboard.data['stage_options'], expected_labels)
+        self.assertEqual(dashboard.data['current_stage'], final.label)
+        self.team.refresh_from_db()
+        self.assertIsNone(self.team.ready_for_stage)
+        for stage in dashboard.data['stages'][:2]:
+            self.assertTrue(stage['read_only'])
+            self.assertEqual(stage['semester_id'], self.intake.pk)
+            self.assertEqual(stage['stage_status_detail'], 'passed')
+            self.assertEqual(stage['grade']['status'], 'published')
+            self.assertTrue(stage['required_complete'])
+            self.assertTrue(stage['pre'][0]['uploaded'])
+            self.assertFalse(stage['pre'][0]['can_upload'])
+            self.assertFalse(stage['pre'][0]['can_faculty_review'])
+            self.assertFalse(stage['peer_eval_allowed'])
+        self.assertFalse(dashboard.data['stages'][2]['read_only'])
+        self.assertEqual(dashboard.data['stages'][2]['semester_id'], self.normal.pk)
+
+        for selected in (None, self.first.label, self.second.label):
+            response = self.client.get('/api/repository/deliverables/',
+                {'stage_label': selected} if selected else {})
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(response.data['stage_options'], expected_labels)
+            self.assertEqual(response.data['selected_stage'], selected or final.label)
+            team = response.data['teams'][0]
+            self.assertEqual(team['current_stage'], final.label)
+            self.assertEqual(team['selected_stage']['semester_id'],
+                self.intake.pk if selected else self.normal.pk)
+            if selected:
+                self.assertEqual(team['selected_stage']['pre'][0]['submission']['file_name'], 'stage-paper.pdf')
+                self.assertEqual(team['grade']['status'], 'published')
+        self.assertEqual(before, (list(TeamGrade.all_objects.values()),
+            list(DeliverableSubmission.all_objects.values()), list(TeamStageProgress.all_objects.values()),
+            list(TeamTermParticipation.objects.values())))
+
+        # A stale client cannot use a carried replacement grant to change history.
+        response = self.client.post('/api/repository/deliverables/upload/', {
+            'team_id': self.team.pk, 'stage_label': self.first.label,
+            'deliverable_id': 'PRE', 'file_name': 'changed.pdf'}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('read-only', str(response.data))
+        source_file.refresh_from_db()
+        self.assertEqual(source_file.file_name, 'stage-paper.pdf')
+
     def test_admin_setup_actions_keep_new_stages_after_continuation(self):
         self.continue_team()
         stage = DefenseStage.objects.create(label='Implementation review', display_order=3)

@@ -49,7 +49,7 @@ Use `--team-id 25 26` instead of `--all-teams` to select particular teams. `--ba
 - PIT uses the active section instructor assignment for that team's semester, year and section, in `workspace=instructor`.
 - Capstone uses the team's active assigned adviser, in `workspace=adviser`. A Capstone section instructor is not a replacement for an adviser.
 - Accounts use short-lived ordinary access tokens in memory. Passwords and refresh-token records are not changed. An admin/PIT Lead is never used as a fallback when an assignment is missing.
-- If several instructors are assigned to the same team, the script reports ambiguity. Select an assigned username with `--reviewers USERNAME`, combined with `--team-id` if you only want that instructor's particular teams. This filter does not grant permissions.
+- Each section has one active instructor per semester/year. The database and import services reject a second active assignment. If legacy data still reports several instructors, resolve the assignments through management before evaluation; `--reviewers USERNAME` filters discovery and never grants review permission.
 - Reviewer identity, active semester and project version are revalidated before reads and writes. In pre mode, the backend's signed review token pins the requirements and uploaded-file snapshot. Post mode refreshes and checks each current file ID/revision and requirement before using the existing file-review endpoint.
 
 ## What the command does

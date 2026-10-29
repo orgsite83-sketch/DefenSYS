@@ -795,6 +795,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                             .whereType<Map>()
                             .map((g) => Map<String, dynamic>.from(g))
                             .toList();
+                        final stageInfo = stagesList.firstWhere(
+                          (stage) => stage['stage_label'] == selectedStage,
+                          orElse: () => <String, dynamic>{},
+                        );
                         return TeamDefenseRecordsView(
                           teamId:
                               defenseRecordId(teamData?['id'] ?? team?['id']) ??
@@ -805,7 +809,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                 team?['project_version'],
                           ),
                           semesterId: defenseRecordId(
-                            teamData?['semester_id'] ?? team?['semester_id'],
+                            stageInfo['semester_id'] ??
+                                teamData?['semester_id'] ??
+                                team?['semester_id'],
                           ),
                           adviserName: adviserName,
                           grades: stageGrades,
@@ -1804,7 +1810,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                                 context,
                                               )
                                             : (isCleared
-                                                  ? const Color(0xFF1E293B)
+                                                  ? DefensysTokens.textPrimaryOf(context)
                                                   : DefensysTokens.textSecondaryOf(
                                                       context,
                                                     ))),

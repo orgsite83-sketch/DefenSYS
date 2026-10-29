@@ -196,6 +196,10 @@ class RosterWorkspaceTests(APITestCase):
         from user_management.academic_records.models import StudentAcademicRecord
         from user_management.models import SectionInstructorAssignment
         other = get_user_model().objects.create_user(username='imported-section-instructor', role='faculty')
+        # This import fills a vacant slot; replacing an occupied slot must use
+        # the explicit assignment action instead of adding a second owner.
+        SectionInstructorAssignment.objects.filter(semester=self.term,
+            year_level='2nd Year', section='BSIT-2A').update(is_active=False)
         StudentAcademicRecord.objects.filter(student__in=self.students[:3], semester=self.term).update(section='')
         body = self.section_import()
         body['workspace'] = 'operations'
@@ -216,6 +220,26 @@ class RosterWorkspaceTests(APITestCase):
         self.assertTrue(SectionInstructorAssignment.objects.filter(faculty=other,
             semester=self.term, year_level='2nd Year', section='BSIT-2A', is_active=True).exists())
         self.assertEqual(StudentAcademicRecord.objects.filter(student__in=self.students[:3], section='BSIT-2A').count(), 3)
+
+    def test_roster_import_rechecks_instructor_assignment_before_committing(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        from user_management.models import SectionInstructorAssignment
+        from user_management.instructor_assignments import update_instructor_assignment
+        StudentAcademicRecord.objects.filter(student__in=self.students[:3], semester=self.term).update(section='')
+        body = self.section_import()
+        body['workspace'] = 'operations'
+        preview = self.client.post('/api/teams/rosters/preview/', body, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        replacement = get_user_model().objects.create_user(username='new-section-owner', role='faculty')
+        original = SectionInstructorAssignment.objects.get(semester=self.term,
+            year_level='2nd Year', section='BSIT-2A', is_active=True)
+        update_instructor_assignment(self.lead, original.pk, {'faculty_id': replacement.pk})
+        failed = self.apply(preview.data)
+        self.assertIn(failed.status_code, (400, 409), failed.data)
+        self.assertFalse(StudentTeam.objects.exists())
+        self.assertEqual(StudentAcademicRecord.objects.filter(student__in=self.students[:3], section='').count(), 3)
+        self.assertEqual(SectionInstructorAssignment.objects.get(semester=self.term,
+            year_level='2nd Year', section='BSIT-2A', is_active=True).faculty, replacement)
 
     def test_empty_read_still_rejects_other_years_invalid_workspaces_and_capstone(self):
         from user_management.academic_records.models import StudentAcademicRecord

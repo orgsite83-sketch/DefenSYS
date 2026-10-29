@@ -124,6 +124,8 @@ class ScheduleRunContainer extends ConsumerStatefulWidget {
 class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   bool _isGenerating = false;
   bool _isConfirming = false;
+  String? _generationError;
+  String? _confirmationError;
   String? _adviserPanelWarning;
   String? _lastGeneratedConfigSignature;
   int? _selectedChairId;
@@ -377,6 +379,40 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   int _getReadyTeamsCount(DefenseSchedulerState state) =>
       _eligibleTeams(state).length;
 
+  List<Map<String, dynamic>> _pendingSharedReadiness({Set<int>? teamIds}) {
+    final stage = widget.state.defenseStages.firstWhere(
+      (row) => asInt(row['id']) == widget.stageId,
+      orElse: () => <String, dynamic>{},
+    );
+    final label = widget.scope == 'pit'
+        ? widget.eventController.text.trim()
+        : stage['label']?.toString() ?? '';
+    final sections = <String, Map<String, dynamic>>{};
+    for (final team in teamsForScope(widget.state, widget.scope)) {
+      if (teamIds != null && !teamIds.contains(asInt(team['id']))) continue;
+      if (isTeamStageCompleted(team, label) ||
+          isTeamStageScheduled(team, label)) {
+        continue;
+      }
+      final readiness = sharedSchedulingReadiness(team, label);
+      if (readiness['complete'] == false) {
+        sections['${readiness['section']}'] = readiness;
+      }
+    }
+    return sections.values.toList();
+  }
+
+  Widget _sharedRequirementNotice(Map<String, dynamic> readiness) => Padding(
+    padding: const EdgeInsets.only(top: 12),
+    child: _buildWarningBanner(
+      icon: Icons.folder_off_outlined,
+      isError: false,
+      message:
+          '${readiness['section']} · ${sharedRequirementsStatus(readiness)}. '
+          '${sharedRequirementsDetail(readiness)}',
+    ),
+  );
+
   Future<void> _chooseScheduleTeams() async {
     final eligible = _eligibleTeams(widget.state);
     final ids = {
@@ -534,6 +570,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             color: DefensysTokens.textSecondaryOf(context),
           ),
         ),
+        for (final readiness in _pendingSharedReadiness())
+          _sharedRequirementNotice(readiness),
         const SizedBox(height: 12),
         Divider(height: 1, color: DefensysTokens.borderOf(context)),
         const SizedBox(height: 12),
@@ -890,12 +928,24 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       return;
     }
 
-    setState(() => _isGenerating = true);
+    setState(() {
+      _isGenerating = true;
+      _generationError = null;
+      _confirmationError = null;
+    });
     try {
       final ok = await ref
           .read(defenseSchedulerProvider.notifier)
           .generatePlan(payload);
-      if (!mounted || !ok) return;
+      if (!mounted) return;
+      if (!ok) {
+        setState(() {
+          _generationError =
+              ref.read(defenseSchedulerProvider).error ??
+              'The schedule preview could not be generated. Please try again.';
+        });
+        return;
+      }
 
       final generated = ref
           .read(defenseSchedulerProvider)
@@ -942,12 +992,23 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         )
         .toList();
 
-    setState(() => _isConfirming = true);
+    setState(() {
+      _isConfirming = true;
+      _confirmationError = null;
+    });
     try {
       final ok = await ref
           .read(defenseSchedulerProvider.notifier)
           .confirmPlan(payload);
-      if (!mounted || !ok) return;
+      if (!mounted) return;
+      if (!ok) {
+        setState(() {
+          _confirmationError =
+              ref.read(defenseSchedulerProvider).error ??
+              'The schedule could not be saved. Please try again.';
+        });
+        return;
+      }
 
       widget.onPlanSlotsChanged([]);
       widget.onShowFinalPreviewChanged(false);
@@ -1857,6 +1918,17 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 icon: Icons.warning_amber_rounded,
                 isError: true,
                 message: _adviserPanelWarning!,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (_generationError != null) ...[
+            Semantics(
+              liveRegion: true,
+              child: _buildWarningBanner(
+                icon: Icons.error_outline,
+                isError: true,
+                message: _generationError!,
               ),
             ),
             const SizedBox(height: 16),
@@ -2801,6 +2873,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   }
 
   Widget _buildStepThree(DefenseSchedulerState state) {
+    final sharedPending = _pendingSharedReadiness(
+      teamIds: {
+        for (final slot in widget.planSlots)
+          if (asInt(slot['team_id']) != null) asInt(slot['team_id'])!,
+      },
+    );
     return _schedulerCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2808,9 +2886,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           _planStepHeading(
             3,
             'Step 3: Final Schedule Preview',
-            'Ready to Save',
-            const Color(0xFFECFDF3),
-            const Color(0xFF027A48),
+            sharedPending.isEmpty ? 'Ready to Save' : 'Requirements pending',
+            sharedPending.isEmpty
+                ? const Color(0xFFECFDF3)
+                : const Color(0xFFFEF3C7),
+            sharedPending.isEmpty
+                ? const Color(0xFF027A48)
+                : const Color(0xFFB45309),
           ),
           const SizedBox(height: 10),
           Divider(height: 1, color: _isDark ? DefensysTokens.mistBorder : null),
@@ -2824,9 +2906,22 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             ),
           ),
           const SizedBox(height: 20),
+          for (final readiness in sharedPending)
+            _sharedRequirementNotice(readiness),
           for (final session in _sessions)
             _sessionPlanGroup(state, session, preview: true),
           const SizedBox(height: 24),
+          if (_confirmationError != null) ...[
+            Semantics(
+              liveRegion: true,
+              child: _buildWarningBanner(
+                icon: Icons.error_outline,
+                isError: true,
+                message: _confirmationError!,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           Align(
             alignment: Alignment.centerRight,
             child: Wrap(

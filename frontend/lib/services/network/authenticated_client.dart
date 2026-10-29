@@ -26,6 +26,9 @@ class AuthenticatedHttpClient {
   Completer<bool>? _refreshCompleter;
   final Map<String, Future<http.Response>> _pendingReads = {};
 
+  /// Let a retry start a new read after its caller stopped waiting.
+  void discardPendingReads() => _pendingReads.clear();
+
   Future<http.Response> _getShared(Uri uri, Map<String, String> headers) {
     // Share only concurrent reads with the same token and complete headers.
     // Completed responses are never cached, so a later visit always reads anew.

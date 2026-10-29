@@ -5,7 +5,7 @@ from django.http import Http404
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
-from defensys_backend.read_projection import ReadAPIView as APIView
+from defensys_backend.read_projection import ReadAPIView as APIView, read_projection
 
 from academic_period_management.serializers import SemesterSerializer
 from .serializers import (
@@ -151,8 +151,10 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         )
     else:
         from student_teams.capstone_context import phase_requirements
+        from student_teams.capstone_lifecycle import requirements_for
+        visible_requirements = requirements_for if request.user.role == 'student' else phase_requirements
         stage_options = list(dict.fromkeys(r['label'] for team in current
-            for r in phase_requirements(team)))
+            for r in visible_requirements(team)))
 
     requested_stage = selected_stage or request.query_params.get('stage_label') or ''
     if not requested_stage and current.exists():
@@ -200,6 +202,13 @@ def get_allowed_team(request, team_id):
 
 def deliverables_action_payload(request, team, stage_label):
     """Opt-in row refresh; legacy clients retain the full list response."""
+    # Start a fresh read scope after the action commits. Reuse repeated domain
+    # reads while building this response, without caching write-side decisions.
+    with read_projection():
+        return _deliverables_action_payload(request, team, stage_label)
+
+
+def _deliverables_action_payload(request, team, stage_label):
     scope = 'pit' if team.is_pit else 'capstone'
     selected_stage = request.query_params.get('stage_label') or stage_label
     queryset = workspace_deliverable_teams(request)

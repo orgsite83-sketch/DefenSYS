@@ -769,8 +769,22 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                                 }
                               }
                             : null,
-                        icon: const Icon(Icons.verified_outlined, size: 15),
-                        label: const Text('Mark Complete'),
+                        icon: state.isSaving || state.isCheckingCompletion
+                            ? const SizedBox(
+                                width: 15,
+                                height: 15,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.verified_outlined, size: 15),
+                        label: Text(
+                          state.isCheckingCompletion
+                              ? 'Checking…'
+                              : state.isSaving
+                              ? 'Saving…'
+                              : 'Mark Complete',
+                        ),
                         style: ElevatedButton.styleFrom(
                           foregroundColor: Colors.white,
                           backgroundColor: const Color(0xFF047857),

@@ -109,6 +109,13 @@ def can_read(user, project):
             return True
         if active_links(project).filter(Q(team__memberships__student=user) | Q(team__adviser=user)).exists():
             return True
+        if not project.pit_event_config_id:
+            from .continuation import participants, recorded_access
+            if recorded_access(user, project):
+                return True
+            if any(team.adviser_id == user.pk or team.leader_id == user.pk or
+                    team.memberships.filter(student=user).exists() for team in participants(project)):
+                return True
     schedules = project.rounds.values_list('schedules__pk', flat=True)
     from defense.scheduler.models import DefenseSchedule
     candidates = DefenseSchedule.objects.filter(Q(pk__in=schedules) |
@@ -134,7 +141,15 @@ def visible_projects(user, *, team_id=None):
             section__semester_id=F('team_links__team__semester_id'),
             section__section=F('team_links__team__section'),
             section__year_level=F('team_links__team__year_level')).distinct()
-    return [p for p in projects if can_read(user, p)]
+    result = [p for p in projects if can_read(user, p)]
+    if team_id is not None:
+        from student_teams.models import StudentTeam
+        from .continuation import approved_source
+        team = StudentTeam.objects.filter(pk=team_id).select_related('semester__school_year').first()
+        source = approved_source(team) if team else None
+        if source and source[0].pk not in {p.pk for p in result} and can_read(user, source[0]):
+            result.append(source[0])
+    return result
 
 
 def require_active(project):
@@ -431,6 +446,17 @@ def team_display(team, label=None):
         return {'system_name': selected.title if selected else '',
                 'project_manager_name': project.project_manager.get_full_name() or project.project_manager.username,
                 'section_project_id': project.pk}
+    if team.is_capstone and not getattr(team, '_recorded_term', None):
+        from .continuation import approved_source, section_for, has_recorded_source
+        source = approved_source(team)
+        if source:
+            section = section_for(team, source)
+            manager = section.project_manager or source[0].project_manager
+            return {'system_name': source[2].title,
+                'project_manager_name': manager.get_full_name() or manager.username,
+                'section_project_id': source[0].pk}
+        if has_recorded_source(team):
+            return {'system_name': '', 'project_manager_name': '', 'section_project_id': None}
     if context_label:
         from repository.deliverables.concepts import stage_for
         from .shared_deliverables import resolve
@@ -1263,6 +1289,7 @@ def payload(project, actor):
     if title_workflow.enabled(round):
         shared_review.update(acknowledged=True, can_acknowledge=False, can_review_shared_context=False)
     return {'title_workflow_version': round.title_workflow_version, 'id': project.pk, 'section': project.section.section, 'year_level': project.section.year_level,
+        'historical': not project.section.semester.is_active,
         'configured_count': context.concept_config.get('required_count', 3),
         'can_reconcile_requirements': bool(can_write and can_manage(actor, project) and not round.verdict
             and round.number == 1 and not round.module_rounds.filter(schedule__isnull=False).exists()

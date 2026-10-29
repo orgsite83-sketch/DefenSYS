@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:defensys/screens/web/admin/grade_center/grade_center_shared.dart';
 import 'package:defensys/services/grade_center_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
@@ -87,6 +89,60 @@ Future<void> _openDialog(
 
 void main() {
   setUpAll(() => loadPreviewFonts(force: true));
+
+  for (final fail in [false, true]) {
+    testWidgets(
+      'completion shows progress and closes it after ${fail ? 'failure' : 'success'}',
+      (tester) async {
+        final pending = Completer<GradeGroupCompletionReadiness>();
+        tester.view.physicalSize = const Size(320, 700);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => reviewGradeGroupCompletion(
+                    context,
+                    stageLabel: 'PIT Expo',
+                    isPit: true,
+                    checkCompletion: () => pending.future,
+                  ),
+                  child: const Text('Complete event'),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Complete event'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+        expect(find.text('Checking completion…'), findsOneWidget);
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        if (fail) {
+          pending.completeError(Exception('Connection interrupted'));
+        } else {
+          pending.complete(
+            const GradeGroupCompletionReadiness(
+              totalTeams: 0,
+              readyTeams: 0,
+              canComplete: false,
+            ),
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('Checking completion…'), findsNothing);
+        expect(
+          find.text(fail ? 'Unable to check grading' : 'Grading not ready'),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   for (final dark in [false, true]) {
     for (final width in [1100.0, 390.0]) {
@@ -196,23 +252,37 @@ void main() {
     }
   }
 
-  testWidgets('cleared teams can confirm stage completion', (tester) async {
-    bool? result;
-    await _openDialog(
-      tester,
-      onCompletionResult: (value) => result = value,
-      completion: const GradeGroupCompletionReadiness(
-        totalTeams: 1,
-        readyTeams: 1,
-        canComplete: true,
-      ),
+  for (final isPit in [false, true]) {
+    testWidgets(
+      'cleared ${isPit ? 'PIT' : 'capstone'} teams submit the correct completion token',
+      (tester) async {
+        bool? result;
+        Map<String, dynamic>? approval;
+        final token = isPit ? null : 'reviewed-capstone-context';
+        await _openDialog(
+          tester,
+          isPit: isPit,
+          onCompletionResult: (value) => result = value,
+          completion: GradeGroupCompletionReadiness(
+            totalTeams: 1,
+            readyTeams: 1,
+            canComplete: true,
+            completionToken: token,
+            onApproved: (value) => approval = value,
+          ),
+        );
+        expect(find.text('Mark Complete'), findsOneWidget);
+        expect(find.byType(CheckboxListTile), findsNothing);
+        await tester.tap(find.widgetWithText(ElevatedButton, 'Mark Complete'));
+        await tester.pumpAndSettle();
+        expect(result, isTrue);
+        expect(approval, {
+          if (token != null) 'completion_token': token,
+          'failure_grade_ids': <int>[],
+        });
+      },
     );
-    expect(find.text('Mark Complete'), findsOneWidget);
-    expect(find.byType(CheckboxListTile), findsNothing);
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Mark Complete'));
-    await tester.pumpAndSettle();
-    expect(result, isTrue);
-  });
+  }
 
   for (final dark in [false, true]) {
     for (final size in [

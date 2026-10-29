@@ -8,6 +8,10 @@ For copy-and-paste workflow commands, see the [demo automation guide](../AUTOMAT
 
 ## Available Tools
 
+- `profile_faculty_reads.py`: PostgreSQL READ ONLY API profiler. Run with `backend/venv/Scripts/python.exe` from the repository root. Use `--stage-setup --admin` for stage directory/detail and Capstone rubrics, or `--deliverable-responses` for existing adviser response generation without saving reviews. Add `--uncached` to compare read reuse and `--response-mode full` to measure legacy full-list responses. Reports server time, query counts and response bytes; excludes network, UI and review saving.
+
+- `audit_section_hearing_state.py`: Read-only section workflow/API inspection. Add `--section BSIT-4A --continuity-only` to compare current shared-system display with preserved source-term section assignments, approved projects, versioned team links, term participations, and transition records. PostgreSQL enforces a read-only transaction; this mode performs no API probes or academic-data corrections and writes its report to `.tmp/section-shared-continuity.json`.
+
 - `audit_library_filters.py`: Read-only public-library subject, technology and language coverage. Run with the backend virtual environment, optionally `--academic-year 2024-2025`, `--scope pit` and `--output .tmp/library-filter-audit.json`. Counts published projects once, reports Not specified fields, and keeps the entire database transaction READ ONLY. This is a coverage report, not a real-paper accuracy benchmark.
 
 - `start_local_web.py`: Launches Django + Flutter Web on a shared LAN/phone hotspot IP. Use `--check` for adapter/API/CORS diagnostics or `--interface "Wi-Fi"` to select an adapter. See [the network guide](../docs/WIFI_IP_CONFIG_GUIDE.md).

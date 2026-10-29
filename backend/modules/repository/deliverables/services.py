@@ -882,6 +882,12 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
     """Keep upload and removal rules aligned with the review state."""
     from student_teams.participation import require_open
     require_open(team)
+    if team.is_capstone:
+        from student_teams.capstone_context import inherited_stage_ids
+        from student_teams.capstone_lifecycle import requirement_for_label
+        requirement = requirement_for_label(team, stage_label)
+        if requirement and requirement['id'] in inherited_stage_ids(team):
+            raise PermissionError('Completed stages from a previous semester are read-only.')
     from .stage_access import manually_locked, deliverable_override
     specific = deliverable_override(team, stage_label, submission.deliverable_id if submission else deliverable_id)
     if specific is False or (specific is None and manually_locked(team, stage_label, deliverable_type)):
@@ -966,6 +972,18 @@ def can_submit_files(user, team):
 
 
 def stage_payload(team, stage_label, evaluator=None):
+    historical = False
+    if team.is_capstone and not getattr(team, '_assessment_semester_id', None):
+        from student_teams.capstone_context import inherited_stage_ids
+        from student_teams.capstone_lifecycle import requirement_for_label, latest_stage_assessment, evidence_team
+        requirement = requirement_for_label(team, stage_label)
+        if requirement and requirement['id'] in inherited_stage_ids(team):
+            assessment = latest_stage_assessment(team, requirement['id'])
+            if assessment and assessment.semester_id != team.semester_id:
+                # Inspect inherited work in its original term, including the
+                # captured requirements, grading settings, files and schedule.
+                team = evidence_team(team, assessment, requirement)
+                historical = True
     submitted = submissions_for(team, stage_label)
     definitions = get_deliverable_definitions_for_team(team, stage_label)
     unlocked = archive_unlocked(team, stage_label)
@@ -1090,6 +1108,10 @@ def stage_payload(team, stage_label, evaluator=None):
         }
 
     actor_can_submit = evaluator is None or can_submit_files(evaluator, team)
+    if historical:
+        actor_can_submit = False
+        can_faculty_review_pre = can_faculty_review_post = False
+        can_cancel_endorsement = False
     used_vault_names = set()
     for item in definitions:
         if item.get('source') == 'defense_minutes':
@@ -1110,6 +1132,8 @@ def stage_payload(team, stage_label, evaluator=None):
                 can_review_item = any(f.status != 'accepted' for f in current_files(submission))
         else:
             can_review_item = can_faculty_review_pre or bool(submission and submission.revision_review_unlocked)
+        if historical:
+            can_review_item = False
         
         suggested = ''
         if is_vault:
@@ -1273,6 +1297,10 @@ def stage_payload(team, stage_label, evaluator=None):
     review = endorsement_review(team, stage_label, definitions=definitions, submitted=submitted)
     return {
         'stage_label': stage_label,
+        'semester_id': team.semester_id,
+        'display_semester': team.semester.display_name,
+        'project_version': team.project_version,
+        'read_only': historical,
         'concept_workflow': concept_workflow,
         'shared_deliverables_summary': shared_checklist,
         'hearing_history': (hearing_history(team, concept_context)
@@ -1297,8 +1325,8 @@ def stage_payload(team, stage_label, evaluator=None):
         'post_unavailable_reason': concept_access['reason'] if concept_access else '',
         'required_complete': configured and required_complete(team, stage_label),
         'status': team_stage_status(team, stage_label),
-        'stage_progress_status': progress_status,
-        'stage_status_detail': stage_status_detail,
+        'stage_progress_status': 'passed' if historical else progress_status,
+        'stage_status_detail': 'passed' if historical else stage_status_detail,
         'is_defense_done': is_defense_done,
         'admin_unlocked': admin_unlocked_pre,
         'can_faculty_review': can_faculty_review_pre,
@@ -1388,7 +1416,9 @@ def resolve_team_instructor_or_adviser_name(team):
 def team_payload(team, selected_stage=None, evaluator=None):
     if team.is_capstone:
         from student_teams.capstone_context import phase_requirements
-        required = phase_requirements(team)
+        from student_teams.capstone_lifecycle import requirements_for
+        required = (requirements_for(team) if getattr(evaluator, 'role', None) == 'student'
+                    else phase_requirements(team))
         labels = dict(DefenseStage.objects.filter(pk__in=[r['id'] for r in required]).values_list('pk', 'label'))
         configured_stage_labels = [labels.get(r['id'], r['label']) for r in required]
     else:
