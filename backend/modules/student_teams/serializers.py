@@ -83,19 +83,12 @@ class TeamMemberSerializer(serializers.ModelSerializer):
 
     def get_is_enrolled(self, obj):
         context = self.context
-        if 'enrolled_student_ids' not in context:
-            from .term_scope import get_active_semester
-            active = get_active_semester()
-            if active:
-                enrolled_ids = set(
-                    StudentAcademicRecord.objects.filter(semester=active)
-                    .values_list('student_id', flat=True)
-                )
-            else:
-                enrolled_ids = set()
-            context['enrolled_student_ids'] = enrolled_ids
-
-        return obj.student_id in context['enrolled_student_ids']
+        cache = context.setdefault('_enrollment_by_term', {})
+        term_id = obj.team.semester_id
+        if term_id not in cache:
+            cache[term_id] = set(StudentAcademicRecord.objects.filter(
+                semester_id=term_id).values_list('student_id', flat=True))
+        return obj.student_id in cache[term_id]
 
 
 class StudentTeamSerializer(serializers.ModelSerializer):
@@ -117,6 +110,10 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             from .roster_workspace import display_for
             event = self._selected_pit_event(instance)
             result.update(display_for(instance, event))
+        elif instance.is_capstone:
+            context = result['defense_context']
+            result['current_defense_stage'] = context['current_stage']
+            result['ready_for_stage'] = context['ready_for_stage']
         return result
 
     leader_id = serializers.IntegerField(source='leader.id', read_only=True)
@@ -248,7 +245,8 @@ class StudentTeamSerializer(serializers.ModelSerializer):
     def get_deliverable_count(self, obj):
         if not obj.is_capstone:
             return 0
-        return obj.deliverable_submissions.count()
+        from .capstone_context import stage_context
+        return stage_context(obj)['deliverable_count']
 
     def get_pit_event_name(self, obj):
         if not obj.is_pit:
@@ -270,39 +268,16 @@ class StudentTeamSerializer(serializers.ModelSerializer):
     def get_defense_context(self, obj):
         from repository.deliverables.concepts import stage_for, summary as concept_summary
         if obj.is_capstone:
-            stage_label = obj.current_defense_stage or obj.ready_for_stage or None
-            if not stage_label:
-                if '_first_concept_stage' not in self.context:
-                    from defense.stages.models import DefenseStage
-                    first = DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id').first()
-                    self.context['_first_concept_stage'] = first if first and first.concept_config.get('enabled') else None
-                first = self.context['_first_concept_stage']
-                stage_label = first.label if first else None
-            stage_status = None
-            if stage_label:
-                progress = next(
-                    (
-                        item for item in obj.stage_progress.all()
-                        if item.semester_id == obj.semester_id
-                        and item.defense_stage.label == stage_label
-                    ),
-                    None,
-                )
-                stage_status = progress.status if progress else None
+            from .capstone_context import stage_context
+            context = stage_context(obj)
+            stage_label = context['current_stage']
             from repository.deliverables.concepts import stage_for, summary as concept_summary
             stages = self.context.setdefault('_concept_stage_cache', {})
             if stage_label not in stages:
                 stages[stage_label] = stage_for(obj, stage_label) if stage_label else None
             stage = stages[stage_label]
             concept_workflow = concept_summary(obj, stage) if stage else None
-            return {
-                'concept_workflow': concept_workflow,
-                'is_pit': False,
-                'current_stage': stage_label,
-                'ready_for_stage': obj.ready_for_stage,
-                'stage_status': stage_status,
-                'deliverable_count': obj.deliverable_submissions.count(),
-            }
+            return {**context, 'concept_workflow': concept_workflow}
         event = self._selected_pit_event(obj)
         if event:
             return self._pit_event_defense_context(obj, event)
@@ -529,6 +504,14 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             if import_section:
                 attrs['section'] = import_section
         attrs['section'] = ' '.join((attrs.get('section') or '').strip().split())
+        if 'Capstone' in attrs['level']:
+            from .section_years import capstone_section_issue, capstone_year_issue
+            issue = capstone_year_issue(attrs['year_level'], semester)
+            if issue:
+                raise serializers.ValidationError({'year_level': issue})
+            issue = capstone_section_issue(attrs['section'], attrs['year_level'])
+            if issue:
+                raise serializers.ValidationError({'section': issue})
         if self.context.get('formation'):
             from .formation_access import check_member_sections, is_manager
             if not is_manager(user):
@@ -644,6 +627,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         reason = validated_data.pop('adviser_change_reason', '')
         previous_adviser_id = instance.adviser_id
         previous_project_title = instance.project_title
+        previous_section = instance.section
         from .pit_rosters import protect_membership
         protect_membership(instance, member_ids, validated_data['leader'].pk,
             name=validated_data['name'], section=validated_data.get('section', ''))
@@ -675,6 +659,8 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             if not current or current.verdict not in ('approved', 'approved_with_revisions'):
                 instance.project_pending = True
         instance.save()
+        from .continuation_sections import mark_admin_section_change
+        mark_admin_section_change(instance, previous_section)
         self._sync_members(instance, member_ids, validated_data['leader'].id)
         if instance.is_capstone:
             from .participation import confirm_roster

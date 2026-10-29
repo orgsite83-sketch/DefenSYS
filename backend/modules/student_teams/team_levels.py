@@ -340,6 +340,14 @@ def prepare_bulk_row(
         sec = data.get('section') or import_section or ''
         if sec and ',' not in sec:
             data['section'] = ' '.join(sec.strip().split())
+        if 'Capstone' in data['level']:
+            from .section_years import capstone_section_issue, capstone_year_issue
+            issue = capstone_year_issue(data['year_level'], _active_semester(semester))
+            if issue:
+                return None, [issue]
+            issue = capstone_section_issue(data.get('section', ''), data['year_level'])
+            if issue:
+                return None, [issue]
         return data, []
     explicit_year = normalize_year_level(data.get('year_level', ''))
 
@@ -417,6 +425,11 @@ def prepare_bulk_row(
         except ValueError as exc:
             return None, [str(exc)]
         data['year_level'] = level_year(data['level'])
+    if 'Capstone' in data.get('level', ''):
+        from .section_years import capstone_section_issue
+        issue = capstone_section_issue(data.get('section', ''), data.get('year_level', ''))
+        if issue:
+            return None, [issue]
     return data, []
 
 

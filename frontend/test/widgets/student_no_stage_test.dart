@@ -59,7 +59,7 @@ void main() {
       ],
     );
 
-    expect(find.text('No defense stages configured yet'), findsOneWidget);
+    expect(find.text('Awaiting stage setup'), findsOneWidget);
     expect(find.text('Concept Proposal'), findsNothing);
     expect(find.text('View Details'), findsNothing);
     expect(find.textContaining('Awaiting schedule assignment'), findsNothing);
@@ -83,7 +83,7 @@ void main() {
       ],
     );
 
-    expect(find.text('No defense stages configured yet'), findsOneWidget);
+    expect(find.text('Awaiting stage setup'), findsOneWidget);
     expect(find.textContaining('Defense Status for'), findsNothing);
     expect(find.text('Active Stage Deliberation'), findsNothing);
     expect(find.text('Awaiting Adviser Endorsement'), findsNothing);

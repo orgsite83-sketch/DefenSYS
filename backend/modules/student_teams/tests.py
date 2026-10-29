@@ -449,7 +449,7 @@ class StudentTeamApiTests(APITestCase):
                         'project_title': 'Campus Navigation System',
                         'level': StudentTeam.LEVEL_3_CAPSTONE,
                         'year_level': '3rd Year',
-                        'section': 'BSIT-4A',
+                        'section': 'BSIT-3A',
                         'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
                         'leader_id': 'Juan Dela Cruz',
                         'adviser_id': 'Ada Lovelace',
@@ -459,7 +459,7 @@ class StudentTeamApiTests(APITestCase):
                         'project_title': 'Automated Library Portal',
                         'level': StudentTeam.LEVEL_3_CAPSTONE,
                         'year_level': '3rd Year',
-                        'section': 'BSIT-4A',
+                        'section': 'BSIT-3A',
                         'member_ids': ['Mark Reyes', 'Anna Garcia'],
                         'leader_id': 'Mark Reyes',
                         'adviser_id': 'Grace Hopper',
@@ -473,13 +473,13 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['created_count'], 2)
         team_a = StudentTeam.objects.get(name='Team Alpha')
         team_b = StudentTeam.objects.get(name='Team Beta')
-        self.assertEqual(team_a.section, 'BSIT-4A')
-        self.assertEqual(team_b.section, 'BSIT-4A')
+        self.assertEqual(team_a.section, 'BSIT-3A')
+        self.assertEqual(team_b.section, 'BSIT-3A')
         self.assertEqual(team_a.adviser_id, self.adviser.id)
         self.assertEqual(team_b.adviser_id, self.adviser_b.id)
         for s in (self.student_1, self.student_2, student_3, student_4):
             record = StudentAcademicRecord.objects.get(student=s, semester=self.second_semester)
-            self.assertEqual(record.section, 'BSIT-4A')
+            self.assertEqual(record.section, 'BSIT-3A')
 
     def test_bulk_import_multi_section_mixed_different_and_shared_systems(self):
         self._activate_capstone_intake_semester()
@@ -507,14 +507,14 @@ class StudentTeamApiTests(APITestCase):
         response = self.client.post(
             '/api/teams/bulk-import/',
             {
-                'section': 'BSIT-4A, BSIT-4B',
+                'section': 'BSIT-3A, BSIT-3B',
                 'teams': [
                     {
                         'team_name': 'Team Independent',
                         'project_title': 'Independent Project Alpha',
                         'level': StudentTeam.LEVEL_3_CAPSTONE,
                         'year_level': '3rd Year',
-                        'section': 'BSIT-4A',
+                        'section': 'BSIT-3A',
                         'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
                         'leader_id': 'Juan Dela Cruz',
                         'adviser_id': 'Ada Lovelace',
@@ -524,7 +524,7 @@ class StudentTeamApiTests(APITestCase):
                         'project_title': 'Patient Records Module',
                         'level': StudentTeam.LEVEL_3_CAPSTONE,
                         'year_level': '3rd Year',
-                        'section': 'BSIT-4B',
+                        'section': 'BSIT-3B',
                         'system_name': 'Hospital Management System',
                         'project_manager': 'Mark Reyes',
                         'member_ids': ['Mark Reyes', 'Anna Garcia'],
@@ -540,11 +540,11 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['created_count'], 2)
         team_a = StudentTeam.objects.get(name='Team Independent')
         team_b = StudentTeam.objects.get(name='Team Shared Module')
-        self.assertEqual(team_a.section, 'BSIT-4A')
-        self.assertEqual(team_b.section, 'BSIT-4B')
+        self.assertEqual(team_a.section, 'BSIT-3A')
+        self.assertEqual(team_b.section, 'BSIT-3B')
 
         from .models import SectionAssignment
-        sec_assign = SectionAssignment.objects.get(section='BSIT-4B', semester=self.second_semester)
+        sec_assign = SectionAssignment.objects.get(section='BSIT-3B', semester=self.second_semester)
         self.assertEqual(sec_assign.system_name, 'Hospital Management System')
         self.assertEqual(sec_assign.project_manager_id, student_3.id)
 
@@ -1588,6 +1588,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(context['event_label'], '')
 
     def test_capstone_defense_context_does_not_invent_stage(self):
+        DefenseStage.objects.update(is_active=False)
         team = StudentTeam.objects.create(
             name='Team Cap No Stage',
             project_title='Capstone Without Stage',

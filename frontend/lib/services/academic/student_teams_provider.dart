@@ -36,6 +36,8 @@ class StudentTeamsState {
   final String? eventName;
   final List<Map<String, dynamic>> pitEvents;
   final List<Map<String, dynamic>> rosterContext;
+  final Map<String, dynamic> capstoneHistory;
+  final String historyIntake, historyPhase, historyStage;
   final String? error;
   final String? message;
 
@@ -63,6 +65,10 @@ class StudentTeamsState {
     this.eventName,
     this.pitEvents = const [],
     this.rosterContext = const [],
+    this.capstoneHistory = const {},
+    this.historyIntake = '',
+    this.historyPhase = '',
+    this.historyStage = '',
     this.error,
     this.message,
   });
@@ -91,6 +97,10 @@ class StudentTeamsState {
     String? eventName,
     List<Map<String, dynamic>>? pitEvents,
     List<Map<String, dynamic>>? rosterContext,
+    Map<String, dynamic>? capstoneHistory,
+    String? historyIntake,
+    String? historyPhase,
+    String? historyStage,
     String? error,
     String? message,
     bool clearError = false,
@@ -126,6 +136,10 @@ class StudentTeamsState {
       eventName: clearEventName ? null : eventName ?? this.eventName,
       pitEvents: pitEvents ?? this.pitEvents,
       rosterContext: rosterContext ?? this.rosterContext,
+      capstoneHistory: capstoneHistory ?? this.capstoneHistory,
+      historyIntake: historyIntake ?? this.historyIntake,
+      historyPhase: historyPhase ?? this.historyPhase,
+      historyStage: historyStage ?? this.historyStage,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -150,6 +164,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? level,
     String? status,
     String? scope,
+    String? historyIntake,
+    String? historyPhase,
+    String? historyStage,
     String? yearLevel,
     String? section,
     String? eventName,
@@ -158,6 +175,11 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? successMessage,
   }) async {
     final version = ++_fetchVersion;
+    final contextChanged =
+        (scope != null && scope != _listScope) ||
+        (historyIntake != null && historyIntake != state.historyIntake) ||
+        (historyPhase != null && historyPhase != state.historyPhase) ||
+        (historyStage != null && historyStage != state.historyStage);
     _listScope = scope ?? _listScope;
     final nextWorkspace = workspace ?? state.workspace;
     if (nextWorkspace != state.workspace) {
@@ -185,7 +207,8 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         : (eventName ?? state.eventName);
 
     state = state.copyWith(
-      isLoading: state.teams.isEmpty,
+      isLoading: contextChanged || state.teams.isEmpty,
+      teams: contextChanged ? const [] : null,
       isSaving: false,
       search: nextSearch,
       level: nextLevel,
@@ -197,6 +220,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       clearEventName: clearEventName,
       clearError: true,
       clearMessage: true,
+      historyIntake: historyIntake,
+      historyPhase: historyPhase,
+      historyStage: historyStage,
     );
 
     try {
@@ -207,6 +233,12 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           if (nextLevel.isNotEmpty) 'level': nextLevel,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           'scope': _listScope,
+          if (_listScope == 'history' && nextLevel == 'Capstone') ...{
+            if (state.historyIntake.isNotEmpty)
+              'intake_id': state.historyIntake,
+            if (state.historyPhase.isNotEmpty) 'phase': state.historyPhase,
+            if (state.historyStage.isNotEmpty) 'stage_key': state.historyStage,
+          },
           if (nextYearLevel != null && nextYearLevel.isNotEmpty)
             'year_level': nextYearLevel,
           if (nextSection != null && nextSection.isNotEmpty)
@@ -604,6 +636,12 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       operatingMessage: payload['operating_message']?.toString(),
       pitEvents: _readMapList(payload['pit_events']),
       rosterContext: _readMapList(payload['roster_context']),
+      capstoneHistory: payload['capstone_history'] is Map
+          ? Map<String, dynamic>.from(payload['capstone_history'])
+          : const {},
+      historyIntake: payload['capstone_history'] is Map
+          ? payload['capstone_history']['selected_intake_id']?.toString() ?? ''
+          : state.historyIntake,
       message: successMessage,
       clearError: true,
     );

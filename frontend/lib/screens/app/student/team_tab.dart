@@ -1494,7 +1494,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             const SizedBox(height: 12),
             Text(
               isCapstone
-                  ? 'No defense stages configured yet'
+                  ? 'Awaiting stage setup'
                   : 'No PIT events configured yet',
               style: TextStyle(
                 fontSize: 14.5,

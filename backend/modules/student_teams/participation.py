@@ -211,25 +211,6 @@ def existing_roster(student_ids, term, name, level):
     return team if team and roster_ids(team) == set(student_ids) else None
 
 
-def reconcile_enrollment_sections(term, student_ids):
-    """Reconcile a migrated roster only after all destination enrollments exist."""
-    from user_management.academic_records.models import StudentAcademicRecord
-    if not term.is_active:
-        return
-    teams = StudentTeam.objects.filter(semester=term, intake_semester__isnull=False,
-        level__icontains='Capstone', participation_review_reason='').filter(
-        Q(leader_id__in=student_ids) | Q(memberships__student_id__in=student_ids)).distinct()
-    for team in teams:
-        if team.intake_semester_id == term.pk or team.term_participations.filter(semester=term, closed_at__isnull=False).exists():
-            continue
-        ids = roster_ids(team)
-        records = list(StudentAcademicRecord.objects.filter(semester=term, student_id__in=ids))
-        sections = {r.section.strip() for r in records}
-        if (len(records) == len(ids) and all(r.year_level == '4th Year' for r in records)
-                and len(sections) == 1 and '' not in sections):
-            section = sections.pop()
-            if team.section != section:
-                team.section = section
-                team.save(update_fields=['section', 'updated_at'])
-                from .capstone_lifecycle import capture_participation
-                capture_participation(team)
+def reconcile_enrollment_sections(term, student_ids, actor=None, applied_defaults=None):
+    from .continuation_sections import reconcile_sections
+    reconcile_sections(term, student_ids, actor=actor, applied_defaults=applied_defaults)

@@ -131,6 +131,11 @@ def update_section(request, team_id, data):
     if data['expected_section'] != old_section:
         raise ValidationError({'section': 'The section has changed. Close and reopen the editor to load its current details.'})
     new_section = data['section']
+    if team.is_capstone:
+        from .section_years import capstone_section_issue
+        issue = capstone_section_issue(new_section, team.year_level)
+        if issue:
+            raise ValidationError({'section': issue})
     pm_id = data.get('project_manager_id', assignment.project_manager_id if assignment else None)
     if pm_id is not None and not any(student.pk == pm_id for student in students):
         raise ValidationError({'project_manager_id': 'Choose an active student from this section.'})
@@ -175,6 +180,9 @@ def update_section(request, team_id, data):
         ).update(section=new_section, updated_at=now)
         for item in teams:
             item.section = new_section
+            if item.is_capstone:
+                from .continuation_sections import mark_admin_section_change
+                mark_admin_section_change(item, old_section)
         team.section = new_section
 
     scope_values = {

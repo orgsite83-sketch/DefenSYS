@@ -60,6 +60,23 @@ void _expectCount(String id, String count) {
 }
 
 void main() {
+  testWidgets('source and continuation rows count one team', (tester) async {
+    await pumpDefensysWidget(
+      tester,
+      const StudentTeamsSummaryCards(
+        state: StudentTeamsState(
+          teams: [
+            {'id': 7, 'record_key': '7:3', 'is_editable': false},
+            {'id': 7, 'record_key': '7:1', 'is_editable': false},
+          ],
+        ),
+        isPitContext: false,
+      ),
+    );
+    _expectCount('teams', '1');
+    _expectCount('ready', '—');
+    _expectCount('scheduled', '—');
+  });
   testWidgets(
     'PIT counts section instructors and only selected event eligibility',
     (tester) async {

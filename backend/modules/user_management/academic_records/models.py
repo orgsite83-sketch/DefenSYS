@@ -71,6 +71,11 @@ class StudentAcademicRecord(models.Model):
     def clean(self):
         if self.student_id and getattr(self.student, 'role', None) != 'student':
             raise ValidationError({'student': 'Academic records can only be assigned to student users.'})
+        if self.semester_id:
+            from student_teams.section_years import enrollment_section_issue
+            issue = enrollment_section_issue(self.section, self.year_level, self.semester)
+            if issue:
+                raise ValidationError({'section': issue})
 
     def save(self, *args, **kwargs):
         self.full_clean()

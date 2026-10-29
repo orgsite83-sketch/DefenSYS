@@ -1,5 +1,5 @@
 from django.db import connection, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from hashlib import sha256
 import json
 from rest_framework.exceptions import ValidationError
@@ -38,16 +38,15 @@ def build_semester_transition_preview(target_semester):
             'current_semester': _semester_summary(current_semester),
             'target_semester': _semester_summary(target_semester),
             'impact_counts': {},
+            'effects': [],
             'issues': [],
             'blocking_reasons': [],
             'can_switch': True,
         }
 
     impact_counts = _impact_counts(current_semester)
+    effects = _transition_effects(current_semester, impact_counts)
     issues = _transition_issues(current_semester, impact_counts)
-    blocking_reasons = [
-        issue['message'] for issue in issues if issue.get('blocking')
-    ]
 
     from student_teams.capstone_lifecycle import build_capstone_review
     review = build_capstone_review(current_semester, target_semester)
@@ -62,11 +61,12 @@ def build_semester_transition_preview(target_semester):
             'action_label': 'Review grades', 'route': '/admin/grade-center'})
     blocking_reasons = [issue['message'] for issue in issues if issue.get('blocking')]
     revision = sha256(json.dumps({'capstone': review['revision'], 'counts': impact_counts,
-        'issues': issues}, sort_keys=True).encode()).hexdigest()
+        'effects': effects, 'issues': issues}, sort_keys=True).encode()).hexdigest()
     return {
         'current_semester': _semester_summary(current_semester),
         'target_semester': _semester_summary(target_semester),
         'impact_counts': impact_counts,
+        'effects': effects,
         'issues': issues,
         'blocking_reasons': blocking_reasons,
         'can_switch': not blocking_reasons,
@@ -108,7 +108,8 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
     ids = set(source_teams.values_list('leader_id', flat=True)) | set(TeamMembership.objects.filter(team__in=source_teams).values_list('student_id', flat=True))
     list(get_user_model().objects.select_for_update().filter(pk__in=ids).order_by('pk'))
     from user_management.academic_records.models import StudentAcademicRecord
-    list(StudentAcademicRecord.objects.select_for_update().filter(student_id__in=ids, semester=target_semester).order_by('pk'))
+    list(StudentAcademicRecord.objects.select_for_update().filter(student_id__in=ids,
+        semester_id__in=[source.pk, target_semester.pk] if source else [target_semester.pk]).order_by('pk'))
     list(source_teams.select_for_update().order_by('pk'))
     list(TeamGrade.all_objects.select_for_update().filter(team__in=source_teams).order_by('pk'))
     preview = build_semester_transition_preview(target_semester)
@@ -181,6 +182,12 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
             reason=reason,
             strict=True,
         )
+        # Availability already rejects submissions for inactive semesters. Keep
+        # saved component settings intact and refresh connected forms on commit.
+        from realtime.broadcast import notify_capstone_evaluation_flags
+        for semester in (current, target):
+            if semester:
+                transaction.on_commit(lambda semester=semester: notify_capstone_evaluation_flags(semester))
 
     return log.impact_snapshot, log
 
@@ -240,6 +247,8 @@ def _impact_counts(current_semester):
     if current_semester is None:
         return {
             'active_teams': 0,
+            'capstone_teams': 0,
+            'pit_teams': 0,
             'open_schedules': 0,
             'pending_grades': 0,
             'capstone_peer_evaluation_enabled': 0,
@@ -267,8 +276,13 @@ def _impact_counts(current_semester):
         Q(id__in=pit_grade_config_ids) | Q(event_name__in=scheduled_events),
     ).distinct().count()
 
+    team_counts = StudentTeam.objects.filter(semester=current_semester).aggregate(
+        active_teams=Count('pk'),
+        capstone_teams=Count('pk', filter=Q(level__icontains='Capstone')),
+        pit_teams=Count('pk', filter=Q(level__icontains='PIT')),
+    )
     return {
-        'active_teams': StudentTeam.objects.filter(semester=current_semester).count(),
+        **team_counts,
         'open_schedules': DefenseSchedule.objects.filter(
             semester=current_semester,
             status=DefenseSchedule.STATUS_SCHEDULED,
@@ -295,6 +309,23 @@ def _impact_counts(current_semester):
     }
 
 
+def _transition_effects(current_semester, counts):
+    if current_semester is None:
+        return []
+
+    effects = []
+    pit_count = counts['pit_teams']
+    if pit_count:
+        noun = 'team' if pit_count == 1 else 'teams'
+        effects.append({'key': 'pit_teams', 'count': pit_count,
+            'message': f'This semester has {pit_count} PIT {noun}. PIT starts fresh next semester.'})
+    if counts['capstone_teams'] and (counts['capstone_peer_evaluation_enabled']
+            or counts['capstone_adviser_grading_enabled']):
+        effects.append({'key': 'capstone_evaluation_closure',
+            'message': 'Peer and adviser submissions close automatically for the outgoing semester.'})
+    return effects
+
+
 def _transition_issues(current_semester, counts):
     if current_semester is None:
         return []
@@ -302,15 +333,6 @@ def _transition_issues(current_semester, counts):
     semester_id = current_semester.id
     issues = []
 
-    _append_count_issue(
-        issues,
-        key='active_teams',
-        count=counts['active_teams'],
-        blocking=False,
-        message='teams belong to the outgoing semester (PIT and Capstone)',
-        action_label='Review teams',
-        route=f'/admin/student-teams?semester={semester_id}',
-    )
     _append_count_issue(
         issues,
         key='open_schedules',
@@ -330,21 +352,6 @@ def _transition_issues(current_semester, counts):
         route=f'/admin/grade-center?semester={semester_id}&status=open',
     )
 
-    has_active_work = counts['active_teams'] > 0
-    if has_active_work and counts['capstone_peer_evaluation_enabled']:
-        issues.append(_boolean_issue(
-            key='capstone_peer_evaluation_enabled',
-            message='Capstone peer evaluation is still enabled',
-            action_label='Open evaluation settings',
-            route='/admin/academic-periods',
-        ))
-    if has_active_work and counts['capstone_adviser_grading_enabled']:
-        issues.append(_boolean_issue(
-            key='capstone_adviser_grading_enabled',
-            message='Capstone adviser grading is still enabled',
-            action_label='Open evaluation settings',
-            route='/admin/academic-periods',
-        ))
     _append_count_issue(
         issues,
         key='pit_peer_grading_windows',
@@ -377,17 +384,6 @@ def _append_count_issue(issues, *, key, count, blocking, message, action_label, 
         'action_label': action_label,
         'route': route,
     })
-
-
-def _boolean_issue(*, key, message, action_label, route):
-    return {
-        'key': key,
-        'count': 1,
-        'blocking': True,
-        'message': message,
-        'action_label': action_label,
-        'route': route,
-    }
 
 
 def _semester_summary(semester):

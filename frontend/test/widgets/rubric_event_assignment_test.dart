@@ -32,6 +32,15 @@ class _Dashboard extends DashboardNotifier {
 
 class _Rubrics extends RubricEngineNotifier {
   Map<String, dynamic>? savedPayload;
+  List<Map<String, dynamic>>? copySources;
+  String? requestedCopyScope;
+  bool failCopySources = false;
+  void clearDirectory() => state = state.copyWith(
+    rubrics: [],
+    termContext: 'active',
+    search: 'current filter',
+    status: 'draft',
+  );
   void setSaving(bool saving) => state = state.copyWith(isSaving: saving);
   @override
   RubricEngineState build() => const RubricEngineState(
@@ -96,6 +105,21 @@ class _Rubrics extends RubricEngineNotifier {
     String? termContext,
     String? successMessage,
   }) async {}
+  @override
+  Future<List<Map<String, dynamic>>> checkExistingRubrics({
+    String? scope,
+  }) async {
+    requestedCopyScope = scope;
+    if (failCopySources) throw Exception('Source request failed');
+    return copySources ?? state.rubrics;
+  }
+
+  @override
+  Future<bool> addRubric(Map<String, dynamic> payload) async {
+    savedPayload = payload;
+    return true;
+  }
+
   @override
   Future<bool> updateRubric(int rubricId, Map<String, dynamic> payload) async {
     savedPayload = payload;
@@ -504,6 +528,80 @@ void main() {
     );
   }
   testWidgets(
+    'copy includes historical locked rubrics when the current list is empty',
+    (tester) async {
+      final container = await _pump(tester, creating: true);
+      final notifier =
+          container.read(rubricEngineProvider.notifier) as _Rubrics;
+      final source = <String, dynamic>{
+        ...container.read(rubricEngineProvider).rubrics.single,
+        'id': 92,
+        'name': 'Historical panel rubric',
+        'semester_id': 2,
+        'display_semester': 'Second Semester',
+        'pit_event_id': 13,
+        'status': 'published',
+        'is_locked': true,
+      };
+      notifier.copySources = [source];
+      notifier.clearDirectory();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Copy from rubric'));
+      await tester.pumpAndSettle();
+      expect(notifier.requestedCopyScope, 'pit');
+      expect(find.text('Historical panel rubric'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('copy-rubric-semester')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Second Semester').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Historical panel rubric'));
+      await tester.pumpAndSettle();
+      expect(find.text('Implementation'), findsOneWidget);
+      await tester.tap(find.text('Copy rubric'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ShadDialog), findsNothing);
+      expect(container.read(rubricEngineProvider).rubrics, isEmpty);
+      expect(container.read(rubricEngineProvider).termContext, 'active');
+      expect(container.read(rubricEngineProvider).search, 'current filter');
+      expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
+      expect(notifier.savedPayload?['semester_id'], 1);
+      expect(notifier.savedPayload?['status'], 'draft');
+      expect(notifier.savedPayload?['pit_event_id'], isNull);
+      expect(notifier.savedPayload?['defense_stage_id'], isNull);
+      expect(notifier.savedPayload?['name'], 'Historical panel rubric (Copy)');
+      expect(
+        (notifier.savedPayload?['criteria'] as List).first['name'],
+        'Implementation',
+      );
+      expect(source['semester_id'], 2);
+      expect(source['is_locked'], isTrue);
+      expect(source['name'], 'Historical panel rubric');
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    },
+  );
+  testWidgets('copy source failures leave the editor available for retry', (
+    tester,
+  ) async {
+    final container = await _pump(tester, creating: true);
+    final notifier = container.read(rubricEngineProvider.notifier) as _Rubrics;
+    notifier.failCopySources = true;
+    await tester.tap(find.text('Copy from rubric'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ShadDialog), findsNothing);
+    expect(
+      find.text('Unable to load rubrics. Please try again.'),
+      findsOneWidget,
+    );
+    final button = find.ancestor(
+      of: find.text('Copy from rubric'),
+      matching: find.byType(ShadButton),
+    );
+    expect(tester.widget<ShadButton>(button).enabled, isTrue);
+    expect(container.read(unsavedChangesProvider), isFalse);
+    await tester.pumpAndSettle(const Duration(seconds: 7));
+  });
+  testWidgets(
     'assigns an existing event, warns on replacement and sends its ID',
     (tester) async {
       final container = await _pump(tester);
@@ -569,10 +667,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('target-individual')), findsNothing);
-    expect(
-      find.text('Peer evaluations always grade each student individually.'),
-      findsOneWidget,
-    );
+    expect(find.text('Individual scoring'), findsOneWidget);
   });
 
   testWidgets(

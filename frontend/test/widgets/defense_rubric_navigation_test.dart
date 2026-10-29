@@ -59,7 +59,11 @@ class _Stages extends DefenseStagesNotifier {
   DefenseStagesState build() => const DefenseStagesState(stages: [_stage]);
 
   @override
-  Future<void> fetchStages({String? successMessage}) async {}
+  Future<void> fetchStages({String? scope,
+    String? intake,
+    String? phase,
+    String? stage,
+    String? successMessage,}) async {}
 
   @override
   Future<Map<String, dynamic>?> fetchStageDetail(
@@ -127,7 +131,7 @@ class _Rubrics extends RubricEngineNotifier {
   void offerPanelRubric() => state = state.copyWith(rubrics: [{
     'id': 10, 'name': 'Pending panel rubric', 'scope': 'capstone',
     'semester_id': 3, 'status': 'published', 'evaluation_type': 'panel',
-  }]);
+  },],);
   @override
   RubricEngineState build() => RubricEngineState(rubrics: rubrics);
 
@@ -184,9 +188,9 @@ void main() {
         connectivityProvider.overrideWith(_Online.new),
         defenseStagesProvider.overrideWith(() => _Stages()
           ..gradingConfig = gradingConfig
-          ..stageFields = stageFields),
+          ..stageFields = stageFields,),
         academicPeriodProvider.overrideWith(_Periods.new),
-        rubricEngineProvider.overrideWith(() => _Rubrics(rubrics: rubricOptions)),
+        rubricEngineProvider.overrideWith(() => _Rubrics(rubrics: rubricOptions),),
         dashboardProvider('admin').overrideWith(_Dashboard.new),
         notificationsProvider.overrideWith2(_Notifications.new),
       ],
@@ -274,7 +278,7 @@ void main() {
           await tester.tap(find.text('Signed minutes required'));
           await tester.tap(find.text('2. Grading & Rubrics'));
           await tester.pumpAndSettle();
-          await tester.enterText(find.byKey(const ValueKey('panel-weight')), '65');
+          await tester.enterText(find.byKey(const ValueKey('panel-weight')), '65',);
           await tester.ensureVisible(find.text(shortcut));
           await tester.tap(find.text(shortcut));
           await tester.pumpAndSettle();
@@ -379,16 +383,16 @@ void main() {
           rubric,
           {...rubric, 'id': id + 1, 'defense_stage_id': 8},
           {...rubric, 'id': id + 2, 'defense_stage_id': null, 'is_locked': false,
-            'name': 'Available $role'},
-          {...rubric, 'id': id + 3, 'defense_stage_id': null, 'semester_id': 9},
-          {...rubric, 'id': id + 4, 'defense_stage_id': null, 'status': 'draft'},
+            'name': 'Available $role',},
+          {...rubric, 'id': id + 3, 'defense_stage_id': null, 'semester_id': 9,},
+          {...rubric, 'id': id + 4, 'defense_stage_id': null, 'status': 'draft',},
           {...rubric, 'id': id + 5, 'defense_stage_id': null},
-          {...rubric, 'id': id + 6, 'defense_stage_id': 8, 'is_locked': false},
+          {...rubric, 'id': id + 6, 'defense_stage_id': 8, 'is_locked': false,},
         ]);
       }
       await pumpWorkspace(tester,
         initialLocation: creating ? AdminRoutes.defenseStages : AdminRoutes.defenseStageEdit(7),
-        gradingConfig: grading, rubricOptions: options);
+        gradingConfig: grading, rubricOptions: options,);
       if (creating) {
         await tester.tap(find.text('Add stage'));
         await tester.pumpAndSettle();
@@ -397,20 +401,20 @@ void main() {
       await tester.pumpAndSettle();
       for (final (index, role) in ['panel', 'adviser', 'peer'].indexed) {
         final id = 10 + index * 10;
-        final picker = find.byKey(ValueKey('$role-rubric-${creating ? 0 : id}'));
+        final picker = find.byKey(ValueKey('$role-rubric-${creating ? 0 : id}'),);
         final items = tester.widget<ShadSelect<int>>(picker).options!.whereType<ShadOption<int>>();
-        expect(items.map((item) => item.value), [0, if (!creating) id, id + 2]);
+        expect(items.map((item) => item.value), [0, if (!creating) id, id + 2,]);
       }
       expect(tester.takeException(), isNull);
-    });
+    },);
   }
 
   testWidgets('returning from Rubrics refreshes stage assignments without losing edits', (tester) async {
     await pumpWorkspace(tester, initialLocation: AdminRoutes.defenseStageEdit(7),
-      gradingConfig: assignedRubrics);
-    final container = ProviderScope.containerOf(tester.element(find.byType(DefenseStageEditorScreen)));
+      gradingConfig: assignedRubrics,);
+    final container = ProviderScope.containerOf(tester.element(find.byType(DefenseStageEditorScreen)),);
     final stages = container.read(defenseStagesProvider.notifier) as _Stages;
-    await tester.enterText(find.byType(TextField).first, 'Keep my stage edits');
+    await tester.enterText(find.byType(TextField).first, 'Keep my stage edits',);
     await tester.tap(find.text('2. Grading & Rubrics'));
     await tester.pumpAndSettle();
     final oldPanel = find.byKey(const ValueKey('panel-rubric-10'));
@@ -423,9 +427,9 @@ void main() {
     await tester.tap(find.text('Manage rubrics'));
     await tester.pumpAndSettle();
     final newAssignments = {...assignedRubrics,
-      'panel_rubric_id': 30, 'panel_rubric_name': 'New panel assignment'};
+      'panel_rubric_id': 30, 'panel_rubric_name': 'New panel assignment',};
     stages.gradingConfig = newAssignments;
-    container.read(dataRefreshProvider.notifier).markChanged([DataArea.defenseStages]);
+    container.read(dataRefreshProvider.notifier).markChanged([DataArea.defenseStages,]);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Defense Stages Setup'));
     await tester.pumpAndSettle();
@@ -433,23 +437,23 @@ void main() {
       final id = newAssignments['${role}_rubric_id'];
       final picker = find.byKey(ValueKey('$role-rubric-$id'));
       expect(tester.widget<ShadSelect<int>>(picker).initialValue, id);
-      expect(find.text(newAssignments['${role}_rubric_name'] as String), findsOneWidget);
+      expect(find.text(newAssignments['${role}_rubric_name'] as String), findsOneWidget,);
     }
     await tester.tap(find.text('1. Stage Details'));
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text,
-      'Keep my stage edits');
+      'Keep my stage edits',);
     await tester.ensureVisible(find.text('Save changes'));
     await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
     for (final role in ['panel', 'adviser', 'peer']) {
-      expect(stages.gradingConfig['${role}_rubric_id'], newAssignments['${role}_rubric_id']);
+      expect(stages.gradingConfig['${role}_rubric_id'], newAssignments['${role}_rubric_id'],);
       expect(stages.savedGrading!.containsKey('${role}_rubric_id'), isFalse);
     }
     expect(tester.takeException(), isNull);
-  });
+  },);
 
-  testWidgets('restoring an old stage draft keeps newly assigned rubrics', (tester) async {
+  testWidgets('restoring an old stage draft keeps newly assigned rubrics', (tester,) async {
     SharedPreferences.setMockInitialValues({});
     await StageSetupDraftStore(userId: '1', semesterId: 3, stageId: 7).save(
       StageSetupDraft(tab: 1, fields: {
@@ -459,26 +463,26 @@ void main() {
           'panel_weight': 60, 'adviser_weight': 20, 'peer_weight': 20,
           'panel_rubric_id': null, 'adviser_rubric_id': null, 'peer_rubric_id': null,
         },
-      }),
+      },),
     );
     await pumpWorkspace(tester, resetStorage: false,
-      initialLocation: AdminRoutes.defenseStageEdit(7), gradingConfig: assignedRubrics);
+      initialLocation: AdminRoutes.defenseStageEdit(7), gradingConfig: assignedRubrics,);
     for (final role in ['panel', 'adviser', 'peer']) {
-      expect(find.byKey(ValueKey('$role-rubric-${assignedRubrics['${role}_rubric_id']}')), findsOneWidget);
+      expect(find.byKey(ValueKey('$role-rubric-${assignedRubrics['${role}_rubric_id']}'),), findsOneWidget,);
     }
     await tester.tap(find.text('1. Stage Details'));
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text,
-      'Saved setup edits');
+      'Saved setup edits',);
     await tester.ensureVisible(find.text('Save changes'));
     await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('explicitly clearing a stage rubric survives draft restoration', (tester) async {
+  testWidgets('explicitly clearing a stage rubric survives draft restoration', (tester,) async {
     await pumpWorkspace(tester, initialLocation: AdminRoutes.defenseStageEdit(7),
-      gradingConfig: assignedRubrics);
+      gradingConfig: assignedRubrics,);
     await tester.tap(find.text('2. Grading & Rubrics'));
     await tester.pumpAndSettle();
     final picker = find.byKey(const ValueKey('panel-rubric-10'));
@@ -493,9 +497,9 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
     await pumpWorkspace(tester, resetStorage: false,
-      initialLocation: AdminRoutes.defenseStageEdit(7), gradingConfig: assignedRubrics);
+      initialLocation: AdminRoutes.defenseStageEdit(7), gradingConfig: assignedRubrics,);
     expect(find.byKey(const ValueKey('panel-rubric-0')), findsOneWidget);
-    final stages = ProviderScope.containerOf(tester.element(find.byType(DefenseStageEditorScreen)))
+    final stages = ProviderScope.containerOf(tester.element(find.byType(DefenseStageEditorScreen)),)
         .read(defenseStagesProvider.notifier) as _Stages;
     await tester.ensureVisible(find.text('Save changes'));
     await tester.tap(find.text('Save changes'));
@@ -522,7 +526,8 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'Reloadable concept');
     await tester.tap(find.text('3. Deliverables'));
     await tester.pumpAndSettle();
-    await tester.tap(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')));
+    await tester.tap(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable'),
+      ),);
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextFormField).first,
@@ -552,15 +557,15 @@ void main() {
   });
 
   for (final tab in [0, 1, 2]) {
-    testWidgets('capstone rename updates original stage from step ${tab + 1}', (tester) async {
+    testWidgets('capstone rename updates original stage from step ${tab + 1}', (tester,) async {
       final router = await pumpWorkspace(tester,
-        initialLocation: AdminRoutes.defenseStageEdit(7));
+        initialLocation: AdminRoutes.defenseStageEdit(7),);
       final stages = ProviderScope.containerOf(
         tester.element(find.byType(DefenseStageEditorScreen)),
       ).read(defenseStagesProvider.notifier) as _Stages;
-      await tester.enterText(find.byType(TextField).first, 'Updated Concept Proposal');
+      await tester.enterText(find.byType(TextField).first, 'Updated Concept Proposal',);
       if (tab > 0) {
-        await tester.tap(find.text(tab == 1 ? '2. Grading & Rubrics' : '3. Deliverables'));
+        await tester.tap(find.text(tab == 1 ? '2. Grading & Rubrics' : '3. Deliverables'),);
         await tester.pumpAndSettle();
       }
       await tester.ensureVisible(find.text('Save changes'));
@@ -569,7 +574,7 @@ void main() {
       expect(stages.savedStageId, 7);
       expect(stages.savedUpdate?['label'], 'Updated Concept Proposal');
       expect(stages.adds, 0);
-      expect(router.routeInformationProvider.value.uri.path, AdminRoutes.defenseStages);
+      expect(router.routeInformationProvider.value.uri.path, AdminRoutes.defenseStages,);
       expect(tester.takeException(), isNull);
     });
   }
@@ -591,7 +596,7 @@ void main() {
     );
     await tester.tap(find.text('Next: Grading & Rubrics'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('minimum-qualifying-score')), '75');
+    await tester.enterText(find.byKey(const ValueKey('minimum-qualifying-score')), '75',);
     await tester.tap(find.text('3. Deliverables'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add Stage'));
@@ -658,7 +663,8 @@ void main() {
       await tester.tap(find.text('Minutes not required'));
       await tester.tap(find.text('3. Deliverables'));
       await tester.pumpAndSettle();
-      await tester.tap(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')));
+      await tester.tap(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable'),
+        ),);
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byWidgetPredicate(
@@ -720,7 +726,7 @@ void main() {
               ).read(defenseStagesProvider.notifier)
               as _Stages;
       stages.gradingSucceeds = false;
-      (ProviderScope.containerOf(tester.element(find.byType(DefenseStagesScreen)))
+      (ProviderScope.containerOf(tester.element(find.byType(DefenseStagesScreen)),)
           .read(rubricEngineProvider.notifier) as _Rubrics).offerPanelRubric();
       await tester.tap(find.text('Add stage'));
       await tester.pumpAndSettle();
@@ -729,7 +735,7 @@ void main() {
       await tester.tap(find.text('2. Grading & Rubrics'));
       await tester.pumpAndSettle();
       final panelPicker = find.byKey(const ValueKey('panel-rubric-0'));
-      await tester.enterText(find.byKey(const ValueKey('minimum-qualifying-score')), '75');
+      await tester.enterText(find.byKey(const ValueKey('minimum-qualifying-score')), '75',);
       await tester.ensureVisible(panelPicker);
       await tester.tap(panelPicker);
       await tester.pumpAndSettle();
@@ -799,42 +805,42 @@ void main() {
       'deliverables': [
         {'id': 1, 'deliverable_id': 'D1', 'label': 'Submitted manuscript',
           'deliverable_type': 'post', 'file_format': 'pdf', 'required': true,
-          'has_data': true, 'is_locked': true, 'lock_reason': 'Submission history is protected.'},
+          'has_data': true, 'is_locked': true, 'lock_reason': 'Submission history is protected.',},
         {'id': 2, 'deliverable_id': 'D2', 'label': 'Unused presentation',
-          'deliverable_type': 'post', 'file_format': 'presentation', 'required': true},
+          'deliverable_type': 'post', 'file_format': 'presentation', 'required': true,},
       ],
-    });
+    },);
     expect(find.text('Stage Settings Protected'), findsOneWidget);
     await tester.tap(find.text('3. Deliverables'));
     await tester.pumpAndSettle();
-    expect(find.text('Apply Naming Pattern to All Post-Defense Deliverables'), findsNothing);
+    expect(find.text('Apply Naming Pattern to All Post-Defense Deliverables'), findsNothing,);
     await tester.ensureVisible(find.text('Submitted manuscript'));
     await tester.tap(find.text('Submitted manuscript'));
     await tester.pumpAndSettle();
     final usedName = find.byWidgetPredicate((widget) => widget is TextFormField &&
-        widget.controller?.text == 'Submitted manuscript');
-    expect(tester.widget<TextField>(find.descendant(of: usedName, matching: find.byType(TextField))).readOnly, isTrue);
-    final usedDelete = find.widgetWithIcon(IconButton, Icons.delete_outline_rounded);
+        widget.controller?.text == 'Submitted manuscript',);
+    expect(tester.widget<TextField>(find.descendant(of: usedName, matching: find.byType(TextField)),).readOnly, isTrue,);
+    final usedDelete = find.widgetWithIcon(IconButton, Icons.delete_outline_rounded,);
     expect(tester.widget<IconButton>(usedDelete).onPressed, isNull);
     expect(find.text('Submission history is protected.'), findsOneWidget);
-    await capturePreview(tester, find.byType(DefenseStageEditorScreen), 'stage-deliverable-integrity', viewport: true);
+    await capturePreview(tester, find.byType(DefenseStageEditorScreen), 'stage-deliverable-integrity', viewport: true,);
     await tester.ensureVisible(find.text('Unused presentation'));
     await tester.tap(find.text('Unused presentation'));
     await tester.pumpAndSettle();
     final unusedName = find.byWidgetPredicate((widget) => widget is TextFormField &&
-        widget.controller?.text == 'Unused presentation');
-    expect(tester.widget<TextField>(find.descendant(of: unusedName, matching: find.byType(TextField))).readOnly, isFalse);
+        widget.controller?.text == 'Unused presentation',);
+    expect(tester.widget<TextField>(find.descendant(of: unusedName, matching: find.byType(TextField)),).readOnly, isFalse,);
     await tester.enterText(unusedName, 'Updated presentation');
     await tester.ensureVisible(find.text('Save changes'));
     await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
-    final stages = ProviderScope.containerOf(tester.element(find.byType(DefenseStagesScreen)))
+    final stages = ProviderScope.containerOf(tester.element(find.byType(DefenseStagesScreen)),)
         .read(defenseStagesProvider.notifier) as _Stages;
     expect(stages.savedUpdate!['label'], isNull);
-    expect((stages.savedUpdate!['deliverables'] as List).last['label'], 'Updated presentation');
+    expect((stages.savedUpdate!['deliverables'] as List).last['label'], 'Updated presentation',);
     expect(stages.savedGrading, isNull);
     expect(tester.takeException(), isNull);
-  });
+  },);
 
   testWidgets('a browser draft cannot override a stage locked by the server', (
     tester,

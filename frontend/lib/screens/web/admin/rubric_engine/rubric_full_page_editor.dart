@@ -119,6 +119,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   bool _isDirty = false;
   bool _isCustomName = false;
   bool _isInitializing = true;
+  bool _loadingCopySources = false;
   final bool _checking = false;
   UnsavedChangesNotifier? _unsavedNotifier;
   UnsavedChangesSaveDraftNotifier? _unsavedDraftNotifier;
@@ -417,50 +418,46 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     showSuccessToast(context, 'Rubric criteria and details cloned.');
   }
 
-  void _showCloneRubricDialog(
-    BuildContext context,
-    List<Map<String, dynamic>> availableRubrics,
-  ) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        return DefensysShadcnScope(
-          child: _CloneRubricDialog(
-            availableRubrics: availableRubrics,
-            onClone: (sourceRubric) {
-              _cloneFromRubric(sourceRubric);
-              Navigator.pop(dialogContext);
-            },
-          ),
-        );
-      },
-    );
+  Future<void> _showCloneRubricDialog(BuildContext context) async {
+    setState(() => _loadingCopySources = true);
+    try {
+      final availableRubrics = await ref
+          .read(rubricEngineProvider.notifier)
+          .checkExistingRubrics(scope: _scope);
+      if (!mounted || !context.mounted) return;
+      await showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) {
+          return DefensysShadcnScope(
+            child: _CloneRubricDialog(
+              availableRubrics: availableRubrics,
+              onClone: (sourceRubric) {
+                _cloneFromRubric(sourceRubric);
+                Navigator.pop(dialogContext);
+              },
+            ),
+          );
+        },
+      );
+    } catch (_) {
+      if (mounted && context.mounted) {
+        showErrorToast(context, 'Unable to load rubrics. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _loadingCopySources = false);
+    }
   }
 
   Widget _buildCloneDropdown(RubricEngineState state) {
     if (_editing || widget.readOnly) return const SizedBox.shrink();
 
-    final user = ref.read(authProvider).user;
-    final isPitLead = _isPitLeadOnly(user);
-
-    final availableRubrics = state.rubrics.where((r) {
-      if (isPitLead) {
-        return r['scope'] == 'pit';
-      }
-      return true;
-    }).toList();
-
-    if (availableRubrics.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
     return ShadButton.outline(
       size: ShadButtonSize.sm,
-      enabled: !state.isSaving,
-      onPressed: state.isSaving
+      enabled: !state.isSaving && !_loadingCopySources,
+      onPressed: state.isSaving || _loadingCopySources
           ? null
-          : () => _showCloneRubricDialog(context, availableRubrics),
+          : () => _showCloneRubricDialog(context),
       leading: const Icon(LucideIcons.copy, size: 15),
       child: const Text('Copy from rubric'),
     );
@@ -1721,6 +1718,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                   setState(() => _selectedScope = value ?? 'all'),
             ),
             ShadSelect<String>(
+              key: const ValueKey('copy-rubric-semester'),
               initialValue: _selectedSemester,
               maxWidth: desktop ? 220 : size.width - 96,
               selectedOptionBuilder: (_, value) => Text(

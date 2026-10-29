@@ -32,7 +32,11 @@ class _Stages extends DefenseStagesNotifier {
   DefenseStagesState build() => const DefenseStagesState(stages: [_stage]);
 
   @override
-  Future<void> fetchStages({String? successMessage}) async {}
+  Future<void> fetchStages({String? scope,
+    String? intake,
+    String? phase,
+    String? stage,
+    String? successMessage,}) async {}
 
   @override
   Future<Map<String, dynamic>?> fetchStageDetail(

@@ -344,18 +344,25 @@ def augment_deliverable_missing_rows(entries, deliverable_id='', stage_filter=''
     }
 
     if scope.get('scope') == 'admin':
-        stage_names = sorted(set(STAGE_OPTIONS + [e.get('stage') for e in entries if e.get('type') == 'capstone' and e.get('stage')]))
+        from student_teams.capstone_context import phase_requirements
+
         teams = list(_capstone_teams_queryset().filter(semester__is_active=True))
-        for stage_name in stage_names:
-            if stage_filter and stage_name != stage_filter:
-                continue
-            definitions = deliverable_definitions_for_stage(stage_name)
-            for definition in definitions:
-                if definition['type'] not in ('pre', 'post'):
+        for team in teams:
+            # Completed source-term stages stay in their original archive.
+            # Use the same phase requirements as the team's current workspace;
+            # a calendar change must not manufacture another set of missing files.
+            for requirement in phase_requirements(team):
+                stage_name = requirement['label']
+                if stage_filter and stage_name != stage_filter:
                     continue
-                if requested_id and definition['id'] != requested_id:
-                    continue
-                for team in teams:
+                definitions = requirement.get('definitions')
+                if definitions is None:
+                    definitions = deliverable_definitions_for_stage(stage_name)
+                for definition in definitions:
+                    if definition['type'] not in ('pre', 'post'):
+                        continue
+                    if requested_id and definition['id'] != requested_id:
+                        continue
                     semester = team.semester
                     key = ('capstone', semester.school_year.label, semester.label,
                            team.id, stage_name, definition['id'])

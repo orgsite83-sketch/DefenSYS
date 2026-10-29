@@ -34,6 +34,11 @@ def require_section_write(user, semester, year, section, pm=None):
         raise ValidationError('Select a valid year and section.')
     if not semester.is_active:
         raise PermissionDenied('Historical sections are read-only.')
+    if is_capstone_scope(year, semester):
+        from .section_years import capstone_section_issue
+        issue = capstone_section_issue(section, year)
+        if issue:
+            raise ValidationError({'section': issue})
     if not is_admin_user(user):
         if is_capstone_scope(year, semester):
             raise PermissionDenied('Only Admin can manage Capstone sections.')

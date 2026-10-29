@@ -176,6 +176,15 @@ class StudentTeam(models.Model):
     def clean(self):
         if self.leader_id and getattr(self.leader, 'role', None) != 'student':
             raise ValidationError({'leader': 'Team leader must be a student.'})
+        if self.is_capstone:
+            from .section_years import capstone_section_issue, capstone_year_issue
+            if self.intake_semester_id and self.semester_id and self.intake_semester_id != self.semester_id:
+                issue = capstone_year_issue(self.year_level, self.semester)
+                if issue:
+                    raise ValidationError({'year_level': issue})
+            issue = capstone_section_issue(self.section, self.year_level)
+            if issue:
+                raise ValidationError({'section': issue})
         if self.adviser_id and getattr(self.adviser, 'role', None) not in ['faculty', 'admin']:
             raise ValidationError({'adviser': 'Adviser must be a faculty or admin user.'})
         if self.pk and self.adviser_id is not None:

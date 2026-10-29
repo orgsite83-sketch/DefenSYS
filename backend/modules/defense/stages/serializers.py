@@ -715,7 +715,7 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
         changing_peer_r = 'peer_rubric_id' in attrs and attrs['peer_rubric_id'] != (config.peer_rubric_id)
 
         if changing_panel_w or changing_adviser_w or changing_peer_w or changing_panel_r or changing_adviser_r or changing_peer_r:
-            locked, reason = check_stage_structure_locked(config.defense_stage, config.semester)
+            locked, reason = check_stage_locked(config.defense_stage, config.semester)
             if locked:
                 raise serializers.ValidationError(
                     {'rubric': reason or 'Stage configuration cannot be changed because defenses are already scheduled or officially completed.'}

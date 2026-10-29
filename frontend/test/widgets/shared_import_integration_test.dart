@@ -30,6 +30,9 @@ class _Teams extends StudentTeamsNotifier {
   StudentTeamsState build() => const StudentTeamsState();
   @override
   Future<void> fetchTeams({
+    String? historyIntake,
+    String? historyPhase,
+    String? historyStage,
     String? workspace,
     String? search,
     String? level,

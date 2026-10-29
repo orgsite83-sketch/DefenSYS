@@ -121,7 +121,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final targetStage =
         _selectedStageForView?.trim().toLowerCase() ?? currentStageLabel;
     final eventRows = stages.where((s) => s['stage_label']?.toString().trim().toLowerCase() == targetStage
-        && s['team_id'] != null).toList();
+        && s['team_id'] != null,).toList();
     final requestedTeam = ref.read(studentTeamSelectionProvider);
     final eventRow = eventRows.where((s) => s['team_id'] == requestedTeam).firstOrNull
         ?? eventRows.firstOrNull;
@@ -292,7 +292,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final selectedTeamId = ref.watch(studentTeamSelectionProvider);
     final eventEntries = (widget.studentData?['stages'] as List? ?? [])
         .whereType<Map>()
-        .where((entry) => entry['stage_label'] == _requestedStage && entry['team'] is Map)
+        .where((entry) => entry['stage_label'] == _requestedStage && entry['team'] is Map,)
         .toList();
     final eventEntry = eventEntries.where((entry) => entry['team_id'] == selectedTeamId).firstOrNull
         ?? eventEntries.firstOrNull;
@@ -323,7 +323,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 widget.studentData?['stages'] as List? ??
                 [])
             .cast<Map<String, dynamic>>()
-            .where((entry) => isCapstone || entry['team_id'] == null || entry['team_id'] == team?['id'])
+            .where((entry) => isCapstone || entry['team_id'] == null || entry['team_id'] == team?['id'],)
             .toList();
 
     final rawActiveStageName =
@@ -482,7 +482,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         onSelected: (_) => ref.read(studentTeamSelectionProvider.notifier)
                             .select(entry['team_id'] as int),
                       ),
-                  ]),
+                  ],),
 
                 // Contextual Notice Banner (Archive for past stages, Upcoming info for future stages - Capstone only)
                 if (isCapstone &&
@@ -629,7 +629,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       const SizedBox(height: 12),
                       Text(
                         isCapstone
-                            ? 'No defense stages configured yet'
+                            ? 'Awaiting stage setup'
                             : 'No PIT events configured yet',
                         textAlign: TextAlign.center,
                         style: const TextStyle(

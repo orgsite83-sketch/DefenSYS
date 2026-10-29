@@ -22,7 +22,11 @@ class _StagesNotifier extends DefenseStagesNotifier {
   DefenseStagesState build() => const DefenseStagesState();
 
   @override
-  Future<void> fetchStages({String? successMessage}) async {}
+  Future<void> fetchStages({String? scope,
+    String? intake,
+    String? phase,
+    String? stage,
+    String? successMessage,}) async {}
 
   @override
   Future<int?> addStage(Map<String, dynamic> payload) async {
@@ -137,8 +141,8 @@ void main() {
         findsNothing,
       );
       expect(find.text('Demo Report'), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable')), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable'),), findsOneWidget,);
+      expect(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable'),), findsOneWidget,);
       await tester.tap(find.text('Save changes'));
       await tester.pumpAndSettle();
       expect(stages.saved?['is_presentation_only'], false);
@@ -234,8 +238,8 @@ void main() {
           find.text('Will students submit files for this stage?'),
           findsNothing,
         );
-        expect(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')), findsOneWidget);
-        expect(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable')), findsOneWidget);
+        expect(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable'),), findsOneWidget,);
+        expect(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable'),), findsOneWidget,);
         expect(
           find.byType(StageMinutesDeliverableCard),
           requiredMinutes ? findsOneWidget : findsNothing,
@@ -268,7 +272,8 @@ void main() {
           await tester.pumpAndSettle();
         }
         if (requiredMinutes) {
-          await tester.tap(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable')));
+          await tester.tap(find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section'),), matching: find.text('Add deliverable'),
+            ),);
           await tester.pumpAndSettle();
           await tester.enterText(
             find.byWidgetPredicate(
@@ -288,8 +293,10 @@ void main() {
           await tester.tap(find.text('Required').last);
           await tester.pumpAndSettle();
 
-          await tester.ensureVisible(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable')));
-          await tester.tap(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section')), matching: find.text('Add deliverable')));
+          await tester.ensureVisible(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section'),), matching: find.text('Add deliverable'),
+            ),);
+          await tester.tap(find.descendant(of: find.byKey(const ValueKey('post-defense-deliverables-section'),), matching: find.text('Add deliverable'),
+            ),);
           await tester.pumpAndSettle();
           await tester.enterText(
             find.byWidgetPredicate(

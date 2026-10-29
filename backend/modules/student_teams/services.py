@@ -269,6 +269,7 @@ def mark_stage_result(grade, user=None):
         return None
     progress, _ = _progress_for(grade.team, grade.defense_stage, user=user,
         semester=grade.semester, project_version=grade.project_version)
+    previous_status = progress.status
     verdict = getattr(grade, 'verdict', '')
     from grading.grades.defense_workflow import passed_and_cleared, legacy_finalized_pass
     from repository.deliverables.services import post_deliverables_complete
@@ -309,6 +310,12 @@ def mark_stage_result(grade, user=None):
     progress.graded_at = progress.graded_at or timezone.now()
     progress.updated_by = user
     progress.save(update_fields=['status', 'grade', 'graded_at', 'updated_by', 'updated_at'])
+    if previous_status != progress.status:
+        from .history_events import record_team_event
+        record_team_event(grade.team, 'capstone.stage_status_changed', actor=user,
+            semester=grade.semester, old_values={'stage_status': previous_status},
+            values={'grade_id': grade.pk, 'defense_stage_id': grade.defense_stage_id,
+                'stage_label': grade.stage_label or lbl, 'stage_status': progress.status})
     if grade.semester_id == grade.team.semester_id:
         _mirror_team_status(grade.team, team_status)
         if grade.status == grade.STATUS_PUBLISHED and grade.result == 'failed':

@@ -39,6 +39,8 @@ class DefenseStageEditorScreen extends ConsumerStatefulWidget {
   final int initialTab;
   final Map<String, dynamic>? initialStage;
   final VoidCallback onBack;
+  final int? semesterId;
+  final bool readOnly;
 
   const DefenseStageEditorScreen({
     super.key,
@@ -46,6 +48,8 @@ class DefenseStageEditorScreen extends ConsumerStatefulWidget {
     this.initialTab = 0,
     this.initialStage,
     required this.onBack,
+    this.semesterId,
+    this.readOnly = false,
   });
 
   @override
@@ -125,13 +129,13 @@ class _DefenseStageEditorScreenState
       'is_active': _isActive,
       'is_presentation_only': false,
       'minutes_required': _minutesRequired,
-      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
+      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always',},
       'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
       'score_carryover': _scoreCarryover,
       'minutes_deliverable_id': _minutesNumber.text,
       'minutes_deliverable_label': _minutesName.text,
       'deliverables': _deliverables,
-      'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables),
+      'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables,),
       'rubric_assignment_changes': _editedRubricRoles.toList(),
       'rubric_assignment_base': _serverRubricIds,
       'grading_config': {
@@ -160,7 +164,7 @@ class _DefenseStageEditorScreenState
       _clearDirty();
       return true;
     } catch (_) {
-      if (mounted) setState(() => _error = 'Could not save your draft. Your setup is still open; please try again.');
+      if (mounted) setState(() => _error = 'Could not save your draft. Your setup is still open; please try again.',);
       return false;
     } finally {
       if (mounted) setState(() => _savingDraft = false);
@@ -190,7 +194,7 @@ class _DefenseStageEditorScreenState
       _clearDirty();
       await _load();
     } catch (_) {
-      if (mounted) setState(() => _error = 'Could not discard the draft. Please try again.');
+      if (mounted) setState(() => _error = 'Could not discard the draft. Please try again.',);
     }
   }
 
@@ -297,7 +301,7 @@ class _DefenseStageEditorScreenState
       if (!mounted || detail?['grading_config'] is! Map) return;
       setState(() => _syncServerRubricAssignments(
         Map<String, dynamic>.from(detail!['grading_config'] as Map),
-      ));
+      ),);
     } finally {
       _refreshingRubrics = false;
     }
@@ -315,7 +319,7 @@ class _DefenseStageEditorScreenState
     _panel.dispose();
     _adviser.dispose();
     _peer.dispose();
-    for (final item in deliverableSetupItems(_deliverables, _sharedDeliverables)) {
+    for (final item in deliverableSetupItems(_deliverables, _sharedDeliverables,)) {
       (item['_labelController'] as TextEditingController?)?.dispose();
       (item['_templateController'] as TextEditingController?)?.dispose();
     }
@@ -333,7 +337,7 @@ class _DefenseStageEditorScreenState
 
     await ref.read(academicPeriodProvider.notifier).fetchPeriods();
     final active = ref.read(academicPeriodProvider).activeSemester;
-    _semesterId ??= _asInt(active?['id']);
+    _semesterId ??= widget.semesterId ?? _asInt(active?['id']);
 
     await ref.read(defenseStagesProvider.notifier).fetchStages();
 
@@ -351,7 +355,7 @@ class _DefenseStageEditorScreenState
     // Load Capstone rubrics (published ones are filtered client-side for dropdowns)
     await ref.read(rubricEngineProvider.notifier).fetchRubrics(
           scope: 'capstone',
-          status: '',
+          status: ''
         );
 
     if (!mounted) return;
@@ -397,7 +401,7 @@ class _DefenseStageEditorScreenState
     final serverStage = _stage;
     final restored = {...?_stage, if (!_structureLocked) ...draft.fields};
     for (final key in ['deliverables', 'shared_deliverables']) {
-      restored[key] = restoreProtectedDeliverables(draft.fields[key] ?? restored[key], serverStage?[key]);
+      restored[key] = restoreProtectedDeliverables(draft.fields[key] ?? restored[key], serverStage?[key],);
     }
     _applyStage(restored);
     // Locks and workflow metadata always come from the server.
@@ -409,9 +413,10 @@ class _DefenseStageEditorScreenState
       final base = draft.fields['rubric_assignment_base'] as Map? ?? {};
       final changes = draft.fields['rubric_assignment_changes'] as List? ?? [];
       _editedRubricRoles.addAll(changes.whereType<String>().where((role) =>
-        base.containsKey(role) && _asInt(base[role]) == _serverRubricIds[role]));
+        base.containsKey(role) && _asInt(base[role]) == _serverRubricIds[role],
+        ),);
       _applyWeights(Map<String, dynamic>.from(grading));
-      _applyRubricAssignments(Map<String, dynamic>.from(grading), roles: _editedRubricRoles);
+      _applyRubricAssignments(Map<String, dynamic>.from(grading), roles: _editedRubricRoles,);
     }
     _activeTab = draft.tab;
   }
@@ -423,9 +428,9 @@ class _DefenseStageEditorScreenState
     _description.text = stage['description']?.toString() ?? '';
     _orderPosition = _asInt(stage['display_order']) ?? 1;
     _isActive = stage['is_active'] != false;
-    _conceptConfig = Map<String, dynamic>.from(stage['concept_config'] as Map? ?? {});
+    _conceptConfig = Map<String, dynamic>.from(stage['concept_config'] as Map? ?? {},);
     _sharedDeliverables = sharedDeliverableValues(stage['shared_deliverables'] ??
-        (_conceptConfig['enabled'] == true ? defaultSharedDeliverables() : []));
+        (_conceptConfig['enabled'] == true ? defaultSharedDeliverables() : []),);
     _qualifyingScore.text = stage['qualifying_score']?.toString() ?? '';
     _scoreCarryover = stage['score_carryover']?.toString() ?? _conceptConfig['score_carryover']?.toString() ?? 'reassess';
     _minutesRequired = stage['minutes_required'] == true;
@@ -454,10 +459,10 @@ class _DefenseStageEditorScreenState
       _serverRubricIds[role] = id;
     }
     _applyRubricAssignments(grading,
-      roles: {'panel', 'adviser', 'peer'}.difference(_editedRubricRoles));
+      roles: {'panel', 'adviser', 'peer'}.difference(_editedRubricRoles),);
   }
 
-  void _applyRubricAssignments(Map<String, dynamic> grading, {required Set<String> roles}) {
+  void _applyRubricAssignments(Map<String, dynamic> grading, {required Set<String> roles,}) {
     if (roles.contains('panel')) {
       _panelRubricId = _asInt(grading['panel_rubric_id']);
       _panelRubricName = grading['panel_rubric_name']?.toString();
@@ -500,12 +505,12 @@ class _DefenseStageEditorScreenState
       return;
     }
     if (!_structureLocked && _weightTotal != 100) {
-      setState(() => _error = 'Panel, Adviser, and Peer weights must total 100%.');
+      setState(() => _error = 'Panel, Adviser, and Peer weights must total 100%.',);
       return;
     }
 
     // Validate student deliverable labels and archive naming templates.
-    final configuredItems = deliverableSetupItems(_deliverables, _sharedDeliverables);
+    final configuredItems = deliverableSetupItems(_deliverables, _sharedDeliverables,);
     for (int i = 0; i < configuredItems.length; i++) {
       final d = configuredItems[i];
       final labelVal = d['label']?.toString().trim() ?? '';
@@ -563,14 +568,14 @@ class _DefenseStageEditorScreenState
             'is_active': _isActive,
             'is_presentation_only': false,
             'minutes_required': _minutesRequired,
-      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
+      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always',},
       'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
       'score_carryover': _scoreCarryover,
             'minutes_deliverable_id': _minutesNumber.text.trim(),
             'minutes_deliverable_label': _minutesName.text.trim(),
             },
             'deliverables': _deliverables,
-            'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables),
+            'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables,),
             if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
           },
         );
@@ -595,7 +600,7 @@ class _DefenseStageEditorScreenState
         await _clearBrowserDraft();
         _savedDraft = null;
       } catch (_) {
-        setState(() => _error = 'Stage saved, but its browser draft could not be removed.');
+        setState(() => _error = 'Stage saved, but its browser draft could not be removed.',);
         return;
       }
       _clearDirty();
@@ -629,7 +634,7 @@ class _DefenseStageEditorScreenState
   Widget _buildPositionSelector() {
     final allStages = ref.watch(defenseStagesProvider).stages;
     final totalStages = allStages.length;
-    final currentPos = _orderPosition.clamp(1, totalStages > 0 ? totalStages : 1);
+    final currentPos = _orderPosition.clamp(1, totalStages > 0 ? totalStages : 1,);
     final initialOrder = _asInt(_stage?['display_order']);
 
     // Calculate highest order of completed stages
@@ -677,9 +682,10 @@ class _DefenseStageEditorScreenState
   }
 
   bool get _isLocked =>
+      widget.readOnly ||
       _stage?['is_locked'] == true || _stage?['status'] == 'locked';
   bool get configuredItemsHaveData =>
-      deliverableSetupItems(_deliverables, _sharedDeliverables).any((row) => row['has_data'] == true);
+      deliverableSetupItems(_deliverables, _sharedDeliverables,).any((row) => row['has_data'] == true);
   bool get _structureLocked => _isLocked || _stage?['structure_locked'] == true;
   String? get _lockReason =>
       _stage?[_isLocked ? 'lock_reason' : 'structure_lock_reason']?.toString();
@@ -772,8 +778,8 @@ class _DefenseStageEditorScreenState
     final adviserVal = int.tryParse(_adviser.text.trim()) ?? 0;
     final peerVal = int.tryParse(_peer.text.trim()) ?? 0;
     final hasWeightError = (panelVal + adviserVal + peerVal) != 100;
-    final preDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables).where((d) => d['deliverable_type'] == 'pre').toList();
-    final postDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables).where((d) => d['deliverable_type'] == 'post').toList();
+    final preDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables,).where((d) => d['deliverable_type'] == 'pre').toList();
+    final postDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables,).where((d) => d['deliverable_type'] == 'post').toList();
 
     return PopScope(
       canPop: !_isDirty,
@@ -856,7 +862,7 @@ class _DefenseStageEditorScreenState
                       child: _buildTabBar(
                         activeTab: _activeTab,
                         hasWeightError: hasWeightError,
-                        deliverableCount: deliverableSetupItems(_deliverables, _sharedDeliverables).length + (_minutesRequired == true ? 1 : 0),
+                        deliverableCount: deliverableSetupItems(_deliverables, _sharedDeliverables,).length + (_minutesRequired == true ? 1 : 0),
                         onTabSelected: (tab) => setState(() => _activeTab = tab),
                       ),
                     ),
@@ -880,7 +886,7 @@ class _DefenseStageEditorScreenState
                                     child: TextField(
                                       controller: _label,
                                       readOnly: _structureLocked,
-                                      style: TextStyle(color: _textPrimaryColor),
+                                      style: TextStyle(color: _textPrimaryColor,),
                                       decoration: _inputDecoration(
                                         labelText: 'Stage Name',
                                         hintText: 'e.g. Concept Proposal, Colloquium, Final Defense',
@@ -894,7 +900,7 @@ class _DefenseStageEditorScreenState
                                     child: TextField(
                                       controller: _code,
                                       readOnly: _structureLocked,
-                                      style: TextStyle(color: _textPrimaryColor),
+                                      style: TextStyle(color: _textPrimaryColor,),
                                       decoration: _inputDecoration(
                                         labelText: 'Stage Code',
                                         hintText: 'e.g. CAPS101',
@@ -916,23 +922,23 @@ class _DefenseStageEditorScreenState
                                 child: _buildPositionSelector(),
                               ),
                               const SizedBox(height: 16),
-                              Text('Stage policies', style: Theme.of(context).textTheme.titleSmall),
+                              Text('Stage policies', style: Theme.of(context).textTheme.titleSmall,),
                               const SizedBox(height: 4),
-                              Text('Enable only the workflows this stage uses.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: _textSecondaryColor)),
+                              Text('Enable only the workflows this stage uses.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: _textSecondaryColor),),
                               const SizedBox(height: 12),
                               ConceptSettings(value: _conceptConfig, enabled: !_structureLocked, onChanged: (value) {
                                 setState(() {
                                   if (_conceptConfig['enabled'] != true && value['enabled'] == true && _sharedDeliverables.isEmpty) {
                                     _sharedDeliverables = defaultSharedDeliverables();
-                                    ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables);
-                                    linkNewSharedConceptDefaults(_deliverables, _sharedDeliverables);
+                                    ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables,);
+                                    linkNewSharedConceptDefaults(_deliverables, _sharedDeliverables,);
                                   }
                                   _conceptConfig = value;
-                                  ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables);
-                                  if (!_deliverables.contains(_selectedDeliverable)) _selectedDeliverable = null;
+                                  ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables,);
+                                  if (!_deliverables.contains(_selectedDeliverable,)) _selectedDeliverable = null;
                                 });
                                 _markDirty();
-                              }),
+                              },),
                               const SizedBox(height: 20),
                               StageMinutesSettings(
                                 requiredMinutes: _minutesRequired, enabled: !_structureLocked,
@@ -952,7 +958,7 @@ class _DefenseStageEditorScreenState
                               ),
                               const SizedBox(height: 16),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8,),
                                 decoration: BoxDecoration(
                                   color: _panelBgColor,
                                   borderRadius: BorderRadius.circular(10),
@@ -970,7 +976,7 @@ class _DefenseStageEditorScreenState
                                   ),
                                   subtitle: Text(
                                     'When active, this stage is part of the live capstone defense sequence.',
-                                    style: TextStyle(fontSize: 12, color: _textSecondaryColor),
+                                    style: TextStyle(fontSize: 12, color: _textSecondaryColor,),
                                   ),
                                   activeTrackColor: AppColors.maroon,
                                   value: _isActive,
@@ -1002,30 +1008,30 @@ class _DefenseStageEditorScreenState
                                     onRubricChanged: (value) {
                                       setState(() { _panelRubricId = value; _editedRubricRoles.add('panel'); });
                                       _markDirty();
-                                    }),
+                                    },),
                                   GradingRoleSetup(role: 'adviser', label: 'Adviser', weightController: _adviser,
                                     rubrics: _getRubricOptions('adviser'), rubricId: _adviserRubricId, rubricName: _adviserRubricName,
                                     onWeightChanged: (_) { setState(() {}); _markDirty(); },
                                     onRubricChanged: (value) {
                                       setState(() { _adviserRubricId = value; _editedRubricRoles.add('adviser'); });
                                       _markDirty();
-                                    }),
+                                    },),
                                   GradingRoleSetup(role: 'peer', label: 'Peer', weightController: _peer,
                                     rubrics: _getRubricOptions('peer'), rubricId: _peerRubricId, rubricName: _peerRubricName,
                                     onWeightChanged: (_) { setState(() {}); _markDirty(); },
                                     onRubricChanged: (value) {
                                       setState(() { _peerRubricId = value; _editedRubricRoles.add('peer'); });
                                       _markDirty();
-                                    }),
+                                    },),
                                 ],
                               ),
-                              Padding(padding: const EdgeInsets.symmetric(vertical: 24),
-                                child: Divider(height: 1, color: _borderColor)),
+                              Padding(padding: const EdgeInsets.symmetric(vertical: 24,),
+                                child: Divider(height: 1, color: _borderColor),),
                               StageOutcomeSettings(scoreController: _qualifyingScore,
                                 scoreCarryover: _scoreCarryover, conceptSelection: _conceptConfig['enabled'] == true,
                                 enabled: !_saving && !_structureLocked,
                                 onChanged: () { setState(() {}); _markDirty(); },
-                                onCarryoverChanged: (v) { setState(() => _scoreCarryover = v); _markDirty(); }),
+                                onCarryoverChanged: (v) { setState(() => _scoreCarryover = v); _markDirty(); },),
                             ],
                           ),
 
@@ -1035,11 +1041,11 @@ class _DefenseStageEditorScreenState
                             children: [
                               StageDeliverablePresetsBar(
                                 existingStages: ref.read(defenseStagesProvider).stages,
-                                currentDeliverables: deliverablePresetItems(_deliverables, _sharedDeliverables),
+                                currentDeliverables: deliverablePresetItems(_deliverables, _sharedDeliverables,),
                                 enabled: !_isLocked && !configuredItemsHaveData,
                                 onApplyDeliverables: (newDeliverables) {
                                   setState(() {
-                                    applyDeliverablePresetItems(newDeliverables, _deliverables, _sharedDeliverables);
+                                    applyDeliverablePresetItems(newDeliverables, _deliverables, _sharedDeliverables,);
                                     _selectedDeliverable = _deliverables.isNotEmpty ? _deliverables.first : null;
                                     _error = null;
                                   });
@@ -1047,7 +1053,7 @@ class _DefenseStageEditorScreenState
                                 },
                               ),
                               StageDeliverableCounts(
-                                deliverables: deliverableSetupItems(_deliverables, _sharedDeliverables),
+                                deliverables: deliverableSetupItems(_deliverables, _sharedDeliverables,),
                                 minutesRequired: _minutesRequired == true,
                               ),
                               _buildDeliverableSection(
@@ -1144,14 +1150,14 @@ class _DefenseStageEditorScreenState
 
                     // Pinned Navigation & Action Footer
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16,),
                       child: StageSetupActions(
                         children: [
                           TextButton(
                             onPressed: _saving ? null : _handleBack,
                             style: TextButton.styleFrom(
                               foregroundColor: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
-                              textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                              textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13,),
                             ),
                             child: Text(_isLocked ? 'Back to Setup' : 'Cancel'),
                           ),
@@ -1160,7 +1166,7 @@ class _DefenseStageEditorScreenState
                             OutlinedButton.icon(
                               onPressed: (_saving || _savingDraft) ? null : _saveDraft,
                               icon: const Icon(Icons.save_outlined, size: 16),
-                              label: Text(_savingDraft ? 'Saving draft…' : 'Save draft'),
+                              label: Text(_savingDraft ? 'Saving draft…' : 'Save draft',),
                             ),
                           ],
                           const Spacer(),
@@ -1169,13 +1175,13 @@ class _DefenseStageEditorScreenState
                               onPressed: () {
                                 setState(() => _activeTab -= 1);
                               },
-                              icon: const Icon(Icons.arrow_back_rounded, size: 15),
+                              icon: const Icon(Icons.arrow_back_rounded, size: 15,),
                               label: const Text('Back'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: _isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF334155),
                                 side: BorderSide(color: _borderColor),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10,),
+                                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13,),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -1186,15 +1192,15 @@ class _DefenseStageEditorScreenState
                                 setState(() => _activeTab += 1);
                               },
                               iconAlignment: IconAlignment.end,
-                              icon: const Icon(Icons.arrow_forward_rounded, size: 15),
+                              icon: const Icon(Icons.arrow_forward_rounded, size: 15,),
                               label: Text(
                                 _activeTab == 0 ? 'Next: Grading & Rubrics' : 'Next: Deliverables',
                               ),
                               style: FilledButton.styleFrom(
                                 backgroundColor: _isDark ? DefensysTokens.maroon : AppColors.maroon,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                                textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10,),
+                                textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13,),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -1207,7 +1213,7 @@ class _DefenseStageEditorScreenState
                             )
                           else
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8,),
                               decoration: BoxDecoration(
                                 color: _inputFillColor,
                                 borderRadius: BorderRadius.circular(8),
@@ -1216,7 +1222,7 @@ class _DefenseStageEditorScreenState
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.lock_outline, size: 16, color: _textSecondaryColor),
+                                  Icon(Icons.lock_outline, size: 16, color: _textSecondaryColor,),
                                   const SizedBox(width: 6),
                                   Text(
                                     'Read-Only Mode',
@@ -1289,7 +1295,7 @@ class _DefenseStageEditorScreenState
             icon: Icons.inventory_2_rounded,
             badge: (deliverableCount > 0
                     ? Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1,),
                         decoration: BoxDecoration(
                           color: activeTab == 2
                               ? Colors.white.withValues(alpha: 0.25)
@@ -1371,7 +1377,7 @@ class _DefenseStageEditorScreenState
               ),
               if (badge != null) ...[
                 const SizedBox(width: 6),
-                badge,
+                badge
               ],
             ],
           ),
@@ -1407,7 +1413,7 @@ class _DefenseStageEditorScreenState
       ),
       helperStyle: TextStyle(
         fontSize: 11,
-        color: _textSecondaryColor,
+        color: _textSecondaryColor
       ),
       filled: true,
       fillColor: _inputFillColor,
@@ -1422,7 +1428,7 @@ class _DefenseStageEditorScreenState
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: _isDark ? const Color(0xFFF87171) : AppColors.maroon, width: 1.5),
+        borderSide: BorderSide(color: _isDark ? const Color(0xFFF87171) : AppColors.maroon, width: 1.5,),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -1430,7 +1436,7 @@ class _DefenseStageEditorScreenState
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: _isDark ? const Color(0xFFF87171) : AppColors.maroon, width: 1.5),
+        borderSide: BorderSide(color: _isDark ? const Color(0xFFF87171) : AppColors.maroon, width: 1.5,),
       ),
     );
   }
@@ -1804,7 +1810,7 @@ class _DefenseStageEditorScreenState
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
               child: Text(item['lock_reason']?.toString() ??
                   'This requirement is protected because it has submission history or grading has started.',
-                  style: TextStyle(fontSize: 12, color: _textSecondaryColor)),
+                  style: TextStyle(fontSize: 12, color: _textSecondaryColor),),
             ),
 
           // 2. Card Content Body
@@ -2175,7 +2181,7 @@ class _DefenseStageEditorScreenState
               : (_isDark ? const Color(0xFF38BDF8).withValues(alpha: 0.5) : const Color(0xFFBAE6FD)),
         ),
       ),
-      child: Text(message, style: TextStyle(fontSize: 13, color: _textPrimaryColor)),
+      child: Text(message, style: TextStyle(fontSize: 13, color: _textPrimaryColor),),
     );
   }
 

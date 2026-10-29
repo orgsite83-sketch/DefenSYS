@@ -17,7 +17,7 @@ from defense.scheduler.models import DefenseSchedule, SchedulePanelist
 from defense.stages.models import DefenseStage, StageDeliverable
 from repository.deliverables.models import DeliverableSubmission
 from repository.deliverables.services import stage_payload, upsert_submission
-from student_teams.models import StudentTeam
+from student_teams.models import StudentTeam, TeamTermParticipation
 
 
 class SignedMinutesRequirementTests(APITestCase):
@@ -205,3 +205,62 @@ class SignedMinutesRequirementTests(APITestCase):
         entries = signed_minutes_archive_entries()
         self.assertEqual(len(entries), 1)
         self.assertIn(f'revision_id={revision.pk}', entries[0]['file_url'])
+
+    def test_archive_keeps_hearing_term_and_year_after_team_promotion(self):
+        self.finalize()
+        revision = DefenseMinutesRevision.objects.create(
+            minutes=self.minutes, snapshot={'project_title': 'Original concept'},
+            pdf_file=self.minutes.pdf_file.name, reason='Title correction', actor=self.admin,
+        )
+        TeamTermParticipation.objects.update_or_create(
+            team=self.team, semester=self.semester,
+            defaults={'closed_at': timezone.now(),
+                      'snapshot': {'year_level': '3rd Year', 'level': StudentTeam.LEVEL_3_CAPSTONE}},
+        )
+        next_year = SchoolYear.objects.create(label='2027-2028')
+        next_semester = Semester.objects.create(school_year=next_year, label=Semester.SECOND)
+        StudentTeam.objects.filter(pk=self.team.pk).update(
+            semester=next_semester, year_level='4th Year', level=StudentTeam.LEVEL_4_CAPSTONE,
+        )
+        TeamTermParticipation.objects.create(
+            team=self.team, semester=next_semester,
+            snapshot={'year_level': '4th Year', 'level': StudentTeam.LEVEL_4_CAPSTONE},
+        )
+
+        entries = signed_minutes_archive_entries()
+        self.assertEqual(len(entries), 2)
+        for entry in entries:
+            self.assertEqual(entry['year_level'], '3rd Year')
+            self.assertEqual(entry['level'], StudentTeam.LEVEL_3_CAPSTONE)
+            self.assertEqual(entry['academic_year'], '2026-2027')
+            self.assertEqual(entry['semester'], Semester.FIRST)
+        retained = next(entry for entry in entries if 'revision_id=' in entry['file_url'])
+        self.assertEqual(retained['project_title'], 'Original concept')
+        self.assertIn(f'revision_id={revision.pk}', retained['file_url'])
+
+        # Verify the same grouping the archive browser exposes, through the API.
+        self.client.force_authenticate(self.admin)
+        query = {'type': 'capstone'}
+        for title in ('2026-2027', Semester.FIRST, '3rd Year', self.stage.label):
+            response = self.client.get('/api/repository/audit/', query)
+            self.assertEqual(response.status_code, 200, response.data)
+            folders = response.data['folder_browser']['folders']
+            self.assertEqual([folder['title'] for folder in folders], [title])
+            query['folder_key'] = folders[0]['key']
+
+    def test_current_fourth_year_minutes_keep_actual_year_level(self):
+        self.finalize()
+        # An open participation's earlier draft snapshot is not historical authority.
+        TeamTermParticipation.objects.update_or_create(
+            team=self.team, semester=self.semester,
+            defaults={'closed_at': None,
+                      'snapshot': {'year_level': '3rd Year', 'level': StudentTeam.LEVEL_3_CAPSTONE}},
+        )
+        StudentTeam.objects.filter(pk=self.team.pk).update(
+            year_level='4th Year', level=StudentTeam.LEVEL_4_CAPSTONE,
+        )
+        entry, = signed_minutes_archive_entries()
+        self.assertEqual(entry['year_level'], '4th Year')
+        self.assertEqual(entry['level'], StudentTeam.LEVEL_4_CAPSTONE)
+        self.assertEqual(entry['academic_year'], '2026-2027')
+        self.assertEqual(entry['semester'], Semester.FIRST)

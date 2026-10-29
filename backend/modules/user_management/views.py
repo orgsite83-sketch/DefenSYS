@@ -545,6 +545,11 @@ class BulkImportUsersMixin:
                     continue
                 year_level = context_year_level
             section = ' '.join((data.get('section') or context_section or '').strip().split())
+            from student_teams.section_years import enrollment_section_issue
+            section_issue = enrollment_section_issue(section, year_level, context_semester) if role == 'student' else ''
+            if section_issue:
+                errors.append({'row': index, 'id_number': username, 'errors': {'section': [section_issue]}})
+                continue
 
             row_instr = _clean_spaces(
                 data.get('instructor')
@@ -585,6 +590,29 @@ class BulkImportUsersMixin:
                 hashed_passwords = dict(zip(unique_new_usernames, hashes))
 
         with transaction.atomic():
+            # Serialize against semester activation and roster edits using the
+            # same period -> student -> team order as enrollment rollover.
+            list(Semester.objects.select_for_update().order_by('pk'))
+            if context_semester:
+                context_semester.refresh_from_db()
+            locked_users = User.objects.select_for_update().filter(
+                username__in=usernames_to_check).order_by('pk')
+            existing_users_map = {u.username: u for u in locked_users}
+            from student_teams.continuation_sections import section_decisions, reconcile_sections
+            section_defaults = section_decisions(context_semester,
+                {existing_users_map[username].pk: year for _, username, _, role, year, _ in validated_rows
+                 if username in existing_users_map and role == 'student' and year},
+                {existing_users_map[username].pk: section for _, username, _, role, _, section in validated_rows
+                 if username in existing_users_map and role == 'student'}) if context_semester and not self.force_pit_lead_context else {}
+            for index, username, _, _, _, _ in validated_rows:
+                expected = rows[index - 1].get('_section_resolution')
+                user = existing_users_map.get(username)
+                actual = section_defaults.get(user.pk) if user else None
+                if expected is not None and not isinstance(expected, dict):
+                    return Response({'detail': 'Invalid section preview. Refresh the enrollment preview.'}, status=400)
+                if expected and actual and any(expected.get(key) != actual.get(key)
+                        for key in ('section', 'source', 'team_id')):
+                    return Response({'detail': 'Section assignments changed. Refresh the enrollment preview before importing.'}, status=400)
             if self.force_pit_lead_context:
                 require_pit_import_scope(request.user, context_semester)
             for index, username, data, role, year_level, section in validated_rows:
@@ -598,6 +626,14 @@ class BulkImportUsersMixin:
 
                 if existing_user:
                     if existing_user.role == 'student' and context_semester is not None and year_level:
+                        decision = section_defaults.get(existing_user.pk)
+                        if decision:
+                            section = decision['section']
+                        section_issue = enrollment_section_issue(section, year_level, context_semester)
+                        if section_issue:
+                            errors.append({'row': index, 'id_number': username,
+                                'errors': {'section': [section_issue]}})
+                            continue
                         update_defaults = {'year_level': year_level}
                         if section:
                             update_defaults['section'] = section
@@ -697,6 +733,11 @@ class BulkImportUsersMixin:
                         section=section,
                     ))
 
+            if context_semester and not self.force_pit_lead_context:
+                reconcile_sections(context_semester, {r.student_id for r in records_created}, actor=request.user,
+                    applied_defaults={sid: d['section'] for sid, d in section_defaults.items()
+                        if d['source'] == 'inferred'})
+
             instructor_warnings = []
             assigned_instructors = []
             if (created or records_created) and require_faculty_match and faculty is not None and not is_capstone_scope(context_year_level, context_semester):
@@ -761,6 +802,7 @@ class BulkImportUsersMixin:
             ],
             'created_count': len(created),
             'records_created_count': len(records_created),
+            'section_resolutions': [{'student_id': sid, **decision} for sid, decision in section_defaults.items()],
             'skipped': skipped,
             'skipped_count': len(skipped),
             'errors': errors,

@@ -102,14 +102,15 @@ class GradeMasterlistPendingRoute extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final params = Map<String, String>.from(GoRouterState.of(context).uri.queryParameters);
-    final data = ref.watch(gradeMasterlistDataProvider(masterlistQueryKey(params)));
+    final params = Map<String, String>.from(GoRouterState.of(context).uri.queryParameters,);
+    final data = ref.watch(gradeMasterlistDataProvider(masterlistQueryKey(params)),);
     return data.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Padding(padding: const EdgeInsets.all(24), child: Text(error.toString())),
+      error: (error, _) => Padding(padding: const EdgeInsets.all(24), child: Text(error.toString()),),
       data: (payload) {
         final rows = gradeMaps(payload['rows']);
-        if (rows.isEmpty) return const Padding(padding: EdgeInsets.all(24), child: Text('This academic record is unavailable.'));
+        if (rows.isEmpty) { return const Padding(padding: EdgeInsets.all(24), child: Text('This academic record is unavailable.'),);
+        }
         final row = rows.first;
         final cell = gradeMaps(row['assessments']).firstOrNull ?? <String, dynamic>{};
         final gradeId = gradeNumber(cell['grade_id'])?.toInt();
@@ -120,7 +121,7 @@ class GradeMasterlistPendingRoute extends ConsumerWidget {
           onBack: () => context.pop(),
         );
         }
-        return GradePendingDetails(row: row, cell: cell, contextData: gradeMap(payload['context']));
+        return GradePendingDetails(row: row, cell: cell, contextData: gradeMap(payload['context']),);
       },
     );
   }
@@ -294,7 +295,7 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final rubrics = ref.read(rubricEngineProvider).rubrics;
-      final exists = rubrics.any((item) => int.tryParse(item['id']?.toString() ?? '') == id);
+      final exists = rubrics.any((item) => int.tryParse(item['id']?.toString() ?? '') == id,);
       if (!exists && !_isFetching) {
         setState(() => _isFetching = true);
         await ref.read(rubricEngineProvider.notifier).fetchSingleRubric(id);
@@ -334,7 +335,7 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Color(0xFFEF4444)),
+              const Icon(Icons.error_outline, size: 48, color: Color(0xFFEF4444),),
               const SizedBox(height: 16),
               const Text('Invalid Rubric ID'),
               const SizedBox(height: 16),
@@ -368,7 +369,7 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
         return const Scaffold(
           backgroundColor: Colors.white,
           body: Center(
-            child: CircularProgressIndicator(),
+            child: CircularProgressIndicator()
           ),
         );
       }
@@ -379,11 +380,11 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.search_off_rounded, size: 48, color: Color(0xFF94A3B8)),
+              const Icon(Icons.search_off_rounded, size: 48, color: Color(0xFF94A3B8),),
               const SizedBox(height: 16),
               Text(
                 'Rubric #$id not found',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700,),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
@@ -437,7 +438,7 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444),),
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Delete'),
             ),
@@ -495,6 +496,11 @@ class AdminDefenseStageEditorRoute extends ConsumerWidget {
     return DefenseStageEditorScreen(
       stageId: stageId,
       initialTab: initialTab,
+      semesterId: int.tryParse(
+        GoRouterState.of(context).uri.queryParameters['semester_id'] ?? '',
+      ),
+      readOnly:
+          GoRouterState.of(context).uri.queryParameters['read_only'] == 'true',
       onBack: () {
         ref.read(unsavedChangesProvider.notifier).setDirty(false);
         context.pop();

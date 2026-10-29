@@ -70,6 +70,9 @@ class _Teams extends StudentTeamsNotifier {
   StudentTeamsState build() => const StudentTeamsState(teams: [_team, _pitTeam]);
   @override
   Future<void> fetchTeams({
+    String? historyIntake,
+    String? historyPhase,
+    String? historyStage,
     String? workspace,
     String? search,
     String? level,
@@ -88,7 +91,11 @@ class _Stages extends DefenseStagesNotifier {
   @override
   DefenseStagesState build() => const DefenseStagesState();
   @override
-  Future<void> fetchStages({String? successMessage}) async {}
+  Future<void> fetchStages({String? scope,
+    String? intake,
+    String? phase,
+    String? stage,
+    String? successMessage,}) async {}
 }
 
 class _Grades extends GradeCenterNotifier {
@@ -96,6 +103,7 @@ class _Grades extends GradeCenterNotifier {
   GradeCenterState build() => const GradeCenterState();
   @override
   Future<void> fetchGrades({
+    String? historySemester,
     String? search,
     String? yearLevel,
     String? status,
@@ -186,7 +194,7 @@ Future<void> _toggleSignatures(WidgetTester tester, String badge) async {
 }
 
 void main() {
-  testWidgets('PDF and Excel select their preview without view tabs', (tester) async {
+  testWidgets('PDF and Excel select their preview without view tabs', (tester,) async {
     final client = MockClient((request) async => _response('Format Preview'));
     addTearDown(client.close);
     await _openReport(tester, client);
@@ -220,7 +228,7 @@ void main() {
     final client = MockClient((request) async {
       requests.add(request.url);
       if (request.url.path.endsWith('assessment-candidates/')) {
-        return http.Response(jsonEncode({'teams': [_pitTeam], 'students': [], 'student_contexts': {}}), 200);
+        return http.Response(jsonEncode({'teams': [_pitTeam], 'students': [], 'student_contexts': {},}), 200,);
       }
       return _response('PIT Lead Preview');
     });
@@ -247,14 +255,14 @@ void main() {
     expect(requests.last.queryParameters['scope'], 'pit');
     expect(find.text('Latest recorded event'), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
+  },);
 
-  testWidgets('PIT Lead roster keeps its year after resetting filters', (tester) async {
+  testWidgets('PIT Lead roster keeps its year after resetting filters', (tester,) async {
     final requests = <Uri>[];
     final client = MockClient((request) async {
       requests.add(request.url);
       if (request.url.path.endsWith('assessment-candidates/')) {
-        return http.Response(jsonEncode({'teams': [_pitTeam], 'students': [], 'student_contexts': {}}), 200);
+        return http.Response(jsonEncode({'teams': [_pitTeam], 'students': [], 'student_contexts': {},}), 200,);
       }
       return _response('PIT Roster Preview');
     });
@@ -277,12 +285,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('scope filters reports and carries PIT into the team preview', (tester) async {
+  testWidgets('scope filters reports and carries PIT into the team preview', (tester,) async {
     final requests = <Uri>[];
     final client = MockClient((request) async {
       requests.add(request.url);
       if (request.url.path.endsWith('assessment-candidates/')) {
-        return http.Response(jsonEncode({'teams': [_pitTeam], 'students': [], 'student_contexts': {}}), 200);
+        return http.Response(jsonEncode({'teams': [_pitTeam], 'students': [], 'student_contexts': {},}), 200,);
       }
       return _response('PIT Preview');
     });
@@ -302,7 +310,7 @@ void main() {
     expect(find.text('Latest recorded event'), findsOneWidget);
   });
 
-  testWidgets('team coverage sends all assessments or a selected record', (tester) async {
+  testWidgets('team coverage sends all assessments or a selected record', (tester,) async {
     final requests = <Uri>[];
     final client = MockClient((request) async {
       requests.add(request.url);
@@ -324,7 +332,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('individual reports use the same scope and coverage controls', (tester) async {
+  testWidgets('individual reports use the same scope and coverage controls', (tester,) async {
     final requests = <Uri>[];
     final client = MockClient((request) async {
       requests.add(request.url);
@@ -374,7 +382,7 @@ void main() {
   });
 
   testWidgets('catalog filters narrow categories and clear the search and scope', (
-    tester,
+    tester
   ) async {
     final client = MockClient((request) async => _response('Report Preview'));
     addTearDown(client.close);
@@ -401,7 +409,7 @@ void main() {
     expect(find.text('Audit Trail Export'), findsOneWidget);
     expect(find.text('Browse reports by category'), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
+  },);
 
   testWidgets('report rows fit a narrow viewport', (tester) async {
     final client = MockClient((request) async => _response('Report Preview'));
@@ -422,7 +430,7 @@ void main() {
   });
 
   testWidgets('applying signatories refreshes with the same settings as export', (
-    tester,
+    tester
   ) async {
     final requests = <Uri>[];
     final client = MockClient((request) async {
@@ -473,10 +481,10 @@ void main() {
       isFalse,
     );
     expect(tester.takeException(), isNull);
-  });
+  },);
 
   testWidgets('a slower old signature response cannot replace the latest preview', (
-    tester,
+    tester
   ) async {
     var defer = false;
     final pending = <Completer<http.Response>>[];
@@ -504,7 +512,7 @@ void main() {
     expect(pane.includeSignatures, isFalse);
     expect(pane.isLoading, isFalse);
     expect(tester.takeException(), isNull);
-  });
+  },);
 
   testWidgets('view changes keep the PDF loaded and zoom controls work', (
     tester,
@@ -524,7 +532,7 @@ void main() {
               return [792.0];
             case 'getPage':
               final args = call.arguments as Map;
-              return Uint8List((args['width'] as int) * (args['height'] as int) * 4);
+              return Uint8List((args['width'] as int) * (args['height'] as int) * 4,);
             case 'closeDocument':
               return null;
           }
@@ -540,7 +548,7 @@ void main() {
       generatedAt: '',
       summaryKpis: const [],
       columns: const [],
-      rows: const [{'score': 90}],
+      rows: const [{'score': 90},],
       totalRows: 1,
       pdfBase64: base64Encode(
         File('assets/template/Minutes-Defense-TEMPLATE.pdf').readAsBytesSync(),
@@ -565,7 +573,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
     });
-    expect(loads, 1, reason: 'The native PDF load should finish before settling');
+    expect(loads, 1, reason: 'The native PDF load should finish before settling',);
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('1 page'), findsOneWidget);
     final originalState = tester.state(find.byType(SfPdfViewer));

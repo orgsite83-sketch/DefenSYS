@@ -1,4 +1,6 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Q
+from django.db.models.manager import BaseManager
 from django.utils.functional import cached_property
 from rest_framework import serializers
 
@@ -102,6 +104,24 @@ class SectionInstructorAssignmentSerializer(serializers.ModelSerializer):
         return user_display_name(obj.assigned_by) if obj.assigned_by_id else None
 
 
+class ManagedUserListSerializer(serializers.ListSerializer):
+    def to_representation(self, data):
+        from student_teams.models import StudentTeam
+        from student_teams.term_scope import apply_team_scope
+        from student_teams.pit_rosters import filter_teams
+        users = list(data.all() if isinstance(data, BaseManager) else data)
+        ids = {u.pk for u in users if u.role == 'student'}
+        teams = filter_teams(apply_team_scope(StudentTeam.objects.filter(
+            Q(leader_id__in=ids) | Q(memberships__student_id__in=ids)), 'active'), current=True
+        ).select_related('semester').prefetch_related('memberships').distinct() if ids else []
+        by_student = {}
+        for team in teams:
+            for sid in ({team.leader_id} | {m.student_id for m in team.memberships.all()}) & ids:
+                by_student.setdefault(sid, []).append(team.pk)
+        self.child._team_ids_by_student = by_student
+        return super().to_representation(users)
+
+
 class ManagedUserSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     team_id = serializers.SerializerMethodField()
@@ -112,6 +132,7 @@ class ManagedUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
+        list_serializer_class = ManagedUserListSerializer
         fields = [
             'id',
             'username',
@@ -145,6 +166,11 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         }
 
     def get_team_id(self, obj):
+        if hasattr(self, '_team_ids_by_student'):
+            ids = self._team_ids_by_student.get(obj.pk, [])
+            if len(ids) > 1:
+                raise serializers.ValidationError('Your Current roster has overlapping team memberships. Ask your instructor to review it.')
+            return str(ids[0]) if ids else None
         from student_teams.current_identity import current_team_for_student
         team = current_team_for_student(obj)
         return str(team.pk) if team else None

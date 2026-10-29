@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
-from defense.stages.models import DefenseStage
+from defense.stages.models import DefenseStage, StageGradingConfig
 from .models import Rubric
 
 
@@ -307,6 +307,43 @@ class RubricEngineApiTests(APITestCase):
         names_all = [r['name'] for r in response_all.data['rubrics']]
         self.assertIn('Active Rubric', names_all)
         self.assertIn('Historical Rubric', names_all)
+
+    def test_historical_locked_rubric_can_be_copied_without_changing_its_source(self):
+        historical_semester = Semester.objects.create(
+            school_year=SchoolYear.objects.create(label='2025-2026'), label=Semester.SECOND,
+        )
+        response = self.client.post('/api/grading/rubrics/', self.rubric_payload(
+            name='Completed historical rubric', semester_id=historical_semester.pk,
+        ), format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        source_id = response.data['rubric']['id']
+        Rubric.objects.filter(pk=source_id).update(is_locked=True, status=Rubric.STATUS_PUBLISHED)
+        source = Rubric.objects.get(pk=source_id)
+        StageGradingConfig.objects.update_or_create(defense_stage=self.stage, semester=historical_semester,
+            defaults={'panel_rubric': source, 'is_officially_complete': True})
+        original = Rubric.objects.values().get(pk=source_id)
+        original_criteria = list(source.criteria.order_by('id').values())
+
+        response = self.client.get('/api/grading/rubrics/', {'scope': 'capstone'})
+        self.assertEqual(response.status_code, 200, response.data)
+        candidate = next(rubric for rubric in response.data['rubrics'] if rubric['id'] == source_id)
+        self.assertEqual(candidate['semester_id'], historical_semester.pk)
+        self.assertTrue(candidate['is_locked'])
+        criteria = [{key: value for key, value in criterion.items() if key != 'id'}
+            for criterion in candidate['criteria']]
+        copied = self.client.post('/api/grading/rubrics/', self.rubric_payload(
+            name='Copied historical rubric', defense_stage_id=None, criteria=criteria,
+        ), format='json')
+        self.assertEqual(copied.status_code, 201, copied.data)
+        self.assertNotEqual(copied.data['rubric']['id'], source_id)
+        self.assertEqual(copied.data['rubric']['semester_id'], self.semester.pk)
+        self.assertEqual(copied.data['rubric']['status'], Rubric.STATUS_DRAFT)
+        self.assertFalse(copied.data['rubric']['is_locked'])
+        self.assertIsNone(copied.data['rubric']['defense_stage_id'])
+        self.assertEqual([c['name'] for c in copied.data['rubric']['criteria']],
+            [c['name'] for c in candidate['criteria']])
+        self.assertEqual(Rubric.objects.values().get(pk=source_id), original)
+        self.assertEqual(list(source.criteria.order_by('id').values()), original_criteria)
 
     def test_pit_rubric_without_event_name_is_valid(self):
         self.client.force_authenticate(user=self._pit_lead_user('pit-lead-create'))

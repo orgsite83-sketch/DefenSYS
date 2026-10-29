@@ -45,6 +45,43 @@ void main() {
     expect(next.error, isNull);
   });
 
+  test('history keeps intake phase and stage scope across refreshes', () async {
+    final requests = <Uri>[];
+    setApiHttpClientForTesting(
+      MockClient((request) async {
+        requests.add(request.url);
+        return http.Response(
+          jsonEncode({
+            'teams': [
+              {'id': 7, 'semester_id': 3, 'record_key': '7:3'},
+            ],
+            'capstone_history': {
+              'selected_intake_id': 3,
+              'intakes': [
+                {'id': 3, 'label': 'Intake 2025-2026'},
+              ],
+            },
+          }),
+          200,
+        );
+      }),
+    );
+    final container = ProviderContainer(overrides: authTestOverrides());
+    addTearDown(container.dispose);
+    final notifier = container.read(studentTeamsProvider.notifier);
+    await notifier.fetchTeams(level: 'Capstone', scope: 'history');
+    expect(container.read(studentTeamsProvider).error, isNull, reason: requests.toString());
+    expect(requests, isNotEmpty);
+    expect(container.read(studentTeamsProvider).historyIntake, '3');
+    await notifier.fetchTeams(historyPhase: 'capstone_1', historyStage: '3:1');
+    await notifier.fetchTeams();
+    expect(requests.last.queryParameters, containsPair('intake_id', '3'));
+    expect(requests.last.queryParameters, containsPair('phase', 'capstone_1'));
+    expect(requests.last.queryParameters, containsPair('stage_key', '3:1'));
+    expect(requests.last.queryParameters, isNot(contains('semester_id')));
+    expect(container.read(studentTeamsProvider).teams.single['semester_id'], 3);
+  });
+
   test('manual roster errors retain every missing student name and ID', () async {
     const ana =
         'Ana Reyes (2023-0184) is not enrolled in 2nd Semester, A.Y. 2026-2027.';
@@ -64,7 +101,7 @@ void main() {
     addTearDown(container.dispose);
     final saved = await container
         .read(studentTeamsProvider.notifier)
-          .addTeam({'name': 'Team Harbor'});
+          .addTeam({'name': 'Team Harbor',});
     expect(saved, isFalse);
     expect(container.read(studentTeamsProvider).error, '$ana\n$bea');
   });

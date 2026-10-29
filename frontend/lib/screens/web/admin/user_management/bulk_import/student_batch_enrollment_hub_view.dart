@@ -95,6 +95,57 @@ class _StudentBatchEnrollmentHubViewState
   bool _isDraggingFile = false;
   bool _freshImportPending = false;
 
+  String _freshSection(Map<String, dynamic> student) =>
+      ((student['_section_resolution'] as Map?)?['section'] ??
+              student['section'] ?? '')
+          .toString().trim();
+
+  Future<void> _resolveFreshSections(List<Map<String, dynamic>> students) async {
+    final active = ref.read(academicPeriodProvider).activeSemester ??
+        widget.academicState.activeSemester ??
+        ref.read(studentAcademicRecordsProvider).activeSemester;
+    if (active == null) return;
+    final resolutions = await ref.read(userManagementProvider.notifier)
+        .previewEnrollmentSections(students, active['id'] as int);
+    final byId = {for (final row in resolutions) row['id_number']: row};
+    for (final student in students) {
+      student['_section_resolution'] = byId[student['id_number']];
+    }
+  }
+
+  Future<void> _editFreshSection(Map<String, dynamic> student) async {
+    final controller = TextEditingController(text: _freshSection(student));
+    final section = await showDialog<String>(context: context, builder: (context) =>
+      AlertDialog(
+        title: const Text('Enrollment section'),
+        content: TextField(controller: controller, autofocus: true, maxLength: 80,
+          decoration: const InputDecoration(labelText: 'Official section',
+            hintText: 'BSIT-4A', helperText: 'Leave blank to use an available continuation default.')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Apply')),
+        ],
+      ));
+    // The closing route may still reference its TextField during animation.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    controller.dispose();
+    if (section == null || !mounted) return;
+    final revised = _parsedFreshStudents.map((s) => Map<String, dynamic>.from(s)).toList();
+    final row = revised.firstWhere((s) => s['id_number'] == student['id_number']);
+    row['section'] = section;
+    try {
+      await _resolveFreshSections(revised);
+      if (!mounted) return;
+      setState(() => _parsedFreshStudents = revised);
+      ref.read(studentBatchDraftProvider.notifier).saveFreshDraft(
+        stagedFiles: _stagedFreshFiles, parsedStudents: revised,
+        sectionFilter: _selectedFreshSectionFilter);
+    } catch (e) {
+      if (mounted) showErrorToast(context, 'Could not review sections: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -386,7 +437,7 @@ class _StudentBatchEnrollmentHubViewState
 
     final sectionCounts = <String, int>{};
     for (final s in _parsedFreshStudents) {
-      final sec = s['section']?.toString().trim() ?? '';
+      final sec = _freshSection(s);
       final label = sec.isEmpty ? 'Unassigned' : sec;
       sectionCounts[label] = (sectionCounts[label] ?? 0) + 1;
     }
@@ -401,7 +452,7 @@ class _StudentBatchEnrollmentHubViewState
       if (!matchQuery) return false;
 
       if (_selectedFreshSectionFilter != 'ALL') {
-        final sec = s['section']?.toString().trim() ?? '';
+        final sec = _freshSection(s);
         final label = sec.isEmpty ? 'Unassigned' : sec;
         if (label != _selectedFreshSectionFilter) return false;
       }
@@ -1872,7 +1923,7 @@ class _StudentBatchEnrollmentHubViewState
                       const SizedBox(height: 3),
                       Text(
                         allViaTeams
-                            ? 'Verify parsed student cohorts, emails, and IDs before confirming enrollment. Section assignments will link via team rosters.'
+                            ? 'Review enrollment details. Section defaults apply only to confirmed Capstone 2 continuations; other sections remain unassigned.'
                             : 'Verify parsed student cohorts, section assignments, and emails before confirming enrollment.',
                         style: const TextStyle(
                           fontSize: 12.5,
@@ -1962,7 +2013,7 @@ class _StudentBatchEnrollmentHubViewState
             padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
             child: Text(
               allViaTeams
-                  ? 'Review student details before confirming enrollment. Section assignments will link automatically via team rosters.'
+                  ? 'Confirmed Capstone 2 continuations can inherit their next section. PIT sections follow the existing instructor or PIT Lead roster flow.'
                   : 'Review student details and verify section assignments before confirming enrollment.',
               style: const TextStyle(
                 color: Color(0xFF98A2B3),
@@ -2021,7 +2072,9 @@ class _StudentBatchEnrollmentHubViewState
                     fullName == ',' ? (s['name']?.toString() ?? 'Student') : fullName;
                 final email = s['email']?.toString() ?? '';
                 final year = s['year_level']?.toString() ?? 'Unassigned';
-                final rawSec = s['section']?.toString().trim() ?? '';
+                final rawSec = _freshSection(s);
+                final resolution = s['_section_resolution'] as Map?;
+                final inferred = resolution?['source'] == 'inferred';
                 final hasExplicitSection = rawSec.isNotEmpty &&
                     rawSec.toLowerCase() != 'unassigned' &&
                     rawSec.toLowerCase() != 'null';
@@ -2069,8 +2122,8 @@ class _StudentBatchEnrollmentHubViewState
                           children: [
                             Tooltip(
                               message: hasExplicitSection
-                                  ? 'Assigned Section: $sec'
-                                  : 'Section will be automatically linked when the Capstone Team Roster is imported.',
+                                  ? '${resolution?['message'] ?? 'Assigned Section: $sec'}'
+                                  : '${resolution?['message'] ?? 'Enter the official section or assign it through the existing roster flow.'}',
                               waitDuration: const Duration(milliseconds: 300),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -2092,8 +2145,8 @@ class _StudentBatchEnrollmentHubViewState
                                     ],
                                     Text(
                                       hasExplicitSection
-                                          ? 'Section: $sec'
-                                          : 'Section: Via Team Roster',
+                                          ? 'Section: $sec${inferred ? ' (inferred)' : ''}'
+                                          : 'Section: Unassigned',
                                       style: TextStyle(
                                         fontSize: 11.5,
                                         fontWeight: FontWeight.w600,
@@ -2103,6 +2156,12 @@ class _StudentBatchEnrollmentHubViewState
                                   ],
                                 ),
                               ),
+                            ),
+                            IconButton(
+                              tooltip: 'Edit enrollment section',
+                              onPressed: _freshImportPending ? null : () => _editFreshSection(s),
+                              icon: const Icon(Icons.edit_outlined, size: 15),
+                              visualDensity: VisualDensity.compact,
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -2209,7 +2268,7 @@ class _StudentBatchEnrollmentHubViewState
                 Expanded(
                   child: Text(
                     allViaTeams
-                        ? 'Review student details before confirming enrollment. Section assignments will link automatically via team rosters.'
+                        ? 'Only confirmed Capstone 2 continuations receive section defaults. Review unassigned sections before enrollment.'
                         : 'Review student details and verify section assignments before confirming enrollment.',
                     style: const TextStyle(
                       color: Color(0xFF667085),
@@ -2392,6 +2451,8 @@ class _StudentBatchEnrollmentHubViewState
       }
 
       final skippedCount = files.length - validFiles.length;
+      await _resolveFreshSections(allStudents);
+      if (!mounted) return;
 
       setState(() {
         _stagedFreshFiles = List.from(validFiles);
@@ -2444,11 +2505,26 @@ class _StudentBatchEnrollmentHubViewState
     final draft = ref.read(studentBatchDraftProvider.notifier);
     setState(() => _freshImportPending = true);
     try {
+      final reviewed = _parsedFreshStudents.map((s) => Map<String, dynamic>.from(s)).toList();
+      await _resolveFreshSections(reviewed);
+      if (!mounted) return;
+      List<Object> sectionSummary(List<Map<String, dynamic>> rows) => rows.map((s) => [
+        _freshSection(s), (s['_section_resolution'] as Map?)?['source'] == 'review',
+      ]).toList();
+      final before = sectionSummary(_parsedFreshStudents);
+      final after = sectionSummary(reviewed);
+      if (jsonEncode(before) != jsonEncode(after)) {
+        setState(() => _parsedFreshStudents = reviewed);
+        ToastService.warning(context, 'Section assignments updated. Review the preview, then confirm enrollment.');
+        return;
+      }
       final success = await widget.onConfirmFreshImport(
-        List<Map<String, dynamic>>.from(_parsedFreshStudents),
+        reviewed,
         {'semester_id': activeSem['id']},
       );
       if (success) draft.clearFreshDraft();
+    } catch (e) {
+      if (mounted) showErrorToast(context, 'Could not verify enrollment sections: $e');
     } finally {
       if (mounted) setState(() => _freshImportPending = false);
     }

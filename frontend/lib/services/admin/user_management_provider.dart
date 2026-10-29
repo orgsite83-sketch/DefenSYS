@@ -309,6 +309,20 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     }
   }
 
+  Future<List<Map<String, dynamic>>> previewEnrollmentSections(
+    List<Map<String, dynamic>> students,
+    int semesterId,
+  ) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/academic-records/section-preview/'),
+      body: jsonEncode({'students': students, 'semester_id': semesterId}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    return _readMapList(jsonDecode(response.body)['sections']);
+  }
+
   Future<bool> bulkImport(
     List<Map<String, dynamic>> rows, {
     Map<String, dynamic>? studentContext,

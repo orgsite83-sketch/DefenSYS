@@ -201,6 +201,23 @@ class DashboardApiTests(APITestCase):
         self.assertEqual(draft_item['severity'], 'warning')
         self.assertEqual(draft_item['category_label'], 'DRAFT RUBRICS')
 
+    def test_admin_dashboard_does_not_request_setup_for_officially_completed_stages(self):
+        admin = User.objects.create_user(username='closed-stage-admin', role='admin')
+        semester = Semester.objects.create(
+            school_year=SchoolYear.objects.create(label='2026-2027'),
+            label=Semester.FIRST, is_active=True,
+        )
+        stage = DefenseStage.objects.create(label='Completed review')
+        DefenseStage.objects.exclude(pk=stage.pk).update(is_active=False)
+        StageGradingConfig.objects.create(defense_stage=stage, semester=semester,
+            is_officially_complete=True)
+        self.client.force_authenticate(admin)
+        response = self.client.get('/api/dashboards/admin/')
+        self.assertEqual(response.status_code, 200, response.data)
+        actions = {item['id'] for item in response.data['action_items']}
+        self.assertNotIn('stages_without_rubrics', actions)
+        self.assertNotIn('stages_without_deliverables', actions)
+
     def test_faculty_dashboard_reflects_request_user_roles(self):
         faculty = User.objects.create_user(
             username='faculty-1',

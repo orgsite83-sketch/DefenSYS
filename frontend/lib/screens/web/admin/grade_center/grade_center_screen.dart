@@ -2,6 +2,7 @@ import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../../../widgets/academic/capstone_history_filters.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -46,7 +47,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       final user = ref.read(authProvider).user;
       final isAdmin = _isGradeCenterAdmin(user);
       ref.read(gradeCenterProvider.notifier).fetchGrades(
-            scope: _defaultScopeForUser(user),
+            scope: _defaultScopeForUser(user)
           );
       if (isAdmin) {
         _ensureDefenseStagesLoaded();
@@ -111,7 +112,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
         }
         showIncompleteGradingTeamsDialog(
           context,
-          teams: next.incompleteTeams,
+          teams: next.incompleteTeams
         );
         ref.read(gradeCenterProvider.notifier).clearIncompleteTeams();
       });
@@ -244,6 +245,20 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
             actions: const ReportExportMenu(reportId: 'semester-grades'),
           ),
           const SizedBox(height: 26),
+          AcademicHistoryDropdown(
+            label: 'Academic period',
+            value: state.historySemester,
+            items: [
+              const MapEntry('', 'Current Term'),
+              ...state.historySemesters.map(
+                (t) => MapEntry('${t['id']}', '${t['label']}'),
+              ),
+            ],
+            onChanged: (value) => ref
+                .read(gradeCenterProvider.notifier)
+                .fetchGrades(historySemester: value),
+          ),
+          const SizedBox(height: 16),
           _buildStats(state),
 
           if (isAdmin) ...[
@@ -267,9 +282,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       enabled: !state.isSaving,
       items: const [
         DefensysSegmentItem(
-          value: 'capstone', label: 'Capstone Stages', icon: Icons.rocket_launch_rounded),
+          value: 'capstone', label: 'Capstone Stages', icon: Icons.rocket_launch_rounded,),
         DefensysSegmentItem(
-          value: 'pit', label: 'PIT Expos & Events', icon: Icons.lightbulb_rounded),
+          value: 'pit', label: 'PIT Expos & Events', icon: Icons.lightbulb_rounded,),
       ],
       onChanged: (scope) => ref
           .read(gradeCenterProvider.notifier)

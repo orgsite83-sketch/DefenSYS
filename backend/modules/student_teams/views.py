@@ -281,6 +281,21 @@ class StudentTeamListCreateView(APIView):
     def get(self, request):
         visible = workspace_teams_for(request.user, request.query_params.get('workspace'))
         scope = request.query_params.get('scope', 'active').strip()
+        if scope == 'history' and (request.query_params.get('level') == 'Capstone'
+                or request.query_params.get('intake_id')):
+            from .capstone_history import history_payload, history_teams_for
+            history = history_payload(history_teams_for(request.user,
+                request.query_params.get('workspace')), request.query_params, user=request.user)
+            teams = history['teams']
+            counts = {**counts_payload(visible.none()),
+                'all': len({t['id'] for t in teams}), 'filtered': len(teams),
+                'total_capstone': len({t['id'] for t in teams})}
+            for key, value in (('pending', 'Pending'), ('approved', 'Approved'),
+                    ('failed', 'Failed'), ('completed', 'Completed')):
+                counts[key] = len({t['id'] for t in teams if t.get('status') == value})
+            return Response({**options_payload(user=request.user, include_roster_options=False,
+                workspace=request.query_params.get('workspace')), **history,
+                'counts': counts, 'roster_context': []})
         queryset = apply_team_scope(visible, scope=scope, user=request.user)
         search = request.query_params.get('search', '').strip()
         level = request.query_params.get('level', '').strip()

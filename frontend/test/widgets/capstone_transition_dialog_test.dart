@@ -12,8 +12,29 @@ Map<String, dynamic> _preview({bool blocked = false}) => {
   'target_semester': {'display_name': '1st Semester, AY 2026–2027'},
   'preview_revision': 'review-v1',
   'can_switch': !blocked,
+  'impact_counts': {'pit_teams': 2},
+  'effects': [
+    {
+      'key': 'pit_teams',
+      'count': 2,
+      'message':
+          'This semester has 2 PIT teams. PIT starts fresh next semester.',
+    },
+    {
+      'key': 'capstone_evaluation_closure',
+      'message':
+          'Peer and adviser submissions close automatically for the outgoing semester.',
+    },
+  ],
   'issues': [
-    if (blocked) {'message': 'PIT evaluation is still open.'},
+    if (blocked)
+      {
+        'key': 'pending_grades',
+        'blocking': true,
+        'message': '3 grade records are still pending.',
+        'route': '/admin/grade-center',
+        'action_label': 'Review grades',
+      },
   ],
   'capstone_review': {
     'kind': 'continue',
@@ -26,6 +47,7 @@ Map<String, dynamic> _preview({bool blocked = false}) => {
         'destination': 'continue',
         'can_include': true,
         'pending_enrollment': true,
+        'section_progression': {'source_section': 'BSIT-3A', 'section': 'BSIT-4A', 'issues': []},
       },
       {
         'team_id': 2,
@@ -37,15 +59,16 @@ Map<String, dynamic> _preview({bool blocked = false}) => {
         'reason':
             'Finalized Failed. Returning students join a new Capstone 1 intake.',
       },
-      {
-        'team_id': 3,
-        'name': 'Team Orion',
-        'project_title': 'Queue management',
-        'outcome': 'needs_review',
-        'destination': 'needs_review',
-        'can_include': false,
-        'reason': 'Source-term clearance is incomplete.',
-      },
+      if (blocked)
+        {
+          'team_id': 3,
+          'name': 'Team Orion',
+          'project_title': 'Queue management',
+          'outcome': 'needs_review',
+          'destination': 'needs_review',
+          'can_include': false,
+          'reason': 'Source-term clearance is incomplete.',
+        },
     ],
   },
 };
@@ -89,6 +112,7 @@ Future<_Periods> _pump(
   bool dark = false,
   double width = 1200,
   bool blocked = false,
+  Map<String, dynamic>? preview,
 }) async {
   tester.view.physicalSize = Size(width, 900);
   tester.view.devicePixelRatio = 1;
@@ -105,7 +129,7 @@ Future<_Periods> _pump(
             key: const ValueKey('transition-preview'),
             child: SemesterTransitionDialog(
               semesterId: 20,
-              preview: _preview(blocked: blocked),
+              preview: preview ?? _preview(blocked: blocked),
             ),
           ),
         ),
@@ -130,8 +154,9 @@ void main() {
     (tester) async {
       final notifier = await _pump(tester);
       expect(find.text('Ready for Capstone 2'), findsOneWidget);
+      expect(find.text('Section: BSIT-3A → BSIT-4A'), findsOneWidget);
       expect(find.text('Failed · History'), findsOneWidget);
-      expect(find.text('Needs review'), findsOneWidget);
+      expect(find.text('Needs review'), findsNothing);
       expect(find.text('Enrollment needed'), findsNothing);
       expect(find.text('Returning teams'), findsNothing);
       await capturePreview(
@@ -141,18 +166,77 @@ void main() {
       );
       await tester.tap(_continue());
       await tester.pumpAndSettle();
+      final outgoing = find.byKey(const ValueKey('semester-switch-outgoing'));
+      final incoming = find.byKey(const ValueKey('semester-switch-incoming'));
+      expect(tester.widget(outgoing), isA<ShadCard>());
+      expect(tester.widget(incoming), isA<ShadCard>());
       expect(
-        find.textContaining('1 team continuing to Capstone 2'),
+        find.descendant(of: incoming, matching: find.text('1 Capstone team')),
         findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: incoming,
+          matching: find.text('Continue to Capstone 2'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: outgoing, matching: find.text('2 PIT teams')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: outgoing,
+          matching: find.textContaining('1 failed Capstone team'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: incoming,
+          matching: find.textContaining('1 failed Capstone team'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: outgoing, matching: find.text('1 Capstone team')),
+        findsNothing,
+      );
+      expect(tester.getTopLeft(outgoing).dy, tester.getTopLeft(incoming).dy);
+      expect(
+        tester.getTopLeft(outgoing).dx,
+        lessThan(tester.getTopLeft(incoming).dx),
       );
       expect(
         find.text('Student enrollment can be rolled over after this switch.'),
         findsOneWidget,
       );
+      expect(find.text('Semester switch summary'), findsOneWidget);
+      expect(find.text('Next active semester'), findsOneWidget);
+      expect(find.text('Outgoing semester'), findsOneWidget);
+      expect(find.text('Ready to activate'), findsOneWidget);
+      final summary = find.byKey(const ValueKey('semester-switch-summary'));
+      expect(find.descendant(of: summary, matching: outgoing), findsOneWidget);
       expect(
-        find.text('Outgoing semester checks · PIT and Capstone'),
+        find.descendant(
+          of: incoming,
+          matching: find.text('PIT starts fresh next semester.'),
+        ),
         findsOneWidget,
       );
+      expect(
+        find.textContaining('Peer and adviser submissions close automatically'),
+        findsOneWidget,
+      );
+      expect(find.text('Needs attention before switching'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('semester-switch-attention')),
+        findsNothing,
+      );
+      expect(find.text('View outgoing teams'), findsNothing);
+      expect(find.text('Open evaluation settings'), findsNothing);
+      expect(find.byType(ShadCheckbox), findsNothing);
       expect(tester.widget<ShadButton>(_confirm()).onPressed, isNotNull);
       await capturePreview(
         tester,
@@ -168,24 +252,103 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets(
+    'a fresh Capstone 1 intake keeps completed records in the outgoing card',
+    (tester) async {
+      final preview = _preview();
+      preview['current_semester'] = {
+        'display_name': '1st Semester, AY 2026–2027',
+      };
+      preview['target_semester'] = {
+        'display_name': '2nd Semester, AY 2026–2027',
+      };
+      preview['capstone_review'] = {
+        'kind': 'close_cycle',
+        'teams': [
+          {
+            'team_id': 1,
+            'name': 'Team Cedar',
+            'project_title': 'Laboratory booking',
+            'outcome': 'completed',
+            'destination': 'history',
+            'can_include': false,
+          },
+        ],
+      };
+      await _pump(tester, preview: preview);
+      await tester.tap(_continue());
+      await tester.pumpAndSettle();
+      final outgoing = find.byKey(const ValueKey('semester-switch-outgoing'));
+      final incoming = find.byKey(const ValueKey('semester-switch-incoming'));
+      expect(
+        find.descendant(
+          of: outgoing,
+          matching: find.textContaining('1 completed Capstone team'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: incoming,
+          matching: find.text('New Capstone 1 intake'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Continue to Capstone 2'), findsNothing);
+      expect(tester.widget<ShadButton>(_confirm()).enabled, isTrue);
+      await capturePreview(
+        tester,
+        find.byKey(const ValueKey('transition-preview')),
+        'semester-cards-new-intake',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('semester blockers need a reason for calendar override', (
     tester,
   ) async {
     final notifier = await _pump(tester, blocked: true);
     await tester.tap(_continue());
     await tester.pumpAndSettle();
-    expect(find.text('PIT evaluation is still open.'), findsOneWidget);
+    expect(find.text('Needs attention before switching'), findsOneWidget);
+    expect(find.text('3 grade records are still pending.'), findsOneWidget);
+    expect(find.text('Review grades'), findsOneWidget);
+    final attention = find.byKey(const ValueKey('semester-switch-attention'));
+    expect(tester.widget(attention), isA<ShadCard>());
+    expect(
+      find.descendant(of: attention, matching: find.text('Review grades')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('semester-switch-summary')),
+        matching: find.text('Review grades'),
+      ),
+      findsNothing,
+    );
+    expect(find.text('Ready to activate'), findsNothing);
     expect(tester.widget<ShadButton>(_confirm()).onPressed, isNull);
+    expect(tester.widget<ShadButton>(_confirm()).enabled, isFalse);
+    await tester.ensureVisible(find.byType(ShadCheckbox));
+    await tester.pumpAndSettle();
+    await capturePreview(
+      tester,
+      find.byKey(const ValueKey('transition-preview')),
+      'capstone-confirm-attention-light',
+    );
     await tester.tapAt(
       tester.getTopLeft(find.byType(ShadCheckbox)) + const Offset(9, 9),
     );
     await tester.pumpAndSettle();
     expect(tester.widget<ShadButton>(_confirm()).onPressed, isNull);
+    await tester.ensureVisible(find.byType(EditableText));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(EditableText),
       'Approved calendar exception',
     );
     await tester.pumpAndSettle();
+    expect(tester.widget<ShadButton>(_confirm()).enabled, isTrue);
     await tester.tap(_confirm());
     await tester.pumpAndSettle();
     expect(notifier.submitted!['force'], true);
@@ -212,7 +375,8 @@ void main() {
       testWidgets('review fits $width ${dark ? 'dark' : 'light'}', (
         tester,
       ) async {
-        await _pump(tester, width: width, dark: dark);
+        final blocked = width == 390 && dark;
+        await _pump(tester, width: width, dark: dark, blocked: blocked);
         expect(tester.takeException(), isNull);
         await capturePreview(
           tester,
@@ -222,6 +386,28 @@ void main() {
         await tester.tap(_continue());
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        final outgoing = find.byKey(const ValueKey('semester-switch-outgoing'));
+        final incoming = find.byKey(const ValueKey('semester-switch-incoming'));
+        if (width < 640) {
+          expect(
+            tester.getTopLeft(outgoing).dy,
+            lessThan(tester.getTopLeft(incoming).dy),
+          );
+          expect(
+            tester.getSize(outgoing).width,
+            tester.getSize(incoming).width,
+          );
+        }
+        if (blocked) {
+          await tester.ensureVisible(find.byType(ShadCheckbox));
+          await tester.pumpAndSettle();
+          expect(tester.widget<ShadButton>(_confirm()).onPressed, isNull);
+        }
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('transition-preview')),
+          'capstone-confirm-${width.toInt()}-${dark ? 'dark' : 'light'}',
+        );
       });
     }
   }

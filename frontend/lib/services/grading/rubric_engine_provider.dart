@@ -359,20 +359,19 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     ]);
   }
 
-  Future<List<Map<String, dynamic>>> checkExistingRubrics() async {
-    try {
-      final response = await _client.get(Uri.parse(baseUrl));
-      if (response.statusCode == 200) {
-        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
-        if (payload['rubrics'] is List) {
-          return (payload['rubrics'] as List)
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList();
-        }
-      }
-    } catch (_) {}
-    return [];
+  /// Copy sources span semesters without changing the directory's filters/data.
+  Future<List<Map<String, dynamic>>> checkExistingRubrics({
+    String? scope,
+  }) async {
+    final uri = Uri.parse(baseUrl).replace(
+      queryParameters: {if (scope != null && scope.isNotEmpty) 'scope': scope},
+    );
+    final response = await _client.get(uri);
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+    return _readMapList(payload['rubrics']);
   }
 
   AuthenticatedHttpClient get _client =>

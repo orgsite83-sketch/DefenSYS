@@ -18,6 +18,7 @@ from .rollover import (
     normalize_year_level as _normalize_year_level,
 )
 from .serializers import (
+    EnrollmentSectionPreviewRowSerializer,
     RolloverActionSerializer,
     StudentAcademicRecordSerializer,
     StudentAcademicRecordWriteSerializer,
@@ -128,6 +129,37 @@ class StudentAcademicRecordDetailView(APIView):
         return Response({'counts': counts_payload()}, status=status.HTTP_200_OK)
 
 
+class EnrollmentSectionPreviewView(APIView):
+    permission_classes = [IsSystemAdmin]
+
+    def post(self, request):
+        """Resolve defaults without creating users, enrollment, or participation."""
+        from student_teams.continuation_sections import section_decisions
+        semester_id = request.data.get('semester_id')
+        if not isinstance(semester_id, int) or isinstance(semester_id, bool):
+            return Response({'detail': 'semester_id must be an integer.'}, status=400)
+        semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
+        students = request.data.get('students')
+        if not isinstance(students, list) or len(students) > 1000:
+            return Response({'detail': 'Provide up to 1000 student rows.'}, status=400)
+        if any(not isinstance(s, dict) for s in students):
+            return Response({'detail': 'Each student must be an object.'}, status=400)
+        serializer = EnrollmentSectionPreviewRowSerializer(data=students, many=True)
+        serializer.is_valid(raise_exception=True)
+        students = serializer.validated_data
+        names = [_clean_spaces(s.get('id_number')) for s in students]
+        users = {u.username: u for u in User.objects.filter(username__in=names, role='student')}
+        years = {users[name].pk: _normalize_year_level(s.get('year_level', ''))
+            for name, s in zip(names, students) if name in users}
+        explicit = {users[name].pk: _clean_spaces(s.get('section', ''))
+            for name, s in zip(names, students) if name in users}
+        decisions = section_decisions(semester, years, explicit)
+        return Response({'sections': [dict(id_number=name, **decisions[users[name].pk])
+            if name in users else {'id_number': name, 'section': _clean_spaces(s.get('section', '')),
+                'source': 'explicit' if s.get('section') else 'unassigned', 'message': ''}
+            for name, s in zip(names, students)]})
+
+
 class RolloverPreviewView(APIView):
     permission_classes = [IsSystemAdmin]
 
@@ -136,15 +168,30 @@ class RolloverPreviewView(APIView):
         latest = latest_records_by_student()
         rows = []
 
+        from student_teams.continuation_sections import section_decisions
+        steps = {record.pk: next_rollover_semester(record) for record in latest}
+        groups = {}
         for record in latest:
-            next_year_level, next_semester, target_semester = next_rollover_semester(record)
+            year, _, term = steps[record.pk]
+            if term:
+                groups.setdefault(term.pk, (term, {}))[1][record.student_id] = year
+        decisions = {pk: section_decisions(term, years) for pk, (term, years) in groups.items()}
+
+        for record in latest:
+            next_year_level, next_semester, target_semester = steps[record.pk]
+            decision = decisions[target_semester.pk].get(record.student_id) if target_semester else None
+            from student_teams.section_years import enrollment_section_issue
+            fallback_section = '' if enrollment_section_issue(record.section,
+                next_year_level, target_semester) else record.section
             rows.append({
                 'record': StudentAcademicRecordSerializer(record).data,
                 'promote_result': {
                     'year_level': next_year_level,
                     'semester': next_semester,
                     'target_semester_id': target_semester.id if target_semester else None,
-                    'section': record.section,
+                    'section': decision['section'] if decision and decision.get('team_id') else fallback_section,
+                    'section_automatic': bool(decision and decision.get('team_id')),
+                    'section_resolution': decision if decision and decision.get('team_id') else None,
                 },
                 'retain_result': {
                     'year_level': record.year_level,
@@ -187,6 +234,12 @@ class RolloverPreviewView(APIView):
             u.username: u 
             for u in User.objects.filter(username__in=csv_students.keys())
         }
+        from student_teams.continuation_sections import section_decisions
+        section_defaults = section_decisions(active,
+            {u.pk: _normalize_year_level(csv_students[name].get('year_level', ''))
+                for name, u in existing_users.items() if u.role == 'student'},
+            {u.pk: _clean_spaces(csv_students[name].get('section', ''))
+                for name, u in existing_users.items() if u.role == 'student'})
 
         rows = []
         processed_usernames = set()
@@ -207,6 +260,10 @@ class RolloverPreviewView(APIView):
 
             target_year = _normalize_year_level(csv_student.get('year_level', ''))
             target_section = _clean_spaces(csv_student.get('section', ''))
+            decision = section_defaults.get(user.pk) if user else None
+            automatic_section = bool(decision and decision.get('team_id') and not target_section)
+            if decision and decision.get('team_id'):
+                target_section = decision['section']
             if target_year not in dict(StudentAcademicRecord.YEAR_LEVEL_CHOICES):
                 val_error = 'Invalid or missing year level.'
             if len(target_section) > 80:
@@ -258,6 +315,8 @@ class RolloverPreviewView(APIView):
                     'semester': active.label,
                     'target_semester_id': active.id,
                     'section': target_section,
+                    'section_automatic': automatic_section,
+                    'section_resolution': decision if decision and decision.get('team_id') else None,
                 },
                 'retain_result': {
                     'year_level': latest_record.year_level if latest_record else target_year,

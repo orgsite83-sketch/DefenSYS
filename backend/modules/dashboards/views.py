@@ -1001,7 +1001,6 @@ class AdminDashboardView(APIView):
         student_count = User.objects.filter(role='student').count()
         faculty_count = User.objects.filter(role__in=['faculty', 'admin']).count()
         team_count = StudentTeam.objects.count()
-        stage_count = DefenseStage.objects.filter(is_active=True).count()
         published_rubric_count = Rubric.objects.filter(status=Rubric.STATUS_PUBLISHED).count()
         upcoming_defense_count = DefenseSchedule.objects.filter(status=DefenseSchedule.STATUS_SCHEDULED).count()
         published_grade_count = TeamGrade.objects.filter(
@@ -1074,9 +1073,21 @@ class AdminDashboardView(APIView):
             .prefetch_related(*active_stage_prefetch)
             .order_by('display_order', 'id')
         )
+        capstone_teams = StudentTeam.objects.filter(level__icontains='Capstone')
+        schedulable_teams = capstone_teams.filter(semester=active_sem) if active_sem else capstone_teams.none()
+        current_teams = list(schedulable_teams.select_related('semester__school_year'))
+        if current_teams:
+            from student_teams.capstone_context import phase_requirements
+            # Global publication survives rollover; inherited source stages are
+            # not destination setup work. Keep the union for mixed cohorts.
+            applicable_ids = {requirement['id'] for team in current_teams
+                for requirement in phase_requirements(team)}
+            active_stages = [stage for stage in active_stages if stage.pk in applicable_ids]
+        # Without a roster, retain setup prompts for the initial configuration.
+        stage_count = len(active_stages)
         stage_distribution = []
         for stage in active_stages:
-            count = StudentTeam.objects.filter(
+            count = schedulable_teams.filter(
                 Q(current_defense_stage=stage.label) | Q(ready_for_stage=stage.label)
             ).count()
             stage_distribution.append({
@@ -1085,8 +1096,6 @@ class AdminDashboardView(APIView):
                 'count': count,
             })
 
-        capstone_teams = StudentTeam.objects.filter(level__icontains='Capstone')
-        schedulable_teams = capstone_teams.filter(semester=active_sem) if active_sem else capstone_teams.none()
         ready_capstone_count = sum(
             any(is_stage_ready(team, stage) for stage in active_stages)
             for team in stage_readiness_candidates(schedulable_teams)
@@ -1114,6 +1123,8 @@ class AdminDashboardView(APIView):
         if period_configured and active_sem is not None:
             for stage in active_stages:
                 cfg = stage.active_configs[0] if getattr(stage, 'active_configs', None) else None
+                if cfg and cfg.is_officially_complete:
+                    continue
                 has_panel_rubric = bool(
                     cfg and cfg.panel_rubric and cfg.panel_rubric.status == Rubric.STATUS_PUBLISHED
                 )
@@ -1656,8 +1667,9 @@ class StudentDashboardView(APIView):
         stages_payload = []
         if team:
             if team.is_capstone:
-                from repository.deliverables.services import STAGE_OPTIONS, stage_payload
-                stage_options = list(STAGE_OPTIONS)
+                from repository.deliverables.services import stage_payload
+                from student_teams.capstone_context import phase_requirements
+                stage_options = [r['label'] for r in phase_requirements(team)]
             else:
                 from defense.scheduler.models import PitEventGradingConfig
                 from repository.deliverables.services import stage_payload

@@ -204,8 +204,9 @@ def current_stage_for_team(team):
         return default_stage_label()
     if team.is_capstone:
         from defense.scheduler.models import DefenseSchedule
-        from student_teams.capstone_lifecycle import requirements_for, stage_cleared
-        required = requirements_for(team)
+        from student_teams.capstone_context import phase_requirements
+        from student_teams.capstone_lifecycle import stage_cleared
+        required = phase_requirements(team)
         if not required:
             return None
         labels = dict(DefenseStage.objects.filter(pk__in=[r['id'] for r in required]).values_list('pk', 'label'))
@@ -214,6 +215,7 @@ def current_stage_for_team(team):
         sched = (
             DefenseSchedule.objects.filter(
                 team=team,
+                semester=team.semester,
         project_version=team.project_version,
                 scope=DefenseSchedule.SCOPE_CAPSTONE,
                 status=DefenseSchedule.STATUS_SCHEDULED,
@@ -1385,8 +1387,8 @@ def resolve_team_instructor_or_adviser_name(team):
 
 def team_payload(team, selected_stage=None, evaluator=None):
     if team.is_capstone:
-        from student_teams.capstone_lifecycle import requirements_for
-        required = requirements_for(team)
+        from student_teams.capstone_context import phase_requirements
+        required = phase_requirements(team)
         labels = dict(DefenseStage.objects.filter(pk__in=[r['id'] for r in required]).values_list('pk', 'label'))
         configured_stage_labels = [labels.get(r['id'], r['label']) for r in required]
     else:

@@ -70,6 +70,8 @@ class GradeCenterState {
   final Map<String, Map<String, dynamic>> groupSettings;
   final List<Map<String, dynamic>> capstoneStages;
   final List<Map<String, dynamic>> pitEvents;
+  final List<Map<String, dynamic>> historySemesters;
+  final String historySemester;
   final String search;
   final String yearLevel;
   final String status;
@@ -92,6 +94,8 @@ class GradeCenterState {
     this.groupSettings = const {},
     this.capstoneStages = const [],
     this.pitEvents = const [],
+    this.historySemesters = const [],
+    this.historySemester = '',
     this.search = '',
     this.yearLevel = '',
     this.status = '',
@@ -115,6 +119,8 @@ class GradeCenterState {
     Map<String, Map<String, dynamic>>? groupSettings,
     List<Map<String, dynamic>>? capstoneStages,
     List<Map<String, dynamic>>? pitEvents,
+    List<Map<String, dynamic>>? historySemesters,
+    String? historySemester,
     String? search,
     String? yearLevel,
     String? status,
@@ -143,6 +149,8 @@ class GradeCenterState {
       groupSettings: groupSettings ?? this.groupSettings,
       capstoneStages: capstoneStages ?? this.capstoneStages,
       pitEvents: pitEvents ?? this.pitEvents,
+      historySemesters: historySemesters ?? this.historySemesters,
+      historySemester: historySemester ?? this.historySemester,
       search: search ?? this.search,
       yearLevel: yearLevel ?? this.yearLevel,
       status: status ?? this.status,
@@ -172,6 +180,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
   }
 
   Future<void> fetchGrades({
+    String? historySemester,
     String? search,
     String? yearLevel,
     String? status,
@@ -183,7 +192,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     final nextStatus = status ?? state.status;
     final nextScope = scope ?? state.scope;
 
-    if (state.isLoading &&
+    if (historySemester == null &&state.isLoading &&
         nextSearch == state.search &&
         nextYearLevel == state.yearLevel &&
         nextStatus == state.status &&
@@ -200,6 +209,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       yearLevel: nextYearLevel,
       status: nextStatus,
       scope: nextScope,
+      historySemester: historySemester,
       clearError: true,
       clearMessage: true,
     );
@@ -207,6 +217,8 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     try {
       final queryParameters = <String, String>{
         'workspace': 'operations',
+        if (state.historySemester.isNotEmpty)
+          'semester_id': state.historySemester,
         if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
         if (nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
         if (nextStatus.isNotEmpty) 'status': nextStatus,
@@ -783,6 +795,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       groupSettings: _readGroupSettings(payload['group_settings']),
       capstoneStages: _readMapList(payload['capstone_stages']),
       pitEvents: _readMapList(payload['pit_events']),
+      historySemesters: _readMapList(payload['history_semesters']),
       message: successMessage,
       clearError: true,
     );

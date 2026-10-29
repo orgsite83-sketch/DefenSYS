@@ -15,6 +15,13 @@ rules and the evidence for retiring the former recovery policy.
   review issue. Student rollover enrolls students and reconciles the section of
   an already migrated team after all member enrollments agree; it does not move
   teams, reopen failed work, or allocate participation numbers.
+- PIT teams and section rosters stay in their original semester. Activation never
+  moves or copies them; each new semester needs fresh PIT roster formation/import.
+  Unfinished PIT grading remains an outgoing-semester closure safeguard. Enabled
+  Capstone evaluation switches do not require manual closure: inactive-term
+  availability guards close submissions when the canonical switch commits.
+  Preserve saved grading settings and incomplete requirements; only actual
+  unfinished academic work blocks the switch.
 - `student_teams/participation.py` owns student intake identity, eligibility,
   confirmation, placement history, number previews, and returning-student rules.
   Database constraints and period/student locks protect confirmation and retries.
@@ -40,7 +47,8 @@ rules and the evidence for retiring the former recovery policy.
   team. All Capstone import commits are atomic.
 - Existing shadcn components and DefenSYS tokens style the focused UI changes.
   Semester switching now has Review teams and Confirm, with green readiness,
-  explicit failed/history/review statuses, and semester-wide PIT/Capstone checks.
+  explicit failed/history/review statuses, expected switch effects in the neutral
+  summary, and a separate attention section for unfinished PIT/Capstone work.
 
 ## Removal inventory
 
@@ -161,3 +169,59 @@ count integrity, normal migration before enrollment, and rollover regressions.
 Dart analysis, Django system checks, migration consistency, and whitespace checks
 passed. This follow-up needs no schema migration and makes no development data
 or credential changes.
+
+## PIT semester isolation clarification, 2026-10-29
+
+Migration already selects only Capstone teams. The confirmation now distinguishes
+Capstone continuation from the outgoing PIT roster notice: PIT teams stay in the
+old semester and the administrator creates new PIT rosters next semester. The
+combined outgoing-team row is removed. API impact counts distinguish PIT and
+Capstone, and PIT-only terms no longer trigger Capstone evaluation-switch checks.
+PIT grading/completion checks remain, including preserved unresolved state after
+a calendar override.
+
+All 109 focused backend tests passed across academic periods, participation, and
+enrollment rollover. Added cases cover all three PIT year levels and section
+rosters, mixed Capstone/PIT terms, both regular switch directions, and forced
+switching with open PIT grading. All nine semester-dialog tests passed, including
+narrow/light/dark rendering; Dart analysis is clean. The updated confirmation
+capture was visually reviewed. No schema or development-data change is needed.
+
+## Detailed confirmation and submission availability, 2026-10-29
+
+The preview separates expected `effects` from actionable `issues`. Semester
+activation shows a detailed shadcn summary with term identities, Capstone
+movement/history, PIT isolation, submission access, and enrollment. Only actual
+unfinished work appears in the amber attention container with review actions
+and the existing override/reason controls. Confirm is visually and functionally
+disabled while those blockers apply; PIT information has no review action.
+
+Enabled Capstone peer/adviser settings are no longer activation blockers.
+Existing inactive-term submission guards close outgoing access automatically.
+Activation preserves saved source/target settings and all grade requirements,
+scores, and unresolved states. It does not waive missing assessments or publish
+grades. Forms refresh only after transaction commit; duplicate requests and
+failed transactions do not send a spurious refresh. The old boolean-window
+blocker helper is removed. PIT workflow/completion safeguards remain.
+
+All 157 focused backend tests passed across periods, participation, rollover,
+grading availability, PIT peer access, weighted scoring, and realtime behavior.
+All nine final semester widget tests passed, including action/summary separation,
+disabled confirmation, override reasons, and responsive light/dark rendering.
+Dart analysis and whitespace checks passed. Desktop and narrow-screen captures
+were visually reviewed. No schema or development-data changes were needed.
+
+## Semester-direction cards, 2026-10-29
+
+The approved confirmation now uses separate Outgoing semester and Next active
+semester shadcn cards. Source PIT counts and Capstone history stay on the left;
+eligible Capstone continuation appears on the right with green emphasis. Each
+card identifies its academic term. Fresh Capstone 1 intake and fresh PIT rosters
+have explicit destination wording. Cards stack with a downward arrow on narrow
+screens. The attention container and confirmation/override guards are retained.
+
+All ten final semester widget tests and Dart analysis passed. Captures at desktop
+and narrow widths in light/dark themes, plus a fresh Capstone 1 intake, were
+visually reviewed. Source/destination count placement, history preservation in
+the summary, and blocked confirmation are covered. This follow-up changes only
+frontend presentation; the previous backend rules and verification remain valid.

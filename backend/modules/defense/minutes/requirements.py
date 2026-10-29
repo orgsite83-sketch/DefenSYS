@@ -87,14 +87,27 @@ def signed_minutes_archive_entries():
     """Private institutional archive references the original signed PDF bytes."""
     from django.db.models import Q
     from repository.project_archive.payloads import empty_ml_fields
+    from student_teams.models import TeamTermParticipation
 
-    minutes_list = DefenseMinutes.objects.filter(
+    minutes_list = list(DefenseMinutes.objects.filter(
         Q(status=DefenseMinutes.STATUS_COMPLETED) | Q(revisions__pdf_file__isnull=False),
-    ).select_related('schedule__team__semester__school_year', 'schedule__defense_stage').prefetch_related('revisions').distinct()
+    ).select_related('schedule__team', 'schedule__semester__school_year').prefetch_related('revisions').distinct())
+    # A continuing team moves terms and year levels; its earlier minutes do not.
+    # Batch the same closed-term snapshots used by historical team readers.
+    term_snapshots = {
+        (row['team_id'], row['semester_id']): row['snapshot']
+        for row in TeamTermParticipation.objects.filter(
+            team_id__in={minutes.schedule.team_id for minutes in minutes_list},
+            semester_id__in={minutes.schedule.semester_id for minutes in minutes_list},
+            closed_at__isnull=False,
+        ).values('team_id', 'semester_id', 'snapshot')
+    }
     entries = []
     for minutes in minutes_list:
         schedule = minutes.schedule
         team = schedule.team
+        semester = schedule.semester
+        snapshot = term_snapshots.get((team.pk, semester.pk), {})
         versions = []
         if minutes_complete(minutes):
             versions.append((None, minutes.chairman_signed_at, minutes.project_title))
@@ -114,9 +127,10 @@ def signed_minutes_archive_entries():
                 'deliverable_id': schedule.minutes_deliverable_id or 'MINUTES',
                 'deliverable_label': schedule.minutes_deliverable_label or f'Signed Minutes - {minutes.defense_stage_label}',
                 'team_id': team.pk, 'team_name': minutes.team_name, 'project_title': project_title,
-                'year_level': team.year_level, 'level': team.level,
-                'academic_year': team.semester.school_year.label if team.semester else '',
-                'semester': team.semester.label if team.semester else '', 'stage': minutes.defense_stage_label,
+                'year_level': snapshot.get('year_level', team.year_level),
+                'level': snapshot.get('level', team.level),
+                'academic_year': semester.school_year.label,
+                'semester': semester.label, 'stage': minutes.defense_stage_label,
                 'course_code': '', 'status': 'Approved', 'deliverable_type': 'system',
                 'deliverable_type_label': 'System generated', 'is_restricted_archive': True,
                 'archive_locked': True, 'is_missing': False, 'can_override': False,

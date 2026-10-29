@@ -340,7 +340,11 @@ class _Notifications extends NotificationsNotifier {
 
 class _Stages extends DefenseStagesNotifier {
   @override
-  Future<void> fetchStages({String? successMessage}) async {}
+  Future<void> fetchStages({String? scope,
+    String? intake,
+    String? phase,
+    String? stage,
+    String? successMessage,}) async {}
 }
 
 class _Teams extends StudentTeamsNotifier {
@@ -366,6 +370,9 @@ class _Teams extends StudentTeamsNotifier {
 
   @override
   Future<void> fetchTeams({
+    String? historyIntake,
+    String? historyPhase,
+    String? historyStage,
     String? workspace,
     String? search,
     String? level,
@@ -437,6 +444,7 @@ class _Grades extends GradeCenterNotifier {
 
   @override
   Future<void> fetchGrades({
+    String? historySemester,
     String? search,
     String? yearLevel,
     String? status,

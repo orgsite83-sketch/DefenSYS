@@ -181,7 +181,15 @@ class PitEventConfigLookupView(APIView):
         event_name = request.query_params.get('event_name', '').strip()
         if not event_name:
             configs = pit_events_for_user(request.user, semester=semester).select_related('panel_rubric', 'peer_rubric').prefetch_related('deliverables').order_by('event_name')
-            return Response({'configs': [pit_event_config_payload(c) for c in configs]})
+            allowed = set(pit_events_for_user(request.user).values_list('semester_id', flat=True))
+            current = active_semester()
+            if current:
+                allowed.add(current.pk)
+            return Response({'configs': [pit_event_config_payload(c) for c in configs],
+                'history_semesters': [{'id': t.pk, 'label': t.display_name} for t in
+                    Semester.objects.filter(pk__in=allowed).select_related('school_year')
+                        .exclude(pk=current.pk if current else None)
+                        .order_by('-school_year__label', 'label')]})
 
         config = get_pit_event_config(semester, event_name)
         if config:

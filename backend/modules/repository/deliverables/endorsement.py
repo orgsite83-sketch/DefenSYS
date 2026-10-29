@@ -23,6 +23,8 @@ def endorsement_blocker(team, stage_label):
         return 'Only teams in the active semester can be reviewed and endorsed.'
     from .concepts import stage_for
     stage = stage_for(team, stage_label)
+    if stage is None:
+        return 'Awaiting stage setup.'
     from .redefense import preparing
     endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
     if endorsed and not preparing(team, stage):

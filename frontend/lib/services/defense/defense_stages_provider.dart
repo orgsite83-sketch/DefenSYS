@@ -17,6 +17,9 @@ class DefenseStagesState {
   final List<Map<String, dynamic>> stages;
   final List<Map<String, dynamic>> activeStages;
   final Map<String, dynamic> counts;
+  final List<Map<String, dynamic>> phaseGroups;
+  final Map<String, dynamic> capstoneHistory;
+  final String historyScope, historyIntake, historyPhase, historyStage;
   final String? error;
   final String? message;
 
@@ -26,6 +29,12 @@ class DefenseStagesState {
     this.stages = const [],
     this.activeStages = const [],
     this.counts = const {},
+    this.phaseGroups = const [],
+    this.capstoneHistory = const {},
+    this.historyScope = 'active',
+    this.historyIntake = '',
+    this.historyPhase = '',
+    this.historyStage = '',
     this.error,
     this.message,
   });
@@ -36,6 +45,12 @@ class DefenseStagesState {
     List<Map<String, dynamic>>? stages,
     List<Map<String, dynamic>>? activeStages,
     Map<String, dynamic>? counts,
+    List<Map<String, dynamic>>? phaseGroups,
+    Map<String, dynamic>? capstoneHistory,
+    String? historyScope,
+    String? historyIntake,
+    String? historyPhase,
+    String? historyStage,
     String? error,
     String? message,
     bool clearError = false,
@@ -47,6 +62,12 @@ class DefenseStagesState {
       stages: stages ?? this.stages,
       activeStages: activeStages ?? this.activeStages,
       counts: counts ?? this.counts,
+      phaseGroups: phaseGroups ?? this.phaseGroups,
+      capstoneHistory: capstoneHistory ?? this.capstoneHistory,
+      historyScope: historyScope ?? this.historyScope,
+      historyIntake: historyIntake ?? this.historyIntake,
+      historyPhase: historyPhase ?? this.historyPhase,
+      historyStage: historyStage ?? this.historyStage,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -55,15 +76,26 @@ class DefenseStagesState {
 
 class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     static String get baseUrl => ApiConfig.defenseStagesUrl;
+  int _fetchVersion = 0;
 
   @override
   DefenseStagesState build() {
+    ref.onDispose(() => _fetchVersion++);
     return const DefenseStagesState();
   }
 
-  Future<void> fetchStages({String? successMessage}) async {
+  Future<void> fetchStages({String? successMessage,
+    String? scope,
+    String? intake,
+    String? phase,
+    String? stage,}) async {
+    final version = ++_fetchVersion;
     state = state.copyWith(
-      isLoading: state.stages.isEmpty,
+      historyScope: scope,
+      historyIntake: intake,
+      historyPhase: phase,
+      historyStage: stage,
+      isLoading: true,
       isSaving: false,
       clearError: true,
       clearMessage: true,
@@ -71,9 +103,20 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
 
     try {
       final response = await _client.get(
-        Uri.parse('$baseUrl/'),
-        
+        Uri.parse('$baseUrl/').replace(
+          queryParameters: {
+            'scope': state.historyScope,
+            if (state.historyScope == 'history') ...{
+              if (state.historyIntake.isNotEmpty)
+                'intake_id': state.historyIntake,
+              if (state.historyPhase.isNotEmpty) 'phase': state.historyPhase,
+              if (state.historyStage.isNotEmpty)
+                'stage_key': state.historyStage,
+            },
+          },
+        ),
       );
+      if (!ref.mounted ||version != _fetchVersion) return;
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -87,6 +130,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
         error: _errorFromResponse(response),
       );
     } catch (e) {
+      if (!ref.mounted || version != _fetchVersion) return;
       state = state.copyWith(
         isLoading: false,
         isSaving: false,
@@ -212,7 +256,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     int semesterId,
     Map<String, dynamic> weights,
   ) async {
-    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true,);
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$stageId/grading-config/?semester_id=$semesterId'),
@@ -320,7 +364,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
 
     try {
       final response = await _client.delete(
-        Uri.parse('$baseUrl/$stageId/'),
+        Uri.parse('$baseUrl/$stageId/')
         
       );
 
@@ -375,6 +419,13 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       isSaving: false,
       stages: _readMapList(payload['stages']),
       activeStages: _readMapList(payload['active_stages']),
+      phaseGroups: _readMapList(payload['phase_groups']),
+      capstoneHistory: payload['capstone_history'] is Map
+          ? Map<String, dynamic>.from(payload['capstone_history'])
+          : const {},
+      historyIntake: payload['capstone_history'] is Map
+          ? payload['capstone_history']['selected_intake_id']?.toString() ?? ''
+          : state.historyIntake,
       counts: payload['counts'] is Map
           ? Map<String, dynamic>.from(payload['counts'])
           : state.counts,

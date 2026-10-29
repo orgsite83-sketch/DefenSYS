@@ -651,6 +651,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
   Future<List<Map<String, dynamic>>> fetchPitEventConfigs({
     int? semesterId,
+    void Function(List<Map<String, dynamic>>)? onHistorySemesters,
   }) async {
     try {
       final uri = Uri.parse('$baseUrl/pit-event-config/').replace(
@@ -663,6 +664,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
         return [];
       }
       final data = Map<String, dynamic>.from(jsonDecode(response.body));
+      onHistorySemesters?.call(_readMapList(data['history_semesters']));
       final configs = data['configs'];
       if (configs is List) {
         return configs.map((c) => Map<String, dynamic>.from(c as Map)).toList();

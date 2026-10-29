@@ -22,6 +22,14 @@ import 'user_management_screen_test.dart'
         FakeUserManagementNotifier;
 
 class _Users extends FakeUserManagementNotifier {
+  @override
+  Future<List<Map<String, dynamic>>> previewEnrollmentSections(
+    List<Map<String, dynamic>> students, int semesterId,
+  ) async => [for (final s in students) {
+    'id_number': s['id_number'], 'section': s['section'] ?? '',
+    'source': 'unassigned', 'message': '',
+  }];
+
   final result = Completer<bool>();
   int importCalls = 0;
 

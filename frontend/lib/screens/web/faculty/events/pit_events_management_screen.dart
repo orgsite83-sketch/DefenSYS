@@ -20,6 +20,7 @@ import '../../../../widgets/repository/deliverable_timing_fields.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../services/dashboard_provider.dart';
 import '../../../../utils/unsaved_changes.dart';
+import '../../../../widgets/academic/capstone_history_filters.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_choices.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_overview.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_presets_bar.dart';
@@ -56,8 +57,13 @@ class PitEventsManagementScreen extends ConsumerStatefulWidget {
 class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementScreen> {
   // Scheduler refreshes include the full event setup. Read that same snapshot
   // so returning from Rubrics cannot retain and save obsolete assignments.
-  List<Map<String, dynamic>> get _configs =>
-      ref.read(defenseSchedulerProvider).pitEvents;
+  List<Map<String, dynamic>> get _configs => _historySemester.isEmpty
+      ?
+      ref.read(defenseSchedulerProvider).pitEvents
+      : _pastConfigs;
+  String _historySemester = '';
+  List<Map<String, dynamic>> _pastConfigs = [], _historySemesters = [];
+  int _loadRevision = 0;
   bool _isLoadingConfigs = true;
   final Set<int> _expandedConfigIds = {};
 
@@ -76,18 +82,41 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
   }
 
   Future<void> _loadData() async {
+    final revision = ++_loadRevision;
     setState(() => _isLoadingConfigs = true);
     await ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
-    if (mounted) {
+    if (!mounted || revision != _loadRevision) return;
+    List<Map<String, dynamic>> terms = [];
+    final configs = await ref
+        .read(defenseSchedulerProvider.notifier)
+        .fetchPitEventConfigs(
+          semesterId: int.tryParse(_historySemester),
+          onHistorySemesters: (value) => terms = value,
+        );
+    if (mounted && revision == _loadRevision) {
       setState(() {
+        _historySemesters = terms;
+        _pastConfigs = configs
+            .map(
+              (c) => {
+                ...c,
+                'is_locked': true,
+                'display_semester': terms
+                    .where((t) => '${t['id']}' == _historySemester)
+                    .firstOrNull?['label'],
+                'lock_reason': 'Historical configuration · Read-only record',
+              },
+            )
+            .toList();
         _isLoadingConfigs = false;
       });
     }
   }
 
   Future<void> _deleteConfig(Map<String, dynamic> config) async {
+    if (_historySemester.isNotEmpty) return;
     if (config['is_locked'] == true) {
-      showErrorToast(context, config['lock_reason']?.toString() ?? 'Cannot delete a secured PIT event with active defenses or grades.');
+      showErrorToast(context, config['lock_reason']?.toString() ?? 'Cannot delete a secured PIT event with active defenses or grades.',);
       return;
     }
     final confirmed = await showConfirmDialog(
@@ -110,6 +139,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
   }
 
   void _showEventDialog([Map<String, dynamic>? config]) {
+    if (config == null && _historySemester.isNotEmpty) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -148,18 +178,24 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
 
     ref.listen<DefenseSchedulerState>(
       defenseSchedulerProvider,
-      (previous, next) {
+      (previous, next,) {
         if (next.error != null && next.error != previous?.error) {
           showErrorToast(context, next.error!);
         }
         if (next.message != null && next.message != previous?.message) {
           showSuccessToast(context, next.message!);
         }
-      },
+      }
     );
 
     final activeSem = state.activeSemester;
-    final activeSemLabel = activeSem != null
+    final activeSemLabel = _historySemester.isNotEmpty
+        ? (_historySemesters
+                  .where((t) => '${t['id']}' == _historySemester)
+                  .firstOrNull?['label']
+                  ?.toString() ??
+              '')
+        : activeSem != null
         ? (activeSem['display_name']?.toString() ?? '')
         : 'No active semester';
 
@@ -167,7 +203,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(64.0),
-          child: CircularProgressIndicator(color: DefensysTokens.maroonTextOf(context)),
+          child: CircularProgressIndicator(color: DefensysTokens.maroonTextOf(context),),
         ),
       );
     }
@@ -186,6 +222,21 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildExecutiveHeader(activeSemLabel, state.isSaving),
+              const SizedBox(height: 16),
+              AcademicHistoryDropdown(
+                label: 'Academic period',
+                value: _historySemester,
+                items: [
+                  const MapEntry('', 'Current Term'),
+                  ..._historySemesters.map(
+                    (t) => MapEntry('${t['id']}', '${t['label']}'),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() => _historySemester = value);
+                  _loadData();
+                },
+              ),
               const SizedBox(height: 20),
               _buildExecutiveStatCards(),
               const SizedBox(height: 24),
@@ -212,7 +263,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
           children: [
             Text(
               'PIT Event Operations & Setup',
-              style: DefensysTokens.pageTitle.copyWith(fontSize: 26, color: _ink),
+              style: DefensysTokens.pageTitle.copyWith(fontSize: 26, color: _ink,),
             ),
             const SizedBox(height: 6),
             Text(
@@ -239,6 +290,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
               onPressed: _loadData,
               child: const Text('Refresh'),
             ),
+            if (_historySemester.isEmpty)
             ShadButton(
               enabled: !isSaving,
               backgroundColor: DefensysTokens.maroonTextOf(context),
@@ -257,7 +309,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             children: [
               titleBlock,
               const SizedBox(height: 16),
-              actionButtons,
+              actionButtons
             ],
           );
         }
@@ -744,13 +796,13 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
         const SizedBox(height: 10),
         SetupRubricCard(
           role: 'panel',
-          name: _pitRubricName(config, 'panel', config['panel_rubric_id'], state.rubrics),
+          name: _pitRubricName(config, 'panel', config['panel_rubric_id'], state.rubrics,),
           isRequired: true,
           isReady: rubricsReady,
         ),
         SetupRubricCard(
           role: 'peer',
-          name: _pitRubricName(config, 'peer', config['peer_rubric_id'], state.peerRubrics),
+          name: _pitRubricName(config, 'peer', config['peer_rubric_id'], state.peerRubrics,),
           isRequired: peerWeight > 0,
           isReady: rubricsReady,
         ),
@@ -927,8 +979,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     final initialEventName = widget.config?['event_name']?.toString() ?? '';
     final initialCode = widget.config?['event_code']?.toString() ?? '';
     final initialTemplate = (widget.config?['archive_file_template'] ?? widget.config?['vault_file_template'])?.toString() ?? '';
-    final initialPanelRubric = int.tryParse(widget.config?['panel_rubric_id']?.toString() ?? '');
-    final initialPeerRubric = int.tryParse(widget.config?['peer_rubric_id']?.toString() ?? '');
+    final initialPanelRubric = int.tryParse(widget.config?['panel_rubric_id']?.toString() ?? '',);
+    final initialPeerRubric = int.tryParse(widget.config?['peer_rubric_id']?.toString() ?? '',);
     final initialPanelWeight = int.tryParse(widget.config?['panel_weight']?.toString() ?? '') ?? 80;
     final initialPeerWeight = int.tryParse(widget.config?['peer_weight']?.toString() ?? '') ?? 20;
     final initialPeerGrading = widget.config?['peer_grading_enabled'];
@@ -947,7 +999,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     if (jsonEncode(_conceptConfig) != jsonEncode(widget.config?['concept_config'] ?? {})) return true;
     final initialShared = widget.config?['shared_deliverables'] ??
         ((widget.config?['concept_config'] as Map?)?['enabled'] == true ? defaultSharedDeliverables() : []);
-    if (jsonEncode(configuredSharedDeliverables(_deliverables, _sharedDeliverables)) != jsonEncode(initialShared)) return true;
+    if (jsonEncode(configuredSharedDeliverables(_deliverables, _sharedDeliverables),) != jsonEncode(initialShared)) return true;
 
     if (_deliverables.length != initialDelList.length) return true;
 
@@ -1014,28 +1066,28 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       _eventNameController.text = widget.config!['event_name']?.toString() ?? '';
       _eventCodeController.text = widget.config!['event_code']?.toString() ?? '';
       _archiveFileTemplateController.text = (widget.config!['archive_file_template'] ?? widget.config!['vault_file_template'])?.toString() ?? '';
-      _panelRubricId = int.tryParse(widget.config!['panel_rubric_id']?.toString() ?? '');
-      _peerRubricId = int.tryParse(widget.config!['peer_rubric_id']?.toString() ?? '');
+      _panelRubricId = int.tryParse(widget.config!['panel_rubric_id']?.toString() ?? '',);
+      _peerRubricId = int.tryParse(widget.config!['peer_rubric_id']?.toString() ?? '',);
       _panelWeight = int.tryParse(widget.config!['panel_weight']?.toString() ?? '') ?? 80;
       _peerWeight = int.tryParse(widget.config!['peer_weight']?.toString() ?? '') ?? 20;
       final initialPeerGrading = widget.config!['peer_grading_enabled'];
       _peerGradingEnabled = initialPeerGrading is bool ? initialPeerGrading : true;
-      _conceptConfig = Map<String, dynamic>.from(widget.config!['concept_config'] as Map? ?? {});
+      _conceptConfig = Map<String, dynamic>.from(widget.config!['concept_config'] as Map? ?? {},);
       _sharedDeliverables = sharedDeliverableValues(widget.config!['shared_deliverables'] ??
-          (_conceptConfig['enabled'] == true ? defaultSharedDeliverables() : []));
+          (_conceptConfig['enabled'] == true ? defaultSharedDeliverables() : []),);
 
       final delList = widget.config!['deliverables'] as List? ?? [];
       _deliverables = delList.map((item) {
         final map = Map<String, dynamic>.from(item as Map);
         map['is_defense_material'] = item['is_defense_material'] == true;
-        map['_labelController'] = TextEditingController(text: map['label']?.toString() ?? '');
+        map['_labelController'] = TextEditingController(text: map['label']?.toString() ?? '',);
         map['_templateController'] = TextEditingController(
           text: (map['archive_file_template'] ?? map['vault_file_template'])?.toString() ?? '',
         );
         return map;
       }).toList();
     }
-    _panelWeightController = TextEditingController(text: _panelWeight.toString());
+    _panelWeightController = TextEditingController(text: _panelWeight.toString(),);
     _peerWeightController = TextEditingController(text: _peerWeight.toString());
 
     _eventNameController.addListener(_markDirty);
@@ -1059,7 +1111,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     _panelWeightController.dispose();
     _peerWeightController.dispose();
 
-    for (final item in deliverableSetupItems(_deliverables, _sharedDeliverables)) {
+    for (final item in deliverableSetupItems(_deliverables, _sharedDeliverables,)) {
       (item['_labelController'] as TextEditingController?)?.dispose();
       (item['_templateController'] as TextEditingController?)?.dispose();
     }
@@ -1138,7 +1190,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'deadline_hours_before': 24,
     };
     newMap['_labelController'] = TextEditingController(text: '');
-    newMap['_templateController'] = TextEditingController(text: defaultTemplate);
+    newMap['_templateController'] = TextEditingController(text: defaultTemplate,);
     setState(() {
       _deliverables.add(newMap);
       _selectedDeliverable = newMap;
@@ -1173,14 +1225,14 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       return;
     }
 
-    final configuredItems = deliverableSetupItems(_deliverables, _sharedDeliverables);
+    final configuredItems = deliverableSetupItems(_deliverables, _sharedDeliverables,);
     for (int i = 0; i < configuredItems.length; i++) {
       final d = configuredItems[i];
       final ctrl = d['_labelController'] as TextEditingController?;
       final lbl = (ctrl != null ? ctrl.text : d['label']?.toString() ?? '').trim();
       if (lbl.isEmpty) {
         setState(() => _activeTab = 2);
-        showValidationToast(context, 'Deliverable name cannot be empty (item ${i + 1}).');
+        showValidationToast(context, 'Deliverable name cannot be empty (item ${i + 1}).',);
         return;
       }
     }
@@ -1225,10 +1277,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'panel_weight': _panelWeight,
       'peer_weight': _peerWeight,
       'peer_grading_enabled': _peerGradingEnabled,
-      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always'},
+      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always',},
       'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': deliverablesPayload,
-      'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables),
+      'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables,),
     };
 
     final success = await ref.read(defenseSchedulerProvider.notifier).savePitEventConfig(payload);
@@ -1348,7 +1400,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
             icon: Icons.inventory_2_rounded,
             badge: deliverableCount > 0
                 ? Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1,),
                     decoration: BoxDecoration(
                       color: activeTab == 2
                           ? Colors.white.withValues(alpha: 0.25)
@@ -1426,7 +1478,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
               ),
               if (badge != null) ...[
                 const SizedBox(width: 6),
-                badge,
+                badge
               ],
             ],
           ),
@@ -2138,26 +2190,30 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Allow peer evaluation', style: DefensysTokens.body.copyWith(fontWeight: FontWeight.w600, color: DefensysTokens.textPrimaryOf(context))),
+                  Text('Allow peer evaluation', style: DefensysTokens.body.copyWith(fontWeight: FontWeight.w600, color: DefensysTokens.textPrimaryOf(context),
+                      ),),
             if (_peerGradingEnabled) ...[
               const SizedBox(height: 6),
               Text('Opens after all panelists submit evaluations.',
-                      style: DefensysTokens.caption.copyWith(color: DefensysTokens.textSecondaryOf(context))),
+                      style: DefensysTokens.caption.copyWith(color: DefensysTokens.textSecondaryOf(context),
+                        ),),
             ],
-          ])),
+          ],
+                ),),
           const SizedBox(width: 16),
           Semantics(label: 'Allow peer evaluation', child: ShadSwitch(
             value: _peerGradingEnabled,
             enabled: !isLocked && !ref.watch(defenseSchedulerProvider).isSaving,
             onChanged: (value) { setState(() => _peerGradingEnabled = value); _markDirty(); },
-          )),
-        ]),
+          ),),
+        ],),
         if (_peerGradingEnabled && issue != null) ...[
           const SizedBox(height: 8),
-                Text(issue, style: DefensysTokens.caption.copyWith(color: DefensysTokens.textSecondaryOf(context))),
+                Text(issue, style: DefensysTokens.caption.copyWith(color: DefensysTokens.textSecondaryOf(context),
+              ),),
         ],
       ],
-    ));
+    ),);
   }
 
   @override
@@ -2168,25 +2224,29 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
     final state = ref.watch(defenseSchedulerProvider);
     final activeSem = state.activeSemester;
-    final activeSemesterName = activeSem != null
+    final activeSemesterName =
+        widget.config?['display_semester']?.toString() ??
+        ( activeSem != null
         ? '${activeSem['academic_year'] ?? activeSem['school_year'] ?? ''} ${activeSem['semester'] ?? ''}'.trim()
-        : 'Active Semester';
+        : 'Active Semester');
 
     final dashboard = ref.watch(dashboardProvider('faculty')).data;
     final assignedPitYear = dashboard?['pit_lead_year']?.toString().trim();
     final pitYear = assignedPitYear ?? '';
 
-    final semesterId = int.tryParse(activeSem?['id']?.toString() ?? '');
+    final semesterId = int.tryParse(
+      widget.config?['semester_id']?.toString() ??activeSem?['id']?.toString() ?? '',);
     final eventId = int.tryParse(widget.config?['id']?.toString() ?? '');
     bool isEligibleRubric(Map<String, dynamic> rubric, String role) {
       final id = int.tryParse(rubric['id']?.toString() ?? '');
-      final assignedEventId = int.tryParse(rubric['pit_event_id']?.toString() ?? '');
-      final currentId = int.tryParse(widget.config?['${role}_rubric_id']?.toString() ?? '');
+      final assignedEventId = int.tryParse(rubric['pit_event_id']?.toString() ?? '',);
+      final currentId = int.tryParse(widget.config?['${role}_rubric_id']?.toString() ?? '',);
       final assignedElsewhere = (assignedEventId != null && assignedEventId != eventId) ||
           state.pitEvents.any((event) =>
             int.tryParse(event['id']?.toString() ?? '') != eventId &&
             [event['panel_rubric_id'], event['peer_rubric_id']].any((value) =>
-              value != null && int.tryParse(value.toString()) == id));
+              value != null && int.tryParse(value.toString()) == id,
+                ),);
       return id != null && rubric['scope'] == 'pit' &&
           rubric['evaluation_type'] == role && rubric['status'] == 'published' &&
           semesterId != null && int.tryParse(rubric['semester_id']?.toString() ?? '') == semesterId &&
@@ -2195,8 +2255,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     final panelRubrics = state.rubrics.where((r) => isEligibleRubric(r, 'panel')).toList();
     final peerRubrics = state.peerRubrics.where((r) => isEligibleRubric(r, 'peer')).toList();
 
-    final preDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables).where((d) => d['deliverable_type'] == 'pre').toList();
-    final postDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables).where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault').toList();
+    final preDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables,).where((d) => d['deliverable_type'] == 'pre').toList();
+    final postDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables).where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault',).toList();
 
     return PopScope(
       canPop: !_isDirty || _allowPop,
@@ -2225,7 +2285,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 Container(
                   padding: const EdgeInsets.fromLTRB(24, 18, 16, 12),
                   decoration: BoxDecoration(
-                    border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
+                    border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context),
+                      ),),
                   ),
                   child: Row(
                     children: [
@@ -2235,7 +2296,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           color: DefensysTokens.surfaceHigherOf(context),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.event_note_rounded, size: 20, color: DefensysTokens.maroon),
+                        child: const Icon(Icons.event_note_rounded, size: 20, color: DefensysTokens.maroon,),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -2259,11 +2320,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       ),
                       IconButton(
                         onPressed: _handleClose,
-                        icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
+                        icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B),),
                         tooltip: 'Close',
                         style: IconButton.styleFrom(
                           hoverColor: const Color(0xFFF1F5F9),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8),),
                         ),
                       ),
                     ],
@@ -2273,7 +2334,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 // 2. Segmented Step Tab Bar
                 _buildDialogTabBar(
                   activeTab: _activeTab,
-                  deliverableCount: deliverableSetupItems(_deliverables, _sharedDeliverables).length,
+                  deliverableCount: deliverableSetupItems(_deliverables, _sharedDeliverables,).length,
                   totalWeight: _panelWeight + _peerWeight,
                   onTabSelected: (index) {
                     setState(() => _activeTab = index);
@@ -2293,16 +2354,16 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           children: [
                             if (isLocked) ...[
                               Container(
-                                margin: const EdgeInsets.only(bottom: 16),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                margin: const EdgeInsets.only(bottom: 16,),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12,),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFFFFBEB),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: const Color(0xFFFDE68A)),
+                                  borderRadius: BorderRadius.circular(10,),
+                                  border: Border.all(color: const Color(0xFFFDE68A),),
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.lock_outline_rounded, color: Color(0xFFB45309), size: 20),
+                                    const Icon(Icons.lock_outline_rounded, color: Color(0xFFB45309), size: 20,),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
@@ -2352,7 +2413,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                       }
                                       return null;
                                     },
-                                    style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
+                                    style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14,),
                                     onChanged: (_) => setState(() {}),
                                   ),
                                 ),
@@ -2367,7 +2428,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                       hintText: 'e.g. PIT201',
                                       helperText: 'Unique system identifier',
                                     ),
-                                    style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
+                                    style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14,),
                                   ),
                                 ),
                               ],
@@ -2378,7 +2439,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                border: Border.all(color: const Color(0xFFE2E8F0),),
                               ),
                               child: Row(
                                 children: [
@@ -2388,7 +2449,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                       color: const Color(0xFFEFF6FF),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: const Icon(Icons.school_outlined, size: 20, color: Color(0xFF2563EB)),
+                                    child: const Icon(Icons.school_outlined, size: 20, color: Color(0xFF2563EB),),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -2410,35 +2471,37 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                               ),
                                             ),
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2,),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFFEFF6FF),
-                                                borderRadius: BorderRadius.circular(6),
-                                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                                                color: const Color(0xFFEFF6FF,),
+                                                borderRadius: BorderRadius.circular(6,),
+                                                border: Border.all(color: const Color(0xFFBFDBFE,
+                                                          ),),
                                               ),
                                               child: Text(
                                                 pitYear,
                                                 style: const TextStyle(
                                                   fontSize: 11.5,
                                                   fontWeight: FontWeight.w700,
-                                                  color: Color(0xFF1D4ED8),
+                                                  color: Color(0xFF1D4ED8,),
                                                   fontFamily: DefensysTokens.fontFamily,
                                                 ),
                                               ),
                                             ),
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2,),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFFF1F5F9),
-                                                borderRadius: BorderRadius.circular(6),
-                                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                                color: const Color(0xFFF1F5F9,),
+                                                borderRadius: BorderRadius.circular(6,),
+                                                border: Border.all(color: const Color(0xFFE2E8F0,
+                                                          ),),
                                               ),
                                               child: Text(
                                                 activeSemesterName,
                                                 style: const TextStyle(
                                                   fontSize: 11.5,
                                                   fontWeight: FontWeight.w600,
-                                                  color: Color(0xFF475569),
+                                                  color: Color(0xFF475569,),
                                                   fontFamily: DefensysTokens.fontFamily,
                                                 ),
                                               ),
@@ -2469,12 +2532,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                 setState(() {
                                   if (_conceptConfig['enabled'] != true && value['enabled'] == true && _sharedDeliverables.isEmpty) {
                                     _sharedDeliverables = defaultSharedDeliverables();
-                                    ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables);
-                                    linkNewSharedConceptDefaults(_deliverables, _sharedDeliverables);
+                                    ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables,);
+                                    linkNewSharedConceptDefaults(_deliverables, _sharedDeliverables,);
                                   }
                                   _conceptConfig = value;
-                                  ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables);
-                                  if (!_deliverables.contains(_selectedDeliverable)) _selectedDeliverable = null;
+                                  ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables,);
+                                  if (!_deliverables.contains(_selectedDeliverable,)) _selectedDeliverable = null;
                                 });
                                 _markDirty();
                               },
@@ -2504,18 +2567,19 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               roles: [
                                 GradingRoleSetup(role: 'panel', label: 'Panel', weightController: _panelWeightController,
                                   rubrics: panelRubrics, rubricId: _panelRubricId,
-                                  rubricName: _pitRubricName(widget.config, 'panel', _panelRubricId, state.rubrics),
+                                  rubricName: _pitRubricName(widget.config, 'panel', _panelRubricId, state.rubrics,),
                                   onWeightChanged: _onPanelWeightChanged,
-                                  onRubricChanged: (value) { setState(() => _panelRubricId = value); _markDirty(); }),
+                                  onRubricChanged: (value) { setState(() => _panelRubricId = value,); _markDirty(); },),
                                 GradingRoleSetup(role: 'peer', label: 'Peer', weightController: _peerWeightController,
                                   rubrics: peerRubrics, rubricId: _peerRubricId,
-                                  rubricName: _pitRubricName(widget.config, 'peer', _peerRubricId, state.peerRubrics),
+                                  rubricName: _pitRubricName(widget.config, 'peer', _peerRubricId, state.peerRubrics,),
                                   onWeightChanged: _onPeerWeightChanged,
-                                  onRubricChanged: (value) { setState(() => _peerRubricId = value); _markDirty(); }),
+                                  onRubricChanged: (value) { setState(() => _peerRubricId = value,); _markDirty(); },),
                               ],
                             ),
-                            Padding(padding: const EdgeInsets.symmetric(vertical: 24),
-                              child: Divider(height: 1, color: DefensysTokens.borderOf(context))),
+                            Padding(padding: const EdgeInsets.symmetric(vertical: 24,),
+                              child: Divider(height: 1, color: DefensysTokens.borderOf(context),
+                                      ),),
                             _buildPeerGradingAccessCard(isLocked),
                           ],
                         ),
@@ -2533,26 +2597,26 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                     StageDeliverablePresetManager.pitEventMatchesYearLevel(
                                       e['year_level']?.toString() ?? '',
                                       assignedPitYear ?? '',
-                                    )).map((e) => {
+                                    ),).map((e) => {
                                   'id': e['id'],
                                   'scope': 'pit',
                                   'year_level': e['year_level'],
                                   'label': e['event_name'] ?? e['name'] ?? 'PIT Event',
                                   'deliverables': e['deliverables'] ?? [],
-                                }),
+                                },),
                               ],
-                              currentDeliverables: deliverablePresetItems(_deliverables, _sharedDeliverables),
+                              currentDeliverables: deliverablePresetItems(_deliverables, _sharedDeliverables,),
                               enabled: !isLocked,
                               onApplyDeliverables: (newDeliverables) {
                                 setState(() {
-                                  applyDeliverablePresetItems(newDeliverables, _deliverables, _sharedDeliverables);
+                                  applyDeliverablePresetItems(newDeliverables, _deliverables, _sharedDeliverables,);
                                   _selectedDeliverable = _deliverables.isNotEmpty ? _deliverables.first : null;
                                 });
                                 _markDirty();
                               },
                             ),
                             StageDeliverableCounts(
-                              deliverables: deliverableSetupItems(_deliverables, _sharedDeliverables),
+                              deliverables: deliverableSetupItems(_deliverables, _sharedDeliverables,),
                               minutesRequired: false,
                             ),
                             _buildDeliverableSection(
@@ -2590,26 +2654,27 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         ),
                       ].indexed.map((entry) => Offstage(
                         offstage: entry.$1 != _activeTab,
-                        child: TickerMode(enabled: entry.$1 == _activeTab, child: entry.$2),
-                      )).toList(),
+                        child: TickerMode(enabled: entry.$1 == _activeTab, child: entry.$2,
+                                  ),
+                                ),).toList(),
                     ),
                   ),
                 ),
 
                 // 4. Footer Actions Bar
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14,),
                   decoration: BoxDecoration(
                     color: DefensysTokens.surfaceHigherOf(context),
-                    border: Border(top: BorderSide(color: DefensysTokens.borderOf(context))),
+                    border: Border(top: BorderSide(color: DefensysTokens.borderOf(context)),),
                   ),
                   child: StageSetupActions(
                     children: [
                       TextButton(
                         onPressed: state.isSaving ? null : _handleClose,
                         style: TextButton.styleFrom(
-                          foregroundColor: DefensysTokens.textSecondaryOf(context),
-                          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily),
+                          foregroundColor: DefensysTokens.textSecondaryOf(context,),
+                          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily,),
                         ),
                         child: Text(isLocked ? 'Close' : 'Cancel'),
                       ),
@@ -2622,11 +2687,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           icon: const Icon(Icons.arrow_back_rounded, size: 16),
                           label: const Text('Back'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: DefensysTokens.textPrimaryOf(context),
-                            side: BorderSide(color: DefensysTokens.borderOf(context)),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            foregroundColor: DefensysTokens.textPrimaryOf(context,),
+                            side: BorderSide(color: DefensysTokens.borderOf(context),),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10,),
+                            textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily,),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8),),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -2635,23 +2700,23 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         ElevatedButton.icon(
                           onPressed: () {
                             if (_activeTab == 0 && _eventNameController.text.trim().isEmpty) {
-                              showValidationToast(context, 'Please enter an event name before proceeding.');
+                              showValidationToast(context, 'Please enter an event name before proceeding.',);
                               return;
                             }
                             if (_activeTab == 1 && (_panelWeight + _peerWeight) != 100) {
-                              showValidationToast(context, 'Panel and Peer weights must total 100%.');
+                              showValidationToast(context, 'Panel and Peer weights must total 100%.',);
                               return;
                             }
                             setState(() => _activeTab++);
                           },
-                          icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                          label: Text(_activeTab == 0 ? 'Next: Grading & Rubrics' : 'Next: Deliverables'),
+                          icon: const Icon(Icons.arrow_forward_rounded, size: 16,),
+                          label: Text(_activeTab == 0 ? 'Next: Grading & Rubrics' : 'Next: Deliverables',),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: DefensysTokens.maroon,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                            textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10,),
+                            textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily,),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8),),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -2659,13 +2724,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       if (isLocked && _activeTab == 2)
                         ElevatedButton.icon(
                           onPressed: null,
-                          icon: const Icon(Icons.lock_outline_rounded, size: 16, color: Colors.white),
+                          icon: const Icon(Icons.lock_outline_rounded, size: 16, color: Colors.white,),
                           label: const Text('Secured (Read-Only)'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.grey,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10,),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8),),
                           ),
                         )
                       else if (!isLocked && (widget.config != null || _activeTab == 2))
@@ -2688,4 +2753,3 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     );
   }
 }
-

@@ -358,7 +358,7 @@ class GradeCenterApiTests(APITestCase):
     def test_admin_scope_pit_returns_only_pit(self):
         sync_missing_grade_rows(user=self.admin)
 
-        response = self.client.get('/api/grading/grades/', {'scope': 'pit'})
+        response = self.client.get('/api/grading/grades/', {'scope': 'pit', 'semester_id': self.first_semester.pk})
 
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(response.data['counts']['filtered'], 1)
@@ -366,35 +366,36 @@ class GradeCenterApiTests(APITestCase):
             all(grade['scope'] == TeamGrade.SCOPE_PIT for grade in response.data['grades']),
         )
 
-    def test_admin_scope_all_returns_capstone_and_pit(self):
+    def test_admin_scope_all_keeps_the_selected_semester(self):
         sync_missing_grade_rows(user=self.admin)
 
         response = self.client.get('/api/grading/grades/', {'scope': 'all'})
 
         self.assertEqual(response.status_code, 200)
         scopes = {grade['scope'] for grade in response.data['grades']}
-        self.assertIn(TeamGrade.SCOPE_CAPSTONE, scopes)
-        self.assertIn(TeamGrade.SCOPE_PIT, scopes)
+        self.assertEqual(scopes, {TeamGrade.SCOPE_CAPSTONE})
+        history = self.client.get('/api/grading/grades/', {'scope': 'all', 'semester_id': self.first_semester.pk})
+        self.assertEqual({g['scope'] for g in history.data['grades']}, {TeamGrade.SCOPE_PIT})
 
     def test_grade_center_records_are_scoped_by_requesting_role(self):
         sync_missing_grade_rows(user=self.admin)
 
-        def visible_scopes(user):
+        def visible_scopes(user, semester):
             self.client.force_authenticate(user=user)
-            response = self.client.get('/api/grading/grades/', {'scope': 'all'})
+            response = self.client.get('/api/grading/grades/', {'scope': 'all', 'semester_id': semester.pk})
             self.assertEqual(response.status_code, 200)
             return {grade['scope'] for grade in response.data['grades']}
 
         self.assertEqual(
-            visible_scopes(self.pit_lead),
+            visible_scopes(self.pit_lead, self.first_semester),
             {TeamGrade.SCOPE_PIT},
         )
         self.assertEqual(
-            visible_scopes(self.adviser),
+            visible_scopes(self.adviser, self.semester),
             {TeamGrade.SCOPE_CAPSTONE},
         )
         self.assertEqual(
-            visible_scopes(self.pit_student),
+            visible_scopes(self.pit_student, self.first_semester),
             {TeamGrade.SCOPE_PIT},
         )
 
@@ -869,7 +870,7 @@ class GradeCenterApiTests(APITestCase):
         sync_missing_grade_rows(user=self.pit_lead)
         self.client.force_authenticate(user=self.pit_lead)
 
-        response = self.client.get('/api/grading/grades/')
+        response = self.client.get('/api/grading/grades/', {'semester_id': self.first_semester.pk})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['counts']['all'], 1)

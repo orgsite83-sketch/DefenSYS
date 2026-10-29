@@ -46,6 +46,9 @@ String _defenseContext(Map<String, dynamic> team) {
       return 'No PIT event scheduled';
     }
     final stage = context['current_stage']?.toString();
+    if (context['stage_status'] == 'awaiting_stage_setup') {
+      return 'Awaiting stage setup';
+    }
     if (stage != null && stage.isNotEmpty) {
       return stage;
     }
@@ -283,8 +286,8 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
   }
 
   void _openTeam(Map<String, dynamic> team) {
-    if (team['participation_id'] != null &&
-        team['term_status'] == 'historical') {
+    if (team['term_status'] == 'historical' &&
+        (team['participation_id'] != null || team['record_key'] != null)) {
       showHistoricalTeam(context, team);
       return;
     }
@@ -318,11 +321,12 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           ),
         ),
         const SizedBox(height: 2),
-        if (team['term_status'] == 'historical')
+        if (
+        team['term_status'] == 'historical')
           Padding(
             padding: const EdgeInsets.only(top: 2, bottom: 4),
-            child: Text(
-              '${team['display_semester']} · ${team['status']}',
+            child:Text(
+              '${team['phase _label'] ?? ''} · ${team['display_semester']} · ${team['status']}',
               style: TextStyle(fontSize: 11, color: _textSecondary),
             ),
           ),
@@ -411,7 +415,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
               ),
             ),
             child: Text(
-              'Not Enrolled',
+              'Enrollment pending',
               style: TextStyle(
                 color: _isDark
                     ? const Color(0xFFFCA5A5)
@@ -435,7 +439,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
       );
     }
 
-    final memberCountStr = '${team['member_count'] ?? 0} members';
+    final memberCountStr = '${team['member_count'] ?? 0} members · ${members.whereType<Map>().where((m) => m['is_enrolled'] == true).length} enrolled';
     Widget membersWidget;
     if (hasUnenrolled) {
       membersWidget = Row(
@@ -451,7 +455,8 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           ),
           const SizedBox(width: 4),
           const Tooltip(
-            message: 'Contains non-enrolled members',
+            message:
+                'Enrollment has not been recorded for every member in this term.',
             child: Icon(
               Icons.warning_amber_rounded,
               color: Color(0xFFD97706),
@@ -542,10 +547,14 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
     final isDark = _isDark;
 
     final Map<String, int> adviserLoadCounts = {};
+    final countedAssignments = <String>{};
     if (!isPit) {
       for (final t in state.teams) {
         final adviser = t['adviser_name']?.toString().trim() ?? '';
-        if (adviser.isNotEmpty) {
+        if (adviser.isNotEmpty &&
+            countedAssignments.add(
+              '$adviser:${t['id'] ?? identityHashCode(t)}',
+            )) {
           adviserLoadCounts[adviser] = (adviserLoadCounts[adviser] ?? 0) + 1;
         }
       }
@@ -577,6 +586,10 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
       itemBuilder: (context, index) {
         final section = sortedSections[index];
         final sectionTeams = sectionsMap[section]!;
+        final sectionTeamCount = sectionTeams
+            .map((t) => t['id'] ?? t)
+            .toSet()
+            .length;
         final systemName =
             sectionTeams.first['system_name']?.toString().trim() ?? '';
         final managerName =
@@ -671,7 +684,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '${sectionTeams.length} ${sectionTeams.length == 1 ? 'team' : 'teams'}',
+                      '$sectionTeamCount ${sectionTeamCount == 1 ? 'team' : 'teams'}',
                       style: TextStyle(
                         fontSize: 11,
                         color: isDark

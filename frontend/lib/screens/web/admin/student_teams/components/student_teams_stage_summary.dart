@@ -16,14 +16,17 @@ String? teamCurrentStageStatus(Map<String, dynamic> team) {
 }
 
 String _stageStatusLabel(String? status) => switch (status) {
-  'completed' => 'Capstone completed',
+  'completed' => 'Completed',
+  'awaiting_stage_setup' => 'Awaiting stage setup',
+  'setup_pending' => 'Setup pending',
+  'preparing' => 'Preparing',
   'needs_review' => 'Needs review',
   'open' => 'Term closed',
   'locked' => 'Preparing',
   'ready' => 'Ready to schedule',
   'scheduled' => 'Scheduled',
   'grading' => 'Grading',
-  'passed' => 'Stage passed',
+  'passed' => 'Completed',
   'replacement_concepts_needed' => 'Replacement concepts needed',
   'concepts_needed' => 'Concepts needed',
   'concept_review_pending' => 'Adviser review pending',
@@ -116,9 +119,19 @@ class StudentTeamsSummaryCards extends StatelessWidget {
           ? team['instructor_name']
           : team['adviser_name'] ?? team['adviser'];
       return faculty == null || faculty.toString().trim().isEmpty;
-    }).length;
+    }).map((t) => t['id'] ?? t)
+        .toSet()
+        .length;
     final eventName = state.eventName?.trim() ?? '';
-    final hasSchedulingContext = !isPitContext || eventName.isNotEmpty;
+    final historical =
+        state.teams.isNotEmpty &&
+        state.teams.every((t) => t['is_editable'] == false);
+    final hasSchedulingContext = !historical &&
+        (isPitContext
+            ? eventName.isNotEmpty
+            : state.teams.any(
+                (t) => teamCurrentStageStatus(t) != 'awaiting_stage_setup',
+              ));
     String? schedulingStatus(Map<String, dynamic> team) {
       if (!isPitContext) return teamCurrentStageStatus(team);
       final context = team['defense_context'];
@@ -149,8 +162,8 @@ class StudentTeamsSummaryCards extends StatelessWidget {
       _TeamSummaryCard(
         id: 'teams',
         label: 'Teams',
-        count: state.teams.length,
-        helper: 'Current list',
+        count: state.teams.map((t) => t['id'] ?? t).toSet().length,
+        helper: historical ? 'Selected intake': 'Current list',
         icon: Icons.groups_2_rounded,
         accent: DefensysUi.primaryMaroon,
       ),

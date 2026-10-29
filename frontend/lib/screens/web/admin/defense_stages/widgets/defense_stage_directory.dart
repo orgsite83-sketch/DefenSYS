@@ -7,8 +7,12 @@ import '../../../../../widgets/feedback/defensys_skeleton.dart';
 import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../../../widgets/status_badge.dart';
 import '../../../../../widgets/setup/setup_requirement_panels.dart';
+import '../../../../../widgets/academic/capstone_history_filters.dart';
+import '../../student_teams/components/student_teams_toolbar.dart';
+import '../../user_management/bulk_import/official_class_list_parser.dart' show DashedBorder;
 
 bool stageSetupLocked(Map<String, dynamic> stage) =>
+    stage['history_read_only'] == true ||
     stage['is_locked'] == true || stage['structure_locked'] == true || stage['status'] == 'locked';
 
 bool stagePublished(Map<String, dynamic> stage) => stage['is_active'] is bool
@@ -16,6 +20,7 @@ bool stagePublished(Map<String, dynamic> stage) => stage['is_active'] is bool
     : stage['status'] == 'published';
 
 List<String> stageSetupIssues(Map<String, dynamic> stage) {
+  if (stage['is_officially_complete'] == true) return [];
   final readiness = stage['setup_readiness'];
   if (readiness is! Map) return ['Refresh to check setup readiness.'];
   final issues = readiness['issues'];
@@ -47,6 +52,7 @@ class DefenseStageDirectory extends StatefulWidget {
     required this.onMove,
     this.exportAction,
     this.draftNotice,
+    this.onHistoryChanged,
   });
   final DefenseStagesState state;
   final Future<void> Function() onRefresh;
@@ -56,6 +62,7 @@ class DefenseStageDirectory extends StatefulWidget {
   final Future<void> Function(Map<String, dynamic>, int, int) onMove;
   final Widget? exportAction;
   final Widget? draftNotice;
+  final ValueChanged<Map<String, String>>? onHistoryChanged;
 
   @override
   State<DefenseStageDirectory> createState() => _DefenseStageDirectoryState();
@@ -88,7 +95,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   }
 
   Future<void> _addStage() async {
-    if (_busy) return;
+    if (_busy || widget.state.historyScope == 'history') return;
     setState(() => _adding = true);
     try {
       await widget.onAdd();
@@ -117,6 +124,46 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _header(compact),
+                if (widget.onHistoryChanged != null) ...[
+                  const SizedBox(height: 16),
+                  PitTeamScopeToggle(
+                    teamListScope: widget.state.historyScope,
+                    isSaving: _busy,
+                    onScopeChanged: (value) {
+                      if (value != null) {
+                        widget.onHistoryChanged!({
+                          'scope': value,
+                          'intake': '',
+                          'phase': '',
+                          'stage': '',
+                        });
+                      }
+                    },
+                    onClear: () => widget.onHistoryChanged!({
+                      'scope': 'active',
+                      'intake': '',
+                      'phase': '',
+                      'stage': '',
+                    }),
+                  ),
+                  if (widget.state.historyScope == 'history') ...[
+                    const SizedBox(height: 12),
+                    CapstoneHistoryFilters(
+                      options: widget.state.capstoneHistory,
+                      intake: widget.state.historyIntake,
+                      phase: widget.state.historyPhase,
+                      stage: widget.state.historyStage,
+                      enabled: !_busy,
+                      onChanged: (intake, phase, stage) =>
+                          widget.onHistoryChanged!({
+                            'scope': 'history',
+                            'intake': intake,
+                            'phase': phase,
+                            'stage': stage,
+                          }),
+                    ),
+                  ],
+                ],
                 const SizedBox(height: 24),
                 if (widget.draftNotice != null) ...[
                   widget.draftNotice!,
@@ -150,7 +197,11 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
                     ),
                     const SizedBox(height: 20),
                   ],
-                  if (widget.state.stages.isEmpty)
+                  if (widget.state.phaseGroups.isNotEmpty) ...[
+                    _directoryHeader(),
+                    const SizedBox(height: 16),
+                    ..._phaseContainers(compact),
+                  ] else if (widget.state.stages.isEmpty)
                     if (widget.state.error == null)
                       _empty()
                     else
@@ -204,6 +255,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
           onPressed: _refresh,
           child: Text(_refreshing ? 'Refreshing…' : 'Refresh'),
         ),
+        if (widget.state.historyScope != 'history')
         ShadButton(
           enabled: !_busy,
           backgroundColor: DefensysTokens.maroonOf(context),
@@ -231,7 +283,9 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   }
 
   Widget _summary(bool compact) {
-    final stages = widget.state.stages;
+    final stages = widget.state.phaseGroups.isEmpty
+        ? widget.state.stages
+        : widget.state.phaseGroups.expand((g) => _rows(g['stages'])).toList();
     final attention = stages
         .where((stage) => stageSetupIssues(stage).isNotEmpty)
         .length;
@@ -327,6 +381,105 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     ],
   );
 
+  List<Widget> _phaseContainers(bool compact) {
+    final groups = widget.state.phaseGroups;
+    return [
+      for (var n = 0; n < groups.length; n++) ...[
+        ShadCard(
+          width: double.infinity,
+          backgroundColor: _surface,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${groups[n]['phase_label']}',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: _ink,
+                        ),
+                      ),
+                      Text('${groups[n]['display_semester']}', style: _small),
+                    ],
+                  ),
+                  ShadBadge.secondary(
+                    child: Text(
+                      groups[n]['read_only'] == true
+                          ? 'Read-only record'
+                          : 'Current phase',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_rows(groups[n]['stages']).isEmpty)
+                _phaseEmptyState(readOnly: groups[n]['read_only'] == true)
+              else
+                ..._phaseStageItems(groups[n], compact, n == groups.length - 1),
+            ],
+          ),
+        ),
+        if (n < groups.length - 1)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _timelineConnectorSpacer(compact),
+          ),
+      ],
+    ];
+  }
+
+  Widget _phaseEmptyState({required bool readOnly}) => DashedBorder(
+    color: _border,
+    radius: 6,
+    child: SizedBox(width: double.infinity, child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('No stages configured for this semester', textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _ink)),
+        const SizedBox(height: 6),
+        Text('Awaiting stage setup', textAlign: TextAlign.center, style: _small),
+        if (!readOnly) ...[
+          const SizedBox(height: 18),
+          ShadButton(size: ShadButtonSize.sm, enabled: !_busy,
+            backgroundColor: DefensysTokens.maroonOf(context),
+            foregroundColor: Colors.white,
+            leading: const Icon(LucideIcons.plus, size: 14),
+            onPressed: _addStage, child: const Text('Add stage')),
+        ],
+      ]),
+    )),
+  );
+
+  List<Widget> _phaseStageItems(
+    Map<String, dynamic> group,
+    bool compact,
+    bool lastGroup,
+  ) {
+    final stages = _rows(group['stages']);
+    return [
+      for (var i = 0; i < stages.length; i++) ...[
+        _stageItemWithSpine(
+          stage: stages[i],
+          index: widget.state.stages.indexWhere(
+            (s) => s['id'] == stages[i]['id'],
+          ),
+          isLast: lastGroup && i == stages.length - 1,
+          compact: compact,
+        ),
+        if (i < stages.length - 1) _timelineConnectorSpacer(compact),
+      ],
+    ];
+  }
+
   Widget _publication(Map<String, dynamic> stage) {
     final published = stagePublished(stage);
     return ShadBadge.secondary(
@@ -363,8 +516,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
                     child: Center(
                       child: Container(
                         width: 2,
-                        color: _border,
-                      ),
+                        color: _border)
                     ),
                   ),
               ],
@@ -392,8 +544,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
             child: Center(
               child: Container(
                 width: 2,
-                color: _border,
-              ),
+                color: _border)
             ),
           ),
           const SizedBox(width: 14),
@@ -430,7 +581,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
           shape: BoxShape.circle,
           border: Border.all(color: _surface, width: 1.5),
         ),
-        child: const Icon(LucideIcons.lockKeyhole, size: 8, color: Colors.white),
+        child: const Icon(LucideIcons.lockKeyhole, size: 8, color: Colors.white,),
       );
       tooltipMessage =
           'Configuration locked · ${stage['lock_reason'] ?? 'Defenses scheduled'}';
@@ -444,7 +595,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
           shape: BoxShape.circle,
           border: Border.all(color: _surface, width: 1.5),
         ),
-        child: const Icon(LucideIcons.circleDashed, size: 8, color: Colors.white),
+        child: const Icon(LucideIcons.circleDashed, size: 8, color: Colors.white,),
       );
       tooltipMessage = 'Draft milestone';
     } else if (ready) {
@@ -474,7 +625,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
           shape: BoxShape.circle,
           border: Border.all(color: _surface, width: 1.5),
         ),
-        child: const Icon(LucideIcons.alertTriangle, size: 8, color: Colors.white),
+        child: const Icon(LucideIcons.alertTriangle, size: 8, color: Colors.white,),
       );
       tooltipMessage = issues.join('\n');
     }
@@ -508,7 +659,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
           Positioned(
             top: -3,
             right: -3,
-            child: cornerBadge,
+            child: cornerBadge
           ),
         ],
       ),
@@ -608,8 +759,9 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
             ],
           ),
         ),
+        if (!compact) ...[
         const SizedBox(width: 12),
-        _readiness(stage),
+        _readiness(stage)],
       ],
     );
     return ShadCard(
@@ -621,7 +773,10 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (compact)
-            title
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [title, const SizedBox(height: 10), _readiness(stage)],
+            )
           else
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -676,9 +831,10 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
                 onPressed: () => setState(
                   () => expanded ? _expanded.remove(key) : _expanded.add(key),
                 ),
-                child: Text(
+                child: Flexible(child: Text(
                   expanded ? 'Hide requirements' : 'View requirements',
-                ),
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                )),
               ),
               if (compact) _actions(stage, index),
             ],
@@ -738,6 +894,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
           ),
         ),
       ),
+      if (stage['history_read_only'] != true)
       _StageActionsMenu(
         stage: stage,
         busy: _busy,
@@ -874,6 +1031,9 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
           Icon(LucideIcons.layers, size: 30, color: _muted),
           const SizedBox(height: 16),
           Text(
+            widget.state.historyScope == 'history'
+                ? 'No stage records for this selection'
+                :
             'Build your defense sequence',
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -884,6 +1044,9 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
           ),
           const SizedBox(height: 8),
           Text(
+            widget.state.historyScope == 'history'
+                ? 'Choose another intake, phase, or stage.'
+                :
             'Add your first stage, then configure its rubrics and requirements.',
             textAlign: TextAlign.center,
             style: _small,

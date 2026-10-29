@@ -45,7 +45,7 @@ class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
             {
               'id': 9,
               'label': '1st Semester',
-              'is_active': false,
+              'is_active': false
             },
           ],
         },
@@ -96,7 +96,11 @@ class _FakeDefenseStagesNotifier extends DefenseStagesNotifier {
   }
 
   @override
-  Future<void> fetchStages({String? successMessage}) async {}
+  Future<void> fetchStages({String? scope,
+    String? intake,
+    String? phase,
+    String? stage,
+    String? successMessage,}) async {}
 }
 
 class _FakeUserManagementNotifier extends UserManagementNotifier {
@@ -117,7 +121,7 @@ class _FakeUserManagementNotifier extends UserManagementNotifier {
   }
 
   @override
-  Future<void> fetchUsers({String? search, String? role, String? successMessage}) async {}
+  Future<void> fetchUsers({String? search, String? role, String? successMessage,}) async {}
 }
 
 class _FakeDefenseSchedulerNotifier extends DefenseSchedulerNotifier {
@@ -148,7 +152,8 @@ class _FakeDefenseSchedulerNotifier extends DefenseSchedulerNotifier {
 
   @override
   Future<List<Map<String, dynamic>>> fetchPitEventConfigs(
-      {int? semesterId}) async {
+      {int? semesterId,
+    void Function(List<Map<String, dynamic>>)? onHistorySemesters,}) async {
     return _configs;
   }
 
@@ -170,18 +175,18 @@ void main() {
       ProviderScope(
         overrides: [
           academicPeriodProvider
-              .overrideWith(_FakeAcademicPeriodNotifier.new),
+              .overrideWith(_FakeAcademicPeriodNotifier.new,),
           defenseStagesProvider
               .overrideWith(_FakeDefenseStagesNotifier.new),
           userManagementProvider
-              .overrideWith(_FakeUserManagementNotifier.new),
+              .overrideWith(_FakeUserManagementNotifier.new,),
           defenseSchedulerProvider
-              .overrideWith(_FakeDefenseSchedulerNotifier.new),
+              .overrideWith(_FakeDefenseSchedulerNotifier.new,),
         ],
         child: MaterialApp(
           theme: AppTheme.mistDarkTheme,
           home: const Scaffold(
-            body: AcademicPeriodsScreen(),
+            body: AcademicPeriodsScreen()
           ),
         ),
       ),
@@ -214,7 +219,7 @@ void main() {
 
     // 5. In Capstone Tab (default selected): verify policies and defense stages pipeline
     expect(find.text('⚙️ Capstone Cohort Policies'), findsOneWidget);
-    expect(find.text('📝 Term-Wide Evaluation Master Toggles'), findsOneWidget);
+    expect(find.text('📝 Term-Wide Evaluation Master Toggles'), findsOneWidget,);
     expect(find.text('🛡️ Capstone Defense Stages Pipeline'), findsOneWidget);
     expect(find.text('Title Proposal'), findsOneWidget);
     expect(find.text('Outline Defense'), findsOneWidget);
@@ -226,20 +231,20 @@ void main() {
 
     // Verify PIT Governance Banner
     expect(find.text('Faculty Lead Ownership & Admin Oversight'),
-        findsOneWidget);
+        findsOneWidget,);
     expect(find.text('Governance Model'), findsOneWidget);
     expect(find.text('PIT Coordinator (Faculty Lead)'), findsOneWidget);
     expect(
-        find.text('Administrator (Institutional Oversight)'), findsOneWidget);
+        find.text('Administrator (Institutional Oversight)'), findsOneWidget,);
 
     // Verify PIT-specific rules: 80% Panelist, 20% Peer, and NO adviser note
-    expect(find.text('📌 PIT Cohort Structure (1st–3rd Year)'), findsOneWidget);
+    expect(find.text('📌 PIT Cohort Structure (1st–3rd Year)'), findsOneWidget,);
     expect(find.text('80%'), findsOneWidget);
     expect(find.text('20%'), findsOneWidget);
     expect(
         find.textContaining(
-            'Note: PIT does NOT have assigned faculty advisers.'),
-        findsOneWidget);
+            'Note: PIT does NOT have assigned faculty advisers.',),
+        findsOneWidget,);
 
     // Verify 3 Cohort breakdown cards
     expect(find.text('1st Year Cohort — CS 101'), findsOneWidget);
@@ -312,5 +317,5 @@ void main() {
     // The terms table should be visible again
     expect(find.text('1st Semester'), findsWidgets);
     expect(find.text('2nd Semester'), findsWidgets);
-  });
+  },);
 }

@@ -150,7 +150,9 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
             .values_list('event_name', flat=True)
         )
     else:
-        stage_options = list(STAGE_OPTIONS)
+        from student_teams.capstone_context import phase_requirements
+        stage_options = list(dict.fromkeys(r['label'] for team in current
+            for r in phase_requirements(team)))
 
     requested_stage = selected_stage or request.query_params.get('stage_label') or ''
     if not requested_stage and current.exists():

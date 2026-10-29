@@ -35,6 +35,9 @@ class _IntegrationTeams extends StudentTeamsNotifier {
 
   @override
   Future<void> fetchTeams({
+    String? historyIntake,
+    String? historyPhase,
+    String? historyStage,
     String? workspace,
     String? search,
     String? level,

@@ -50,6 +50,17 @@ class StudentAcademicRecordListSerializer(serializers.ListSerializer):
                 scope = (assignment.semester_id, assignment.year_level, assignment.section)
                 assignments_by_scope.setdefault(scope, assignment)
         self.child._instructor_assignments_by_scope = assignments_by_scope
+        from student_teams.models import StudentCapstoneParticipation, StudentCapstonePlacement
+        latest = {}
+        for participation in StudentCapstoneParticipation.objects.filter(
+                student_id__in={r.student_id for r in records}).order_by('student_id', '-number'):
+            latest.setdefault(participation.student_id, participation)
+        placed = set(StudentCapstonePlacement.objects.filter(ended_at__isnull=True,
+            participation_id__in=[p.pk for p in latest.values()]).values_list('participation_id', flat=True))
+        self.child._capstone_participations_by_student = {sid: {
+            'number': p.number, 'state': p.state, 'returning': p.state == 'failed',
+            'has_current_team': p.state == 'active' and p.pk in placed,
+        } for sid, p in latest.items()}
         return super().to_representation(records)
 
 
@@ -95,6 +106,8 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
         ]
 
     def get_capstone_participation(self, obj):
+        if hasattr(self, '_capstone_participations_by_student'):
+            return self._capstone_participations_by_student.get(obj.student_id)
         from student_teams.models import StudentCapstoneParticipation
         row = StudentCapstoneParticipation.objects.filter(student_id=obj.student_id).order_by('-number').first()
         if not row:
@@ -157,6 +170,10 @@ class StudentAcademicRecordWriteSerializer(serializers.Serializer):
             semester = Semester.objects.select_related('school_year').get(pk=attrs['semester_id'])
         except Semester.DoesNotExist as exc:
             raise serializers.ValidationError({'semester_id': 'Semester does not exist.'}) from exc
+        from student_teams.section_years import enrollment_section_issue
+        issue = enrollment_section_issue(attrs.get('section', ''), attrs['year_level'], semester)
+        if issue:
+            raise serializers.ValidationError({'section': issue})
 
         record_id = self.context.get('record_id')
         existing = StudentAcademicRecord.objects.filter(student=student, semester=semester)
@@ -217,6 +234,12 @@ class StudentAcademicRecordWriteSerializer(serializers.Serializer):
         raise serializers.ValidationError({'student_id': 'This field is required.'})
 
 
+class EnrollmentSectionPreviewRowSerializer(serializers.Serializer):
+    id_number = serializers.CharField(max_length=150)
+    year_level = serializers.CharField(required=False, allow_blank=True, default='', max_length=20)
+    section = serializers.CharField(required=False, allow_blank=True, default='', max_length=80)
+
+
 class RolloverActionSerializer(serializers.Serializer):
     record_id = serializers.IntegerField(required=False, allow_null=True)
     username = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=150)
@@ -226,6 +249,7 @@ class RolloverActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['promote', 'retain', 'drop', 'create'])
     year_level = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     section = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=80)
+    section_resolution = serializers.DictField(required=False, allow_null=True)
     target_semester_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 
 

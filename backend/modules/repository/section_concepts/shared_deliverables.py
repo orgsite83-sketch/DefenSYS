@@ -42,6 +42,24 @@ def resolve(team, context):
     pit = hasattr(context, 'event_name')
     if pit != team.is_pit or (pit and (context.semester_id != team.semester_id or context.year_level != team.year_level)):
         return None
+    historical = bool(getattr(team, '_recorded_term', None)) or bool(
+        getattr(team, '_assessment_semester_id', None) and
+        StudentTeam.objects.filter(pk=team.pk).exclude(semester_id=team.semester_id).exists())
+    if historical:
+        captured = SharedDeliverableSet.objects.filter(section__semester_id=team.semester_id,
+            **services.context_fields(context),
+            team_snapshot__contains=[{'id': team.pk, 'version': team.project_version}]
+        ).select_related('section__semester', 'source_project', 'source_round', 'project_manager').order_by('-pk').first()
+        if captured:
+            from student_teams.capstone_lifecycle import recorded_team
+            members = list(StudentTeam.objects.filter(pk__in=[t['id'] for t in captured.team_snapshot]))
+            members = [recorded_team(t, captured.section.semester) for t in members]
+            return {'team': team, 'teams': members, 'team_snapshot': captured.team_snapshot,
+                'section': captured.section, 'context': context, 'project': captured.source_project,
+                'current_project': captured.source_project, 'round': captured.source_round,
+                'manager': captured.project_manager, 'pending_import': None, 'historical': True,
+                'captured': captured, 'identity': captured.identity,
+                'systems': captured.system_snapshot, 'definitions': deepcopy(captured.requirements)}
     section = section_assignment(team.semester_id, team.section, team.year_level)
     if not section:
         return None
@@ -63,6 +81,8 @@ def resolve(team, context):
             raise ValidationError('This team has different approved shared systems. Resolve its project assignment first.')
         project = approved[0][0] if approved else None
     hearing = services.latest(project) if project else None
+    if historical and hearing and current_project:
+        return for_round(hearing, historical=True)
     pending_import = None
     if not project and (not section.system_name.strip() or not section.project_manager_id):
         return None
@@ -393,10 +413,10 @@ def completion_summary(profile, dtype='post'):
         'requirements': requirements, **document_progress(profile, dtype)}
 
 
-def for_round(hearing):
+def for_round(hearing, *, historical=False):
     link = services.active_links(hearing.project).first()
     latest = services.latest(hearing.project)
-    if link and latest and latest.pk == hearing.pk:
+    if not historical and link and latest and latest.pk == hearing.pk:
         return resolve(link.team, hearing.project.context)
     # Completed rounds keep their original evidence after a new project/round.
     # This projection never reconnects old teams to new work.

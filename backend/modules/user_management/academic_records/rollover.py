@@ -117,7 +117,24 @@ def confirm_rollover(actions, default_semester):
         pk__in=target_ids_by_row,
     ).select_related('school_year').order_by('pk')}
     created, skipped = [], []
+    applied_defaults = {}
     seen = set()
+    from student_teams.continuation_sections import section_decisions
+    section_groups = {}
+    for index, item in enumerate(actions):
+        if item['action'] in ('retain', 'drop'):
+            continue
+        target = targets.get(target_ids_by_row[index])
+        record = records.get(item.get('record_id'))
+        user = users_by_name.get(record.student.username if record else item.get('username'))
+        record = record or (latest.get(user.pk) if user else None)
+        if user and target:
+            year = normalize_year_level(item.get('year_level')) or (
+                next_rollover_semester(record)[0] if record else YEAR_LEVELS[0])
+            years, sections = section_groups.setdefault(target.pk, ({}, {}))
+            years[user.pk], sections[user.pk] = year, clean_spaces(item.get('section'))
+    section_defaults = {pk: section_decisions(targets[pk], years, sections)
+        for pk, (years, sections) in section_groups.items()}
 
     for index, item in enumerate(actions):
         def invalid(message):
@@ -172,6 +189,18 @@ def confirm_rollover(actions, default_semester):
                 else:
                     target_year = YEAR_LEVELS[0]
             target_section = clean_spaces(item.get('section')) if 'section' in item else (record.section if record else '')
+            decision = section_defaults.get(target.pk, {}).get(user.pk) if user else None
+            expected = item.get('section_resolution')
+            if expected and decision and any(expected.get(key) != decision.get(key)
+                    for key in ('section', 'source', 'team_id')):
+                invalid('Section assignments changed. Refresh the rollover preview before confirming.')
+            if decision and decision.get('team_id'):
+                target_section = decision['section']
+                if decision['source'] == 'inferred':
+                    applied_defaults.setdefault(target.pk, {})[user.pk] = target_section
+            from student_teams.section_years import enrollment_section_issue
+            if enrollment_section_issue(target_section, target_year, target) and 'section' not in item:
+                target_section = ''
         if target_year not in YEAR_LEVELS:
             invalid('Year level must be 1st Year, 2nd Year, 3rd Year or 4th Year.')
         if user is None:
@@ -191,6 +220,7 @@ def confirm_rollover(actions, default_semester):
     # Enrollment reconciliation never migrates a team or creates a Capstone participation.
     from student_teams.participation import reconcile_enrollment_sections
     for term_id in {r.semester_id for r in created}:
-        reconcile_enrollment_sections(targets[term_id], {r.student_id for r in created if r.semester_id == term_id})
+        reconcile_enrollment_sections(targets[term_id], {r.student_id for r in created if r.semester_id == term_id},
+            applied_defaults=applied_defaults.get(term_id))
     team_updates = 0
     return created, skipped, team_updates

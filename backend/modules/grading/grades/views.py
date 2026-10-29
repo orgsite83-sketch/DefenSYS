@@ -18,6 +18,7 @@ from authentication_access_control.scopes import grade_records_for, manageable_g
 from authentication_access_control.workspaces import workspace_grades_for
 from user_management.permissions import IsSystemAdmin, CanManageModule
 from .models import TeamGrade
+from academic_period_management.models import Semester
 from .serializers import TeamGradeSerializer, TeamGradeUpdateSerializer
 from django.core.exceptions import PermissionDenied, ValidationError as DjangoValidationError
 
@@ -51,6 +52,8 @@ def _is_grade_center_admin(user):
 
 
 def filter_grade_queryset(request, queryset):
+    semester = selected_grade_semester(request)
+    queryset = queryset.filter(semester=semester) if semester else queryset.none()
     search = request.query_params.get('search', '').strip()
     year_level = request.query_params.get('year_level', '').strip()
     status_filter = request.query_params.get('status', '').strip()
@@ -85,6 +88,15 @@ def filter_grade_queryset(request, queryset):
             queryset = queryset.filter(scope=scope)
 
     return queryset
+
+
+def selected_grade_semester(request):
+    if request.query_params.get('semester_id'):
+        from academic_period_management.models import Semester
+        from rest_framework.serializers import IntegerField
+        return get_object_or_404(Semester, pk=IntegerField(min_value=1).run_validation(
+            request.query_params['semester_id']))
+    return active_semester()
 
 
 def counts_payload(base_queryset, current_queryset=None):
@@ -149,25 +161,46 @@ def options_payload(queryset):
 
 def grade_center_payload(request, queryset=None, sync_info=None):
     raw_base = workspace_grades_for(request.user, request.query_params.get('workspace'))
+    semester = selected_grade_semester(request)
+    available_terms = set(raw_base.values_list('semester_id', flat=True))
+    from defense.scheduler.event_scope import pit_events_for_user
+    available_terms.update(pit_events_for_user(request.user).values_list('semester_id', flat=True))
+    active = active_semester()
+    if active:
+        available_terms.add(active.pk)
+    raw_base = raw_base.filter(semester=semester) if semester else raw_base.none()
     base = without_stale_unscheduled_placeholders(grade_review_queryset(raw_base))
     current = without_stale_unscheduled_placeholders(
         grade_review_queryset(queryset if queryset is not None else raw_base)
     )
-    semester = active_semester()
     payload = {
         'grades': TeamGradeSerializer(current, many=True).data,
         'counts': counts_payload(base, current),
         'active_semester': SemesterSerializer(semester).data if semester else None,
+        'selected_semester_id': semester.pk if semester else None,
+        'history_semesters': [{'id': t.pk, 'label': t.display_name} for t in
+            Semester.objects
+                .filter(pk__in=available_terms).select_related('school_year')
+                .exclude(pk=active.pk if active else None)
+                .order_by('-school_year__label', 'label')],
         'group_settings': build_group_settings_map(current, semester, user=request.user),
         **options_payload(base),
     }
     if CanManageModule().has_permission(request, None):
         from authentication_access_control.scopes import is_admin_user
         active_stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')) if is_admin_user(request.user) else []
+        if active_stages and semester:
+            from authentication_access_control.workspaces import workspace_teams_for
+            from student_teams.capstone_lifecycle import teams_in_recorded_term, recorded_team
+            from student_teams.capstone_context import phase_requirements
+            teams = teams_in_recorded_term(workspace_teams_for(request.user,
+                request.query_params.get('workspace')).filter(level__icontains='Capstone'), semester)
+            applicable = {r['id'] for team in teams for r in phase_requirements(recorded_team(team, semester))}
+            active_stages = [s for s in active_stages if s.pk in applicable]
         payload['capstone_stages'] = DefenseStageSerializer(
             active_stages,
             many=True,
-            context={'ordered_stages': active_stages},
+            context={'ordered_stages': active_stages, 'semester': semester},
         ).data
         if semester:
             from defense.scheduler.models import PitEventGradingConfig

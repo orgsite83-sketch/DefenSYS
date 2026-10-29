@@ -15,7 +15,9 @@ Map<String, dynamic> buildStudentRolloverAction(
     'email': record['student_email'],
     'action': action,
     'year_level': result['year_level'],
-    'section': result['section'],
+    if (result['section_automatic'] != true) 'section': result['section'],
+    if (result['section_resolution'] is Map)
+      'section_resolution': result['section_resolution'],
     'target_semester_id': result['target_semester_id'],
   };
 }

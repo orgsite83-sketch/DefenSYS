@@ -186,7 +186,13 @@ def capture_participation(team, *, requirements=None):
     row.project_version = team.project_version
     row.is_extended = False
     row.requirements = requirements if requirements is not None else requirements_for(team)
+    baseline = row.snapshot.get('inherited_stage_ids')
+    section_policy = row.snapshot.get('continuation_sections')
     row.snapshot = team_snapshot(team)
+    if baseline is not None:
+        row.snapshot['inherited_stage_ids'] = baseline
+    if section_policy is not None:
+        row.snapshot['continuation_sections'] = section_policy
     row.save()
     return row
 
@@ -206,9 +212,17 @@ def historical_payload(row):
             .order_by('project_version', 'id').values('id', 'project_version', 'project_title_snapshot',
                 'defense_stage_id', 'stage_label', 'status', 'verdict', 'final_grade'))})
     from .participation import member_participation
+    from user_management.academic_records.models import StudentAcademicRecord
+    from .capstone_context import phase_for, phase_label
+    enrolled = set(StudentAcademicRecord.objects.filter(semester=row.semester,
+        student_id__in=payload.get('member_ids', [])).values_list('student_id', flat=True))
     payload['members'] = [dict(member, id=member['student_id'],
+        is_enrolled=member['student_id'] in enrolled,
         capstone_participation=member_participation(row.team, member['student_id']))
         for member in payload.get('members', [])]
+    payload['phase'] = phase_for(row.team, row.semester)
+    payload['phase_label'] = phase_label(payload['phase'])
+    payload['record_key'] = f'{row.team_id}:{row.semester_id}'
     return payload
 
 
@@ -220,6 +234,7 @@ def build_capstone_review(source, target):
     from django.contrib.auth import get_user_model
     from defense.scheduler.models import DefenseSchedule
     from repository.deliverables.models import DeliverableSubmission, DeliverableSubmissionFile
+    from .section_years import enrollment_section_issue
     kind = transition_kind(source, target)
     teams = StudentTeam.objects.filter(semester=source, level__icontains='Capstone') if source else StudentTeam.objects.none()
     rows, fingerprints = [], []
@@ -264,6 +279,8 @@ def build_capstone_review(source, target):
                     reason = 'A continuing member has an inactive or invalid student account.'
                 elif any(r['year_level'] != '4th Year' for r in enrollment):
                     reason = 'An existing destination enrollment does not match fourth-year continuation.'
+                elif any(enrollment_section_issue(r['section'], r['year_level'], target) for r in enrollment):
+                    reason = 'An existing destination enrollment section does not match fourth-year continuation.'
                 elif len({r['section'] for r in enrollment if r['section']}) > 1:
                     reason = 'Destination enrollment sections conflict. Review the official roster.'
                 elif target.pk and StudentTeam.objects.filter(semester=target, level__icontains='Capstone').exclude(pk=team.pk).filter(Q(leader_id__in=roster) | Q(memberships__student_id__in=roster)).exists():
@@ -279,6 +296,9 @@ def build_capstone_review(source, target):
         row = {'team_id': team.pk, 'name': team.name, 'project_title': team.project_title,
             'project_version': team.project_version, 'outcome': outcome, 'destination': destination,
             'can_include': can_include, 'pending_enrollment': pending_enrollment, 'reason': reason}
+        if can_include:
+            from .continuation_sections import transition_section_plan
+            row['section_progression'] = transition_section_plan(team, source, target)
         rows.append(row)
         fingerprints.append({'team': team_snapshot(team), 'row': row, 'requirements': requirements,
             'enrollment': enrollment,
@@ -303,9 +323,18 @@ def apply_capstone_transition(source, target, review, *, actor, log):
     if review['kind'] not in ('continue', 'close_cycle'):
         return []
     applied = []
+    # Resolve the complete outgoing cohort before changing any live shared
+    # membership. Otherwise later teams see earlier teams in the new semester.
+    prepared = {}
+    for item in review['teams']:
+        team = StudentTeam.objects.select_for_update(of=('self',)).select_related(
+            'semester__school_year', 'intake_semester__school_year').get(pk=item['team_id'])
+        requirements = requirements_for(team)
+        cleared = [r['id'] for r in requirements if stage_cleared(team, r)] if item['can_include'] else []
+        prepared[team.pk] = (requirements, cleared)
     for item in review['teams']:
         team = StudentTeam.objects.select_for_update(of=('self',)).select_related('semester__school_year', 'intake_semester__school_year', 'leader', 'adviser').get(pk=item['team_id'])
-        requirements = requirements_for(team)
+        requirements, cleared = prepared[team.pk]
         old = team.term_participations.filter(semester=source).first()
         if not old or not old.closed_at:
             old = capture_participation(team, requirements=requirements)
@@ -318,19 +347,39 @@ def apply_capstone_transition(source, target, review, *, actor, log):
             team.refresh_from_db()
             team.semester = target
             team.level, team.year_level = StudentTeam.LEVEL_4_CAPSTONE, '4th Year'
+            # Save the destination team with its destination section in the same
+            # write; a carried third-year label is never a valid temporary state.
+            from .section_years import capstone_section_issue
+            section_plan = item['section_progression']
+            if section_plan['section']:
+                team.section = section_plan['section']
+            elif capstone_section_issue(team.section, team.year_level):
+                team.section = ''
             team.capstone_phase = StudentTeam.PHASE_ACTIVE
-            next_stage = next((r for r in requirements if not stage_cleared(team, r)), None)
+            next_stage = next((r for r in requirements if r['id'] not in cleared), None)
             from defense.stages.models import DefenseStage
             team.current_defense_stage = (DefenseStage.objects.filter(pk=next_stage['id']).values_list('label', flat=True).first() or next_stage['label']) if next_stage else None
             team.ready_for_stage = None
             team.save()
             new = capture_participation(team, requirements=requirements)
             new.transition = log
-            new.save(update_fields=['transition', 'updated_at'])
+            new.snapshot['inherited_stage_ids'] = cleared
+            new.save(update_fields=['snapshot', 'transition', 'updated_at'])
+            from .continuation_sections import apply_transition_sections
+            apply_transition_sections(team, source, target, new,
+                item['section_progression'], actor=actor)
+            from .history_events import record_team_event
+            record_team_event(team, 'capstone.continued', actor=actor,
+                old_values={'semester_id': source.pk, 'phase': 'capstone_1'},
+                values={'source_semester_id': source.pk, 'destination_semester_id': target.pk,
+                    'transition_id': log.pk, 'inherited_stage_ids': cleared, 'phase': 'capstone_2'})
             applied.append(team.pk)
         elif item['outcome'] in ('failed', 'completed'):
             from .participation import close_placements
             close_placements(team, item['outcome'])
+            from .history_events import record_team_event
+            record_team_event(team, 'capstone.participation_closed', actor=actor,
+                values={'outcome': item['outcome'], 'transition_id': log.pk})
     return applied
 
 

@@ -51,14 +51,20 @@ def grade_configuration_lock(context, semester=None):
         schedules = DefenseSchedule.objects.filter(semester=context.semester, scope='pit',
             team__year_level=context.year_level, event_name__iexact=context.event_name)
     else:
-        # A stage's requirement definitions are global, so earlier semesters and
-        # earlier project versions must also keep that configuration protected.
-        if context.grading_configs.filter(is_officially_complete=True).exists():
+        configs = context.grading_configs.all()
+        if semester is not None:
+            configs = configs.filter(semester=semester)
+        # No semester means structural protection across all historical uses.
+        # Explicit semester means only that term's grading weights and rubrics.
+        if configs.filter(is_officially_complete=True).exists():
             return True, 'This stage is officially complete.'
         grades = TeamGrade.all_objects.filter(
             Q(defense_stage=context) | Q(defense_stage__isnull=True, scope='capstone',
                                         stage_label__iexact=context.label))
         schedules = DefenseSchedule.objects.filter(defense_stage=context)
+        if semester is not None:
+            grades = grades.filter(semester=semester)
+            schedules = schedules.filter(semester=semester)
     scored = Q(verdict__gt='') | Q(published_at__isnull=False) | ~Q(status=TeamGrade.STATUS_PENDING)
     for prefix in ('', 'student_grades__', 'attempt_history__'):
         for field in ('panel_score', 'adviser_score', 'peer_score', 'final_grade'):

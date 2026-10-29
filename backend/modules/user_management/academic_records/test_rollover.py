@@ -25,7 +25,9 @@ class RolloverRegressionTests(APITestCase):
         self.next_first = Semester.objects.create(school_year=self.next_year, label=Semester.FIRST)
         self.client.force_authenticate(self.admin)
 
-    def record(self, student=None, semester=None, year='1st Year', section='BSIT-1A'):
+    def record(self, student=None, semester=None, year='1st Year', section=None):
+        if section is None:
+            section = f'BSIT-{year[0]}A'
         return StudentAcademicRecord.objects.create(
             student=student or self.student, semester=semester or self.first,
             year_level=year, section=section)

@@ -11,6 +11,7 @@ import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/screens/web/admin/defense_stages/widgets/defense_stage_directory.dart';
 import 'package:defensys/screens/web/admin/defense_stages/widgets/stage_setup_confirmation.dart';
+import '../helpers/capture_preview.dart';
 
 const stages = <Map<String, dynamic>>[
   {
@@ -121,6 +122,61 @@ void main() {
     );
   });
 
+  for (final (width, dark) in [(320.0, false), (1440.0, false), (1440.0, true)]) {
+    testWidgets(
+      'phase containers keep the empty continuation and recorded term at $width dark=$dark',
+      (tester) async {
+        Map<String, dynamic>? opened;
+        await loadPreviewFonts();
+        await pumpDirectory(
+          tester,
+          width: width,
+          dark: dark,
+          state: DefenseStagesState(
+            stages: stages,
+            phaseGroups: [
+              {
+                'phase_label': 'Capstone 1',
+                'display_semester': '2nd Semester, A.Y. 2025–2026',
+                'read_only': true,
+                'stages': [
+                  {
+                    ...stages.first,
+                    'semester_id': 3,
+                    'history_read_only': true,
+                  },
+                ],
+              },
+              {
+                'phase_label': 'Capstone 2',
+                'display_semester': '1st Semester, A.Y. 2026–2027',
+                'read_only': false,
+                'stages': <Map<String, dynamic>>[],
+              },
+            ],
+          ),
+          configure: (stage) => opened = stage,
+        );
+        expect(find.text('Capstone 1'), findsOneWidget);
+        expect(find.text('Capstone 2'), findsOneWidget);
+        expect(find.text('Awaiting stage setup'), findsOneWidget);
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('stage-configure-1')),
+        );
+        await tester.tap(find.byKey(const ValueKey('stage-configure-1')));
+        expect(opened?['semester_id'], 3);
+        expect(opened?['history_read_only'], isTrue);
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('directory-preview')),
+          'capstone-phase-containers-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+      },
+    );
+  }
+
   testWidgets(
     'scheduled stage remains Published with an explicit lock reason',
     (tester) async {
@@ -148,7 +204,7 @@ void main() {
       expect(find.text('Concept evaluation'), findsOneWidget);
       expect(find.text('Signed Minutes - Concept Proposal'), findsOneWidget);
       expect(tester.widgetList<SetupRubricCard>(find.byType(SetupRubricCard))
-        .map((card) => card.role), ['panel', 'adviser', 'peer']);
+        .map((card) => card.role), ['panel', 'adviser', 'peer'],);
       expect(find.byType(SetupRequirementGroup), findsNWidgets(3));
       await tester.tap(find.byKey(const ValueKey('stage-requirements-1')));
       await tester.pumpAndSettle();
@@ -254,7 +310,7 @@ void main() {
     final emptyCenter = tester.getCenter(emptyState).dx;
     expect(
       tester
-          .getCenter(find.descendant(of: emptyState, matching: find.byType(Icon)))
+          .getCenter(find.descendant(of: emptyState, matching: find.byType(Icon)),)
           .dx,
       closeTo(emptyCenter, 1),
     );

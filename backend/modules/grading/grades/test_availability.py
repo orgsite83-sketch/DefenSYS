@@ -184,6 +184,41 @@ class EvaluationAvailabilityTests(APITestCase):
         self.grade.refresh_from_db()
         self.assertIn('previous project', peer_grading_unavailable_reason(self.grade))
 
+    def test_calendar_switch_closes_submissions_without_waiving_missing_grades(self):
+        from academic_period_management.models import SchoolYear, Semester
+        from academic_period_management.services import build_semester_transition_preview, switch_active_semester
+        from rest_framework.exceptions import ValidationError
+        self.panel()
+        self.assertEqual(peer_grading_unavailable_reason(self.grade), '')
+        self.assertEqual(adviser_grading_unavailable_reason(self.grade), '')
+        original = TeamGrade.all_objects.filter(pk=self.grade.pk).values().get()
+        year = SchoolYear.objects.create(label='2027-2028')
+        target = Semester.objects.create(school_year=year, label=Semester.FIRST,
+            starts_on='2000-01-01', ends_on='2199-12-31')
+        preview = build_semester_transition_preview(target)
+        self.assertFalse(preview['can_switch'])
+        self.assertGreater(preview['impact_counts']['pending_grades'], 0)
+        self.assertFalse(any(issue['key'] in ('capstone_peer_evaluation_enabled',
+            'capstone_adviser_grading_enabled') for issue in preview['issues']))
+        with self.assertRaises(ValidationError):
+            switch_active_semester(target, self.admin, preview_revision=preview['preview_revision'])
+        self.semester.refresh_from_db()
+        self.assertTrue(self.semester.is_active)
+        switch_active_semester(target, self.admin, force=True, reason='Approved calendar exception',
+            preview_revision=preview['preview_revision'])
+        self.semester.refresh_from_db()
+        self.assertFalse(self.semester.is_active)
+        self.assertTrue(self.semester.capstone_peer_evaluation_enabled)
+        self.assertTrue(self.semester.capstone_adviser_grading_enabled)
+        peer = self.peer()
+        adviser = self.submit_adviser()
+        self.assertEqual(peer.status_code, 400, peer.data)
+        self.assertEqual(adviser.status_code, 400, adviser.data)
+        self.assertIn('active academic term', str(peer.data))
+        self.assertIn('active academic term', str(adviser.data))
+        self.assertEqual(TeamGrade.all_objects.filter(pk=self.grade.pk).values().get(), original)
+        self.assertFalse(PeerEvaluationSubmission.objects.filter(team_grade=self.grade).exists())
+
     def test_redefense_does_not_open_peer_using_old_panel_scores(self):
         self.panel()
         self.grade.peer_score = Decimal('80')

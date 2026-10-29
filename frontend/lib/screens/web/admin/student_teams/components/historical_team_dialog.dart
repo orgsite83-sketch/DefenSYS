@@ -127,6 +127,60 @@ Future<void> showHistoricalTeam(
                           ),
                         ),
                       const SizedBox(height: 10),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text('Submitted files for this stage'),
+                        children: [
+                          if ((team['files'] as List? ?? []).isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                'No recorded files for this selection.',
+                              ),
+                            ),
+                          for (final file
+                              in (team['files'] as List? ?? [])
+                                  .whereType<Map>())
+                            ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                '${file['label']} · ${file['status']}',
+                              ),
+                              subtitle: Text(
+                                '${file['file_name']} · Project version ${file['project_version']}',
+                              ),
+                            ),
+                        ],
+                      ),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text('Recorded activity'),
+                        children: [
+                          if ((team['timeline'] as List? ?? []).isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                'No recorded activity is available for this selection.',
+                              ),
+                            ),
+                          for (final event
+                              in (team['timeline'] as List? ?? [])
+                                  .whereType<Map>())
+                            ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                '${event['action']}'
+                                    .replaceAll('capstone.', '')
+                                    .replaceAll('_', ' '),
+                              ),
+                              subtitle: Text(
+                                '${event['recorded_at']} · ${event['actor']}',
+                              ),
+                            ),
+                        ],
+                      ),
                       Text(
                         'This record preserves the earlier project and outcome even when the team is active in another term.',
                         style: TextStyle(

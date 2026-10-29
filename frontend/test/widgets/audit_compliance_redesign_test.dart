@@ -108,6 +108,9 @@ class FakeStudentTeamsNotifier extends StudentTeamsNotifier {
 
   @override
   Future<void> fetchTeams({
+    String? historyIntake,
+    String? historyPhase,
+    String? historyStage,
     String? workspace,
     String? search,
     String? level,
@@ -127,7 +130,11 @@ class FakeDefenseStagesNotifier extends DefenseStagesNotifier {
   DefenseStagesState build() => const DefenseStagesState();
 
   @override
-  Future<void> fetchStages({String? successMessage}) async {}
+  Future<void> fetchStages({String? scope,
+    String? intake,
+    String? phase,
+    String? stage,
+    String? successMessage,}) async {}
 }
 
 class FakeGradeCenterNotifier extends GradeCenterNotifier {
@@ -136,6 +143,7 @@ class FakeGradeCenterNotifier extends GradeCenterNotifier {
 
   @override
   Future<void> fetchGrades({
+    String? historySemester,
     String? search,
     String? level,
     String? stage,
@@ -302,7 +310,7 @@ void main() {
     selectedLog: mockAuditLogs.first,
   );
 
-  testWidgets('Audit quick export downloads a formatted Excel workbook', (tester) async {
+  testWidgets('Audit quick export downloads a formatted Excel workbook', (tester,) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -311,8 +319,9 @@ void main() {
       tester,
       const AuditComplianceScreen(),
       overrides: [
-        authProvider.overrideWith(() => FakeAuthNotifier({'id': 1, 'role': 'admin'})),
-        systemAuditProvider.overrideWith(() => FakeSystemAuditNotifier(mockAuditState.copyWith(search: 'rubric', track: 'capstone'))),
+        authProvider.overrideWith(() => FakeAuthNotifier({'id': 1, 'role': 'admin'}),),
+        systemAuditProvider.overrideWith(() => FakeSystemAuditNotifier(mockAuditState.copyWith(search: 'rubric', track: 'capstone'),
+          ),),
         reportsProvider.overrideWith(() => reports),
       ],
     );

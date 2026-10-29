@@ -29,6 +29,7 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'components/student_teams_bulk_import.dart';
 import 'components/student_teams_grid.dart';
 import 'components/student_teams_stage_summary.dart';
+import '../../../../widgets/academic/capstone_history_filters.dart';
 import 'components/student_teams_toolbar.dart';
 import 'dialogs/advisor_assignment_modal.dart';
 import 'dialogs/create_team_modal.dart';
@@ -130,7 +131,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         return lvl.contains('capstone');
       }).toList();
       final counts = Map<String, dynamic>.from(state.counts);
-      counts['all'] = capstoneTeams.length;
+      counts['all'] = capstoneTeams.map((t) => t['id']).toSet().length;
       counts['filtered'] = capstoneTeams.length;
       counts['pending'] = capstoneTeams
           .where(
@@ -1119,6 +1120,13 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                   reportId: 'team-roster',
                   params: {
                     'term_context': _teamListScope,
+                    'level': displayState.level,
+                    if (_teamListScope == 'history' &&
+                        displayState.level == 'Capstone') ...{
+                      'intake_id': displayState.historyIntake,
+                      'phase': displayState.historyPhase,
+                      'stage_key': displayState.historyStage,
+                    },
                     if (_section != null) 'section': _section!,
                     'roster_view': 'current',
                     if (displayState.eventName != null)
@@ -1204,6 +1212,24 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                     );
               },
             ),
+            if (_teamListScope == 'history' &&
+                !_isPitContext(displayState)) ...[
+              const SizedBox(height: 12),
+              CapstoneHistoryFilters(
+                options: displayState.capstoneHistory,
+                intake: displayState.historyIntake,
+                phase: displayState.historyPhase,
+                stage: displayState.historyStage,
+                enabled: !displayState.isSaving,
+                onChanged: (intake, phase, stage) => ref
+                    .read(studentTeamsProvider.notifier)
+                    .fetchTeams(
+                      historyIntake: intake,
+                      historyPhase: phase,
+                      historyStage: stage,
+                    ),
+              ),
+            ],
           ],
           if (_savedDraft != null && !_isBulkImportVisible) ...[
             const SizedBox(height: 14),

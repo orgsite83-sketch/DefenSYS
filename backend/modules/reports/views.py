@@ -500,12 +500,22 @@ class TeamRosterReportView(ReportAPIView):
                 if search and search.casefold() not in ' '.join(str(data.get(key, '')) for key in ('name', 'project_title', 'leader_name', 'adviser_name')).casefold():
                     continue
                 teams.append(recorded_team(record.team, record.semester))
+        if term_context == 'history' and request.query_params.get('intake_id'):
+            from student_teams.capstone_history import history_payload, history_teams_for
+            from copy import copy
+            candidates = history_teams_for(request.user)
+            scoped = history_payload(candidates, request.query_params, user=request.user)
+            by_id = {t.pk: t for t in candidates}
+            terms = {t.pk: t for t in Semester.objects.select_related('school_year')}
+            teams = [copy(recorded_team(by_id[r['id']], terms[r['semester_id']])) for r in scoped['teams']]
         generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
-        
-        total_members_count = sum(len(t._recorded_term.snapshot.get('members', [])) if hasattr(t, '_recorded_term') else t.memberships.count() for t in teams)
+
+        total_members_count = len({student_id for t in teams for student_id in (
+            t._recorded_term.snapshot.get('member_ids', []) if hasattr(t, '_recorded_term') else
+            t.memberships.values_list('student_id', flat=True))})
 
         summary_kpis = [
-            {'label': 'Total Teams', 'value': str(len(teams))},
+            {'label': 'Total Teams', 'value': str(len({t.pk for t in teams}))},
             {'label': 'Total Enrolled Students', 'value': str(total_members_count)},
             {'label': 'Academic Period', 'value': f"{semester.school_year.label} {semester.label}" if semester else "All Semesters"},
         ]

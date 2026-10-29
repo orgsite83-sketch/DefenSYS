@@ -23,6 +23,18 @@ from .serializers import (
 )
 
 
+def record_setup_event(stage, request, action, *, semester=None, old_values=None, values=None):
+    from authentication_access_control.audit import log_high_impact_action
+    from authentication_access_control.models import SystemAuditLog
+    semester = semester or resolve_semester()
+    log_high_impact_action(category=SystemAuditLog.CATEGORY_RUBRICS,
+        action=action, target=stage, request=request, strict=True, old_values=old_values,
+        new_values={'scope': 'capstone', 'defense_stage_id': stage.pk,
+            'stage_label': stage.label, 'semester_id': semester.pk if semester else None,
+            'actor_snapshot': {'id': request.user.pk,
+                'name': request.user.get_full_name() or request.user.username}, **(values or {})})
+
+
 def normalize_stage_orders():
     """Ensure all defense stages have contiguous, unique display_order values (1, 2, 3...)."""
     stages = list(DefenseStage.objects.all().order_by('display_order', 'id'))
@@ -33,7 +45,6 @@ def normalize_stage_orders():
 
 
 def ordered_stages(include_inactive=True):
-    normalize_stage_orders()
     queryset = DefenseStage.objects.all()
     if not include_inactive:
         queryset = queryset.filter(is_active=True)
@@ -78,7 +89,32 @@ class DefenseStageListCreateView(APIView):
 
     def get(self, request):
         semester = resolve_semester(request.query_params.get('semester_id'))
-        return Response(stage_list_payload(semester))
+        payload = stage_list_payload(semester)
+        from student_teams.capstone_history import history_payload, history_teams_for
+        history = history_payload(history_teams_for(request.user), request.query_params, user=request.user)
+        payload['capstone_history'] = history['capstone_history']
+        grouped = {}
+        for row in history['teams']:
+            term_id = row['semester_id']
+            group = grouped.setdefault(term_id, {'semester_id': term_id,
+                'phase': row['phase'], 'phase_label': row['phase_label'],
+                'display_semester': row['display_semester'], 'stage_ids': set(),
+                'read_only': request.query_params.get('scope') == 'history' or not semester or term_id != semester.pk})
+            group['stage_ids'].update(r['id'] for r in row['stage_requirements'])
+        for group in grouped.values():
+            term = Semester.objects.select_related('school_year').get(pk=group['semester_id'])
+            ids = group.pop('stage_ids')
+            selected = request.query_params.get('stage_key', '')
+            if selected:
+                ids = {i for i in ids if f'{term.pk}:{i}' == selected}
+            stages = list(DefenseStage.objects.filter(pk__in=ids).order_by('display_order', 'pk'))
+            group['stages'] = [{**s, 'semester_id': term.pk,
+                'history_read_only': group['read_only']} for s in DefenseStageSerializer(stages, many=True,
+                    context={'semester': term, 'ordered_stages': ordered_stages()}).data]
+        payload['phase_groups'] = list(grouped.values())
+        if request.query_params.get('scope') == 'history' and not grouped:
+            payload.update(stages=[], active_stages=[], counts={'total': 0, 'active': 0, 'inactive': 0})
+        return Response(payload)
 
     def post(self, request):
         from .serializers import check_stage_structure_locked as check_stage_locked
@@ -116,6 +152,9 @@ class DefenseStageListCreateView(APIView):
                 DefenseStage.objects.filter(pk=s.pk).update(display_order=index)
             stage.refresh_from_db()
 
+            record_setup_event(stage, request, 'capstone.stage_created',
+                values={'display_order': stage.display_order})
+
         return Response(
             {
                 'stage': DefenseStageSerializer(
@@ -130,7 +169,7 @@ class DefenseStageListCreateView(APIView):
 
 def _stage_detail_payload(stage, request):
     semester = resolve_semester(request.query_params.get('semester_id'))
-    config = get_or_create_stage_grading_config(stage, semester) if semester else None
+    config = stage.grading_configs.filter(semester=semester).first() if semester else None
     payload = {
         'stage': DefenseStageSerializer(
             stage,
@@ -440,12 +479,13 @@ class StageGradingConfigView(APIView):
                 {'semester_id': 'No active semester is configured.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        config = get_or_create_stage_grading_config(stage, semester)
+        config = stage.grading_configs.filter(semester=semester).first()
         return Response({
-            'grading_config': StageGradingConfigSerializer(config).data,
+            'grading_config': StageGradingConfigSerializer(config).data if config else grading_config_payload(None),
             'active_semester': SemesterSerializer(semester).data,
         })
 
+    @transaction.atomic
     def patch(self, request, stage_id):
         stage = get_object_or_404(DefenseStage, pk=stage_id)
         semester = resolve_semester(request.query_params.get('semester_id'))
@@ -455,12 +495,19 @@ class StageGradingConfigView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         config = get_or_create_stage_grading_config(stage, semester)
+        before = dict(StageGradingConfigSerializer(config).data)
         serializer = StageGradingConfigWriteSerializer(
             data=request.data,
             context={'config': config},
         )
         serializer.is_valid(raise_exception=True)
         config = serializer.save()
+        after = dict(StageGradingConfigSerializer(config).data)
+        comparable_before = {k: v for k, v in before.items() if k != 'updated_at'}
+        comparable_after = {k: v for k, v in after.items() if k != 'updated_at'}
+        if comparable_before != comparable_after:
+            record_setup_event(stage, request, 'capstone.grading_configuration_changed',
+                semester=semester, old_values=before, values={'configuration': after})
         return Response({
             'grading_config': StageGradingConfigSerializer(config).data,
             'active_semester': SemesterSerializer(semester).data,

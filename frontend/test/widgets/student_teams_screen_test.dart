@@ -18,6 +18,9 @@ class _FakeStudentTeamsNotifier extends StudentTeamsNotifier {
 
   @override
   Future<void> fetchTeams({
+    String? historyIntake,
+    String? historyPhase,
+    String? historyStage,
     String? workspace,
     String? search,
     String? level,
@@ -309,7 +312,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('STAGE & DELIVERABLES'), findsOneWidget);
     expect(find.text('Ready to schedule'), findsNWidgets(2));
-    expect(find.text('Stage passed'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
     expect(find.text('View'), findsNWidgets(4));
   });
 
