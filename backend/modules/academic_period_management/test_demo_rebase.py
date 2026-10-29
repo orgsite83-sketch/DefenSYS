@@ -11,8 +11,8 @@ from rest_framework.exceptions import APIException
 from authentication_access_control.models import SystemAuditLog
 from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig
 from grading.grades.models import TeamGrade
-from student_teams.capstone_lifecycle import cohort_context
-from student_teams.models import (CapstoneJourney, PITSectionRoster, SectionAssignment,
+from student_teams.participation import intake_for
+from student_teams.models import (HistoricalCapstoneJourney, PITSectionRoster, SectionAssignment,
     StudentTeam, TeamMembership, TeamTermParticipation)
 from user_management.academic_records.models import StudentAcademicRecord
 from user_management.models import SectionInstructorAssignment
@@ -62,7 +62,7 @@ class DemoRebaseTests(TestCase):
     def test_preview_changes_nothing_and_apply_moves_pit_and_capstone_together(self):
         preview = rebase_demo_term(**self.kwargs)
         self.assertFalse(preview['applied'])
-        self.assertFalse(CapstoneJourney.objects.exists())
+        self.assertFalse(HistoricalCapstoneJourney.objects.exists())
         self.pit.refresh_from_db()
         self.assertEqual(self.pit.semester_id, self.source.pk)
         old_grade = TeamGrade.all_objects.filter(pk=self.grade.pk).values().get()
@@ -87,10 +87,7 @@ class DemoRebaseTests(TestCase):
         self.assertEqual(self.participation.snapshot['school_year'], self.year.label)
         self.assertEqual(self.participation.snapshot['project_title'], 'Keep title')
         self.assertEqual(self.participation.snapshot['semester_id'], self.target.pk)
-        context = cohort_context(self.capstone)
-        self.assertEqual(context['intake'].pk, self.target.pk)
-        self.assertEqual(context['normal_year'], '2026-2027')
-        self.assertEqual(context['end_year'], '2027-2028')
+        self.assertEqual(intake_for(self.capstone).pk, self.target.pk)
         current_grade = TeamGrade.all_objects.filter(pk=self.grade.pk).values().get()
         self.assertEqual({**old_grade, 'semester_id': self.target.pk}, current_grade)
         self.assertEqual(get_user_model().objects.get(pk=self.student.pk).password, password_before)
@@ -117,8 +114,8 @@ class DemoRebaseTests(TestCase):
             rebase_demo_term(**self.kwargs)
         self.participation.closed_at = None
         self.participation.save(update_fields=['closed_at'])
-        CapstoneJourney.objects.create(team=self.capstone, intake_semester=self.source,
-            normal_completion_year='2025-2026', extension_end_year='2026-2027')
+        HistoricalCapstoneJourney.objects.bulk_create([HistoricalCapstoneJourney(team=self.capstone, intake_semester=self.source,
+            normal_completion_year='2025-2026', extension_end_year='2026-2027')])
         with self.assertRaisesRegex(ValueError, 'cohort/assessment'):
             rebase_demo_term(**self.kwargs)
 
@@ -156,4 +153,4 @@ class DemoRebaseTests(TestCase):
         self.assertEqual(self.grade.semester_id, self.source.pk)
         self.assertTrue(self.source.is_active)
         self.assertFalse(self.target.is_active)
-        self.assertFalse(CapstoneJourney.objects.exists())
+        self.assertFalse(HistoricalCapstoneJourney.objects.exists())

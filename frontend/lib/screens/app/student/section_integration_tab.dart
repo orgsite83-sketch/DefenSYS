@@ -188,6 +188,9 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
           _sharedGroups = groups;
           if (!groups.any((group) => group['stage_label'] == _sharedStage)) {
             final current =
+                groups
+                    .where((group) => group['stage_status'] == 'current')
+                    .firstOrNull?['stage_label'] ??
                 widget.studentData['team']?['current_defense_stage'] ??
                 p?['stage_label'];
             _sharedStage =
@@ -369,26 +372,6 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                       ),
                     ],
                     const SizedBox(height: 24),
-                    if (_sharedGroups.length > 1) ...[
-                      DropdownButtonFormField<String>(
-                        initialValue: _sharedStage,
-                        decoration: const InputDecoration(
-                          labelText: 'Stage / event',
-                          isDense: true,
-                        ),
-                        items: _sharedGroups
-                            .map(
-                              (group) => DropdownMenuItem<String>(
-                                value: '${group['stage_label']}',
-                                child: Text('${group['stage_label']}'),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) =>
-                            setState(() => _sharedStage = value),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
                     if (showConcept) _buildSystemToolbar(systems),
                     const SizedBox(height: 16),
                     if (sharedGroup != null)
@@ -1450,8 +1433,88 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
               color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
+          if (_sharedGroups.length > 1) ...[
+            const SizedBox(height: 14),
+            _buildStageNavigation(),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildStageNavigation() {
+    return ShadTabs<String>(
+      key: const ValueKey('shared-stage-navigation'),
+      value: _sharedStage,
+      scrollable: true,
+      tabBarAlignment: Alignment.centerLeft,
+      gap: 0,
+      tabsGap: 4,
+      padding: const EdgeInsets.all(4),
+      decoration: ShadDecoration(
+        color: DefensysTokens.surfaceHigherOf(context),
+        border: ShadBorder.all(
+          color: DefensysTokens.borderOf(context),
+          radius: BorderRadius.circular(8),
+        ),
+      ),
+      onChanged: (value) => setState(() => _sharedStage = value),
+      tabs: [
+        for (final group in _sharedGroups)
+          ShadTab<String>(
+            value: '${group['stage_label']}',
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            selectedBackgroundColor: DefensysTokens.surfaceOf(context),
+            selectedForegroundColor: DefensysTokens.textPrimaryOf(context),
+            foregroundColor: DefensysTokens.textSecondaryOf(context),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${group['stage_label']}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      group['stage_status'] == 'complete'
+                          ? Icons.check_circle_outline
+                          : group['stage_status'] == 'current'
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 11,
+                      color: group['stage_status'] == 'current'
+                          ? DefensysTokens.maroonTextOf(context)
+                          : DefensysTokens.textSecondaryOf(context),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      switch (group['stage_status']) {
+                        'complete' => 'Complete',
+                        'current' => 'Current',
+                        'upcoming' => 'Upcoming',
+                        _ => 'Status unavailable',
+                      },
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: group['stage_status'] == 'current'
+                            ? DefensysTokens.maroonTextOf(context)
+                            : DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 

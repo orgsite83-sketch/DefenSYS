@@ -39,8 +39,6 @@ class NotificationListView(APIView):
 
     def get(self, request):
         qs = workspace_notifications(request).select_related('sender')
-        from defense.scheduler.materials import sync_overdue_notifications
-        sync_overdue_notifications(request.user)
         unread_count = qs.filter(is_read=False).count()
         total_count = qs.count()
 

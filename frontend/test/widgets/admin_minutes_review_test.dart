@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:defensys/screens/web/admin/defense_board/defense_board_screen.dart';
@@ -10,9 +11,12 @@ import 'package:defensys/services/defense_board_provider.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/minutes/minutes_pdf_dialog.dart';
+import 'package:defensys/notifications/minutes_notification_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -103,6 +107,12 @@ class _Scheduler extends DefenseSchedulerNotifier {
   }) async {}
 }
 
+class _FilteredBoard extends _Board {
+  @override
+  DefenseBoardState build() =>
+      super.build().copyWith(schedules: [], scope: 'pit', search: 'other team');
+}
+
 Future<void> _open(
   WidgetTester tester,
   _Client client, {
@@ -191,6 +201,103 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
   });
+
+  for (final legacy in [false, true]) {
+    testWidgets(
+      'admin minutes notification opens the board PDF review (legacy=$legacy)',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        tester.view.physicalSize = const Size(1400, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final lookupRequests = <Uri>[];
+        when(
+          () => client.get(
+            any(
+              that: predicate<Uri>((uri) => uri.path == '/api/defense/board/'),
+            ),
+          ),
+        ).thenAnswer((invocation) async {
+          lookupRequests.add(invocation.positionalArguments.first as Uri);
+          return http.Response(
+            jsonEncode({
+              'schedules': [
+                {
+                  'id': 18,
+                  'team_name': 'Team BioPulse',
+                  'stage_label': 'Concept Proposal',
+                  'status': 'done',
+                  'minutes_status': 'adviser_signed',
+                },
+              ],
+            }),
+            200,
+          );
+        });
+        final board = _FilteredBoard();
+        final router = GoRouter(
+          initialLocation: legacy
+              ? '/admin/defense-board/minutes/18'
+              : '/admin/defense-board?minutes=18&search=other+team',
+          routes: [
+            GoRoute(
+              path: '/admin/defense-board',
+              builder: (_, _) => const Scaffold(body: DefenseBoardScreen()),
+              routes: [legacyMinutesNotificationRoute('admin')],
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              authProvider.overrideWith(() => _Admin()),
+              defenseBoardProvider.overrideWith(() => board),
+              defenseSchedulerProvider.overrideWith(_Scheduler.new),
+              authenticatedHttpClientProvider.overrideWithValue(client),
+            ],
+            child: MaterialApp.router(
+              theme: AppTheme.lightTheme,
+              routerConfig: router,
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        await _waitForPdf(tester);
+        expect(find.byType(MinutesPdfDialog), findsOneWidget);
+        expect(find.byType(MinutesFormScreen), findsNothing);
+        expect(find.text('Sign as chairman'), findsOneWidget);
+        expect(lookupRequests.single.queryParameters, {
+          'schedule_id': '18',
+          'scope': 'capstone',
+          'workspace': 'operations',
+        });
+        expect(requests, ['/api/defense/minutes/18/preview/']);
+        await tester.tap(find.text('Close'));
+        await tester.pumpAndSettle();
+        expect(find.byType(MinutesPdfDialog), findsNothing);
+        expect(
+          router.routeInformationProvider.value.uri.queryParameters.containsKey(
+            'minutes',
+          ),
+          isFalse,
+        );
+        if (!legacy) {
+          expect(
+            router.routeInformationProvider.value.uri.queryParameters['search'],
+            'other team',
+          );
+        }
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(DefenseBoardScreen)),
+        );
+        expect(container.read(defenseBoardProvider).scope, 'pit');
+        expect(container.read(defenseBoardProvider).search, 'other team');
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'chairman badge opens signing PDF and uploads signature without leaving the board',

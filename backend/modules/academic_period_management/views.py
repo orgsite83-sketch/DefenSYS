@@ -313,23 +313,3 @@ class SemesterActivateView(APIView):
         })
 
 
-class ReturningTeamsView(APIView):
-    permission_classes = [IsAuthenticated, IsSystemAdmin]
-
-    def get(self, request, semester_id):
-        from student_teams.capstone_lifecycle import build_capstone_review, returning_source
-        target = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id, is_active=True)
-        review = build_capstone_review(returning_source(target), target, late=True)
-        return Response({'capstone_review': review, 'preview_revision': review['revision'],
-                         'target_semester': SemesterSerializer(target).data,
-                         'issues': [], 'blocking_reasons': [], 'can_switch': True, 'late': True})
-
-    def post(self, request, semester_id):
-        from student_teams.capstone_lifecycle import confirm_returning_teams
-        target = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
-        serializer = SemesterActivationSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        applied = confirm_returning_teams(target, actor=request.user, decisions=data['decisions'],
-            preview_revision=data['preview_revision'], reason=data['reason'], request_id=data.get('request_id'))
-        return Response({'applied_team_ids': applied, 'active_semester': active_semester_payload()})

@@ -182,14 +182,14 @@ void main() {
   );
 
   test(
-    'upload completeness never grants acceptance; defense and archive keep their rules',
+    'upload completeness never grants acceptance; pre-defense review and archive keep their rules',
     () {
       final item = _requirement(count: 2);
       expect(RequirementSummary(item).status, 'Under Review');
       expect(RequirementSummary(item).uploaded, 2);
       item['requirement_timing'] = 'defense';
-      expect(RequirementSummary(item).status, 'Uploaded');
-      expect(RequirementSummary(item).pending, 0);
+      expect(RequirementSummary(item).status, 'Under Review');
+      expect(RequirementSummary(item).pending, 2);
       item['type'] = 'post';
       for (final file in (item['submission'] as Map)['files']) {
         file['status'] = 'accepted';
@@ -253,7 +253,7 @@ void main() {
   }
 
   testWidgets(
-    'all timings appear together and the status filter survives focused review',
+    'pre-defense and archive rows appear together and the status filter survives focused review',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1100, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -277,7 +277,7 @@ void main() {
       expect(find.text('Requirement 0'), findsOneWidget);
       expect(find.text('Requirement 8'), findsOneWidget);
       expect(find.text('Requirement 9'), findsOneWidget);
-      expect(find.text('Before defense'), findsOneWidget);
+      expect(find.text('Before defense'), findsNothing);
       expect(find.text('Post-defense archive'), findsOneWidget);
       expect(find.text('Next'), findsNothing);
       expect(find.byType(ShadTabs<String>), findsNothing);
@@ -839,8 +839,8 @@ void main() {
         expect(find.text('Pitch Deck'), findsOneWidget);
         expect(find.text('Final manuscript'), findsOneWidget);
         expect(find.text('5/5 files uploaded'), findsOneWidget);
-        expect(find.text('Before endorsement'), findsOneWidget);
-        expect(find.text('Before defense'), findsOneWidget);
+        expect(find.text('Before endorsement'), findsNWidgets(2));
+        expect(find.text('Before defense'), findsNothing);
         expect(find.text('Post-defense archive'), findsOneWidget);
         expect(find.text('pitch_1.pdf'), findsNothing);
         expect(tester.takeException(), isNull);

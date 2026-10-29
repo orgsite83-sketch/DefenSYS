@@ -47,8 +47,11 @@ class FocusedRepeatAssessmentTests(APITestCase):
                  'criteria_scores': [{'criterion_id': self.panel_rubric.criteria.first().pk, 'score': 8}]}]
         validate_evaluation_submissions(next_schedule, rows)
         submit_panelist_grade(next_schedule, next_grade, rows[0]['criteria_scores'], panelist=self.panelist, concept_key='c2')
-        approved = record_verdict(next_grade, actor=self.admin, verdict='approved',
-            concept_decisions=[{'key': 'c2', 'decision': 'approved', 'remarks': ''}])
+        # The new hearing captures automatic outcomes while preserving the
+        # earlier panel's narrower concept set and evidence.
+        next_grade.refresh_from_db()
+        approved = next_grade
+        self.assertEqual(approved.verdict, 'approved')
         self.assertEqual(approved.panel_score, 80)
         self.assertEqual(approved.attempt_count, 2)
         self.assertEqual(approved.attempt_history.get().verdict, 'for_redefense')

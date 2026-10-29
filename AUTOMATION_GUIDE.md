@@ -22,7 +22,7 @@ The commands use the backend virtual environment directly; activating it is opti
 
 **Preview and save:** the simple commands below include `--dry-run`. Review the output, then run the same command without `--dry-run` to save that action. Explicit live commands are also provided for the post-defense upload and archive steps.
 
-Each script authenticates and reads the live backend during a preview. The minutes script can initialize a draft when fetching it, even in preview; it skips saving generated comments until run without `--dry-run`.
+Previews inspect the configured local data and, where applicable, read the live backend. Minutes previews use read-only discovery and do not initialize drafts, save comments, apply signatures, or generate stored PDFs.
 
 ## 2. Which script should I use?
 
@@ -34,7 +34,7 @@ Each script authenticates and reads the live backend during a preview. The minut
 | Generate panelist evaluations | `execution/auto_panelist_eval.py` | Assigned faculty and external panelists |
 | Generate peer and self-evaluations | `execution/auto_peer_eval.py` | Students |
 | Generate Capstone adviser grades | `execution/auto_adviser_eval.py` | Assigned advisers |
-| Populate draft minutes comments | `execution/auto_documenter_minutes.py` | Assigned documenter |
+| Populate draft minutes / complete signing | `execution/auto_documenter_minutes.py` / add `--sign-all` | Assigned documenter, assigned adviser, administrator |
 
 For the first-year example, follow: **pre-upload -> faculty review/endorsement -> schedule in the UI -> panelist evaluation -> peer evaluation -> post-upload -> faculty acceptance/archive**. Record any required concept decision in the chair workspace. The backend determines when each step is available.
 
@@ -224,7 +224,7 @@ Remove `--dry-run` to submit eligible missing adviser grades. Default scores are
 
 Narrow the run with `--team-id 25`, `--advisers 208`, `--session-id UUID` or `--semester-id 2`. This script has no `--year` or `--scope` options. For Capstone uploads and faculty review, use the earlier commands with `--scope capstone` and the exact configured stage/requirement; PIT requirement IDs do not carry over automatically.
 
-## 10. Documenter minutes drafts
+## 10. Documenter minutes and signatures
 
 Preview generated comments for one Capstone defense schedule:
 
@@ -235,7 +235,19 @@ Preview generated comments for one Capstone defense schedule:
 
 Replace `37` with the actual schedule ID. Remove `--dry-run` to save draft comments. Use `--all-minutes` instead of `--schedule-id 37` for the broad batch of eligible Capstone schedules, or filter with `--team-id 25` / `--documenter 211`.
 
-Existing draft comments are kept unless `--overwrite` is supplied. Signed/submitted minutes are skipped. The script populates comments only; review, PDF preview, signatures and submission happen in the Documenter workspace. Fetching minutes can initialize their draft even in a preview. This script has no `--year`, `--stage` or `--scope` options.
+Existing draft comments are kept unless `--overwrite` is supplied. The default action fills draft comments only. Discovery defaults to the active semester and current project version; use `--stage`, `--semester-id`, or `--session-id` to narrow it. Future, paused, cancelled and stale assessments are not processed. This script has no `--year` or `--scope` options.
+
+To complete the normal documenter, adviser and administrator acceptance/signature flow using their existing uploaded signatures:
+
+```powershell
+.\backend\venv\Scripts\python.exe execution\auto_documenter_minutes.py `
+  --all-minutes --stage "Project Proposal" --semester-id 3 `
+  --sign-all --admin admin --dry-run
+```
+
+Replace the term ID and administrator username with the intended values. Remove `--dry-run` to fill missing draft comments, preview each signing step, submit as the assigned documenter, sign as the team's adviser, then sign as the administrator and verify the official PDF. Without `--admin`, the schedule's active administrator creator is selected, or the sole administrator with a signature when unambiguous. Missing accounts/signatures block the record before draft creation. The script never uploads or changes signatures/passwords.
+
+Partially signed minutes resume at the next required signature. Completed minutes are preserved, including when `--overwrite` is supplied. No write is retried automatically; after a timeout, inspect saved state before rerunning. `--request-timeout 90` allows slower PDF responses. Exit code `1` reports blocked/failed records; `0` means all selected actions finished or existing completed records were preserved. Generated comments remain simulated demo feedback.
 
 ## 11. Filters and common problems
 

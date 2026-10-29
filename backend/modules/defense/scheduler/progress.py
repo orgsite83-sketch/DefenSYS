@@ -25,11 +25,16 @@ def schedule_progress(schedule, *, reconcile_status=True):
     if uses_verdict:
         verdict = grade.verdict if grade else history.verdict if history else ''
     evidence = grade or history
+    metadata = evidence.outcome_metadata if evidence else {}
+    from grading.grades.outcome_rules import automatic_outcomes
     concept_retry = False
     if schedule.scope == 'pit':
         from repository.deliverables.models import ConceptRound
         concept_retry = ConceptRound.objects.filter(schedule=schedule, verdict='for_redefense').exists()
-    result = {'verdict': verdict, 'attempt_count': grade.attempt_count if grade else history.attempt_number if history else 1,
+    result = {'verdict': 'failed' if metadata.get('closure', {}).get('failed') else verdict,
+              'hearing_outcome': verdict, 'outcome_metadata': metadata,
+              'automatic_outcomes': automatic_outcomes(schedule),
+              'attempt_count': grade.attempt_count if grade else history.attempt_number if history else 1,
               'panel_evaluators_submitted': 0, 'panel_evaluators_required': 0,
               'revisions_cleared_at': str(evidence.revisions_cleared_at) if verdict and evidence.revisions_cleared_at else None,
               'revision_deadline': str(evidence.revision_deadline) if verdict and evidence.revision_deadline else None,
@@ -77,7 +82,9 @@ def schedule_progress(schedule, *, reconcile_status=True):
             from defense.scheduler.models import DefenseSchedule
             DefenseSchedule.objects.filter(pk=schedule.pk, status='scheduled').update(status=DefenseSchedule.STATUS_DONE)
             schedule.status = DefenseSchedule.STATUS_DONE
-        if verdict == 'for_redefense' or concept_retry:
+        if grade.closed_as_failed:
+            display = 'failed'
+        elif verdict == 'for_redefense' or concept_retry:
             display = 'redefense_required'
         elif verdict in ('failed', 'project_rejected'):
             display = verdict
@@ -92,8 +99,11 @@ def schedule_progress(schedule, *, reconcile_status=True):
         elif not uses_verdict and readiness['ready']:
             display = 'awaiting_completion'
         elif readiness['panel_complete']:
-            display = ('awaiting_concept_selection' if rule and rule['per_concept']
-                       and rule['outcome'] == 'approved' else 'awaiting_verdict') if uses_verdict else 'grading_incomplete'
+            if rule and rule['automatic']:
+                display = 'awaiting_concept_selection' if rule['per_concept'] else 'evaluating'
+            else:
+                display = ('awaiting_concept_selection' if rule and rule['per_concept']
+                           and rule['outcome'] == 'approved' else 'awaiting_verdict') if uses_verdict else 'grading_incomplete'
         elif readiness['panel_evaluators_submitted'] or grade.panel_score is not None:
             display = 'evaluating'
         else:

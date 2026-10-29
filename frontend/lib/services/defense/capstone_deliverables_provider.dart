@@ -217,12 +217,6 @@ class StudentTaskBadgeHelper {
   /// Checks if a deliverable item is pending required action (missing or needs revision).
   static bool isDeliverablePending(Map<String, dynamic> item) {
     if (item['is_waived'] == true) return false;
-    // Defense-timed files can be supplied after endorsement. Until a date is
-    // assigned, they are preparation work rather than an overdue task.
-    if (item['requirement_timing'] == 'defense' &&
-        item['materials_status'] == 'awaiting_schedule') {
-      return false;
-    }
     final uploaded = item['uploaded'] == true;
     final submission =
         item['submission'] as Map<String, dynamic>? ??
@@ -237,11 +231,6 @@ class StudentTaskBadgeHelper {
       return true;
     }
     if (item['required'] != true) return false;
-    if (item['requirement_timing'] == 'defense' &&
-        item['materials_submitted'] is bool) {
-      return item['materials_submitted'] != true;
-    }
-
     if (!uploaded || submission == null || submission.isEmpty || isRejected) {
       return true;
     }

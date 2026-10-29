@@ -200,6 +200,7 @@ void main() {
     final team = _team(canIssue: true)..isPosted = true;
     team.workflowGrade = {
       'workflow': {
+        'concept_workflow': {'enabled': true},
         'assessment_policy': {'version': 1},
         'outcome_rule': {
           'outcome': 'for_redefense',
@@ -209,6 +210,10 @@ void main() {
       },
     };
     await _showSheet(tester, [team], start: false);
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('grading-outcome-tab')),
+    );
     final instructions = find.byWidgetPredicate(
       (widget) =>
           widget is TextField &&
@@ -246,12 +251,14 @@ void main() {
       expect(team.evaluationProgress.required, 3);
       expect(team.evaluationProgress.complete, isFalse);
       Future<void> select(String key, String title) async {
-        final selector = find.byWidgetPredicate(
-          (w) => w is DropdownButtonFormField<String>,
-        );
-        await _tapVisible(tester, selector);
-        await tester.tap(find.text(title).last);
-        await tester.pumpAndSettle();
+        final row = find.byKey(ValueKey('assessment-candidate-$key'));
+        if (row.evaluate().isEmpty) {
+          await _tapVisible(
+            tester,
+            find.byKey(const ValueKey('assessment-selector')),
+          );
+        }
+        await _tapVisible(tester, row);
       }
 
       await select('c2', 'Second concept');
@@ -632,10 +639,7 @@ void main() {
         find.byKey(const ValueKey('more-grading-actions')),
       );
       await _tapVisible(tester, find.text('Next unscored'));
-      expect(
-        find.byKey(const ValueKey('concept-assessment-c2')),
-        findsOneWidget,
-      );
+      expect(find.text('Concept 2 of 2'), findsOneWidget);
       expect(_value(tester, 'Clarity'), isNull);
       expect(
         team.draftSubmissions

@@ -2,7 +2,6 @@ from django.urls import path
 
 from .views import (
     DefenseScheduleConfirmPlanView,
-    DefenseMaterialDeadlineView,
     DefenseScheduleDetailView,
     DefenseScheduleGeneratePlanView,
     DefenseScheduleListCreateView,
@@ -33,6 +32,5 @@ urlpatterns = [
     path('guest-grade-draft/', GuestPanelistEvaluationDraftView.as_view(), name='guest_panelist_evaluation_draft'),
     path('guest-submit-grades/', GuestPanelistGradeSubmissionView.as_view(), name='guest_panelist_grade_submission'),
     path('<int:schedule_id>/', DefenseScheduleDetailView.as_view(), name='defense_schedule_detail'),
-    path('<int:schedule_id>/material-deadline/', DefenseMaterialDeadlineView.as_view(), name='defense_material_deadline'),
     path('<int:schedule_id>/verdict/', DefenseScheduleVerdictView.as_view(), name='defense_schedule_verdict'),
 ]

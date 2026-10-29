@@ -11,6 +11,7 @@ import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/capture_preview.dart';
 import '../helpers/pump_app.dart';
@@ -153,6 +154,143 @@ void main() {
     FilePicker.platform = _Picker();
   });
   tearDown(resetApiHttpClientForTesting);
+
+  for (final dark in [false, true]) {
+    for (final width in [500.0, 390.0]) {
+      testWidgets(
+        'stage tabs retain workflow labels and shared upload uses archive suggestion ($width, $dark)',
+        (tester) async {
+          const suggested =
+              'SmartAgroIndustrialIoTSustainableSupplyPlatform_ApprovedConceptPaper.pdf';
+          Map<String, dynamic> group(String stage, String status, int id) => {
+            'team_id': 5,
+            'section': 'BSIT-3A',
+            'stage_label': stage,
+            'stage_status': status,
+            'scope': 'capstone',
+            'context_id': id,
+            'review_token': 'shared-version',
+            'concept_selection_enabled': false,
+            'project_manager_name': 'Gabriel Navarro',
+            'reviewer_name': 'Eduardo Padilla',
+            'systems': [
+              {
+                'key': 'c1',
+                'title':
+                    'Smart Agro-Industrial IoT & Sustainable Supply Platform',
+              },
+            ],
+            'selected_key': 'c1',
+            'requirements': [
+              if (status == 'current')
+                {
+                  'deliverable_id': 'FINAL',
+                  'label': 'Approved concept paper',
+                  'required': true,
+                  'deliverable_type': 'post',
+                  'file_format': 'pdf',
+                  'status': 'missing',
+                  'file_policy': {'mode': 'single'},
+                  'documents': [
+                    {
+                      'key': 'primary',
+                      'label': 'Approved concept paper',
+                      'file_format': 'pdf',
+                      'can_upload': true,
+                      'can_review': false,
+                      'suggested_file_name': suggested,
+                    },
+                  ],
+                },
+            ],
+          };
+          final groups = [
+            group('Concept Proposal', 'complete', 1),
+            group('Project Proposal', 'current', 2),
+            group('Final Defense', 'upcoming', 3),
+          ];
+          final project = {
+            ..._preview(),
+            'id': 7,
+            'imported': false,
+            'round_id': 20,
+            'shared_contexts': groups,
+          };
+          var uploaded = false;
+          setApiHttpClientForTesting(
+            MockClient((request) async {
+              if (request.method == 'POST' &&
+                  request.url.path.endsWith('/shared-deliverables/')) {
+                expect(request.body, contains(suggested));
+                expect(
+                  request.body,
+                  isNot(contains('filename="system-a.pdf"')),
+                );
+                uploaded = true;
+                return http.Response(
+                  jsonEncode({'shared_deliverables': groups[1]}),
+                  200,
+                );
+              }
+              if (request.url.path.endsWith('/section-concepts/')) {
+                return http.Response(
+                  jsonEncode({
+                    'projects': [project],
+                    'shared_contexts': groups,
+                    'tasks': [],
+                  }),
+                  200,
+                );
+              }
+              return http.Response(jsonEncode(project), 200);
+            }),
+          );
+          await _pump(tester, dark: dark);
+          tester.view.physicalSize = Size(width, 1000);
+          await tester.pumpAndSettle();
+          final navigation = find.byKey(
+            const ValueKey('shared-stage-navigation'),
+          );
+          expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+          expect(
+            tester.widget<ShadTabs<String>>(navigation).value,
+            'Project Proposal',
+          );
+          expect(find.text('Current'), findsOneWidget);
+          expect(find.text('Complete'), findsOneWidget);
+          expect(find.text('Upcoming'), findsOneWidget);
+          expect(find.text('Suggested archive filename'), findsOneWidget);
+          expect(find.text(suggested), findsOneWidget);
+          expect(find.byTooltip('Copy archive filename'), findsOneWidget);
+          await capturePreview(
+            tester,
+            find.byType(SectionIntegrationTab),
+            'shared-stage-tabs-${width.toInt()}-${dark ? 'dark' : 'light'}',
+            viewport: true,
+          );
+          await tester.tap(find.text('Concept Proposal'));
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<ShadTabs<String>>(navigation).value,
+            'Concept Proposal',
+          );
+          expect(
+            find.text('Current'),
+            findsOneWidget,
+          ); // Browsing does not change workflow state.
+          await tester.tap(find.text('Project Proposal'));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(
+            find.widgetWithText(OutlinedButton, 'Upload').first,
+          );
+          await tester.tap(find.widgetWithText(OutlinedButton, 'Upload').first);
+          await tester.pumpAndSettle();
+          expect(uploaded, isTrue);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   for (final dark in [false, true]) {
     testWidgets(

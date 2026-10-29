@@ -111,6 +111,21 @@ class DefenseBoardApiTests(APITestCase):
         for row in response.data['schedules']:
             self.assertEqual(row['can_delete'], not row['deletion_blockers'])
 
+    def test_notification_schedule_lookup_preserves_workspace_permissions_and_creates_no_minutes(self):
+        from defense.minutes.models import DefenseMinutes
+        response = self.client.get('/api/defense/board/', {
+            'schedule_id': self.capstone_schedule.pk, 'workspace': 'operations', 'scope': 'capstone'})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([row['id'] for row in response.data['schedules']], [self.capstone_schedule.pk])
+        self.client.force_authenticate(self.pit_student)
+        response = self.client.get('/api/defense/board/', {'schedule_id': self.capstone_schedule.pk})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['schedules'], [])
+        self.assertFalse(DefenseMinutes.objects.exists())
+        for invalid in ('0', '-1', 'bad'):
+            response = self.client.get('/api/defense/board/', {'schedule_id': invalid})
+            self.assertEqual(response.status_code, 400)
+
     def test_students_and_advisers_see_upcoming_defenses_without_creating_minutes(self):
         from defense.minutes.models import DefenseMinutes
         adviser = User.objects.create_user(username='record-adviser', role='faculty')

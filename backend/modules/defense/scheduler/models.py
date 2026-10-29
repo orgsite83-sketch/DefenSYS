@@ -76,6 +76,7 @@ class DefenseSchedule(models.Model):
         ('postponed', 'Postponed'), ('no_show', 'No-show'),
     ])
     operation_reason = models.TextField(blank=True)
+    # Retired deadline columns are retained only as historical storage.
     materials_deadline_override = models.DateTimeField(null=True, blank=True)
     materials_late_upload_until = models.DateTimeField(null=True, blank=True)
     materials_deadline_reason = models.TextField(blank=True)
@@ -214,16 +215,8 @@ class DefenseSchedule(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def clear_material_deadlines(self):
-        self.materials_deadline_override = None
-        self.materials_late_upload_until = None
-        self.materials_deadline_reason = ''
-        self.materials_notice_key = ''
 
     def save(self, *args, **kwargs):
-        # Operational edits can validate a new deadline against the new slot in
-        # the same transaction. Other reschedules must expire the old permission.
-        material_deadlines_revalidated = kwargs.pop('material_deadlines_revalidated', False)
         is_new = self.pk is None
         if is_new:
             from grading.grades.outcome_rules import capture_policy
@@ -252,13 +245,6 @@ class DefenseSchedule(models.Model):
         else:
             self.event_name = ''
         self.full_clean()
-        if not material_deadlines_revalidated and not is_new and previous and (previous['scheduled_date'] != self.scheduled_date or previous['start_time'] != self.start_time):
-            # A grace deadline belongs to one defense time. Rescheduling derives
-            # fresh deadlines from the new slot instead of retaining an old one.
-            self.clear_material_deadlines()
-            if kwargs.get('update_fields') is not None:
-                kwargs['update_fields'] = set(kwargs['update_fields']) | {
-                    'materials_deadline_override', 'materials_late_upload_until', 'materials_deadline_reason', 'materials_notice_key'}
         super().save(*args, **kwargs)
 
         # Sync TeamStageProgress status for Capstone schedules

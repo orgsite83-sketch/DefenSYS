@@ -349,8 +349,8 @@ void main() {
         },
         {
           'type': 'pre',
-          'requirement_timing': 'defense',
-          'submission': {'status': 'pending'},
+          'requirement_timing': 'scheduling',
+          'submission': {'status': 'accepted'},
         },
         {
           'type': 'post',
@@ -440,7 +440,7 @@ void main() {
     },
   );
 
-  test('missing defense materials remain secondary to the schedule status', () {
+  test('retired material payloads do not add missing-file tasks to a scheduled defense', () {
     final value = stage(fileStatus: 'accepted')
       ..['assessment_progress'] = {
         'display_status': 'scheduled',
@@ -451,7 +451,7 @@ void main() {
     expect(TeamWorkflowStatus.fromStage(value).tone, WorkflowStatusTone.active);
     expect(
       DeliverablesTriageHelper.isOverdueOrMissing({'selected_stage': value}),
-      isTrue,
+      isFalse,
     );
   });
 

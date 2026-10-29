@@ -8,10 +8,11 @@ via the actual DefenSYS backend API endpoints:
   - Generates realistic, constructive panelist comments tailored by role (Chair, Technical, UI/UX)
   - Saves comments as draft: PATCH /api/defense/minutes/<schedule_id>/
 
-Note:
-  This script specifically focuses on what the Documenter fills in their workspace (draft comments).
-  It does NOT submit or apply e-signatures, allowing you to review, sign, and submit directly
-  in the Documenter workspace UI.
+By default, only missing draft comments are filled. Add --sign-all to submit as
+the assigned documenter, accept/sign as the assigned adviser, then sign as the
+administrator through the normal APIs. Existing uploaded signatures are used;
+passwords and signature files are never changed. Partially signed records resume
+at their next step; completed records are preserved. Dry runs never create drafts.
 
 Usage Examples:
   # 1. Preview comments for all eligible schedules requiring minutes without saving:
@@ -31,15 +32,24 @@ Usage Examples:
 
   # 6. Overwrite existing draft comments:
   python execution/auto_documenter_minutes.py --all-minutes --overwrite
+
+  # 7. Preview/complete the current term's Project Proposal minutes:
+  python execution/auto_documenter_minutes.py --all-minutes --stage "Project Proposal" --sign-all --admin admin --dry-run
 """
 
 import argparse
+import math
 import os
 import random
 import sys
 import time
 from typing import Any, Dict, List, Optional
 import requests
+
+if __package__:
+    from . import upload_deliverables as common
+else:
+    import upload_deliverables as common
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BACKEND_PATH = os.path.join(REPO_ROOT, "backend")
@@ -59,7 +69,7 @@ def init_django():
     django.setup()
 
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Automate recording defense minutes comments across teams and schedules."
     )
@@ -96,7 +106,7 @@ def parse_args():
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Preview  erated comments without updating the server",
+        help="Preview comments and signatures without creating or changing records",
     )
     parser.add_argument(
         "--delay",
@@ -104,7 +114,22 @@ def parse_args():
         default=0.1,
         help="Delay in seconds between requests (default: 0.1s)",
     )
-    return parser.parse_args()
+    parser.add_argument('--stage', help='Only this Capstone stage label.')
+    parser.add_argument('--semester-id', type=int, help='Academic term; defaults to the active semester.')
+    parser.add_argument('--session-id', help='Only this scheduled session UUID.')
+    parser.add_argument('--sign-all', action='store_true',
+        help='Submit/sign as documenter, assigned adviser, then administrator using existing signatures.')
+    parser.add_argument('--admin', help='Administrator username for the final signature; otherwise use the schedule creator or sole signed administrator.')
+    parser.add_argument('--request-timeout', type=float, default=60,
+        help='HTTP timeout in seconds (default: 60). Writes are never retried.')
+    args = parser.parse_args(argv)
+    if args.admin and not args.sign_all:
+        parser.error('--admin requires --sign-all.')
+    if not math.isfinite(args.delay) or not 0 <= args.delay <= 60:
+        parser.error('--delay must be between 0 and 60 seconds.')
+    if not math.isfinite(args.request_timeout) or not 0 < args.request_timeout <= 300:
+        parser.error('--request-timeout must be greater than 0 and at most 300 seconds.')
+    return args
 
 
 # Realistic academic panel comments organized by panel role
@@ -166,234 +191,279 @@ def generate_panelist_comment(role_snapshot: str, display_order: int) -> str:
     return f"{primary} {secondary}"
 
 
+class MinutesAutomationError(ValueError):
+    def __init__(self, detail, *, fatal=False):
+        self.fatal = fatal
+        super().__init__(detail)
+
+
 def get_jwt_token_for_user(username: str) -> Optional[str]:
-    init_django()
-    from django.contrib.auth import get_user_model  # type: ignore
-    from authentication_access_control.tokens import DefensysRefreshToken  # type: ignore
-
-    User = get_user_model()
-    try:
-        user = User.objects.get(username=username)
-        refresh = DefensysRefreshToken.for_user(user)
-        return str(refresh.access_token)
-    except Exception as e:
-        print(f"  [FAIL] Failed to generate token for {username}: {e}")
-        return None
+    """Normal short-lived access token without refresh-token or credential writes."""
+    with common.local_read_only():
+        from django.contrib.auth import get_user_model
+        from rest_framework_simplejwt.tokens import AccessToken
+        user = get_user_model().objects.filter(
+            username=username, is_active=True, role__in=['faculty', 'admin']).first()
+        return str(AccessToken.for_user(user)) if user else None
 
 
-def fetch_eligible_schedules(
-    team_id: Optional[int] = None,
-    schedule_id: Optional[int] = None,
-    documenter_username: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    """
-    Finds Capstone defense schedules that require minutes or have a documenter assigned.
-    Safe read-only query against the database.
-    """
-    init_django()
-    from defense.scheduler.models import DefenseSchedule  # type: ignore
-
-    qs = (
-        DefenseSchedule.objects.filter(scope=DefenseSchedule.SCOPE_CAPSTONE)
-        .exclude(status=DefenseSchedule.STATUS_CANCELLED)
-        .select_related("team", "defense_stage", "documenter")
-        .prefetch_related("panel_assignments__panelist")
-        .order_by("scheduled_date", "start_time", "pk")
-    )
-
-    if schedule_id:
-        qs = qs.filter(pk=schedule_id)
-    if team_id:
-        qs = qs.filter(team_id=team_id)
-    if documenter_username:
-        qs = qs.filter(documenter__username=documenter_username)
-
-    results = []
-    for sched in qs:
-        # Check if minutes are required for this schedule or stage
-        if not (sched.requires_minutes or sched.documenter_id):
-            continue
-
-        results.append({
-            "id": sched.id,
-            "team_id": sched.team_id,
-            "team_name": sched.team.name if sched.team else f"Team #{sched.team_id}",
-            "stage_label": sched.defense_stage.label if sched.defense_stage else "Defense",
-            "minutes_required": sched.requires_minutes,
-            "documenter_id": sched.documenter_id,
-            "documenter_username": sched.documenter.username if sched.documenter else None,
-            "documenter_name": sched.documenter.get_full_name() if sched.documenter else "Unassigned",
-        })
-
-    return results
+def fetch_eligible_schedules(team_id=None, schedule_id=None, documenter_username=None,
+                             semester_id=None, stage=None, session_id=None):
+    with common.local_read_only():
+        from academic_period_management.services import active_semester
+        from defense.scheduler.models import DefenseSchedule
+        from django.db.models import F
+        if semester_id is None:
+            semester = active_semester()
+            if semester is None:
+                raise MinutesAutomationError('No active semester. Specify --semester-id.')
+            semester_id = semester.pk
+        qs = DefenseSchedule.objects.filter(scope='capstone', semester_id=semester_id,
+            project_version=F('team__project_version'),
+            status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE])
+        if schedule_id:
+            qs = qs.filter(pk=schedule_id)
+        if team_id:
+            qs = qs.filter(team_id=team_id)
+        if documenter_username:
+            qs = qs.filter(documenter__username=documenter_username)
+        if stage:
+            qs = qs.filter(defense_stage__label__iexact=stage.strip())
+        if session_id:
+            qs = qs.filter(session_id=session_id)
+        return [{'id': schedule.pk, 'team_name': schedule.team.name,
+                 'stage_label': schedule.stage_label}
+                for schedule in qs.select_related('team', 'defense_stage').order_by(
+                    'scheduled_date', 'start_time', 'pk')
+                if schedule.requires_minutes or schedule.documenter_id]
 
 
-def run():
-    args = parse_args()
-
-    if not args.all_minutes and not args.team_id and not args.schedule_id and not args.documenter:
-        print("[!] Error: Specify --all-minutes, --team-id <id>, --schedule-id <id>, or --documenter <username>.")
-        sys.exit(1)
-
-    print("[*] Discovering defense schedules requiring minutes...")
-    schedules = fetch_eligible_schedules(
-        team_id=args.team_id,
-        schedule_id=args.schedule_id,
-        documenter_username=args.documenter,
-    )
-
-    if not schedules:
-        print("[!] No eligible defense schedules requiring minutes found.")
-        sys.exit(1)
-
-    print("=" * 70)
-    print("  DefenSYS Documenter Minutes Automation (Comments Only)")
-    print("=" * 70)
-    print(f"  Target Server   : {args.base_url}")
-    print(f"  Total Schedules : {len(schedules)}")
-    print(f"  Overwrite Mode  : {'YES (replace existing comments)' if args.overwrite else 'NO (preserve existing comments)'}")
-    print(f"  Mode            : {'DRY RUN (Preview only, no changes saved)' if args.dry_run else 'LIVE DRAFT UPDATE'}")
-    print("=" * 70)
-
-    # Cache tokens by documenter username
-    doc_tokens: Dict[str, str] = {}
-
-    total_processed = 0
-    total_skipped = 0
-    total_comments_saved = 0
-
-    for sched in schedules:
-        sched_id = sched["id"]
-        team_name = sched["team_name"]
-        stage_label = sched["stage_label"]
-        doc_username = sched["documenter_username"]
-        doc_name = sched["documenter_name"]
-
-        print(f"\n[*] Schedule #{sched_id} | {team_name} ({stage_label})")
-
-        if not doc_username:
-            print(f"  [SKIP] No documenter assigned to schedule #{sched_id}.")
-            total_skipped += 1
-            continue
-
-        # Get JWT token for documenter
-        if doc_username not in doc_tokens:
-            token = get_jwt_token_for_user(doc_username)
-            if not token:
-                print(f"  [FAIL] Cannot authenticate documenter {doc_username}.")
-                total_skipped += 1
-                continue
-            doc_tokens[doc_username] = token
-
-        token = doc_tokens[doc_username]
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-        # Step 1: Fetch minutes detail (also auto-creates draft if not yet initialized)
-        detail_url = f"{args.base_url.rstrip('/')}/api/defense/minutes/{sched_id}/"
-        try:
-            res = requests.get(detail_url, headers=headers, timeout=10)
-        except Exception as e:
-            print(f"  [FAIL] Network error fetching minutes for schedule #{sched_id}: {e}")
-            total_skipped += 1
-            continue
-
-        if res.status_code != 200:
-            print(f"  [FAIL] Failed to fetch minutes (HTTP {res.status_code}): {res.text}")
-            total_skipped += 1
-            continue
-
-        minutes_data = res.json()
-        current_status = minutes_data.get("status", "draft")
-
-        # Check status: if already submitted, adviser signed, or completed
-        if current_status != "draft":
-            print(f"  [SKIP] Minutes already signed or submitted (Status: '{current_status}').")
-            total_skipped += 1
-            continue
-
-        panelist_comments = minutes_data.get("panelist_comments", [])
-        if not panelist_comments:
-            print("  [SKIP] No panelist comment slots found on minutes record.")
-            total_skipped += 1
-            continue
-
-        # Check if comments need to be updated
-        comments_to_update = []
-        for c in panelist_comments:
-            c_id = c["id"]
-            role_snapshot = c.get("panelist_role_snapshot", "Panel Member")
-            name_snapshot = c.get("panelist_name_snapshot", "Panelist")
-            existing_comment = (c.get("comments") or "").strip()
-            display_order = c.get("display_order", 0)
-
-            if existing_comment and not args.overwrite:
-                print(f"  [KEEP] {role_snapshot} ({name_snapshot}): Comment already recorded.")
-                continue
-
-            new_comment_text = generate_panelist_comment(role_snapshot, display_order)
-            comments_to_update.append({
-                "id": c_id,
-                "role": role_snapshot,
-                "name": name_snapshot,
-                "text": new_comment_text,
-            })
-
-        if not comments_to_update:
-            print("  [SKIP] All panelist comments are already filled. (Use --overwrite to replace them).")
-            total_skipped += 1
-            continue
-
-        print(f"  [INFO] Documenter: {doc_name} ({doc_username}) | Generating {len(comments_to_update)} comment(s):")
-        for item in comments_to_update:
-            short_preview = item["text"][:80] + ("..." if len(item["text"]) > 80 else "")
-            print(f"    - {item['role']} ({item['name']}): \"{short_preview}\"")
-
-        if args.dry_run:
-            print("  [OK] [DRY RUN] Comments previewed successfully.")
-            total_processed += 1
-            total_comments_saved += len(comments_to_update)
-            continue
-
-        # Step 2: PATCH comments to save draft
-        patch_payload = {
-            "comments": [
-                {"id": item["id"], "comments": item["text"]}
-                for item in comments_to_update
-            ]
-        }
-
-        try:
-            patch_res = requests.patch(detail_url, headers=headers, json=patch_payload, timeout=10)
-        except Exception as e:
-            print(f"  [FAIL] Network error saving draft comments: {e}")
-            total_skipped += 1
-            continue
-
-        if patch_res.status_code == 200:
-            print(f"  [OK] Saved {len(comments_to_update)} panelist comment(s) in draft.")
-            total_processed += 1
-            total_comments_saved += len(comments_to_update)
+def minutes_context(schedule_id, admin_username=None):
+    """Read-only plan, including unsaved missing comment slots for a true dry run."""
+    with common.local_read_only():
+        from django.contrib.auth import get_user_model
+        from django.db.models import Q
+        from django.utils import timezone
+        from defense.scheduler.models import DefenseSchedule
+        from defense.minutes.models import DefenseMinutes
+        from defense.minutes.services import missing_panelist_comments, minutes_panel_roster
+        schedule = DefenseSchedule.objects.select_related(
+            'team__adviser', 'semester', 'documenter', 'created_by').get(pk=schedule_id)
+        minutes = DefenseMinutes.objects.filter(schedule=schedule).first()
+        status = minutes.status if minutes else 'draft'
+        comments = list(minutes.current_panelist_comments) if minutes else []
+        if status == 'draft':
+            comments.extend(missing_panelist_comments(minutes or DefenseMinutes(schedule=schedule), comments))
+        admin_users = get_user_model().objects.filter(is_active=True).filter(Q(role='admin') | Q(is_superuser=True))
+        if admin_username:
+            admin = admin_users.filter(username=admin_username).first()
+        elif schedule.created_by_id and admin_users.filter(pk=schedule.created_by_id).exists():
+            admin = schedule.created_by
         else:
-            print(f"  [FAIL] Failed to save comments (HTTP {patch_res.status_code}): {patch_res.text}")
-            total_skipped += 1
+            candidates = list(admin_users.exclude(e_signature='').exclude(e_signature__isnull=True)[:2])
+            admin = candidates[0] if len(candidates) == 1 else None
+        signers = {'documenter': schedule.documenter, 'adviser': schedule.team.adviser, 'admin': admin}
+        reasons = []
+        if (schedule.scope != 'capstone' or schedule.status not in ('scheduled', 'done')
+                or schedule.operation_state != 'normal'):
+            reasons.append('The current defense is not available for minutes processing.')
+        if (not schedule.semester.is_active or schedule.semester_id != schedule.team.semester_id
+                or schedule.project_version != schedule.team.project_version):
+            reasons.append('This assessment is outside the active team term/project.')
+        if schedule.scheduled_date > timezone.localdate():
+            reasons.append('The defense date is still in the future.')
+        if not minutes_panel_roster(schedule):
+            reasons.append('No panel roster is assigned.')
+        if not schedule.documenter or not schedule.documenter.is_active:
+            reasons.append('No active documenter is assigned.')
+        signer_problems = []
+        actors = {}
+        for role, user in signers.items():
+            actors[role] = {'id': user.pk if user else None, 'username': user.username if user else None}
+            if not user or not user.is_active or user.role not in ('faculty', 'admin'):
+                signer_problems.append(f'No active {role} account is available. Select the administrator with --admin when needed.')
+            elif not user.e_signature or not user.e_signature.storage.exists(user.e_signature.name):
+                signer_problems.append(f'{role.title()} {user.username} has no available uploaded signature.')
+        if minutes:
+            for role, field in [('documenter', 'documenter'), ('adviser', 'adviser')]:
+                signed_by = getattr(minutes, f'{field}_signed_by_id')
+                if signed_by and signed_by != actors[role]['id']:
+                    signer_problems.append(f'The assigned {role} differs from the recorded signer; review this record in the app.')
+        return {'schedule_id': schedule.pk, 'status': status,
+            'pdf_file': bool(minutes and minutes.pdf_file),
+            'comments': [{'id': c.pk, 'panelist': c.panelist_id,
+                'guest': c.guest_invitation_id, 'role': c.panelist_role_snapshot,
+                'order': c.display_order, 'comments': c.comments} for c in comments],
+            'actors': actors, 'reasons': reasons, 'signer_problems': signer_problems,
+            'stamp': (schedule.team_id, schedule.semester_id, schedule.project_version,
+                schedule.team.project_version, schedule.revision, schedule.documenter_id,
+                schedule.team.adviser_id, actors['admin']['id'],
+                tuple((row['panelist_id'], row['guest_invitation_id']) for row in minutes_panel_roster(schedule)))}
 
-        if args.delay > 0:
-            time.sleep(args.delay)
 
-    print("\n" + "=" * 70)
-    print("  SUMMARY")
-    print("=" * 70)
-    print(f"  Total Schedules Processed : {total_processed}")
-    print(f"  Total Comments Saved       : {total_comments_saved}")
-    print(f"  Total Schedules Skipped   : {total_skipped}")
-    print("=" * 70)
-    print("[*] Minutes drafts are now populated with panelist comments.")
-    print("[*] You can now open the Documenter workspace in the web app, review the comments,")
-    print("    preview the PDF, sign with your e-signature, and submit whenever you are ready!\n")
+class MinutesClient:
+    """Every write uses the real actor's ordinary API; no automatic write retries."""
+    def __init__(self, base_url, timeout):
+        self.base_url = base_url.rstrip('/')
+        self.timeout = timeout
+        self.sessions = {}
+
+    def request(self, method, schedule_id, username, *, action='', payload=None, pdf=False):
+        if username not in self.sessions:
+            token = get_jwt_token_for_user(username)
+            if not token:
+                raise MinutesAutomationError(f'Cannot authenticate {username}.', fatal=True)
+            session = requests.Session()
+            session.headers.update({'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+            self.sessions[username] = session
+        url = f'{self.base_url}/api/defense/minutes/{schedule_id}/' + (f'{action}/' if action else '')
+        try:
+            response = self.sessions[username].request(method, url, json=payload,
+                timeout=self.timeout, allow_redirects=False)
+        except requests.RequestException as exc:
+            raise MinutesAutomationError(
+                f'{method} {action or "detail"} failed: {exc}. Check saved state before rerunning; writes are never retried.',
+                fatal=True) from exc
+        if response.status_code != 200:
+            raise MinutesAutomationError(
+                f'{method} {action or "detail"}: HTTP {response.status_code}: {response.text[:500]}',
+                fatal=response.status_code in (401, 429))
+        if pdf:
+            if not response.content.startswith(b'%PDF-'):
+                raise MinutesAutomationError('The PDF endpoint did not return a valid PDF.')
+            return response.content
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise MinutesAutomationError('The minutes API did not return JSON.') from exc
+        if not isinstance(data, dict):
+            raise MinutesAutomationError('The minutes API returned an invalid response.')
+        return data
+
+    def close(self):
+        for session in self.sessions.values():
+            session.close()
 
 
-if __name__ == "__main__":
-    run()
+def process_schedule(schedule_id, args, client):
+    context = minutes_context(schedule_id, args.admin)
+    original_stamp = context['stamp']
+    result = {'comments': 0, 'signatures': 0, 'completed': 0, 'preserved': 0}
+    if context['status'] == 'completed':
+        if not context['pdf_file']:
+            raise MinutesAutomationError('Completed minutes have no stored PDF. Review the record in the app.')
+        print('  [KEEP] Minutes are already finalized.')
+        result['preserved'] = 1
+        return result
+    problems = context['reasons'] + (context['signer_problems'] if args.sign_all else [])
+    if problems:
+        raise MinutesAutomationError(' '.join(problems))
+    if args.dry_run:
+        if context['status'] == 'draft':
+            result['comments'] = sum(bool(args.overwrite or not c['comments'].strip()) for c in context['comments'])
+            print(f"  [DRY-RUN] Would fill {result['comments']} missing/draft panel comments.")
+        if args.sign_all:
+            steps = {'draft': ['documenter', 'adviser', 'admin'],
+                     'submitted': ['adviser', 'admin'], 'adviser_signed': ['admin']}.get(context['status'])
+            if steps is None:
+                raise MinutesAutomationError('Unknown minutes status.')
+            for role in steps:
+                print(f"  [DRY-RUN] Would accept/sign as {role}: {context['actors'][role]['username']}.")
+            result['signatures'] = len(steps)
+            result['completed'] = 1
+        return result
+    if context['status'] == 'draft':
+        documenter = context['actors']['documenter']['username']
+        # The ordinary detail endpoint initializes/synchronizes draft slots only in live mode.
+        data = client.request('GET', schedule_id, documenter)
+        fresh = minutes_context(schedule_id, args.admin)
+        if fresh['stamp'] != context['stamp'] or fresh['status'] != 'draft':
+            raise MinutesAutomationError('The assignment or minutes status changed. Refresh and rerun.')
+        updates = [{'id': c['id'], 'comments': generate_panelist_comment(
+            c.get('panelist_role_snapshot', ''), c.get('display_order', 0))}
+            for c in data.get('panelist_comments', [])
+            if args.overwrite or not (c.get('comments') or '').strip()]
+        if updates:
+            client.request('PATCH', schedule_id, documenter, payload={'comments': updates})
+            result['comments'] = len(updates)
+            print(f'  [OK] Saved {len(updates)} panelist comments.')
+        else:
+            print('  [KEEP] Existing draft comments preserved.')
+    if not args.sign_all:
+        return result
+    context = minutes_context(schedule_id, args.admin)
+    if any(not c['comments'].strip() for c in context['comments']):
+        raise MinutesAutomationError('Every current panelist needs a comment before signing.')
+    if context['stamp'] != original_stamp:
+        raise MinutesAutomationError('The assignment changed while saving comments. Refresh and rerun.')
+    reviewed_comments = [(c['panelist'], c['guest'], c['comments']) for c in context['comments']]
+    for before, action, role, after in [
+        ('draft', 'submit', 'documenter', 'submitted'),
+        ('submitted', 'sign-adviser', 'adviser', 'adviser_signed'),
+        ('adviser_signed', 'sign-chairman', 'admin', 'completed'),
+    ]:
+        if context['status'] != before:
+            continue
+        username = context['actors'][role]['username']
+        client.request('GET', schedule_id, username, action='preview', pdf=True)
+        fresh = minutes_context(schedule_id, args.admin)
+        if (fresh['stamp'] != context['stamp'] or fresh['status'] != before
+                or fresh['reasons'] or fresh['signer_problems']
+                or [(c['panelist'], c['guest'], c['comments']) for c in fresh['comments']] != reviewed_comments):
+            raise MinutesAutomationError('The reviewed minutes or assignment changed. Refresh and rerun.')
+        data = client.request('POST', schedule_id, username, action=action, payload={})
+        if data.get('status') != after:
+            raise MinutesAutomationError(f'The signing response did not confirm {after}. Check saved state.')
+        result['signatures'] += 1
+        print(f'  [OK] Accepted/signed as {role}: {username}.')
+        context = minutes_context(schedule_id, args.admin)
+    if context['status'] == 'completed' and context['pdf_file']:
+        client.request('GET', schedule_id, context['actors']['admin']['username'], action='pdf', pdf=True)
+        result['completed'] = 1
+        print('  [OK] Finalized minutes PDF verified.')
+    else:
+        raise MinutesAutomationError('Minutes have not reached completed status with an official PDF.')
+    return result
+
+
+def run(argv=None):
+    args = parse_args(argv)
+    args.base_url = common.server_url(args.base_url)
+    if not (args.all_minutes or args.team_id or args.schedule_id or args.documenter):
+        raise MinutesAutomationError('Specify --all-minutes, --team-id, --schedule-id, or --documenter.')
+    schedules = fetch_eligible_schedules(args.team_id, args.schedule_id, args.documenter,
+        args.semester_id, args.stage, args.session_id)
+    print(f'DefenSYS minutes automation: {len(schedules)} schedules; '
+          f'{"DRY RUN" if args.dry_run else "LIVE"}; '
+          f'{"comments and all signatures" if args.sign_all else "draft comments only"}.')
+    totals = {'comments': 0, 'signatures': 0, 'completed': 0, 'preserved': 0}
+    failed = 0
+    client = MinutesClient(args.base_url, args.request_timeout)
+    try:
+        for schedule in schedules:
+            print(f"\n[*] Schedule #{schedule['id']} | {schedule['team_name']} ({schedule['stage_label']})")
+            try:
+                result = process_schedule(schedule['id'], args, client)
+                for key in totals:
+                    totals[key] += result[key]
+            except MinutesAutomationError as exc:
+                print(f'[FAIL] {exc}')
+                failed += 1
+                if exc.fatal:
+                    break
+            if args.delay:
+                time.sleep(args.delay)
+    finally:
+        client.close()
+    print(f'\nSUMMARY: {totals}; failed={failed}; selected={len(schedules)}')
+    if args.dry_run:
+        print('Preview only. No drafts, comments, signatures or PDFs were stored.')
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(run())
+    except (MinutesAutomationError, common.UploadError) as exc:
+        print(f'[FAIL] {exc}')
+        sys.exit(1)

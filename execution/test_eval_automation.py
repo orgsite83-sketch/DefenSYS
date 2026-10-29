@@ -54,7 +54,7 @@ class EvaluationAutomationTests(unittest.TestCase):
 
     def test_open_peer_submits_in_matching_context(self):
         client = self.run_peer(self.peer_args(session_id='session-a', semester_id=1), self.peer_dashboard())
-        client.submit_evaluation.assert_called_once()
+        self.assertEqual([call.args[0]['evaluateeId'] for call in client.submit_evaluation.call_args_list], [1, 3])
 
     def test_peer_year_cli_accepts_numbers_and_labels_and_rejects_unknown_years(self):
         for value, expected in [('1', '1st Year'), ('2nd Year', '2nd Year'), ('3', '3rd Year'), ('4', '4th Year')]:
@@ -69,7 +69,7 @@ class EvaluationAutomationTests(unittest.TestCase):
     def test_peer_year_uses_the_live_team_instead_of_the_students_academic_year(self):
         dashboard = self.peer_dashboard(academic_record={'year_level': '2nd Year'})
         client = self.run_peer(self.peer_args(year='1st Year', session_id='session-a', semester_id=1), dashboard)
-        client.submit_evaluation.assert_called_once()
+        self.assertEqual(client.submit_evaluation.call_count, 2)
         self.assertEqual(client.submit_evaluation.call_args.args[0]['teamId'], 2)
 
     def test_peer_year_rechecks_dashboard_and_skips_other_or_unknown_cohorts(self):
@@ -82,7 +82,7 @@ class EvaluationAutomationTests(unittest.TestCase):
                     client.submit_evaluation.assert_not_called()
 
     def test_peer_year_filter_preserves_availability_and_completed_evaluations(self):
-        for overrides in [{'peerEvalEnabled': False}, {'myPeerSubmissions': [{'evaluateeId': 3}]}]:
+        for overrides in [{'peerEvalEnabled': False}, {'myPeerSubmissions': [{'evaluateeId': 1}, {'evaluateeId': 3}]}]:
             with self.subTest(overrides=overrides):
                 client = self.run_peer(self.peer_args(year='1st Year'), self.peer_dashboard(**overrides))
                 client.submit_evaluation.assert_not_called()
@@ -178,7 +178,7 @@ class EvaluationAutomationTests(unittest.TestCase):
         mock_patch.assert_not_called()
 
     def test_open_panelist_defense_submits_grades_and_issues_capstone_verdict(self):
-        args = self.panelist_args(session_id='session-uuid-1')
+        args = self.panelist_args(session_id='session-uuid-1', request_timeout=90)
         session = Mock()
         session.get.return_value.status_code = 200
         session.get.return_value.json.return_value = {
@@ -207,6 +207,15 @@ class EvaluationAutomationTests(unittest.TestCase):
         call_payload = mock_patch.call_args[1]['json']
         self.assertIn('/api/defense/schedules/101/verdict/', call_url)
         self.assertEqual(call_payload['verdict'], 'approved')
+        self.assertTrue(all(call.kwargs['timeout'] == 90 for call in session.get.call_args_list))
+        self.assertEqual(session.post.call_args.kwargs['timeout'], 90)
+        self.assertEqual(mock_patch.call_args.kwargs['timeout'], 90)
+
+    def test_panelist_timeout_cli_rejects_unbounded_or_nonpositive_waits(self):
+        self.assertEqual(auto_panelist_eval.parse_args(['--all-panelists', '--request-timeout', '90']).request_timeout, 90)
+        for value in ['0', '-1', '301', 'nan', 'inf']:
+            with self.subTest(value=value), patch('sys.stderr', new=StringIO()), self.assertRaises(SystemExit):
+                auto_panelist_eval.parse_args(['--all-panelists', '--request-timeout', value])
 
     def test_pit_defense_submits_grades_but_skips_verdict(self):
         args = self.panelist_args(scope='pit')
@@ -426,6 +435,16 @@ class EvaluationAutomationTests(unittest.TestCase):
                 _, _, verdict, result, _ = self.run_panel(teams=[team])
                 self.assertEqual(verdict.call_args.kwargs['verdict'], chosen)
                 self.assertEqual(result, 0)
+
+    def test_automatic_hearings_never_plan_a_manual_verdict_write(self):
+        for complete, outcome in [(False, 'pending'), (True, 'approved'), (True, 'for_redefense')]:
+            with self.subTest(complete=complete, outcome=outcome):
+                row = self.panelist_schedule_payload(assessment_policy={'version': 1, 'automatic_outcomes': True},
+                    grade_record={'workflow': {'outcome_rule': {
+                        'automatic': True, 'panel_complete': complete, 'outcome': outcome}}})
+                state, explanation, verdict = auto_panelist_eval.plan_verdict(row, 'approved')
+                self.assertIn(state, ('existing', 'manual'))
+                self.assertIsNone(verdict)
 
     def test_incomplete_cutoff_or_disallowed_verdict_stays_pending(self):
         for row, requested in [

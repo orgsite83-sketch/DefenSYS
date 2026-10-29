@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -13,6 +14,7 @@ import '../shadcn/defensys_shadcn_scope.dart';
 import 'deliverable_file_widgets.dart';
 import 'concept_revision_dialog.dart';
 import 'concept_review_section.dart';
+import 'shared_concept_review.dart';
 
 List<Map<String, dynamic>> _sharedRows(dynamic value) => (value as List? ?? [])
     .whereType<Map>()
@@ -31,9 +33,11 @@ class SharedDeliverablesPanel extends ConsumerStatefulWidget {
     this.systemHeaderBuilder,
     this.onReviewFiles,
     this.readOnly = false,
+    this.normalFlow = false,
   });
   final Map<String, dynamic> group;
   final bool readOnly;
+  final bool normalFlow;
   final ValueChanged<Map<String, dynamic>>? onChanged;
   final String? selectedSystemKey;
   final ValueChanged<String>? onSystemChanged;
@@ -50,6 +54,7 @@ class _SharedDeliverablesPanelState
   String? systemKey;
   String? error;
   bool busy = false;
+  bool showHistory = false;
   @override
   void initState() {
     super.initState();
@@ -60,6 +65,11 @@ class _SharedDeliverablesPanelState
   void didUpdateWidget(covariant SharedDeliverablesPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.group, widget.group)) {
+      if (oldWidget.group['identity'] != widget.group['identity'] ||
+          oldWidget.group['selected_key'] != widget.group['selected_key']) {
+        showHistory = false;
+        systemKey = null;
+      }
       group = widget.group;
       error = null;
     }
@@ -78,6 +88,8 @@ class _SharedDeliverablesPanelState
       DataArea.dashboard,
       DataArea.teams,
       DataArea.deliverables,
+      DataArea.grades,
+      DataArea.repository,
     ]);
   }
 
@@ -113,13 +125,24 @@ class _SharedDeliverablesPanelState
       error = null;
     });
     try {
+      final suggested =
+          '${document['suggested_file_name'] ?? requirement['suggested_file_name'] ?? ''}';
+      final repositoryName =
+          requirement['deliverable_type'] == 'post' && suggested.isNotEmpty
+          ? info.extensions.isEmpty && !file.name.contains('.')
+                ? suggested
+                : info.recommendedFileName(
+                    suggested,
+                    selectedFileName: file.name,
+                  )
+          : file.name;
       final response = await ref
           .read(sectionConceptServiceProvider)
           .uploadShared(
             group,
             '${requirement['deliverable_id']}',
             '${document['key'] ?? ''}',
-            file.name,
+            repositoryName,
             file.bytes!,
           );
       if (mounted) changed(response);
@@ -230,13 +253,11 @@ class _SharedDeliverablesPanelState
         : relevantFiles.isNotEmpty
         ? 'pending'
         : 'missing');
-    final defenseTimed =
-        requirement['requirement_timing'] == 'defense' &&
-        requirement['deliverable_type'] != 'post';
-    final label = defenseTimed && status == 'pending'
-        ? 'Uploaded'
-        : status == 'accepted'
-        ? 'Accepted'
+    final post = requirement['deliverable_type'] == 'post';
+    final label = status == 'accepted'
+        ? post
+              ? 'Accepted & archived'
+              : 'Accepted'
         : status == 'rejected'
         ? 'Corrections requested'
         : status == 'pending'
@@ -249,7 +270,6 @@ class _SharedDeliverablesPanelState
         : status == 'rejected' || label == 'Action Required'
         ? WorkflowStatusTone.destructive
         : WorkflowStatusTone.neutral;
-    final post = requirement['deliverable_type'] == 'post';
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -297,18 +317,29 @@ class _SharedDeliverablesPanelState
           ),
           const SizedBox(height: 10),
           for (final document in documents) ...[
+            if (post &&
+                '${document['suggested_file_name'] ?? requirement['suggested_file_name'] ?? ''}'
+                    .isNotEmpty)
+              _archiveNameSuggestion(
+                '${document['suggested_file_name'] ?? requirement['suggested_file_name']}',
+                archived: (document['file'] as Map?)?['status'] == 'accepted',
+              ),
             if (document['file'] is Map) ...[
               DeliverableUploadedFileTile(
                 fileName: '${(document['file'] as Map)['file_name']}',
                 onDetails: () =>
                     view(Map<String, dynamic>.from(document['file'] as Map)),
-                onRevision: !widget.readOnly && document['can_upload'] == true
+                onRevision:
+                    !widget.readOnly &&
+                        document['can_upload'] == true &&
+                        !(post &&
+                            (document['file'] as Map)['status'] == 'accepted')
                     ? () => upload(requirement, document)
                     : null,
                 revisionEnabled: !busy,
               ),
               Text(
-                'Revision ${(document['file'] as Map)['revision']} · ${(document['file'] as Map)['status']}',
+                'Revision ${(document['file'] as Map)['revision']} · ${post && (document['file'] as Map)['status'] == 'accepted' ? 'Archived' : (document['file'] as Map)['status']}',
                 style: TextStyle(
                   fontSize: 11,
                   color: DefensysTokens.textSecondaryOf(context),
@@ -327,7 +358,9 @@ class _SharedDeliverablesPanelState
                   padding: const EdgeInsets.only(top: 8),
                   child: Text('${document['title_blocker']}'),
                 ),
-              if (!widget.readOnly && document['can_review'] == true)
+              if (!widget.readOnly &&
+                  document['can_review'] == true &&
+                  !(post && (document['file'] as Map)['status'] == 'accepted'))
                 Wrap(
                   alignment: WrapAlignment.end,
                   spacing: 8,
@@ -340,8 +373,7 @@ class _SharedDeliverablesPanelState
                           review(requirement, document, 'rejected'),
                       child: const Text('Request revision'),
                     ),
-                    if (!defenseTimed &&
-                        (document['file'] as Map)['status'] != 'accepted')
+                    if ((document['file'] as Map)['status'] != 'accepted')
                       ShadButton(
                         height: 40,
                         backgroundColor: DefensysTokens.maroonOf(context),
@@ -370,7 +402,14 @@ class _SharedDeliverablesPanelState
               ),
             const SizedBox(height: 8),
           ],
-          if (mode == 'multiple' && !widget.readOnly)
+          if (post &&
+              mode == 'multiple' &&
+              documents.isEmpty &&
+              '${requirement['suggested_file_name'] ?? ''}'.isNotEmpty)
+            _archiveNameSuggestion('${requirement['suggested_file_name']}'),
+          if (mode == 'multiple' &&
+              !widget.readOnly &&
+              !(post && status == 'accepted'))
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
@@ -426,29 +465,225 @@ class _SharedDeliverablesPanelState
     );
   }
 
+  Widget _archiveNameSuggestion(String name, {bool archived = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Suggested archive filename',
+            style: TextStyle(
+              fontSize: 11,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: SelectableText(
+                  name,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.5,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              ShadButton.ghost(
+                size: ShadButtonSize.sm,
+                width: 30,
+                height: 30,
+                padding: EdgeInsets.zero,
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: name));
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Archive filename copied.')),
+                    );
+                  }
+                },
+                child: const Tooltip(
+                  message: 'Copy archive filename',
+                  child: Icon(Icons.copy_outlined, size: 14),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            archived
+                ? 'Archive naming reference. This file is accepted and read-only.'
+                : 'Used for new uploads and revisions. Your local file keeps its name.',
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.4,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _normalFlow() {
+    final systems = _sharedRows(group['systems']);
+    final system =
+        systems
+            .where((row) => row['key'] == group['selected_key'])
+            .firstOrNull ??
+        (systems.length == 1 ? systems.single : null);
+    final requirements = _sharedRows(group['requirements']);
+    return DefensysShadcnScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '${system?['title'] ?? ''}'.trim().isEmpty
+                ? 'Shared system title unavailable'
+                : '${system!['title']}',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              height: 1.4,
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Project manager: ${group['project_manager_name'] ?? 'Not assigned'}',
+            style: TextStyle(
+              fontSize: 12,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (busy) const LinearProgressIndicator(),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          for (final requirement in requirements)
+            if ((requirement['file_policy'] as Map?)?['mode'] != 'concepts')
+              requirementCard(requirement)
+            else if (system != null)
+              requirementCard(requirement, key: '${system['key']}'),
+          if (requirements.any(
+                (row) => (row['file_policy'] as Map?)?['mode'] == 'concepts',
+              ) &&
+              system == null)
+            const Text('A selected shared system is needed to show its files.'),
+          if (requirements.isEmpty)
+            Text(
+              'No shared deliverables are currently due.',
+              style: TextStyle(color: DefensysTokens.textSecondaryOf(context)),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.normalFlow) return _normalFlow();
     final requirements = _sharedRows(group['requirements']);
-    final repeated = requirements
+    final allRepeated = requirements
         .where((row) => (row['file_policy'] as Map?)?['mode'] == 'concepts')
         .toList();
     final once = requirements
         .where((row) => (row['file_policy'] as Map?)?['mode'] != 'concepts')
         .toList();
     final systems = _sharedRows(group['systems']);
+    final official = systems
+        .where((system) => system['key'] == group['selected_key'])
+        .firstOrNull;
+    final repeated = allRepeated
+        .where((row) => official == null || row['deliverable_type'] != 'post')
+        .toList();
+    final alternatives = systems
+        .where((system) => system['key'] != group['selected_key'])
+        .toList();
+    final visibleSystems = official == null
+        ? systems
+        : showHistory
+        ? alternatives
+        : [official];
     final active =
-        systems
+        visibleSystems
             .where(
               (system) =>
                   system['key'] == (widget.selectedSystemKey ?? systemKey),
             )
             .firstOrNull ??
-        systems.firstOrNull;
+        visibleSystems.firstOrNull;
     return DefensysShadcnScope(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (systems.length == 1 &&
+          if (official != null) ...[
+            SharedSystemSelectionBanner(project: group),
+            const SizedBox(height: 10),
+            Text(
+              'Project manager: ${group['project_manager_name'] ?? 'Not assigned'}. '
+              'Only the selected system needs a final paper; earlier proposals remain available in history.',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+            const SizedBox(height: 14),
+            for (final requirement in requirements.where(
+              (row) => row['deliverable_type'] == 'post',
+            ))
+              requirementCard(
+                requirement,
+                key: (requirement['file_policy'] as Map?)?['mode'] == 'concepts'
+                    ? '${official['key']}'
+                    : null,
+              ),
+            if (alternatives.isNotEmpty) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ShadButton.ghost(
+                  size: ShadButtonSize.sm,
+                  onPressed: busy
+                      ? null
+                      : () => setState(() {
+                          showHistory = !showHistory;
+                          systemKey = null;
+                        }),
+                  leading: Icon(
+                    showHistory ? Icons.arrow_back : Icons.history,
+                    size: 15,
+                  ),
+                  child: Text(
+                    showHistory
+                        ? 'Back to selected system'
+                        : 'Earlier proposals (${alternatives.length})',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (showHistory)
+              Text(
+                'Proposal history · Not selected for final submission',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+          ],
+          if (official == null &&
+              systems.length == 1 &&
               repeated.isEmpty &&
               '${active?['title'] ?? ''}'.isNotEmpty) ...[
             Text(
@@ -470,7 +705,10 @@ class _SharedDeliverablesPanelState
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
-          if (once.isNotEmpty && widget.systemHeaderBuilder == null) ...[
+          if (once.any(
+                (row) => official == null || row['deliverable_type'] != 'post',
+              ) &&
+              widget.systemHeaderBuilder == null) ...[
             Text(
               'For the entire section',
               style: TextStyle(
@@ -480,11 +718,14 @@ class _SharedDeliverablesPanelState
               ),
             ),
             const SizedBox(height: 10),
-            for (final requirement in once) requirementCard(requirement),
+            for (final requirement in once.where(
+              (row) => official == null || row['deliverable_type'] != 'post',
+            ))
+              requirementCard(requirement),
           ],
           if ((repeated.isNotEmpty || widget.systemHeaderBuilder != null) &&
               active != null) ...[
-            if (systems.length > 1)
+            if (visibleSystems.length > 1)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: ShadTabs<String>(
@@ -499,7 +740,7 @@ class _SharedDeliverablesPanelState
                           widget.onSystemChanged?.call(value);
                         },
                   tabs: [
-                    for (final system in systems)
+                    for (final system in visibleSystems)
                       ShadTab(
                         value: '${system['key']}',
                         child: Text('System ${systems.indexOf(system) + 1}'),
@@ -543,7 +784,10 @@ class _SharedDeliverablesPanelState
                 requirementCard(requirement, key: '${active['key']}'),
             ],
           ],
-          if (once.isNotEmpty && widget.systemHeaderBuilder != null) ...[
+          if (once.any(
+                (row) => official == null || row['deliverable_type'] != 'post',
+              ) &&
+              widget.systemHeaderBuilder != null) ...[
             const SizedBox(height: 16),
             const Text(
               'Section-wide documents',
@@ -558,7 +802,10 @@ class _SharedDeliverablesPanelState
               ),
             ),
             const SizedBox(height: 10),
-            for (final requirement in once) requirementCard(requirement),
+            for (final requirement in once.where(
+              (row) => official == null || row['deliverable_type'] != 'post',
+            ))
+              requirementCard(requirement),
           ],
           if (requirements.isEmpty)
             Text(
@@ -578,10 +825,14 @@ class SharedDeliverablesSection extends ConsumerStatefulWidget {
     required this.teamId,
     required this.stageLabel,
     this.summary,
+    this.embedded = false,
+    this.onChanged,
   });
   final int teamId;
   final String stageLabel;
   final Map<String, dynamic>? summary;
+  final bool embedded;
+  final VoidCallback? onChanged;
   @override
   ConsumerState<SharedDeliverablesSection> createState() =>
       _SharedDeliverablesSectionState();
@@ -591,11 +842,12 @@ class _SharedDeliverablesSectionState
     extends ConsumerState<SharedDeliverablesSection> {
   Map<String, dynamic>? group;
   String? error;
+  bool loading = false;
   int revision = 0;
   @override
   void initState() {
     super.initState();
-    if (widget.summary == null) load();
+    if (widget.embedded || widget.summary == null) load();
   }
 
   @override
@@ -612,6 +864,7 @@ class _SharedDeliverablesSectionState
     setState(() {
       group = null;
       error = null;
+      loading = true;
     });
     try {
       final response = await ref
@@ -619,6 +872,7 @@ class _SharedDeliverablesSectionState
           .sharedDeliverables(widget.teamId, stageLabel: widget.stageLabel);
       if (mounted && request == revision) {
         setState(() {
+          loading = false;
           group = response['shared_deliverables'] is Map
               ? Map<String, dynamic>.from(
                   response['shared_deliverables'] as Map,
@@ -627,12 +881,75 @@ class _SharedDeliverablesSectionState
         });
       }
     } catch (exception) {
-      if (mounted && request == revision) setState(() => error = '$exception');
+      if (mounted && request == revision) {
+        setState(() {
+          loading = false;
+          error = '$exception';
+        });
+      }
     }
+  }
+
+  void changed(Map<String, dynamic> value) {
+    setState(() => group = value);
+    widget.onChanged?.call();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) {
+      return Container(
+        key: const ValueKey('shared-deliverables-workspace'),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: DefensysTokens.surfaceOf(context),
+          border: Border.all(color: DefensysTokens.borderOf(context)),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Shared system',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${group?['section'] ?? widget.summary?['section'] ?? ''} · ${widget.stageLabel}',
+              style: TextStyle(
+                fontSize: 12,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+            const SizedBox(height: 20),
+            if (loading)
+              const LinearProgressIndicator()
+            else if (error != null) ...[
+              Text(error!),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: load,
+                  child: const Text('Retry shared deliverables'),
+                ),
+              ),
+            ] else if (group != null)
+              SharedDeliverablesPanel(
+                group: group!,
+                normalFlow: true,
+                onChanged: changed,
+              )
+            else
+              const Text('No shared deliverables are currently available.'),
+          ],
+        ),
+      );
+    }
     if (error != null) {
       return TextButton(
         onPressed: load,
@@ -652,10 +969,7 @@ class _SharedDeliverablesSectionState
         },
         children: [
           if (group != null)
-            SharedDeliverablesPanel(
-              group: group!,
-              onChanged: (value) => setState(() => group = value),
-            )
+            SharedDeliverablesPanel(group: group!, onChanged: changed)
           else
             const LinearProgressIndicator(),
         ],

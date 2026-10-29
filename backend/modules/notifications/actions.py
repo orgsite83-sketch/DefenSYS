@@ -4,17 +4,37 @@ One query per target kind for an entire notification page, rather than per row.
 This resolver does not create minutes or otherwise write to workflow records.
 """
 from authentication_access_control.scopes import is_admin_user
+import re
 from urllib.parse import urlencode
+
+
+def minutes_action_route(schedule, workspace):
+    """Review minutes in the recipient's workspace; only documenters edit them."""
+    if workspace == 'documenter':
+        return f'/documenter/minutes/{schedule.pk}'
+    if workspace == 'adviser':
+        query = urlencode({'scope': 'capstone', 'tab': 'defense', 'stage': schedule.stage_label})
+        return f'/faculty/deliverables/teams/{schedule.team_id}?{query}'
+    base = 'admin' if workspace == 'admin' else 'faculty'
+    return f'/{base}/defense-board?minutes={schedule.pk}'
 
 
 def target(notification):
     payload = notification.action_payload or {}
     kind = payload.get('action_kind')
+    schedule_id = payload.get('schedule_id')
+    if notification.category in ('MINUTES', 'DEFENSE') and schedule_id is None:
+        # Old persisted notices may carry only the former review URL. Keep the
+        # same schedule identity and re-check access in resolve_actions below.
+        path = (notification.action_route or '').split('?', 1)[0].split('#', 1)[0]
+        match = re.fullmatch(r'/(?:admin|faculty)/defense-board/minutes/([1-9]\d*)/?', path)
+        if match:
+            schedule_id = int(match.group(1))
     if payload.get('team_id') and payload.get('stage_label'):
         kind = kind or 'deliverables'
     if payload.get('panelist_eligibility') and payload.get('request_id'):
         kind = 'panelist_request'
-    if notification.category in ('MINUTES', 'DEFENSE') and payload.get('schedule_id'):
+    if notification.category in ('MINUTES', 'DEFENSE') and schedule_id:
         kind = kind or {
             'minutes ready for review': 'minutes_adviser',
             'minutes awaiting final signature': 'minutes_chairman',
@@ -22,7 +42,7 @@ def target(notification):
             'minutes finalized': 'minutes_finalized',
         }.get(notification.title.lower())
     key = 'request_id' if kind == 'panelist_request' else 'evaluator_id' if kind == 'external_evaluator' else 'team_id' if kind == 'deliverables' else 'schedule_id'
-    value = payload.get(key)
+    value = schedule_id if key == 'schedule_id' else payload.get(key)
     return kind, value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
@@ -51,13 +71,14 @@ def resolve_actions(notifications, actor):
     evaluators = {e.pk: e for e in evaluators}
     minutes_ids = {pk for kind, pk in targets.values() if kind and kind.startswith('minutes_') and pk}
     schedules = {s.pk: s for s in DefenseSchedule.objects.filter(pk__in=minutes_ids)
-                 .select_related('team').prefetch_related('panel_assignments')}
+                 .select_related('team', 'defense_stage').prefetch_related('panel_assignments')}
     minutes = {m.schedule_id: m for m in DefenseMinutes.objects.filter(schedule_id__in=minutes_ids)}
     teams = {}
     if ids('deliverables'):
         from repository.deliverables.services import team_queryset_for_user
         teams = {t.pk: t for t in team_queryset_for_user(actor).filter(pk__in=ids('deliverables'))}
     stage_states = {}
+    requirement_states = {}
     base = 'admin' if admin else 'faculty'
     result = {}
     for notification in notifications:
@@ -95,9 +116,17 @@ def resolve_actions(notifications, actor):
                 task = notification.action_payload.get('deliverable_task')
                 done = status == 'endorsed' or (task == 'submit' and status == 'complete')
                 if task == 'materials':
-                    from repository.deliverables.timing import materials_readiness, stage_schedule
-                    schedule = stage_schedule(team, stage_label=stage)
-                    done = bool(schedule and materials_readiness(schedule)['status'] in ('ready', 'not_required'))
+                    done = True  # Retired task; old notices no longer require action.
+                if task == 'requirement_upload':
+                    from repository.deliverables.reminders import requirement_reminder_state
+                    requirement_key = (pk, stage, notification.action_payload.get('deliverable_id'))
+                    if requirement_key not in requirement_states:
+                        requirement_states[requirement_key] = requirement_reminder_state(team, stage, requirement_key[2])
+                    requirement = requirement_states[requirement_key]
+                    if requirement is None:
+                        result[notification.pk] = action
+                        continue
+                    done = requirement['complete']
                 query = urlencode({'stage': stage, 'scope': 'capstone' if team.is_capstone else 'pit'})
                 route = f'/student?tab=stages&subtab=deliverables&{query}' if actor.role == 'student' else (
                     f'/admin/student-teams/{pk}?tab=deliverables&{query}' if admin else
@@ -111,7 +140,7 @@ def resolve_actions(notifications, actor):
                 schedule.team.adviser_id == actor.pk or
                 any(p.panelist_id == actor.pk for p in schedule.panel_assignments.all()))
             if allowed:
-                route = f'/documenter/minutes/{pk}' if notification.workspace == 'documenter' else f'/{base}/defense-board/minutes/{pk}'
+                route = minutes_action_route(schedule, notification.workspace)
                 if schedule.status == DefenseSchedule.STATUS_CANCELLED:
                     action = _state('cancelled', 'Cancelled', route if item else None, 'View minutes' if item else None)
                 else:

@@ -55,7 +55,7 @@ def build_semester_transition_preview(target_semester):
         issues.append({'key': 'exceptional_transition', 'blocking': True,
             'message': 'This is not a consecutive regular-term transition. No automatic team continuation will be applied.',
             'action_label': 'Review teams', 'route': '/admin/student-teams'})
-    if review['kind'] == 'close_cycle' and review['counts']['needs_review']:
+    if review['counts']['needs_review']:
         issues.append({'key': 'capstone_unresolved', 'blocking': True,
             'count': review['counts']['needs_review'],
             'message': 'Capstone teams still have unresolved grading, clearance, or cohort records.',
@@ -77,7 +77,7 @@ def build_semester_transition_preview(target_semester):
 
 @transaction.atomic
 def switch_active_semester(target_semester, user, force=False, reason='', *,
-                           decisions=None, preview_revision='', request_id=None):
+                           preview_revision='', request_id=None):
     reason = (reason or '').strip()
     if not (getattr(user, 'is_superuser', False) or getattr(user, 'role', None) == 'admin'):
         from rest_framework.exceptions import PermissionDenied
@@ -91,12 +91,12 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
         if previous:
             if previous.operation != 'activation' or previous.to_semester_id != target_semester.pk or previous.changed_by_id != user.pk:
                 raise ValidationError('This request identity has already been used for another transition.')
-            if previous.reason != reason or previous.forced != bool(force) or previous.impact_snapshot.get('decisions', []) != (decisions or []):
+            if previous.reason != reason or previous.forced != bool(force):
                 raise ValidationError('This request has already completed with different decisions. Refresh the period before starting another review.')
             return previous.impact_snapshot, previous
     source = active_semester()
     if source and source.pk == target_semester.pk:
-        if preview_revision or decisions:
+        if preview_revision:
             raise ValidationError({'code': 'stale_preview', 'detail': 'This semester is already active. Refresh the current roster.'})
         return build_semester_transition_preview(target_semester), None
     from .calendar import validate_calendar
@@ -159,9 +159,8 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
             impact_snapshot=preview,
         )
         from student_teams.capstone_lifecycle import apply_capstone_transition
-        applied = apply_capstone_transition(current, target, review, decisions or [],
-            actor=user, log=log, reason=reason)
-        log.impact_snapshot = {**preview, 'applied_team_ids': applied, 'decisions': decisions or []}
+        applied = apply_capstone_transition(current, target, review, actor=user, log=log)
+        log.impact_snapshot = {**preview, 'applied_team_ids': applied}
         log.save(update_fields=['impact_snapshot'])
         log_high_impact_action(
             category=SystemAuditLog.CATEGORY_ACADEMIC_PERIOD,
@@ -195,7 +194,7 @@ def proposed_semester(school_year, *, label, starts_on, ends_on, **_ignored):
 
 @transaction.atomic
 def create_semester(school_year, user, *, label, starts_on, ends_on, set_active=False,
-                    force=False, reason='', decisions=None, preview_revision='', request_id=None):
+                    force=False, reason='', preview_revision='', request_id=None):
     """Create and optionally activate together through the canonical transition."""
     from .calendar import validate_calendar
     from .models import SchoolYear
@@ -213,7 +212,7 @@ def create_semester(school_year, user, *, label, starts_on, ends_on, set_active=
             if (previous.changed_by_id != user.pk or previous.operation != 'activation'
                     or previous.impact_snapshot.get('created_term') != identity
                     or previous.forced != force or previous.reason != reason.strip()
-                    or previous.impact_snapshot.get('decisions', []) != (decisions or [])):
+                   ):
                 raise ValidationError('This request identity has already been used for another operation.')
             if not previous.to_semester.is_active:
                 raise ValidationError({'code': 'stale_creation',
@@ -229,7 +228,7 @@ def create_semester(school_year, user, *, label, starts_on, ends_on, set_active=
     target.save()
     if set_active:
         _preview, log = switch_active_semester(target, user, force=force, reason=reason,
-            decisions=decisions, preview_revision=preview['preview_revision'], request_id=request_id)
+            preview_revision=preview['preview_revision'], request_id=request_id)
         if log:
             log.impact_snapshot = {**log.impact_snapshot, 'created_term': identity}
             log.save(update_fields=['impact_snapshot'])
@@ -308,7 +307,7 @@ def _transition_issues(current_semester, counts):
         key='active_teams',
         count=counts['active_teams'],
         blocking=False,
-        message='active teams are assigned to the current semester',
+        message='teams belong to the outgoing semester (PIT and Capstone)',
         action_label='Review teams',
         route=f'/admin/student-teams?semester={semester_id}',
     )
@@ -335,14 +334,14 @@ def _transition_issues(current_semester, counts):
     if has_active_work and counts['capstone_peer_evaluation_enabled']:
         issues.append(_boolean_issue(
             key='capstone_peer_evaluation_enabled',
-            message='peer evaluation is still enabled',
+            message='Capstone peer evaluation is still enabled',
             action_label='Open evaluation settings',
             route='/admin/academic-periods',
         ))
     if has_active_work and counts['capstone_adviser_grading_enabled']:
         issues.append(_boolean_issue(
             key='capstone_adviser_grading_enabled',
-            message='adviser grading is still enabled',
+            message='Capstone adviser grading is still enabled',
             action_label='Open evaluation settings',
             route='/admin/academic-periods',
         ))

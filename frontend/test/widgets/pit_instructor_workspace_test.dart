@@ -368,14 +368,14 @@ void main() {
     expect(summary.label, '1 needs review');
   });
 
-  test('team badge separates endorsement blockers from files due later', () {
+  test('team badge counts every missing required pre-defense file', () {
     Map<String, dynamic> team({required bool paperUploaded}) => {
       'current_stage': 'Proposal',
       'stages': [
         {
           'stage_label': 'Proposal',
           'deliverables_configured': true,
-          'required_complete': paperUploaded,
+          'required_complete': false,
           'pre': [
             {
               'id': 'PAPER',
@@ -405,14 +405,12 @@ void main() {
     };
 
     final blocked = TeamRequirementSummary.fromTeam(team(paperUploaded: false));
-    expect(blocked.missingForEndorsement, 1);
-    expect(blocked.pendingDefenseFiles, 1);
+    expect(blocked.missingForEndorsement, 2);
     expect(blocked.label, 'Awaiting files');
 
     final ready = TeamRequirementSummary.fromTeam(team(paperUploaded: true));
-    expect(ready.missingForEndorsement, 0);
-    expect(ready.pendingDefenseFiles, 1);
-    expect(ready.label, 'Awaiting endorsement');
+    expect(ready.missingForEndorsement, 1);
+    expect(ready.label, 'Awaiting files');
   });
 
   testWidgets('team badge preserves completion workflow and guidance', (
@@ -509,53 +507,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('PIT files due after scheduling need no endorsement', (
-    tester,
-  ) async {
-    expect(
-      DeliverablesTriageHelper.isOverdueOrMissing(
-        Map<String, dynamic>.from(_pitTeam),
-      ),
-      isTrue,
-    );
-    expect(
-      DeliverablesTriageHelper.isReadyForDefense(
-        Map<String, dynamic>.from(_pitTeam),
-      ),
-      isTrue,
-    );
-    tester.view.physicalSize = const Size(1500, 1050);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-
-    await pumpDefensysWidget(
-      tester,
-      const SingleChildScrollView(
-        child: DeliverablesTablePane(
-          state: CapstoneDeliverablesState(
-            scope: 'pit',
-            selectedStage: 'System Concept Pitching',
-            stageOptions: ['System Concept Pitching'],
-            teams: [_pitTeam],
-          ),
-          isAdviser: false,
-          initialTeamId: 7,
-        ),
-      ),
-      overrides: [adviserGradingProvider.overrideWith(_PitGradesNotifier.new)],
-    );
-
-    expect(find.text('Ready to schedule'), findsWidgets);
-    expect(find.text('Needs review'), findsNothing);
-    expect(find.text('No scheduling uploads required'), findsOneWidget);
-    expect(
-      find.textContaining(
-        'No endorsement needed. This team can be scheduled now.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Endorse team'), findsNothing);
-  });
 
   testWidgets('instructor team has read only Schedule tab and scoped exports', (
     tester,

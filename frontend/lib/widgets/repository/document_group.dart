@@ -29,6 +29,9 @@ class DocumentGroup extends ConsumerStatefulWidget {
     this.initialSlotKey,
     this.onOpenConceptReview,
     this.titleWorkflow = const {},
+    this.allowUploads = true,
+    this.onRemind,
+    this.reminding = false,
   });
   final Map<String, dynamic> titleWorkflow;
   final int teamId;
@@ -42,6 +45,11 @@ class DocumentGroup extends ConsumerStatefulWidget {
   final String? initialSlotKey;
   final ValueChanged<String?>? onOpenConceptReview;
   final List<Map<String, dynamic>> concepts;
+
+  /// Tracking surfaces can disable submission actions independently of role.
+  final bool allowUploads;
+  final VoidCallback? onRemind;
+  final bool reminding;
   @override
   ConsumerState<DocumentGroup> createState() => _DocumentGroupState();
 }
@@ -132,6 +140,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     Map<String, dynamic>? file, {
     bool multiple = false,
   }) async {
+    if (!widget.allowUploads) return;
     try {
       final slots = (widget.item['document_slots'] as List? ?? [])
           .whereType<Map>();
@@ -292,9 +301,9 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         (title['title_review'] as Map?)?['state'] != 'accepted';
     final user = ref.watch(authProvider).user ?? {};
     final faculty = user['role'] != 'student';
-    final defenseTimed = item['requirement_timing'] == 'defense';
     final canReview = faculty && item['can_faculty_review'] == true;
     final canUpload =
+        widget.allowUploads &&
         item['can_upload'] == true &&
         uploadBlocker.isEmpty &&
         (widget.titleWorkflow['title_workflow_version'] != 2 ||
@@ -311,14 +320,12 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         file?['status'] == 'rejected' || file?['status'] == 'Needs Revision';
     final status = file == null
         ? (required ? 'Missing' : 'Optional')
-        : defenseTimed && !rejected
-        ? 'Uploaded'
         : accepted
         ? (item['type'] == 'post' ? 'Archived' : 'Accepted for presentation')
         : rejected
         ? 'Corrections requested'
         : 'Awaiting review';
-    final tone = accepted || (defenseTimed && file != null && !rejected)
+    final tone = accepted
         ? WorkflowStatusTone.success
         : file == null
         ? WorkflowStatusTone.neutral
@@ -363,7 +370,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         file: file,
         status: status,
         uploader: uploader,
-        onReplace: !busy && canUpload && (!accepted || defenseTimed)
+        onReplace: !busy && canUpload && !accepted
             ? () => upload(slot, file)
             : null,
         onRemove: !busy && canUpload && !accepted
@@ -446,6 +453,10 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                 constraints: const BoxConstraints(maxWidth: 180),
                 child: DeliverableStatusBadge(label: status, tone: tone),
               ),
+              if (file == null && required && widget.onRemind != null) ...[
+                const SizedBox(width: 8),
+                reminderButton(),
+              ],
             ],
           ),
           if (file != null) ...[
@@ -488,7 +499,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                 ),
               ),
             if (canReview &&
-                (defenseTimed || !(item['type'] == 'post' && accepted))) ...[
+                !(item['type'] == 'post' && accepted)) ...[
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,
@@ -497,7 +508,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (compact && !accepted && !defenseTimed)
+                    if (compact && !accepted)
                       ShadButton.outline(
                         height: 36,
                         enabled: !busy && !titleBlocked,
@@ -521,7 +532,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                         onPressed: () => review(file, 'rejected'),
                         child: const Text('Request revision'),
                       ),
-                      if (!accepted && !defenseTimed)
+                      if (!accepted)
                         ShadButton(
                           height: 40,
                           backgroundColor: DefensysTokens.maroonOf(context),
@@ -866,23 +877,16 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
           file['status'] != 'rejected' &&
           file['status'] != 'Needs Revision',
     );
-    final defenseUploaded =
-        item['requirement_timing'] == 'defense' &&
-        files.isNotEmpty &&
-        allUploaded &&
-        !anyRejected;
     final groupStatus = allAccepted
         ? (item['type'] == 'post' ? 'Archived' : 'Accepted')
         : missingCount > 0
         ? '$uploadedCount/$minimum Uploaded'
         : anyRejected
         ? 'Corrections requested'
-        : defenseUploaded
-        ? 'Uploaded'
         : pendingReview
         ? 'Under Review'
         : 'Optional';
-    final groupTone = allAccepted || defenseUploaded
+    final groupTone = allAccepted
         ? WorkflowStatusTone.success
         : missingCount > 0
         ? WorkflowStatusTone.neutral
@@ -994,7 +998,8 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                   '${file['slot_key']}',
                   file,
                 ),
-              if (item['can_upload'] == true &&
+              if (widget.allowUploads &&
+                  item['can_upload'] == true &&
                   (user['role'] == 'student' ||
                       user['role'] == 'admin' ||
                       user['is_superuser'] == true) &&
@@ -1009,6 +1014,11 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                   onUpload: () => upload('', null, multiple: true),
                 ),
               ],
+              if (missingCount > 0 && widget.onRemind != null)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: reminderButton(),
+                ),
             ] else
               for (final slot in slots) ...[
                 documentRow(
@@ -1054,4 +1064,18 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
       ),
     );
   }
+
+  Widget reminderButton() => ShadButton.outline(
+    size: ShadButtonSize.sm,
+    enabled: !busy && !widget.reminding,
+    leading: widget.reminding
+        ? const SizedBox(
+            width: 13,
+            height: 13,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : const Icon(LucideIcons.bell, size: 13),
+    onPressed: widget.reminding ? null : widget.onRemind,
+    child: const Text('Remind'),
+  );
 }

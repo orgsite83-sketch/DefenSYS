@@ -160,7 +160,7 @@ class FacultyTeamSummaryView(APIView):
             files.append({
                 'file': item.get('label') or item.get('name') or item.get('id') or 'File',
                 'timing': 'After defense' if item.get('type') == 'post' else
-                          ('Before defense' if item.get('requirement_timing') == 'defense' else 'Before endorsement'),
+                          'Before endorsement',
                 'status': status,
             })
         spec = dataset('Assigned Team Summary', [

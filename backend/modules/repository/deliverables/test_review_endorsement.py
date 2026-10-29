@@ -72,7 +72,7 @@ class ReviewEndorsementTests(APITestCase):
             progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage, semester=self.semester)
             self.assertEqual(progress.updated_by, self.adviser)
         self.assertFalse(SystemAuditLog.objects.filter(action='repository.review_and_endorse').exists())
-        self.assertEqual(stage_payload(self.team, self.stage.label)['materials_readiness']['submitted_total'], 0)
+        self.assertNotIn('materials_readiness', stage_payload(self.team, self.stage.label))
 
     def test_capstone_reviews_files_before_separate_endorsement(self):
         self.assert_separate_review_and_endorsement()

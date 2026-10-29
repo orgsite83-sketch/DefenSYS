@@ -91,3 +91,16 @@ class ArchiveFolderHierarchyTests(TestCase):
     def test_invalid_folder_key_resets_to_root(self):
         self.assertEqual(archive_folder_payload(self.entries, folder_key='invalid!')['folder_key'], '')
 
+    def test_shared_module_history_has_stable_seven_level_navigation(self):
+        shared = {**self.base, 'section_project_id': 10, 'section_round_id': 7,
+            'shared_owner': 'team', 'section': 'BSIT-2A', 'shared_system_title': 'Selected system',
+            'is_proposal_history': True}
+        self.entries = [shared]
+        leaf = self._open('team', ['2026-2027', '1st Semester', '2nd Year', 'Showcase',
+            'Shared system · BSIT-2A', 'Team Atlas', 'Proposal history'])
+        self.assertTrue(leaf['is_leaf'])
+        self.assertEqual(leaf['entries'], [shared])
+        self.assertEqual(len(leaf['breadcrumbs']), 7)
+        self.assertTrue(leaf['shared_context']['is_history'])
+        self.assertEqual(entries_in_folder(self.entries, folder_key=leaf['folder_key']), [shared])
+

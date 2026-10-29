@@ -1,6 +1,7 @@
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../config/api_config.dart';
@@ -9,6 +10,9 @@ import '../../../../services/authenticated_client.dart';
 import '../../../../services/student_teams_provider.dart';
 import '../../../../services/team_detail_provider.dart';
 import '../../../../services/auth_provider.dart';
+import '../../../../services/academic_period_provider.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'dart:convert';
 import '../../../../services/app/data_refresh_provider.dart';
 import '../../../../utils/universal_file_viewer.dart';
 import '../../../../toasts/feedback_toast.dart';
@@ -18,6 +22,7 @@ import '../../../../widgets/repository/shared_concept_review.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../grade_center_shared.dart';
 import 'academic_progress_card.dart';
+import '../../../../widgets/academic/student_capstone_history.dart';
 
 class TeamDetailPage extends ConsumerStatefulWidget {
   const TeamDetailPage({
@@ -44,7 +49,6 @@ class TeamDetailPage extends ConsumerStatefulWidget {
 }
 
 class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
-
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
   static const _gold = DefensysUi.accentGold;
@@ -63,6 +67,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   String _selectedDeliverableStage = '';
   int? _selectedReportIndex;
   bool _isEditing = false;
+  bool _reusingRoster = false;
   String _studentFilter = '';
   bool _refreshAfterEvaluation = false;
   int _teamRevision = 0;
@@ -126,7 +131,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     final team = detailState.team;
 
     if (detailState.isLoading && team == null) {
-      return Center(child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)));
+      return Center(
+        child: CircularProgressIndicator(
+          color: DefensysTokens.maroonOf(context),
+        ),
+      );
     }
 
     if (team == null) {
@@ -156,18 +165,27 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     final isCapstone = level.toUpperCase().contains('CAPSTONE');
     final tabCount = isCapstone ? 4 : 3;
 
-    final teamStages = (detailState.deliverableTeam?['stages'] as List? ?? const [])
-        .whereType<Map>()
-        .map((s) => s['stage_label']?.toString() ?? '')
-        .where((s) => s.isNotEmpty)
-        .toList();
+    final teamStages =
+        (detailState.deliverableTeam?['stages'] as List? ?? const [])
+            .whereType<Map>()
+            .map((s) => s['stage_label']?.toString() ?? '')
+            .where((s) => s.isNotEmpty)
+            .toList();
     final stageOptions = teamStages.isNotEmpty
         ? teamStages
-        : _filterStageOptionsForTeam(detailState.stageOptions, team, isCapstone);
-    final currentStage = detailState.deliverableTeam?['current_stage']?.toString();
+        : _filterStageOptionsForTeam(
+            detailState.stageOptions,
+            team,
+            isCapstone,
+          );
+    final currentStage = detailState.deliverableTeam?['current_stage']
+        ?.toString();
     if (stageOptions.isNotEmpty) {
-      if (_selectedDeliverableStage.isEmpty || !stageOptions.contains(_selectedDeliverableStage)) {
-        if (currentStage != null && currentStage.isNotEmpty && stageOptions.contains(currentStage)) {
+      if (_selectedDeliverableStage.isEmpty ||
+          !stageOptions.contains(_selectedDeliverableStage)) {
+        if (currentStage != null &&
+            currentStage.isNotEmpty &&
+            stageOptions.contains(currentStage)) {
           _selectedDeliverableStage = currentStage;
         } else {
           _selectedDeliverableStage = stageOptions.first;
@@ -190,7 +208,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
 
     return DefaultTabController(
       length: tabCount,
-      initialIndex: widget.initialDeliverableStage == null ? 0 : isCapstone ? 2 : 1,
+      initialIndex: widget.initialDeliverableStage == null
+          ? 0
+          : isCapstone
+          ? 2
+          : 1,
       child: Padding(
         padding: DefensysUi.contentPadding,
         child: Column(
@@ -246,33 +268,70 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     final project = team?['project_title']?.toString() ?? '';
     final workflow = _overviewConceptWorkflow(team);
     final proposals = conceptRows(workflow['concepts']);
+    final active = ref.watch(academicPeriodProvider).activeSemester;
+    final canReuse =
+        widget.canManage &&
+        team?['is_capstone'] == true &&
+        team?['is_editable'] == false &&
+        team?['status'] == 'Failed' &&
+        active?['label'] == '2nd Semester' &&
+        active?['id'] != team?['semester_id'];
 
     return Row(
       children: [
         IconButton(
           tooltip: 'Back to teams',
           onPressed: widget.onBack,
-          icon: Icon(Icons.arrow_back_rounded, color: DefensysTokens.maroonTextOf(context)),
+          icon: Icon(
+            Icons.arrow_back_rounded,
+            color: DefensysTokens.maroonTextOf(context),
+          ),
         ),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: DefensysUi.pageTitle.copyWith(color: DefensysTokens.maroonTextOf(context))),
+              Text(
+                title,
+                style: DefensysUi.pageTitle.copyWith(
+                  color: DefensysTokens.maroonTextOf(context),
+                ),
+              ),
               if (hasOpenConceptProposals(workflow))
-                Text('Concept selection · ${proposals.where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty).length} of ${proposals.length} titles provided',
-                  style: DefensysUi.subtitle.copyWith(fontSize: 14, color: DefensysTokens.textSecondaryOf(context)))
+                Text(
+                  'Concept selection · ${proposals.where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty).length} of ${proposals.length} titles provided',
+                  style: DefensysUi.subtitle.copyWith(
+                    fontSize: 14,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                )
               else if (project.isNotEmpty)
-                Text(project, style: DefensysUi.subtitle.copyWith(color: DefensysTokens.textSecondaryOf(context)), maxLines: 2),
+                Text(
+                  project,
+                  style: DefensysUi.subtitle.copyWith(
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                  maxLines: 2,
+                ),
               if (!_isEditing)
                 Text(
                   'Team workspace — submissions and roster',
-                  style: TextStyle(color: DefensysTokens.textSecondaryOf(context), fontSize: 13),
+                  style: TextStyle(
+                    color: DefensysTokens.textSecondaryOf(context),
+                    fontSize: 13,
+                  ),
                 ),
             ],
           ),
         ),
-        if (widget.canManage && !_isEditing)
+        if (canReuse)
+          DefensysShadcnScope(
+            child: ShadButton.outline(
+              onPressed: _reusingRoster ? null : () => _reuseRoster(team!),
+              child: Text(_reusingRoster ? 'Saving…' : 'Reuse roster'),
+            ),
+          ),
+        if (widget.canManage && team?['is_editable'] != false && !_isEditing)
           OutlinedButton.icon(
             onPressed: () => setState(() => _isEditing = true),
             icon: const Icon(Icons.edit_outlined, size: 18),
@@ -312,13 +371,74 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     );
   }
 
+  Future<void> _reuseRoster(Map<String, dynamic> team) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => DefensysShadcnScope(
+        child: ShadDialog(
+          title: const Text('Reuse roster for this Capstone 1 intake?'),
+          description: const Text(
+            'The new participation starts with this batch’s requirements. Previous records stay in History.',
+          ),
+          actions: [
+            ShadButton.outline(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ShadButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Confirm new participation'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _reusingRoster = true);
+    try {
+      final response = await ref
+          .read(authenticatedHttpClientProvider)
+          .post(
+            Uri.parse('${ApiConfig.teamsUrl}/${team['id']}/reuse-roster/'),
+            body: jsonEncode({}),
+          );
+      if (!mounted) return;
+      final data = jsonDecode(response.body) as Map;
+      if (response.statusCode != 201) {
+        showErrorToast(
+          context,
+          data['detail']?.toString() ??
+              data['member_ids']?.toString() ??
+              'The roster cannot join this intake. Review the student records.',
+        );
+      } else {
+        final id = (data['team'] as Map)['id'];
+        ref.read(dataRefreshProvider.notifier).markChanged({DataArea.teams});
+        context.go(AdminRoutes.teamDetail(int.parse('$id')));
+      }
+    } catch (_) {
+      if (mounted) {
+        showErrorToast(context, 'The roster could not be saved. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _reusingRoster = false);
+    }
+  }
+
   Map<String, dynamic> _overviewConceptWorkflow(Map<String, dynamic>? team) {
     final defense = team?['defense_context'] as Map?;
     if (defense?.containsKey('concept_workflow') == true) {
-      return Map<String, dynamic>.from(defense?['concept_workflow'] as Map? ?? {});
+      return Map<String, dynamic>.from(
+        defense?['concept_workflow'] as Map? ?? {},
+      );
     }
-    final workspace = ref.read(teamDetailProvider(widget.teamId)).deliverableTeam;
-    final label = defense?['current_stage'] ?? defense?['event_label'] ?? workspace?['current_stage'];
+    final workspace = ref
+        .read(teamDetailProvider(widget.teamId))
+        .deliverableTeam;
+    final label =
+        defense?['current_stage'] ??
+        defense?['event_label'] ??
+        workspace?['current_stage'];
     final stages = (workspace?['stages'] as List? ?? []).whereType<Map>();
     final stage = stages.where((s) => s['stage_label'] == label).firstOrNull;
     return Map<String, dynamic>.from(stage?['concept_workflow'] as Map? ?? {});
@@ -506,67 +626,103 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (proposalMode) ...[
-                Wrap(alignment: WrapAlignment.spaceBetween, spacing: 20, runSpacing: 12,
-                  crossAxisAlignment: WrapCrossAlignment.center, children: [
-                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('PROJECT INFORMATION', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
-                        letterSpacing: .8, color: DefensysTokens.textSecondaryOf(context))),
-                      const SizedBox(height: 8),
-                      Text('Concept proposals', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700,
-                        color: DefensysTokens.textPrimaryOf(context))),
-                    ]),
-                    ProposalTitleProgressBadge(rows: proposals),
-                  ]),
-                const SizedBox(height: 12),
-                Text('These proposals are awaiting concept selection.',
-                  style: TextStyle(fontSize: 14, color: DefensysTokens.textSecondaryOf(context), height: 1.45)),
-                const SizedBox(height: 8),
-                ProposalTitleSummary(rows: proposals, showHeading: false),
-              ] else Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: 20,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'PROJECT INFORMATION',
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: FontWeight.w800,
-                            letterSpacing: 0.8,
+                            letterSpacing: .8,
                             color: DefensysTokens.textSecondaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          project,
+                          'Concept proposals',
                           style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
                             color: DefensysTokens.textPrimaryOf(context),
-                            height: 1.3,
                           ),
                         ),
                       ],
                     ),
+                    ProposalTitleProgressBadge(rows: proposals),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'These proposals are awaiting concept selection.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: DefensysTokens.textSecondaryOf(context),
+                    height: 1.45,
                   ),
-                  const SizedBox(width: 16),
-                  _buildTeamStatusBadge(status),
-                ],
-              ),
+                ),
+                const SizedBox(height: 8),
+                ProposalTitleSummary(rows: proposals, showHeading: false),
+              ] else
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'PROJECT INFORMATION',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.8,
+                              color: DefensysTokens.textSecondaryOf(context),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            project,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: DefensysTokens.textPrimaryOf(context),
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    _buildTeamStatusBadge(status),
+                  ],
+                ),
               const SizedBox(height: 16),
               Divider(color: DefensysTokens.borderOf(context), height: 1),
               const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
-                    child: _buildMetaText('Program', programLabel, icon: Icons.school_outlined),
+                    child: _buildMetaText(
+                      'Program',
+                      programLabel,
+                      icon: Icons.school_outlined,
+                    ),
                   ),
                   if (!isCapstone)
                     Expanded(
-                      child: _buildMetaText('Section', team['section']?.toString() ?? '—', icon: Icons.class_outlined),
+                      child: _buildMetaText(
+                        'Section',
+                        team['section']?.toString() ?? '—',
+                        icon: Icons.class_outlined,
+                      ),
                     ),
                 ],
               ),
@@ -587,7 +743,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.badge_outlined, size: 18, color: DefensysTokens.maroonTextOf(context)),
+                  Icon(
+                    Icons.badge_outlined,
+                    size: 18,
+                    color: DefensysTokens.maroonTextOf(context),
+                  ),
                   SizedBox(width: 8),
                   Text(
                     'CLASSROOM DETAILS',
@@ -611,7 +771,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 _buildInfoRow(
                   Icons.person_outline,
                   'Instructor',
-                  team['instructor_name']?.toString() ?? 'No instructor assigned',
+                  team['instructor_name']?.toString() ??
+                      'No instructor assigned',
                 ),
                 const SizedBox(height: 12),
                 _buildInfoRow(
@@ -652,12 +813,14 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         const SizedBox(height: 20),
         AcademicProgressCard(
           grades: detailState.grades,
-          stageLabels: (detailState.deliverableTeam?['stages'] as List? ?? const [])
-              .whereType<Map>()
-              .map((stage) => stage['stage_label']?.toString() ?? '')
-              .where((label) => label.isNotEmpty)
-              .toList(),
-          currentStage: detailState.deliverableTeam?['current_stage']?.toString(),
+          stageLabels:
+              (detailState.deliverableTeam?['stages'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map((stage) => stage['stage_label']?.toString() ?? '')
+                  .where((label) => label.isNotEmpty)
+                  .toList(),
+          currentStage: detailState.deliverableTeam?['current_stage']
+              ?.toString(),
           isCapstone: isCapstone,
           isLoading: detailState.isLoading,
           error: detailState.gradesError,
@@ -680,7 +843,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         ? FacultyRoutes.gradeDetail(gradeId)
         : AdminRoutes.gradeDetail(gradeId);
     final locked =
-        grade['is_officially_complete'] == true || grade['status'] == 'published';
+        grade['is_officially_complete'] == true ||
+        grade['status'] == 'published';
     _refreshAfterEvaluation = true;
     // Cross-section pushes belong to the source branch's Navigator. Switch
     // branches instead, and retain an explicit destination for the Back link.
@@ -710,7 +874,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.people_alt_outlined, size: 18, color: DefensysTokens.maroonTextOf(context)),
+                  Icon(
+                    Icons.people_alt_outlined,
+                    size: 18,
+                    color: DefensysTokens.maroonTextOf(context),
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'TEAM ROSTER (${members.length}/4)',
@@ -737,7 +905,13 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                   final name = student['name']?.toString() ?? 'Unknown Student';
                   final username = student['username']?.toString() ?? '';
                   final initials = name.isNotEmpty
-                      ? name.trim().split(' ').map((e) => e[0]).take(2).join().toUpperCase()
+                      ? name
+                            .trim()
+                            .split(' ')
+                            .map((e) => e[0])
+                            .take(2)
+                            .join()
+                            .toUpperCase()
                       : '?';
 
                   return Container(
@@ -752,11 +926,17 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                       children: [
                         CircleAvatar(
                           radius: 18,
-                          backgroundColor: isLeader ? _gold.withValues(alpha: 0.2) : DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                          backgroundColor: isLeader
+                              ? _gold.withValues(alpha: 0.2)
+                              : DefensysTokens.maroonOf(
+                                  context,
+                                ).withValues(alpha: 0.1),
                           child: Text(
                             initials,
                             style: TextStyle(
-                              color: isLeader ? const Color(0xFFB45309) : DefensysTokens.maroonTextOf(context),
+                              color: isLeader
+                                  ? const Color(0xFFB45309)
+                                  : DefensysTokens.maroonTextOf(context),
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -790,13 +970,28 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
+                            if (isCapstone && studentId != null)
+                              StudentCapstoneParticipationButton(
+                                studentId: studentId,
+                                name: name,
+                                number: _asInt(
+                                  (student['capstone_participation']
+                                      as Map?)?['number'],
+                                ),
+                                canOpenHistory: widget.canManage,
+                              ),
                             if (isLeader)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFFEF3C7),
                                   borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: const Color(0xFFFDE68A)),
+                                  border: Border.all(
+                                    color: const Color(0xFFFDE68A),
+                                  ),
                                 ),
                                 child: const Text(
                                   'Leader',
@@ -810,11 +1005,16 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                             if (!isEnrolled) ...[
                               if (isLeader) const SizedBox(height: 4),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFFEE2E2),
                                   borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: const Color(0xFFFCA5A5)),
+                                  border: Border.all(
+                                    color: const Color(0xFFFCA5A5),
+                                  ),
                                 ),
                                 child: const Text(
                                   'Not Enrolled',
@@ -850,7 +1050,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.workspace_premium_outlined, size: 18, color: DefensysTokens.maroonTextOf(context)),
+                    Icon(
+                      Icons.workspace_premium_outlined,
+                      size: 18,
+                      color: DefensysTokens.maroonTextOf(context),
+                    ),
                     SizedBox(width: 8),
                     Text(
                       'PROJECT ADVISER',
@@ -868,7 +1072,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                   Icons.person_pin_rounded,
                   'Current Adviser',
                   team['adviser_name']?.toString() ??
-                      _adviserLabel(_asInt(team['adviser_id']), detailState.advisers),
+                      _adviserLabel(
+                        _asInt(team['adviser_id']),
+                        detailState.advisers,
+                      ),
                 ),
                 const SizedBox(height: 20),
                 _adviserHistorySection(detailState.adviserHistory),
@@ -910,22 +1117,22 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
           programLabel,
           adviserName,
         );
-        final rightColumn = _buildRightOverviewColumn(detailState, team, isCapstone, members, leaderId);
+        final rightColumn = _buildRightOverviewColumn(
+          detailState,
+          team,
+          isCapstone,
+          members,
+          leaderId,
+        );
 
         if (isWide) {
           return SingleChildScrollView(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  flex: 3,
-                  child: leftColumn,
-                ),
+                Expanded(flex: 3, child: leftColumn),
                 const SizedBox(width: 24),
-                Expanded(
-                  flex: 2,
-                  child: rightColumn,
-                ),
+                Expanded(flex: 2, child: rightColumn),
               ],
             ),
           );
@@ -933,11 +1140,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
           return SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                leftColumn,
-                const SizedBox(height: 24),
-                rightColumn,
-              ],
+              children: [leftColumn, const SizedBox(height: 24), rightColumn],
             ),
           );
         }
@@ -953,7 +1156,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     final yearLevel = team['year_level']?.toString() ?? '3rd Year';
     final isCapstone = level.toUpperCase().contains('CAPSTONE');
     final statusOptions = detailState.statuses.isEmpty
-        ? const ['Pending', 'Approved', 'Failed', 'Delayed/Extended']
+        ? const ['Pending', 'Approved', 'Failed']
         : detailState.statuses;
 
     return LayoutBuilder(
@@ -985,7 +1188,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 decoration: const InputDecoration(
                   labelText: 'Team Name',
                   border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -994,7 +1200,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 decoration: const InputDecoration(
                   labelText: 'Project Title',
                   border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -1002,11 +1211,17 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 decoration: const InputDecoration(
                   labelText: 'Program',
                   border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                 ),
                 child: Text(
                   isCapstone ? 'Capstone · $yearLevel' : '$yearLevel PIT',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -1017,14 +1232,19 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 decoration: const InputDecoration(
                   labelText: 'Team Result',
                   border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                 ),
                 items: statusOptions
                     .map(
-                      (item) => DropdownMenuItem(value: item, child: Text(item)),
+                      (item) =>
+                          DropdownMenuItem(value: item, child: Text(item)),
                     )
                     .toList(),
-                onChanged: (value) => setState(() => _status = value ?? _status),
+                onChanged: (value) =>
+                    setState(() => _status = value ?? _status),
               ),
               if (!isCapstone) ...[
                 const SizedBox(height: 16),
@@ -1033,20 +1253,29 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                   decoration: const InputDecoration(
                     labelText: 'Section',
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
                 ),
               ],
               if (!widget.isPitLead && isCapstone) ...[
                 const SizedBox(height: 16),
                 DropdownButtonFormField<int?>(
-                  initialValue: detailState.advisers.any((a) => _asInt(a['id']) == _adviserId)
+                  initialValue:
+                      detailState.advisers.any(
+                        (a) => _asInt(a['id']) == _adviserId,
+                      )
                       ? _adviserId
                       : null,
                   decoration: const InputDecoration(
                     labelText: 'Adviser',
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                   ),
                   items: [
                     const DropdownMenuItem<int?>(
@@ -1091,7 +1320,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                       color: _ink,
                     ),
                   ),
-                  Icon(Icons.person_add_alt_1_outlined, size: 18, color: DefensysTokens.maroonTextOf(context)),
+                  Icon(
+                    Icons.person_add_alt_1_outlined,
+                    size: 18,
+                    color: DefensysTokens.maroonTextOf(context),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -1101,7 +1334,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                   hintText: 'Type name or student ID...',
                   prefixIcon: Icon(Icons.search, size: 20),
                   border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
                 onChanged: (val) {
                   setState(() {
@@ -1119,14 +1355,19 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 ),
                 child: Builder(
                   builder: (context) {
-                    final filteredStudents = detailState.students.where((student) {
+                    final filteredStudents = detailState.students.where((
+                      student,
+                    ) {
                       final studentId = _asInt(student['id']);
-                      if (studentId != null && _selectedMembers.contains(studentId)) {
+                      if (studentId != null &&
+                          _selectedMembers.contains(studentId)) {
                         return true;
                       }
                       if (_studentFilter.trim().isEmpty) return true;
-                      final name = student['name']?.toString().toLowerCase() ?? '';
-                      final username = student['username']?.toString().toLowerCase() ?? '';
+                      final name =
+                          student['name']?.toString().toLowerCase() ?? '';
+                      final username =
+                          student['username']?.toString().toLowerCase() ?? '';
                       final query = _studentFilter.toLowerCase();
                       return name.contains(query) || username.contains(query);
                     }).toList();
@@ -1158,8 +1399,12 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                             onChanged: (value) {
                               setState(() {
                                 if (value == true) {
-                                  if (_selectedMembers.length >= 4 && !selected) {
-                                    showValidationToast(context, 'A team can have a maximum of 4 members.');
+                                  if (_selectedMembers.length >= 4 &&
+                                      !selected) {
+                                    showValidationToast(
+                                      context,
+                                      'A team can have a maximum of 4 members.',
+                                    );
                                     return;
                                   }
                                   _selectedMembers.add(studentId);
@@ -1176,13 +1421,18 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                             },
                             title: Text(
                               '${student['name']} (${student['username']})',
-                              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             subtitle: _leaderId == studentId
                                 ? Text(
                                     'Team Leader',
                                     style: TextStyle(
-                                      color: DefensysTokens.maroonTextOf(context),
+                                      color: DefensysTokens.maroonTextOf(
+                                        context,
+                                      ),
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -1195,7 +1445,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                                       _leaderId == studentId
                                           ? Icons.workspace_premium_rounded
                                           : Icons.circle_outlined,
-                                      color: _leaderId == studentId ? _gold : _muted,
+                                      color: _leaderId == studentId
+                                          ? _gold
+                                          : _muted,
                                     ),
                                     onPressed: () =>
                                         setState(() => _leaderId = studentId),
@@ -1205,7 +1457,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                         );
                       },
                     );
-                  }
+                  },
                 ),
               ),
               const SizedBox(height: 12),
@@ -1228,15 +1480,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  flex: 3,
-                  child: leftColumn,
-                ),
+                Expanded(flex: 3, child: leftColumn),
                 const SizedBox(width: 24),
-                Expanded(
-                  flex: 2,
-                  child: rightColumn,
-                ),
+                Expanded(flex: 2, child: rightColumn),
               ],
             ),
           );
@@ -1244,11 +1490,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
           return SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                leftColumn,
-                const SizedBox(height: 24),
-                rightColumn,
-              ],
+              children: [leftColumn, const SizedBox(height: 24), rightColumn],
             ),
           );
         }
@@ -1382,10 +1624,18 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         .toList();
     final effectiveStageOptions = teamStages.isNotEmpty
         ? teamStages
-        : _filterStageOptionsForTeam(stageOptions, detailState.team, isCapstone);
+        : _filterStageOptionsForTeam(
+            stageOptions,
+            detailState.team,
+            isCapstone,
+          );
 
     if (effectiveStageOptions.isEmpty) {
-      return _emptyTab(isCapstone ? 'No defense stages setup yet.' : 'No PIT events setup yet.');
+      return _emptyTab(
+        isCapstone
+            ? 'No defense stages setup yet.'
+            : 'No PIT events setup yet.',
+      );
     }
 
     final stages = (deliverableTeam['stages'] as List? ?? const [])
@@ -1401,7 +1651,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
     final pre = deliverables.where((d) => d['type'] == 'pre').toList();
-    final vault = deliverables.where((d) => d['type'] == 'post' || d['type'] == 'vault').toList();
+    final vault = deliverables
+        .where((d) => d['type'] == 'post' || d['type'] == 'vault')
+        .toList();
 
     return SingleChildScrollView(
       child: Container(
@@ -1416,7 +1668,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
           children: [
             Row(
               children: [
-                Icon(Icons.touch_app_outlined, size: 15, color: DefensysTokens.maroonTextOf(context)),
+                Icon(
+                  Icons.touch_app_outlined,
+                  size: 15,
+                  color: DefensysTokens.maroonTextOf(context),
+                ),
                 const SizedBox(width: 6),
                 Text(
                   isCapstone ? 'Defense Stage Overview' : 'PIT Event Overview',
@@ -1429,14 +1685,19 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFFCBD5E1)),
                   ),
                   child: Text(
-                    isCapstone ? 'Click stage to select view' : 'Click event to select view',
+                    isCapstone
+                        ? 'Click stage to select view'
+                        : 'Click event to select view',
                     style: const TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
@@ -1452,7 +1713,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               runSpacing: 8,
               children: effectiveStageOptions.map((label) {
                 final active = label == _selectedDeliverableStage;
-                final isCurrentConfig = label == deliverableTeam['current_stage']?.toString();
+                final isCurrentConfig =
+                    label == deliverableTeam['current_stage']?.toString();
                 return Tooltip(
                   message: active
                       ? '$label (Currently active ${isCapstone ? 'stage' : 'event'})'
@@ -1460,25 +1722,35 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: () => setState(() => _selectedDeliverableStage = label),
+                      onTap: () =>
+                          setState(() => _selectedDeliverableStage = label),
                       borderRadius: BorderRadius.circular(8),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
                         decoration: BoxDecoration(
-                          color: active ? DefensysTokens.maroonOf(context) : const Color(0xFFF8FAFC),
+                          color: active
+                              ? DefensysTokens.maroonOf(context)
+                              : const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: active ? DefensysTokens.maroonOf(context) : const Color(0xFFCBD5E1),
+                            color: active
+                                ? DefensysTokens.maroonOf(context)
+                                : const Color(0xFFCBD5E1),
                             width: active ? 1.5 : 1.0,
                           ),
                           boxShadow: active
                               ? [
                                   BoxShadow(
-                                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.25),
+                                    color: DefensysTokens.maroonOf(
+                                      context,
+                                    ).withValues(alpha: 0.25),
                                     blurRadius: 4,
                                     offset: const Offset(0, 2),
-                                  )
+                                  ),
                                 ]
                               : [],
                         ),
@@ -1486,13 +1758,19 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (active) ...[
-                              const Icon(Icons.check_circle, size: 14, color: Colors.white),
+                              const Icon(
+                                Icons.check_circle,
+                                size: 14,
+                                color: Colors.white,
+                              ),
                               const SizedBox(width: 6),
                             ],
                             Text(
                               label,
                               style: TextStyle(
-                                fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                                fontWeight: active
+                                    ? FontWeight.w700
+                                    : FontWeight.w600,
                                 color: active ? Colors.white : _ink,
                                 fontSize: 12,
                               ),
@@ -1500,11 +1778,16 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                             if (isCurrentConfig) ...[
                               const SizedBox(width: 6),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 1,
+                                ),
                                 decoration: BoxDecoration(
                                   color: active
                                       ? Colors.white.withValues(alpha: 0.25)
-                                      : DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                                      : DefensysTokens.maroonOf(
+                                          context,
+                                        ).withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -1512,7 +1795,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                                   style: TextStyle(
                                     fontSize: 9,
                                     fontWeight: FontWeight.bold,
-                                    color: active ? Colors.white : DefensysTokens.maroonTextOf(context),
+                                    color: active
+                                        ? Colors.white
+                                        : DefensysTokens.maroonTextOf(context),
                                   ),
                                 ),
                               ),
@@ -1538,7 +1823,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   'No pre-defense requirements configured.',
-                  style: TextStyle(color: _muted, fontStyle: FontStyle.italic, fontSize: 12),
+                  style: TextStyle(
+                    color: _muted,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 12,
+                  ),
                 ),
               )
             else
@@ -1549,7 +1838,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
             ),
             const SizedBox(height: 8),
-            if (stage['vault_unlocked'] != true && stage['archive_unlocked'] != true)
+            if (stage['vault_unlocked'] != true &&
+                stage['archive_unlocked'] != true)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
@@ -1625,7 +1915,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.hourglass_empty, size: 12, color: Colors.amber.shade800),
+                  Icon(
+                    Icons.hourglass_empty,
+                    size: 12,
+                    color: Colors.amber.shade800,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     'Awaiting student upload',
@@ -1653,11 +1947,19 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   }
 
   Widget _buildRequiredCheckBlock(List<Map<String, dynamic>> pre) {
-    final requiredItems = pre.where((item) => item['required'] == true).toList();
+    final requiredItems = pre
+        .where((item) => item['required'] == true)
+        .toList();
     final total = requiredItems.length;
-    final done = requiredItems.where((item) => item['uploaded'] == true || item['submission'] != null).length;
-    final pct = total > 0 ? (done / total).clamp(0.0, 1.0) : (pre.isEmpty ? 0.0 : 1.0);
-    final color = done == total && total > 0 ? const Color(0xFF10B981) : Colors.orange;
+    final done = requiredItems
+        .where((item) => item['uploaded'] == true || item['submission'] != null)
+        .length;
+    final pct = total > 0
+        ? (done / total).clamp(0.0, 1.0)
+        : (pre.isEmpty ? 0.0 : 1.0);
+    final color = done == total && total > 0
+        ? const Color(0xFF10B981)
+        : Colors.orange;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1681,7 +1983,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 ),
               ),
               Text(
-                total > 0 ? '$done / $total Complete' : (pre.isEmpty ? 'Not Configured' : 'Complete'),
+                total > 0
+                    ? '$done / $total Complete'
+                    : (pre.isEmpty ? 'Not Configured' : 'Complete'),
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -1768,7 +2072,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                       onPressed: id == null
                           ? null
                           : () => _downloadTeamDocument(id),
-                      icon: Icon(Icons.download_outlined, color: DefensysTokens.maroonTextOf(context)),
+                      icon: Icon(
+                        Icons.download_outlined,
+                        color: DefensysTokens.maroonTextOf(context),
+                      ),
                     ),
                   ],
                 ),
@@ -2003,7 +2310,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     if (mounted) {
       final teamsState = ref.read(studentTeamsProvider);
       final errorMsg = teamsState.error;
-      if (errorMsg != null && (errorMsg.contains('defense schedules') || errorMsg.contains('grade records'))) {
+      if (errorMsg != null &&
+          (errorMsg.contains('defense schedules') ||
+              errorMsg.contains('grade records'))) {
         final user = ref.read(authProvider).user;
         final isAdmin = user?['role']?.toString() == 'admin';
 
@@ -2013,7 +2322,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             builder: (dialogContext) => AlertDialog(
               surfaceTintColor: Colors.transparent,
               title: const Text('Delete Blocked'),
-              content: const Text('Only system administrators can delete teams with active schedules or grades.'),
+              content: const Text(
+                'Only system administrators can delete teams with active schedules or grades.',
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
@@ -2028,10 +2339,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         final forceDeleted = await showDialog<bool>(
           context: context,
           builder: (dialogContext) {
-            return _ForceDeleteDialog(
-              teamName: name,
-              warningMessage: errorMsg,
-            );
+            return _ForceDeleteDialog(teamName: name, warningMessage: errorMsg);
           },
         );
 
@@ -2196,8 +2504,12 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         final breakdowns = parseBreakdowns(grade);
         final peerGrades = parsePeerPerStudent(grade);
 
-        final panelBreakdowns = breakdowns.where((b) => b['evaluation_type'] == 'panel').toList();
-        final peerBreakdowns = breakdowns.where((b) => b['evaluation_type'] == 'peer').toList();
+        final panelBreakdowns = breakdowns
+            .where((b) => b['evaluation_type'] == 'panel')
+            .toList();
+        final peerBreakdowns = breakdowns
+            .where((b) => b['evaluation_type'] == 'peer')
+            .toList();
 
         final finalScore = asDouble(grade['final_grade']);
 
@@ -2219,7 +2531,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          grade['stage_label']?.toString() ?? 'Grade Evaluation',
+                          grade['stage_label']?.toString() ??
+                              'Grade Evaluation',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -2247,12 +2560,14 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                   Expanded(
                     child: _buildScoreStatCard(
                       title: 'Final Grade',
-                      value: finalScore == null ? '--' : finalScore.toStringAsFixed(2),
+                      value: finalScore == null
+                          ? '--'
+                          : finalScore.toStringAsFixed(2),
                       color: finalScore == null
                           ? _muted
                           : finalScore >= 75
-                              ? const Color(0xFF10B981)
-                              : _red,
+                          ? const Color(0xFF10B981)
+                          : _red,
                       isBold: true,
                     ),
                   ),
@@ -2300,18 +2615,32 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                   child: Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                         child: Row(
                           children: [
                             Expanded(
                               flex: 2,
-                              child: Text('STUDENT', style: DefensysUi.tableHeader),
+                              child: Text(
+                                'STUDENT',
+                                style: DefensysUi.tableHeader,
+                              ),
                             ),
                             Expanded(
-                              child: Text('AVERAGE', style: DefensysUi.tableHeader, textAlign: TextAlign.right),
+                              child: Text(
+                                'AVERAGE',
+                                style: DefensysUi.tableHeader,
+                                textAlign: TextAlign.right,
+                              ),
                             ),
                             Expanded(
-                              child: Text('PEER GRADE', style: DefensysUi.tableHeader, textAlign: TextAlign.right),
+                              child: Text(
+                                'PEER GRADE',
+                                style: DefensysUi.tableHeader,
+                                textAlign: TextAlign.right,
+                              ),
                             ),
                           ],
                         ),
@@ -2322,26 +2651,36 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                         final norm = asDouble(pg['normalized_score']);
                         final maxS = asDouble(pg['max_score']) ?? 10.0;
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
                           child: Row(
                             children: [
                               Expanded(
                                 flex: 2,
                                 child: Text(
                                   '${pg['student_name']} (${pg['username']})',
-                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13.5,
+                                  ),
                                 ),
                               ),
                               Expanded(
                                 child: Text(
-                                  avg == null ? '—' : '${avg.toStringAsFixed(2)} / ${maxS.toStringAsFixed(0)}',
+                                  avg == null
+                                      ? '—'
+                                      : '${avg.toStringAsFixed(2)} / ${maxS.toStringAsFixed(0)}',
                                   style: DefensysUi.tableCell,
                                   textAlign: TextAlign.right,
                                 ),
                               ),
                               Expanded(
                                 child: Text(
-                                  norm == null ? 'Pending' : norm.toStringAsFixed(2),
+                                  norm == null
+                                      ? 'Pending'
+                                      : norm.toStringAsFixed(2),
                                   style: TextStyle(
                                     fontSize: 13.5,
                                     fontWeight: FontWeight.bold,
@@ -2476,7 +2815,10 @@ class _ForceDeleteDialogState extends State<_ForceDeleteDialog> {
           children: [
             Text(
               widget.warningMessage,
-              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.red),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.red,
+              ),
             ),
             const SizedBox(height: 12),
             const Text(
@@ -2493,7 +2835,10 @@ class _ForceDeleteDialogState extends State<_ForceDeleteDialog> {
               decoration: const InputDecoration(
                 hintText: 'Enter team name',
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
               ),
             ),
           ],

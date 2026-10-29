@@ -223,13 +223,6 @@ def _resolve_submission_status_display(submission, review_status, team, definiti
     if review_status == DeliverableSubmission.STATUS_REJECTED:
         return 'Needs Revision'
     if review_status == DeliverableSubmission.STATUS_PENDING:
-        from repository.deliverables.timing import due_before_defense
-        is_defense_material = bool(definition and due_before_defense(definition))
-        if is_defense_material:
-            from repository.deliverables.services import is_stage_defense_done
-            if team and is_stage_defense_done(team, submission.stage_label):
-                return 'Approved'
-            return 'Uploaded'
         return 'Pending Review'
     return (review_status or 'Approved').title()
 
@@ -272,6 +265,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'id': entry_id,
             'source_id': submission.id,
             'file_id': None,
+            'project_version': submission.project_version,
             'type': entry_type,
             'file_name': submission.file_name,
             'file_size': submission.file_size,
@@ -334,6 +328,10 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'id': entry_id,
             'source_id': submission.id,
             'file_id': f.id,
+            'project_version': submission.project_version,
+            'slot_key': f.slot_key,
+            'concept_round_id': f.concept_round_id,
+            'selected_concept_key': f.selected_concept_key,
             'type': entry_type,
             'file_name': f.file_name,
             'canonical_file_name': canonical_name or f.file_name,

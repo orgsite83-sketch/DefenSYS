@@ -13,6 +13,7 @@ from .views import (
     GradeCenterSyncView,
     TeamGradeVerdictView,
     TeamGradeWorkflowView,
+    TeamGradeAssessmentView,
 )
 
 
@@ -35,6 +36,7 @@ urlpatterns = [
     path('<int:grade_id>/publish/', GradeCenterPublishView.as_view(), name='grade_center_publish'),
     path('<int:grade_id>/verdict/', TeamGradeVerdictView.as_view(), name='team_grade_verdict'),
     path('<int:grade_id>/workflow/', TeamGradeWorkflowView.as_view(), name='team_grade_workflow'),
+    path('<int:grade_id>/assessment/', TeamGradeAssessmentView.as_view(), name='team_grade_assessment'),
     # Adviser-specific grading endpoints
     path('adviser-grades/', AdviserGradeListView.as_view(), name='adviser_grade_list'),
     path('adviser-grades/<int:grade_id>/submit/', AdviserSubmitGradeView.as_view(), name='adviser_grade_submit'),

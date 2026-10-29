@@ -87,7 +87,7 @@ Future<void> showManualCreateTeamModal({
   const yearOptions = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 
   final statusOptions = state.statuses.isEmpty
-      ? const ['Pending', 'Approved', 'Failed', 'Delayed/Extended']
+      ? const ['Pending', 'Approved', 'Failed']
       : state.statuses;
   final name = TextEditingController();
   final projectTitle = TextEditingController();

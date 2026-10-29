@@ -55,7 +55,6 @@ def stage_options(queryset):
     )
 
 
-
 def adviser_options(queryset):
     from django.db.models import Count
     adviser_data = (
@@ -104,6 +103,10 @@ def filter_board_queryset(request, queryset):
     # A faculty account may have several duties. A workspace's team calendar
     # must not inherit unrelated panel, documenter, or PIT-lead assignments.
     workspace = request.query_params.get('workspace', '').strip()
+    if 'schedule_id' in request.query_params:
+        from rest_framework import serializers
+        schedule_id = serializers.IntegerField(min_value=1).run_validation(request.query_params['schedule_id'])
+        queryset = queryset.filter(pk=schedule_id)
     if workspace == 'adviser':
         queryset = queryset.filter(scope='capstone', team__adviser=request.user, semester__is_active=True)
     elif workspace == 'instructor':
@@ -193,8 +196,7 @@ def board_payload(request, queryset=None, *, workspace=None):
     base = board_queryset_for_user(request.user, workspace=workspace)
     current = queryset if queryset is not None else base
     # Assessment fields reuse the same fully loaded grade rows for this request.
-    from repository.deliverables.timing import with_material_permissions
-    current = with_material_permissions(current).select_related('documenter', 'minutes')
+    current = current.select_related('documenter', 'minutes')
     manageable_ids = set(manageable_schedules_for(request.user).filter(
         pk__in=current.values('pk'),
     ).values_list('pk', flat=True)) if workspace in ('', 'operations') else set()

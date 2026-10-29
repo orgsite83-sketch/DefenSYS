@@ -12,10 +12,16 @@ class DefenseTeamSummary extends StatelessWidget {
     required this.team,
     this.showDetailsInitially = false,
     this.previewMode = false,
+    this.assessmentTitle,
+    this.parentSystemTitle = '',
+    this.materials,
   });
   final TeamData team;
   final bool showDetailsInitially;
   final bool previewMode;
+  final String? assessmentTitle;
+  final String parentSystemTitle;
+  final Widget? materials;
 
   String _initials(String name) {
     final words = name
@@ -183,6 +189,8 @@ class DefenseTeamSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = DefensysTokens.maroonOf(context);
     final surface = DefensysTokens.surfaceOf(context);
+    final assessing = assessmentTitle != null;
+    final title = assessmentTitle ?? team.project;
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -199,60 +207,81 @@ class DefenseTeamSummary extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(9),
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: .08),
-                          borderRadius: BorderRadius.circular(10),
+                  if (!assessing) ...[
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(9),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: .08),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.school_outlined,
+                            size: 20,
+                            color: DefensysTokens.maroonTextOf(context),
+                          ),
                         ),
-                        child: Icon(
-                          Icons.school_outlined,
-                          size: 20,
-                          color: DefensysTokens.maroonTextOf(context),
-                        ),
-                      ),
-                      const SizedBox(width: 11),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              team.scopeLabel,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: DefensysTokens.maroonTextOf(context),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                team.scopeLabel,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: DefensysTokens.maroonTextOf(context),
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              'Attempt #${team.attemptCount}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: DefensysTokens.textSecondaryOf(context),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Attempt #${team.attemptCount}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: DefensysTokens.textSecondaryOf(
+                                    context,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      ShadBadge.outline(
-                        child: Text(
-                          team.isChair ? 'Panel Chair' : 'Panelist',
-                          style: const TextStyle(fontSize: 10),
+                        const SizedBox(width: 8),
+                        ShadBadge.outline(
+                          child: Text(
+                            team.isChair ? 'Panel Chair' : 'Panelist',
+                            style: const TextStyle(fontSize: 10),
+                          ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 17),
+                  ],
+                  if (parentSystemTitle.isNotEmpty) ...[
+                    Text(
+                      'Shared system',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: DefensysTokens.textSecondaryOf(context),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 17),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      parentSystemTitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.45,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   Text(
-                    team.project.isNotEmpty
-                        ? team.project
-                        : 'Project title unavailable',
+                    title.isNotEmpty ? title : 'Project title unavailable',
                     style: TextStyle(
-                      fontSize: 21,
+                      fontSize: assessing ? 18 : 21,
                       height: 1.25,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -.45,
@@ -271,7 +300,7 @@ class DefenseTeamSummary extends StatelessWidget {
                       ),
                     ),
                   ],
-                  if (previewMode) ...[
+                  if (previewMode || assessing) ...[
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 12,
@@ -391,9 +420,13 @@ class DefenseTeamSummary extends StatelessWidget {
                           child: Text('No presenting members listed.'),
                         ),
                       const SizedBox(height: 12),
-                      if (!previewMode) _composition(context),
+                      if (!previewMode && !assessing) _composition(context),
                     ],
                   ),
+                  if (materials != null) ...[
+                    const Divider(height: 24),
+                    materials!,
+                  ],
                 ],
               ),
             ),
@@ -403,18 +436,30 @@ class DefenseTeamSummary extends StatelessWidget {
     );
   }
 
-  Widget _previewMeta(BuildContext context, IconData icon, String value) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(icon, size: 14, color: DefensysTokens.textSecondaryOf(context)),
-      const SizedBox(width: 5),
-      Text(
-        value,
-        style: TextStyle(
-          fontSize: 11,
-          color: DefensysTokens.textSecondaryOf(context),
+  Widget _previewMeta(BuildContext context, IconData icon, String value) =>
+      ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width - 72,
         ),
-      ),
-    ],
-  );
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }

@@ -58,6 +58,8 @@ def schedule_audit_values(schedule, **extra):
 @transaction.atomic
 def transition_schedule_status(schedule, new_status, *, actor=None, reason='', request=None):
     """Single source of truth for schedule status transitions."""
+    from student_teams.models import StudentTeam
+    StudentTeam.objects.select_for_update().get(pk=schedule.team_id)
     schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
     old_status = schedule.status
     if new_status == old_status:
@@ -84,7 +86,7 @@ def transition_schedule_status(schedule, new_status, *, actor=None, reason='', r
         ready = team_grading_readiness(grade, grade.semester, grade.scope)
         if schedule.scope == 'capstone':
             if not ready['panel_complete'] or not grade.verdict:
-                raise ValidationError('Complete every required panel evaluation and record the chair verdict before closing this attempt.')
+                raise ValidationError('Complete every required panel evaluation and resolve the panel outcome before closing this attempt.')
         elif not ready['ready']:
             from repository.deliverables.models import ConceptRound
             concept_retry = ConceptRound.objects.filter(schedule=schedule, verdict='for_redefense').exists()
@@ -144,6 +146,8 @@ def deletion_blockers(schedule):
 @transaction.atomic
 def delete_schedule(schedule, *, actor=None, request=None, reason='Empty schedule removal'):
     """Single source of truth for deleting a defense schedule securely."""
+    from student_teams.models import StudentTeam
+    StudentTeam.objects.select_for_update().get(pk=schedule.team_id)
     schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
     blockers = deletion_blockers(schedule)
     if blockers:

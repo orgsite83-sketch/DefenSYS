@@ -12,6 +12,7 @@ from user_management.permissions import IsFacultyRole
 from defense.scheduler.serializers import schedule_queryset
 from defense.scheduler.models import DefenseSchedule, SchedulePanelist
 from notifications.models import Notification, NotificationCategory
+from notifications.actions import minutes_action_route
 from .models import DefenseMinutes, MinutesPanelistComment
 from .serializers import DocumenterAssignmentSerializer, DefenseMinutesSerializer
 from .pdf_generator import generate_minutes_pdf
@@ -285,7 +286,7 @@ class MinutesSubmitView(APIView):
                     workspace='admin' if adviser.role == 'admin' else 'adviser',
                     category=NotificationCategory.MINUTES,
                     priority='HIGH',
-                    action_route=f"/{'admin' if adviser.role == 'admin' else 'faculty'}/defense-board/minutes/{schedule.pk}",
+                    action_route=minutes_action_route(schedule, 'admin' if adviser.role == 'admin' else 'adviser'),
                     action_payload={'schedule_id': schedule.pk, 'action_kind': 'minutes_adviser'},
                 )
                 
@@ -354,7 +355,7 @@ class MinutesSignAdviserView(APIView):
                     category=NotificationCategory.MINUTES,
                     workspace='admin',
                     priority='HIGH',
-                    action_route=f"/admin/defense-board/minutes/{schedule.pk}",
+                    action_route=minutes_action_route(schedule, 'admin'),
                     action_payload={'schedule_id': schedule.pk, 'action_kind': 'minutes_chairman'},
                 )
                 
@@ -425,7 +426,7 @@ class MinutesSignChairmanView(APIView):
                     message=f"The minutes for {minutes.team_name}'s {stage_label} defense have been finalized with all signatures",
                     category=NotificationCategory.MINUTES,
                     workspace='admin' if documenter.role == 'admin' else 'documenter',
-                    action_route=f'/admin/defense-board/minutes/{schedule.pk}' if documenter.role == 'admin' else f'/documenter/minutes/{schedule.pk}',
+                    action_route=minutes_action_route(schedule, 'admin' if documenter.role == 'admin' else 'documenter'),
                     action_payload={'schedule_id': schedule.pk, 'action_kind': 'minutes_finalized'},
                 )
                 

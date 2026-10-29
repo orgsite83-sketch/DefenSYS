@@ -89,6 +89,75 @@ void main() {
   setUpAll(() => loadPreviewFonts(force: true));
 
   for (final dark in [false, true]) {
+    for (final width in [1100.0, 390.0]) {
+      testWidgets(
+        'one missing PM paper is not eight pending adviser approvals ($width, $dark)',
+        (tester) async {
+          tester.view.physicalSize = Size(width, 844);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await _openDialog(
+            tester,
+            dark: dark,
+            teams: [
+              for (var index = 1; index <= 8; index++)
+                {
+                  'team_name': 'Team Module $index',
+                  'missing_components': ['post_defense'],
+                  'panel_complete': true,
+                  'adviser_complete': true,
+                  'peer_complete': true,
+                  'minutes_required': true,
+                  'minutes_complete': true,
+                  'post_defense_complete': false,
+                  'post_defense_completion': {
+                    'team_complete': true,
+                    'shared_complete': false,
+                    'shared': {
+                      'section_id': 2,
+                      'section': 'BSIT-3A',
+                      'identity': 'shared-1',
+                      'stage_label': 'Concept Proposal',
+                      'status': 'awaiting_pm_upload',
+                      'complete': false,
+                      'selected_system_title':
+                          'Smart Agro-Industrial IoT & Sustainable Supply Platform',
+                      'project_manager_name': 'Gabriel Navarro',
+                      'requirements': [
+                        {
+                          'label': 'Approved shared concept paper',
+                          'complete': false,
+                        },
+                      ],
+                    },
+                  },
+                },
+            ],
+          );
+          expect(find.text('Awaiting Adviser Approval'), findsNothing);
+          expect(find.text('Awaiting PM upload'), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('shared-completion-2')),
+            findsOneWidget,
+          );
+          expect(find.text('Team files accepted'), findsWidgets);
+          expect(
+            find.text('Post-defense deliverables: 8 missing'),
+            findsNothing,
+          );
+          await capturePreview(
+            tester,
+            find.byKey(const ValueKey('readiness-preview')),
+            'shared-completion-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  for (final dark in [false, true]) {
     for (final size in [const Size(1100, 844), const Size(390, 640)]) {
       testWidgets(
         'unresolved re-defense and revisions block completion at $size ($dark)',
@@ -308,7 +377,9 @@ void main() {
       expect(find.text('Ready'), findsNWidgets(3));
 
       // Tap Tab 1: Deliverables & Clearance
-      await tester.tap(find.byKey(const ValueKey('tab-deliverables-clearance')));
+      await tester.tap(
+        find.byKey(const ValueKey('tab-deliverables-clearance')),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Awaiting Adviser Approval'), findsOneWidget);
     },
@@ -343,31 +414,160 @@ void main() {
     },
   );
 
-  testWidgets(
-    'confirmation dialog handles PIT scope with disabled adviser',
-    (tester) async {
+  for (final dark in [false, true]) {
+    for (final size in [const Size(1100, 840), const Size(390, 640)]) {
+      testWidgets('required minutes block completion at $size ($dark)', (
+        tester,
+      ) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        bool? result;
+        await _openDialog(
+          tester,
+          dark: dark,
+          onCompletionResult: (value) => result = value,
+          completion: const GradeGroupCompletionReadiness(
+            totalTeams: 1,
+            readyTeams: 0,
+            canComplete: false,
+            incompleteTeams: [
+              {
+                'team_name': 'Team Minutes Pending',
+                'missing_components': ['minutes'],
+                'panel_complete': true,
+                'adviser_complete': true,
+                'peer_complete': true,
+                'post_defense_complete': true,
+                'minutes_required': true,
+                'minutes_complete': false,
+                'minutes_status_label': 'Awaiting chairman signature',
+              },
+            ],
+          ),
+        );
+        expect(find.text('Signed minutes: 1 missing'), findsOneWidget);
+        expect(find.text('Awaiting chairman signature'), findsOneWidget);
+        expect(find.text('Approved & Cleared'), findsOneWidget);
+        expect(find.text('Mark Complete'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('readiness-preview')),
+          'minutes-readiness-${size.width.toInt()}-${dark ? 'dark' : 'light'}',
+        );
+        await tester.tap(find.widgetWithText(OutlinedButton, 'Close'));
+        await tester.pumpAndSettle();
+        expect(result, isFalse);
+      });
+    }
+  }
+
+  for (final label in [
+    'Awaiting documenter',
+    'Draft - documenter editing',
+    'Awaiting adviser signature',
+    'Signed PDF pending',
+  ]) {
+    testWidgets('minutes show their current signing step: $label', (
+      tester,
+    ) async {
       await _openDialog(
         tester,
-        isPit: true,
-        completion: const GradeGroupCompletionReadiness(
-          totalTeams: 8,
-          readyTeams: 8,
-          canComplete: true,
-          panelCompleteCount: 8,
-          peerCompleteCount: 8,
-          peerEnabled: true,
-          postDeliverablesCompleteCount: 8,
-        ),
+        teams: [
+          {
+            'team_name': 'Team Draft',
+            'missing_components': ['minutes'],
+            'minutes_required': true,
+            'minutes_complete': false,
+            'minutes_status_label': label,
+            'post_defense_complete': true,
+          },
+        ],
       );
+      expect(find.text(label), findsOneWidget);
+      expect(find.text('Signed minutes: 1 missing'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
-      expect(find.text('Mark Concept Proposal Complete?'), findsOneWidget);
-      expect(find.text('All 8 teams are ready'), findsOneWidget);
-      expect(find.text('Evaluator Grades'), findsOneWidget);
-      expect(find.text('Adviser'), findsNothing);
-      expect(find.text('Deliverables & Clearance'), findsOneWidget);
-      expect(find.text('Cancel'), findsOneWidget);
-      expect(find.text('Mark Complete'), findsOneWidget);
-    },
-  );
+  testWidgets('finalized and exempt minutes are distinct in a mixed cohort', (
+    tester,
+  ) async {
+    await _openDialog(
+      tester,
+      completion: const GradeGroupCompletionReadiness(
+        totalTeams: 2,
+        readyTeams: 2,
+        canComplete: true,
+        cohortTeams: [
+          {
+            'team_name': 'Team Signed',
+            'missing_components': <String>[],
+            'minutes_required': true,
+            'minutes_complete': true,
+          },
+          {
+            'team_name': 'Team Exempt',
+            'missing_components': <String>[],
+            'minutes_required': false,
+            'minutes_complete': true,
+          },
+        ],
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('tab-deliverables-clearance')));
+    await tester.pumpAndSettle();
+    expect(find.text('Finalized'), findsOneWidget);
+    expect(find.text('Not required'), findsOneWidget);
+    expect(find.text('Mark Complete'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('exempt stages have no signed-minutes column or blocker', (
+    tester,
+  ) async {
+    await _openDialog(
+      tester,
+      teams: [
+        {
+          'team_name': 'Team Exempt',
+          'missing_components': ['post_defense'],
+          'minutes_required': false,
+          'minutes_complete': true,
+        },
+      ],
+    );
+    expect(find.text('Signed minutes'), findsNothing);
+    expect(find.textContaining('Signed minutes:'), findsNothing);
+    expect(find.text('Awaiting Adviser Approval'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('confirmation dialog handles PIT scope with disabled adviser', (
+    tester,
+  ) async {
+    await _openDialog(
+      tester,
+      isPit: true,
+      completion: const GradeGroupCompletionReadiness(
+        totalTeams: 8,
+        readyTeams: 8,
+        canComplete: true,
+        panelCompleteCount: 8,
+        peerCompleteCount: 8,
+        peerEnabled: true,
+        postDeliverablesCompleteCount: 8,
+      ),
+    );
+
+    expect(find.text('Mark Concept Proposal Complete?'), findsOneWidget);
+    expect(find.text('All 8 teams are ready'), findsOneWidget);
+    expect(find.text('Evaluator Grades'), findsOneWidget);
+    expect(find.text('Adviser'), findsNothing);
+    expect(find.text('Deliverables & Clearance'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Mark Complete'), findsOneWidget);
+  });
 }
-

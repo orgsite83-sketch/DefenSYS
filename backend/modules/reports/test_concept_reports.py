@@ -239,12 +239,14 @@ class ConceptProjectReportTests(APITestCase):
         rows[1]['project_title'] = ''
         preview = self.client.post('/api/teams/bulk-import/preview/', {'teams': rows}, format='json')
         self.assertTrue(all(r['ready'] for r in preview.data['rows']), preview.data)
-        self.assertEqual([r['concept_requirement']['required_count'] for r in preview.data['rows']], [1, 2])
+        # An imported title seeds the configured set; it never reduces it.
+        self.assertEqual([r['concept_requirement']['required_count'] for r in preview.data['rows']], [2, 2])
         imported = self.client.post('/api/teams/bulk-import/', {'teams': rows}, format='json')
         self.assertEqual(imported.status_code, 201, imported.data)
         new = StudentTeam.objects.filter(semester=self.target)
         self.assertEqual(new.count(), 2)
-        self.assertEqual({t.concept_assignment['mode'] for t in new}, {'assigned', 'proposals'})
+        self.assertEqual({t.concept_assignment['mode'] for t in new}, {'proposals'})
+        self.assertEqual({t.concept_assignment.get('assigned_title', '') for t in new}, {rows[0]['project_title'], ''})
         self.assertFalse(ConceptRound.objects.filter(team__in=new).exists())
         self.assertFalse(DeliverableSubmission.all_objects.filter(team__in=new).exists())
         self.assertFalse(TeamGrade.all_objects.filter(team__in=new, verdict__in=['approved', 'approved_with_revisions']).exists())

@@ -1,4 +1,4 @@
-"""Faculty review defaults, with read-only compatibility for existing hearings."""
+"""Faculty review defaults and completed hearing exemptions."""
 from copy import deepcopy
 
 
@@ -9,14 +9,13 @@ def faculty_review_definition(definition):
 
 
 def apply_hearing_policy(definitions, schedule, *, grade=None):
-    """Keep pre-existing deadlines and completed exemptions attached to their hearing.
+    """Keep completed exemptions attached to their exact hearing.
 
     Only the data migration populates this snapshot. New schedules always use
     faculty-reviewed requirements; changing a live checklist never rewrites a
     completed hearing's evidence.
     """
     snapshot = getattr(schedule, 'legacy_deliverable_policy', None) or {}
-    timings = snapshot.get('timings', {})
     waived = set()
     if grade and grade.status == 'published' and grade.verdict == 'approved':
         if schedule and grade.schedule_id == schedule.pk:
@@ -27,8 +26,6 @@ def apply_hearing_policy(definitions, schedule, *, grade=None):
     result = []
     for definition in definitions:
         item = deepcopy(definition)
-        if item['id'] in timings:
-            item.update(timings[item['id']])
         if item['id'] in waived:
             item['historical_waiver'] = True
         result.append(item)

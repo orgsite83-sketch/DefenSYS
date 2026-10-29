@@ -203,7 +203,7 @@ class CapstoneSharedHearingFlowTests(APITestCase):
 
     def test_configured_module_outcome_uses_the_selected_systems_assessment(self):
         from grading.grades.outcome_rules import outcome_payload
-        from grading.grades.defense_workflow import record_verdict
+        from grading.grades.automatic_outcomes import save_recommendations
         self.stage.qualifying_score = 75
         self.stage.save()
         project, schedule, grade, criterion = self.prepare_hearing()
@@ -215,9 +215,8 @@ class CapstoneSharedHearingFlowTests(APITestCase):
         services.decide(project, self.chair, [{'key': key,
             'decision': 'approved' if key == 'c2' else 'not_selected'} for key in services.KEYS], 'approved', '')
         self.assertEqual(outcome_payload(grade)['outcome'], 'for_redefense')
-        result = record_verdict(grade, actor=self.chair, verdict='for_redefense', remarks='Revise the selected module.',
-            concept_decisions=[{'key': key, 'decision': 'revise' if key == 'c2' else 'not_selected',
-                'remarks': 'Revise this module.' if key == 'c2' else ''} for key in services.KEYS])
+        grade.refresh_from_db()
+        result = save_recommendations(grade, actor=self.chair, notes='Revise this module.')
         self.assertEqual(result.verdict, 'for_redefense')
         current = concepts.latest_round(self.team, self.stage)
         self.assertEqual([c['key'] for c in current.concepts], ['c2'])

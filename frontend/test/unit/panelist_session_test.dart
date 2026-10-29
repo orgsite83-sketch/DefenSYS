@@ -7,6 +7,7 @@ TeamData assignment(
   DateTime date, {
   bool submitted = false,
   bool chair = false,
+  bool concepts = false,
   String? verdict,
 }) => TeamData(
   name: 'Team VaultSync',
@@ -24,6 +25,11 @@ TeamData assignment(
   isPosted: submitted,
   isChair: chair,
   verdict: verdict,
+  assessmentConcepts: concepts
+      ? [
+          {'key': 'c1', 'title': 'Concept proposal'},
+        ]
+      : [],
 );
 
 void main() {
@@ -62,21 +68,25 @@ void main() {
     },
   );
 
-  test('a chair must record the verdict before their day is finished', () {
-    final team = assignment(
-      'earlier',
-      DateTime(2026, 10, 9),
-      submitted: true,
-      chair: true,
-    );
-    final earlier = PanelistSession('earlier', [team]);
-    final next = PanelistSession('next', [
-      assignment('next', DateTime(2026, 10, 10)),
-    ]);
-    expect(earlier.isHistory([earlier, next]), isFalse);
-    team.verdict = 'for_redefense';
-    expect(earlier.isHistory([earlier, next]), isTrue);
-  });
+  test(
+    'a manual concept chair must record the verdict before their day is finished',
+    () {
+      final team = assignment(
+        'earlier',
+        DateTime(2026, 10, 9),
+        submitted: true,
+        chair: true,
+        concepts: true,
+      );
+      final earlier = PanelistSession('earlier', [team]);
+      final next = PanelistSession('next', [
+        assignment('next', DateTime(2026, 10, 10)),
+      ]);
+      expect(earlier.isHistory([earlier, next]), isFalse);
+      team.verdict = 'for_redefense';
+      expect(earlier.isHistory([earlier, next]), isTrue);
+    },
+  );
 
   test('an elapsed date never hides unsubmitted grades', () {
     final earlier = PanelistSession('earlier', [

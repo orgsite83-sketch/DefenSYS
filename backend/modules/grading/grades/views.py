@@ -99,7 +99,8 @@ def counts_payload(base_queryset, current_queryset=None):
     approved_result = Q(scope=TeamGrade.SCOPE_CAPSTONE) & (
         Q(verdict='approved')
         | Q(verdict='approved_with_revisions', revisions_cleared_at__isnull=False))
-    failed_result = Q(scope=TeamGrade.SCOPE_CAPSTONE, verdict__in=('failed', 'project_rejected'))
+    failed_result = Q(scope=TeamGrade.SCOPE_CAPSTONE) & (
+        Q(verdict__in=('failed', 'project_rejected')) | Q(outcome_metadata__closure__failed=True))
     base_agg = base_queryset.aggregate(
         all=Count('pk'),
         total_capstone=Count('pk', filter=Q(scope=TeamGrade.SCOPE_CAPSTONE)),
@@ -369,6 +370,9 @@ class GradeCenterGroupSettingsSerializer(drf_serializers.Serializer):
     pit_event_config_id = drf_serializers.IntegerField(required=False, allow_null=True)
     is_officially_complete = drf_serializers.BooleanField(required=False)
     peer_grading_enabled = drf_serializers.BooleanField(required=False)
+    failure_grade_ids = drf_serializers.ListField(child=drf_serializers.IntegerField(), required=False)
+    closure_reason = drf_serializers.CharField(max_length=5000, required=False, allow_blank=True)
+    completion_token = drf_serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
         if 'is_officially_complete' not in attrs and 'peer_grading_enabled' not in attrs:
@@ -436,6 +440,9 @@ class GradeCenterGroupSettingsView(APIView):
                 is_officially_complete=data.get('is_officially_complete'),
                 peer_grading_enabled=data.get('peer_grading_enabled'),
                 user=request.user,
+                failure_grade_ids=data.get('failure_grade_ids'),
+                closure_reason=data.get('closure_reason', ''),
+                completion_token=data.get('completion_token'),
             )
         except IncompleteGradingTeamsError as exc:
             return Response(
@@ -538,6 +545,32 @@ class TeamGradeVerdictView(APIView):
             'grade': TeamGradeSerializer(grade).data,
             **grade_center_payload(request),
         })
+
+
+class TeamGradeAssessmentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, grade_id):
+        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        from .automatic_outcomes import resolve_outcome, save_recommendations
+        from .outcome_rules import automatic_outcomes
+        if not automatic_outcomes(grade.schedule):
+            return Response({'detail': 'This hearing uses its captured manual assessment policy.'}, status=400)
+        try:
+            if request.data.get('action') == 'select_concept':
+                key = drf_serializers.CharField(max_length=32).run_validation(request.data.get('concept_key'))
+                token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
+                grade = resolve_outcome(grade, actor=request.user, selected_key=key, review_token=token)
+            elif request.data.get('action') == 'recommendations':
+                token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
+                grade = save_recommendations(grade, actor=request.user, notes=request.data.get('recommendations', ''), review_token=token)
+            else:
+                return Response({'detail': 'Choose concept selection or recommendations.'}, status=400)
+        except PermissionError as exc:
+            return Response({'detail': str(exc)}, status=403)
+        except DjangoValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=400)
+        return Response({'grade': TeamGradeSerializer(grade, context={'request': request}).data})
 
 
 class TeamGradeWorkflowView(APIView):

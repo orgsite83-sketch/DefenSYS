@@ -240,29 +240,23 @@ ButtonStyle facultyDashboardOutlineStyle(BuildContext context) =>
     );
 
 /// A team-level summary. Defense files already present in the stage's pre
-/// requirements are counted once, even when materials_readiness also lists them.
+/// requirements are counted once.
 class TeamRequirementSummary {
   final int missingForEndorsement;
-  final int pendingDefenseFiles;
   final int awaitingReview;
-  final bool overdue;
-  final bool awaitingSchedule;
   final bool configured;
   final bool needsAttention;
   final TeamWorkflowStatus? workflow;
 
   const TeamRequirementSummary({
     required this.missingForEndorsement,
-    required this.pendingDefenseFiles,
     required this.awaitingReview,
-    required this.overdue,
-    required this.awaitingSchedule,
     required this.configured,
     required this.needsAttention,
     this.workflow,
   });
 
-  int get missing => missingForEndorsement + pendingDefenseFiles;
+  int get missing => missingForEndorsement;
 
   factory TeamRequirementSummary.fromTeam(
     Map<String, dynamic>? team, {
@@ -274,18 +268,13 @@ class TeamRequirementSummary {
     if (stage == null) {
       return const TeamRequirementSummary(
         missingForEndorsement: 0,
-        pendingDefenseFiles: 0,
         awaitingReview: 0,
-        overdue: false,
-        awaitingSchedule: false,
         configured: false,
         needsAttention: false,
       );
     }
 
     final endorsementIds = <String>{};
-    final defenseIds = <String>{};
-    var overdue = false;
     for (final item in DeliverablesTriageHelper.items(stage)) {
       if (item['required'] != true ||
           item['is_waived'] == true ||
@@ -297,45 +286,23 @@ class TeamRequirementSummary {
           (submission is Map ? submission['status'] : item['submission_status'])
               ?.toString()
               .toLowerCase();
-      final isMaterial = item['requirement_timing'] == 'defense';
-      final submitted = isMaterial && item['materials_submitted'] is bool
-          ? item['materials_submitted'] == true
-          : item['uploaded'] == true &&
+      final submitted = item['uploaded'] == true &&
                 status != 'rejected' &&
                 status != 'needs revision' &&
                 status != 'needs_revision';
       if (!submitted) {
-        final ids = isMaterial ? defenseIds : endorsementIds;
+        final ids = endorsementIds;
         ids.add(
           item['id']?.toString() ??
               item['label']?.toString() ??
               'requirement-${ids.length}',
         );
-        if (item['materials_status'] == 'overdue') overdue = true;
       }
-    }
-
-    final materials = stage['materials_readiness'];
-    if (materials is Map) {
-      for (final item
-          in (materials['missing'] as List? ?? []).whereType<Map>()) {
-        defenseIds.add(
-          item['id']?.toString() ??
-              item['label']?.toString() ??
-              'material-${defenseIds.length}',
-        );
-        if (item['materials_status'] == 'overdue') overdue = true;
-      }
-      overdue = overdue || materials['status'] == 'overdue';
     }
 
     return TeamRequirementSummary(
       missingForEndorsement: endorsementIds.length,
-      pendingDefenseFiles: defenseIds.length,
       awaitingReview: TeamWorkflowStatus.pendingReviewCount(stage),
-      overdue: overdue,
-      awaitingSchedule:
-          materials is Map && materials['status'] == 'awaiting_schedule',
       configured:
           stage['deliverables_configured'] == true ||
           stage['is_presentation_only'] == true ||
@@ -367,8 +334,6 @@ class TeamRequirementBadge extends StatelessWidget {
       message:
           '${summary.workflow?.nextStep ?? ''} '
           '${summary.missingForEndorsement} files needed before endorsement; '
-          '${summary.pendingDefenseFiles} defense files due later. '
-          'Defense files do not block endorsement or scheduling. '
           '${summary.awaitingReview} submissions awaiting review.',
       child: TeamWorkflowBadge(
         key: const Key('team-requirement-badge'),
@@ -457,7 +422,6 @@ class DefenseScheduleCalendar extends StatelessWidget {
         ],
         'status_counts': {state: 1},
         'display_status': display,
-        'materials_readiness': schedule['materials_readiness'],
         'can_open': true,
         'sort_time': rawTime,
       });

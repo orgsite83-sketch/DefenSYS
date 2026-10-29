@@ -221,7 +221,8 @@ def panelist_result_payload(team_grade, panelist_key):
             'peer': peer_w,
             **({'adviser': team_grade.adviser_weight} if team_grade.is_capstone and team_grade.adviser_weight else {}),
         },
-        'verdict': (team_grade.verdict or '') if team_grade.uses_defense_verdict else '',
+        'verdict': ('failed' if team_grade.closed_as_failed else team_grade.verdict or '') if team_grade.uses_defense_verdict else '',
+        'outcome_metadata': team_grade.outcome_metadata,
         'verdict_remarks': (team_grade.verdict_remarks or '') if team_grade.uses_defense_verdict else '',
         'verdict_by_name': (
             f"{team_grade.verdict_by.first_name} {team_grade.verdict_by.last_name}".strip()
@@ -267,7 +268,9 @@ def previous_panel_attempt_results(submissions):
         percentage = panelist_overall_percentage(official_scores, maximum_attr='max_score_snapshot')
         weights = ({'panel_weight': snapshot.panel_weight, 'peer_weight': snapshot.peer_weight,
                     'adviser_weight': snapshot.adviser_weight} if snapshot else weights_for_schedule(schedule))
-        verdict = snapshot.verdict if snapshot else ''
+        hearing_outcome = snapshot.verdict if snapshot else ''
+        outcome_metadata = snapshot.outcome_metadata if snapshot else {}
+        verdict = 'failed' if outcome_metadata.get('closure', {}).get('failed') else hearing_outcome
         results.append({
             'teamName': schedule.team.name,
             'projectTitle': snapshot.project_title if snapshot else schedule.project_title_snapshot,
@@ -275,7 +278,7 @@ def previous_panel_attempt_results(submissions):
             'concept_assessments': concept_results,
             'total': float(sum((score.score for score in official_scores), Decimal('0'))),
             'max': float(sum((score.max_score_snapshot for score in official_scores), Decimal('0'))),
-            'teamStatus': 'Failed' if verdict in ('failed', 'project_rejected') else 'Pending',
+            'teamStatus': 'Failed' if verdict in ('failed', 'project_rejected') or (snapshot and snapshot.outcome_metadata.get('closure', {}).get('failed')) else 'Pending',
             'level': schedule.team.year_level or '', 'stage': schedule.stage_label,
             'scope': schedule.scope, 'semester_id': schedule.semester_id,
             'display_semester': schedule.semester.display_name,
@@ -297,6 +300,8 @@ def previous_panel_attempt_results(submissions):
             'weights': {'panel': weights['panel_weight'], 'peer': weights['peer_weight'],
                         **({'adviser': weights['adviser_weight']} if schedule.scope == 'capstone' else {})},
             'verdict': verdict,
+            'hearing_outcome': hearing_outcome,
+            'outcome_metadata': outcome_metadata,
             'verdict_remarks': snapshot.verdict_remarks if snapshot else '',
             'verdict_by_name': display_name(snapshot.verdict_by) if snapshot and snapshot.verdict_by else '',
             'revision_deadline': snapshot.revision_deadline.isoformat() if snapshot and snapshot.revision_deadline else None,
@@ -689,6 +694,7 @@ def _submission_identity_kwargs(panelist=None, guest=None):
 def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks='', student=None, expected_context=None, concept_key=''):
     from defense.scheduler.models import DefenseSchedule
     from defense.scheduler.panelist_evaluation import grading_unavailable_reason, evaluation_context
+    StudentTeam.objects.select_for_update().get(pk=schedule.team_id)
     schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
     team_grade = TeamGrade.objects.select_for_update().get(pk=team_grade.pk)
     if expected_context and expected_context != evaluation_context(schedule, team_grade):
@@ -772,7 +778,17 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
     ])
 
     recompute_panel_score(team_grade)
-    if peer_grading_allowed_for_grade(team_grade):
+    from .automatic_outcomes import resolve_outcome
+    resolve_outcome(team_grade)
+    team_grade.refresh_from_db()
+    from .outcome_rules import automatic_outcomes, outcome_payload
+    if automatic_outcomes(schedule):
+        # Recorded outcomes notify through the shared write path. A complete
+        # assessment awaiting a chair/section selection must also refresh staff.
+        if not team_grade.verdict and outcome_payload(team_grade)['panel_complete']:
+            from realtime.broadcast import notify_capstone_evaluation_flags
+            transaction.on_commit(lambda: notify_capstone_evaluation_flags(team_grade.semester))
+    elif peer_grading_allowed_for_grade(team_grade):
         from realtime.broadcast import notify_team_peer_open
         student_ids = list(team_grade.team.memberships.values_list('student_id', flat=True))
         transaction.on_commit(lambda: notify_team_peer_open(
@@ -1231,6 +1247,7 @@ def _snapshot_attempt(grade, user=None):
     return GradeAttemptHistory.objects.create(
         team_grade=grade,
         assessment_policy=grade.schedule.assessment_policy if grade.schedule_id else {},
+        outcome_metadata=grade.outcome_metadata,
         student_scores=[{'student_id': row.student_id, 'name': display_name(row.student),
             **{field: str(getattr(row, field)) if getattr(row, field) is not None else None
                for field in ('panel_score', 'adviser_score', 'peer_score', 'final_grade')}}
@@ -1257,15 +1274,6 @@ def _snapshot_attempt(grade, user=None):
     )
 
 
-def _consume_recovery_authorization(schedule):
-    if schedule.scope != TeamGrade.SCOPE_CAPSTONE:
-        return
-    from student_teams.models import TeamRecoveryAuthorization
-    TeamRecoveryAuthorization.objects.filter(
-        team=schedule.team, semester=schedule.semester, defense_stage=schedule.defense_stage,
-        consumed_at__isnull=True,
-    ).filter(Q(project_version=schedule.project_version, action='retake') | Q(
-        replacement_project_version=schedule.project_version, action='new_concept')).update(consumed_at=timezone.now())
 
 
 class GradeContextService:
@@ -1300,13 +1308,15 @@ class GradeContextService:
             )
             if repair_placeholders:
                 _cleanup_stale_grades_for_schedule(grade, schedule)
-            _consume_recovery_authorization(schedule)
             return grade, created, True
 
         changed = False
         if grade.schedule_id != schedule.id:
             if grade.attempt_history.filter(schedule=schedule).exists():
                 return grade, False, False
+            if schedule.scope == 'capstone':
+                from student_teams.participation import require_open
+                require_open(schedule.team)
             if grade.schedule_id is not None and (
                 grade.panel_score is not None
                 or grade.final_grade is not None
@@ -1338,6 +1348,7 @@ class GradeContextService:
                 grade.final_grade = None
                 grade.status = TeamGrade.STATUS_PENDING
                 grade.verdict = ''
+                grade.outcome_metadata = {}
                 grade.verdict_remarks = ''
                 grade.verdict_by = None
                 grade.verdict_at = None
@@ -1369,7 +1380,6 @@ class GradeContextService:
                     changed = True
         if changed:
             grade.save()
-            _consume_recovery_authorization(schedule)
         if repair_placeholders:
             _cleanup_stale_grades_for_schedule(grade, schedule)
         return grade, created, changed
@@ -1562,7 +1572,7 @@ class GradeContextService:
         if grade.uses_defense_verdict and not (
             passed_and_cleared(grade) or grade.verdict in (TeamGrade.VERDICT_FAILED, TeamGrade.VERDICT_PROJECT_REJECTED)
         ):
-            raise ValidationError('Record the panel verdict and resolve re-defense or revision clearance before publishing.')
+            raise ValidationError('Resolve the panel outcome and any re-defense or revision clearance before publishing.')
         if not team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
             raise ValidationError('Complete every required evaluator and grading component before publishing.')
         grade.publish(user=user)
@@ -2017,7 +2027,7 @@ def _apply_team_result_from_grade(grade):
 
     if grade.uses_defense_verdict:
         from .defense_workflow import passed_and_cleared
-        next_status = (StudentTeam.STATUS_FAILED if grade.verdict in ('failed', 'project_rejected')
+        next_status = (StudentTeam.STATUS_FAILED if grade.result == 'failed'
                        else StudentTeam.STATUS_APPROVED if passed_and_cleared(grade)
                        else StudentTeam.STATUS_PENDING)
         if grade.team.status != next_status:
@@ -2201,51 +2211,84 @@ def cohort_grading_teams_for_group(
             config=config,
             year_level=year_level,
         )
-    grades = grade_review_queryset(grades).select_related('team', 'semester')
+    grades = grade_review_queryset(grades).select_related('team', 'semester', 'defense_stage')
     teams_list = []
     for grade in grades:
         readiness = team_grading_readiness(grade, semester, scope, config)
         missing = list(readiness['missing_components'])
+        from .stage_closure import eligible_failure
+        from .outcome_rules import automatic_outcomes, outcome_payload
+        closure_eligible = eligible_failure(grade)
         from repository.deliverables.pit_decisions import completion_blocker
         concept_blocker = completion_blocker(grade)
         if concept_blocker:
             missing.append('concept_selection')
         is_post_complete = True
+        post_completion = None
         if grade.uses_defense_verdict:
             if not grade.verdict:
-                missing.append('verdict')
+                missing.append('concept_selection' if automatic_outcomes(grade.schedule) else 'verdict')
             elif grade.verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
                 missing.append('redefense')
             elif grade.verdict in TeamGrade.PASSING_VERDICTS:
                 if grade.verdict == TeamGrade.VERDICT_APPROVED_WITH_REVISIONS and not grade.revisions_cleared_at:
                     missing.append('clearance')
-                from repository.deliverables.services import post_deliverables_complete
+                from repository.deliverables.services import post_deliverables_state
                 lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
-                if not post_deliverables_complete(grade.team, lbl):
+                post_completion = post_deliverables_state(grade.team, lbl)
+                if not post_completion['complete']:
                     is_post_complete = False
                     missing.append('post_defense')
         else:
-            from repository.deliverables.services import post_deliverables_complete
-            if not post_deliverables_complete(grade.team, stage_label):
+            from repository.deliverables.services import post_deliverables_state
+            post_completion = post_deliverables_state(grade.team, stage_label)
+            if not post_completion['complete']:
                 is_post_complete = False
                 missing.append('post_defense')
 
+        if closure_eligible or grade.closed_as_failed:
+            missing = []
+        # Signed minutes are configured independently of student uploads and
+        # remain required for nonpassing hearings, including closure failures.
+        minutes = None
+        if scope == TeamGrade.SCOPE_CAPSTONE:
+            from defense.minutes.requirements import stage_minutes_requirement
+            from defense.stages.models import DefenseStage
+            stage = grade.defense_stage or getattr(config, 'defense_stage', None)
+            if stage is None:
+                stage = DefenseStage.objects.filter(label=grade.stage_label).first()
+            minutes = stage_minutes_requirement(grade.team, stage)
+        minutes_required = bool(minutes and minutes.get('required'))
+        minutes_complete = not minutes_required or minutes['completed']
+        if not minutes_complete:
+            missing.append('minutes')
+        rule = outcome_payload(grade) if closure_eligible else None
         teams_list.append(
             {
                 'team_id': grade.team_id,
                 'team_name': grade.team.name,
                 'grade_id': grade.id,
+                'closure_failure_eligible': closure_eligible,
+                'assessment': rule,
                 'missing_components': missing,
                 'panel_complete': readiness['panel_complete'],
                 'peer_complete': readiness['peer_complete'],
                 'adviser_complete': readiness['adviser_complete'],
                 'post_defense_complete': is_post_complete,
+                'post_defense_completion': post_completion,
+                'minutes_required': minutes_required,
+                'minutes_complete': minutes_complete,
+                'minutes_status': minutes['status'] if minutes_required else 'not_required',
+                'minutes_status_label': minutes['status_label'] if minutes_required else 'Not required',
                 'submitted': readiness['submitted'],
                 'required': readiness['required'],
                 'evaluators_done': readiness['evaluators_done'],
                 'evaluators_total': readiness['evaluators_total'],
             }
         )
+    if scope == TeamGrade.SCOPE_CAPSTONE and config and config.defense_stage.qualifying_score is not None:
+        from .stage_closure import unassessed_teams
+        teams_list.extend(unassessed_teams(semester, config, {row['team_id'] for row in teams_list}))
     return teams_list
 
 
@@ -2280,7 +2323,7 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
     redefense_teams = [
         {'team_id': grade.team_id, 'team_name': grade.team.name}
         for grade in grades
-        if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE
+        if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE and not grade.closed_as_failed
     ]
     revision_teams = [
         {'team_id': grade.team_id, 'team_name': grade.team.name}
@@ -2396,13 +2439,25 @@ def group_completion_readiness(*, semester, scope, stage_label, user):
     has_unscheduled_placeholders = group_grades.exclude(
         pk__in=grade_review_queryset(group_grades).values('pk'),
     ).exists()
+    failures = [row for row in cohort if row.get('closure_failure_eligible')]
+    token = None
+    if scope == TeamGrade.SCOPE_CAPSTONE and config:
+        from .stage_closure import completion_token
+        token = completion_token(group_grades, cohort, config)
+    from repository.section_concepts.services import completion_blocker
+    shared_blocker = completion_blocker(config if scope == TeamGrade.SCOPE_PIT else stage, semester) if config else ''
     return {
         **counts,
+        'grading_total_team_count': len(cohort),
         'is_officially_complete': is_complete,
         'can_complete': (counts['grading_total_team_count'] > 0 and not incomplete
-                         and not is_complete and not has_unscheduled_placeholders),
+                         and not is_complete and not has_unscheduled_placeholders and not shared_blocker),
+        'completion_blocker': shared_blocker,
         'incomplete_teams': incomplete,
         'cohort_teams': cohort,
+        'failure_candidates': failures,
+        'completion_token': token,
+        'completion_ready_team_count': len(cohort) - len(incomplete),
     }
 
 
@@ -2415,6 +2470,8 @@ def _auto_finalize_passed_grades_in_queryset(grades, user=None):
     skipped_below_threshold = 0
 
     for grade in grades:
+        if grade.closed_as_failed:
+            continue
         grade.recalculate()
         from repository.deliverables.pit_decisions import completion_blocker
         if completion_blocker(grade):
@@ -2553,7 +2610,8 @@ class StageCompletionService:
         return None
 
     @classmethod
-    def complete_group(cls, *, semester, scope, stage_label, config, user=None, peer_grading_enabled=None):
+    def complete_group(cls, *, semester, scope, stage_label, config, user=None, peer_grading_enabled=None,
+                       failure_grade_ids=None, closure_reason='', completion_token=None):
         label = (stage_label or '').strip()
         from authentication_access_control.scopes import is_admin_user
         if user is not None and not is_admin_user(user) and (not _is_pit_lead_only(user) or scope != TeamGrade.SCOPE_PIT):
@@ -2569,6 +2627,15 @@ class StageCompletionService:
 
         with transaction.atomic():
             config = cls._lock_config(scope, config)
+            if config.is_officially_complete:
+                raise ValidationError('This stage or event is already officially complete.')
+            if scope == TeamGrade.SCOPE_CAPSTONE:
+                from student_teams.models import StudentTeam
+                # Evaluate locks, rather than count(), which removes FOR UPDATE.
+                list(StudentTeam.objects.select_for_update().filter(semester=semester,
+                    grade_records__defense_stage=config.defense_stage).order_by('pk'))
+                list(DefenseSchedule.objects.select_for_update().filter(semester=semester,
+                    defense_stage=config.defense_stage).order_by('pk'))
             from repository.section_concepts.services import completion_blocker
             context = config if scope == TeamGrade.SCOPE_PIT else config.defense_stage
             shared_blocker = completion_blocker(context, semester)
@@ -2608,6 +2675,21 @@ class StageCompletionService:
             )
             if incomplete:
                 raise IncompleteGradingTeamsError(incomplete)
+
+            from .outcome_rules import automatic_outcomes
+            from .stage_closure import completion_token as make_token, validate_failure_confirmation, finalize_failure
+            cohort = cohort_grading_teams_for_group(semester, scope, label, config=config,
+                year_level=year_level, grades_queryset=grades)
+            failures = [row for row in cohort if row.get('closure_failure_eligible')]
+            if scope == TeamGrade.SCOPE_CAPSTONE and (failures or any(automatic_outcomes(g.schedule) for g in grades)):
+                if failures and not is_admin_user(user):
+                    raise PermissionDenied('Only an administrator can finalize stage failures.')
+                validate_failure_confirmation(failures, grade_ids=failure_grade_ids or [],
+                    reason=closure_reason, token=completion_token,
+                    expected_token=make_token(group_grades, cohort, config))
+            for grade in grades:
+                if any(row['grade_id'] == grade.pk for row in failures):
+                    finalize_failure(grade, user, closure_reason)
 
             auto_result = _auto_finalize_passed_grades_in_queryset(grades, user=user)
 
@@ -2675,6 +2757,9 @@ class StageCompletionService:
                 settings_payload['auto_finalize'] = auto_result
                 settings_payload['auto_publish'] = auto_result
 
+                from realtime.broadcast import notify_capstone_evaluation_flags
+                transaction.on_commit(lambda: notify_capstone_evaluation_flags(semester))
+
             readiness_counts = grading_readiness_counts_for_group(
                 semester,
                 scope,
@@ -2695,6 +2780,9 @@ def update_group_settings(
     is_officially_complete=None,
     peer_grading_enabled=None,
     user=None,
+    failure_grade_ids=None,
+    closure_reason='',
+    completion_token=None,
 ):
     label = (stage_label or '').strip()
     if not label:
@@ -2739,6 +2827,9 @@ def update_group_settings(
             config=config,
             user=user,
             peer_grading_enabled=peer_grading_enabled,
+            failure_grade_ids=failure_grade_ids,
+            closure_reason=closure_reason,
+            completion_token=completion_token,
         )
 
     if is_officially_complete is not None:
@@ -2819,11 +2910,11 @@ def require_grade_editable(grade):
         config = grade.pit_event_config
         if config.year_level != grade.team.year_level or config.semester_id != grade.semester_id:
             raise ValidationError('This PIT assessment is outside the team cohort and is read-only.')
-    from .defense_workflow import require_current, replacement_for
+    from .defense_workflow import require_current
     require_current(grade)
-    if grade.defense_stage_id and (grade.project_version > 1 or replacement_for(grade.team, grade.defense_stage)) and grade.status not in TeamGrade.LOCKED_STATUSES:
-        return
-    if (getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE or getattr(grade, 'attempt_count', 1) > 1) and grade.status not in TeamGrade.LOCKED_STATUSES:
+    from student_teams.participation import require_open
+    require_open(grade.team)
+    if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE and not grade.closed_as_failed and grade.status not in TeamGrade.LOCKED_STATUSES:
         return
     settings = group_settings_for_grade(grade)
     if settings.get('is_officially_complete'):

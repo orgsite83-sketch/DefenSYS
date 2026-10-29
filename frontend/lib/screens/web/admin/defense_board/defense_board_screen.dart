@@ -4,7 +4,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../widgets/shadcn/defensys_action_menu.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import 'components/schedule_operations_dialog.dart';
-import 'components/material_deadline_dialog.dart';
 import 'components/schedule_group_actions.dart';
 import 'components/session_evaluator_access_dialog.dart';
 import 'components/schedule_manager_dialog.dart';
@@ -37,6 +36,7 @@ import '../widgets/defensys_admin_shell.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../../../../widgets/minutes/minutes_pdf_dialog.dart';
+import '../../../../notifications/minutes_notification_route.dart';
 import '../../../../utils/import/schedule_import_draft.dart';
 import '../../../../utils/scheduler/defense_scheduler_draft.dart';
 import '../../../../utils/scheduler/session_activity.dart';
@@ -117,6 +117,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   int? _lastPanelistRequest;
+  int? _lastMinutesRequest;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -139,6 +140,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             adviser: '', section: '',
           );
         });
+      }
+    }
+    final minutesId = int.tryParse(uri.queryParameters['minutes'] ?? '');
+    if (minutesId != _lastMinutesRequest) {
+      _lastMinutesRequest = minutesId;
+      if (minutesId != null && minutesId > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _openNotificationMinutes(minutesId, uri));
       }
     }
     final id = int.tryParse(uri.queryParameters['panelistRequest'] ?? '');
@@ -2685,24 +2693,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           if (!isSchedulePit) DefensysMenuItem(label: 'Change documenter', icon: LucideIcons.filePenLine, onPressed: editable ? () => edit('documenter') : null),
           DefensysMenuItem(label: 'Change room', icon: LucideIcons.mapPin, hint: canReschedule ? null : 'Recorded evaluations keep their original room and time.', onPressed: canReschedule ? () => edit('room') : null),
           DefensysMenuItem(label: 'Reschedule defense', icon: LucideIcons.calendarClock, hint: canReschedule ? null : 'Recorded evaluations keep their original room and time.', onPressed: canReschedule ? () => edit('time') : null),
-          if (((schedule['materials_readiness'] as Map?)?['required_total'] as num? ?? 0) > 0 &&
-              schedule['status'] != 'archived')
-            DefensysMenuItem(
-              label: (DateTime.tryParse((schedule['materials_readiness'] as Map?)?['defense_starts_at']?.toString() ?? '')?.isAfter(DateTime.now()) ?? false) &&
-                      (schedule['materials_readiness'] as Map?)?['has_evaluations'] != true
-                  ? 'Extend material deadline'
-                  : 'Open late-upload window',
-              icon: LucideIcons.clock,
-              hint: (schedule['materials_readiness'] as Map?)?['is_locked_historical'] == true
-                  ? 'Finalized grades protect this schedule.'
-                  : null,
-              onPressed: canManage &&
-                      (editable ||
-                          (schedule['materials_readiness'] as Map?)?['can_open_late_window'] == true) &&
-                      (schedule['materials_readiness'] as Map?)?['is_locked_historical'] != true
-                  ? () => showMaterialDeadlineDialog(context, schedule)
-                  : null,
-            ),
           const Divider(height: 9),
           DefensysMenuItem(
             label: schedule['operation_state'] != null && schedule['operation_state'] != 'normal' || schedule['status'] == 'cancelled' ? 'Resume defense' : 'Pause defense',
@@ -3428,6 +3418,24 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     if (!mounted || signed != true) return;
     await ref.read(defenseBoardProvider.notifier).fetchBoard(
       successMessage: 'Signed as chairman successfully. Official minutes PDF generated.');
+  }
+
+  Future<void> _openNotificationMinutes(int scheduleId, Uri requestUri) async {
+    bool stillHere() => mounted && GoRouterState.of(context).uri == requestUri;
+    if (!stillHere()) return;
+    try {
+      final schedule = await fetchMinutesNotificationSchedule(
+        ref.read(authenticatedHttpClientProvider), scheduleId, workspace: 'operations');
+      if (!stillHere()) return;
+      await _previewMinutes(schedule);
+    } catch (error) {
+      if (mounted && stillHere()) showErrorToast(context, error.toString());
+    } finally {
+      if (mounted && stillHere()) {
+        final query = Map<String, String>.from(requestUri.queryParameters)..remove('minutes');
+        context.replace(requestUri.replace(queryParameters: query).toString());
+      }
+    }
   }
 
   Widget _minutesStatusChip(Map<String, dynamic> schedule) {

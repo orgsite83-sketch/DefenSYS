@@ -7,7 +7,7 @@ from academic_period_management.models import SchoolYear, Semester
 from defense.scheduler.models import DefenseSchedule
 from defense.stages.models import DefenseStage
 from grading.grades.models import TeamGrade
-from .models import StudentTeam, TeamRecoveryAuthorization, TeamStageProgress
+from .models import StudentTeam, TeamStageProgress
 from .services import get_ready_teams, is_stage_ready, stage_readiness_candidates, mark_stage_ready
 
 
@@ -38,11 +38,6 @@ class ReadinessCandidateTests(TestCase):
             verdict=verdict, **values,
         )
 
-    def authorization(self, team, action='retake', **values):
-        return TeamRecoveryAuthorization.objects.create(
-            team=team, semester=self.semester, defense_stage=self.stage,
-            project_version=team.project_version, action=action, reason='Test recovery', **values,
-        )
 
     def test_all_readiness_paths_match_unfiltered_checks(self):
         self.team('Never endorsed')
@@ -58,18 +53,9 @@ class ReadinessCandidateTests(TestCase):
         self.grade(redefense, 'for_redefense')
         verification = self.team('Unverified redefense')
         self.grade(verification, 'for_redefense', redefense_verification_required=True)
-        retake = self.team('Authorized failed attempt')
-        self.grade(retake, 'failed')
-        self.authorization(retake)
-        self.assertFalse(is_stage_ready(retake, self.stage))
-        mark_stage_ready(retake, self.stage)
-        consumed = self.team('Consumed recovery')
-        self.grade(consumed, 'failed')
-        self.authorization(consumed, consumed_at=timezone.now())
-        replacement = self.team('Replacement concept', project_version=2)
-        self.authorization(replacement, action='new_concept', replacement_project_version=2)
-        self.assertFalse(is_stage_ready(replacement, self.stage))
-        mark_stage_ready(replacement, self.stage)
+        failed = self.team('Finalized failed attempt')
+        self.grade(failed, 'failed')
+        self.assertFalse(is_stage_ready(failed, self.stage))
         old = self.team('Previous project endorsement', project_version=2)
         progress = TeamStageProgress.objects.create(
             team=old, semester=self.semester, defense_stage=self.stage, status='ready',
@@ -84,7 +70,7 @@ class ReadinessCandidateTests(TestCase):
         self.grade(passed, 'approved')
 
         expected = {team.pk for team in StudentTeam.objects.all() if is_stage_ready(team, self.stage)}
-        self.assertEqual(expected, {ready.pk, scheduled.pk, redefense.pk, retake.pk, replacement.pk})
+        self.assertEqual(expected, {ready.pk, scheduled.pk, redefense.pk})
         self.assertEqual(set(get_ready_teams(self.semester, self.stage).values_list('pk', flat=True)), expected)
         candidates = set(stage_readiness_candidates(StudentTeam.objects.all()).values_list('pk', flat=True))
         self.assertTrue(expected.issubset(candidates))

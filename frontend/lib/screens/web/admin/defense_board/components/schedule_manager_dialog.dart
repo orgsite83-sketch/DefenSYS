@@ -93,12 +93,8 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
   final _room = TextEditingController(),
       _shift = TextEditingController(text: '0'),
       _reason = TextEditingController(),
-      _startTime = TextEditingController(),
-      _deadlineTime = TextEditingController(text: '23:59');
-  DateTime? _date, _deadlineDate;
-  bool _deadlineChanged = false,
-      _deadlineExtendAtStart = false;
-  String _deadlineMode = 'extend';
+      _startTime = TextEditingController();
+  DateTime? _date;
   bool _documenterChanged = false,
       _busy = true,
       _review = false,
@@ -154,19 +150,6 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
           (e['status'] == 'scheduled' ||
               (_status == 'normal' && e['status'] == 'cancelled'));
     }
-    final hasRosterOrTimetableChanges = _faculty.changes != null ||
-        _external.changes != null ||
-        _faculty.replacement != null ||
-        _documenterChanged ||
-        _roomChanged ||
-        _timeChanged;
-    if (_tab == 'deadlines' || (_deadlineChanged && !hasRosterOrTimetableChanges)) {
-      final readiness = e['materials_readiness'] as Map?;
-      final locked = readiness?['is_locked_historical'] == true || e['status'] == 'archived';
-      final canLate = readiness?['can_open_late_window'] == true || e['can_open_late_window'] == true;
-      final canExt = readiness?['can_extend_deadline'] == true || e['can_extend_deadline'] == true;
-      return !locked && (canLate || canExt);
-    }
     return e['can_edit'] != false && e['status'] == 'scheduled';
   }
   List<Map<String, dynamic>> get _timingProtected => _scopeEntries
@@ -190,8 +173,7 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
       (_external.changes != null ? 1 : 0) +
       (_documenterChanged ? 1 : 0) +
       (_roomChanged ? 1 : 0) +
-      (_timeChanged ? 1 : 0) +
-      (_deadlineChanged ? 1 : 0);
+      (_timeChanged ? 1 : 0);
 
   String get _scopeLabel => switch (_scope) {
     'stage' =>
@@ -210,7 +192,7 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
       _tab = 'panel';
       _pool = 'external';
     }
-    if (!const ['panel', 'documenter', 'room', 'time', 'deadlines'].contains(_tab)) {
+    if (!const ['panel', 'documenter', 'room', 'time'].contains(_tab)) {
       _tab = 'panel';
     }
     if ([
@@ -229,18 +211,12 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
     }
     _date = DateTime.tryParse('${widget.schedule?['scheduled_date']}');
     _startTime.text = _time(widget.schedule?['start_time']);
-    final initialStart = DateTime.tryParse(
-      '${widget.schedule?['scheduled_date']}T${widget.schedule?['start_time']}',
-    );
-    _deadlineDate = initialStart ?? DateTime.now().add(const Duration(days: 1));
-    _deadlineTime.text =
-        initialStart != null ? _time(widget.schedule?['start_time']) : '23:59';
     _load();
   }
 
   @override
   void dispose() {
-    for (final c in [_room, _shift, _reason, _startTime, _deadlineTime]) {
+    for (final c in [_room, _shift, _reason, _startTime]) {
       c.dispose();
     }
     super.dispose();
@@ -270,7 +246,6 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
         if (_scope == 'selected' && _selected.isEmpty && initial != null) {
           _selected.add(_id(initial['id'])!);
         }
-        _syncDeadlineDefaults();
       });
     } catch (e) {
       if (mounted) {
@@ -281,32 +256,8 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
     }
   }
 
-  void _syncDeadlineDefaults() {
-    final entries = _affected.isNotEmpty ? _affected : _scopeEntries;
-    final anyPastOrEvaluated = entries.any((e) {
-      final readiness = e['materials_readiness'] as Map?;
-      final start = DateTime.tryParse(
-        readiness?['defense_starts_at']?.toString() ?? e['defense_starts_at']?.toString() ?? '',
-      );
-      return (start != null && DateTime.now().isAfter(start)) ||
-          readiness?['has_evaluations'] == true ||
-          e['has_evaluations'] == true ||
-          e['status'] == 'done' ||
-          readiness?['can_extend_deadline'] == false ||
-          e['can_extend_deadline'] == false;
-    });
-    if (anyPastOrEvaluated) {
-      _deadlineMode = 'late_upload';
-      if (_deadlineDate == null || _deadlineDate!.isBefore(DateTime.now())) {
-        _deadlineDate = DateTime.now().add(const Duration(days: 1));
-        _deadlineTime.text = '23:59';
-      }
-    }
-  }
-
   void _change(VoidCallback change) => setState(() {
     change();
-    _syncDeadlineDefaults();
     _review = false;
     _reviewData = null;
     _error = null;
@@ -350,8 +301,7 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
             _faculty.replacement != null ||
         _documenterChanged && _documenter != _id(e['documenter_id']) ||
         _roomChanged && _room.text.trim() != e['room'] ||
-        _timeChanged ||
-        _deadlineChanged;
+        _timeChanged;
   }
 
   bool get _needsMinutes =>
@@ -369,18 +319,6 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
       'start_time': _startTime.text.trim(),
     },
     if (_timeChanged && !_single) 'shift_minutes': _shiftMinutes,
-    if (_deadlineChanged) ...{
-      'materials_deadline_mode': _deadlineMode,
-      if (_deadlineMode == 'extend' && _deadlineExtendAtStart && !_single)
-        'materials_deadline_at_start': true
-      else if (_deadlineDate != null) ...{
-        'materials_deadline':
-            '${DateFormat('yyyy-MM-dd').format(_deadlineDate!)}T${_deadlineTime.text.trim().isEmpty ? '23:59' : _deadlineTime.text.trim()}:00',
-        if (_deadlineMode == 'late_upload')
-          'materials_late_upload_until':
-              '${DateFormat('yyyy-MM-dd').format(_deadlineDate!)}T${_deadlineTime.text.trim().isEmpty ? '23:59' : _deadlineTime.text.trim()}:00',
-      },
-    },
     if (_minutes) 'acknowledge_minutes_amendment': true,
   };
   Map<String, dynamic> _payload(String action) {
@@ -436,21 +374,6 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
         ).hasMatch(_startTime.text.trim())) {
       setState(() => _error = 'Enter a valid 24-hour time, such as 08:30.');
       return;
-    }
-    if (_deadlineChanged && (!_deadlineExtendAtStart || _single)) {
-      if (_deadlineDate == null) {
-        setState(() => _error = 'Choose a deadline date.');
-        return;
-      }
-      if (!RegExp(
-        r'^([01]\d|2[0-3]):[0-5]\d$',
-      ).hasMatch(_deadlineTime.text.trim())) {
-        setState(
-          () => _error =
-              'Enter a valid 24-hour deadline time, such as 23:59 or 17:00.',
-        );
-        return;
-      }
     }
     if (_action == 'delete') {
       setState(() => _review = true);
@@ -959,7 +882,6 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
             if (_type != 'pit') 'documenter': 'Documenter',
             'room': 'Room',
             'time': 'Time',
-            'deadlines': 'Submission deadlines',
           }.entries)
             ShadTab(
               value: e.key,
@@ -975,7 +897,7 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
                     'documenter' => _documenterChanged,
                     'room' => _roomChanged,
                     'time' => _timeChanged,
-                    _ => _deadlineChanged,
+                    _ => false,
                   }) ...[
                     const SizedBox(width: 5),
                     _badge('Changed'),
@@ -1062,7 +984,6 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
           helper: '24-hour time, for example 08:30.',
         ),
       ],
-      if (_tab == 'deadlines') _deadlineForm(),
       if (_pending > 0) ...[
         const SizedBox(height: 12),
         WorkflowNotice(
@@ -1099,119 +1020,6 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
     ],
   );
 
-  bool get _hasPastOrEvaluatedScope => _affected.any((e) {
-    final readiness = e['materials_readiness'] as Map?;
-    final start = DateTime.tryParse(
-      readiness?['defense_starts_at']?.toString() ?? e['defense_starts_at']?.toString() ?? '',
-    );
-    return (start != null && DateTime.now().isAfter(start)) ||
-        readiness?['has_evaluations'] == true ||
-        e['has_evaluations'] == true ||
-        e['status'] == 'done' ||
-        readiness?['can_extend_deadline'] == false ||
-        e['can_extend_deadline'] == false;
-  });
-
-  Widget _deadlineForm() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      WorkflowSelect(
-        label: 'Deadline action',
-        value: _hasPastOrEvaluatedScope ? 'late_upload' : _deadlineMode,
-        searchable: false,
-        enabled: !_busy && !_hasPastOrEvaluatedScope,
-        options: {
-          if (!_hasPastOrEvaluatedScope)
-            'extend': 'Extend deadline up to defense start (Upcoming)',
-          'late_upload': 'Open late-upload window (Missing files only)',
-        },
-        onChanged: (v) => _change(() {
-          _deadlineMode = v;
-          _deadlineChanged = true;
-        }),
-      ),
-      const SizedBox(height: 12),
-      if (_deadlineMode == 'extend') ...[
-        const WorkflowNotice(
-          title: 'Pre-defense deadline extension',
-          message:
-              'Only applies to upcoming defenses before evaluation begins. Existing uploaded files remain in place.',
-        ),
-        const SizedBox(height: 12),
-        if (!_single) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: ShadCheckbox(
-              value: _deadlineExtendAtStart,
-              enabled: !_busy,
-              onChanged: (v) => _change(() {
-                _deadlineExtendAtStart = v;
-                _deadlineChanged = true;
-              }),
-              label: const Text(
-                'Set submission deadline to each defense’s start time',
-              ),
-            ),
-          ),
-        ],
-        if (!_deadlineExtendAtStart || _single) ...[
-          WorkflowField(
-            label: 'New deadline date',
-            child: ShadDatePicker(
-              selected: _deadlineDate,
-              enabled: !_busy,
-              closeOnSelection: true,
-              allowDeselection: false,
-              onChanged: (v) => _change(() {
-                _deadlineDate = v;
-                _deadlineChanged = true;
-              }),
-            ),
-          ),
-          _input(
-            'Deadline time',
-            _deadlineTime,
-            'manager-deadline-time',
-            helper: '24-hour time, e.g. 08:30 or 23:59.',
-          ),
-        ],
-      ] else ...[
-        const WorkflowNotice(
-          title: 'Late-upload window for missing materials',
-          message:
-              'Allows teams to upload missing presentation materials after the defense or when evaluations have begun. Existing submitted files and completed evaluations are strictly locked.',
-        ),
-        const SizedBox(height: 12),
-        WorkflowField(
-          label: 'Late-upload window open until date',
-          child: ShadDatePicker(
-            selected: _deadlineDate,
-            enabled: !_busy,
-            closeOnSelection: true,
-            allowDeselection: false,
-            onChanged: (v) => _change(() {
-              _deadlineDate = v;
-              _deadlineChanged = true;
-            }),
-          ),
-        ),
-        _input(
-          'Late-upload window open until time',
-          _deadlineTime,
-          'manager-deadline-late-time',
-          helper: '24-hour time, e.g. 17:00 or 23:59.',
-        ),
-      ],
-      const SizedBox(height: 8),
-      Text(
-        'Applies to ${_affected.length} defense ${_affected.length == 1 ? 'schedule' : 'schedules'} in the chosen scope.',
-        style: TextStyle(
-          fontSize: 12,
-          color: DefensysTokens.textSecondaryOf(context),
-        ),
-      ),
-    ],
-  );
   Widget _deleteForm() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [

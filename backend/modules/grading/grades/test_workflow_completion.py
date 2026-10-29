@@ -1,6 +1,7 @@
 """Exercise configured outcomes, real file clearance and progression together."""
 from decimal import Decimal
 
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from defense.scheduler.models import DefenseSchedule
@@ -17,7 +18,8 @@ from student_teams.services import stage_progression_blocker
 from . import test_outcome_rules as fixtures
 from .defense_workflow import record_verdict
 from .models import TeamGrade
-from .services import GradeContextService, cohort_grading_teams_for_group
+from .services import (GradeContextService, IncompleteGradingTeamsError,
+    cohort_grading_teams_for_group, group_completion_readiness, update_group_settings)
 
 
 class WorkflowCompletionTests(APITestCase):
@@ -52,6 +54,114 @@ class WorkflowCompletionTests(APITestCase):
 
     def progress(self):
         return schedule_progress(DefenseSchedule.objects.get(pk=self.capstone_schedule.pk), reconcile_status=False)
+
+    def require_minutes(self):
+        self.stage.minutes_required = True
+        self.stage.save(update_fields=['minutes_required'])
+        documenter = self.admin.__class__.objects.create_user(
+            username='completion-documenter', role='faculty', is_documenter=True)
+        # Model a defense confirmed with the stage's minutes requirement.
+        self.capstone_schedule.documenter = documenter
+        self.capstone_schedule.minutes_required = True
+        self.capstone_schedule.save(update_fields=['documenter', 'minutes_required'])
+
+    def make_minutes(self, *, finalized=False):
+        from defense.minutes.models import DefenseMinutes
+        values = dict(schedule=self.capstone_schedule, team_name=self.capstone_team.name,
+            project_title=self.capstone_team.project_title, adviser_name='Adviser',
+            documenter_name='Documenter', defense_stage_label=self.stage.label,
+            defense_date=self.capstone_schedule.scheduled_date,
+            defense_time=self.capstone_schedule.start_time, room=self.capstone_schedule.room)
+        if finalized:
+            values.update(status='completed', pdf_file='test-evidence/signed-minutes.pdf',
+                documenter_signed_at=timezone.now(), adviser_signed_at=timezone.now(),
+                chairman_signed_at=timezone.now())
+        return DefenseMinutes.objects.create(**values)
+
+    def completion_preview(self):
+        return group_completion_readiness(semester=self.semester, scope='capstone',
+            stage_label=self.stage.label, user=self.admin)
+
+    def complete_stage(self, **confirmation):
+        return update_group_settings(semester=self.semester, scope='capstone',
+            stage_label=self.stage.label, user=self.admin, is_officially_complete=True,
+            **confirmation)
+
+    def test_required_minutes_block_preview_and_completion_after_student_files_are_accepted(self):
+        self.require_minutes()
+        self.approve()
+        self.accepted_files()
+        preview = self.completion_preview()
+        self.assertFalse(preview['can_complete'])
+        row = preview['incomplete_teams'][0]
+        self.assertEqual(row['missing_components'], ['minutes'])
+        self.assertTrue(row['post_defense_complete'])
+        self.assertTrue(row['minutes_required'])
+        self.assertFalse(row['minutes_complete'])
+        self.assertEqual(row['minutes_status_label'], 'Awaiting documenter')
+        with self.assertRaises(IncompleteGradingTeamsError):
+            self.complete_stage()
+
+    def test_partial_signatures_or_missing_pdf_do_not_complete_minutes(self):
+        self.require_minutes()
+        self.approve()
+        self.accepted_files()
+        minutes = self.make_minutes(finalized=True)
+        for field, value, label in [
+            ('status', 'draft', 'Draft - documenter editing'),
+            ('status', 'submitted', 'Awaiting adviser signature'),
+            ('status', 'adviser_signed', 'Awaiting chairman signature'),
+            ('pdf_file', '', 'Signed PDF pending'),
+            ('documenter_signed_at', None, 'Signed PDF pending'),
+            ('adviser_signed_at', None, 'Signed PDF pending'),
+            ('chairman_signed_at', None, 'Signed PDF pending'),
+        ]:
+            with self.subTest(field=field, value=value):
+                original = getattr(minutes, field)
+                setattr(minutes, field, value)
+                minutes.save()
+                preview = self.completion_preview()
+                self.assertFalse(preview['can_complete'])
+                self.assertEqual(preview['incomplete_teams'][0]['minutes_status_label'], label)
+                setattr(minutes, field, original)
+                minutes.save()
+        preview = self.completion_preview()
+        self.assertTrue(preview['can_complete'], preview)
+        self.assertEqual(preview['cohort_teams'][0]['minutes_status_label'], 'Finalized')
+        self.complete_stage()
+
+    def test_exempt_confirmed_defense_needs_no_minutes_after_stage_setting_changes(self):
+        self.approve()
+        self.accepted_files()
+        self.stage.minutes_required = True
+        self.stage.save(update_fields=['minutes_required'])
+        preview = self.completion_preview()
+        self.assertTrue(preview['can_complete'], preview)
+        self.assertFalse(preview['cohort_teams'][0]['minutes_required'])
+        self.assertTrue(preview['cohort_teams'][0]['minutes_complete'])
+        self.complete_stage()
+
+    def test_required_confirmed_defense_still_needs_minutes_after_stage_setting_changes(self):
+        self.require_minutes()
+        self.approve()
+        self.accepted_files()
+        self.stage.minutes_required = False
+        self.stage.save(update_fields=['minutes_required'])
+        preview = self.completion_preview()
+        self.assertFalse(preview['can_complete'])
+        self.assertEqual(preview['incomplete_teams'][0]['missing_components'], ['minutes'])
+
+    def test_completion_rechecks_minutes_after_successful_preview(self):
+        self.require_minutes()
+        self.approve()
+        self.accepted_files()
+        minutes = self.make_minutes(finalized=True)
+        preview = self.completion_preview()
+        self.assertTrue(preview['can_complete'])
+        minutes.status = 'draft'
+        minutes.save()
+        with self.assertRaises(IncompleteGradingTeamsError):
+            self.complete_stage(completion_token=preview['completion_token'])
 
     def test_panel_qualification_and_academic_total_do_not_record_a_verdict(self):
         self.submit(8)

@@ -25,6 +25,7 @@ class ProposalTitleSummary extends StatelessWidget {
     this.collapsible = false,
     this.showHeading = true,
     this.fontSize = 14,
+    this.selectedKey = '',
   });
   final List<Map<String, dynamic>> rows;
   final String title;
@@ -32,6 +33,7 @@ class ProposalTitleSummary extends StatelessWidget {
   final bool collapsible;
   final bool showHeading;
   final double fontSize;
+  final String selectedKey;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +41,10 @@ class ProposalTitleSummary extends StatelessWidget {
         .where((r) => '${r['title'] ?? ''}'.trim().isNotEmpty)
         .length;
     final heading = '$title · $provided of ${rows.length} titles provided';
+    final selectedStyle = WorkflowStatusStyle.of(
+      context,
+      WorkflowStatusTone.success,
+    );
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -63,20 +69,59 @@ class ProposalTitleSummary extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: Text(
-                    '${row['title'] ?? ''}'.trim().isEmpty
-                        ? 'Pending proposal'
-                        : '${row['title']}',
-                    style: TextStyle(
-                      fontSize: fontSize,
-                      height: 1.45,
-                      fontStyle: '${row['title'] ?? ''}'.trim().isEmpty
-                          ? FontStyle.italic
-                          : FontStyle.normal,
-                      color: '${row['title'] ?? ''}'.trim().isEmpty
-                          ? DefensysTokens.textSecondaryOf(context)
-                          : DefensysTokens.textPrimaryOf(context),
-                    ),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '${row['title'] ?? ''}'.trim().isEmpty
+                            ? 'Pending proposal'
+                            : '${row['title']}',
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          height: 1.45,
+                          fontStyle: '${row['title'] ?? ''}'.trim().isEmpty
+                              ? FontStyle.italic
+                              : FontStyle.normal,
+                          color: '${row['title'] ?? ''}'.trim().isEmpty
+                              ? DefensysTokens.textSecondaryOf(context)
+                              : DefensysTokens.textPrimaryOf(context),
+                        ),
+                      ),
+                      if (selectedKey.isNotEmpty && row['key'] == selectedKey)
+                        Container(
+                          key: ValueKey('selected-proposal-$selectedKey'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: selectedStyle.background,
+                            border: Border.all(color: selectedStyle.border),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.check_rounded,
+                                size: 13,
+                                color: selectedStyle.foreground,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Selected',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: selectedStyle.foreground,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],

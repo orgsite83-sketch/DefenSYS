@@ -248,7 +248,9 @@ def _check_progression(before, after, protected):
 
 @transaction.atomic
 def request_correction(grade_id, actor, data, request=None):
-    # Match the schedule-then-grade lock order used by submissions and operations.
+    # Match submissions and stage closure: team, schedule, then grade.
+    from student_teams.models import StudentTeam
+    StudentTeam.objects.select_for_update().get(pk=TeamGrade.objects.values_list('team_id', flat=True).get(pk=grade_id))
     schedule_id = TeamGrade.objects.values_list('schedule_id', flat=True).get(pk=grade_id)
     if schedule_id:
         from defense.scheduler.models import DefenseSchedule
@@ -299,6 +301,8 @@ def _apply(correction, grade, actor, approval_reason, request):
 
 @transaction.atomic
 def review_correction(grade_id, correction_id, actor, data, request=None):
+    from student_teams.models import StudentTeam
+    StudentTeam.objects.select_for_update().get(pk=TeamGrade.objects.values_list('team_id', flat=True).get(pk=grade_id))
     schedule_id = TeamGrade.objects.values_list('schedule_id', flat=True).get(pk=grade_id)
     if schedule_id:
         from defense.scheduler.models import DefenseSchedule

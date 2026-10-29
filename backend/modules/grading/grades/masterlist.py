@@ -297,7 +297,7 @@ def _cell(grade, assessment, team, student_grade=None, *, individual=False):
             'assessment_label': assessment['label'],
             'team': {**team, 'project_title': grade.project_title_snapshot or team['project_title']},
             'components': components, 'final_grade': final, 'status': status, 'status_label': labels.get(status, 'Pending'),
-            'publication_status': grade.status, 'outcome': grade.get_verdict_display() if grade.verdict else '',
+            'publication_status': grade.status, 'outcome': 'Failed (stage closure)' if grade.closed_as_failed else grade.get_verdict_display() if grade.verdict else '',
             'missing_components': missing, 'evaluators': [], 'is_locked': grade.status == 'published',
             'project_version': grade.project_version, 'attempt': grade.attempt_count}
 

@@ -112,6 +112,19 @@ Future<void> _pump(
 );
 
 void main() {
+  testWidgets('automatic closure failure displays the final outcome instead of a pending verdict', (tester) async {
+    final record = _record(18, status: 'done', progress: 'failed', verdict: 'failed');
+    record['assessment'] = <String, dynamic>{
+      ...Map<String, dynamic>.from(record['assessment'] as Map),
+      'automatic_outcomes': true, 'hearing_outcome': 'for_redefense',
+      'grade_status': 'published', 'published_result': 'failed',
+    };
+    await _pump(tester, [record]);
+    expect(find.text('Outcome: Failed'), findsOneWidget);
+    expect(find.text('Awaiting verdict'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   setUpAll(() => loadPreviewFonts(force: true));
 
   testWidgets('upcoming records show the full roster before minutes exist', (

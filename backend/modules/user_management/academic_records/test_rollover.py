@@ -172,7 +172,7 @@ class RolloverRegressionTests(APITestCase):
         self.record(semester=first)
         self.assertEqual(latest_records_by_student()[0].pk, current.pk)
 
-    def test_selected_fully_enrolled_team_advances_once_and_unselected_team_stays(self):
+    def test_full_enrollment_never_migrates_either_team(self):
         self.next_first.is_active = True
         self.next_first.save()
         source = self.record(semester=self.second, year='3rd Year')
@@ -183,17 +183,17 @@ class RolloverRegressionTests(APITestCase):
         action = {'record_id': source.pk, 'action': 'promote', 'target_semester_id': self.next_first.pk}
         response = self.confirm(action)
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['team_updates'], 1)
+        self.assertEqual(response.data['team_updates'], 0)
         selected.refresh_from_db()
         unselected.refresh_from_db()
-        self.assertEqual((selected.semester_id, selected.level), (self.next_first.pk, StudentTeam.LEVEL_4_CAPSTONE))
+        self.assertEqual((selected.semester_id, selected.level), (self.second.pk, StudentTeam.LEVEL_3_CAPSTONE))
         self.assertEqual(unselected.semester_id, self.second.pk)
         repeat = self.confirm(action)
         self.assertEqual(repeat.status_code, 200)
         self.assertEqual(repeat.data['created_count'], 0)
         self.assertEqual(repeat.data['team_updates'], 0)
 
-    def test_partial_roster_waits_until_every_member_is_enrolled_in_fourth_year(self):
+    def test_partial_and_full_enrollment_leave_team_migration_to_period_activation(self):
         self.next_first.is_active = True
         self.next_first.save()
         team = self.team()
@@ -206,9 +206,9 @@ class RolloverRegressionTests(APITestCase):
         team.refresh_from_db()
         self.assertEqual(team.semester_id, self.second.pk)
         last = self.confirm({'record_id': member_record.pk, 'action': 'promote', 'target_semester_id': self.next_first.pk})
-        self.assertEqual(last.data['team_updates'], 1)
+        self.assertEqual(last.data['team_updates'], 0)
 
-    def test_enrollment_alone_never_grants_a_fourth_year_extension(self):
+    def test_enrollment_alone_never_creates_a_capstone_participation(self):
         source = self.record(semester=self.second, year='3rd Year')
         retained = self.team()
         response = self.confirm({'record_id': source.pk, 'action': 'retain', 'target_semester_id': self.next_first.pk})
@@ -223,7 +223,7 @@ class RolloverRegressionTests(APITestCase):
         self.assertEqual(response.data['team_updates'], 0)
         team.refresh_from_db()
         self.assertEqual(team.semester_id, self.second.pk)
-        self.assertNotEqual(team.capstone_phase, StudentTeam.PHASE_EXTENDED)
+        self.assertIsNone(team.capstone_phase)
 
     def test_duplicate_or_mismatched_student_selections_are_rejected_atomically(self):
         source = self.record()
@@ -234,14 +234,14 @@ class RolloverRegressionTests(APITestCase):
         response = self.confirm({**action, 'username': 'wrong-student'})
         self.assertEqual(response.status_code, 400)
 
-    def test_team_save_failure_rolls_back_enrollment(self):
+    def test_enrollment_does_not_call_team_migration(self):
         self.next_first.is_active = True
         self.next_first.save()
         source = self.record(semester=self.second, year='3rd Year')
         team = self.team()
         with patch.object(StudentTeam, 'save', side_effect=ValidationError('Conflicting team.')):
             response = self.confirm({'record_id': source.pk, 'action': 'promote', 'target_semester_id': self.next_first.pk})
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(StudentAcademicRecord.objects.filter(student=self.student, semester=self.next_first).exists())
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(StudentAcademicRecord.objects.filter(student=self.student, semester=self.next_first).exists())
         team.refresh_from_db()
         self.assertEqual(team.semester_id, self.second.pk)

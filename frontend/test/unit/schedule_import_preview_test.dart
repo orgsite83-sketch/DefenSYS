@@ -8,7 +8,7 @@ void main() {
     const stageId = 10;
     const stageLabel = 'Project Proposal';
 
-    test('PIT import permits defense-timed files and gates scheduling files', () {
+    test('PIT import requires endorsement for every required pre-deliverable', () {
       const event = 'System Concept Pitching';
       final source = ParsedScheduleImport(rows: [
         const ParsedScheduleImportRow(
@@ -62,7 +62,7 @@ void main() {
             peerWeight: 20,
           ).single;
 
-      expect(preview('defense').rowType, ScheduleImportRowType.initialReady);
+      expect(preview('defense').rowType, ScheduleImportRowType.notEndorsed);
       expect(preview('scheduling').rowType, ScheduleImportRowType.notEndorsed);
     });
 

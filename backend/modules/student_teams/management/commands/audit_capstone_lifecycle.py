@@ -3,7 +3,7 @@ import json
 from django.core.management.base import BaseCommand
 from django.db import connection, transaction
 from student_teams.models import StudentTeam
-from student_teams.capstone_lifecycle import cohort_context
+from student_teams.participation import intake_for
 
 
 class Command(BaseCommand):
@@ -18,13 +18,12 @@ class Command(BaseCommand):
             rows = []
             teams = StudentTeam.objects.filter(level__in=(StudentTeam.LEVEL_3_CAPSTONE, StudentTeam.LEVEL_4_CAPSTONE))
             for team in teams.select_related('semester__school_year').order_by('pk'):
-                context = cohort_context(team)
+                intake = intake_for(team)
                 rows.append({'team_id': team.pk, 'name': team.name,
-                    'operating_term': team.semester.display_name, 'is_extended': team.capstone_phase == 'extended',
-                    'cohort': context['intake'].display_name if context else None,
-                    'normal_completion_year': context['normal_year'] if context else None,
-                    'extension_end_year': context['end_year'] if context else None,
-                    'provenance': 'known' if context else 'needs_review',
+                    'operating_term': team.semester.display_name,
+                    'intake': intake.display_name if intake else None,
+                    'review_reason': team.participation_review_reason,
+                    'provenance': 'known' if intake and not team.participation_review_reason else 'needs_review',
                     'recorded_terms': team.term_participations.count()})
         self.stdout.write(json.dumps({'read_only': True, 'teams': len(rows),
             'needs_review': sum(r['provenance'] == 'needs_review' for r in rows), 'rows': rows}, indent=2))

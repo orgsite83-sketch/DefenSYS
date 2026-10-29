@@ -12,6 +12,7 @@ import 'package:defensys/utils/defense_schedule_import_parser.dart';
 import 'package:defensys/utils/import/schedule_import_draft.dart';
 import 'package:defensys/utils/import/schedule_import_workspace.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -115,7 +116,10 @@ class _Stages extends DefenseStagesNotifier {
       'panel_rubric_id': 1,
       'adviser_rubric_id': 2,
       'peer_rubric_id': 3,
-      'panel_rubric_name': 'CP Panel',
+      'panel_weight': 50,
+      'adviser_weight': 30,
+      'peer_weight': 20,
+      'panel_rubric_name': stageId == 20 ? 'PP Panel' : 'CP Panel',
       'adviser_rubric_name': 'CP Adviser',
       'peer_rubric_name': 'CP Peer',
     },
@@ -125,6 +129,7 @@ class _Stages extends DefenseStagesNotifier {
 ({ScheduleImportDraft draft, DefenseSchedulerState state}) _fixture({
   int count = 16,
   bool unknownLastTeam = false,
+  bool blankLastRoom = false,
 }) {
   final rows = [
     for (var i = 0; i < count; i++)
@@ -141,7 +146,11 @@ class _Stages extends DefenseStagesNotifier {
             ? const ['Jonathan Beltran']
             : const ['Analiza Corpuz'],
         documenter: i < 8 ? 'Cecilia Magbanua' : 'Maria Reyes',
-        room: i < 8 ? 'Room 301' : 'Room 302',
+        room: blankLastRoom && i == count - 1
+            ? ''
+            : i < 8
+            ? 'Room 301'
+            : 'Room 302',
         date: i % 8 < 4 ? '2026-10-20' : '2026-10-21',
         stage: _stage,
         startTime: '${8 + (i % 4) ~/ 2}:${i.isEven ? '00' : '30'}',
@@ -170,6 +179,7 @@ class _Stages extends DefenseStagesNotifier {
       },
       defenseStages: const [
         {'id': 10, 'label': _stage},
+        {'id': 20, 'label': 'Project Proposal'},
       ],
       faculty: const [
         {'id': 101, 'name': 'Maricel Suarez', 'username': 'msuarez'},
@@ -202,6 +212,7 @@ Future<_Scheduler> _pumpReview(
   WidgetTester tester, {
   int count = 16,
   bool unknownLastTeam = false,
+  bool blankLastRoom = false,
   int? failedIndex,
   List<Map<String, dynamic>>? conflictSchedules,
   bool validationFailure = false,
@@ -214,7 +225,11 @@ Future<_Scheduler> _pumpReview(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
-  final fixture = _fixture(count: count, unknownLastTeam: unknownLastTeam);
+  final fixture = _fixture(
+    count: count,
+    unknownLastTeam: unknownLastTeam,
+    blankLastRoom: blankLastRoom,
+  );
   FlutterSecureStorage.setMockInitialValues({});
   SharedPreferences.setMockInitialValues({
     if (seedDraft)
@@ -279,6 +294,62 @@ Future<void> _allDuration(
   );
   if (save) await _tap(tester, find.text('Save settings'));
   await tester.pumpAndSettle();
+}
+
+Future<void> _saveWait(WidgetTester tester, String label) async {
+  await _tap(tester, find.text(label));
+  await tester.pump(const Duration(milliseconds: 700));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _chooseNextStage(WidgetTester tester) async {
+  await _tap(tester, find.byType(DropdownButtonFormField<String>).first);
+  await _tap(tester, find.text('Project Proposal').last);
+}
+
+Future<GoRouter> _pumpRoutedReview(WidgetTester tester) async {
+  tester.view.physicalSize = const Size(1600, 1000);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  final fixture = _fixture(count: 3);
+  FlutterSecureStorage.setMockInitialValues({});
+  SharedPreferences.setMockInitialValues({
+    'defense_schedule_import_draft_capstone': jsonEncode(
+      fixture.draft.toJson(),
+    ),
+  });
+  final router = GoRouter(
+    initialLocation: '/review',
+    routes: [
+      GoRoute(
+        path: '/review',
+        builder: (_, __) => Scaffold(
+          body: DefenseScheduleBulkImportView(
+            scope: 'capstone',
+            initialStageId: 10,
+            onBack: () {},
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/admin/defense-stages/:stageId/edit',
+        builder: (_, state) => Scaffold(body: Text(state.uri.toString())),
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        defenseSchedulerProvider.overrideWith(() => _Scheduler(fixture.state)),
+        defenseStagesProvider.overrideWith(_Stages.new),
+      ],
+      child: MaterialApp.router(theme: AppTheme.theme, routerConfig: router),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return router;
 }
 
 void main() {
@@ -1045,4 +1116,231 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('saving from Sessions retains checked Stage room edit', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 3);
+    await _openSettings(tester);
+    await _tap(tester, find.byKey(const ValueKey('set_room')));
+    await tester.enterText(
+      find.byKey(const ValueKey('schedule_room')),
+      'New Hall',
+    );
+    await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
+    await _saveWait(tester, 'Apply session plan');
+    final draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(
+      draft.room,
+      'New Hall',
+      reason: 'The Stage edit should survive applying the Sessions tab.',
+    );
+  });
+
+  testWidgets('applying sessions retains a newly selected stage', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 3);
+    await _openSettings(tester);
+    await _chooseNextStage(tester);
+    expect(find.text('Project Proposal settings'), findsOneWidget);
+    await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
+    await _saveWait(tester, 'Apply session plan');
+    final draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+    expect(draft.stageId, 20);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('cancelling after editing both tabs preserves the saved draft', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 3);
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+    final before = (await loadScheduleImportDraft(scope: 'capstone'))!.toJson();
+    await _openSettings(tester);
+    await _tap(tester, find.byKey(const ValueKey('set_room')));
+    await tester.enterText(
+      find.byKey(const ValueKey('schedule_room')),
+      'New Hall',
+    );
+    await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
+    await _tap(tester, find.byKey(const ValueKey('session_0_card')));
+    await tester.enterText(
+      find.byKey(const ValueKey('session_0_room')),
+      'Auditorium',
+    );
+    await _tap(tester, find.byKey(const ValueKey('settings_stage_tab')));
+    await _tap(tester, find.text('Cancel'));
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+    expect(
+      (await loadScheduleImportDraft(scope: 'capstone'))!.toJson(),
+      before,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('saving from Stage retains Session room edit', (tester) async {
+    await _pumpReview(tester, count: 3);
+    await _openSettings(tester);
+    await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
+    await _tap(tester, find.byKey(const ValueKey('session_0_card')));
+    await tester.enterText(
+      find.byKey(const ValueKey('session_0_room')),
+      'Auditorium',
+    );
+    await _tap(tester, find.byKey(const ValueKey('settings_stage_tab')));
+    await _saveWait(tester, 'Save settings');
+    final draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(
+      draft.parsed.rows.every((row) => row.room == 'Auditorium'),
+      isTrue,
+      reason: 'The Session edit should survive saving the Stage tab.',
+    );
+  });
+
+  testWidgets('saving without checked fields preserves unset defaults', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 3, blankLastRoom: true);
+    expect(find.text('Import 2 slots'), findsOneWidget);
+    final before = (await loadScheduleImportDraft(scope: 'capstone'))!;
+    expect(before.room, isEmpty);
+    await _openSettings(tester);
+    await _saveWait(tester, 'Save settings');
+    final after = (await loadScheduleImportDraft(scope: 'capstone'))!;
+    final readySlotsAfterSave = find.text('Import 3 slots').evaluate().length;
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(
+      {'room': after.room, 'unexpectedlyReadyThirdSlot': readySlotsAfterSave},
+      {'room': before.room, 'unexpectedlyReadyThirdSlot': 0},
+      reason:
+          'Saving unchecked settings must not fill the missing room and make another slot importable.',
+    );
+  });
+
+  testWidgets('View grading opens the newly selected stage', (tester) async {
+    final router = await _pumpRoutedReview(tester);
+    await _openSettings(tester);
+    await _chooseNextStage(tester);
+    await _tap(tester, find.text('View grading setup'));
+    final actual = router.routeInformationProvider.value.uri.toString();
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(
+      actual,
+      '/admin/defense-stages/20/edit?tab=1',
+      reason:
+          'Grading navigation should use the stage currently selected in the dialog.',
+    );
+  });
+
+  testWidgets('grading summary refreshes when selected stage changes', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 3);
+    await _openSettings(tester);
+    await _chooseNextStage(tester);
+    final summary = find.textContaining('Panel: PP Panel').evaluate().length;
+    await _tap(tester, find.byTooltip('Close settings'));
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(
+      summary,
+      1,
+      reason:
+          'The summary should describe the selected Project Proposal stage.',
+    );
+  });
+
+  testWidgets('grading summary reflects configured stage weights', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 3);
+    await _openSettings(tester);
+    final summary = find.text('Panel: CP Panel (50%)').evaluate().length;
+    await _tap(tester, find.byTooltip('Close settings'));
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(
+      summary,
+      1,
+      reason: 'The configured stage panel weight is 50, not the default 80.',
+    );
+  });
+
+  testWidgets('changing stage and saving reloads rubric names', (tester) async {
+    await _pumpReview(tester, count: 3);
+    await _openSettings(tester);
+    await _chooseNextStage(tester);
+    await _saveWait(tester, 'Save settings');
+    final draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+    expect(draft.stageId, 20);
+    await _openSettings(tester);
+    expect(find.textContaining('Panel: PP Panel'), findsOneWidget);
+    await _tap(tester, find.byTooltip('Close settings'));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('missing-only scope preserves spreadsheet room values', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 3);
+    await _openSettings(tester);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const ValueKey('schedule_room')))
+          .enabled,
+      isFalse,
+    );
+    await _tap(tester, find.byKey(const ValueKey('set_room')));
+    await tester.enterText(
+      find.byKey(const ValueKey('schedule_room')),
+      'Fallback Hall',
+    );
+    await _saveWait(tester, 'Save settings');
+    final draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+    expect(draft.room, 'Fallback Hall');
+    expect(draft.parsed.rows.every((row) => row.room == 'Room 301'), isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('date checkbox enables picker and invalid dates block saving', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 3);
+    await _openSettings(tester);
+    await _tap(tester, find.byKey(const ValueKey('set_date')));
+    await _tap(tester, find.byTooltip('Choose date'));
+    expect(find.byType(DatePickerDialog), findsOneWidget);
+    await _tap(tester, find.text('Cancel').last);
+    await tester.enterText(
+      find.byKey(const ValueKey('schedule_date')),
+      '2026-02-30',
+    );
+    await _tap(tester, find.text('Save settings'));
+    expect(find.text('Use YYYY-MM-DD'), findsOneWidget);
+    await _tap(tester, find.text('Cancel'));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Clear draft supports cancellation and confirmed deletion', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 3);
+    await _openSettings(tester);
+    await _tap(tester, find.text('Draft actions'));
+    await _tap(tester, find.text('Clear draft'));
+    expect(find.text('Discard schedule draft?'), findsOneWidget);
+    await _tap(tester, find.text('Cancel'));
+    expect(await loadScheduleImportDraft(scope: 'capstone'), isNotNull);
+    await _openSettings(tester);
+    await _tap(tester, find.text('Draft actions'));
+    await _tap(tester, find.text('Clear draft'));
+    await _tap(tester, find.text('Discard draft'));
+    expect(await loadScheduleImportDraft(scope: 'capstone'), isNull);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

@@ -656,21 +656,6 @@ class _DashboardSchedulePlannerState
                                       height: 1.4,
                                     ),
                                   ),
-                                  if (session['materials_readiness']
-                                      case final Map materials
-                                      when (materials['required_total']
-                                                  as num? ??
-                                              0) >
-                                          0) ...[
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${materials['submitted_total'] ?? 0}/${materials['required_total']} defense materials uploaded',
-                                      style: TextStyle(
-                                        color: muted,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
                                   if (!_canOpenSession(session)) ...[
                                     const SizedBox(height: 4),
                                     Text(

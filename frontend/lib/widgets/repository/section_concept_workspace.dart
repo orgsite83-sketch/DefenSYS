@@ -929,7 +929,18 @@ class _SectionConceptWorkspaceState
               ),
             )
             .length;
-    final status = verdict.isNotEmpty
+    final post = (p['shared_deliverables'] as Map?)?['post_completion'] as Map?;
+    final status =
+        '${p['selected_key'] ?? ''}'.isNotEmpty &&
+            post != null &&
+            (p['post_unlocked'] == true || post['complete'] == true)
+        ? switch (post['status']) {
+            'awaiting_pm_upload' => 'Awaiting PM upload',
+            'awaiting_review' => 'Shared final paper awaiting review',
+            'changes_requested' => 'Shared final paper corrections requested',
+            _ => 'Shared final files archived',
+          }
+        : verdict.isNotEmpty
         ? verdict.replaceAll('_', ' ')
         : p['endorsed'] == true
         ? 'Shared papers cleared for hearing'
@@ -1709,7 +1720,7 @@ class _SectionConceptWorkspaceState
             _sharedReviewHeader(p),
             _sharedAcknowledgment(p, showProgress: false),
             const SizedBox(height: 16),
-            if (!widget.focused) ...[
+            if (!widget.focused && p['shared_deliverables'] is! Map) ...[
               SharedSystemSelectionBanner(project: p),
               const SizedBox(height: 16),
             ],

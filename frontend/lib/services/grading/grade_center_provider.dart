@@ -29,6 +29,10 @@ class GradeGroupCompletionReadiness {
     this.peerEnabled,
     this.verdictCompleteCount,
     this.postDeliverablesCompleteCount,
+    this.failureCandidates = const [],
+    this.completionToken,
+    this.completionBlocker,
+    this.onApproved,
   });
 
   final int totalTeams;
@@ -46,6 +50,10 @@ class GradeGroupCompletionReadiness {
   final bool? peerEnabled;
   final int? verdictCompleteCount;
   final int? postDeliverablesCompleteCount;
+  final List<Map<String, dynamic>> failureCandidates;
+  final String? completionToken;
+  final String? completionBlocker;
+  final void Function(Map<String, dynamic>)? onApproved;
 }
 
 class GradeCenterState {
@@ -149,12 +157,13 @@ class GradeCenterState {
 }
 
 class GradeCenterNotifier extends Notifier<GradeCenterState> {
+  final _completionApprovals = <String, Map<String, dynamic>>{};
   int _fetchVersion = 0;
   static String get baseUrl => ApiConfig.gradeCenterUrl;
 
-  Uri _managementUri(String path) => Uri.parse('$baseUrl/$path').replace(
-    queryParameters: {'workspace': 'operations'},
-  );
+  Uri _managementUri(String path) => Uri.parse(
+    '$baseUrl/$path',
+  ).replace(queryParameters: {'workspace': 'operations'});
 
   @override
   GradeCenterState build() {
@@ -235,9 +244,11 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     state = state.copyWith(isRefreshingGrade: true, clearError: true);
 
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/$gradeId/').replace(
-        queryParameters: {'workspace': 'operations'},
-      ));
+      final response = await _client.get(
+        Uri.parse(
+          '$baseUrl/$gradeId/',
+        ).replace(queryParameters: {'workspace': 'operations'}),
+      );
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -277,9 +288,11 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     );
 
     try {
-      final response = await _client.post(Uri.parse('$baseUrl/sync/').replace(
-        queryParameters: {'workspace': 'operations'},
-      ));
+      final response = await _client.post(
+        Uri.parse(
+          '$baseUrl/sync/',
+        ).replace(queryParameters: {'workspace': 'operations'}),
+      );
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -337,9 +350,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
   }
 
   Future<Map<String, dynamic>> correctionDetails(int gradeId) async {
-    final response = await _client.get(
-      _managementUri('$gradeId/corrections/'),
-    );
+    final response = await _client.get(_managementUri('$gradeId/corrections/'));
     if (response.statusCode != 200) {
       throw Exception(_errorFromResponse(response));
     }
@@ -379,9 +390,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     );
 
     try {
-      final response = await _client.post(
-        _managementUri('$gradeId/publish/'),
-      );
+      final response = await _client.post(_managementUri('$gradeId/publish/'));
 
       if (response.statusCode == 200) {
         await fetchGrades(
@@ -406,12 +415,18 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     required String scope,
     required String stageLabel,
   }) async {
+    final approvalKey = '$scope|${stageLabel.trim()}';
+    _completionApprovals.remove(approvalKey);
     state = state.copyWith(isCheckingCompletion: true);
     try {
       final response = await _client.get(
-        Uri.parse(
-          '$baseUrl/group-settings/',
-        ).replace(queryParameters: {'workspace': 'operations', 'scope': scope, 'stage_label': stageLabel}),
+        Uri.parse('$baseUrl/group-settings/').replace(
+          queryParameters: {
+            'workspace': 'operations',
+            'scope': scope,
+            'stage_label': stageLabel,
+          },
+        ),
       );
       if (response.statusCode != 200) {
         throw Exception(_errorFromResponse(response));
@@ -428,7 +443,11 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
 
       return GradeGroupCompletionReadiness(
         totalTeams: (payload['grading_total_team_count'] as num).toInt(),
-        readyTeams: (payload['grading_ready_team_count'] as num).toInt(),
+        readyTeams:
+            ((payload['completion_ready_team_count'] ??
+                        payload['grading_ready_team_count'])
+                    as num)
+                .toInt(),
         canComplete: payload['can_complete'] == true,
         isComplete: payload['is_officially_complete'] == true,
         incompleteTeams: teams('incomplete_teams'),
@@ -449,6 +468,12 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         postDeliverablesCompleteCount: optInt(
           'post_deliverables_complete_count',
         ),
+        failureCandidates: payload.containsKey('failure_candidates')
+            ? teams('failure_candidates')
+            : const [],
+        completionToken: payload['completion_token']?.toString(),
+        completionBlocker: payload['completion_blocker']?.toString(),
+        onApproved: (approval) => _completionApprovals[approvalKey] = approval,
       );
     } finally {
       state = state.copyWith(isCheckingCompletion: false);
@@ -474,6 +499,10 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       final body = <String, dynamic>{'scope': scope, 'stage_label': stageLabel};
       if (isOfficiallyComplete != null) {
         body['is_officially_complete'] = isOfficiallyComplete;
+        final approval = _completionApprovals.remove(
+          '$scope|${stageLabel.trim()}',
+        );
+        if (isOfficiallyComplete && approval != null) body.addAll(approval);
       }
       if (peerGradingEnabled != null) {
         body['peer_grading_enabled'] = peerGradingEnabled;

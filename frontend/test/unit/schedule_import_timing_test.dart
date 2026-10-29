@@ -40,6 +40,9 @@ DefenseSchedulerState _state({
   defenseStages: const [
     {'id': 10, 'label': 'Concept Proposal'},
   ],
+  pitEvents: const [
+    {'event_name': 'PIT Expo', 'year_level': '1st Year'},
+  ],
   faculty: const [
     {'id': 101, 'name': 'Chair One'},
     {'id': 102, 'name': 'Recorder One'},
@@ -54,7 +57,8 @@ DefenseSchedulerState _state({
         'id': i,
         'name': 'Team $i',
         'level': scope == 'pit' ? 'PIT 1' : 'Capstone 1',
-        'ready_for_stage': 'Concept Proposal',
+        'ready_for_stage': scope == 'pit' ? 'PIT Expo' : 'Concept Proposal',
+        if (scope == 'pit') 'year_level': '1st Year',
         if (advisers[i] != null) 'adviser_name': advisers[i],
       },
   ],

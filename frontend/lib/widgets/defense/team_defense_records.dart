@@ -284,6 +284,7 @@ class DefenseRecordCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final assessment = (schedule['assessment'] as Map?) ?? const {};
+    final automatic = assessment['automatic_outcomes'] == true;
     final status =
         schedule['display_status']?.toString() ??
         schedule['status']?.toString() ??
@@ -479,13 +480,13 @@ class DefenseRecordCard extends StatelessWidget {
             ),
           ],
           const Divider(height: 30),
-          _section('Verdict and completion'),
+          _section(automatic ? 'Outcome and completion' : 'Verdict and completion'),
           Text(
             hasVerdict
-                ? 'Defense verdict: ${defenseVerdictLabel(verdict)}'
+                ? '${automatic ? 'Outcome' : 'Defense verdict'}: ${defenseVerdictLabel(verdict)}'
                 : (result != null && result != 'pending'
                       ? 'Published result: ${_resultLabel(result)}'
-                      : 'Awaiting verdict'),
+                      : (automatic ? defenseProgressLabel(status) : 'Awaiting verdict')),
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),

@@ -1,4 +1,8 @@
-"""Shared configuration for Capstone and PIT submission deadlines."""
+"""Normalize checklist input to the current faculty-review rule.
+
+Legacy values remain accepted as input/model metadata only. They never restore
+deadline enforcement, upload exceptions or an alternate submission workflow.
+"""
 
 
 TIMING_SCHEDULING = 'scheduling'
@@ -19,6 +23,6 @@ def validate_timing(data):
     if data.get('deliverable_type', 'pre') != 'pre' and timing == TIMING_DEFENSE:
         raise serializers.ValidationError('Only pre-defense deliverables can use a defense deadline.')
     # Retain validation for legacy payloads, but all new configuration follows
-    # the same faculty-review gate. Old schedule deadlines live on the hearing.
+    # the same faculty-review gate. Stored old deadlines have no runtime effect.
     return {'requirement_timing': TIMING_SCHEDULING, 'deadline_hours_before': 24,
             'verdict_condition': 'all_pass'}

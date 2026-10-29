@@ -18,6 +18,7 @@ def capture_policy(schedule):
     return {
         'version': 1 if stage.qualifying_score is not None else 0,
         'repeat_files_version': 1,
+        'automatic_outcomes': bool(stage.qualifying_score is not None),
         'qualifying_score': str(stage.qualifying_score) if stage.qualifying_score is not None else None,
         'score_carryover': (stage.score_carryover if stage.qualifying_score is not None else
             stage.concept_config.get('score_carryover', 'reassess') if stage.concept_config.get('enabled') else 'retain'),
@@ -33,6 +34,10 @@ def capture_policy(schedule):
 
 def policy_for(schedule):
     return (schedule.assessment_policy or {}) if schedule else {}
+
+
+def automatic_outcomes(schedule):
+    return bool(policy_for(schedule).get('version') == 1 and policy_for(schedule).get('automatic_outcomes'))
 
 
 @read_memoize(copy=True)
@@ -155,7 +160,17 @@ def outcome_payload(grade):
             else:
                 qualifies = any(r['qualifies'] for r in results if r['key'] == section.selected_key)
     available = complete and (not blocker or shared_redefense)
+    from hashlib import sha256
+    import json
+    from defense.scheduler.panelist_evaluation import evaluation_context
+    roster = [sorted((row.panelist_id, row.is_chair) for row in grade.schedule.panel_assignments.all()),
+              sorted(str(row.pk) for row in grade.schedule.guest_invitations.all() if row.is_active),
+              sorted(str(row.pk) for row in grade.schedule.guest_panelist_codes.all() if row.is_active)]
+    review_token = sha256(json.dumps([grade.pk, grade.schedule_id, grade.project_version,
+        str(grade.updated_at), evaluation_context(grade.schedule, grade), roster,
+        complete, results, blocker], sort_keys=True).encode()).hexdigest()
     return {'qualifying_score': float(cutoff), 'per_concept': bool(policy.get('per_concept')),
+            'automatic': automatic_outcomes(grade.schedule), 'review_token': review_token,
             'panel_complete': complete, 'assessments': results,
             'reason': blocker,
             'outcome': ('approved' if qualifies else 'for_redefense') if available else 'pending',

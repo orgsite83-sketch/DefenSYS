@@ -71,7 +71,6 @@ class FlexibleDateField(serializers.DateField):
         return super().to_internal_value(value)
 
 
-
 def time_to_minutes(value):
     return value.hour * 60 + value.minute
 
@@ -269,7 +268,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         for grade in obj.grade_records.all():
             if grade.semester_id != obj.semester_id:
                 continue
-            if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE and grade.uses_defense_verdict:
+            if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE and grade.uses_defense_verdict and not grade.closed_as_failed:
                 label = grade.stage_label
                 if label not in completed:
                     redefense.add(label)
@@ -351,7 +350,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         # The current grade's verdict is cleared when a new attempt starts.
         # Do not reuse the previous attempt's outcome for that new defense.
         return {
-            grade.stage_label: grade.verdict
+            grade.stage_label: 'failed' if grade.closed_as_failed else grade.verdict
             for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester, scope=TeamGrade.SCOPE_CAPSTONE)
             if grade.verdict and grade.stage_label
         }
@@ -456,7 +455,6 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     display_status = serializers.SerializerMethodField()
     grade_id = serializers.SerializerMethodField()
     grade_status = serializers.SerializerMethodField()
-    materials_readiness = serializers.SerializerMethodField()
 
     class Meta:
         model = DefenseSchedule
@@ -500,7 +498,6 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'display_status',
             'grade_id',
             'grade_status',
-            'materials_readiness',
             'panelists',
             'panelist_ids',
             'external_evaluators',
@@ -517,38 +514,6 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     def get_latest_change(self, obj):
         return self.context.get('latest_changes', {}).get(str(obj.pk))
 
-    def get_materials_readiness(self, obj):
-        from repository.deliverables.services import get_deliverable_definitions_for_scope
-        from repository.deliverables.timing import due_before_defense, materials_readiness
-        from repository.deliverables.models import DeliverableSubmission
-
-        if not hasattr(self, '_material_permissions_loaded'):
-            from repository.deliverables.timing import load_material_permissions
-            records = self.parent.instance if self.parent and self.parent.instance is not None else [obj]
-            load_material_permissions(list(records))
-            self._material_permissions_loaded = True
-        if not hasattr(self, '_material_definitions'):
-            self._material_definitions = {}
-        key = (obj.scope, obj.semester_id if obj.scope == 'pit' else None,
-               obj.team.year_level if obj.scope == 'pit' else None, obj.stage_label)
-        if key not in self._material_definitions:
-            self._material_definitions[key] = get_deliverable_definitions_for_scope(obj.scope, obj.semester_id, obj.stage_label, year_level=obj.team.year_level)
-        from defense.deliverable_policy import apply_hearing_policy
-        definitions = apply_hearing_policy(self._material_definitions[key], obj)
-        if not any(item.get('required') and due_before_defense(item) for item in definitions):
-            return materials_readiness(obj, definitions=definitions, submitted={})
-        if not hasattr(self, '_material_submissions'):
-            self._material_submissions = {}
-            records = self.parent.instance if self.parent and self.parent.instance is not None else [obj]
-            records = list(records)
-            team_ids = {item.team_id for item in records}
-            versions = {item.project_version for item in records}
-            for submission in DeliverableSubmission.all_objects.filter(team_id__in=team_ids,
-                    project_version__in=versions).only('team_id', 'project_version', 'stage_label', 'deliverable_id', 'status', 'file', 'is_late'):
-                submission_key = (submission.team_id, submission.project_version, submission.stage_label.lower())
-                self._material_submissions.setdefault(submission_key, {})[submission.deliverable_id] = submission
-        submitted = self._material_submissions.get((obj.team_id, obj.project_version, obj.stage_label.lower()), {})
-        return materials_readiness(obj, definitions=definitions, submitted=submitted)
 
     def get_grade_id(self, obj):
         try:
@@ -1119,8 +1084,6 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         from .operations import join_matching_session
         join_matching_session(schedule)
         self._sync_grade_row(schedule)
-        from .materials import notify_deadline
-        notify_deadline(schedule, actor)
         if schedule.documenter:
             send_documenter_assignment_notification(schedule)
         return schedule
@@ -1638,8 +1601,6 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                 )
             if schedule.documenter:
                 send_documenter_assignment_notification(schedule)
-            from .materials import notify_deadline
-            notify_deadline(schedule, actor)
         return schedules
 
 
@@ -1674,6 +1635,7 @@ def send_documenter_assignment_notification(schedule):
     if not schedule.documenter:
         return
     from notifications.models import Notification, NotificationCategory
+    from notifications.actions import minutes_action_route
 
     stage = schedule.defense_stage.label if schedule.defense_stage else schedule.event_name or 'defense'
     date_str = schedule.scheduled_date.strftime('%B %d, %Y')
@@ -1691,7 +1653,7 @@ def send_documenter_assignment_notification(schedule):
         sender=schedule.created_by,
         category=NotificationCategory.DEFENSE,
         workspace='admin' if schedule.documenter.role == 'admin' else 'documenter',
-        action_route=f'/admin/defense-board/minutes/{schedule.pk}' if schedule.documenter.role == 'admin' else f'/documenter/minutes/{schedule.pk}',
+        action_route=minutes_action_route(schedule, 'admin' if schedule.documenter.role == 'admin' else 'documenter'),
         action_payload={'schedule_id': schedule.pk, 'action_kind': 'minutes_documenter'},
     )
 
@@ -1785,7 +1747,6 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
         }, request=request)
         schedule.refresh_from_db()
         return schedule
-
 
 
 def minutes_to_time(minutes):

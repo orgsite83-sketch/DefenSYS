@@ -20,12 +20,15 @@ import '../../../widgets/confirm_dialog.dart';
 import '../../../toasts/feedback_toast.dart';
 import '../../../widgets/tactile_button.dart';
 import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import '../../../widgets/grading/automatic_assessment_panel.dart';
 import 'widgets/evaluation_score_picker.dart';
 import 'widgets/evaluation_review_screen.dart';
 import 'widgets/evaluation_navigation.dart';
 import 'widgets/team_grade_chooser.dart';
 import 'widgets/defense_team_summary.dart';
 import 'widgets/defense_materials_card.dart';
+import 'widgets/grading_workspace_navigation.dart';
+import 'widgets/shared_system_assessment_review.dart';
 
 class GradeSheetTab extends ConsumerStatefulWidget {
   final List<TeamData> teams;
@@ -68,6 +71,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   Timer? _autoSaveTimer;
   Future<bool>? _draftSaveFuture;
   final _scrollController = ScrollController();
+  final _outcomeScrollController = ScrollController();
+  final _sharedScrollController = ScrollController();
+  GradingWorkspaceView _workspaceView = GradingWorkspaceView.evaluation;
   final _footerActions = ShadPopoverController();
   final _evaluationKey = GlobalKey();
   final _criterionKeys = <Criterion, GlobalKey>{};
@@ -111,6 +117,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   void dispose() {
     _autoSaveTimer?.cancel();
     _scrollController.dispose();
+    _outcomeScrollController.dispose();
+    _sharedScrollController.dispose();
     _footerActions.dispose();
     for (var controller in _studentRemarksControllers.values) {
       controller.dispose();
@@ -161,8 +169,21 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final team = widget.teams[widget.selectedTeamIndex];
 
     if (!identical(_lastTeam, team)) {
+      final retainTarget =
+          _lastTeam != null && _conceptOwner == _identity(team);
+      final selectedMemberId =
+          retainTarget &&
+              _selectedStudentIndex < _lastTeam!.memberDetails.length
+          ? _lastTeam!.memberDetails[_selectedStudentIndex].id
+          : null;
       _autoSaveTimer?.cancel();
       _lastTeam = team;
+      if (_conceptOwner != _identity(team) ||
+          !team.usesConceptWorkspace ||
+          (_workspaceView == GradingWorkspaceView.sharedSystems &&
+              !team.usesSharedConceptWorkspace)) {
+        _workspaceView = GradingWorkspaceView.evaluation;
+      }
       if (team.assessmentConcepts.isNotEmpty &&
           (_conceptOwner != _identity(team) ||
               !team.assessmentConcepts.any(
@@ -172,9 +193,14 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       }
       _conceptOwner = _identity(team);
       _formGeneration++;
-      _selectedStudentIndex = 0;
+      final refreshedMemberIndex = team.memberDetails.indexWhere(
+        (member) => member.id == selectedMemberId,
+      );
+      _selectedStudentIndex = refreshedMemberIndex < 0
+          ? 0
+          : refreshedMemberIndex;
       _draftSaveError = null;
-      _showIndividualCriteria = team.isIndividualTarget;
+      if (!retainTarget) _showIndividualCriteria = team.isIndividualTarget;
 
       _criteria = [];
       _criterionKeys.clear();
@@ -394,6 +420,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   /// Used by both the chooser and dashboard navigation. A failed save keeps the
   /// current sheet open; edits made during an in-flight save require another ACK.
+  bool get hasPendingChanges =>
+      _draftSaveFuture != null || _lastTeam?.hasUnsavedChanges == true;
+
   Future<bool> savePendingChanges() async {
     _footerActions.hide();
     _autoSaveTimer?.cancel();
@@ -489,8 +518,17 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   /// Assignments uses this same verification flow rather than directly changing
   /// the selected index. The final lookup uses schedule/context identity so a
   /// refreshed or reordered assignment list cannot activate the wrong team.
-  Future<bool> openTeam(int index) async {
-    if (index < 0 || index >= widget.teams.length) return false;
+  Future<bool> openTeam(TeamData requested) async {
+    final index = widget.teams.indexWhere(
+      (team) => _identity(team) == _identity(requested),
+    );
+    if (index < 0) {
+      showErrorToast(
+        context,
+        'This assignment changed. Refresh the assignments and try again.',
+      );
+      return false;
+    }
     final candidate = widget.teams[index];
     if (_lastTeam != null &&
         _identity(candidate) == _identity(_lastTeam!) &&
@@ -559,121 +597,422 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final team = widget.teams[widget.selectedTeamIndex];
     final unavailable = !team.gradingAvailable && !team.isPosted;
     final canScore = team.isPosted || _isVerified(team);
+    final activeConcept = team.assessmentConcepts
+        .where((row) => row['key'] == _activeConceptKey)
+        .firstOrNull;
     final scrollContent = SingleChildScrollView(
+      key: const ValueKey('evaluation-scroll'),
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          DefenseTeamSummary(
-            key: const ValueKey('team-defense-brief'),
-            team: team,
-            showDetailsInitially: !canScore,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: team.usesConceptWorkspace ? 960 : double.infinity,
           ),
-          if (team.defenseMaterials.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            DefenseMaterialsCard(
-              key: const ValueKey('defense-materials'),
-              materials: team.defenseMaterials,
-              onView: _viewDefenseMaterial,
-            ),
-          ],
-          const SizedBox(height: 16),
-          if (unavailable || team.isPosted) ...[
-            _buildAvailabilityNotice(team),
-            const SizedBox(height: 16),
-          ],
-          if (team.assessmentConcepts.isNotEmpty) ...[
-            DropdownButtonFormField<String>(
-              key: ValueKey('concept-assessment-$_activeConceptKey'),
-              initialValue: _activeConceptKey,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Concept to assess',
-                border: OutlineInputBorder(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DefenseTeamSummary(
+                key: const ValueKey('team-defense-brief'),
+                team: team,
+                showDetailsInitially: !canScore,
+                assessmentTitle: activeConcept?['title']?.toString(),
+                parentSystemTitle: activeConcept == null
+                    ? ''
+                    : team.systemTitleFor(_activeConceptKey!),
+                materials: activeConcept == null
+                    ? null
+                    : _buildAssessmentMaterials(team),
               ),
-              items: team.assessmentConcepts
-                  .map(
-                    (c) => DropdownMenuItem(
-                      value: c['key'].toString(),
-                      child: Text(
-                        c['title'].toString(),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged:
-                  _isSubmittingGrades ||
-                      _isReviewingGrades ||
-                      _isNavigatingEvaluation
-                  ? null
-                  : (key) {
-                      if (key == null || key == _activeConceptKey) return;
-                      if (!team.isPosted && team.gradingAvailable) {
-                        _rememberDraft();
-                      }
-                      setState(() {
-                        _activeConceptKey = key;
-                        _lastTeam = null;
-                        _syncRubricForCurrentTeam();
-                      });
-                    },
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Score every concept separately. The selected concept contributes to the official academic grade once.',
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (unavailable)
-            _buildRubricPreview(team)
-          else if (!canScore)
-            _buildTeamEntry(team)
-          else
-            _buildEvaluationCard(team),
-          if (team.usesDefenseVerdict && !team.isLockedByDate) ...[
-            const SizedBox(height: 14),
-            if (team.isChair)
-              _buildChairVerdictCard(team)
-            else
-              _buildPanelistVerdictCard(team),
-          ],
-          if (!team.usesDefenseVerdict &&
-              team.hasConceptWorkflow &&
-              !team.isLockedByDate) ...[
-            const SizedBox(height: 14),
-            if (team.isChair)
-              _buildChairPitConceptCard(team)
-            else
-              _buildPanelistPitConceptCard(team),
-          ],
-        ],
+              const SizedBox(height: 16),
+              if (unavailable || team.isPosted) ...[
+                _buildAvailabilityNotice(team),
+                const SizedBox(height: 16),
+              ],
+              if (activeConcept == null) _buildAssessmentMaterials(team),
+              const SizedBox(height: 16),
+              if (unavailable)
+                _buildRubricPreview(team)
+              else if (!canScore)
+                _buildTeamEntry(team)
+              else
+                _buildEvaluationCard(team),
+              if (canScore && team.assessmentConcepts.length > 1) ...[
+                const SizedBox(height: 16),
+                _buildAssessmentNavigation(team),
+              ],
+            ],
+          ),
+        ),
       ),
     );
     return DefensysShadcnScope(
       child: Column(
         children: [
           _buildGradingContext(team),
+          if (team.usesConceptWorkspace)
+            GradingWorkspaceTabs(
+              shared: team.usesSharedConceptWorkspace,
+              value: _workspaceView,
+              onChanged: (value) {
+                FocusScope.of(context).unfocus();
+                setState(() => _workspaceView = value);
+              },
+            ),
           Expanded(
-            child: widget.onRefresh == null
-                ? scrollContent
-                : RefreshIndicator(
-                    color: DefensysTokens.maroonOf(context),
-                    onRefresh: () async {
-                      if (await savePendingChanges()) await widget.onRefresh!();
-                    },
-                    child: scrollContent,
+            child: IndexedStack(
+              index: !team.usesConceptWorkspace
+                  ? 0
+                  : _workspaceView == GradingWorkspaceView.evaluation
+                  ? 0
+                  : _workspaceView == GradingWorkspaceView.sharedSystems
+                  ? 1
+                  : team.usesSharedConceptWorkspace
+                  ? 2
+                  : 1,
+              children: [
+                _buildEvaluationLayout(
+                  team,
+                  widget.onRefresh == null
+                      ? scrollContent
+                      : RefreshIndicator(
+                          color: DefensysTokens.maroonOf(context),
+                          onRefresh: () async {
+                            if (await savePendingChanges()) {
+                              await widget.onRefresh!();
+                            }
+                          },
+                          child: scrollContent,
+                        ),
+                ),
+                if (team.usesSharedConceptWorkspace)
+                  SingleChildScrollView(
+                    controller: _sharedScrollController,
+                    padding: const EdgeInsets.all(20),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 800),
+                        child: _buildSharedSystems(team),
+                      ),
+                    ),
                   ),
+                if (team.usesConceptWorkspace)
+                  SingleChildScrollView(
+                    controller: _outcomeScrollController,
+                    padding: const EdgeInsets.all(16),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 960),
+                        child: _buildTeamOutcome(team),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          if (canScore && !unavailable) _buildEvaluationFooter(team),
+          if (team.usesConceptWorkspace &&
+              _workspaceView == GradingWorkspaceView.outcome)
+            _buildOutcomeFooter(team)
+          else if (_workspaceView == GradingWorkspaceView.evaluation &&
+              canScore &&
+              !unavailable)
+            _buildEvaluationFooter(team),
         ],
       ),
     );
   }
 
+  Widget _buildEvaluationLayout(TeamData team, Widget content) {
+    if (team.assessmentConcepts.isEmpty) return content;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide =
+            constraints.maxWidth >= 1000 &&
+            MediaQuery.textScalerOf(context).scale(1) <= 1.3;
+        final navigator = ConceptAssessmentNavigator(
+          team: team,
+          activeKey: _activeConceptKey!,
+          sidebar: wide,
+          enabled:
+              !_isSubmittingGrades &&
+              !_isReviewingGrades &&
+              !_isNavigatingEvaluation,
+          onChanged: (key) => _selectAssessment(team, key),
+        );
+        if (wide) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(width: 285, child: navigator),
+              VerticalDivider(
+                width: 1,
+                color: DefensysTokens.borderOf(context),
+              ),
+              Expanded(child: content),
+            ],
+          );
+        }
+        return Column(
+          children: [
+            navigator,
+            Expanded(child: content),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSharedSystems(TeamData team) {
+    if (team.sharedReview != null) {
+      return SharedSystemAssessmentReview(
+        key: ValueKey(
+          'shared-review-${team.sharedReview!['id']}-${team.sharedReview!['round_id']}',
+        ),
+        team: team,
+        onView: _viewDefenseMaterial,
+        onUpdated: _refreshOutcome,
+      );
+    }
+    // Keep already-authorized files readable when decision context is absent.
+    final groups = <String, List<Map<String, dynamic>>>{};
+    for (final file in team.sharedMaterials) {
+      groups
+          .putIfAbsent((file['candidate_key'] ?? '').toString(), () => [])
+          .add(file);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Shared systems',
+          style: DefensysTokens.sectionTitle.copyWith(
+            color: DefensysTokens.textPrimaryOf(context),
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text('Shared system review is unavailable for this hearing.'),
+        for (final group in groups.entries) ...[
+          const SizedBox(height: 24),
+          DefenseMaterialsCard(
+            title: group.key.isEmpty
+                ? 'Section common files'
+                : team.systemTitleFor(group.key).isNotEmpty
+                ? team.systemTitleFor(group.key)
+                : 'Shared system files',
+            materials: group.value,
+            onView: _viewDefenseMaterial,
+            flat: true,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _selectAssessment(TeamData team, String key) async {
+    if (key == _activeConceptKey) return;
+    await _navigateEvaluation(team, () {
+      _activeConceptKey = key;
+      _lastTeam = null;
+      _syncRubricForCurrentTeam();
+    }, reveal: false);
+    if (mounted && _activeConceptKey == key && _scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+  }
+
+  Future<void> _refreshOutcome() async {
+    if (widget.onRefresh != null) {
+      await widget.onRefresh!();
+    } else {
+      widget.onGradesSubmitted?.call();
+    }
+  }
+
+  Widget _buildTeamOutcome(TeamData team) {
+    if (team.usesAutomaticOutcomes && team.workflowGrade != null) {
+      return AutomaticAssessmentPanel(
+        key: ValueKey('automatic-outcome-${team.scheduleId}'),
+        grade: team.workflowGrade!,
+        isChair: team.isChair,
+        embedded: true,
+        showSharedLink: false,
+        teamName: team.name,
+        sharedContext: team.hasSharedSystem
+            ? team.sharedReview ??
+                  {
+                    'selected_key': team.selectedSharedConceptKey,
+                    'verdict':
+                        (team.conceptWorkflow?['shared_selection']
+                            as Map?)?['decision'] ??
+                        '',
+                  }
+            : null,
+        assessmentConcepts: team.assessmentConcepts,
+        onUpdated: () => _refreshOutcome(),
+      );
+    }
+    if (team.isLockedByDate) {
+      return const Text('This hearing is read-only.');
+    }
+    if (team.usesDefenseVerdict) {
+      return team.isChair
+          ? _buildChairVerdictCard(team)
+          : _buildPanelistVerdictCard(team);
+    }
+    if (team.hasConceptWorkflow) {
+      return team.isChair
+          ? _buildChairPitConceptCard(team)
+          : _buildPanelistPitConceptCard(team);
+    }
+    return const Text('Awaiting panel evaluations');
+  }
+
+  Widget _buildOutcomeFooter(TeamData team) => Container(
+    key: const ValueKey('outcome-footer'),
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    decoration: BoxDecoration(
+      color: DefensysTokens.surfaceOf(context),
+      border: Border(top: BorderSide(color: DefensysTokens.borderOf(context))),
+    ),
+    child: SafeArea(
+      top: false,
+      child: Text(
+        team.panelRequired != null && team.panelRequired! > 0
+            ? '${team.panelSubmitted ?? 0} of ${team.panelRequired} panelists submitted'
+            : team.outcomeRule?['panel_complete'] == true
+            ? 'Panel evaluations complete'
+            : 'Awaiting panel evaluations',
+        style: TextStyle(
+          color: DefensysTokens.textSecondaryOf(context),
+          fontSize: 12,
+        ),
+      ),
+    ),
+  );
+
+  Widget _buildAssessmentNavigation(TeamData team) {
+    final index = team.assessmentConcepts.indexWhere(
+      (c) => c['key'] == _activeConceptKey,
+    );
+    final enabled =
+        !_isNavigatingEvaluation && !_isSubmittingGrades && !_isReviewingGrades;
+    final noun = team.hasSharedSystem ? 'module' : 'concept';
+    return Row(
+      children: [
+        Expanded(
+          child: ShadButton.outline(
+            key: const ValueKey('previous-assessment'),
+            height: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+            enabled: enabled && index > 0,
+            onPressed: () => _selectAssessment(
+              team,
+              team.assessmentConcepts[index - 1]['key'].toString(),
+            ),
+            child: Flexible(
+              child: Text('Previous $noun', textAlign: TextAlign.center),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ShadButton.outline(
+            key: const ValueKey('next-assessment'),
+            height: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+            enabled: enabled && index < team.assessmentConcepts.length - 1,
+            onPressed: () => _selectAssessment(
+              team,
+              team.assessmentConcepts[index + 1]['key'].toString(),
+            ),
+            child: Flexible(
+              child: Text('Next $noun', textAlign: TextAlign.center),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAssessmentMaterials(TeamData team) {
+    final concepts = team.assessmentConcepts.isNotEmpty;
+    List<Map<String, dynamic>> scoped(List<Map<String, dynamic>> files) =>
+        concepts
+        ? files.where((f) => f['candidate_key'] == _activeConceptKey).toList()
+        : files;
+    final separateShared = team.usesSharedConceptWorkspace;
+    final shared = separateShared
+        ? <Map<String, dynamic>>[]
+        : scoped(team.sharedMaterials);
+    final own = scoped(team.teamMaterials);
+    final common = concepts
+        ? [
+            if (!separateShared) ...team.sharedMaterials,
+            ...team.teamMaterials,
+          ].where((f) => (f['candidate_key'] ?? '').toString().isEmpty).toList()
+        : <Map<String, dynamic>>[];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!separateShared &&
+            (team.hasSharedSystem ||
+                team.gradingWorkspace['shared_materials_configured'] == true ||
+                shared.isNotEmpty)) ...[
+          DefenseMaterialsCard(
+            key: const ValueKey('shared-assessment-materials'),
+            title: 'Shared system files',
+            materials: shared,
+            onView: _viewDefenseMaterial,
+            emptyLabel:
+                team.gradingWorkspace['shared_materials_configured'] == false
+                ? 'No shared defense materials configured.'
+                : team.gradingWorkspace.containsKey(
+                    'shared_materials_configured',
+                  )
+                ? 'No shared files uploaded yet.'
+                : 'Shared materials are unavailable.',
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (own.isNotEmpty || concepts)
+          DefenseMaterialsCard(
+            key: const ValueKey('defense-materials'),
+            flat: team.usesConceptWorkspace,
+            title: team.hasSharedSystem
+                ? 'Team module files'
+                : concepts
+                ? 'Concept files'
+                : 'Defense materials',
+            materials: own,
+            onView: _viewDefenseMaterial,
+          ),
+        if (common.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ShadAccordion<String>(
+            children: [
+              ShadAccordionItem<String>(
+                value: 'common-files',
+                title: const Text(
+                  'Team common files',
+                  style: TextStyle(fontSize: 12),
+                ),
+                child: DefenseMaterialsCard(
+                  materials: common,
+                  onView: _viewDefenseMaterial,
+                  embedded: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildGradingContext(TeamData team) {
+    final sharedView = _workspaceView == GradingWorkspaceView.sharedSystems;
     final statusColor = team.isPosted
         ? (DefensysTokens.isDark(context)
               ? const Color(0xFF6EE7B7)
@@ -703,11 +1042,13 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: .08),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
-                  team.isPosted
+                  sharedView
+                      ? Icons.hub_outlined
+                      : team.isPosted
                       ? Icons.check_circle_outline_rounded
                       : _isVerified(team)
                       ? Icons.edit_outlined
@@ -722,7 +1063,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      team.isPosted
+                      sharedView
+                          ? 'Section workspace'
+                          : team.isPosted
                           ? 'Submitted grades'
                           : _isVerified(team)
                           ? 'Currently grading'
@@ -734,7 +1077,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                       ),
                     ),
                     Text(
-                      team.name,
+                      sharedView
+                          ? (team.sharedReview?['section'] ?? 'Shared systems')
+                                .toString()
+                          : team.name,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -769,7 +1115,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
             ],
           ),
-          if (_showingStudents &&
+          if (_workspaceView == GradingWorkspaceView.evaluation &&
+              _showingStudents &&
               team.memberDetails.isNotEmpty &&
               (team.isPosted || _isVerified(team))) ...[
             const SizedBox(height: 8),
@@ -1107,6 +1454,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     TeamData team,
     VoidCallback change, {
     GlobalKey? Function()? scrollTarget,
+    bool reveal = true,
   }) async {
     if (_isNavigatingEvaluation ||
         _isChoosingTeam ||
@@ -1128,7 +1476,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       }
       FocusScope.of(context).unfocus();
       setState(change);
-      _revealEvaluation(scrollTarget);
+      if (reveal) _revealEvaluation(scrollTarget);
     } finally {
       if (mounted) setState(() => _isNavigatingEvaluation = false);
     }
@@ -1316,9 +1664,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               Container(
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(
-                    context,
-                  ).withValues(alpha: .07),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
@@ -1568,6 +1914,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           team.draftSubmissions = [];
           team.draftSavedAt = null;
           team.hasUnsavedChanges = false;
+          if (team.usesConceptWorkspace) {
+            _workspaceView = GradingWorkspaceView.outcome;
+          }
         });
         widget.onEvaluationChanged?.call();
         widget.onGradesSubmitted?.call();

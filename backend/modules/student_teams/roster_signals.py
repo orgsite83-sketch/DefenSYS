@@ -54,6 +54,9 @@ def pin_capstone_requirements(sender, instance, raw=False, **kwargs):
     if not team.is_capstone:
         return
     from .models import TeamTermParticipation
+    if TeamTermParticipation.objects.filter(team=team, semester_id=instance.semester_id, closed_at__isnull=False).exists():
+        from django.core.exceptions import ValidationError
+        raise ValidationError('A new assessment cannot be inserted into a closed participation. Use a new Capstone 1 intake or the audited correction process.')
     if instance.semester_id != team.semester_id:
         if TeamTermParticipation.objects.filter(team=team, semester_id=instance.semester_id, closed_at__isnull=False).exists():
             from django.core.exceptions import ValidationError

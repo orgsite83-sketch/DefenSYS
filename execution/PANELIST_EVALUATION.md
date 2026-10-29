@@ -49,6 +49,7 @@ Useful options:
 | `--semester-id 2` | Explicit academic term. Otherwise use the active semester, except for explicit team/session selections. |
 | `--min-score 8 --max-score 8` | Fixed 80% of each criterion maximum. Defaults are random 70–90%; zero and fractional maxima are supported. |
 | `--include-drafts` | Preserve saved draft scores and remarks, fill missing scores, and submit the completed evaluation. |
+| `--request-timeout 90` | Allow slower assignment responses or submissions up to 90 seconds. Defaults to 30 seconds; writes are never retried automatically. |
 
 ## Preserved workflow rules
 
@@ -62,6 +63,8 @@ Useful options:
 - Saving evaluations does not publish grades, accept archive files, sign minutes, clear concept decisions/revisions, or bypass completion requirements.
 
 Exit codes: `0` finished, `1` request/configuration failure, `2` unavailable assignments or pending verdicts. A concept hearing can finish its automated scoring with exit `0` while its manual chair decision remains outstanding.
+
+Local flow check (2026-10-29): faculty accounts assigned across multiple cohorts can take approximately 14 seconds to load assignments, exceeding the former hard-coded 10-second timeout. Use the configurable request timeout for both discovery and the mandatory refresh before each submission. After a timed-out write, inspect saved evaluations before rerunning.
 
 ## Verification
 

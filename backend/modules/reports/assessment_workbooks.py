@@ -126,9 +126,12 @@ def assessment_document_sheets(records, *, student, team_rows, coverage):
             history_rows = []
             for attempt in histories:
                 remarks = attempt.verdict_remarks or ''
+                outcome = dict(grade.VERDICT_CHOICES).get(attempt.verdict, attempt.verdict.replace('_', ' ').title()) if attempt.verdict else 'Not recorded'
+                if attempt.outcome_metadata.get('closure', {}).get('failed'):
+                    outcome = f'Failed (stage closure); hearing: {outcome}'
                 for part, offset in enumerate(range(0, max(1, len(remarks)), 1000), 1):
                     history_rows.append({'attempt': attempt.attempt_number, 'date': attempt.schedule.scheduled_date if attempt.schedule else '', 'panel': _percent(attempt.panel_score),
-                                         'final': _percent(attempt.final_grade), 'outcome': dict(grade.VERDICT_CHOICES).get(attempt.verdict, attempt.verdict.replace('_', ' ').title()) if attempt.verdict else 'Not recorded',
+                                         'final': _percent(attempt.final_grade), 'outcome': outcome,
                                          'part': part, 'remarks': remarks[offset:offset + 1000]})
             sheets.append({'name': _supporting_name(name, 'History'), 'title': title, 'subtitle': 'Defense Attempt History', 'metadata': metadata,
                            'section_title': 'Defense Attempt History & Traceability Log', 'signatures': False,

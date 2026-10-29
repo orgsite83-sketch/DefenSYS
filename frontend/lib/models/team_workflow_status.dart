@@ -38,6 +38,10 @@ class TeamWorkflowStatus {
       'Grading is ready. Waiting for authorized finalization.',
     'pending_post_defense' =>
       'The team needs to submit or correct the required post-defense files and complete any remaining documentation.',
+    'awaiting_pm_upload' =>
+      'Team files are accepted. The project manager must submit the selected shared system paper once for the section.',
+    'shared_archive_review_pending' =>
+      'Team files are accepted. The section shared paper needs faculty review or corrections.',
     'archive_review_pending' =>
       'Review the submitted post-defense files for archiving. Accept each archive submission or request corrections.',
     'revisions_pending' =>
@@ -233,9 +237,7 @@ class TeamWorkflowStatus {
       .fold(0, (total, item) => total + pendingFileReviewCount(item));
 
   static int pendingFileReviewCount(Map item) {
-    final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
-    if ((!isPost && item['requirement_timing'] == 'defense') ||
-        item['can_faculty_review'] == false ||
+    if (item['can_faculty_review'] == false ||
         item['is_waived'] == true ||
         item['source'] == 'defense_minutes') {
       return 0;
@@ -321,7 +323,6 @@ class TeamWorkflowStatus {
               item['required'] == true &&
               item['type'] != 'post' &&
               item['deliverable_type'] != 'post' &&
-              item['requirement_timing'] != 'defense' &&
               item['is_waived'] != true &&
               item['uploaded'] == false,
         )) {
@@ -352,7 +353,6 @@ class TeamWorkflowStatus {
           (item) =>
               item['required'] == true &&
               item['type'] != 'post' &&
-              item['requirement_timing'] != 'defense' &&
               item['is_waived'] != true &&
               (item['uploaded'] == false ||
                   (item['uploaded'] != true && item['submission'] == null)),
@@ -493,6 +493,23 @@ class TeamWorkflowStatus {
           'cancelled',
           'archived',
         }.contains(recordedStatus)) {
+      final completion = stage['post_defense_completion'];
+      if (completion is Map &&
+          completion['team_complete'] == true &&
+          completion['shared_complete'] == false) {
+        final shared = completion['shared'] as Map? ?? {};
+        return shared['status'] == 'awaiting_pm_upload'
+            ? const TeamWorkflowStatus(
+                'awaiting_pm_upload',
+                'Awaiting PM upload',
+                WorkflowStatusTone.neutral,
+              )
+            : const TeamWorkflowStatus(
+                'shared_archive_review_pending',
+                'Shared paper needs review',
+                WorkflowStatusTone.active,
+              );
+      }
       return describe('pending_post_defense');
     }
     if (assessment is Map && assessment['display_status'] is String) {
@@ -574,7 +591,6 @@ class TeamWorkflowStatus {
       (item) =>
           item['type'] != 'post' &&
           item['deliverable_type'] != 'post' &&
-          item['requirement_timing'] != 'defense' &&
           item['is_waived'] != true,
     );
     if (scheduling.any(

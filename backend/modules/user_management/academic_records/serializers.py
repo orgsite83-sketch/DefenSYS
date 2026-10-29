@@ -67,6 +67,7 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
     rolled_from_label = serializers.SerializerMethodField()
     instructor_name = serializers.SerializerMethodField()
     instructor_id = serializers.SerializerMethodField()
+    capstone_participation = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentAcademicRecord
@@ -90,7 +91,17 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
             'rolled_from_id',
             'rolled_from_label',
             'created_at',
+            'capstone_participation',
         ]
+
+    def get_capstone_participation(self, obj):
+        from student_teams.models import StudentCapstoneParticipation
+        row = StudentCapstoneParticipation.objects.filter(student_id=obj.student_id).order_by('-number').first()
+        if not row:
+            return None
+        return {'number': row.number, 'state': row.state,
+            'returning': row.state == 'failed',
+            'has_current_team': row.state == 'active' and row.placements.filter(ended_at__isnull=True).exists()}
 
     def get_rolled_from_label(self, obj):
         if not obj.rolled_from_id:

@@ -33,6 +33,9 @@ class ConfiguredOutcomeTests(APITestCase):
             rubric=self.panel_rubric, scheduled_date='2026-05-15', start_time='08:00', room='Phase 3')
         SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=self.panelist, is_chair=True)
         self.grade, _, _ = GradeContextService.get_or_create_for_schedule(self.capstone_schedule)
+        # These regressions retain the captured v1 manual-outcome contract.
+        self.capstone_schedule.assessment_policy.pop('automatic_outcomes', None)
+        self.capstone_schedule.save(update_fields=['assessment_policy'])
 
     def submit(self, score, student=None, criteria=None):
         return submit_panelist_grade(self.capstone_schedule, self.grade,
@@ -210,6 +213,8 @@ class PerConceptOutcomeTests(APITestCase):
             defense_stage=self.stage, rubric=self.panel_rubric, scheduled_date='2026-05-15', start_time='08:00', room='Concepts')
         SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=self.panelist, is_chair=True)
         self.grade, _, _ = GradeContextService.get_or_create_for_schedule(self.capstone_schedule)
+        self.capstone_schedule.assessment_policy.pop('automatic_outcomes', None)
+        self.capstone_schedule.save(update_fields=['assessment_policy'])
 
     def scores(self, values):
         return [{'concept_key': f'c{i}', 'student_id': None,

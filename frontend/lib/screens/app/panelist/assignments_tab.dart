@@ -443,11 +443,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                   color: DefensysTokens.maroon,
                 ),
                 const SizedBox(width: 6),
-                _scopeFilterChip(
-                  'PIT Expos',
-                  'pit',
-                  color: ProgramColors.pit,
-                ),
+                _scopeFilterChip('PIT Expos', 'pit', color: ProgramColors.pit),
               ],
             ),
           ),
@@ -471,9 +467,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   ) {
     final firstTeam = entries.first.value;
     final isCapstone = firstTeam.scope == 'capstone';
-    final accentColor = isCapstone
-        ? DefensysTokens.maroon
-        : ProgramColors.pit;
+    final accentColor = isCapstone ? DefensysTokens.maroon : ProgramColors.pit;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -643,9 +637,9 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          t.project.isEmpty
+                          t.assignmentProjectTitle.isEmpty
                               ? 'No project title specified'
-                              : t.project,
+                              : t.assignmentProjectTitle,
                           style: TextStyle(
                             fontSize: 12,
                             color: DefensysTokens.textSecondaryOf(context),

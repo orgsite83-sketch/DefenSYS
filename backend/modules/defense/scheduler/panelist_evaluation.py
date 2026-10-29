@@ -47,6 +47,9 @@ def verdict_unavailable_reason(schedule, grade=None):
     """Shared verdict readiness for assignment display and the submit endpoint."""
     if schedule.scope == DefenseSchedule.SCOPE_PIT:
         return 'PIT events do not use official defense verdicts.'
+    from grading.grades.outcome_rules import automatic_outcomes
+    if automatic_outcomes(schedule):
+        return 'This hearing uses automatic outcomes.'
     return assessment_unavailable_reason(schedule, grade)
 
 

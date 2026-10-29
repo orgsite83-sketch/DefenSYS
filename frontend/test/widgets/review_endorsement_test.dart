@@ -17,8 +17,8 @@ Map<String, dynamic> _stage({bool ready = true, bool accepted = false}) => {
   'stage_label': 'Concept Proposal',
   'deliverables_configured': true,
   'required_complete': accepted,
-  'required_total': 1,
-  'required_uploaded': ready ? 1 : 0,
+  'required_total': 2,
+  'required_uploaded': ready ? 2 : 1,
   'endorsement_required': true,
   'endorsed': false,
   'endorsement_review': {
@@ -56,13 +56,12 @@ Map<String, dynamic> _stage({bool ready = true, bool accepted = false}) => {
       'label': 'Pitch deck',
       'type': 'pre',
       'required': true,
-      'requirement_timing': 'defense',
+      'requirement_timing': 'scheduling',
       'uploaded': true,
       'can_upload': true,
       'can_faculty_review': true,
-      'materials_submitted': true,
       'submission': {
-        'status': 'pending',
+        'status': 'accepted',
         'file_name': 'pitch.pptx',
         'files': [],
       },
@@ -181,8 +180,7 @@ void main() {
         stage['required_complete'] = false;
         stage['required_total'] = 2;
         final deck = (stage['pre'] as List).last as Map<String, dynamic>;
-        deck['requirement_timing'] = 'scheduling';
-        deck.remove('materials_submitted');
+        (deck['submission'] as Map)['status'] = 'pending';
         await _pumpWorkspace(
           tester,
           stage: stage,
@@ -361,7 +359,7 @@ void main() {
 
   for (final pit in [false, true]) {
     testWidgets(
-      '${pit ? 'PIT' : 'Capstone'} accepts scheduling files before separate endorsement; deck needs no approval',
+      '${pit ? 'PIT' : 'Capstone'} accepts required files before separate endorsement',
       (tester) async {
         tester.view.physicalSize = const Size(1500, 1200);
         tester.view.devicePixelRatio = 1;
@@ -376,7 +374,7 @@ void main() {
         );
         expect(find.text('Accept'), findsOneWidget);
         expect(find.text('Request corrections'), findsNWidgets(2));
-        expect(find.text('Uploaded'), findsOneWidget);
+        expect(find.text('Accepted'), findsOneWidget);
         expect(find.text('Review & endorse'), findsNothing);
         expect(
           tester.widget<ElevatedButton>(_endorseButton()).onPressed,
@@ -405,7 +403,7 @@ void main() {
           notifier: notifier,
           pit: pit,
         );
-        expect(find.text('Accepted'), findsOneWidget);
+        expect(find.text('Accepted'), findsNWidgets(2));
         expect(find.text('Awaiting endorsement'), findsWidgets);
         expect(
           tester.widget<ElevatedButton>(_endorseButton()).onPressed,
@@ -414,8 +412,8 @@ void main() {
         await tester.tap(_endorseButton());
         await tester.pumpAndSettle();
         expect(
-          find.textContaining(
-            'All required before-endorsement files have been accepted.',
+          find.text(
+            'Endorse Team FreshStartAdvising for Concept Proposal?',
           ),
           findsOneWidget,
         );
@@ -540,19 +538,20 @@ void main() {
   );
 
   test(
-    'pending decks do not count as faculty reviews or block endorsed scheduling readiness',
+    'pending decks require faculty review and block scheduling readiness',
     () {
       final stage = _stage();
       stage['endorsed'] = true;
       (stage['pre'] as List).removeAt(0);
+      ((stage['pre'] as List).single['submission'] as Map)['status'] = 'pending';
       final team = <String, dynamic>{'selected_stage': stage};
-      expect(DeliverablesTriageHelper.pendingReviewCount(team), 0);
-      expect(DeliverablesTriageHelper.isReadyForDefense(team), true);
+      expect(DeliverablesTriageHelper.pendingReviewCount(team), 1);
+      expect(DeliverablesTriageHelper.isReadyForDefense(team), false);
     },
   );
 
   testWidgets(
-    'matrix treats an uploaded deck as uploaded and keeps scheduling clearance separate',
+    'matrix counts accepted required papers and decks together',
     (tester) async {
       tester.view.physicalSize = const Size(1600, 1200);
       tester.view.devicePixelRatio = 1;
@@ -584,10 +583,54 @@ void main() {
         ),
         overrides: authTestOverrides(),
       );
-      expect(find.text('Uploaded'), findsOneWidget);
+      expect(find.text('Accepted'), findsWidgets);
+      expect(find.text('Before Defense Materials'), findsNothing);
       expect(find.textContaining('Pending Review'), findsNothing);
-      expect(find.text('1 / 1 Cleared'), findsWidgets);
+      expect(find.text('2 / 2 Cleared'), findsWidgets);
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('retired timing metadata cannot clear a pending matrix file', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final stage = _stage(accepted: true);
+    stage['required_complete'] = false;
+    final deck = (stage['pre'] as List).last as Map;
+    deck['requirement_timing'] = 'defense';
+    deck['submission']['status'] = 'pending';
+    deck['submission']['is_late'] = true;
+    final team = <String, dynamic>{
+      'id': 7,
+      'name': 'Team Review',
+      'current_stage': 'Concept Proposal',
+      'stages': [stage],
+    };
+    await pumpDefensysWidget(
+      tester,
+      SingleChildScrollView(
+        child: CohortSubmissionsMatrix(
+          teams: [team],
+          state: CapstoneDeliverablesState(
+            teams: [team],
+            selectedStage: 'Concept Proposal',
+          ),
+          isAdviser: true,
+          initialExpandedTeamId: 7,
+        ),
+      ),
+      overrides: authTestOverrides(),
+    );
+    expect(find.text('Pending Review'), findsOneWidget);
+    expect(find.text('1 cleared · 1 pending review'), findsWidgets);
+    expect(find.text('2 / 2 Cleared'), findsNothing);
+    expect(find.text('BEFORE DEFENSE'), findsNothing);
+    expect(find.text('LATE SUBMISSION'), findsNothing);
+    expect(find.text('Before Defense Materials'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

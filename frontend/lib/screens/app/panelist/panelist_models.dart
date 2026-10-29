@@ -59,6 +59,7 @@ class TeamData {
   List<Map<String, dynamic>> submittedSubmissions;
   final List<Map<String, dynamic>> defenseMaterials;
   final List<Map<String, dynamic>> assessmentConcepts;
+  final Map<String, dynamic> gradingWorkspace;
 
   final bool isChair;
   String? verdict;
@@ -100,6 +101,7 @@ class TeamData {
     this.submittedSubmissions = const [],
     this.defenseMaterials = const [],
     this.assessmentConcepts = const [],
+    this.gradingWorkspace = const {},
     this.panelWeight = 50,
     this.peerWeight = 20,
     this.adviserWeight = 0,
@@ -137,19 +139,148 @@ class TeamData {
   String get defenseStage => stageName.isNotEmpty ? stageName : eventName;
   bool get isToday => scheduledDate == manilaToday;
   bool get usesDefenseVerdict => isCapstone;
+  bool get usesAutomaticOutcomes => outcomeRule?['automatic'] == true;
+  bool get usesConceptWorkspace =>
+      assessmentConcepts.isNotEmpty || conceptWorkflow?['enabled'] == true;
+  Map<String, dynamic>? get sharedReview {
+    final value = gradingWorkspace['shared_review'];
+    return value is Map ? Map<String, dynamic>.from(value) : null;
+  }
+
+  bool get hasSharedSystem =>
+      sharedReview != null ||
+      conceptWorkflow?['selection_mode'] == 'shared_module' ||
+      conceptWorkflow?['section_project_id'] != null;
+
+  bool get usesSharedConceptWorkspace =>
+      usesConceptWorkspace && hasSharedSystem;
+
+  List<Map<String, dynamic>> get hearingConcepts =>
+      ((conceptWorkflow?['hearing_concepts'] ?? conceptWorkflow?['concepts'])
+                  as List? ??
+              assessmentConcepts)
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+
+  String systemTitleFor(String key) {
+    final candidate = assessmentConcepts
+        .where((row) => row['key'] == key)
+        .firstOrNull;
+    final systems = (sharedReview?['systems'] as List? ?? []).whereType<Map>();
+    return (candidate?['system_title'] ??
+            systems.where((row) => row['key'] == key).firstOrNull?['title'] ??
+            hearingConcepts
+                .where((row) => row['key'] == key)
+                .firstOrNull?['system_title'] ??
+            '')
+        .toString();
+  }
+
+  String get selectedSharedConceptKey =>
+      (sharedReview?['selected_key'] ??
+              conceptWorkflow?['section_selected_key'] ??
+              (conceptWorkflow?['shared_selection'] as Map?)?['selected_key'] ??
+              hearingConcepts
+                  .where((row) => row['section_selected'] == true)
+                  .firstOrNull?['key'] ??
+              '')
+          .toString();
+
+  /// Assignment identity comes from the captured hearing, never the first seed.
+  String get assignmentProjectTitle {
+    if (!usesConceptWorkspace) return project;
+    if (hasSharedSystem && selectedSharedConceptKey.isNotEmpty) {
+      final candidates = [...assessmentConcepts, ...hearingConcepts];
+      final title =
+          candidates
+              .where((row) => row['key'] == selectedSharedConceptKey)
+              .firstOrNull?['title']
+              ?.toString() ??
+          '';
+      if (title.isNotEmpty) return title;
+    }
+    if (hasPitConceptDecision && (pitSelectedTitle ?? '').isNotEmpty) {
+      return pitSelectedTitle!;
+    }
+    final recorded = verdict ?? workflowGrade?['verdict'];
+    if (['approved', 'approved_with_revisions'].contains(recorded)) {
+      final title =
+          hearingConcepts
+              .where(
+                (row) => [
+                  'approved',
+                  'approved_with_revisions',
+                ].contains(row['decision']),
+              )
+              .firstOrNull?['title']
+              ?.toString() ??
+          '';
+      return title.isNotEmpty ? title : project;
+    }
+    final candidates = assessmentConcepts.isNotEmpty
+        ? assessmentConcepts
+        : hearingConcepts;
+    final count = candidates
+        .map((row) => row['key'])
+        .where((key) => key != null)
+        .toSet()
+        .length;
+    final label = hasSharedSystem
+        ? count == 1
+              ? 'Module proposal under assessment'
+              : 'Module proposals under assessment'
+        : count == 1
+        ? 'Concept under assessment'
+        : 'Concepts under assessment';
+    return count > 0
+        ? '$label · $count ${count == 1 ? 'proposal' : 'proposals'}'
+        : label;
+  }
+
+  List<Map<String, dynamic>> get sharedMaterials =>
+      (gradingWorkspace['shared_materials'] as List? ?? [])
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+  List<Map<String, dynamic>> get teamMaterials {
+    final raw = gradingWorkspace['team_materials'] as List?;
+    if (raw != null) {
+      return raw
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }
+    final keys = assessmentConcepts.map((row) => row['key']).toSet();
+    return defenseMaterials.map((row) {
+      final key = (row['slot_key'] ?? '').toString().split(':').first;
+      return {...row, 'candidate_key': keys.contains(key) ? key : ''};
+    }).toList();
+  }
+
+  Map<String, dynamic> get assessmentProgress => Map<String, dynamic>.from(
+    (workflowGrade?['workflow'] as Map?)?['assessment_progress'] as Map? ?? {},
+  );
+  int? get panelSubmitted =>
+      (assessmentProgress['panel_evaluators_submitted'] as num?)?.toInt();
+  int? get panelRequired =>
+      (assessmentProgress['panel_evaluators_required'] as num?)?.toInt();
   Map<String, dynamic>? get conceptWorkflow {
     final raw = (workflowGrade?['workflow'] as Map? ?? {})['concept_workflow'];
     return raw is Map ? Map<String, dynamic>.from(raw) : null;
   }
+
   Map<String, dynamic>? get outcomeRule {
     final value = (workflowGrade?['workflow'] as Map?)?['outcome_rule'];
     return value is Map ? Map<String, dynamic>.from(value) : null;
   }
+
   bool get hasConceptWorkflow => conceptWorkflow != null;
   bool get hasPitConceptDecision =>
       conceptWorkflow?['decision']?.toString().isNotEmpty ?? false;
   String? get pitConceptDecision => conceptWorkflow?['decision']?.toString();
-  String? get pitSelectedTitle => conceptWorkflow?['selected_title']?.toString();
+  String? get pitSelectedTitle =>
+      conceptWorkflow?['selected_title']?.toString();
   bool get canManagePitConceptDecision =>
       conceptWorkflow?['can_manage_decision'] == true;
   bool get canRecordPitConceptDecision =>
@@ -161,10 +292,23 @@ class TeamData {
   bool get panelWorkFinished {
     if (isCompleted) return true;
     if (!isPosted) return false;
-    if (usesDefenseVerdict && isChair && !hasVerdict) return false;
-    if (!usesDefenseVerdict && isChair && canManagePitConceptDecision && !hasPitConceptDecision) return false;
+    if (usesConceptWorkspace && usesDefenseVerdict && isChair && !hasVerdict) {
+      if (!usesAutomaticOutcomes ||
+          (outcomeRule?['panel_complete'] == true &&
+              outcomeRule?['outcome'] == 'approved' &&
+              outcomeRule?['per_concept'] == true)) {
+        return false;
+      }
+    }
+    if (!usesDefenseVerdict &&
+        isChair &&
+        canManagePitConceptDecision &&
+        !hasPitConceptDecision) {
+      return false;
+    }
     return true;
   }
+
   bool get gradingAvailable =>
       !isCompleted &&
       !isPosted &&
@@ -173,7 +317,9 @@ class TeamData {
       (serverGradingAvailable ?? true);
   bool get canIssueVerdict =>
       !isCompleted &&
+      usesConceptWorkspace &&
       usesDefenseVerdict &&
+      !usesAutomaticOutcomes &&
       isChair &&
       !isLockedByDate &&
       scheduleStatus == 'scheduled' &&
@@ -219,14 +365,21 @@ class TeamData {
         })
         .toList();
     if (assessmentConcepts.isNotEmpty && conceptKey == null) {
-      final results = assessmentConcepts.map((c) => progressFor(studentId, conceptKey: c['key'].toString()));
-      return EvaluationProgress(results.fold(0, (n, r) => n + r.entered), results.fold(0, (n, r) => n + r.required));
+      final results = assessmentConcepts.map(
+        (c) => progressFor(studentId, conceptKey: c['key'].toString()),
+      );
+      return EvaluationProgress(
+        results.fold(0, (n, r) => n + r.entered),
+        results.fold(0, (n, r) => n + r.required),
+      );
     }
     final answers = isPosted ? submittedSubmissions : draftSubmissions;
     final scores = <String, num>{};
     for (final submission in answers) {
       if (submission['student_id']?.toString() != studentId) continue;
-      if (conceptKey != null && submission['concept_key'] != conceptKey) continue;
+      if (conceptKey != null && submission['concept_key'] != conceptKey) {
+        continue;
+      }
       for (final item
           in (submission['criteria_scores'] as List? ?? []).whereType<Map>()) {
         final score = item['score'];
@@ -251,6 +404,19 @@ class TeamData {
           individuals.fold(0, (sum, progress) => sum + progress.entered),
       team.required +
           individuals.fold(0, (sum, progress) => sum + progress.required),
+    );
+  }
+
+  EvaluationProgress progressForConcept(String key) {
+    final team = progressFor(null, conceptKey: key);
+    final individuals = targetType == 'team'
+        ? <EvaluationProgress>[]
+        : memberDetails.map(
+            (member) => progressFor(member.id, conceptKey: key),
+          );
+    return EvaluationProgress(
+      team.entered + individuals.fold(0, (n, p) => n + p.entered),
+      team.required + individuals.fold(0, (n, p) => n + p.required),
     );
   }
 

@@ -67,7 +67,6 @@ class RequirementSummary {
         ? files.every((file) => file['status'] == 'accepted')
         : !grouped && uploaded > 0 && submission['status'] == 'accepted';
     final post = item['type'] == 'post' || item['deliverable_type'] == 'post';
-    final defense = !post && item['requirement_timing'] == 'defense';
     if (item['is_waived'] == true) {
       status = 'Waived';
       tone = WorkflowStatusTone.neutral;
@@ -83,9 +82,6 @@ class RequirementSummary {
     } else if (corrections > 0) {
       status = 'Corrections requested';
       tone = WorkflowStatusTone.attention;
-    } else if (defense && fileCount > 0) {
-      status = 'Uploaded';
-      tone = WorkflowStatusTone.success;
     } else if (pending > 0) {
       status = 'Under Review';
       tone = WorkflowStatusTone.attention;
@@ -124,11 +120,9 @@ class RequirementSummary {
 }
 
 /// Review membership follows configuration, never labels or extensions.
-/// Defense-timed materials retain their upload/correction workflow in By team.
 bool isConceptRequirement(Map item) {
   final policy = item['file_policy'] as Map? ?? {};
   return policy['mode'] == 'concepts' &&
-      item['requirement_timing'] != 'defense' &&
       item['type'] != 'post' &&
       item['deliverable_type'] != 'post';
 }

@@ -401,17 +401,10 @@ class _AdviserDashboardContentState
           (stage['deliverables_configured'] == true ||
               stage['is_presentation_only'] == true) &&
           stage['endorsed'] != true) {
-        final materials = stage['materials_readiness'];
-        final defenseFilesDueLater =
-            materials is Map &&
-            (materials['required_total'] as num? ?? 0) >
-                (materials['submitted_total'] as num? ?? 0);
         tasks.add(
           _AdviserTask(
             name,
-            defenseFilesDueLater
-                ? 'Ready for endorsement; defense files are due later'
-                : 'Required items complete; ready for endorsement',
+            'Required items complete; ready for endorsement',
             Icons.verified_outlined,
             entry.key,
             () => widget.onOpenDeliverables(entry.key),

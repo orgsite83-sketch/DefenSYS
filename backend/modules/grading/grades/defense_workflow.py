@@ -1,11 +1,11 @@
-"""Defense outcomes, clearance, and authorized recovery, independent of dates."""
+"""Defense outcomes and clearance; finalized failures cannot be reopened."""
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
 from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
-from student_teams.models import StudentTeam, TeamRecoveryAuthorization, TeamStageProgress
+from student_teams.models import StudentTeam, TeamStageProgress
 from .models import TeamGrade
 
 
@@ -14,6 +14,8 @@ def is_admin(user):
 
 
 def is_chair(grade, user):
+    if not getattr(user, 'pk', None) or getattr(user, 'is_guest_panelist', False):
+        return False
     return bool(grade.schedule_id and grade.schedule.panel_assignments.filter(panelist=user, is_chair=True).exists())
 
 
@@ -41,18 +43,8 @@ def legacy_finalized_pass(grade):
                 and grade.result == 'passed')
 
 
-def recovery_for(team, stage):
-    return TeamRecoveryAuthorization.objects.filter(
-        team=team, semester=team.semester, defense_stage=stage,
-        project_version=team.project_version, action='retake', consumed_at__isnull=True,
-    ).first()
 
 
-def replacement_for(team, stage):
-    return TeamRecoveryAuthorization.objects.filter(
-        team=team, semester=team.semester, defense_stage=stage, action='new_concept',
-        replacement_project_version=team.project_version, consumed_at__isnull=True,
-    ).first()
 
 
 def require_current(grade):
@@ -70,6 +62,18 @@ def audit(grade, actor, action, **values):
 
 @transaction.atomic
 def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verification_required=False, concept_decisions=None, replacement_concepts_required=False):
+    """Retained for captured manual policies; new hearings cannot use this write."""
+    from .outcome_rules import automatic_outcomes
+    if automatic_outcomes(grade.schedule):
+        raise ValidationError('This hearing uses automatic outcomes. Select a qualifying concept or save recommendations.')
+    return _record_outcome(grade, actor=actor, verdict=verdict, remarks=remarks, deadline=deadline,
+        verification_required=verification_required, concept_decisions=concept_decisions,
+        replacement_concepts_required=replacement_concepts_required)
+
+
+@transaction.atomic
+def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verification_required=False,
+                    concept_decisions=None, replacement_concepts_required=False, automatic=False):
     StudentTeam.objects.select_for_update().get(pk=grade.team_id)
     if grade.schedule_id:
         from defense.scheduler.models import DefenseSchedule
@@ -78,7 +82,7 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
     require_current(grade)
     if not grade.uses_defense_verdict:
         raise ValidationError('PIT events do not use official defense verdicts.')
-    if not (is_admin(actor) or is_chair(grade, actor)):
+    if not automatic and not (is_admin(actor) or is_chair(grade, actor)):
         raise PermissionError('Only the panel chair or an administrator can record a verdict.')
     if verdict not in dict(TeamGrade.VERDICT_CHOICES):
         raise ValidationError('Select a valid defense verdict.')
@@ -89,19 +93,23 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
     from defense.scheduler.panelist_evaluation import verdict_unavailable_reason
     from .services import team_grading_readiness
     if grade.schedule_id:
-        reason = verdict_unavailable_reason(grade.schedule, grade)
+        from defense.scheduler.panelist_evaluation import assessment_unavailable_reason
+        reason = (assessment_unavailable_reason if automatic else verdict_unavailable_reason)(grade.schedule, grade)
         if reason:
             raise ValidationError(reason)
     elif not team_grading_readiness(grade, grade.semester, grade.scope)['panel_complete']:
         raise ValidationError('Every required panel evaluation must be submitted before a verdict.')
-    if verdict in (TeamGrade.VERDICT_FOR_REDEFENSE, TeamGrade.VERDICT_FAILED, TeamGrade.VERDICT_PROJECT_REJECTED) and not remarks.strip():
+    if not automatic and verdict in (TeamGrade.VERDICT_FOR_REDEFENSE, TeamGrade.VERDICT_FAILED, TeamGrade.VERDICT_PROJECT_REJECTED) and not remarks.strip():
         raise ValidationError('Record the reason and required action for this outcome.')
     from .outcome_rules import validate_outcome, policy_for
     validate_outcome(grade, verdict, concept_decisions)
     grade.verdict = verdict
     grade.verdict_remarks = remarks.strip()
-    grade.verdict_by = actor
+    grade.verdict_by = None if automatic else actor
     grade.verdict_at = timezone.now()
+    if automatic:
+        grade.outcome_metadata = {**grade.outcome_metadata, 'source': 'automatic',
+            'selected_by': actor.pk if actor else None}
     grade.revision_deadline = deadline if verdict == TeamGrade.VERDICT_APPROVED_WITH_REVISIONS else None
     grade.revisions_cleared_at = None
     grade.revisions_cleared_by = None
@@ -114,7 +122,7 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
     grade.redefense_verified_at = None
     grade.redefense_verified_by = None
     from repository.deliverables.concepts import record_outcome
-    record_outcome(grade, concept_decisions, replacement_required=replacement_concepts_required)
+    record_outcome(grade, concept_decisions, replacement_required=replacement_concepts_required, automatic=automatic)
     from repository.deliverables.concepts import enabled as concepts_enabled, context_for_grade
     if (not concepts_enabled(context_for_grade(grade)) and policy_for(grade.schedule).get('version') == 1
             and policy_for(grade.schedule).get('repeat_files_version') == 1):
@@ -137,8 +145,11 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
             grade.team.ready_for_stage = None
             grade.team.save(update_fields=['ready_for_stage', 'updated_at'])
     maybe_auto_finalize_passed_grade(grade, user=actor)
-    audit(grade, actor, 'defense.verdict_submitted', verdict=verdict, verdict_remarks=remarks,
+    audit(grade, actor, 'defense.outcome_resolved' if automatic else 'defense.verdict_submitted', verdict=verdict, verdict_remarks=remarks,
           verification_required=grade.redefense_verification_required)
+    if automatic:
+        from realtime.broadcast import notify_capstone_evaluation_flags
+        transaction.on_commit(lambda: notify_capstone_evaluation_flags(grade.semester))
     return grade
 
 
@@ -148,10 +159,10 @@ def workflow_payload(grade, actor=None):
     from student_teams.services import is_stage_ready
     from repository.deliverables.models import DeliverableSubmission
     from defense.scheduler.models import DefenseSchedule
-    authorization = recovery_for(grade.team, grade.defense_stage) if grade.defense_stage_id else None
-    records = grade.team.recovery_authorizations.select_related('authorized_by', 'defense_stage', 'semester')
     from repository.deliverables.concepts import payload as concept_payload, clearance_blocker, context_for_grade
     concept_context = context_for_grade(grade)
+    from .outcome_rules import automatic_outcomes
+    from .automatic_outcomes import recommendations_unavailable_reason
     concept_workflow = concept_payload(grade.team, concept_context, actor=actor)
     if concept_workflow and grade.schedule_id:
         from repository.deliverables.models import ConceptRound
@@ -173,13 +184,15 @@ def workflow_payload(grade, actor=None):
         'concept_workflow': concept_workflow,
         'outcome_rule': outcome_payload(grade),
         'assessment_policy': policy_for(grade.schedule),
+        'outcome_metadata': grade.outcome_metadata,
+        'can_save_recommendations': (automatic_outcomes(grade.schedule) and actor is not None
+            and not recommendations_unavailable_reason(grade, actor)),
         'assessment_progress': schedule_progress(grade.schedule, reconcile_status=False) if grade.schedule_id else None,
         'chair_id': grade.schedule.panel_assignments.filter(is_chair=True).values_list('panelist_id', flat=True).first() if grade.schedule_id else None,
         'adviser_id': grade.team.adviser_id,
         'passed_and_cleared': passed_and_cleared(grade),
         'revisions_pending': grade.verdict == 'approved_with_revisions' and not grade.revisions_cleared_at,
-        'retake_authorized': bool(authorization),
-        'redefense_ready': (not clearance_blocker(grade.team, concept_context) and (grade.verdict == 'for_redefense' or bool(authorization)) and (
+        'redefense_ready': (not grade.closed_as_failed and not clearance_blocker(grade.team, concept_context) and grade.verdict == 'for_redefense' and (
             policy_for(grade.schedule).get('version') == 1 or
             not grade.redefense_verification_required or bool(grade.redefense_verified_at)) and
             (not grade.schedule_id or grade.schedule.assessment_policy.get('version') != 1 or
@@ -197,13 +210,7 @@ def workflow_payload(grade, actor=None):
                              'minutes_id': s.minutes.pk if hasattr(s, 'minutes') else None}
                             for s in DefenseSchedule.objects.filter(team=grade.team,
                                 project_version=grade.project_version).select_related('minutes').order_by('scheduled_date', 'id')],
-        'recovery_history': [{'id': r.pk, 'action': r.action, 'reason': r.reason,
-                              'stage_label': r.defense_stage.label, 'academic_period': r.semester.display_name,
-                              'project_version': r.project_version, 'previous_project_title': r.previous_project_title,
-                              'replacement_project_version': r.replacement_project_version,
-                              'authorized_at': r.authorized_at.isoformat(),
-                              'authorized_by': r.authorized_by.get_full_name() or r.authorized_by.username if r.authorized_by else '',
-                              'consumed': bool(r.consumed_at)} for r in records],
+
     }
 
 
@@ -212,8 +219,10 @@ def apply_workflow_action(grade, *, actor, action, reason='', project_title='', 
     team = StudentTeam.objects.select_for_update().get(pk=grade.team_id)
     grade = TeamGrade.objects.select_for_update(of=('self',)).select_related('team', 'defense_stage', 'semester').get(pk=grade.pk)
     require_current(grade)
+    from student_teams.participation import require_open
+    require_open(team)
     if not grade.uses_defense_verdict:
-        raise ValidationError('Recovery and revision clearance apply to Capstone defenses.')
+        raise ValidationError('Revision clearance applies to Capstone defenses.')
     if grade.scope == TeamGrade.SCOPE_PIT and action not in ('clear_revisions', 'verify_redefense'):
         raise ValidationError('PIT concept hearings support revision clearance and concept re-defense only.')
     is_assigned_adviser = bool(team.adviser_id and team.adviser_id == actor.pk)
@@ -255,23 +264,6 @@ def apply_workflow_action(grade, *, actor, action, reason='', project_title='', 
         grade.redefense_verified_by = actor
         grade.clearance_remarks = reason.strip()
         grade.save()
-    elif action in ('authorize_retake', 'authorize_new_concept', 'keep_blocked'):
-        if not is_admin(actor):
-            raise PermissionError('Only an administrator can record a recovery authorization.')
-        if grade.verdict not in ('failed', 'project_rejected'):
-            raise ValidationError('Recovery authorization requires a Failed or Project Rejected verdict.')
-        if not reason.strip():
-            raise ValidationError('Record the institutional decision or authorization reference.')
-        if action == 'keep_blocked':
-            TeamRecoveryAuthorization.objects.filter(team=team, project_version=team.project_version,
-                defense_stage=grade.defense_stage, action='retake', consumed_at__isnull=True).update(consumed_at=timezone.now())
-        elif action == 'authorize_retake':
-            from student_teams.capstone_lifecycle import authorize_recovery
-            authorize_recovery(team, grade, target=team.semester, choice='continue', reason=reason, actor=actor)
-        else:
-            from student_teams.capstone_lifecycle import authorize_recovery
-            authorize_recovery(team, grade, target=team.semester, choice='new', title=project_title,
-                reason=reason, actor=actor)
     else:
         raise ValidationError('Select a valid workflow action.')
     audit(grade, actor, f'defense.{action}', reason=reason, replacement_project_title=project_title,

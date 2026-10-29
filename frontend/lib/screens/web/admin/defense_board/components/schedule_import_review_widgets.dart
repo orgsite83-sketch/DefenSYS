@@ -586,7 +586,9 @@ class ScheduleImportFilterBar extends StatelessWidget {
         if (hasFilters)
           TextButton(
             style: TextButton.styleFrom(
-              foregroundColor: DefensysTokens.maroonOf(context),
+              foregroundColor: DefensysTokens.isDark(context)
+                  ? DefensysTokens.textPrimaryOf(context)
+                  : Colors.black,
               textStyle: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,

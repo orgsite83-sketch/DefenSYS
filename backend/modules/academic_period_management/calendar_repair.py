@@ -64,8 +64,7 @@ def repair_sample_calendar(*, semester_id, starts_on, ends_on, source_date, targ
         validate_defense_date(semester, target_date)
         row.scheduled_date = target_date
         row.revision += 1
-        row.save(update_fields=['scheduled_date', 'revision', 'updated_at', 'materials_deadline_override',
-            'materials_late_upload_until', 'materials_deadline_reason', 'materials_notice_key'])
+        row.save(update_fields=['scheduled_date', 'revision', 'updated_at'])
         log_high_impact_action(category=SystemAuditLog.CATEGORY_SCHEDULING,
             action='schedule.sample_calendar_corrected', target=row, actor=actor,
             old_values={'scheduled_date': source_date.isoformat()},

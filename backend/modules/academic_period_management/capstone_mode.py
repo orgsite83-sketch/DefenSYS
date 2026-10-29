@@ -12,7 +12,7 @@ def default_capstone_flags_for_label(label):
     if label == Semester.SECOND:
         return True, Semester.PHASE_CAPSTONE_1
     if label == Semester.FIRST:
-        return True, Semester.PHASE_CAPSTONE_2
+        return False, Semester.PHASE_CAPSTONE_2
     return False, Semester.PHASE_NONE
 
 
@@ -34,7 +34,7 @@ def derive_capstone_program_phase(semester):
 def derive_capstone_team_creation_enabled(semester):
     """Team creation open during Capstone 1 intake and Capstone 2 continuation."""
     phase = derive_capstone_program_phase(semester)
-    return phase in (Semester.PHASE_CAPSTONE_1, Semester.PHASE_CAPSTONE_2)
+    return phase == Semester.PHASE_CAPSTONE_1
 
 
 def normalize_capstone_flags(semester):
@@ -75,17 +75,15 @@ def capstone_operating_mode(semester):
 
     phase = derive_capstone_program_phase(semester)
 
+    if phase == Semester.PHASE_CAPSTONE_2:
+        return {
+            'mode': MODE_CAPSTONE_2_CONTINUE,
+            'can_create_capstone_teams': False,
+            'message': 'Capstone 2 uses eligible teams continued at semester activation. New participation starts in a regular Capstone 1 intake.',
+        }
+
     if semester.capstone_team_creation_enabled:
-        if phase == Semester.PHASE_CAPSTONE_2:
-            return {
-                'mode': MODE_CAPSTONE_2_CONTINUE,
-                'can_create_capstone_teams': True,
-                'message': (
-                    'Capstone 2 term: teams carry over from the previous term. '
-                    'New teams can also be created or imported if needed.'
-                ),
-            }
-        elif phase == Semester.PHASE_CAPSTONE_1:
+        if phase == Semester.PHASE_CAPSTONE_1:
             return {
                 'mode': MODE_CAPSTONE_1_INTAKE,
                 'can_create_capstone_teams': True,

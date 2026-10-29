@@ -23,7 +23,6 @@ import '../../../widgets/confirm_dialog.dart';
 import '../../../toasts/feedback_toast.dart';
 import '../../../utils/progress_upload.dart';
 import '../../../utils/universal_file_viewer.dart';
-import '../../../widgets/repository/defense_material_readiness.dart';
 
 /// Smooth dashed border painter for the upload dropzone container.
 class _DashedRectPainter extends CustomPainter {
@@ -465,9 +464,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               else ...[
                 Builder(
                   builder: (context) {
-                    final hasPendingScheduling = pre
-                        .where((item) => item['requirement_timing'] != 'defense')
-                        .any(StudentTaskBadgeHelper.isDeliverablePending);
+                    final hasPendingScheduling =
+                        pre.any(StudentTaskBadgeHelper.isDeliverablePending);
                     final hasPendingPost = StudentTaskBadgeHelper.hasPendingPostDeliverables(selectedStage);
                     final stageGrade = (selectedStage['grade'] as Map<String, dynamic>?) ??
                         (selectedStage['grade'] is Map ? Map<String, dynamic>.from(selectedStage['grade'] as Map) : null);
@@ -480,14 +478,14 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           stage: selectedStage,
                           showTitleCard: false,
                         ),
-                        _buildRequiredProgressBlock(pre.where((item) => item['requirement_timing'] != 'defense').toList()),
+                        _buildRequiredProgressBlock(pre),
                         const SizedBox(height: 16),
                         _sectionTitle(
                           widget.isCapstone ? 'Pre-defense deliverables' : noEndorsementNeeded ? 'Before scheduling' : 'Before endorsement',
                           showRedDot: hasPendingScheduling,
                         ),
                         const SizedBox(height: 8),
-                        if (!pre.any((item) => item['requirement_timing'] != 'defense'))
+                        if (pre.isEmpty)
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 8),
                             child: Text(
@@ -510,18 +508,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                 style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                               ),
                             ),
-                            ...pre.where((item) => item['requirement_timing'] != 'defense')
+                            ...pre
                                 .map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
                           ],
-                        if (pre.any((item) => item['requirement_timing'] == 'defense')) ...[
-                          const SizedBox(height: 10),
-                          _sectionTitle('Before Your Defense'),
-                          const SizedBox(height: 8),
-                          DefenseMaterialReadiness(readiness: Map<String, dynamic>.from(
-                              selectedStage['materials_readiness'] as Map? ?? const {})),
-                          ...pre.where((item) => item['requirement_timing'] == 'defense')
-                              .map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
-                        ],
                         const SizedBox(height: 20),
                         if (stageGrade != null) ...[
                           _buildDirectivesCard(stageGrade),
@@ -974,7 +963,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final rawFeedback = (submission['feedback'] ?? item['feedback'])?.toString() ?? '';
     final isAccepted = status == 'accepted';
     final isRejected = status == 'rejected' || status == 'Needs Revision';
-    final isDefenseUploaded = item['requirement_timing'] == 'defense' && uploaded && !isRejected;
 
     final replacementUnlockedByAdmin = item['type'] == 'pre' && isAccepted &&
         submission['file_replacement_unlocked'] == true;
@@ -990,10 +978,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final uploadedBy = (submission['uploaded_by_name'] ?? 'Team Member').toString();
     final uploadedAt = (submission['uploaded_at'] ?? submission['date'] ?? '').toString();
     final isRequired = item['required'] == true && !isWaived;
-    final dueAfterScheduling = item['requirement_timing'] == 'defense' &&
-        item['materials_status'] == 'awaiting_schedule';
 
-    final cardBorderColor = (isWaived || isAccepted || isDefenseUploaded)
+    final cardBorderColor = (isWaived || isAccepted)
         ? Color.alphaBlend(DefensysTokens.success.withValues(alpha: .3), DefensysTokens.borderOf(context))
         : DefensysTokens.borderOf(context);
 
@@ -1041,8 +1027,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   isRejected: isRejected,
                   uploaded: uploaded,
                   isRequired: isRequired,
-                  isDefenseTimed: item['requirement_timing'] == 'defense',
-                  dueAfterScheduling: dueAfterScheduling,
                 ),
               ],
             ),
@@ -1065,15 +1049,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-            ],
-            if (item['requirement_timing'] == 'defense') ...[
-              const SizedBox(height: 6),
-              Text(item['due_at'] == null
-                  ? 'Deadline set when your defense is scheduled'
-                  : 'Due: ${materialDeadlineLabel(item['due_at'])}',
-                  style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context))),
-              if (item['upload_lock_reason']?.toString().isNotEmpty == true)
-                Text(item['upload_lock_reason'].toString(), style: Theme.of(context).textTheme.bodySmall),
             ],
             const SizedBox(height: 10),
 
@@ -1267,10 +1242,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     required bool isRejected,
     required bool uploaded,
     required bool isRequired,
-    bool isDefenseTimed = false,
-    bool dueAfterScheduling = false,
   }) {
-    if (isWaived || isAccepted || (isDefenseTimed && uploaded && !isRejected)) {
+    if (isWaived || isAccepted) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
@@ -1284,7 +1257,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             const Icon(Icons.check_circle_rounded, size: 11, color: Color(0xFF15803D)),
             const SizedBox(width: 3.5),
             Text(
-              isDefenseTimed && uploaded ? 'Uploaded' : isPost && isAccepted ? 'Archived' : 'Approved',
+              isPost && isAccepted ? 'Archived' : 'Approved',
               style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
             ),
           ],
@@ -1325,7 +1298,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               const Icon(Icons.schedule_rounded, size: 11, color: Color(0xFFD97706)),
               const SizedBox(width: 3.5),
               Text(
-                isDefenseTimed ? 'Submitted' : 'Under Review',
+                'Under Review',
                 style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFB45309)),
               ),
             ],
@@ -1336,9 +1309,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: isRequired && !dueAfterScheduling ? const Color(0xFFFFF1F2) : DefensysTokens.surfaceHigherOf(context),
+          color: isRequired ? const Color(0xFFFFF1F2) : DefensysTokens.surfaceHigherOf(context),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isRequired && !dueAfterScheduling ? const Color(0xFFFECDD3) : DefensysTokens.borderOf(context)),
+          border: Border.all(color: isRequired ? const Color(0xFFFECDD3) : DefensysTokens.borderOf(context)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1347,17 +1320,17 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               width: 5,
               height: 5,
               decoration: BoxDecoration(
-                color: isRequired && !dueAfterScheduling ? const Color(0xFFE11D48) : const Color(0xFF94A3B8),
+                color: isRequired ? const Color(0xFFE11D48) : const Color(0xFF94A3B8),
                 shape: BoxShape.circle,
               ),
             ),
             const SizedBox(width: 4),
             Text(
-              dueAfterScheduling ? 'Due later' : isRequired ? 'Action Required' : 'Optional',
+              isRequired ? 'Action Required' : 'Optional',
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: isRequired && !dueAfterScheduling ? const Color(0xFFBE123C) : DefensysTokens.textSecondaryOf(context),
+                color: isRequired ? const Color(0xFFBE123C) : DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
@@ -1387,7 +1360,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final isAccepted = status == 'accepted';
     final isPost = item['type'] == 'post';
     final isRejected = status == 'rejected' || status == 'Needs Revision';
-    final isDefenseUploaded = item['requirement_timing'] == 'defense' && uploaded && !isRejected;
     final rawFeedback = (submission['feedback'] ?? item['feedback'])?.toString() ?? '';
     final isWPR = item['id'] == 'WPR';
     final isWaived = item['is_waived'] == true;
@@ -1530,12 +1502,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: isWaived || isAccepted || isDefenseUploaded
+                color: isWaived || isAccepted
                     ? const Color(0xFFF0FDF4)
                     : (isRejected ? const Color(0xFFFEF2F2) : (uploaded ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC))),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: isWaived || isAccepted || isDefenseUploaded
+                  color: isWaived || isAccepted
                       ? const Color(0xFFBBF7D0)
                       : (isRejected ? const Color(0xFFFECACA) : (uploaded ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0))),
                 ),
@@ -1543,11 +1515,11 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               child: Row(
                 children: [
                   Icon(
-                    isWaived || isAccepted || isDefenseUploaded
+                    isWaived || isAccepted
                         ? Icons.verified_rounded
                         : (isRejected ? Icons.warning_amber_rounded : (uploaded ? Icons.schedule_rounded : Icons.info_outline_rounded)),
                     size: 16,
-                    color: isWaived || isAccepted || isDefenseUploaded
+                    color: isWaived || isAccepted
                         ? const Color(0xFF15803D)
                         : (isRejected ? const Color(0xFFDC2626) : (uploaded ? const Color(0xFFD97706) : const Color(0xFF64748B))),
                   ),
@@ -1559,7 +1531,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         Text(
                           isWaived
                               ? 'Status: Recorded historical exemption'
-                              : isDefenseUploaded ? 'Status: Uploaded'
                               : (isAccepted
                                   ? (isPost ? 'Status: Archived' : 'Status: Accepted for Oral Defense')
                                   : (isRejected
@@ -1568,7 +1539,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.bold,
-                            color: isWaived || isAccepted || isDefenseUploaded
+                            color: isWaived || isAccepted
                                 ? const Color(0xFF15803D)
                                 : (isRejected ? const Color(0xFFDC2626) : (uploaded ? const Color(0xFFB45309) : const Color(0xFF475569))),
                           ),
@@ -1583,7 +1554,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                   : (uploaded ? 'Submitted and queued for verification.' : 'Please upload document before the stage deadline.')),
                           style: TextStyle(
                             fontSize: 10,
-                            color: isWaived || isAccepted || isDefenseUploaded
+                            color: isWaived || isAccepted
                                 ? const Color(0xFF166534)
                                 : (isRejected ? const Color(0xFF991B1B) : const Color(0xFF64748B)),
                           ),

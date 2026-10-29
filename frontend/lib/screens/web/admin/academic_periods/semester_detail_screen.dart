@@ -46,7 +46,8 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _borderColor => _isDark ? DefensysTokens.mistBorder : _line;
-  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _surfaceColor =>
+      _isDark ? DefensysTokens.mistSurface : Colors.white;
   Color get _inkColor => _isDark ? const Color(0xFFF4F4F5) : _ink;
   Color get _mutedColor => _isDark ? const Color(0xFFA1A1AA) : _muted;
   Color get _panelBgColor =>
@@ -127,9 +128,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
 
     if (state.isLoading && semester == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: _maroon),
-        ),
+        body: Center(child: CircularProgressIndicator(color: _maroon)),
       );
     }
 
@@ -163,7 +162,8 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
       );
     }
 
-    final yearLabel = semester['school_year_label']?.toString() ??
+    final yearLabel =
+        semester['school_year_label']?.toString() ??
         semester['school_year']?.toString() ??
         '';
     final termName = semester['label']?.toString() ?? 'Semester';
@@ -202,10 +202,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                     }
                   },
                 ),
-                DefensysBreadcrumbItem(
-                  label: termName,
-                  isCurrent: true,
-                ),
+                DefensysBreadcrumbItem(label: termName, isCurrent: true),
               ],
             ),
             const SizedBox(height: 18),
@@ -213,8 +210,12 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
             // Header Banner
             _buildTermHeader(semester, yearLabel, termName, isActive),
             const SizedBox(height: 20),
-            SemesterCalendarSummary(semester: semester,
-              onEdit: state.isSaving ? null : () => showSemesterCalendarEditor(context, ref, semester)),
+            SemesterCalendarSummary(
+              semester: semester,
+              onEdit: state.isSaving
+                  ? null
+                  : () => showSemesterCalendarEditor(context, ref, semester),
+            ),
             const SizedBox(height: 20),
 
             // 3 KPI Overview Cards
@@ -234,7 +235,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                     return _buildCapstoneTab(semester, state.isSaving);
                   case 1:
                     return _buildPitTab(
-                        semester, state.isSaving, userState.users);
+                      semester,
+                      state.isSaving,
+                      userState.users,
+                    );
                   case 2:
                   default:
                     return _buildMasterControlsTab(semester, state.isSaving);
@@ -281,19 +285,27 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
             height: 48,
             decoration: BoxDecoration(
               color: isActive
-                  ? (_isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5))
-                  : (_isDark ? const Color(0xFF27272A) : const Color(0xFFF1F5F9)),
+                  ? (_isDark
+                        ? const Color(0xFF064E3B)
+                        : const Color(0xFFECFDF5))
+                  : (_isDark
+                        ? const Color(0xFF27272A)
+                        : const Color(0xFFF1F5F9)),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isActive
-                    ? (_isDark ? const Color(0xFF059669) : const Color(0xFFA7F3D0))
+                    ? (_isDark
+                          ? const Color(0xFF059669)
+                          : const Color(0xFFA7F3D0))
                     : _borderColor,
               ),
             ),
             child: Icon(
               isActive ? Icons.verified_rounded : Icons.calendar_month_rounded,
               color: isActive
-                  ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                  ? (_isDark
+                        ? const Color(0xFF34D399)
+                        : const Color(0xFF059669))
                   : _mutedColor,
               size: 24,
             ),
@@ -317,15 +329,17 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                     const SizedBox(width: 12),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 3.5),
+                        horizontal: 9,
+                        vertical: 3.5,
+                      ),
                       decoration: BoxDecoration(
                         color: isActive
                             ? (_isDark
-                                ? const Color(0xFF064E3B)
-                                : const Color(0xFFECFDF5))
+                                  ? const Color(0xFF064E3B)
+                                  : const Color(0xFFECFDF5))
                             : (_isDark
-                                ? const Color(0xFF27272A)
-                                : const Color(0xFFF1F5F9)),
+                                  ? const Color(0xFF27272A)
+                                  : const Color(0xFFF1F5F9)),
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
                           color: isActive
@@ -354,8 +368,8 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                             style: TextStyle(
                               color: isActive
                                   ? (_isDark
-                                      ? const Color(0xFF34D399)
-                                      : const Color(0xFF047857))
+                                        ? const Color(0xFF34D399)
+                                        : const Color(0xFF047857))
                                   : _mutedColor,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,
@@ -390,8 +404,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: _maroon,
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -415,8 +431,11 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.lock_clock_rounded,
-                      size: 15, color: Color(0xFF10B981)),
+                  const Icon(
+                    Icons.lock_clock_rounded,
+                    size: 15,
+                    color: Color(0xFF10B981),
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     'Current Live Period',
@@ -467,7 +486,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
           child: _kpiCard(
             icon: Icons.rocket_launch_rounded,
             iconBg: _isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEEF2FF),
-            iconColor: _isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4338CA),
+            iconColor: _isDark
+                ? const Color(0xFFA5B4FC)
+                : const Color(0xFF4338CA),
             title: '🚀 PIT Program Track',
             value: '${_pitEventConfigs.length} Pitch Events',
             subtitle: '1st, 2nd, and 3rd Year Cohorts',
@@ -548,10 +569,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: TextStyle(color: _mutedColor, fontSize: 12),
-          ),
+          Text(subtitle, style: TextStyle(color: _mutedColor, fontSize: 12)),
         ],
       ),
     );
@@ -617,8 +635,8 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                           phase == 'capstone_1'
                               ? 'Capstone 1 (Intake - 3rd Year, 2nd Sem)'
                               : (phase == 'capstone_2'
-                                  ? 'Capstone 2 (Continuation - 4th Year, 1st Sem)'
-                                  : 'Closed / Inactive'),
+                                    ? 'Capstone 2 (Continuation - 4th Year, 1st Sem)'
+                                    : 'Closed / Inactive'),
                           style: TextStyle(
                             color: _inkColor,
                             fontSize: 13,
@@ -633,15 +651,17 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
                               decoration: BoxDecoration(
                                 color: teamCreationOn
                                     ? (_isDark
-                                        ? const Color(0xFF064E3B)
-                                        : const Color(0xFFECFDF5))
+                                          ? const Color(0xFF064E3B)
+                                          : const Color(0xFFECFDF5))
                                     : (_isDark
-                                        ? const Color(0xFF27272A)
-                                        : const Color(0xFFF1F5F9)),
+                                          ? const Color(0xFF27272A)
+                                          : const Color(0xFFF1F5F9)),
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
@@ -649,8 +669,8 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                                 style: TextStyle(
                                   color: teamCreationOn
                                       ? (_isDark
-                                          ? const Color(0xFF34D399)
-                                          : const Color(0xFF047857))
+                                            ? const Color(0xFF34D399)
+                                            : const Color(0xFF047857))
                                       : _mutedColor,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
@@ -664,7 +684,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                                     ? 'Admins can create/import teams.'
                                     : 'Creation follows academic calendar.',
                                 style: TextStyle(
-                                    color: _mutedColor, fontSize: 11.5),
+                                  color: _mutedColor,
+                                  fontSize: 11.5,
+                                ),
                               ),
                             ),
                           ],
@@ -676,7 +698,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                         child: Text(
                           'Capstone 2 automatically preserves teams & assigned advisers from Capstone 1.',
                           style: TextStyle(
-                              color: _mutedColor, fontSize: 12, height: 1.35),
+                            color: _mutedColor,
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
                         ),
                       ),
                     ],
@@ -792,15 +817,19 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     String yearKey,
   ) {
     for (final user in users) {
-      final isLead = user['is_pit_lead'] == true ||
+      final isLead =
+          user['is_pit_lead'] == true ||
           (user['roles'] is Map && user['roles']['is_pit_lead'] == true);
       if (!isLead) continue;
 
-      final rawYear = (user['pit_lead_year'] ??
-              (user['roles'] is Map ? user['roles']['pit_lead_year'] : null))
-          ?.toString()
-          .trim()
-          .toLowerCase() ??
+      final rawYear =
+          (user['pit_lead_year'] ??
+                  (user['roles'] is Map
+                      ? user['roles']['pit_lead_year']
+                      : null))
+              ?.toString()
+              .trim()
+              .toLowerCase() ??
           '';
 
       if (yearKey == '1st Year') {
@@ -919,7 +948,8 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
         setState(() {
           config['peer_grading_enabled'] = previousValue;
         });
-        final err = ref.read(defenseSchedulerProvider).error ??
+        final err =
+            ref.read(defenseSchedulerProvider).error ??
             'Failed to update peer evaluation setting.';
         showErrorToast(context, err);
       }
@@ -1003,7 +1033,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: _isDark
                                 ? const Color(0xFF312E81)
@@ -1043,10 +1075,14 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _inkColor,
                   side: BorderSide(color: _borderColor),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   textStyle: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -1065,8 +1101,11 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.person_pin_rounded,
-                          size: 18, color: Color(0xFF2563EB)),
+                      const Icon(
+                        Icons.person_pin_rounded,
+                        size: 18,
+                        color: Color(0xFF2563EB),
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(
@@ -1084,9 +1123,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                             Text(
                               'Operationally owns student team formation, assigns panel evaluators, oversees pitch deliverables, and guides defense schedules.',
                               style: TextStyle(
-                                  color: _mutedColor,
-                                  fontSize: 11.5,
-                                  height: 1.3),
+                                color: _mutedColor,
+                                fontSize: 11.5,
+                                height: 1.3,
+                              ),
                             ),
                           ],
                         ),
@@ -1107,8 +1147,11 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.security_rounded,
-                          size: 18, color: Color(0xFF10B981)),
+                      const Icon(
+                        Icons.security_rounded,
+                        size: 18,
+                        color: Color(0xFF10B981),
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(
@@ -1126,9 +1169,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                             Text(
                               'Authorizes academic term activation, assigns faculty leads, audits grading completeness, and toggles event peer review permissions.',
                               style: TextStyle(
-                                  color: _mutedColor,
-                                  fontSize: 11.5,
-                                  height: 1.3),
+                                color: _mutedColor,
+                                fontSize: 11.5,
+                                height: 1.3,
+                              ),
                             ),
                           ],
                         ),
@@ -1192,8 +1236,11 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.info_outline_rounded,
-                            size: 18, color: Color(0xFF6366F1)),
+                        const Icon(
+                          Icons.info_outline_rounded,
+                          size: 18,
+                          color: Color(0xFF6366F1),
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
@@ -1234,8 +1281,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                             children: [
                               Text(
                                 'Panelist Weight',
-                                style:
-                                    TextStyle(color: _mutedColor, fontSize: 11),
+                                style: TextStyle(
+                                  color: _mutedColor,
+                                  fontSize: 11,
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -1249,7 +1298,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                               Text(
                                 'Defense Panel Rubric',
                                 style: TextStyle(
-                                    color: _mutedColor, fontSize: 10.5),
+                                  color: _mutedColor,
+                                  fontSize: 10.5,
+                                ),
                               ),
                             ],
                           ),
@@ -1269,8 +1320,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                             children: [
                               Text(
                                 'Peer Evaluation',
-                                style:
-                                    TextStyle(color: _mutedColor, fontSize: 11),
+                                style: TextStyle(
+                                  color: _mutedColor,
+                                  fontSize: 11,
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -1284,7 +1337,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                               Text(
                                 'Student Peer Rubric',
                                 style: TextStyle(
-                                    color: _mutedColor, fontSize: 10.5),
+                                  color: _mutedColor,
+                                  fontSize: 10.5,
+                                ),
                               ),
                             ],
                           ),
@@ -1311,7 +1366,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                       foregroundColor: _inkColor,
                       side: BorderSide(color: _borderColor),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       textStyle: const TextStyle(fontSize: 11.5),
                     ),
                   ),
@@ -1394,16 +1451,16 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.info_outline_rounded,
-                            size: 16, color: _mutedColor),
+                        Icon(
+                          Icons.info_outline_rounded,
+                          size: 16,
+                          color: _mutedColor,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             'No milestone pitch events scheduled for $key yet. The assigned PIT Coordinator manages pitch events and defense schedules for this cohort.',
-                            style: TextStyle(
-                              color: _mutedColor,
-                              fontSize: 12,
-                            ),
+                            style: TextStyle(color: _mutedColor, fontSize: 12),
                           ),
                         ),
                       ],
@@ -1497,10 +1554,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                     Flexible(
                       child: Text(
                         '(${lead['email']})',
-                        style: TextStyle(
-                          color: _mutedColor,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: _mutedColor, fontSize: 12),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -1583,10 +1637,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     );
   }
 
-  Widget _buildCohortEventItem(
-    Map<String, dynamic> config,
-    bool isSaving,
-  ) {
+  Widget _buildCohortEventItem(Map<String, dynamic> config, bool isSaving) {
     final eventName = config['event_name']?.toString() ?? 'PIT Event';
     final panelWeight = config['panel_weight']?.toString() ?? '80';
     final peerWeight = config['peer_weight']?.toString() ?? '20';
@@ -1639,7 +1690,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 2.5),
+                          horizontal: 7,
+                          vertical: 2.5,
+                        ),
                         decoration: BoxDecoration(
                           color: _isDark
                               ? const Color(0xFF3B181F)
@@ -1649,11 +1702,13 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.lock_rounded,
-                                size: 11,
-                                color: _isDark
-                                    ? const Color(0xFFFCA5A5)
-                                    : _maroon),
+                            Icon(
+                              Icons.lock_rounded,
+                              size: 11,
+                              color: _isDark
+                                  ? const Color(0xFFFCA5A5)
+                                  : _maroon,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               'Defenses Scheduled (Locked)',
@@ -1721,8 +1776,8 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                           style: TextStyle(
                             color: peerEnabled
                                 ? (_isDark
-                                    ? const Color(0xFF34D399)
-                                    : const Color(0xFF047857))
+                                      ? const Color(0xFF34D399)
+                                      : const Color(0xFF047857))
                                 : _mutedColor,
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
@@ -1737,10 +1792,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                 Tooltip(
                   message: isLocked
                       ? (config['lock_reason']?.toString() ??
-                          'Locked: Defenses scheduled')
+                            'Locked: Defenses scheduled')
                       : (peerEnabled
-                          ? 'Click to turn off student peer evaluation for this event'
-                          : 'Click to turn on student peer evaluation for this event'),
+                            ? 'Click to turn off student peer evaluation for this event'
+                            : 'Click to turn on student peer evaluation for this event'),
                   child: Switch.adaptive(
                     value: peerEnabled,
                     activeTrackColor: const Color(0xFF10B981),
@@ -1757,8 +1812,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     );
   }
 
-  Widget _buildMasterControlsTab(
-      Map<String, dynamic> semester, bool isSaving) {
+  Widget _buildMasterControlsTab(Map<String, dynamic> semester, bool isSaving) {
     final isActive = semester['is_active'] == true;
     final termName = semester['label']?.toString() ?? 'Semester';
 
@@ -1795,7 +1849,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                             isActive
                                 ? 'All users (students, faculty, admins) operate inside this period. Switching to another semester will preserve historical records.'
                                 : 'Activating this semester will set it as the institutional active term.',
-                            style: TextStyle(color: _mutedColor, fontSize: 12.5),
+                            style: TextStyle(
+                              color: _mutedColor,
+                              fontSize: 12.5,
+                            ),
                           ),
                         ],
                       ),
@@ -1809,16 +1866,6 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                           foregroundColor: Colors.white,
                         ),
                         child: const Text('Activate This Semester'),
-                      ),
-                    if (isActive && semester['label'] == '2nd Semester')
-                      OutlinedButton.icon(
-                        onPressed: isSaving ? null : () async {
-                          final changed = await showSemesterTransitionReview(context, ref,
-                            int.parse(semester['id'].toString()), returning: true);
-                          if (mounted && changed == true) context.go('/admin/student-teams');
-                        },
-                        icon: const Icon(Icons.people_outline, size: 16),
-                        label: const Text('Review returning teams'),
                       ),
                   ],
                 ),
@@ -1857,7 +1904,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                   ),
                 ),
                 OutlinedButton(
-                  onPressed: isActive ? null : () => _deleteThisSemester(semester),
+                  onPressed: isActive
+                      ? null
+                      : () => _deleteThisSemester(semester),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFFDC2626),
                     side: const BorderSide(color: Color(0xFFF87171)),
@@ -1889,7 +1938,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: _isDark ? const Color(0xFF27272A) : const Color(0xFFF1F5F9),
+              color: _isDark
+                  ? const Color(0xFF27272A)
+                  : const Color(0xFFF1F5F9),
               shape: BoxShape.circle,
               border: Border.all(color: _borderColor),
             ),
@@ -1923,7 +1974,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                     if (isPresentationOnly)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: _isDark
                               ? const Color(0xFF3F3F46)
@@ -1972,8 +2025,6 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     );
   }
 
-
-
   Widget _card({
     required String title,
     required Widget child,
@@ -2018,10 +2069,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                         const SizedBox(height: 2),
                         Text(
                           description,
-                          style: TextStyle(
-                            color: _mutedColor,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(color: _mutedColor, fontSize: 12),
                         ),
                       ],
                     ],
@@ -2034,7 +2082,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                       foregroundColor: _inkColor,
                       side: BorderSide(color: _borderColor),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 11, vertical: 6),
+                        horizontal: 11,
+                        vertical: 6,
+                      ),
                       minimumSize: const Size(0, 30),
                       textStyle: const TextStyle(
                         fontSize: 11.5,
@@ -2151,7 +2201,11 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     final semesterId = int.tryParse(semester['id']?.toString() ?? '');
     if (semesterId == null) return;
 
-    final confirmed = await showSemesterTransitionReview(context, ref, semesterId);
+    final confirmed = await showSemesterTransitionReview(
+      context,
+      ref,
+      semesterId,
+    );
     if (confirmed == true && mounted) {
       context.go('/admin/student-teams');
     }

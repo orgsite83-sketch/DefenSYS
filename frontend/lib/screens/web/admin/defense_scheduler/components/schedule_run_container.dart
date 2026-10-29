@@ -1307,7 +1307,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             icon: Icons.warning_amber_rounded,
             isError: false,
             message: hasDefenseProgress
-                ? 'No teams are eligible to schedule for $stageLabel. Teams already scheduled or assessed remain in the readiness queue with their defense status. Another attempt requires an eligible re-defense or authorized retake.'
+                ? 'No teams are eligible to schedule for $stageLabel. Teams already scheduled or assessed remain in the readiness queue with their defense status. A re-defense requires an open participation and valid stage preparation.'
                 : 'No teams are currently ready for $stageLabel. Teams need approved pre-defense deliverables, endorsement, and completed prior stages.',
           ),
         );

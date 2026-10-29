@@ -24,7 +24,6 @@ class FacultyRequirementsPane extends ConsumerStatefulWidget {
     required this.items,
     required this.buildRequirement,
     this.viewState,
-    this.defenseReadiness,
     this.stageLabel = '',
     this.programScope,
     this.onRequestRevision,
@@ -32,7 +31,6 @@ class FacultyRequirementsPane extends ConsumerStatefulWidget {
   final List<Map<String, dynamic>> items;
   final Widget Function(Map<String, dynamic>) buildRequirement;
   final FacultyRequirementsViewState? viewState;
-  final Widget? defenseReadiness;
   final String stageLabel;
   final String? programScope;
   final void Function(Map<String, dynamic> item, Map<String, dynamic> file)?
@@ -175,13 +173,10 @@ class _FacultyRequirementsPaneState
   String group(Map item) =>
       item['type'] == 'post' || item['deliverable_type'] == 'post'
       ? 'archive'
-      : item['requirement_timing'] == 'defense'
-      ? 'defense'
       : 'required';
 
   String timingLabel(Map item) => switch (group(item)) {
     'archive' => 'Post-defense archive',
-    'defense' => 'Before defense',
     _ => 'Before endorsement',
   };
 
@@ -266,8 +261,6 @@ class _FacultyRequirementsPaneState
               ),
             ),
             const SizedBox(height: 8),
-            if (group(active) == 'defense' && widget.defenseReadiness != null)
-              widget.defenseReadiness!,
             widget.buildRequirement(active),
             const SizedBox(height: 12),
             if (queue.length > 1)

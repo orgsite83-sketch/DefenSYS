@@ -222,7 +222,6 @@ class _PitInstructorDashboardContentState
         : <int, Map<String, dynamic>>{};
 
     var reviews = 0;
-    var awaitingMaterials = 0;
     var readyToSchedule = 0;
     final actions = <Widget>[];
     for (final team in teams) {
@@ -235,12 +234,6 @@ class _PitInstructorDashboardContentState
       if (stage == null) continue;
       final pending = DeliverablesTriageHelper.pendingReviewCount(detail!);
       reviews += pending;
-      final materialMap = stage['materials_readiness'] is Map
-          ? stage['materials_readiness'] as Map
-          : const <String, dynamic>{};
-      final total = (materialMap['required_total'] as num?)?.toInt() ?? 0;
-      final submitted = (materialMap['submitted_total'] as num?)?.toInt() ?? 0;
-      awaitingMaterials += total - submitted;
       final endorsementRequired = stage['endorsement_required'] != false;
       if (stage['deliverables_configured'] == true &&
           stage['required_complete'] == true &&
@@ -271,9 +264,7 @@ class _PitInstructorDashboardContentState
         actions.add(
           _action(
             team['name']?.toString() ?? 'Team',
-            total > submitted
-                ? 'Ready for endorsement; $submitted/$total defense files uploaded (due later)'
-                : 'Scheduling checks clear; ready for endorsement',
+            'Scheduling checks clear; ready for endorsement',
             () => widget.onOpenDeliverables(id),
           ),
         );
@@ -288,11 +279,6 @@ class _PitInstructorDashboardContentState
       _stat('${teams.length}', 'Assigned PIT teams', Icons.groups_outlined),
       _stat('$reviews', 'Submissions to review', Icons.rate_review_outlined),
       _stat('$readyToSchedule', 'Ready to schedule', Icons.verified_outlined),
-      _stat(
-        '$awaitingMaterials',
-        'Defense files to upload',
-        Icons.upload_file_outlined,
-      ),
     ];
 
     return Column(

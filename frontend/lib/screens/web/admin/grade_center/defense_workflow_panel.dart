@@ -2,6 +2,7 @@ import 'package:defensys/widgets/repository/concept_workspace.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -13,17 +14,12 @@ import '../../../../toasts/feedback_toast.dart';
 import '../../../../config/api_config.dart';
 import '../../../../services/authenticated_client.dart';
 import '../../../../utils/universal_file_viewer.dart';
+import '../../../../widgets/grading/automatic_assessment_panel.dart';
 
 class DefenseWorkflowPanel extends ConsumerWidget {
-  const DefenseWorkflowPanel({
-    super.key,
-    required this.grade,
-    this.onProjectReplaced,
-    this.onUpdated,
-  });
+  const DefenseWorkflowPanel({super.key, required this.grade, this.onUpdated});
 
   final Map<String, dynamic> grade;
-  final VoidCallback? onProjectReplaced;
   final VoidCallback? onUpdated;
 
   Future<void> _openFile(BuildContext context, WidgetRef ref, Map file) async {
@@ -56,60 +52,43 @@ class DefenseWorkflowPanel extends ConsumerWidget {
       'clear_revisions': 'Verify and clear required revisions',
       'schedule_compliance_review': 'Schedule a compliance review',
       'verify_redefense': 'Verify required re-defense corrections',
-      'authorize_retake': 'Authorize another attempt',
-      'authorize_new_concept': 'Authorize a replacement concept',
-      'keep_blocked': 'Keep failed / no further attempt',
     };
+    final heading = titles[action];
+    if (heading == null) return;
     final reason = TextEditingController();
-    final title = TextEditingController();
-    final form = GlobalKey<FormState>();
     DateTime? reviewDate;
-    bool acknowledged = false;
-    final replacement = action == 'authorize_new_concept';
     final review = action == 'schedule_compliance_review';
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(titles[action]!),
-          content: SizedBox(
-            width: 520,
-            child: SingleChildScrollView(
-              child: Form(
-                key: form,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('${grade['team_name']} · ${grade['stage_label']}'),
-                    const SizedBox(height: 12),
-                    Text(
-                      replacement
-                          ? 'Keep the current adviser and team members. Preserve the old project, files, minutes, and assessments. The replacement starts at the first defense stage with fresh requirements and grades.'
-                          : action == 'authorize_retake'
-                          ? 'Record the institution’s authorization for another attempt in this stage. Keep the adviser, adviser grade, and peer grade; redo panel grades and the verdict. Progression stays blocked until approval and clearance.'
-                          : review
-                          ? 'This presentation verifies corrections. It retains the same attempt, verdict, and all grades. The chair must still save revision clearance.'
-                          : action == 'keep_blocked'
-                          ? 'Retain the failed outcome and withdraw any unused retake authorization. Scheduling and progression stay blocked.'
-                          : 'Record the corrections and evidence you verified. All existing grades and adviser assignment are retained.',
-                    ),
-                    if (replacement) ...[
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: title,
-                        maxLength: 255,
-                        decoration: const InputDecoration(
-                          labelText: 'Replacement concept title',
-                        ),
-                        validator: (value) => (value?.trim().isEmpty ?? true)
-                            ? 'Enter the new concept title.'
-                            : null,
-                      ),
-                    ],
-                    if (review) ...[
-                      const SizedBox(height: 16),
-                      OutlinedButton.icon(
+        builder: (context, update) => DefensysShadcnScope(
+          child: ShadDialog(
+            constraints: const BoxConstraints(maxWidth: 560),
+            title: Text(heading),
+            description: Text(
+              '${grade['team_name']} · ${grade['stage_label']}',
+            ),
+            actions: [
+              ShadButton.outline(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              ShadButton(
+                onPressed:
+                    (review
+                        ? reviewDate != null
+                        : reason.text.trim().isNotEmpty)
+                    ? () => Navigator.pop(dialogContext, true)
+                    : null,
+                child: const Text('Save'),
+              ),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: SizedBox(
+                width: 480,
+                child: review
+                    ? ShadButton.outline(
                         onPressed: () async {
                           final date = await showDatePicker(
                             context: context,
@@ -121,78 +100,34 @@ class DefenseWorkflowPanel extends ConsumerWidget {
                               const Duration(days: 730),
                             ),
                           );
-                          if (date != null) setState(() => reviewDate = date);
+                          if (date != null) update(() => reviewDate = date);
                         },
-                        icon: const Icon(Icons.calendar_today_outlined),
-                        label: Text(
-                          reviewDate == null
-                              ? 'Choose review date'
-                              : reviewDate!.toIso8601String().split('T').first,
+                        child: Text(
+                          reviewDate?.toIso8601String().split('T').first ??
+                              'Choose review date',
                         ),
-                      ),
-                    ] else ...[
-                      const SizedBox(height: 16),
-                      TextFormField(
+                      )
+                    : ShadInput(
                         controller: reason,
-                        minLines: 3,
-                        maxLines: 5,
-                        decoration: InputDecoration(
-                          labelText:
-                              action.startsWith('authorize') ||
-                                  action == 'keep_blocked'
-                              ? 'Decision reason / authorization reference'
-                              : 'Verified corrections and evidence',
+                        maxLines: 4,
+                        placeholder: const Text(
+                          'Verified corrections and evidence',
                         ),
-                        validator: (value) => (value?.trim().isEmpty ?? true)
-                            ? 'Record the decision or verified corrections.'
-                            : null,
+                        onChanged: (_) => update(() {}),
                       ),
-                    ],
-                    if (replacement)
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text(
-                          'I understand that the replacement starts with fresh project grades and requirements.',
-                        ),
-                        value: acknowledged,
-                        onChanged: (value) =>
-                            setState(() => acknowledged = value ?? false),
-                      ),
-                  ],
-                ),
               ),
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed:
-                  (replacement && !acknowledged) ||
-                      (review && reviewDate == null)
-                  ? null
-                  : () {
-                      if (form.currentState!.validate()) {
-                        Navigator.pop(dialogContext, true);
-                      }
-                    },
-              child: Text(review ? 'Schedule review' : 'Save decision'),
-            ),
-          ],
         ),
       ),
     );
     final body = <String, dynamic>{
       'action': action,
       'reason': reason.text.trim(),
-      if (replacement) 'project_title': title.text.trim(),
       if (reviewDate != null)
         'review_date': reviewDate!.toIso8601String().split('T').first,
     };
     reason.dispose();
-    title.dispose();
     if (saved != true || !context.mounted) return;
     final id = int.tryParse('${grade['id']}');
     if (id == null) return;
@@ -210,7 +145,6 @@ class DefenseWorkflowPanel extends ConsumerWidget {
     }
     onUpdated?.call();
     showSuccessToast(context, 'Defense workflow updated.');
-    if (replacement) onProjectReplaced?.call();
   }
 
   @override
@@ -220,6 +154,13 @@ class DefenseWorkflowPanel extends ConsumerWidget {
     final workflow = Map<String, dynamic>.from(grade['workflow'] as Map? ?? {});
     final admin = user['role'] == 'admin' || user['is_superuser'] == true;
     final id = int.tryParse('${user['id']}');
+    if ((workflow['outcome_rule'] as Map?)?['automatic'] == true) {
+      return AutomaticAssessmentPanel(
+        grade: grade,
+        isChair: id != null && id == workflow['chair_id'],
+        onUpdated: onUpdated,
+      );
+    }
     final chair = admin || id != null && id == workflow['chair_id'];
     final adviser = admin || id != null && id == workflow['adviser_id'];
     final busy = ref.watch(gradeCenterProvider).isSaving;
@@ -230,7 +171,6 @@ class DefenseWorkflowPanel extends ConsumerWidget {
         verdict == 'approved_with_revisions' &&
         grade['revisions_cleared_at'] == null;
     final redefense = verdict == 'for_redefense';
-    final authorized = workflow['retake_authorized'] == true;
     final published = grade['status'] == 'published';
     final policy = workflow['assessment_policy'] as Map? ?? const {};
     final progress = workflow['assessment_progress'] as Map?;
@@ -243,7 +183,7 @@ class DefenseWorkflowPanel extends ConsumerWidget {
     final selectionPending =
         progress?['display_status'] == 'awaiting_concept_selection';
     final heading = failed
-        ? (authorized ? 'Another attempt authorized' : 'Progression blocked')
+        ? 'Participation closed as Failed'
         : revisions
         ? 'Revision clearance pending'
         : redefense
@@ -260,11 +200,7 @@ class DefenseWorkflowPanel extends ConsumerWidget {
         ? 'Approved and cleared · finish required grading and stage completion'
         : 'Awaiting panel evaluations and the chair verdict';
     final explanation = failed
-        ? grade['scope'] == 'pit'
-              ? 'This concept hearing is closed. The recorded concepts, documents, and panel feedback remain in history.'
-              : authorized
-              ? 'The authorized retake keeps adviser and peer grades. The previous failure remains in history.'
-              : 'An admin must record an authorized recovery decision before another defense can be scheduled.'
+        ? 'Returning students must join a new regular Capstone 1 intake. Previous assessments remain in History.'
         : revisions
         ? grade['scope'] == 'pit'
               ? 'Keep the hearing and its grades. Verify the required concept corrections before clearance.'
@@ -360,23 +296,13 @@ class DefenseWorkflowPanel extends ConsumerWidget {
                   adviser &&
                   conceptWorkflow == null)
                 action('Verify required corrections', 'verify_redefense'),
-              if (failed && admin && grade['scope'] == 'capstone') ...[
-                if (verdict == 'failed' && !authorized)
-                  action('Authorize another attempt', 'authorize_retake'),
-                action(
-                  'Authorize replacement concept',
-                  'authorize_new_concept',
-                ),
-                action('Keep failed / no further attempt', 'keep_blocked'),
-              ],
               if (admin &&
-                  (authorized ||
-                      redefense &&
-                          !verificationPending &&
-                          (!configured ||
-                              workflow['redefense_ready'] == true) &&
-                          (conceptWorkflow == null ||
-                              workflow['redefense_ready'] == true)))
+                  redefense &&
+                  !failed &&
+                  !verificationPending &&
+                  (!configured || workflow['redefense_ready'] == true) &&
+                  (conceptWorkflow == null ||
+                      workflow['redefense_ready'] == true))
                 FilledButton(
                   onPressed: busy
                       ? null
@@ -504,21 +430,6 @@ class DefenseWorkflowPanel extends ConsumerWidget {
                         );
                       },
                       child: const Text('View'),
-                    ),
-                  ),
-              ],
-            ),
-          if ((workflow['recovery_history'] as List? ?? []).isNotEmpty)
-            ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: const Text('Recovery decisions'),
-              children: [
-                for (final raw in workflow['recovery_history'] as List)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('${raw['action']} · ${raw['stage_label']}'),
-                    subtitle: Text(
-                      '${raw['reason']}\n${raw['authorized_by']} · ${raw['academic_period']}',
                     ),
                   ),
               ],

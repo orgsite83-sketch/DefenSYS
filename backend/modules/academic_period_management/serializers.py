@@ -4,10 +4,17 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import SCHOOL_YEAR_LOCK_REASON, SchoolYear, Semester, validate_school_year_label
 
 
-class SemesterActivationSerializer(serializers.Serializer):
+class StrictPeriodInputSerializer(serializers.Serializer):
+    def to_internal_value(self, data):
+        unknown = set(data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError({key: 'Unsupported field for semester activation.' for key in sorted(unknown)})
+        return super().to_internal_value(data)
+
+
+class SemesterActivationSerializer(StrictPeriodInputSerializer):
     force = serializers.BooleanField(default=False)
     reason = serializers.CharField(required=False, allow_blank=True, default='', max_length=3000)
-    decisions = serializers.ListField(child=serializers.DictField(), required=False, default=list)
     preview_revision = serializers.CharField(required=False, allow_blank=True, default='', max_length=64)
     request_id = serializers.CharField(required=False, allow_null=True, max_length=64)
 
@@ -109,7 +116,7 @@ class SchoolYearUpdateSerializer(serializers.Serializer):
         return instance
 
 
-class SemesterCalendarSerializer(serializers.Serializer):
+class SemesterCalendarSerializer(StrictPeriodInputSerializer):
     starts_on = serializers.DateField()
     ends_on = serializers.DateField()
 
@@ -128,7 +135,6 @@ class SemesterCreateSerializer(SemesterCalendarSerializer):
     active = serializers.BooleanField(required=False, write_only=True)
     force = serializers.BooleanField(default=False)
     reason = serializers.CharField(required=False, allow_blank=True, default='', max_length=3000)
-    decisions = serializers.ListField(child=serializers.DictField(), required=False, default=list)
     preview_revision = serializers.CharField(required=False, allow_blank=True, default='', max_length=64)
     request_id = serializers.CharField(required=False, allow_null=True, max_length=64)
 

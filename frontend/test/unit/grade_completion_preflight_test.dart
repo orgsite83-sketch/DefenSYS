@@ -10,6 +10,8 @@ class _ReadinessClient extends AuthenticatedHttpClient {
   _ReadinessClient(super.ref, this.response);
   final http.Response response;
   final requests = <Uri>[];
+  final writes = <Map<String, dynamic>>[];
+  bool allowClosure = false;
   @override
   Future<http.Response> get(Uri uri, {Map<String, String>? headers}) async {
     requests.add(uri);
@@ -22,10 +24,85 @@ class _ReadinessClient extends AuthenticatedHttpClient {
     Map<String, String>? headers,
     Object? body,
     Encoding? encoding,
-  }) => throw StateError('Preflight must not write grades');
+  }) async {
+    if (!allowClosure) throw StateError('Preflight must not write grades');
+    writes.add(Map<String, dynamic>.from(jsonDecode(body as String)));
+    return http.Response('{"group_settings":{}}', 200);
+  }
 }
 
 void main() {
+  test(
+    'closure submits the reviewed identities once and never reuses consent',
+    () async {
+      late _ReadinessClient client;
+      final container = ProviderContainer(
+        overrides: [
+          authenticatedHttpClientProvider.overrideWith(
+            (ref) => client = _ReadinessClient(
+              ref,
+              http.Response(
+                jsonEncode({
+                  'grading_total_team_count': 1,
+                  'grading_ready_team_count': 0,
+                  'completion_ready_team_count': 1,
+                  'can_complete': true,
+                  'incomplete_teams': [],
+                  'redefense_teams': [],
+                  'failing_teams': [],
+                  'failure_candidates': [
+                    {'grade_id': 42, 'team_id': 7, 'team_name': 'Team Retry'},
+                  ],
+                  'completion_token': 'reviewed-context',
+                  'completion_blocker': '',
+                }),
+                200,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(gradeCenterProvider.notifier);
+      final readiness = await notifier.checkGroupCompletion(
+        scope: 'capstone',
+        stageLabel: 'Concept Proposal',
+      );
+      expect(readiness.readyTeams, 1);
+      expect(readiness.failureCandidates.single['grade_id'], 42);
+      expect(client.writes, isEmpty);
+      readiness.onApproved!({
+        'failure_grade_ids': [42],
+        'completion_token': readiness.completionToken,
+        'closure_reason': 'Assessment window closed.',
+      });
+      client.allowClosure = true;
+      expect(
+        await notifier.updateGroupSettings(
+          scope: 'capstone',
+          stageLabel: 'Concept Proposal',
+          isOfficiallyComplete: true,
+        ),
+        isTrue,
+      );
+      expect(client.writes.single, {
+        'scope': 'capstone',
+        'stage_label': 'Concept Proposal',
+        'is_officially_complete': true,
+        'failure_grade_ids': [42],
+        'completion_token': 'reviewed-context',
+        'closure_reason': 'Assessment window closed.',
+      });
+      await notifier.updateGroupSettings(
+        scope: 'capstone',
+        stageLabel: 'Concept Proposal',
+        isOfficiallyComplete: true,
+      );
+      expect(client.writes.last.containsKey('failure_grade_ids'), isFalse);
+      expect(client.writes.last.containsKey('completion_token'), isFalse);
+    },
+  );
+
   test(
     'preflight reads the full group without inheriting display filters',
     () async {

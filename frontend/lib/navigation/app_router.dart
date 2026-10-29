@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../screens/app/panelist_dashboard.dart';
 import '../notifications/notification_request_screen.dart';
+import '../notifications/minutes_notification_route.dart';
 import '../screens/web/shared/team_deliverables/team_deliverables_screen.dart';
 import '../screens/web/admin/student_teams/team_creation_page.dart';
 import '../screens/web/faculty/team_roster_screen.dart';
@@ -349,13 +350,7 @@ List<GoRoute> _notificationActionRoutes(String workspace) => [
       onBack: () => context.go('/$workspace/defense-board'),
     ),
   ),
-  GoRoute(
-    path: 'minutes/:scheduleId',
-    builder: (context, state) => MinutesFormScreen(
-      scheduleId: int.parse(state.pathParameters['scheduleId']!),
-      onBack: () => context.go('/$workspace/defense-board'),
-    ),
-  ),
+  legacyMinutesNotificationRoute(workspace),
 ];
 
 List<GoRoute> _adminSectionRoutes() {
@@ -581,7 +576,7 @@ List<GoRoute> _facultySectionRoutes() {
         initialStage: state.uri.queryParameters['stage'],
         initialScope: state.uri.queryParameters['scope'],
         isAdviser: state.uri.queryParameters['scope'] != 'pit',
-        initialTab: 0,
+        initialTab: state.uri.queryParameters['tab'] == 'defense' ? 3 : 0,
       )),
     ]),
     GoRoute(path: 'weekly-reports', pageBuilder: _facultySectionPage),

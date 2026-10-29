@@ -13,7 +13,7 @@ from defense.stages.models import DefenseStage
 from student_teams.models import StudentTeam, TeamStageProgress
 from student_teams.services import is_stage_ready, mark_stage_locked, mark_stage_ready, was_stage_endorsed
 from .models import DeliverableSubmission
-from .timing import due_before_defense, scheduling_requirement
+from .timing import scheduling_requirement
 from .concepts import stage_for as document_context
 
 
@@ -122,7 +122,7 @@ def get_deliverable_definitions_for_team(team, stage_label):
     hearing = latest_round(team, context) if context else None
     grade = latest_stage_grade(team, stage_label, scope='capstone' if team.is_capstone else 'pit')
     # A new concept set or a pending re-defense must not borrow the previous
-    # hearing's upload exceptions. Existing scheduled attempts keep their timing.
+    # hearing's completed exemptions.
     if hearing:
         schedule = hearing.schedule if hearing.schedule_id else None
     elif grade and grade.verdict == 'for_redefense':
@@ -492,6 +492,8 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
     if stage_grade and stage_grade.uses_defense_verdict and policy_for(stage_grade.schedule).get('version') == 1:
         return post_defense_ready(team, stage_label)
     if stage_grade and stage_grade.uses_defense_verdict:
+        if stage_grade.closed_as_failed:
+            return 'failed'
         if getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
             return False
         if getattr(stage_grade, 'result', '') == 'failed':
@@ -508,7 +510,6 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
         project_version=team.project_version,
         status=DefenseSchedule.STATUS_DONE,
     ).filter(Q(defense_stage__label=stage_label) | Q(event_name=stage_label)).exists()
-
 
 
 @read_memoize
@@ -602,11 +603,11 @@ def required_complete(team, stage_label):
 
 
 @read_memoize
-def post_deliverables_complete(team, stage_label):
+def post_deliverables_complete(team, stage_label, *, include_shared=True):
     from repository.section_concepts.shared_deliverables import resolve, required_complete as shared_complete
     from .concepts import stage_for
     profile = resolve(team, stage_for(team, stage_label))
-    if profile and not shared_complete(profile, 'post'):
+    if include_shared and profile and not shared_complete(profile, 'post'):
         return False
     if is_presentation_stage(team, stage_label):
         return True
@@ -626,7 +627,7 @@ def post_deliverables_complete(team, stage_label):
         if not final_paper_complete(team, stage):
             return False
         hearing = latest_round(team, stage)
-        if hearing and hearing.section_round_id and not shared_final_complete(hearing.section_round):
+        if include_shared and hearing and hearing.section_round_id and not shared_final_complete(hearing.section_round):
             return False
 
     submitted = submissions_for(team, stage_label)
@@ -639,6 +640,19 @@ def post_deliverables_complete(team, stage_label):
                 or not completeness(sub, item, accepted=True, stage=stage)):
             return False
     return True
+
+
+@read_memoize(copy=True)
+def post_deliverables_state(team, stage_label):
+    """Keep the authoritative gate while identifying who owns outstanding work."""
+    from repository.section_concepts.shared_deliverables import resolve, completion_summary
+    from .concepts import stage_for
+    profile = resolve(team, stage_for(team, stage_label))
+    shared = completion_summary(profile) if profile else None
+    return {'complete': post_deliverables_complete(team, stage_label),
+        'team_complete': post_deliverables_complete(team, stage_label, include_shared=False),
+        'shared_complete': shared['complete'] if shared else True,
+        'shared': shared if shared and shared['requirements'] else None}
 
 
 def team_stage_status(team, stage_label):
@@ -743,6 +757,8 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
     has_panel_scored = bool(stage_grade and stage_grade.panel_score is not None)
 
     if stage_grade and stage_grade.uses_defense_verdict:
+        if stage_grade.closed_as_failed:
+            return 'failed'
         if stage_grade.verdict in ('failed', 'project_rejected'):
             return stage_grade.verdict
         if stage_grade.verdict == 'for_redefense':
@@ -867,11 +883,6 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
     if specific is False or (specific is None and manually_locked(team, stage_label, deliverable_type)):
         raise PermissionError('File uploads for this deliverable are locked by an Admin or PIT Lead.')
     definition = definition_for(team, stage_label, submission.deliverable_id if submission else deliverable_id)
-    if definition and due_before_defense(definition):
-        from .timing import ensure_material_editable
-        ensure_material_editable(team, stage_label, definition,
-                                 lock=transaction.get_connection().in_atomic_block if lock is None else lock)
-        return
     from grading.grades.models import TeamGrade
     stage_grade = latest_stage_grade(team, stage_label)
     from .redefense import preparing
@@ -941,7 +952,6 @@ def toggle_global_stage_deliverables_unlock(stage_label, user, scope='capstone',
     )
 
 
-
 def can_submit_files(user, team):
     """File submission ownership is independent from faculty review authority."""
     if not user:
@@ -993,9 +1003,6 @@ def stage_payload(team, stage_label, evaluator=None):
     is_defense_today = active_schedules.filter(scheduled_date=today).exists()
     has_active_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_SCHEDULED).exists()
     has_done_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_DONE).exists()
-
-    from .timing import stage_schedule, material_row_state, materials_readiness
-    material_schedule = stage_schedule(team, stage_label)
 
     is_stage_officially_complete = False
     if is_capstone and stage_obj:
@@ -1129,9 +1136,6 @@ def stage_payload(team, stage_label, evaluator=None):
 
         can_upload = upload_window_open and actor_can_submit
 
-        if due_before_defense(item):
-            can_review_item = upload_window_open and not is_defense_done
-
         slots = document_slots_for(item, stage=concept_context)
         if (item.get('file_policy') or {}).get('mode') == 'concepts' and not is_vault:
             from repository.title_workflow import team_guard
@@ -1160,9 +1164,7 @@ def stage_payload(team, stage_label, evaluator=None):
             'is_waived': is_waived,
             'can_faculty_review': can_review_item,
             'submission': submission_payload(submission) if submission else None,
-            **(material_row_state(item, submission, material_schedule) if due_before_defense(item) else {
-                'requirement_timing': 'scheduling', 'due_at': None,
-            }),
+            'requirement_timing': 'scheduling', 'due_at': None,
         })
 
     from defense.minutes.requirements import stage_minutes_requirement
@@ -1230,7 +1232,6 @@ def stage_payload(team, stage_label, evaluator=None):
             'revision': stage_sched.revision,
             'panelists': panelists_list,
             'documenter': doc_data,
-            'materials_readiness': materials_readiness(stage_sched, definitions=definitions, submitted=submitted),
         }
 
     # Resolve stage-scoped peer evaluation data
@@ -1303,7 +1304,6 @@ def stage_payload(team, stage_label, evaluator=None):
         'pre_total': len(pre_items),
         'required_uploaded': sum(1 for item in required_items if item['uploaded']),
         'required_total': len(required_items),
-        'materials_readiness': materials_readiness(material_schedule, definitions=definitions, submitted=submitted),
         'archive_uploaded': sum(1 for item in archive_items if item['uploaded']),
         'archive_total': len(archive_items),
         'archive_required_uploaded': sum(1 for item in archive_required_items if item['uploaded']),
@@ -1314,13 +1314,14 @@ def stage_payload(team, stage_label, evaluator=None):
         ),
         'archive_required_total': len(archive_required_items),
         'archive_complete': archive_required_complete,
+        'post_defense_completion': post_deliverables_state(team, stage_label),
         'pre': pre_items,
         'post': archive_items,
         'system': system_items,
         'minutes_required': bool(generated_minutes and generated_minutes.get('required')),
         'documentation_complete': not generated_minutes or not generated_minutes.get('required') or generated_minutes['completed'],
         'deliverables_total': len(rows),
-        'deliverables_completed': sum(1 for item in rows if item.get('completed') or item.get('materials_submitted') or (
+        'deliverables_completed': sum(1 for item in rows if item.get('completed') or (
             item.get('submission') and item['submission']['status'] == DeliverableSubmission.STATUS_ACCEPTED
         )),
         'deliverables': rows,
@@ -1583,7 +1584,7 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         raise ValueError('Deliverable does not exist for this stage.')
     if definition.get('source') == 'defense_minutes':
         raise PermissionError('Signed minutes are generated by the documenter signing workflow and cannot be uploaded.')
-    if file is not None or due_before_defense(definition):
+    if file is not None:
         from .timing import validate_material_file
         validate_material_file(definition, file_name, file)
     existing = DeliverableSubmission.objects.select_for_update().filter(
@@ -1666,12 +1667,6 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
             'file_name', 'file_size', 'file', 'extracted_text',
             'topics', 'summary', 'category', 'category_confidence', 'uploaded_at',
         ]
-        if due_before_defense(definition):
-            from .timing import stage_schedule, defense_starts_at
-            sched = stage_schedule(team, stage_label)
-            if sched and timezone.now() > defense_starts_at(sched):
-                submission.is_late = True
-                fields_to_update.append('is_late')
         submission.save(update_fields=fields_to_update)
 
     if is_approved_replacement:
@@ -1865,9 +1860,6 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     definition = definition_for(team, stage_label, deliverable_id)
     if definition and definition.get('source') == 'defense_minutes':
         raise PermissionError('Use the defense minutes signing workflow to approve this record.')
-    if definition and due_before_defense(definition):
-        from .timing import ensure_material_editable
-        ensure_material_editable(team, stage_label, definition, lock=True)
     from django.utils import timezone
 
     try:
@@ -1919,7 +1911,7 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
             endorsed = False
         if concept_round and not concept_round.schedule_id and not concept_round.endorsed_at:
             endorsed = False
-        if endorsed and not (admin_unlocked or submission.revision_review_unlocked or (definition and due_before_defense(definition))):
+        if endorsed and not (admin_unlocked or submission.revision_review_unlocked):
             raise PermissionError('Cancel endorsement or ask an Admin to unlock pre-defense review first.')
 
     if not is_post and is_defense_done and not is_admin and not (admin_unlocked or submission.revision_review_unlocked):

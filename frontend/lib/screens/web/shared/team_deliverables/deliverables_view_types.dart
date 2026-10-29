@@ -2,6 +2,27 @@ import 'package:defensys/models/team_workflow_status.dart';
 
 enum DeliverablesViewMode { dossier, matrix }
 
+/// Discover normal-stage shared work once per section/context without opening
+/// or creating a concept round. Concept hearings keep their existing workspace.
+List<Map<String, dynamic>> sharedChecklistsForTeams(
+  Iterable<Map<String, dynamic>> teams, {
+  required String stageLabel,
+}) {
+  final groups = <String, Map<String, dynamic>>{};
+  for (final team in teams) {
+    final stage = DeliverablesTriageHelper.resolveActiveStage(team);
+    final summary = stage?['shared_deliverables_summary'];
+    if (stage?['stage_label'] != stageLabel ||
+        (stage?['concept_workflow'] as Map?)?['enabled'] == true ||
+        summary is! Map) {
+      continue;
+    }
+    final row = Map<String, dynamic>.from(summary);
+    groups.putIfAbsent('${row['section_id']}-${row['context_id']}', () => row);
+  }
+  return groups.values.toList();
+}
+
 enum TeamTriageFilter {
   all,
   needsAttention,
@@ -244,14 +265,6 @@ class DeliverablesTriageHelper {
   static bool isOverdueOrMissing(Map<String, dynamic> team) {
     final activeStage = resolveActiveStage(team);
     if (activeStage == null) return false;
-
-    final materials = activeStage['materials_readiness'];
-    if (materials is Map) {
-      final required = int.tryParse('${materials['required_total'] ?? 0}') ?? 0;
-      final submitted =
-          int.tryParse('${materials['submitted_total'] ?? 0}') ?? 0;
-      if (required > submitted) return true;
-    }
 
     final statusDetail =
         activeStage['stage_status_detail']?.toString() ??

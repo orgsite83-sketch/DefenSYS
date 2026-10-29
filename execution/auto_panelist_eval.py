@@ -191,12 +191,16 @@ def parse_args(argv=None):
         default=0.1,
         help="Delay in seconds between requests (default: 0.1s)",
     )
+    parser.add_argument('--request-timeout', type=float, default=30,
+        help='HTTP request timeout in seconds (default: 30). Writes are never retried automatically.')
     args = parser.parse_args(argv)
     if not (math.isfinite(args.min_score) and math.isfinite(args.max_score)
             and 0 <= args.min_score <= args.max_score <= 10):
         parser.error("Scores must satisfy 0 <= --min-score <= --max-score <= 10 (scaled to each criterion maximum).")
     if not math.isfinite(args.delay) or not 0 <= args.delay <= 60:
         parser.error("--delay must be a finite number between 0 and 60 seconds.")
+    if not math.isfinite(args.request_timeout) or not 0 < args.request_timeout <= 300:
+        parser.error('--request-timeout must be a finite number greater than 0 and at most 300 seconds.')
     if args.external_only and args.panelists:
         parser.error("--external-only cannot be combined with --panelists.")
     if args.verdict_only and args.no_verdict:
@@ -386,8 +390,8 @@ class AssignmentError(ValueError):
         super().__init__(detail)
 
 
-def current_assignment(session, url, schedule_id):
-    response = session.get(url, timeout=10, allow_redirects=False)
+def current_assignment(session, url, schedule_id, *, timeout=30):
+    response = session.get(url, timeout=timeout, allow_redirects=False)
     if response.status_code != 200:
         raise AssignmentError(response.status_code, f'Assignment refresh failed (HTTP {response.status_code}).')
     data = response.json()
@@ -417,14 +421,18 @@ def requires_concept_decision(row):
 
 def plan_verdict(row, requested):
     """Use the chair's current API facts, never the academic weighted score."""
+    workflow = (row.get('grade_record') or {}).get('workflow') or {}
+    rule = workflow.get('outcome_rule')
+    if (rule or {}).get('automatic') or (row.get('assessment_policy') or {}).get('automatic_outcomes'):
+        if not row.get('verdict') and (rule or {}).get('panel_complete') and (rule or {}).get('outcome') == 'approved':
+            return 'manual', 'Panel assessments saved; the assigned chair selects a qualifying concept when required.', None
+        return 'existing', 'This hearing records its outcome automatically. No manual verdict is requested.', None
     if row.get('verdict'):
         return 'existing', f'Existing verdict: {row["verdict"]}.', None
     if requires_concept_decision(row):
         return 'manual', 'Concept assessments saved; the chair must select a qualifying concept and record the outcome.', None
     if row.get('is_chair') is not True or row.get('can_issue_verdict') is not True:
         return 'pending', row.get('verdict_unavailable_reason') or 'The assigned chair is not currently allowed to issue a verdict.', None
-    workflow = (row.get('grade_record') or {}).get('workflow') or {}
-    rule = workflow.get('outcome_rule')
     if (row.get('assessment_policy') or {}).get('version') == 1 and not rule:
         return 'pending', 'The current configured outcome assessment is unavailable.', None
     if rule is not None:
@@ -475,6 +483,7 @@ def submit_schedule_verdict(
     redefense_verification: bool = False,
     actor_username: Optional[str] = None,
     dry_run: bool = False,
+    timeout: float = 30,
 ) -> Dict[str, Any]:
     if dry_run:
         return {"status": "dry_run"}
@@ -504,7 +513,7 @@ def submit_schedule_verdict(
         "Content-Type": "application/json",
     }
     try:
-        resp = requests.patch(url, json=payload, headers=headers, timeout=10, allow_redirects=False)
+        resp = requests.patch(url, json=payload, headers=headers, timeout=timeout, allow_redirects=False)
         if resp.status_code in (200, 201):
             return {"status": "ok", "data": resp.json()}
         else:
@@ -521,6 +530,7 @@ def submit_schedule_verdict(
 def run(argv=None):
     args = parse_args(argv)
     args.base_url = common.server_url(args.base_url)
+    request_timeout = getattr(args, 'request_timeout', 30)
 
     specific_panelists = None
     if args.panelists:
@@ -629,7 +639,7 @@ def run(argv=None):
         assignment_endpoint = 'guest-assignments' if is_external else 'panelist-assignments'
         url = f"{args.base_url.rstrip('/')}/api/defense/schedules/{assignment_endpoint}/"
         try:
-            resp = session.get(url, timeout=10, allow_redirects=False)
+            resp = session.get(url, timeout=request_timeout, allow_redirects=False)
             if resp.status_code != 200:
                 print(f"  [✗] Failed to fetch assignments for panelist {username} (HTTP {resp.status_code})")
                 total_failed += 1
@@ -655,7 +665,7 @@ def run(argv=None):
             schedule_id = team_payload.get('schedule_id')
             if not args.dry_run and not args.verdict_only and not team_payload.get('is_posted'):
                 try:
-                    team_payload = current_assignment(session, url, schedule_id)
+                    team_payload = current_assignment(session, url, schedule_id, timeout=request_timeout)
                     if not assignment_matches(team_payload, args, allowed_schedules):
                         raise ValueError('The assignment moved outside the requested cohort or event/stage.')
                 except (ValueError, requests.RequestException) as error:
@@ -735,7 +745,7 @@ def run(argv=None):
                 submit_endpoint = 'guest-submit-grades' if is_external else 'submit-grades'
                 submit_url = f"{args.base_url.rstrip('/')}/api/defense/schedules/{submit_endpoint}/"
                 try:
-                    s_resp = session.post(submit_url, json=payload, timeout=10, allow_redirects=False)
+                    s_resp = session.post(submit_url, json=payload, timeout=request_timeout, allow_redirects=False)
                     if s_resp.status_code in (200, 201):
                         res_data = s_resp.json()
                         p_score = res_data.get("panel_score")
@@ -793,7 +803,7 @@ def run(argv=None):
                     raise ValueError('Unable to authenticate the assigned chair.')
                 chair_session.headers.update({'Authorization': f'Bearer {chair_token}'})
                 current = current_assignment(chair_session,
-                    f'{args.base_url}/api/defense/schedules/panelist-assignments/', sched_id)
+                    f'{args.base_url}/api/defense/schedules/panelist-assignments/', sched_id, timeout=request_timeout)
                 if not assignment_matches(current, args, allowed_schedules):
                     raise ValueError('The current chair assignment moved outside the requested cohort or stage.')
                 verdict_state, detail, verdict = plan_verdict(current, args.verdict)
@@ -830,6 +840,7 @@ def run(argv=None):
                     redefense_verification=args.redefense_verification,
                     actor_username=chair_user,
                     dry_run=args.dry_run,
+                    timeout=request_timeout,
                 )
                 if res.get("status") == "ok":
                     print(f"    [VERDICT OK] {t_name} (Schedule #{sched_id}): Defense verdict \"{verdict}\" recorded by chair {chair_user}!")

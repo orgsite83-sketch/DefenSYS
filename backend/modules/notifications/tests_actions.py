@@ -1,5 +1,6 @@
 from importlib import import_module
 from datetime import date, time
+from urllib.parse import parse_qs, urlsplit
 
 from django.apps import apps
 from django.contrib.auth import get_user_model
@@ -220,9 +221,25 @@ class NotificationActionTests(APITestCase):
         minutes.status = 'adviser_signed'
         minutes.save()
         self.assertTrue(self.action(adviser, 'adviser')['is_complete'])
-        self.assertEqual(self.action(adviser, 'adviser')['route'], f'/faculty/defense-board/minutes/{schedule.pk}')
+        route = urlsplit(self.action(adviser, 'adviser')['route'])
+        self.assertEqual(route.path, f'/faculty/deliverables/teams/{team.pk}')
+        self.assertEqual(parse_qs(route.query), {'scope': ['capstone'], 'tab': ['defense'], 'stage': [schedule.stage_label]})
         self.client.force_authenticate(self.admin)
         self.assertFalse(self.action(chair)['is_complete'])
+        self.assertEqual(self.action(chair)['route'], f'/admin/defense-board?minutes={schedule.pk}')
+        # Old stored links without action metadata resolve through the same
+        # workspace routes without rewriting notices or creating minutes.
+        adviser.action_payload = {}
+        adviser.action_route = f'/faculty/defense-board/minutes/{schedule.pk}'
+        adviser.save()
+        self.client.force_authenticate(self.faculty)
+        self.assertEqual(self.action(adviser, 'adviser')['route'], route.geturl())
+        self.client.force_authenticate(self.other)
+        self.assertIsNone(resolve_actions([adviser], self.other)[adviser.pk]['route'])
+        doc = Notification.objects.create(recipient=self.doc, title='Minutes Finalized',
+            category='MINUTES', workspace='documenter', action_payload={'schedule_id': schedule.pk})
+        self.assertEqual(resolve_actions([doc], self.doc)[doc.pk]['route'], f'/documenter/minutes/{schedule.pk}')
+        self.client.force_authenticate(self.admin)
         schedule.status = 'cancelled'
         schedule.save()
         self.assertEqual(self.action(chair)['status'], 'cancelled')

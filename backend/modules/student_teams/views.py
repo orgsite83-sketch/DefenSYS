@@ -176,8 +176,9 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
             Q(team_memberships__team__current_defense_stage__isnull=True) | Q(team_memberships__team__current_defense_stage=''),
         ).distinct()
     else:
-        # Capstone: only show students not in any team
-        students = students.filter(team_memberships__isnull=True)
+        # Historical membership is evidence, not an active placement conflict.
+        assigned = TeamMembership.objects.filter(team__semester=active, team__level__icontains='Capstone')
+        students = students.exclude(pk__in=assigned.values('student_id'))
     
     # Auto-detect PIT Lead and apply filtering
     is_pit_lead = user and getattr(user, 'is_pit_lead', False)
@@ -252,8 +253,6 @@ class StudentTeamListCreateView(APIView):
             from .capstone_lifecycle import historical_payload
             rows = TeamTermParticipation.objects.filter(team__in=visible, closed_at__isnull=False).select_related('semester__school_year')
             active = active_semester()
-            if active:
-                rows = rows.exclude(semester=active)
             covered = list(rows.values_list('team_id', flat=True))
             params = self.request.query_params
             if params.get('semester_id'):
@@ -267,10 +266,7 @@ class StudentTeamListCreateView(APIView):
                     continue
                 if any(params.get(key) and params[key] != str(data.get(key, '')) for key in ('year_level', 'section')):
                     continue
-                if params.get('status') in ('Extended', StudentTeam.STATUS_DELAYED):
-                    if data.get('capstone_phase') != StudentTeam.PHASE_EXTENDED:
-                        continue
-                elif params.get('status') and params['status'] != data.get('status'):
+                if params.get('status') and params['status'] != data.get('status'):
                     continue
                 if params.get('search') and params['search'].casefold() not in ' '.join(str(data.get(key, '')) for key in ('name', 'project_title', 'leader_name', 'adviser_name')).casefold():
                     continue
@@ -308,9 +304,7 @@ class StudentTeamListCreateView(APIView):
             queryset = queryset.filter(level__icontains='PIT')
         elif level:
             queryset = queryset.filter(level=level)
-        if status_filter in ('Extended', StudentTeam.STATUS_DELAYED):
-            queryset = queryset.filter(capstone_phase=StudentTeam.PHASE_EXTENDED)
-        elif status_filter:
+        if status_filter:
             queryset = queryset.filter(status=status_filter)
 
         year_level = request.query_params.get('year_level', '').strip()
@@ -480,7 +474,7 @@ class StudentTeamDetailView(APIView):
 
         assert_team_writable(request.user, team)
 
-        if team.term_participations.filter(closed_at__isnull=False).exists() or team.recovery_authorizations.exists():
+        if team.student_placements.exists() or team.term_participations.filter(closed_at__isnull=False).exists() or team.historical_recovery_records.exists():
             return Response({'detail': 'This team has closed academic-period records. Preserve its history.'}, status=409)
 
         if team.is_pit and (team.pit_event_rosters.filter(started_at__isnull=False).exists()
@@ -654,6 +648,7 @@ class BulkImportTeamsPreviewView(APIView):
 class BulkImportTeamsView(APIView):
     permission_classes = [CanManageTeams]
 
+    @transaction.atomic
     def post(self, request):
         section = request.data.get('section', '').strip()
         blocked = None if request.data.get('event_name') else _reject_capstone_bulk_import_if_closed(request.user, section=section)
@@ -759,7 +754,10 @@ class BulkImportTeamsView(APIView):
                 continue
 
             payload = build_team_payload_from_row(result, user=request.user)
+            from .participation import existing_roster
+            prior_roster = existing_roster(payload['member_ids'], active_semester(), payload['name'], payload['level']) if 'Capstone' in payload['level'] else None
             serializer = StudentTeamWriteSerializer(
+                instance=prior_roster,
                 data=payload,
                 context={
                     'assigned_by': request.user,
@@ -854,6 +852,10 @@ class BulkImportTeamsView(APIView):
         created = [team for _, team in imported]
         errors.sort(key=lambda item: item['row'])
         skipped.sort(key=lambda item: item['row'])
+        if errors and (any(team.is_capstone for team in created) or any('Capstone' in str(row.get('level', '')) or row.get('year_level') == '4th Year' for row in rows)):
+            transaction.set_rollback(True)
+            return Response({'created': [], 'created_count': 0, 'imported_rows': [], 'errors': errors,
+                'error_count': len(errors), 'detail': 'No Capstone roster changes were saved. Correct the listed rows and review again.'}, status=400)
         return Response({
             'created': StudentTeamSerializer(created, many=True).data,
             'created_count': len(created),
@@ -1011,14 +1013,27 @@ class StudentTeamSendReminderView(APIView):
         submitted = submissions_for(team, stage_label)
 
         missing_list = []
-        for item in definitions:
-            if item['type'] == 'pre' and item['required']:
-                sub = submitted.get(item['id'])
-                if not sub:
-                    missing_list.append(f"- {item['label']} (Not Submitted)")
-                elif sub.status == DeliverableSubmission.STATUS_REJECTED:
-                    feedback_str = f" - Feedback: {sub.feedback}" if sub.feedback else ""
-                    missing_list.append(f"- {item['label']} (Rejected{feedback_str})")
+        deliverable_id = request.data.get('deliverable_id')
+        if deliverable_id is not None:
+            from repository.deliverables.reminders import requirement_reminder_state
+            if not isinstance(deliverable_id, str) or not deliverable_id.strip():
+                return Response({'detail': 'deliverable_id must be a nonempty string.'}, status=status.HTTP_400_BAD_REQUEST)
+            deliverable_id = deliverable_id.strip()
+            requirement = requirement_reminder_state(team, stage_label, deliverable_id)
+            if requirement is None:
+                return Response({'detail': 'Deliverable not found for this team and stage.'}, status=status.HTTP_404_NOT_FOUND)
+            if requirement['complete']:
+                return Response({'detail': 'This deliverable already has its required files.'}, status=status.HTTP_409_CONFLICT)
+            missing_list.append(f"- {requirement['label']} (Missing files or corrections required)")
+        else:
+            for item in definitions:
+                if item['type'] == 'pre' and item['required']:
+                    sub = submitted.get(item['id'])
+                    if not sub:
+                        missing_list.append(f"- {item['label']} (Not Submitted)")
+                    elif sub.status == DeliverableSubmission.STATUS_REJECTED:
+                        feedback_str = f" - Feedback: {sub.feedback}" if sub.feedback else ""
+                        missing_list.append(f"- {item['label']} (Rejected{feedback_str})")
 
         leader = team.leader
         if not leader:
@@ -1027,6 +1042,8 @@ class StudentTeamSendReminderView(APIView):
         notified_user_ids = set()
         notification_target = {'team_id': team.pk, 'stage_label': stage_label, 'action_kind': 'deliverables',
                                'deliverable_task': 'submit' if missing_list else 'endorse'}
+        if deliverable_id is not None:
+            notification_target.update(deliverable_id=deliverable_id, deliverable_task='requirement_upload')
 
         message_body = (
             f"Dear {leader.first_name} {leader.last_name},\n\n"

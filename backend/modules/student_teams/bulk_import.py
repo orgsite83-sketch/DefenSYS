@@ -500,7 +500,13 @@ def _existing_team_membership_issues(member_user_ids, *, team_name='', level='',
     semester = get_active_semester()
     pit = 'PIT' in level.upper()
     unrestricted = pit and allows_multiple(semester, event_name)
+    existing = None
+    if not pit:
+        from .participation import existing_roster
+        existing = existing_roster(member_user_ids, semester, team_name, level)
     memberships = TeamMembership.objects.filter(student_id__in=member_user_ids, team__semester=semester)
+    if existing:
+        memberships = memberships.exclude(team=existing)
     if pit:
         memberships = pit_event_memberships(memberships.filter(team__level__icontains='PIT'), event_name)
     conflicts = {}
@@ -519,7 +525,7 @@ def _existing_team_membership_issues(member_user_ids, *, team_name='', level='',
         )
 
     if team_name and level:
-        if StudentTeam.objects.filter(name=team_name, level=level).exists():
+        if StudentTeam.objects.filter(name=team_name, level=level, semester=semester).exclude(pk=existing.pk if existing else None).exists():
             issues.append('A team with this name already exists for this level.')
 
     return issues, list(conflicts.values())
@@ -660,6 +666,17 @@ def validate_bulk_team_row(
                 issues.append('A section is required to assign a PIT instructor.')
 
     if member_user_ids and not issues:
+        if not pit_row:
+            from .participation import validate_roster, existing_roster
+            from .term_scope import get_active_semester
+            from rest_framework.exceptions import ValidationError
+            term = get_active_semester()
+            current = existing_roster(member_user_ids, term, data.get('team_name', ''), data.get('level', ''))
+            try:
+                validate_roster(member_user_ids, term, team=current)
+            except ValidationError as exc:
+                detail = exc.detail.get('member_ids', []) if isinstance(exc.detail, dict) else [exc.detail]
+                issues.extend(str(message) for message in detail)
         membership_issues, membership_conflicts = _existing_team_membership_issues(
                 list(member_user_ids),
                 team_name=(data.get('team_name') or '').strip(),
@@ -703,6 +720,9 @@ def validate_bulk_team_row(
         'data': data,
         'concept_assignment': concept_assignment,
         'concept_requirement': concept_requirement,
+        'participation_preview': ([] if pit_row or issues else __import__(
+            'student_teams.participation', fromlist=['roster_preview']).roster_preview(member_user_ids,
+                __import__('student_teams.term_scope', fromlist=['get_active_semester']).get_active_semester())),
     }
 
 
@@ -821,6 +841,7 @@ def preview_bulk_teams(
             'warnings': result.get('warnings', []),
             'membership_conflicts': result['membership_conflicts'],
             'concept_requirement': result['concept_requirement'],
+            'participation_preview': result['participation_preview'],
         })
 
         summary['total'] += 1

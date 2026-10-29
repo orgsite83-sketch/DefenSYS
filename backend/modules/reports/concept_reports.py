@@ -24,6 +24,7 @@ STATUS_LABELS = {
     'not_selected': 'Not selected', 'revise': 'Revision required',
     'for_redefense': 'Re-defense required', 'replacement_required': 'Replacement required',
     'not_submitted': 'No concept submitted', 'not_configured': 'Concepts not configured',
+    'failed': 'Failed (stage closure)',
 }
 
 
@@ -106,6 +107,8 @@ def decision_row(team, current, concept, grade, *, latest):
         decision = 'replacement_required'
     elif current.verdict == 'for_redefense':
         decision = 'for_redefense'
+    if grade and grade.closed_as_failed and grade.schedule_id == current.schedule_id:
+        decision = 'failed'
     cleared = bool(grade and grade.revisions_cleared_at and grade.schedule_id == current.schedule_id
         and grade.verdict == current.verdict and grade.revisions_cleared_at >= current.created_at)
     approved = current.verdict == 'approved' or (current.verdict == 'approved_with_revisions' and cleared)

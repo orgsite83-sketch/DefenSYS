@@ -21,6 +21,11 @@ class ConceptHearingWorkflowTests(APITestCase):
     submit_panel = workflow_fixtures.DefenseWorkflowTests.submit_panel
 
     def setUp(self):
+        # These fixtures describe captured v1 title review. Title-first behavior
+        # is exercised by repository title-workflow regressions separately.
+        legacy_titles = override_settings(DEFENSYS_TITLE_WORKFLOW_VERSION=1)
+        legacy_titles.enable()
+        self.addCleanup(legacy_titles.disable)
         workflow_fixtures.DefenseWorkflowTests.setUp(self)
         temporary_root = Path(__file__).resolve().parents[4] / '.tmp'
         temporary_root.mkdir(exist_ok=True)

@@ -18,7 +18,6 @@ from . import concepts
 from .models import ConceptRound
 from .services import (archive_unlocked, endorse_team, post_deliverables_complete, required_complete,
                        review_submission, stage_payload)
-from .timing import materials_readiness
 from . import test_submission_timing as fixtures
 
 
@@ -122,7 +121,7 @@ class FacultyReviewPolicyTests(APITestCase):
             self.assertEqual(validate_concept_config({'enabled': True, 'required_count': 3,
                 'review_policy': old})['review_policy'], 'always')
 
-    def test_migration_preserves_existing_schedule_deadline_without_waiving_new_requirements(self):
+    def test_stored_deadline_history_does_not_restore_retired_upload_permissions(self):
         hearing = self.hearing()
         self.migrate_policy()
         hearing.refresh_from_db()
@@ -130,10 +129,10 @@ class FacultyReviewPolicyTests(APITestCase):
         self.assertEqual(hearing.status, 'scheduled')
         self.assertEqual(self.deck.requirement_timing, 'scheduling')
         self.assertEqual(hearing.legacy_deliverable_policy['timings']['DECK']['requirement_timing'], 'defense')
-        self.assertEqual(materials_readiness(hearing)['required_total'], 1)
         row = next(d for d in stage_payload(self.team, self.stage.label)['deliverables'] if d['id'] == 'DECK')
-        self.assertTrue(row['can_upload'])
-        self.assertEqual(row['requirement_timing'], 'defense')
+        self.assertFalse(row['can_upload'])
+        self.assertEqual(row['requirement_timing'], 'scheduling')
+        self.assertNotIn('materials_readiness', stage_payload(self.team, self.stage.label))
 
     def test_completed_exemption_is_historical_and_never_reused_for_a_new_attempt(self):
         StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='POST', label='Historical file',

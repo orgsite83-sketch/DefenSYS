@@ -7,7 +7,7 @@ from grading.constants import PASS_GRADE_THRESHOLD
 
 GRADE_OUTCOME_NOTE = (
     "PIT pass/fail marks indicate event scores only and do not restrict participation or decide semester results. "
-    "Capstone outcome follows the recorded defense verdict. Configured hearings use the panel qualifying score; "
+    "Capstone outcome follows the panel assessment and official stage disposition. Configured hearings use the panel qualifying score; "
     "academic totals do not approve a defense. For unconfigured legacy numeric results, the grade "
     f"threshold is {PASS_GRADE_THRESHOLD:.0f}%. "
     "The average is for reference only. "
@@ -17,6 +17,8 @@ GRADE_OUTCOME_NOTE = (
 
 def grade_outcome_label(grade):
     """Identify the outcome's basis without replacing the grading workflow rule."""
+    if grade.closed_as_failed:
+        return 'Failed (stage closure)'
     if grade.verdict == 'approved_with_revisions':
         return (
             'Approved (revisions cleared)'
@@ -25,6 +27,10 @@ def grade_outcome_label(grade):
     if grade.verdict:
         return grade.get_verdict_display()
     if grade.uses_defense_verdict and grade.schedule_id and grade.schedule.assessment_policy.get('version') == 1:
+        from grading.grades.outcome_rules import automatic_outcomes, outcome_payload
+        if automatic_outcomes(grade.schedule):
+            rule = outcome_payload(grade)
+            return 'Awaiting concept selection' if rule['panel_complete'] and rule['outcome'] == 'approved' else 'Awaiting panel assessment'
         return 'Awaiting defense decision'
     if grade.final_grade is None:
         return 'Pending grades'

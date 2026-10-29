@@ -166,11 +166,48 @@ class SharedDeliverableTests(APITestCase):
             self.assertFalse(self.state(context=later)['post_complete'])
             self.accept(context=later)
             self.assertTrue(self.state(context=later)['post_complete'])
+            archived = self.state(self.first, later)['requirements'][0]
+            self.assertFalse(archived['documents'][0]['can_review'])
+            self.assertFalse(archived['can_add_attachment'])
+            with self.assertRaises(ValidationError):
+                self.accept(context=later, status='rejected', feedback='Attempt to revise an archived file.')
+            self.assertEqual(SharedDeliverableFile.objects.get().status, 'accepted')
         from repository.project_archive.shared_concepts import shared_final_entries
         entries = shared_final_entries({'scope': 'pit_lead', 'pit_year_level': self.team.year_level})
         self.assertEqual(len(entries), 1)
         self.assertTrue(entries[0]['is_restricted_archive'])
         self.assertEqual(shared_final_entries({'scope': 'pit_lead', 'pit_year_level': '3rd Year'}), [])
+
+    def test_accepted_post_attachment_group_cannot_be_extended_without_reopening(self):
+        later = self.next_event([self.definition(mode='multiple', dtype='post',
+            file_policy={'mode': 'multiple', 'min_files': 1, 'max_files': 3})])
+        with patch('repository.deliverables.services.post_defense_ready', return_value=True):
+            self.upload(slot='', context=later)
+            document = self.state(context=later)['requirements'][0]['documents'][0]
+            self.accept(slot=document['key'], context=later)
+            archived = self.state(context=later)['requirements'][0]
+            self.assertEqual(archived['status'], 'accepted')
+            self.assertFalse(archived['can_add_attachment'])
+            before = SharedDeliverableFile.objects.count()
+            with self.assertRaises(ValidationError):
+                self.upload(slot='', context=later, name='extra.pdf')
+            self.assertEqual(SharedDeliverableFile.objects.count(), before)
+
+    def test_shared_post_name_uses_selected_system_template_and_actual_extension(self):
+        later = self.next_event([self.definition(dtype='post', file_format='archive',
+            archive_file_template='{project}.{stage}.{semester}.pdf')])
+        with patch('repository.deliverables.services.post_defense_ready', return_value=True):
+            before = self.state(context=later)
+            suggested = before['requirements'][0]['documents'][0]['suggested_file_name']
+            self.assertTrue(suggested.startswith('Approvedsharedsystem.'))
+            self.assertTrue(suggested.endswith('.zip'))
+            shared.upload(self.team, later, self.pm, 'ADMIN', 'primary',
+                SimpleUploadedFile('original.7z', b'7z archive data'), before['review_token'])
+            row = SharedDeliverableFile.objects.get()
+            self.assertTrue(row.file_name.endswith('.7z'))
+            self.assertTrue(row.file_name.startswith('Approvedsharedsystem.'))
+            after = self.state(context=later)
+            self.assertEqual(after['requirements'][0]['documents'][0]['suggested_file_name'], row.file_name)
 
     def test_private_files_use_same_policy_for_both_media_routes(self):
         self.custom([self.definition()])

@@ -3,7 +3,7 @@ from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
 from user_management.academic_records.models import StudentAcademicRecord
-from .models import CapstoneJourney, SectionAssignment, StudentTeam
+from .models import StudentCapstoneParticipation, SectionAssignment, StudentTeam
 
 
 class ImportSemesterScopeTests(APITestCase):
@@ -48,7 +48,7 @@ class ImportSemesterScopeTests(APITestCase):
             self.assertTrue(row['ready'], row['issues'])
             self.assertEqual(row['level'], expected)
         self.assertEqual(StudentTeam.objects.count(), 0)
-        self.assertEqual(CapstoneJourney.objects.count(), 0)
+        self.assertEqual(StudentCapstoneParticipation.objects.count(), 0)
 
     def test_explicit_pit_scope_is_not_silently_converted_to_capstone(self):
         self.activate_second()

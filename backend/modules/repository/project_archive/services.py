@@ -899,11 +899,12 @@ def scoped_entries(user, request=None, *, include_ml=False, include_audit_trail=
         entries.extend(capstone_entry_payload(submission, **payload_kwargs))
     for submission in pit_submissions:
         entries.extend(capstone_entry_payload(submission, **payload_kwargs))
-    from .shared_concepts import shared_final_entries
-    entries.extend(shared_final_entries(scope, request=request))
+    from .shared_concepts import shared_project_entries, attach_shared_team_context
+    entries.extend(shared_project_entries(scope, request=request))
     if scope['scope'] == 'admin':
         from defense.minutes.requirements import signed_minutes_archive_entries
         entries.extend(signed_minutes_archive_entries())
+    attach_shared_team_context(entries)
     if scope['scope'] != 'admin':
         for entry in entries:
             if entry.get('deliverable_type') == DeliverableSubmission.TYPE_POST and entry.get('status') == 'Approved':

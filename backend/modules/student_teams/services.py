@@ -4,14 +4,14 @@ from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from grading.constants import PASS_GRADE_THRESHOLD
-from .models import StudentTeam, TeamRecoveryAuthorization, TeamStageProgress
+from .models import StudentTeam, TeamStageProgress
 
 
 def stage_readiness_candidates(teams, stage=None):
     """Cheap superset; every candidate still goes through is_stage_ready.
 
     Never cache eligibility or replace progression, concept clearance, verdict,
-    or recovery checks. Include active schedules so an assessed attempt can be
+    or participation checks. Include active schedules so an assessed attempt can be
     distinguished from an active presentation without rewriting its status.
     """
     from grading.grades.models import TeamGrade
@@ -22,14 +22,6 @@ def stage_readiness_candidates(teams, stage=None):
         TeamStageProgress.STATUS_READY, TeamStageProgress.STATUS_SCHEDULED,
     ))
     redefense = TeamGrade.objects.filter(**identity, verdict=TeamGrade.VERDICT_FOR_REDEFENSE)
-    recovery = TeamRecoveryAuthorization.objects.filter(
-        **identity, consumed_at__isnull=True,
-    ).filter(
-        Q(action=TeamRecoveryAuthorization.ACTION_RETAKE,
-          project_version=OuterRef('project_version')) |
-        Q(action=TeamRecoveryAuthorization.ACTION_NEW_CONCEPT,
-          replacement_project_version=OuterRef('project_version'))
-    )
     schedules = DefenseSchedule.objects.filter(
         **identity, scope=DefenseSchedule.SCOPE_CAPSTONE,
         project_version=OuterRef('project_version'), status=DefenseSchedule.STATUS_SCHEDULED,
@@ -37,10 +29,9 @@ def stage_readiness_candidates(teams, stage=None):
     if stage is not None:
         progress = progress.filter(defense_stage=stage)
         redefense = redefense.filter(defense_stage=stage)
-        recovery = recovery.filter(defense_stage=stage)
         schedules = schedules.filter(defense_stage=stage)
     return teams.filter(
-        Exists(progress) | Exists(redefense) | Exists(recovery) | Exists(schedules)
+        Exists(progress) | Exists(redefense) | Exists(schedules)
     ).select_related('semester')
 
 
@@ -95,6 +86,9 @@ def is_stage_ready(team, stage):
     from grading.grades.models import TeamGrade
     from defense.scheduler.models import DefenseSchedule
 
+    from .participation import closed_failure
+    if team.is_capstone and (team.participation_review_reason or closed_failure(team)):
+        return False
     if stage_progression_blocker(team, stage):
         return False
     active_scheds = DefenseSchedule.objects.filter(
@@ -110,7 +104,6 @@ def is_stage_ready(team, stage):
             has_active = True
     if has_active:
         return False
-    from grading.grades.defense_workflow import recovery_for, replacement_for
     grade = TeamGrade.objects.filter(
         team=team,
         semester=team.semester,
@@ -129,7 +122,7 @@ def is_stage_ready(team, stage):
     from repository.deliverables.services import required_complete, get_deliverable_definitions_for_team
     if get_deliverable_definitions_for_team(team, stage.label) and not required_complete(team, stage.label):
         return False
-    if grade and getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
+    if grade and not grade.closed_as_failed and getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
         from grading.grades.outcome_rules import policy_for
         if policy_for(grade.schedule).get('version') == 1:
             progress = get_stage_progress(team, stage)
@@ -138,19 +131,11 @@ def is_stage_ready(team, stage):
                 return False
             return True
         return not grade.redefense_verification_required or bool(grade.redefense_verified_at)
-    if grade and grade.verdict in ('failed', 'project_rejected'):
-        authorization = recovery_for(team, stage)
-        progress = get_stage_progress(team, stage)
-        return bool(authorization and progress and progress.status == TeamStageProgress.STATUS_READY
-            and progress.ready_at and progress.ready_at >= authorization.authorized_at)
+    if grade and grade.result == 'failed':
+        return False
     if grade and grade.verdict in TeamGrade.PASSING_VERDICTS:
         return False
-    replacement = replacement_for(team, stage)
-    if replacement:
-        from repository.deliverables.services import required_complete
-        progress = get_stage_progress(team, stage)
-        return bool(progress and progress.status == TeamStageProgress.STATUS_READY and progress.ready_at
-            and progress.ready_at >= replacement.authorized_at and required_complete(team, stage.label))
+
 
     progress = get_stage_progress(team, stage)
     if not progress:
@@ -229,11 +214,12 @@ def mark_stage_ready(team, stage, user=None):
     if blocker:
         raise ValidationError(blocker)
     from grading.grades.models import TeamGrade
-    from grading.grades.defense_workflow import recovery_for
     from .capstone_lifecycle import latest_stage_assessment
     grade = latest_stage_assessment(team, stage.pk)
-    if grade and grade.verdict in ('failed', 'project_rejected') and not recovery_for(team, stage):
-        raise ValidationError('An authorized recovery decision is required before scheduling another attempt.')
+    from .participation import require_open
+    require_open(team)
+    if grade and grade.result == 'failed':
+        raise ValidationError('This participation is finalized as Failed. Return through a new Capstone 1 intake.')
     if grade and grade.verdict in TeamGrade.PASSING_VERDICTS:
         raise ValidationError('This defense is approved. Complete its required grading and revision clearance instead of re-endorsing it.')
     if team.is_capstone:
@@ -244,8 +230,6 @@ def mark_stage_ready(team, stage, user=None):
     from grading.grades.outcome_rules import policy_for
     needs_new_endorsement = bool(grade and grade.verdict == 'for_redefense'
                                 and policy_for(grade.schedule).get('version') == 1)
-    from grading.grades.defense_workflow import replacement_for
-    needs_new_endorsement = needs_new_endorsement or bool(recovery_for(team, stage) or replacement_for(team, stage))
     progress.ready_at = timezone.now() if needs_new_endorsement else progress.ready_at or timezone.now()
     progress.updated_by = user
     progress.save(update_fields=['status', 'ready_at', 'updated_by', 'updated_at'])
@@ -305,7 +289,10 @@ def mark_stage_result(grade, user=None):
                 team_update_fields.append('ready_for_stage')
             grade.team.save(update_fields=team_update_fields)
     else:
-        if verdict == 'for_redefense':
+        if grade.closed_as_failed:
+            progress.status = TeamStageProgress.STATUS_FAILED
+            team_status = StudentTeam.STATUS_FAILED
+        elif verdict == 'for_redefense':
             progress.status = TeamStageProgress.STATUS_REDEFENSE
             team_status = grade.team.status or StudentTeam.STATUS_APPROVED
         elif verdict == 'approved_with_revisions' and not grade.revisions_cleared_at:
@@ -324,4 +311,7 @@ def mark_stage_result(grade, user=None):
     progress.save(update_fields=['status', 'grade', 'graded_at', 'updated_by', 'updated_at'])
     if grade.semester_id == grade.team.semester_id:
         _mirror_team_status(grade.team, team_status)
+        if grade.status == grade.STATUS_PUBLISHED and grade.result == 'failed':
+            from .participation import finalize_failed
+            finalize_failed(grade.team, actor=user)
     return progress

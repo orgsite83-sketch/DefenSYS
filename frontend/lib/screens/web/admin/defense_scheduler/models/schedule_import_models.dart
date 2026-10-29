@@ -230,8 +230,7 @@ bool pitEventRequiresEndorsement(Map<String, dynamic> event) {
   return (event['deliverables'] as List? ?? []).any((item) =>
       item is Map &&
       item['deliverable_type'] == 'pre' &&
-      item['required'] == true &&
-      item['requirement_timing'] != 'defense');
+      item['required'] == true);
 }
 
 bool isPitTeamReadyToSchedule(

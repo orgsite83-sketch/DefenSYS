@@ -56,9 +56,6 @@ from .serializers import (
 )
 
 
-
-
-
 def counts_payload(queryset=None, base_queryset=None):
     base = base_queryset if base_queryset is not None else schedule_queryset()
     current = queryset if queryset is not None else base
@@ -73,17 +70,6 @@ def counts_payload(queryset=None, base_queryset=None):
 
 
 from .services import schedule_audit_values
-
-
-class DefenseMaterialDeadlineView(APIView):
-    permission_classes = [CanManageModule]
-
-    def post(self, request, schedule_id):
-        from .materials import MaterialDeadlineSerializer, extend_material_deadline
-        serializer = MaterialDeadlineSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        schedule = extend_material_deadline(request.user, schedule_id, serializer.validated_data, request=request)
-        return Response({'schedule': DefenseScheduleSerializer(schedule).data})
 
 
 def list_payload(queryset=None, base_queryset=None, user=None, include_options=True):
@@ -596,7 +582,6 @@ class PanelistAssignmentsView(APIView):
         })
 
 
-
 class PanelistResultsView(APIView):
     """Completed panel grades for the authenticated panelist (Results tab)."""
 
@@ -871,6 +856,7 @@ class PanelistGradeSubmissionView(APIView):
 
 def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None, actor=None):
     from grading.grades.serializers import TeamGradeSerializer
+    from .grading_workspace import payload as grading_workspace_payload
     from .progress import schedule_progress
     team = schedule.team
     progress = schedule_progress(schedule, reconcile_status=False)
@@ -891,7 +877,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     from grading.grades.models import GradeAttemptHistory
     attempt = team_grade or GradeAttemptHistory.objects.filter(schedule=schedule).select_related('verdict_by').order_by('-pk').first()
     if attempt:
-        verdict = (attempt.verdict or '') if uses_verdict else ''
+        verdict = ('failed' if attempt.outcome_metadata.get('closure', {}).get('failed') else attempt.verdict or '') if uses_verdict else ''
         verdict_remarks = (attempt.verdict_remarks or '') if uses_verdict else ''
         if uses_verdict and attempt.verdict_by:
             verdict_by_name = (
@@ -1005,6 +991,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'verdict_unavailable_reason': verdict_reason if uses_verdict and is_chair else '',
         'submissions': submissions or [],
         'defense_materials': defense_materials,
+        'grading_workspace': grading_workspace_payload(schedule, hearing, actor, defense_materials),
         'is_chair': is_chair,
         'verdict': verdict,
         'verdict_remarks': verdict_remarks,
@@ -1430,10 +1417,8 @@ class DefenseScheduleVerdictView(APIView):
             return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
 
 
-
         return Response({
             'success': True,
             'message': f'Defense verdict "{verdict}" recorded successfully.',
             'team_grade': TeamGradeSerializer(team_grade).data,
         }, status=status.HTTP_200_OK)
-

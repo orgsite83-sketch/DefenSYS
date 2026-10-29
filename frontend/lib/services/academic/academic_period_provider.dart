@@ -355,10 +355,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     return false;
   }
 
-  Future<Map<String, dynamic>?> fetchTransitionPreview(
-    int semesterId, {
-    bool returning = false,
-  }) async {
+  Future<Map<String, dynamic>?> fetchTransitionPreview(int semesterId) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -367,9 +364,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
     try {
       final response = await _client.get(
-        Uri.parse(
-          '$baseUrl/semesters/$semesterId/${returning ? 'returning-teams' : 'transition-preview'}/',
-        ),
+        Uri.parse('$baseUrl/semesters/$semesterId/transition-preview/'),
       );
 
       if (response.statusCode == 200) {
@@ -392,8 +387,6 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     int semesterId, {
     bool force = false,
     String reason = '',
-    bool returning = false,
-    List<Map<String, dynamic>> decisions = const [],
     String previewRevision = '',
     String? requestId,
   }) async {
@@ -405,11 +398,8 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
     try {
       final response = await _client.post(
-        Uri.parse(
-          '$baseUrl/semesters/$semesterId/${returning ? 'returning-teams' : 'activate'}/',
-        ),
+        Uri.parse('$baseUrl/semesters/$semesterId/activate/'),
         body: jsonEncode({
-          'decisions': decisions,
           'preview_revision': previewRevision,
           if (requestId != null) 'request_id': requestId,
           if (force) 'force': true,

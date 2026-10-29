@@ -17,6 +17,7 @@ class ScheduleImportSettingsResult {
     required this.room,
     required this.duration,
     this.clearDraft = false,
+    this.viewGrading = false,
   });
   final List<ParsedScheduleImportRow> rows;
   final int? stageId;
@@ -25,6 +26,7 @@ class ScheduleImportSettingsResult {
   final String room;
   final int duration;
   final bool clearDraft;
+  final bool viewGrading;
 }
 
 class ScheduleImportSettingsDialog extends StatefulWidget {
@@ -42,7 +44,7 @@ class ScheduleImportSettingsDialog extends StatefulWidget {
     required this.room,
     required this.duration,
     required this.gradingSummaries,
-    required this.onViewGrading,
+    required this.loadGradingSummaries,
     required this.timingIssues,
     this.selectedFileId,
   });
@@ -58,7 +60,8 @@ class ScheduleImportSettingsDialog extends StatefulWidget {
   final String room;
   final int duration;
   final List<String> gradingSummaries;
-  final VoidCallback onViewGrading;
+  final Future<List<String>> Function(int? stageId, String eventName)
+  loadGradingSummaries;
   final List<String> Function(List<ParsedScheduleImportRow>) timingIssues;
   final String? selectedFileId;
   @override
@@ -75,6 +78,13 @@ class _ScheduleImportSettingsDialogState
   late String _scope, _sessionScope;
   late int? _stageId;
   late String _eventName;
+  late List<ParsedScheduleImportRow> _rows;
+  late String _draftDate, _draftRoom;
+  late int _draftDuration;
+  late List<String> _gradingSummaries;
+  bool _stageDirty = false, _sessionsDirty = false, _gradingLoading = false;
+  int _gradingRequest = 0;
+  String? _gradingError;
   var _tab = 0;
   final _checked = <String>{};
   List<_SessionFields> _sessions = [];
@@ -89,6 +99,11 @@ class _ScheduleImportSettingsDialogState
     super.initState();
     _stageId = widget.stageId;
     _eventName = widget.eventName;
+    _rows = widget.rows;
+    _draftDate = widget.date;
+    _draftRoom = widget.room;
+    _draftDuration = widget.duration;
+    _gradingSummaries = widget.gradingSummaries;
     _scope = widget.selectedFileId ?? 'missing';
     _sessionScope = widget.selectedFileId ?? 'all';
     final scopedRows = widget.previewRows.where(
@@ -133,17 +148,20 @@ class _ScheduleImportSettingsDialogState
     super.dispose();
   }
 
-  List<ParsedScheduleImportRow> get _effectiveRows => widget.previewRows
-      .map(
-        (row) => row.source.copyWith(
-          date: row.date,
-          room: row.room,
-          startTime: row.effectiveStartTime,
-          endTime: row.effectiveEndTime,
-          slotDuration: row.duration,
+  List<ParsedScheduleImportRow> _withDefaults(
+    List<ParsedScheduleImportRow> rows,
+  ) => [
+    for (final row in rows)
+      row.copyWith(
+        date: normalizeImportDate(
+          row.date.trim().isEmpty ? _draftDate : row.date,
         ),
-      )
-      .toList();
+        room: row.room.trim().isEmpty ? _draftRoom : row.room,
+        slotDuration: row.slotDuration ?? _draftDuration,
+      ),
+  ];
+
+  List<ParsedScheduleImportRow> get _effectiveRows => _withDefaults(_rows);
 
   void _initializeSessions() {
     final rows = _effectiveRows
@@ -169,6 +187,79 @@ class _ScheduleImportSettingsDialogState
         ),
     ];
     _expandedSessions.clear();
+    _sessionsDirty = false;
+  }
+
+  Future<void> _refreshGradingSummaries() async {
+    final request = ++_gradingRequest;
+    setState(() {
+      _gradingLoading = true;
+      _gradingError = null;
+    });
+    try {
+      final summaries = await widget.loadGradingSummaries(_stageId, _eventName);
+      if (!mounted || request != _gradingRequest) return;
+      setState(() {
+        _gradingSummaries = summaries;
+        _gradingLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || request != _gradingRequest) return;
+      setState(() {
+        _gradingLoading = false;
+        _gradingError =
+            'Could not load grading setup. Select the stage again to retry.';
+      });
+    }
+  }
+
+  bool _commitActiveTab() {
+    if (_tab == 1) {
+      if (!_sessionsDirty) return true;
+      final error = _planError;
+      if (error != null) {
+        setState(() => _error = error);
+        return false;
+      }
+      _rows = _plannedRows();
+      _sessionsDirty = false;
+    } else if (_stageDirty) {
+      if (!(_form.currentState?.validate() ?? true)) return false;
+      if (_scope == 'missing') {
+        if (_checked.contains('date')) _draftDate = _date.text.trim();
+        if (_checked.contains('room')) _draftRoom = _room.text.trim();
+        if (_checked.contains('duration')) {
+          _draftDuration = int.parse(_duration.text);
+        }
+      } else if (_checked.isNotEmpty) {
+        _rows = updateScheduleImportValues(
+          _rows,
+          _rows
+              .where((row) => _scope == 'all' || row.sourceFileId == _scope)
+              .map((row) => row.importRowId)
+              .toSet(),
+          date: _checked.contains('date') ? _date.text.trim() : null,
+          room: _checked.contains('room') ? _room.text.trim() : null,
+          duration: _checked.contains('duration')
+              ? int.parse(_duration.text)
+              : null,
+          fallbackDate: _draftDate,
+          fallbackRoom: _draftRoom,
+          fallbackDuration: _draftDuration,
+        );
+      }
+      _stageDirty = false;
+    }
+    return true;
+  }
+
+  void _changeTab(int tab) {
+    if (_tab == tab || !_commitActiveTab()) return;
+    setState(() {
+      _tab = tab;
+      _error = null;
+      if (tab == 1) _initializeSessions();
+    });
   }
 
   ({
@@ -265,6 +356,7 @@ class _ScheduleImportSettingsDialogState
       });
     }
     _expandedSessions.clear();
+    _sessionsDirty = true;
     for (final session in old) {
       session.dispose();
     }
@@ -280,6 +372,14 @@ class _ScheduleImportSettingsDialogState
         : 'Mixed slot durations';
     return '${_selectedIds.length} teams · $timing';
   }
+
+  String get _targetTitle => widget.isPit
+      ? _eventName
+      : widget.targets
+                .where((target) => asInt(target['id']) == _stageId)
+                .firstOrNull?['label']
+                ?.toString() ??
+            widget.title;
 
   String get _sessionDistribution {
     final counts = _sessions
@@ -305,7 +405,7 @@ class _ScheduleImportSettingsDialogState
 
   List<ParsedScheduleImportRow> _plannedRows() =>
       applyScheduleImportSessionPlans(
-        widget.rows,
+        _rows,
         _selectedIds,
         _sessions
             .map(
@@ -330,7 +430,7 @@ class _ScheduleImportSettingsDialogState
           : '${-remaining} slots exceed the imported team count.';
     }
     try {
-      final issues = widget.timingIssues(_plannedRows());
+      final issues = widget.timingIssues(_withDefaults(_plannedRows()));
       return issues.isEmpty ? null : issues.first;
     } on FormatException catch (error) {
       return error.message;
@@ -340,7 +440,7 @@ class _ScheduleImportSettingsDialogState
   String get _impact {
     if (_checked.isEmpty) return 'Only checked fields change.';
     if (_scope == 'missing') {
-      final count = widget.rows
+      final count = _rows
           .where(
             (row) =>
                 _checked.contains('date') && row.date.trim().isEmpty ||
@@ -352,59 +452,26 @@ class _ScheduleImportSettingsDialogState
           ? 'No current slots need these values. Saved defaults will fill gaps in added files.'
           : '$count slots use these defaults. Spreadsheet and session values are preserved.';
     }
-    final rows = widget.rows
+    final rows = _rows
         .where((row) => _scope == 'all' || row.sourceFileId == _scope)
         .toList();
     final files = rows.map((row) => row.sourceFileId).toSet().length;
     return '${rows.length} slots will be updated across $files ${files == 1 ? 'file' : 'files'}.';
   }
 
-  void _save({bool clear = false}) {
-    if (!clear && !(_form.currentState?.validate() ?? true)) return;
-    var rows = widget.rows,
-        date = widget.date,
-        room = widget.room,
-        duration = widget.duration;
-    if (!clear && _tab == 1) {
-      final error = _planError;
-      if (error != null) {
-        setState(() => _error = error);
-        return;
-      }
-      rows = _plannedRows();
-    } else if (!clear && _checked.isNotEmpty) {
-      if (_scope == 'missing') {
-        if (_checked.contains('date')) date = _date.text.trim();
-        if (_checked.contains('room')) room = _room.text.trim();
-        if (_checked.contains('duration')) duration = int.parse(_duration.text);
-      } else {
-        rows = updateScheduleImportValues(
-          widget.rows,
-          widget.rows
-              .where((row) => _scope == 'all' || row.sourceFileId == _scope)
-              .map((row) => row.importRowId)
-              .toSet(),
-          date: _checked.contains('date') ? _date.text.trim() : null,
-          room: _checked.contains('room') ? _room.text.trim() : null,
-          duration: _checked.contains('duration')
-              ? int.parse(_duration.text)
-              : null,
-          fallbackDate: widget.date,
-          fallbackRoom: widget.room,
-          fallbackDuration: widget.duration,
-        );
-      }
-    }
+  void _save({bool clear = false, bool viewGrading = false}) {
+    if (!clear && !_commitActiveTab()) return;
     Navigator.pop(
       context,
       ScheduleImportSettingsResult(
-        rows: rows,
-        stageId: _tab == 0 ? _stageId : widget.stageId,
-        eventName: _tab == 0 ? _eventName : widget.eventName,
-        date: date,
-        room: room,
-        duration: duration,
+        rows: _rows,
+        stageId: _stageId,
+        eventName: _eventName,
+        date: _draftDate,
+        room: _draftRoom,
+        duration: _draftDuration,
         clearDraft: clear,
+        viewGrading: viewGrading,
       ),
     );
   }
@@ -477,9 +544,10 @@ class _ScheduleImportSettingsDialogState
                         lastDate: DateTime(2100),
                       );
                       if (picked != null && mounted) {
-                        setState(
-                          () => controller.text = formatScheduleDate(picked),
-                        );
+                        setState(() {
+                          controller.text = formatScheduleDate(picked);
+                          _markEdited();
+                        });
                       }
                     },
             )
@@ -497,17 +565,18 @@ class _ScheduleImportSettingsDialogState
                   ),
                 );
                 if (picked != null && mounted) {
-                  setState(
-                    () => controller.text = scheduleTimeFromMinutes(
+                  setState(() {
+                    controller.text = scheduleTimeFromMinutes(
                       picked.hour * 60 + picked.minute,
-                    ),
-                  );
+                    );
+                    _markEdited();
+                  });
                 }
               },
             )
           : null,
     ),
-    onChanged: (_) => setState(() => _error = null),
+    onChanged: (_) => setState(_markEdited),
     validator: !enabled
         ? null
         : (value) {
@@ -533,6 +602,15 @@ class _ScheduleImportSettingsDialogState
             return text.isEmpty ? 'Enter a room or venue' : null;
           },
   );
+
+  void _markEdited() {
+    if (_tab == 0) {
+      _stageDirty = true;
+    } else {
+      _sessionsDirty = true;
+    }
+    _error = null;
+  }
 
   Widget _dropdown(
     String value,
@@ -582,6 +660,7 @@ class _ScheduleImportSettingsDialogState
               key: ValueKey('set_$name'),
               value: _checked.contains(name),
               onChanged: (value) => setState(() {
+                _stageDirty = true;
                 if (value == true) {
                   _checked.add(name);
                   if (controller.text.trim().isEmpty) {
@@ -633,13 +712,16 @@ class _ScheduleImportSettingsDialogState
                 ),
               )
               .toList(),
-          (value) => setState(() {
-            if (widget.isPit) {
-              _eventName = value ?? '';
-            } else {
-              _stageId = int.tryParse(value ?? '');
-            }
-          }),
+          (value) {
+            setState(() {
+              if (widget.isPit) {
+                _eventName = value ?? '';
+              } else {
+                _stageId = int.tryParse(value ?? '');
+              }
+            });
+            _refreshGradingSummaries();
+          },
         ),
       ),
       _helper(
@@ -673,7 +755,10 @@ class _ScheduleImportSettingsDialogState
                 ),
               ),
           ],
-          (value) => setState(() => _scope = value!),
+          (value) => setState(() {
+            _scope = value!;
+            _stageDirty = true;
+          }),
           key: const ValueKey('stage_schedule_scope'),
         ),
       ),
@@ -738,8 +823,19 @@ class _ScheduleImportSettingsDialogState
           spacing: 24,
           runSpacing: 8,
           children: [
-            for (final summary in widget.gradingSummaries)
-              Text(summary, style: const TextStyle(fontSize: 12, height: 1.5)),
+            if (_gradingLoading)
+              const Text(
+                'Loading grading setup…',
+                style: TextStyle(fontSize: 12),
+              )
+            else if (_gradingError != null)
+              _errorBanner(_gradingError!)
+            else
+              for (final summary in _gradingSummaries)
+                Text(
+                  summary,
+                  style: const TextStyle(fontSize: 12, height: 1.5),
+                ),
           ],
         ),
       ),
@@ -747,10 +843,7 @@ class _ScheduleImportSettingsDialogState
         alignment: Alignment.centerLeft,
         child: ShadButton.ghost(
           size: ShadButtonSize.sm,
-          onPressed: () {
-            Navigator.pop(context);
-            widget.onViewGrading();
-          },
+          onPressed: () => _save(viewGrading: true),
           child: const Text('View grading setup'),
         ),
       ),
@@ -809,11 +902,14 @@ class _ScheduleImportSettingsDialogState
                     child: Text(file.name, overflow: TextOverflow.ellipsis),
                   ),
               ],
-              (value) => setState(() {
-                _sessionScope = value!;
-                _initializeSessions();
-                _error = null;
-              }),
+              (value) {
+                if (!_commitActiveTab()) return;
+                setState(() {
+                  _sessionScope = value!;
+                  _initializeSessions();
+                  _error = null;
+                });
+              },
               key: const ValueKey('sessions_source_scope'),
             ),
           ),
@@ -939,6 +1035,7 @@ class _ScheduleImportSettingsDialogState
                     _sessions[second].start.text = scheduleTimeFromMinutes(
                       firstEnd,
                     );
+                    _sessionsDirty = true;
                     _error = null;
                   }),
             child: Flexible(
@@ -1326,7 +1423,7 @@ class _ScheduleImportSettingsDialogState
                   children: [
                     Expanded(
                       child: Text(
-                        _tab == 1 ? 'Sessions' : '${widget.title} settings',
+                        _tab == 1 ? 'Sessions' : '$_targetTitle settings',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
@@ -1374,10 +1471,7 @@ class _ScheduleImportSettingsDialogState
                                 borderRadius: BorderRadius.circular(4),
                               ),
                             ),
-                            onPressed: () => setState(() {
-                              _tab = i;
-                              _error = null;
-                            }),
+                            onPressed: () => _changeTab(i),
                             child: Text(i == 0 ? 'Stage' : 'Sessions'),
                           ),
                         ),

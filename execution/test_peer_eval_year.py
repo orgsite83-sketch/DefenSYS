@@ -14,7 +14,7 @@ from django.test import TestCase
 from academic_period_management.models import SchoolYear, Semester
 from student_teams.models import StudentTeam, TeamMembership
 
-from execution import auto_peer_eval
+from execution import auto_adviser_eval, auto_peer_eval
 
 
 class PeerYearDiscoveryTests(TestCase):
@@ -96,3 +96,35 @@ class PeerYearDiscoveryTests(TestCase):
                                  expected_ids)
                 for call in client.submit_evaluation.call_args_list:
                     self.assertTrue(call.kwargs['dry_run'])
+
+
+class EvaluationAccessTokenTests(TestCase):
+    def test_peer_and_adviser_tokens_preserve_credentials_and_token_records(self):
+        from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        for role, script in [('student', auto_peer_eval), ('faculty', auto_adviser_eval)]:
+            with self.subTest(role=role):
+                user = get_user_model().objects.create(username=f'preview-{role}', role=role)
+                original_password = user.password
+                original_count = OutstandingToken.objects.count()
+                token = script.get_jwt_token_for_user(user.username)
+                self.assertIsNotNone(token)
+                self.assertEqual(str(AccessToken(token)['user_id']), str(user.pk))
+                self.assertEqual(OutstandingToken.objects.count(), original_count)
+                user.refresh_from_db()
+                self.assertEqual(user.password, original_password)
+                self.assertIsNone(user.last_login)
+
+    def test_automation_tokens_reject_inactive_accounts_and_wrong_roles(self):
+        for role, active, script in [
+            ('student', False, auto_peer_eval),
+            ('faculty', True, auto_peer_eval),
+            ('faculty', False, auto_adviser_eval),
+            ('student', True, auto_adviser_eval),
+        ]:
+            with self.subTest(role=role, active=active, script=script.__name__):
+                user = get_user_model().objects.create(
+                    username=f'{script.__name__}-{role}-{active}', role=role, is_active=active)
+                with redirect_stdout(StringIO()):
+                    self.assertIsNone(script.get_jwt_token_for_user(user.username))

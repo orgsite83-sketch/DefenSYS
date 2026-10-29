@@ -46,7 +46,7 @@ class Command(BaseCommand):
             default="all",
             choices=[
                 "multi_section", "redefense", "conflict", "rollover",
-                "pit_failure", "project_pivot", "extension",
+                "pit_failure",
                 "member_divergence", "guest_panelist", "stage_gatekeeping", "member_dropout",
                 "all",
             ],
@@ -87,10 +87,6 @@ class Command(BaseCommand):
             results.append(self.run_rollover_scenario())
         if scenario in ["pit_failure", "all"]:
             results.append(self.run_pit_failure_scenario())
-        if scenario in ["project_pivot", "all"]:
-            results.append(self.run_project_pivot_scenario())
-        if scenario in ["extension", "all"]:
-            results.append(self.run_extension_scenario())
         if scenario in ["member_divergence", "all"]:
             results.append(self.run_member_divergence_scenario())
         if scenario in ["guest_panelist", "all"]:
@@ -656,228 +652,10 @@ class Command(BaseCommand):
     # =========================================================================
     # Scenario 6: Failed Proposal & Project Pivot (Choose Another Project)
     # =========================================================================
-    def run_project_pivot_scenario(self):
-        t0 = time.time()
-        self.stdout.write(f"\n{ANSI.BOLD}{ANSI.MAGENTA}>>> [SCENARIO 6] FAILED PROPOSAL & PROJECT PIVOT (NEW TITLE INTAKE){ANSI.RESET}")
-        assertions = 0
-
-        with transaction.atomic():
-            sy, _ = SchoolYear.objects.get_or_create(label="2026-2027")
-            sem, _ = Semester.objects.get_or_create(school_year=sy, label="1st Semester", defaults={"is_active": True})
-
-            f_fontanilla = self._get_or_create_faculty("206", "Ricardo", "Fontanilla", "206@ustp.edu.ph", is_adviser=True)
-            f_suarez = self._get_or_create_faculty("207", "Maricel", "Suarez", "207@ustp.edu.ph")
-            st_leader = self._get_or_create_student("4099", "Phoenix", "Leader", "4099@ustp.edu.ph")
-
-            stage_prop, _ = DefenseStage.objects.get_or_create(label="Concept Proposal", defaults={"display_order": 1, "is_active": True})
-            stage_prelim, _ = DefenseStage.objects.get_or_create(label="Preliminary Defense", defaults={"display_order": 2, "is_active": True})
-
-            # 1. Team starts with Project A: "Biometric Campus Turnstile"
-            team, _ = StudentTeam.objects.update_or_create(
-                name="Team Phoenix",
-                semester=sem,
-                defaults={
-                    "project_title": "Biometric Campus Turnstile",
-                    "level": "3rd Year Capstone",
-                    "year_level": "3rd Year",
-                    "section": "BSIT-3A",
-                    "leader": st_leader,
-                    "adviser": f_fontanilla,
-                    "status": StudentTeam.STATUS_APPROVED,
-                }
-            )
-            self.stdout.write(f"  [1/5] Initial Project A: '{team.project_title}'")
-            assertions += 1
-
-            # 2. Concept Proposal Defense on Project A fails (Hardware unfeasible)
-            sched1, _ = DefenseSchedule.objects.update_or_create(
-                team=team,
-                semester=sem,
-                defense_stage=stage_prop,
-                scheduled_date=date(2026, 6, 18),
-                start_time=dtime(9, 0),
-                defaults={"scope": "capstone", "room": "Room 301", "status": "done"}
-            )
-            tg1, _ = TeamGrade.objects.update_or_create(
-                team=team,
-                semester=sem,
-                scope="capstone",
-                defense_stage=stage_prop,
-                defaults={
-                    "schedule": sched1,
-                    "stage_label": "Concept Proposal",
-                    "panel_score": Decimal("58.00"),
-                    "adviser_score": Decimal("60.00"),
-                    "peer_score": Decimal("70.00"),
-                    "panel_weight": 50,
-                    "adviser_weight": 30,
-                    "peer_weight": 20,
-                    "status": "published",
-                }
-            )
-            tg1.recalculate()
-            tg1.save()
-
-            progress_prop, _ = TeamStageProgress.objects.get_or_create(team=team, semester=sem, defense_stage=stage_prop)
-            progress_prop.status = TeamStageProgress.STATUS_FAILED
-            progress_prop.save()
-
-            self.stdout.write(f"  [2/5] Project A Proposal Defense: {ANSI.RED}FAILED (59.00%){ANSI.RESET} -> Stage Status: {ANSI.RED}[FAILED]{ANSI.RESET}")
-            assert progress_prop.status == TeamStageProgress.STATUS_FAILED, "Proposal progress should be failed"
-            assertions += 2
-
-            # 3. Team pivots to Project B: "AI Cloud Attendance System"
-            old_title = team.project_title
-            new_title = "AI Cloud Attendance System"
-            team.project_title = new_title
-            team.save()
-
-            self.stdout.write(f"  [3/5] Project Title Pivoted: '{old_title}' -> {ANSI.CYAN}'{new_title}'{ANSI.RESET}")
-            assert team.project_title == new_title, "Project title should be updated"
-            assertions += 1
-
-            # 4. Reset Proposal Stage to READY for Project B
-            progress_prop.status = TeamStageProgress.STATUS_READY
-            progress_prop.save()
-
-            # Schedule new Proposal Defense for Project B
-            sched2, _ = DefenseSchedule.objects.update_or_create(
-                team=team,
-                semester=sem,
-                defense_stage=stage_prop,
-                scheduled_date=date(2026, 7, 2),
-                start_time=dtime(10, 0),
-                defaults={"scope": "capstone", "room": "Room 301", "status": "done"}
-            )
-            tg1.schedule = sched2
-            tg1.panel_score = Decimal("88.00")
-            tg1.adviser_score = Decimal("90.00")
-            tg1.peer_score = Decimal("85.00")
-            tg1.recalculate()
-            tg1.save()
-
-            progress_prop.status = TeamStageProgress.STATUS_PASSED
-            progress_prop.save()
-
-            self.stdout.write(f"  [4/5] Project B Proposal Defense: {ANSI.GREEN}PASSED ({tg1.final_grade}%){ANSI.RESET} -> Stage Status: {ANSI.GREEN}[PASSED]{ANSI.RESET}")
-            assert tg1.final_grade >= Decimal("75.00"), "Project B proposal should pass"
-            assertions += 2
-
-            # 5. Verify Next Stage (Preliminary Defense) is now Unlocked
-            progress_prelim, _ = TeamStageProgress.objects.get_or_create(team=team, semester=sem, defense_stage=stage_prelim)
-            progress_prelim.status = TeamStageProgress.STATUS_READY
-            progress_prelim.save()
-
-            self.stdout.write(f"  [5/5] Advanced to Stage 2: {ANSI.GREEN}'{stage_prelim.label}' is now READY{ANSI.RESET}")
-            assert progress_prelim.status == TeamStageProgress.STATUS_READY, "Preliminary defense should be ready"
-            assertions += 1
-
-        elapsed = time.time() - t0
-        self.stdout.write(f"  {ANSI.GREEN}[OK] Project Pivot Simulation Passed ({assertions} assertions in {elapsed:.2f}s){ANSI.RESET}\n")
-        return {"name": "Project Pivot & New Title", "passed": True, "assertions": assertions, "time": elapsed}
 
     # =========================================================================
     # Scenario 7: One-Year Extension & Delayed Residency
     # =========================================================================
-    def run_extension_scenario(self):
-        t0 = time.time()
-        self.stdout.write(f"\n{ANSI.BOLD}{ANSI.MAGENTA}>>> [SCENARIO 7] ONE-YEAR EXTENSION & DELAYED RESIDENCY WORKFLOW{ANSI.RESET}")
-        assertions = 0
-
-        with transaction.atomic():
-            sy1, _ = SchoolYear.objects.get_or_create(label="2026-2027")
-            sem_ay1_s2, _ = Semester.objects.get_or_create(school_year=sy1, label="2nd Semester")
-
-            sy2, _ = SchoolYear.objects.get_or_create(label="2027-2028")
-            sem_ay2_s1, _ = Semester.objects.get_or_create(school_year=sy2, label="1st Semester", defaults={"is_active": True})
-
-            f_fontanilla = self._get_or_create_faculty("206", "Ricardo", "Fontanilla", "206@ustp.edu.ph", is_adviser=True)
-            f_corpuz = self._get_or_create_faculty("209", "Analiza", "Corpuz", "209@ustp.edu.ph")
-            st_leader = self._get_or_create_student("4011", "Marcus", "Villar", "4011@ustp.edu.ph")
-
-            stage_final, _ = DefenseStage.objects.get_or_create(label="Final Defense", defaults={"display_order": 4, "is_active": True})
-
-            # 1. 4th Year Team at end of AY 2026-2027
-            team, _ = StudentTeam.objects.update_or_create(
-                name="Team SkyLedger",
-                level="4th Year Capstone",
-                defaults={
-                    "semester": sem_ay1_s2,
-                    "project_title": "Alumni Career Tracker",
-                    "year_level": "4th Year",
-                    "section": "BSIT-4A",
-                    "leader": st_leader,
-                    "adviser": f_fontanilla,
-                    "status": StudentTeam.STATUS_APPROVED,
-                    "capstone_phase": StudentTeam.PHASE_ACTIVE,
-                }
-            )
-            self.stdout.write(f"  [1/5] 4th Year Team '{team.name}' active in A.Y. 2026-2027")
-            assertions += 1
-
-            # 2. Team misses final graduation deadline -> Granted 1-Year Extension
-            team.status = StudentTeam.STATUS_DELAYED
-            team.capstone_phase = StudentTeam.PHASE_EXTENDED
-            team.save()
-
-            self.stdout.write(f"  [2/5] Granted 1-Year Residency Extension -> Status: {ANSI.YELLOW}[{team.status}]{ANSI.RESET}, Phase: {ANSI.YELLOW}[{team.capstone_phase.upper()}]{ANSI.RESET}")
-            assert team.status == StudentTeam.STATUS_DELAYED, "Status should be Delayed/Extended"
-            assert team.capstone_phase == StudentTeam.PHASE_EXTENDED, "Phase should be extended"
-            assertions += 2
-
-            # 3. Rollover to next Academic Year (2027-2028 Extension Term)
-            team.semester = sem_ay2_s1
-            team.section = "BSIT-4A-EXT"
-            team.save()
-
-            self.stdout.write(f"  [3/5] Rolled Over to Extension Semester (A.Y. 2027-2028 1st Sem)")
-            assert team.capstone_phase == StudentTeam.PHASE_EXTENDED, "Extension team should maintain extended phase"
-            assertions += 1
-
-            # 4. Extension Defense Scheduled & Evaluated
-            sched_ext, _ = DefenseSchedule.objects.update_or_create(
-                team=team,
-                semester=sem_ay2_s1,
-                defense_stage=stage_final,
-                scheduled_date=date(2027, 9, 15),
-                start_time=dtime(10, 0),
-                defaults={"scope": "capstone", "room": "Room 301", "status": "done"}
-            )
-            tg_ext, _ = TeamGrade.objects.update_or_create(
-                team=team,
-                semester=sem_ay2_s1,
-                scope="capstone",
-                defense_stage=stage_final,
-                defaults={
-                    "schedule": sched_ext,
-                    "stage_label": "Final Defense",
-                    "panel_score": Decimal("91.00"),
-                    "adviser_score": Decimal("92.00"),
-                    "peer_score": Decimal("90.00"),
-                    "panel_weight": 50,
-                    "adviser_weight": 30,
-                    "peer_weight": 20,
-                    "status": "published",
-                }
-            )
-            tg_ext.recalculate()
-            tg_ext.save()
-
-            self.stdout.write(f"  [4/5] Extension Final Defense: {ANSI.GREEN}PASSED ({tg_ext.final_grade}%){ANSI.RESET}")
-            assert tg_ext.final_grade >= Decimal("75.00"), "Final defense should pass"
-            assertions += 2
-
-            # 5. Graduation / Clearance Complete -> Status Updates to Approved
-            team.status = StudentTeam.STATUS_APPROVED
-            team.save()
-
-            self.stdout.write(f"  [5/5] Final Clearance Complete -> Status: {ANSI.GREEN}[APPROVED / GRADUATED]{ANSI.RESET}")
-            assert team.status == StudentTeam.STATUS_APPROVED, "Team should be approved for graduation"
-            assertions += 1
-
-        elapsed = time.time() - t0
-        self.stdout.write(f"  {ANSI.GREEN}[OK] Extension Simulation Passed ({assertions} assertions in {elapsed:.2f}s){ANSI.RESET}\n")
-        return {"name": "1-Year Extension & Delayed", "passed": True, "assertions": assertions, "time": elapsed}
 
     # =========================================================================
     # Scenario 8: Individual Member Divergence & Free-Rider Failure

@@ -57,6 +57,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
   bool _loading = true;
   bool _resultsLoading = false;
   bool _navigating = false;
+  bool _savingNavigation = false;
   String? _workspaceChangeError;
   final _gradeSheetKey = GlobalKey<GradeSheetTabState>();
   String? _assignmentsError;
@@ -501,6 +502,9 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                 .whereType<Map>()
                 .map((c) => Map<String, dynamic>.from(c))
                 .toList(),
+            gradingWorkspace: Map<String, dynamic>.from(
+              team['grading_workspace'] as Map? ?? {},
+            ),
             panelWeight: (weights['panel'] as num?)?.toInt() ?? 0,
             peerWeight: (weights['peer'] as num?)?.toInt() ?? 0,
             adviserWeight: (weights['adviser'] as num?)?.toInt() ?? 0,
@@ -620,11 +624,25 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     );
   }
 
-  Future<void> _openGradeSheet(int teamIndex) async {
+  Future<void> _openGradeSheet(TeamData team) async {
     if (_navigating || _loading) return;
     _navigating = true;
     try {
-      final opened = await _gradeSheetKey.currentState?.openTeam(teamIndex);
+      var sheet = _gradeSheetKey.currentState;
+      if (sheet == null) {
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted) return;
+        sheet = _gradeSheetKey.currentState;
+      }
+      if (sheet == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Grade sheet is loading. Please try again.'),
+          ),
+        );
+        return;
+      }
+      final opened = await sheet.openTeam(team);
       if (mounted && opened == true) setState(() => _selectedIndex = 1);
     } finally {
       _navigating = false;
@@ -634,6 +652,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
   Future<void> _selectDestination(int index) async {
     if (_navigating || index == _selectedIndex) return;
     _navigating = true;
+    if (_selectedIndex == 1 &&
+        _gradeSheetKey.currentState?.hasPendingChanges == true) {
+      setState(() => _savingNavigation = true);
+    }
     try {
       if (_selectedIndex == 1 &&
           !await (_gradeSheetKey.currentState?.savePendingChanges() ??
@@ -642,11 +664,16 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
       }
       if (!mounted) return;
       setState(() => _selectedIndex = index);
-      if (index == 0) await _loadData(showLoading: false);
-      if (index == 2) await _loadResults();
     } finally {
       _navigating = false;
+      if (mounted && _savingNavigation) {
+        setState(() => _savingNavigation = false);
+      }
     }
+    // Refreshing the destination must not lock other visible navigation/actions.
+    if (!mounted) return;
+    if (index == 0) await _loadData(showLoading: false);
+    if (index == 2) await _loadResults();
   }
 
   Future<String?> _pickSession(
@@ -1350,7 +1377,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                         compactHeader: true,
                         sessionHeader: _buildAssignmentSessionCard(),
                         showGroupHeaders: false,
-                        onOpenGradeSheet: _openGradeSheet,
+                        onOpenGradeSheet: (index) =>
+                            _openGradeSheet(teams[index]),
                         onRefresh: _loadData,
                       ),
                 GradeSheetTab(
@@ -1362,7 +1390,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                   ),
                   onGradesSubmitted: () => _loadData(showLoading: false),
                   onEvaluationChanged: () => setState(() {}),
-                  onRefresh: _loadData,
+                  onRefresh: () => _loadData(showLoading: false),
                   emptyMessage: 'No active assignments for this session',
                   stageScoped: true,
                 ),
@@ -1476,32 +1504,65 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
               ],
             ),
           ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _selectedIndex,
-            onDestinationSelected: _selectDestination,
-            indicatorColor: DefensysTokens.maroon.withValues(alpha: 0.15),
-            destinations: [
-              NavigationDestination(
-                icon: const Icon(Icons.assignment_outlined),
-                selectedIcon: const Icon(Icons.assignment_rounded),
-                label: context.l10n.navAssignments,
-              ),
-              NavigationDestination(
-                icon: const Icon(Icons.rate_review_outlined),
-                selectedIcon: const Icon(Icons.rate_review_rounded),
-                label: context.l10n.navGradeSheet,
-              ),
-              NavigationDestination(
-                icon: const Icon(Icons.bar_chart_outlined),
-                selectedIcon: const Icon(Icons.bar_chart_rounded),
-                label: context.l10n.navResults,
-              ),
-              if (!_isGuest)
-                const NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
-                  label: 'Profile',
+          bottomNavigationBar: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_savingNavigation)
+                Container(
+                  key: const ValueKey('navigation-draft-saving'),
+                  color: DefensysTokens.surfaceOf(context),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: DefensysTokens.maroonOf(context),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Saving draft…',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              NavigationBar(
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: _selectDestination,
+                indicatorColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+                destinations: [
+                  NavigationDestination(
+                    icon: const Icon(Icons.assignment_outlined),
+                    selectedIcon: const Icon(Icons.assignment_rounded),
+                    label: context.l10n.navAssignments,
+                  ),
+                  NavigationDestination(
+                    icon: const Icon(Icons.rate_review_outlined),
+                    selectedIcon: const Icon(Icons.rate_review_rounded),
+                    label: context.l10n.navGradeSheet,
+                  ),
+                  NavigationDestination(
+                    icon: const Icon(Icons.bar_chart_outlined),
+                    selectedIcon: const Icon(Icons.bar_chart_rounded),
+                    label: context.l10n.navResults,
+                  ),
+                  if (!_isGuest)
+                    const NavigationDestination(
+                      icon: Icon(Icons.person_outline),
+                      selectedIcon: Icon(Icons.person),
+                      label: 'Profile',
+                    ),
+                ],
+              ),
             ],
           ),
         ),

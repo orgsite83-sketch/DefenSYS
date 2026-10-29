@@ -134,6 +134,7 @@ class TeamGrade(models.Model):
     peer_weight = models.PositiveSmallIntegerField(default=20)
     attempt_count = models.PositiveSmallIntegerField(default=1)
     legacy_deliverable_policy = models.JSONField(default=dict, blank=True, editable=False)
+    outcome_metadata = models.JSONField(default=dict, blank=True, editable=False)
     verdict = models.CharField(max_length=30, choices=VERDICT_CHOICES, blank=True)
     verdict_remarks = models.TextField(blank=True)
     verdict_by = models.ForeignKey(
@@ -229,6 +230,8 @@ class TeamGrade(models.Model):
 
     @property
     def result(self):
+        if self.closed_as_failed:
+            return 'failed'
         if self.uses_defense_verdict and self.verdict:
             if self.verdict in (self.VERDICT_FAILED, self.VERDICT_PROJECT_REJECTED):
                 return 'failed'
@@ -243,6 +246,10 @@ class TeamGrade(models.Model):
         if self.final_grade is None:
             return 'pending'
         return 'passed' if self.final_grade >= PASS_GRADE_THRESHOLD else 'failed'
+
+    @property
+    def closed_as_failed(self):
+        return bool((self.outcome_metadata or {}).get('closure', {}).get('failed'))
 
     def clean(self):
         errors = {}
@@ -260,13 +267,17 @@ class TeamGrade(models.Model):
                 errors['weights'] = 'Panel and peer weights must total 100%.'
         elif self.panel_weight + self.adviser_weight + self.peer_weight != 100:
             errors['weights'] = 'Panel, adviser, and peer weights must total 100%.'
-        if self.status in self.LOCKED_STATUSES and not self.is_complete:
+        if self.status in self.LOCKED_STATUSES and not self.is_complete and not self.closed_as_failed:
             errors['status'] = 'Only complete grades can be locked or published.'
 
         if errors:
             raise ValidationError(errors)
 
     def recalculate(self, keep_published=False):
+        if self.closed_as_failed:
+            # Administrative disposition is independent of an absent official
+            # concept-derived numeric grade. Preserve every actual score.
+            return
         if keep_published and self.status in self.LOCKED_STATUSES and not self.is_complete:
             raise ValidationError({'status': 'A published grade cannot be made incomplete. Reopen it explicitly first.'})
         if self.is_complete:
@@ -659,6 +670,7 @@ class PeerEvaluationSubmission(models.Model):
 class GradeAttemptHistory(models.Model):
     """Immutable snapshot of scores and verdict from a completed defense attempt."""
     assessment_policy = models.JSONField(default=dict, blank=True)
+    outcome_metadata = models.JSONField(default=dict, blank=True)
     student_scores = models.JSONField(default=list, blank=True)
     team_grade = models.ForeignKey(
         TeamGrade,

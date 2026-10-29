@@ -4,6 +4,7 @@ import 'package:defensys/widgets/repository/document_group.dart';
 import 'package:defensys/widgets/repository/requirement_summary.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 import 'package:defensys/widgets/repository/shared_concept_review.dart';
+import 'package:defensys/widgets/repository/shared_deliverables_panel.dart';
 import 'faculty_requirements_pane.dart';
 import 'faculty_team_choice_label.dart';
 import 'package:defensys/widgets/repository/deliverable_file_widgets.dart';
@@ -34,8 +35,6 @@ import 'package:defensys/screens/web/admin/grade_center/defense_workflow_panel.d
 import 'package:defensys/models/adviser_workflow.dart';
 import 'package:defensys/services/defense/team_defense_provider.dart';
 import 'package:defensys/widgets/adviser/workflow_reminder.dart';
-import 'package:defensys/widgets/repository/defense_material_readiness.dart';
-import 'package:defensys/screens/web/admin/defense_board/components/material_deadline_dialog.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import '../deliverables_view_types.dart';
@@ -143,6 +142,7 @@ class DeliverablesTablePane extends ConsumerStatefulWidget {
 class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   int? _selectedTeamId;
   int? _selectedSharedProjectId;
+  String? _selectedSharedChecklistKey;
   bool _showMobileDetail = false;
   final Map<int, String> _cardSelectedStages = {};
   final Map<int, int> _cardActiveTabs = {}; // teamId -> tabIndex
@@ -181,10 +181,17 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     if (oldWidget.conceptReviewProjectId != widget.conceptReviewProjectId ||
         oldWidget.conceptReview != widget.conceptReview) {
       _selectedSharedProjectId = widget.conceptReviewProjectId;
+      _selectedSharedChecklistKey = null;
+    }
+    if (oldWidget.state.selectedStage != widget.state.selectedStage ||
+        oldWidget.state.scope != widget.state.scope ||
+        oldWidget.state.workspace != widget.state.workspace) {
+      _selectedSharedChecklistKey = null;
     }
     if (widget.initialTeamId != oldWidget.initialTeamId &&
         widget.initialTeamId != null) {
       _selectedTeamId = widget.initialTeamId;
+      _selectedSharedChecklistKey = null;
       _showMobileDetail = true;
       if (widget.initialTab != null) {
         _cardActiveTabs[widget.initialTeamId!] = widget.initialTab!;
@@ -192,6 +199,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     }
     if (oldWidget.fileReviewRequestId != widget.fileReviewRequestId &&
         widget.initialConceptRequirementId != null) {
+      _selectedSharedChecklistKey = null;
       final teamId = widget.initialTeamId ?? _selectedTeamId;
       if (teamId != null) _cardActiveTabs[teamId] = 0;
       _lastFileHandoff = null;
@@ -715,13 +723,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       return;
     }
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
-    final isDefense = !isPost && item['requirement_timing'] == 'defense';
     final actionLabel = requestRevision
         ? 'Request revision'
         : isPost
         ? 'Request Revision'
-        : isDefense
-        ? 'Request corrections'
         : 'Reject';
     var feedback = '';
     final confirmed = await showDialog<bool>(
@@ -858,8 +863,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         : 'Accepted'
                   : (fileMap['status'] ?? submission['status']) == 'rejected'
                   ? 'Corrections requested'
-                  : item['requirement_timing'] == 'defense'
-                  ? 'Uploaded'
                   : 'Awaiting review',
             ),
             style: TextButton.styleFrom(
@@ -1035,10 +1038,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         : (item['can_upload'] is bool
               ? item['can_upload'] != true
               : item['locked'] == true || subStatus == 'accepted');
-    final isDefense = !isPost && item['requirement_timing'] == 'defense';
-    final displayCleared =
-        subStatus == 'accepted' ||
-        (isDefense && uploaded && subStatus != 'rejected');
+    final displayCleared = subStatus == 'accepted';
     final canFacultyReview = item['can_faculty_review'] is bool
         ? item['can_faculty_review'] == true
         : (isPost
@@ -1129,35 +1129,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                             ),
                           ),
                         ],
-                        if (submission?['is_late'] == true ||
-                            item['is_late'] == true) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(
-                                0xFFEA580C,
-                              ).withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: const Color(
-                                  0xFFEA580C,
-                                ).withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: const Text(
-                              'LATE SUBMISSION',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFFEA580C),
-                              ),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                     if (item['description']?.toString().isNotEmpty == true) ...[
@@ -1201,20 +1172,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   ),
                 ),
               ] else if (!uploaded) ...[
-                if (isDefense) ...[
-                  Text(
-                    item['materials_status'] == 'overdue'
-                        ? 'Overdue'
-                        : 'Missing',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: item['materials_status'] == 'overdue'
-                          ? AppColors.danger
-                          : DefensysTokens.textSecondaryOf(context),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
                 if (isFaculty && !isAdmin) ...[
                   if (isPost) ...[
                     Text(
@@ -1261,8 +1218,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                           ? 'Corrections requested'
                           : subStatus == 'accepted'
                           ? (isPost ? 'Archived' : 'Accepted')
-                          : isDefense
-                          ? 'Uploaded'
                           : isFaculty && !isAdmin && !canFacultyReview
                           ? 'Locked (Defense Done)'
                           : 'Awaiting review',
@@ -1279,18 +1234,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ],
             ],
           ),
-          if (isDefense) ...[
-            const SizedBox(height: 6),
-            Text(
-              item['due_at'] == null
-                  ? 'Deadline set when defense is scheduled'
-                  : 'Due before defense: ${materialDeadlineLabel(item['due_at'])}',
-              style: TextStyle(
-                fontSize: 12,
-                color: DefensysTokens.textSecondaryOf(context),
-              ),
-            ),
-          ],
           if (uploaded && submission != null) ...[
             const SizedBox(height: 8),
             ..._buildFileList(
@@ -1345,7 +1288,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           ],
           if (uploaded &&
               !isWPR &&
-              ((isFaculty && !isAdmin) || (isAdmin && isDefense)) &&
+              (isFaculty && !isAdmin) &&
               canFacultyReview &&
               !(isPost && subStatus == 'accepted')) ...[
             const SizedBox(height: 12),
@@ -1357,7 +1300,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (!isDefense && subStatus != 'accepted')
+                    if (subStatus != 'accepted')
                       ShadButton.outline(
                         size: ShadButtonSize.sm,
                         enabled: !widget.state.isSaving,
@@ -1365,14 +1308,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                             _promptAcceptDialog(team, stageLabel, item),
                         child: Text(isPost ? 'Approve & Archive' : 'Accept'),
                       ),
-                    if (!isDefense || subStatus != 'rejected')
-                      ShadButton.ghost(
-                        size: ShadButtonSize.sm,
-                        enabled: !widget.state.isSaving,
-                        onPressed: () =>
-                            _promptRejectDialog(team, stageLabel, item),
-                        child: const Text('Request corrections'),
-                      ),
+                    ShadButton.ghost(
+                      size: ShadButtonSize.sm,
+                      enabled: !widget.state.isSaving,
+                      onPressed: () =>
+                          _promptRejectDialog(team, stageLabel, item),
+                      child: const Text('Request corrections'),
+                    ),
                   ],
                 ),
               ),
@@ -1564,7 +1506,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   Future<void> _confirmEndorseTeam(
     Map<String, dynamic> team,
     String selectedStage,
-    bool isPresentationOnly,
   ) async {
     final stage = _stagePayload(_stageList(team), selectedStage);
     if (!_canEndorseTeam(stage)) return;
@@ -1575,24 +1516,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         content: SizedBox(
           width: 480,
           child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isPresentationOnly
-                      ? 'Endorse ${team['name']} for $selectedStage? '
-                            'This confirms the team is verbally prepared and ready for presentation / demo scheduling.'
-                      : 'All required before-endorsement files have been accepted. '
-                            'Endorse ${team['name']} for $selectedStage? This records approval of the team’s work. Any required shared-paper acceptance and adviser acknowledgment remain separate scheduling checks.',
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Before-defense materials remain due by their scheduled deadline.',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
+            child: Text('Endorse ${team['name']} for $selectedStage?'),
           ),
         ),
         actions: [
@@ -1623,11 +1547,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     Map<String, dynamic> team,
     String selectedStage, {
     required bool enabled,
-    required bool isPresentationOnly,
   }) {
     return ElevatedButton.icon(
       onPressed: enabled && !widget.state.isSaving
-          ? () => _confirmEndorseTeam(team, selectedStage, isPresentationOnly)
+          ? () => _confirmEndorseTeam(team, selectedStage)
           : null,
       icon: const Icon(Icons.verified_outlined, size: 16),
       label: const Text(
@@ -1741,12 +1664,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       final allDeliverables = _deliverables(stage, 'deliverables');
       vault = allDeliverables.where((d) => d['type'] == 'post').toList();
     }
-    final beforeEndorsement = pre
-        .where((item) => item['requirement_timing'] != 'defense')
-        .toList();
-    final beforeDefense = pre
-        .where((item) => item['requirement_timing'] == 'defense')
-        .toList();
+    final beforeEndorsement = pre;
 
     final isPresentationOnly = stage['is_presentation_only'] == true;
     final configured =
@@ -1945,11 +1863,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             ),
             buildRequirement: (item) =>
                 _deliverableRow(team, selectedStage, item, setState),
-            defenseReadiness: DefenseMaterialReadiness(
-              readiness: Map<String, dynamic>.from(
-                stage['materials_readiness'] as Map? ?? {},
-              ),
-            ),
           ),
           if (isPresentationOnly)
             const Padding(
@@ -1963,12 +1876,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               padding: const EdgeInsets.only(top: 16),
               child: Align(
                 alignment: Alignment.centerRight,
-                child: _buildEndorseButton(
-                  team,
-                  selectedStage,
-                  enabled: true,
-                  isPresentationOnly: isPresentationOnly,
-                ),
+                child: _buildEndorseButton(team, selectedStage, enabled: true),
               ),
             ),
           if (canCancelEndorsement && isFacultyOrAdmin)
@@ -2085,7 +1993,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         .where(
                           (item) =>
                               item['required'] == true &&
-                              item['requirement_timing'] != 'defense' &&
                               item['submission'] is Map &&
                               item['submission']['status'] == 'accepted',
                         )
@@ -2207,74 +2114,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   ),
                 ),
               ],
-              if (beforeDefense.isNotEmpty) ...[
-                if (beforeEndorsement.isNotEmpty) const SizedBox(height: 14),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    _sectionTitle('Before defense'),
-                    const Spacer(),
-                    if (((widget.state.scope == 'admin' ||
-                            ref.watch(authProvider).user?['is_pit_lead'] ==
-                                true ||
-                            ref.watch(authProvider).user?['role'] == 'admin') &&
-                        stage['schedule'] is Map))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            textStyle: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          onPressed: () async {
-                            final sched = Map<String, dynamic>.from(
-                              stage['schedule'] as Map,
-                            );
-                            sched.putIfAbsent(
-                              'materials_readiness',
-                              () => stage['materials_readiness'],
-                            );
-                            sched.putIfAbsent('team_name', () => team['name']);
-                            sched.putIfAbsent(
-                              'stage_label',
-                              () => selectedStage,
-                            );
-                            await showMaterialDeadlineDialog(context, sched);
-                            ref
-                                .read(capstoneDeliverablesProvider.notifier)
-                                .fetchInitialData();
-                          },
-                          icon: const Icon(
-                            Icons.edit_calendar_outlined,
-                            size: 14,
-                          ),
-                          label: const Text('Edit deadline'),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                DefenseMaterialReadiness(
-                  readiness: Map<String, dynamic>.from(
-                    stage['materials_readiness'] as Map? ?? const {},
-                  ),
-                ),
-                ...beforeDefense.map(
-                  (item) => _deliverableRow(
-                    team,
-                    selectedStage,
-                    item,
-                    (fn) => setState(fn),
-                  ),
-                ),
-              ],
             ],
 
             if (showPostChecklist) ...[
@@ -2328,12 +2167,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ),
               Align(
                 alignment: Alignment.centerRight,
-                child: _buildEndorseButton(
-                  team,
-                  selectedStage,
-                  enabled: true,
-                  isPresentationOnly: isPresentationOnly,
-                ),
+                child: _buildEndorseButton(team, selectedStage, enabled: true),
               ),
             ] else if (canCancelEndorsement && isFacultyOrAdmin) ...[
               const Padding(
@@ -3011,17 +2845,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final isFacultyHeader = widget.isAdviser || widget.isPitInstructor;
     final yearLevel = team['year_level']?.toString().trim() ?? '';
     final section = team['section']?.toString().trim() ?? '';
-    final isPresentationOnly = stagePayload['is_presentation_only'] == true;
     final conceptConfig =
         (stagePayload['concept_workflow'] as Map?)?['config'] as Map?;
     final projectTitle = '${team['project_title'] ?? ''}'.trim().isNotEmpty
         ? '${team['project_title']}'
         : '${conceptConfig?['assigned_title'] ?? ''}';
-    final materialReadiness = stagePayload['materials_readiness'];
-    final materialsPending =
-        materialReadiness is Map &&
-        parseAsInt(materialReadiness['required_total']) >
-            parseAsInt(materialReadiness['submitted_total']);
     final canEndorse =
         _canEndorseTeam(stagePayload) &&
         stagePayload['endorsed'] != true &&
@@ -3482,25 +3310,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 return Row(children: [status, const Spacer(), export]);
               },
             ),
-            if (isPit &&
-                stagePayload['deliverables_configured'] == true &&
-                stagePayload['endorsed'] != true &&
-                (stagePayload['endorsement_required'] == false ||
-                    (stagePayload['required_complete'] == true &&
-                        materialsPending))) ...[
-              const SizedBox(height: 6),
-              Text(
-                stagePayload['endorsement_required'] == false
-                    ? (materialsPending
-                          ? 'No endorsement needed. This team can be scheduled now. Defense files may be uploaded later, before their scheduled deadline.'
-                          : 'No endorsement needed. This team can be scheduled now.')
-                    : 'Scheduling checks are clear. You may endorse this team now; defense files may be uploaded later, before their scheduled deadline.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: DefensysTokens.textSecondaryOf(context),
-                ),
-              ),
-            ],
           ],
           if (isFacultyHeader && stages.isNotEmpty) ...[
             const SizedBox(height: 14),
@@ -3540,7 +3349,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   team,
                   selectedStage,
                   enabled: canEndorse,
-                  isPresentationOnly: isPresentationOnly,
                 );
                 if (constraints.maxWidth < 560) {
                   return Column(
@@ -3614,9 +3422,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       child: DefenseWorkflowPanel(
         grade: normalizedGrade,
         onUpdated: () {
-          ref.read(capstoneDeliverablesProvider.notifier).fetchInitialData();
-        },
-        onProjectReplaced: () {
           ref.read(capstoneDeliverablesProvider.notifier).fetchInitialData();
         },
       ),
@@ -3934,7 +3739,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         leading: Icon(
-          id.startsWith('p')
+          id.startsWith('p') || id.startsWith('s')
               ? Icons.account_tree_outlined
               : Icons.groups_2_outlined,
           size: 17,
@@ -4054,6 +3859,18 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final reviews = widget.conceptReview
         ? sharedReviewsForTeams(teams, stageLabel: widget.state.selectedStage)
         : <Map<String, dynamic>>[];
+    final sharedChecklists = widget.conceptReview
+        ? <String, Map<String, dynamic>>{}
+        : {
+            for (final summary in sharedChecklistsForTeams(
+              teams,
+              stageLabel: widget.state.selectedStage,
+            ))
+              's${summary['section_id']}-${summary['context_id']}': summary,
+          };
+    if (!sharedChecklists.containsKey(_selectedSharedChecklistKey)) {
+      _selectedSharedChecklistKey = null;
+    }
     if (!teams.any((team) => parseAsInt(team['id']) == _selectedTeamId)) {
       _selectedTeamId = teams.isEmpty ? null : parseAsInt(teams.first['id']);
     }
@@ -4071,12 +3888,27 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               parseAsInt(review['project_id']) == _selectedSharedProjectId,
         )
         .firstOrNull;
+    final selectedChecklist = sharedChecklists[_selectedSharedChecklistKey];
     void selectTeam(int id) {
       setState(() {
         _selectedTeamId = id;
         _selectedSharedProjectId = null;
+        _selectedSharedChecklistKey = null;
       });
       widget.onSelectedTeamChanged?.call(id);
+    }
+
+    void select(String value) {
+      if (value.startsWith('t')) {
+        selectTeam(int.parse(value.substring(1)));
+      } else {
+        setState(() {
+          _selectedSharedProjectId = value.startsWith('p')
+              ? int.parse(value.substring(1))
+              : null;
+          _selectedSharedChecklistKey = value.startsWith('s') ? value : null;
+        });
+      }
     }
 
     Widget detail = selectedReview != null
@@ -4093,6 +3925,19 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 .read(capstoneDeliverablesProvider.notifier)
                 .fetchDeliverables(),
           )
+        : selectedChecklist != null
+        ? SharedDeliverablesSection(
+            key: ValueKey(
+              'faculty-shared-checklist-$_selectedSharedChecklistKey',
+            ),
+            teamId: parseAsInt(selectedChecklist['team_id']),
+            stageLabel: '${selectedChecklist['stage_label']}',
+            summary: selectedChecklist,
+            embedded: true,
+            onChanged: () => ref
+                .read(capstoneDeliverablesProvider.notifier)
+                .fetchDeliverables(),
+          )
         : team == null
         ? _buildNoSelectionDetailPane()
         : widget.conceptReview
@@ -4101,8 +3946,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final selections = <String, String>{
       for (final review in reviews)
         'p${review['project_id']}': 'Shared systems · ${review['section']}',
+      for (final entry in sharedChecklists.entries)
+        entry.key: 'Shared system · ${entry.value['section']}',
       for (final team in teams) 't${team['id']}': '${team['name']}',
     };
+    final selected = selectedReview != null
+        ? 'p${selectedReview['project_id']}'
+        : _selectedSharedChecklistKey ?? 't$_selectedTeamId';
     final statuses = <String, TeamWorkflowStatus>{
       for (final review in reviews)
         'p${review['project_id']}': TeamWorkflowStatus(
@@ -4134,9 +3984,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 780) {
-          final selected = selectedReview != null
-              ? 'p${selectedReview['project_id']}'
-              : 't$_selectedTeamId';
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -4151,7 +3998,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   isExpanded: true,
                   isDense: false,
                   decoration: InputDecoration(
-                    labelText: widget.conceptReview
+                    labelText:
+                        widget.conceptReview || sharedChecklists.isNotEmpty
                         ? 'Choose team or review'
                         : 'Choose team',
                   ),
@@ -4166,16 +4014,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ),
                   ],
                   onChanged: (value) {
-                    if (value == null) return;
-                    if (value.startsWith('p')) {
-                      setState(
-                        () => _selectedSharedProjectId = int.parse(
-                          value.substring(1),
-                        ),
-                      );
-                    } else {
-                      selectTeam(int.parse(value.substring(1)));
-                    }
+                    if (value != null) select(value);
                   },
                 ),
               const SizedBox(height: 14),
@@ -4219,22 +4058,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                             id: entry.key,
                             label: entry.value,
                             status: statuses[entry.key],
-                            selected:
-                                entry.key == 'p$_selectedSharedProjectId' &&
-                                    widget.conceptReview ||
-                                entry.key == 't$_selectedTeamId' &&
-                                    selectedReview == null,
-                            onPressed: () {
-                              if (entry.key.startsWith('p')) {
-                                setState(
-                                  () => _selectedSharedProjectId = int.parse(
-                                    entry.key.substring(1),
-                                  ),
-                                );
-                              } else {
-                                selectTeam(int.parse(entry.key.substring(1)));
-                              }
-                            },
+                            selected: entry.key == selected,
+                            onPressed: () => select(entry.key),
                           ),
                         ],
                       ],

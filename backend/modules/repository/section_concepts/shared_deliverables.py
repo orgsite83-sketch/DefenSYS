@@ -252,10 +252,6 @@ def ensure_editable(profile, definition):
             raise PermissionError('Shared files for published grades are locked. Reopen the assessment before changes.')
         if not all(post_defense_ready(team, context.label) for team in profile['teams']):
             raise PermissionError('Complete the section’s current defense assessments and outcomes before post-defense submissions.')
-    elif definition.get('requirement_timing') == 'defense':
-        from repository.deliverables.timing import ensure_material_editable
-        for team in profile['teams']:
-            ensure_material_editable(team, context.label, {**definition, 'id': definition['deliverable_id']})
     elif profile['current_project']:
         services.editable(profile['round'])
     elif schedules(profile):
@@ -341,16 +337,13 @@ def applicable(profile, definition):
 
 def required_complete(profile, dtype='pre', *, accepted=True):
     return all(complete(profile, d, accepted=accepted) for d in profile['definitions'] if
-        d['deliverable_type'] == dtype and d.get('required') and applicable(profile, d) and
-        (dtype != 'pre' or d.get('requirement_timing', 'scheduling') == 'scheduling'))
+        d['deliverable_type'] == dtype and d.get('required') and applicable(profile, d))
 
 
 def document_progress(profile, dtype='pre'):
     result = {'documents_required': 0, 'documents_uploaded': 0, 'documents_accepted': 0}
     for definition in profile['definitions']:
         if definition['deliverable_type'] != dtype or not definition.get('required') or not applicable(profile, definition):
-            continue
-        if dtype == 'pre' and definition.get('requirement_timing') == 'defense':
             continue
         files = requirement_files(profile, definition)
         policy = definition.get('file_policy') or {}
@@ -368,6 +361,36 @@ def document_progress(profile, dtype='pre'):
         result['documents_uploaded'] += uploaded
         result['documents_accepted'] += accepted
     return result
+
+
+def completion_summary(profile, dtype='post'):
+    """Describe section work once, without attributing it to each team's adviser."""
+    hearing = profile['round']
+    selected_key = hearing.selected_key if hearing else ''
+    selected = next((s for s in profile['systems'] if s['key'] == selected_key), None)
+    requirements = []
+    for definition in profile['definitions']:
+        if (definition['deliverable_type'] != dtype or not definition.get('required')
+                or not applicable(profile, definition)):
+            continue
+        files = requirement_files(profile, definition)
+        accepted = complete(profile, definition)
+        uploaded = complete(profile, definition, accepted=None)
+        status = ('accepted' if accepted else 'changes_requested' if any(
+            f['status'] == 'rejected' for f in files.values()) else
+            'awaiting_review' if uploaded else 'awaiting_pm_upload')
+        requirements.append({'id': definition['deliverable_id'], 'label': definition['label'],
+            'status': status, 'complete': accepted})
+    status = ('accepted' if all(row['complete'] for row in requirements) else
+        'awaiting_pm_upload' if any(row['status'] == 'awaiting_pm_upload' for row in requirements) else
+        'changes_requested' if any(row['status'] == 'changes_requested' for row in requirements) else 'awaiting_review')
+    return {'identity': profile['identity'], 'section_id': profile['section'].pk,
+        'section': profile['section'].section, 'project_id': profile['project'].pk if profile['project'] else None,
+        'round_id': hearing.pk if hearing else None, 'stage_label': profile['context'].label,
+        'project_manager_name': profile['manager'].get_full_name() or profile['manager'].username,
+        'selected_key': selected_key, 'selected_system_title': selected['title'] if selected else '',
+        'status': status, 'complete': all(row['complete'] for row in requirements),
+        'requirements': requirements, **document_progress(profile, dtype)}
 
 
 def for_round(hearing):
@@ -445,6 +468,26 @@ def review_token(profile):
         'titles': services.review_token(profile['round']) if profile.get('round') else ''})
 
 
+@read_memoize(copy=True)
+def stage_navigation_states(team):
+    """Read the same progression evidence as the team workspace, never file counts alone."""
+    from repository.deliverables.services import current_stage_for_team, post_deliverables_complete
+    current = current_stage_for_team(team)
+    if team.is_pit:
+        from defense.scheduler.event_scope import pit_events_for_team
+        return {event.label: 'complete' if event.is_officially_complete and
+            post_deliverables_complete(team, event.label) else
+            'current' if event.label == current else 'upcoming'
+            for event in pit_events_for_team(team)}
+    from student_teams.capstone_lifecycle import requirements_for, stage_cleared
+    requirements = requirements_for(team)
+    current_order = next((r['order'] for r in requirements if r['label'] == current), None)
+    return {requirement['label']: 'complete' if stage_cleared(team, requirement) else
+        'current' if requirement['label'] == current or (
+            current_order is not None and requirement['order'] < current_order) else 'upcoming'
+        for requirement in requirements}
+
+
 def payload(profile, actor):
     full_access = staff_access(actor, profile) or member_access(actor, profile)
     if not full_access and not panel_access(actor, profile):
@@ -487,6 +530,9 @@ def payload(profile, actor):
                                  'file_format': definition.get('file_format', 'any'), 'system_key': ''} for key, row in files.items()]
         for slot in configured_slots:
             row = files.get(slot['key'])
+            suggested = archive_file_name(profile, {**definition,
+                'file_format': slot.get('file_format') or definition.get('file_format', 'any')},
+                row['file_name'] if row else '') if definition['deliverable_type'] == 'post' else ''
             from repository import title_workflow
             title_blocker, upload_blocker = '', ''
             try:
@@ -498,13 +544,15 @@ def payload(profile, actor):
             except ValidationError as exc:
                 upload_blocker = ' '.join(exc.messages)
             documents.append({**slot, 'file': row, 'title_blocker': title_blocker,
+                'suggested_file_name': suggested,
                 'title_revision_available': bool((system := title_workflow.shared_system(profile, definition, slot['key'])) and system.title_review.get('state') in ('submitted', 'accepted')),
                 'upload_blocker': upload_blocker,
                 'max_file_size': 25 * 1024 * 1024 if profile['current_project'] and (
                     definition.get('legacy_purpose') == 'final' or (
                     definition.get('legacy_purpose') == 'proposal' and slot['key'].endswith(':paper'))) else MAX_FILE_SIZE,
                 'can_upload': not reason and not upload_blocker and actor.pk == profile['manager'].pk and (not row or row['status'] != 'accepted'),
-                'can_review': not reason and reviewer_access(actor, profile) and bool(row)})
+                'can_review': not reason and reviewer_access(actor, profile) and bool(row)
+                    and not (definition['deliverable_type'] == 'post' and row['status'] == 'accepted')})
         history = []
         if profile['captured']:
             history = [file_payload(row) for row in profile['captured'].files.all() if
@@ -517,18 +565,26 @@ def payload(profile, actor):
                                     'slot_key': slot['key']} for old in current_paper.concept.papers.filter(
                                         purpose=definition['legacy_purpose'], is_current=False))
         requirements.append({**definition, 'id': definition['deliverable_id'], 'status': status, 'documents': documents,
+            'suggested_file_name': archive_file_name(profile, definition, '') if definition['deliverable_type'] == 'post' else '',
             'files': current, 'history': history, 'unavailable_reason': reason,
             'can_add_attachment': not reason and actor.pk == profile['manager'].pk and
+                not (definition['deliverable_type'] == 'post' and status == 'accepted') and
                 len(files) < (definition.get('file_policy') or {}).get('max_files', 10),
             'max_file_size': MAX_FILE_SIZE})
+    states = {stage_navigation_states(team).get(context.label, 'upcoming') for team in profile['teams']}
+    stage_status = 'complete' if states == {'complete'} else 'current' if 'current' in states else 'upcoming'
     return {'team_id': profile['team'].pk, 'section': profile['section'].section,
         'imported': bool(profile['pending_import']), 'concept_selection_enabled': bool(context.concept_config.get('enabled')),
-        'stage_label': context.label, 'scope': 'pit' if hasattr(context, 'event_name') else 'capstone',
+        'stage_label': context.label, 'stage_status': stage_status,
+        'scope': 'pit' if hasattr(context, 'event_name') else 'capstone',
         'context_id': context.pk, 'source_project_id': profile['project'].pk if profile['project'] else None,
         'project_manager_id': profile['manager'].pk,
         'project_manager_name': profile['manager'].get_full_name() or profile['manager'].username,
         'reviewer_name': ', '.join(reviewer_names) if reviewer_names else 'Not assigned',
-        'systems': profile['systems'], 'identity': profile['identity'], 'review_token': review_token(profile),
+        'systems': profile['systems'],
+        'selected_key': profile['round'].selected_key if profile['round'] else '',
+        'post_completion': completion_summary(profile),
+        'identity': profile['identity'], 'review_token': review_token(profile),
         'requirements': requirements, 'pre_complete': required_complete(profile),
         'post_complete': required_complete(profile, 'post')}
 
@@ -588,6 +644,8 @@ def upload(team, context, actor, number, slot_key, file, expected_token):
     configured = {slot['key']: slot for slot in slots(profile, definition)}
     mode = definition.get('file_policy', {}).get('mode', 'single')
     prior = requirement_files(profile, definition)
+    if definition['deliverable_type'] == 'post' and complete(profile, definition):
+        raise ValidationError('This shared post-defense requirement is already accepted and archived.')
     if mode == 'multiple':
         if not slot_key:
             slot_key = 'file_' + uuid4().hex
@@ -630,8 +688,10 @@ def upload(team, context, actor, number, slot_key, file, expected_token):
         query = captured.files.filter(deliverable_id=number, slot_key=slot_key)
         revision = (query.order_by('-revision').values_list('revision', flat=True).first() or 0) + 1
         query.filter(is_current=True).update(is_current=False)
+        repository_name = archive_file_name(profile, definition, file.name)
+        file.name = repository_name
         row = SharedDeliverableFile.objects.create(submission_set=captured, deliverable_id=number, slot_key=slot_key,
-            file=file, file_name=archive_file_name(profile, definition, file.name), file_size=file.size, revision=revision, uploaded_by=actor, title_review_context=title_context)
+            file=file, file_name=repository_name, file_size=file.size, revision=revision, uploaded_by=actor, title_review_context=title_context)
         if profile['current_project'] and definition['deliverable_type'] == 'pre':
             services.invalidate(profile['round'])
         if hasattr(context, 'event_name'):
@@ -683,6 +743,8 @@ def review(team, context, actor, number, slot_key, file_id, legacy, status, feed
     else:
         row = SharedDeliverableFile.objects.select_for_update().get(pk=file_id, is_current=True,
             submission_set=profile['captured'], deliverable_id=number, slot_key=slot_key)
+        if definition['deliverable_type'] == 'post' and row.status == 'accepted':
+            raise ValidationError('This shared post-defense file is already accepted and archived.')
         if status == 'accepted':
             title_workflow.file_acceptance(row, title_workflow.shared_context(profile, definition, slot_key, accepting=True))
         elif system:

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:defensys/screens/app/panelist_dashboard.dart';
 import 'package:defensys/screens/app/panelist/grade_sheet_tab.dart';
 import 'package:defensys/screens/app/panelist/panelist_stage.dart';
@@ -66,6 +67,210 @@ Future<void> _tap(WidgetTester tester, Finder target) async {
 void main() {
   setUpAll(() => registerFallbackValue(Uri.parse('https://example.test')));
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  for (final openViaCard in [true, false]) {
+    testWidgets(
+      'assignment refresh does not block ${openViaCard ? 'Grade Team' : 'Grade Sheet'}',
+      (tester) async {
+        final client = _Client();
+        final response = Completer<http.Response>();
+        var delayAssignments = false;
+        final assignments = [
+          _assignment(20, 'Team SkyLedger'),
+          _assignment(21, 'Team BioPulse'),
+        ];
+        when(() => client.get(any())).thenAnswer((invocation) async {
+          final path = (invocation.positionalArguments.first as Uri).path;
+          if (path.contains('guest-assignments')) {
+            if (delayAssignments) return response.future;
+            return http.Response(jsonEncode({'teams': assignments}), 200);
+          }
+          return http.Response('{"results":[]}', 200);
+        });
+        addTearDown(() {
+          if (!response.isCompleted) {
+            response.complete(
+              http.Response(
+                jsonEncode({'teams': assignments.reversed.toList()}),
+                200,
+              ),
+            );
+          }
+        });
+        await pumpDefensysWidget(
+          tester,
+          const PanelistDashboard(),
+          overrides: [
+            authProvider.overrideWith(_Guest.new),
+            connectivityProvider.overrideWith(_Online.new),
+            authenticatedHttpClientProvider.overrideWithValue(client),
+          ],
+        );
+        await _tap(tester, find.text('Grade Team').first);
+        await _tap(
+          tester,
+          find.byKey(const ValueKey('confirm-team-selection')),
+        );
+        delayAssignments = true;
+        await _tap(tester, find.text('Assignments').last);
+        if (openViaCard) {
+          await _tap(tester, find.text('Grade Team').last);
+          expect(find.text('Team preview'), findsOneWidget);
+          await _tap(
+            tester,
+            find.byKey(const ValueKey('confirm-team-selection')),
+          );
+          final sheet = tester.widget<GradeSheetTab>(
+            find.byType(GradeSheetTab),
+          );
+          expect(sheet.teams[sheet.selectedTeamIndex].scheduleId, '21');
+        } else {
+          await _tap(tester, find.text('Grade Sheet').last);
+          expect(
+            tester
+                .widget<NavigationBar>(find.byType(NavigationBar))
+                .selectedIndex,
+            1,
+          );
+        }
+        response.complete(
+          http.Response(
+            jsonEncode({'teams': assignments.reversed.toList()}),
+            200,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final refreshedSheet = tester.widget<GradeSheetTab>(
+          find.byType(GradeSheetTab),
+        );
+        expect(
+          refreshedSheet.teams[refreshedSheet.selectedTeamIndex].scheduleId,
+          openViaCard ? '21' : '20',
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  testWidgets('results refresh does not block returning to the Grade Sheet', (
+    tester,
+  ) async {
+    final client = _Client();
+    final response = Completer<http.Response>();
+    var delayResults = false;
+    when(() => client.get(any())).thenAnswer((invocation) async {
+      final path = (invocation.positionalArguments.first as Uri).path;
+      if (path.contains('guest-assignments')) {
+        return http.Response(
+          jsonEncode({
+            'teams': [_assignment(20, 'Team SkyLedger')],
+          }),
+          200,
+        );
+      }
+      return delayResults
+          ? response.future
+          : http.Response('{"results":[]}', 200);
+    });
+    addTearDown(() {
+      if (!response.isCompleted) {
+        response.complete(http.Response('{"results":[]}', 200));
+      }
+    });
+    await pumpDefensysWidget(
+      tester,
+      const PanelistDashboard(),
+      overrides: [
+        authProvider.overrideWith(_Guest.new),
+        connectivityProvider.overrideWith(_Online.new),
+        authenticatedHttpClientProvider.overrideWithValue(client),
+      ],
+    );
+    await _tap(tester, find.text('Grade Team'));
+    await _tap(tester, find.byKey(const ValueKey('confirm-team-selection')));
+    delayResults = true;
+    await tester.tap(find.text('Results').last);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      2,
+    );
+    await tester.tap(find.text('Grade Sheet').last);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      1,
+    );
+    response.complete(http.Response('{"results":[]}', 200));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'pending navigation save is visible and a failed save preserves the sheet',
+    (tester) async {
+      await loadPreviewFonts(force: true);
+      final client = _Client();
+      final response = Completer<http.Response>();
+      when(() => client.get(any())).thenAnswer(
+        (invocation) async => http.Response(
+          (invocation.positionalArguments.first as Uri).path.contains(
+                'guest-assignments',
+              )
+              ? jsonEncode({
+                  'teams': [_assignment(20, 'Team SkyLedger')],
+                })
+              : '{"results":[]}',
+          200,
+        ),
+      );
+      when(
+        () => client.post(any(), body: any(named: 'body')),
+      ).thenAnswer((_) => response.future);
+      addTearDown(() {
+        if (!response.isCompleted) response.complete(http.Response('{}', 503));
+      });
+      await pumpDefensysWidget(
+        tester,
+        const PanelistDashboard(),
+        overrides: [
+          authProvider.overrideWith(_Guest.new),
+          connectivityProvider.overrideWith(_Online.new),
+          authenticatedHttpClientProvider.overrideWithValue(client),
+        ],
+      );
+      await _tap(tester, find.text('Grade Team'));
+      await _tap(tester, find.byKey(const ValueKey('confirm-team-selection')));
+      await _tap(tester, find.byKey(const ValueKey('score-value-8')));
+      await tester.tap(find.text('Assignments').last);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.byKey(const ValueKey('navigation-draft-saving')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        1,
+      );
+      await capturePreview(
+        tester,
+        find.byType(PanelistDashboard),
+        'grading-workspace-final/navigation-saving',
+        viewport: true,
+      );
+      response.complete(http.Response('{"detail":"Offline"}', 503));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('navigation-draft-saving')),
+        findsNothing,
+      );
+      expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        1,
+      );
+      expect(_valueForScore(tester), 8);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'Assignments confirms identity and a failed save blocks leaving the grade sheet',
     (tester) async {

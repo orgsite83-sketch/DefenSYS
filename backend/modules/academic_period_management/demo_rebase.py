@@ -25,9 +25,8 @@ def rebase_demo_term(*, source_id, target_id, expected_year, expected_teams,
                      actor=None, apply=False, backup_path=None, preview_revision=''):
     from user_management.models import FacultyRoleAssignment, SectionInstructorAssignment
     from user_management.academic_records.models import StudentAcademicRecord
-    from student_teams.models import (CapstoneJourney, SectionAssignment, StudentTeam,
+    from student_teams.models import (HistoricalCapstoneJourney, SectionAssignment, StudentTeam,
                                      TeamMembership, TeamTermParticipation)
-    from student_teams.capstone_lifecycle import EXTENSION_POLICY, year_after
     from grading.grades.models import TeamGrade
     from repository.archive.models import ArchiveEntry
     from repository.deliverables.models import DeliverableSubmission
@@ -81,9 +80,9 @@ def rebase_demo_term(*, source_id, target_id, expected_year, expected_teams,
     if any(team.level == StudentTeam.LEVEL_3_PIT for team in teams):
         raise ValueError('Third-year PIT cannot be relabeled as second-semester Capstone. Review those teams separately.')
     capstone_ids = [team.pk for team in capstone]
-    if any(team.capstone_phase == StudentTeam.PHASE_EXTENDED or team.project_version != 1 for team in capstone):
+    if any(team.capstone_phase == 'extended' or team.project_version != 1 for team in capstone):
         raise ValueError('Extended or replacement projects require the normal historical correction process.')
-    if (CapstoneJourney.objects.filter(team_id__in=capstone_ids).exists()
+    if (HistoricalCapstoneJourney.objects.filter(team_id__in=capstone_ids).exists()
             or TeamGrade.all_objects.filter(team_id__in=capstone_ids).exists()):
         raise ValueError('Existing Capstone cohort/assessment evidence cannot be rebased as a fresh intake.')
     participations = list(TeamTermParticipation.objects.filter(semester=source).order_by('pk'))
@@ -119,7 +118,7 @@ def rebase_demo_term(*, source_id, target_id, expected_year, expected_teams,
     backup.parent.mkdir(parents=True, exist_ok=True)
     with backup.open('x', encoding='utf-8') as stream:
         json.dump({'correction': report, 'reason': reason, 'records_before': before,
-                   'created_journey_team_ids': capstone_ids}, stream, cls=DjangoJSONEncoder, indent=2)
+                   'mapped_intake_team_ids': capstone_ids}, stream, cls=DjangoJSONEncoder, indent=2)
 
     for model, field, ids in references:
         model._base_manager.filter(pk__in=ids).update(**{field.attname: target_id})
@@ -142,9 +141,7 @@ def rebase_demo_term(*, source_id, target_id, expected_year, expected_teams,
                         'year_level': team.year_level, 'level': team.level, 'section': team.section}
         row.save(update_fields=['snapshot'])
     for team in capstone:
-        CapstoneJourney.objects.create(team_id=team.pk, intake_semester=target,
-            normal_completion_year=year_after(expected_year),
-            extension_end_year=year_after(year_after(expected_year)), extension_policy=EXTENSION_POLICY)
+        StudentTeam.objects.filter(pk=team.pk).update(intake_semester=target)
 
     source.is_active = False
     source.save(update_fields=['is_active'])
@@ -160,5 +157,5 @@ def rebase_demo_term(*, source_id, target_id, expected_year, expected_teams,
         action='semester.demo_baseline_corrected', target=target, actor=actor, reason=reason,
         old_values={'source_semester_id': source_id, 'source_semester': source.display_name},
         new_values=json.loads(json.dumps({**report, 'applied': True, 'backup': str(backup.resolve()),
-            'created_journey_team_ids': capstone_ids}, cls=DjangoJSONEncoder)), strict=True)
+            'mapped_intake_team_ids': capstone_ids}, cls=DjangoJSONEncoder)), strict=True)
     return {**report, 'applied': True, 'backup': str(backup.resolve())}

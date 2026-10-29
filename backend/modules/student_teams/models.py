@@ -97,21 +97,17 @@ class StudentTeam(models.Model):
     STATUS_PENDING = 'Pending'
     STATUS_APPROVED = 'Approved'
     STATUS_FAILED = 'Failed'
-    STATUS_DELAYED = 'Delayed/Extended'
 
     STATUS_CHOICES = (
         (STATUS_PENDING, STATUS_PENDING),
         (STATUS_APPROVED, STATUS_APPROVED),
         (STATUS_FAILED, STATUS_FAILED),
-        (STATUS_DELAYED, STATUS_DELAYED),
     )
 
     PHASE_ACTIVE = 'active'
-    PHASE_EXTENDED = 'extended'
 
     PHASE_CHOICES = (
         (PHASE_ACTIVE, PHASE_ACTIVE),
-        (PHASE_EXTENDED, PHASE_EXTENDED),
     )
 
     name = models.CharField(max_length=120)
@@ -132,6 +128,14 @@ class StudentTeam(models.Model):
         related_name='teams',
         on_delete=models.PROTECT,
     )
+    intake_semester = models.ForeignKey(
+        'academic_period_management.Semester', null=True, blank=True,
+        related_name='capstone_intake_teams', on_delete=models.PROTECT,
+    )
+    previous_team = models.ForeignKey(
+        'self', null=True, blank=True, related_name='returning_rosters', on_delete=models.PROTECT,
+    )
+    participation_review_reason = models.TextField(blank=True, default='')
     leader = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name='led_teams',
@@ -160,8 +164,8 @@ class StudentTeam(models.Model):
     class Meta:
         ordering = ['name']
         constraints = [
-            models.UniqueConstraint(fields=['name', 'level'], condition=models.Q(roster_identity__isnull=True),
-                name='unique_team_name_per_level'),
+            models.UniqueConstraint(fields=['name', 'level', 'semester'], condition=models.Q(roster_identity__isnull=True),
+                name='unique_team_name_per_level_semester'),
         ]
 
     @property
@@ -349,10 +353,11 @@ class TeamStageProgress(models.Model):
         super().save(*args, **kwargs)
 
 
-class TeamRecoveryAuthorization(models.Model):
+class HistoricalCapstoneRecovery(models.Model):
+    """Preserved authorization evidence. Never consulted for live permission."""
     ACTION_RETAKE = 'retake'
     ACTION_NEW_CONCEPT = 'new_concept'
-    team = models.ForeignKey(StudentTeam, related_name='recovery_authorizations', on_delete=models.CASCADE)
+    team = models.ForeignKey(StudentTeam, related_name='historical_recovery_records', on_delete=models.CASCADE)
     defense_stage = models.ForeignKey('defense.DefenseStage', on_delete=models.PROTECT)
     semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT)
     source_grade = models.ForeignKey('grading.TeamGrade', null=True, blank=True,
@@ -369,17 +374,72 @@ class TeamRecoveryAuthorization(models.Model):
 
     class Meta:
         ordering = ['-authorized_at', '-id']
+        db_table = 'student_teams_teamrecoveryauthorization'
+
+    def save(self, *args, **kwargs):
+        raise ValidationError('Retired recovery evidence is read-only.')
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Retired recovery evidence must be preserved.')
 
 
-class CapstoneJourney(models.Model):
-    """Cohort identity and allowance, independent of the current team term."""
-    team = models.OneToOneField(StudentTeam, on_delete=models.CASCADE, related_name='capstone_journey')
+class HistoricalCapstoneJourney(models.Model):
+    """Read-only original cohort/allowance evidence from the retired policy."""
+    team = models.OneToOneField(StudentTeam, on_delete=models.CASCADE, related_name='historical_capstone_journey')
     intake_semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT)
     normal_completion_year = models.CharField(max_length=9)
     extension_end_year = models.CharField(max_length=9)
     extension_policy = models.CharField(max_length=40, blank=True)
     completed_project_version = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'student_teams_capstonejourney'
+
+    def save(self, *args, **kwargs):
+        raise ValidationError('Historical cohort evidence is read-only.')
+
+
+class StudentCapstoneParticipation(models.Model):
+    """One confirmed student intake, including its normal Capstone 2 term."""
+    ACTIVE = 'active'
+    FAILED = 'failed'
+    COMPLETED = 'completed'
+    NEEDS_REVIEW = 'needs_review'
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='capstone_participations')
+    intake_semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT,
+        related_name='student_capstone_participations')
+    number = models.PositiveIntegerField()
+    state = models.CharField(max_length=20, default=ACTIVE, choices=[
+        (ACTIVE, 'Active'), (FAILED, 'Failed'), (COMPLETED, 'Completed'), (NEEDS_REVIEW, 'Needs review')])
+    previous = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT,
+        related_name='subsequent_participations')
+    confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+')
+    confirmed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['student_id', 'number']
+        constraints = [
+            models.UniqueConstraint(fields=['student', 'intake_semester'], name='unique_student_capstone_intake'),
+            models.UniqueConstraint(fields=['student', 'number'], name='unique_student_capstone_number'),
+            models.CheckConstraint(condition=models.Q(number__gte=1), name='positive_capstone_participation'),
+        ]
+
+
+class StudentCapstonePlacement(models.Model):
+    participation = models.ForeignKey(StudentCapstoneParticipation, on_delete=models.PROTECT,
+        related_name='placements')
+    team = models.ForeignKey(StudentTeam, on_delete=models.PROTECT, related_name='student_placements')
+    placed_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    snapshot = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['placed_at', 'id']
+        constraints = [models.UniqueConstraint(fields=['participation'],
+            condition=models.Q(ended_at__isnull=True), name='one_active_capstone_placement')]
 
 
 class TeamTermParticipation(models.Model):

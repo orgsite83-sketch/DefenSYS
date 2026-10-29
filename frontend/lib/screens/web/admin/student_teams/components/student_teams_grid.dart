@@ -233,25 +233,51 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           border: Border.all(color: DefensysTokens.borderOf(context)),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Padding(padding: const EdgeInsets.all(16), child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [Icon(
-            Icons.account_tree_outlined,
-            size: 20,
-            color: DefensysTokens.maroonTextOf(context),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.account_tree_outlined,
+                size: 20,
+                color: DefensysTokens.maroonTextOf(context),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 16,
+                      runSpacing: 10,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          'Shared system proposals · ${workflow['stage_label']}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.textPrimaryOf(context),
+                          ),
+                        ),
+                        ProposalTitleProgressBadge(rows: systems),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ProposalTitleSummary(
+                      rows: systems,
+                      title: 'Shared systems',
+                      systems: true,
+                      showHeading: false,
+                      selectedKey: '${workflow['section_selected_key'] ?? ''}',
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Wrap(spacing: 16, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              Text('Shared system proposals · ${workflow['stage_label']}',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                  color: DefensysTokens.textPrimaryOf(context))),
-              ProposalTitleProgressBadge(rows: systems),
-            ]),
-            const SizedBox(height: 4),
-            ProposalTitleSummary(rows: systems, title: 'Shared systems', systems: true, showHeading: false),
-          ])),
-        ])),
+        ),
       ),
     );
   }
@@ -292,25 +318,6 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           ),
         ),
         const SizedBox(height: 2),
-        if (team['capstone_phase'] == 'extended')
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color: DefensysTokens.surfaceHigherOf(context),
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: Text(
-                'Extended',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: DefensysTokens.maroonTextOf(context),
-                ),
-              ),
-            ),
-          ),
         if (team['term_status'] == 'historical')
           Padding(
             padding: const EdgeInsets.only(top: 2, bottom: 4),
@@ -319,13 +326,13 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
               style: TextStyle(fontSize: 11, color: _textSecondary),
             ),
           ),
-          Text(
-            hasOpenConceptProposals(workflow)
-                ? 'Concept selection · ${proposals.where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty).length} of ${proposals.length} titles provided'
-                : projectTitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: _textSecondary, fontSize: 12),
+        Text(
+          hasOpenConceptProposals(workflow)
+              ? 'Concept selection · ${proposals.where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty).length} of ${proposals.length} titles provided'
+              : projectTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: _textSecondary, fontSize: 12),
         ),
         if (!isPit) ...[
           const SizedBox(height: 4),
@@ -582,8 +589,12 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           final projectId = workflow is Map
               ? _asInt(workflow['section_project_id'])
               : null;
-          if (workflow is Map && (projectId != null || workflow['shared_import_pending'] == true)) {
-            sharedWorkflows[projectId == null ? 'imported:$section' : '$projectId'] = {
+          if (workflow is Map &&
+              (projectId != null ||
+                  workflow['shared_import_pending'] == true)) {
+            sharedWorkflows[projectId == null
+                ? 'imported:$section'
+                : '$projectId'] = {
               ...workflow,
               'stage_label': defense is Map
                   ? defense['event_label'] ?? defense['current_stage'] ?? ''

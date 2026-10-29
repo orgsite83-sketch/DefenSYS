@@ -18,7 +18,7 @@ def _decode_path(value):
     try:
         raw = base64.urlsafe_b64decode(value + '=' * (-len(value) % 4))
         path = json.loads(raw)
-        if isinstance(path, list) and 1 <= len(path) <= 5 and all(isinstance(item, str) for item in path):
+        if isinstance(path, list) and 1 <= len(path) <= 7 and all(isinstance(item, str) for item in path):
             return path
     except (ValueError, UnicodeDecodeError, TypeError):
         pass
@@ -33,7 +33,8 @@ def academic_term_folder_key(academic_year, semester):
 
 
 def _file_entries(entries):
-    return [entry for entry in entries if entry.get('has_file') and not entry.get('is_missing')]
+    return [entry for entry in entries if (entry.get('has_file') and not entry.get('is_missing'))
+            or entry.get('is_shared_requirement')]
 
 
 def _event_cohort_key(entry):
@@ -81,6 +82,19 @@ def _segments(entry, group_by, known_event_ids=None):
     if group_by == 'stage':
         return parents
     if group_by == 'team':
+        if entry.get('section_project_id') and entry.get('shared_owner'):
+            section = (json.dumps(['shared_section', entry['section_project_id'], entry.get('section_round_id')]),
+                f'Shared system · {entry.get("section", "Section")}',
+                entry.get('shared_system_title') or 'System selection pending')
+            history = bool(entry.get('is_proposal_history'))
+            if entry['shared_owner'] == 'section':
+                return parents + [section, (json.dumps(['shared_documents', 'history' if history else 'selected']),
+                    'Proposal history' if history else 'Selected shared system',
+                    'Earlier hearing documents' if history else 'Project manager · One submission for the section')]
+            return parents + [section, (json.dumps(['team', team_key]), team_name, 'Linked module'),
+                (json.dumps(['module_documents', 'history' if history else 'current']),
+                 'Proposal history' if history else 'Module files',
+                 'Unselected module proposals' if history else 'Team submissions and records')]
         return parents + [(json.dumps(['team', team_key]), team_name, year_level)]
     deliverable_id = entry.get('deliverable_id') or 'archive-files'
     deliverable_label = entry.get('deliverable_label') or 'Archive files'
@@ -144,7 +158,7 @@ def archive_folder_payload(entries, group_by='team', folder_key=''):
                 'title': segment[1],
                 'key': _encode_path(selected_path[:index + 1]),
             })
-    is_leaf = bool(matching) and depth >= len(matching[0][1])
+    is_leaf = bool(matching) and all(depth >= len(segments) for _, segments in matching)
     folders = {}
     if not is_leaf:
         for entry, segments in matching:
@@ -179,4 +193,20 @@ def archive_folder_payload(entries, group_by='team', folder_key=''):
         'entries': [entry for entry, _ in matching] if is_leaf else [],
         'file_count': sum(1 for entry, _ in matching if entry.get('has_file') and not entry.get('is_missing')),
         'missing_count': sum(1 for entry, _ in matching if entry.get('is_missing') or not entry.get('has_file')),
+        'shared_context': _shared_folder_context(matching, depth),
     }
+
+
+def _shared_folder_context(matching, depth):
+    if depth < 5 or not matching:
+        return None
+    entries = [entry for entry, _ in matching]
+    identities = {(e.get('section_project_id'), e.get('section_round_id')) for e in entries}
+    if len(identities) != 1 or not entries[0].get('section_project_id'):
+        return None
+    entry = entries[0]
+    pending = [e for e in entries if e.get('is_shared_requirement')]
+    return {'section': entry.get('section'), 'selected_system_title': entry.get('shared_system_title'),
+        'round': entry.get('shared_round'), 'requirements_pending': len(pending),
+        'project_manager_name': next((e.get('project_manager_name') for e in pending if e.get('project_manager_name')), ''),
+        'is_history': all(e.get('is_proposal_history') for e in entries)}

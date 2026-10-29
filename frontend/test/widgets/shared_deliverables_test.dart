@@ -70,6 +70,8 @@ Map<String, dynamic> _group() => {
 };
 
 void main() {
+  setUpAll(() => loadPreviewFonts(force: true));
+
   testWidgets(
     'shared setup is visible, copies requirements, and keeps its settings independent',
     (tester) async {
@@ -202,4 +204,181 @@ void main() {
     });
     expect(status.code, 'shared_clearance_pending');
   });
+
+  for (final dark in [false, true]) {
+    for (final width in [1100.0, 390.0]) {
+      testWidgets(
+        'accepted shared archive file has details but no revision controls ($width, $dark)',
+        (tester) async {
+          tester.view.physicalSize = Size(width, 900);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await loadPreviewFonts();
+          final group = _group()..['selected_key'] = 'c1';
+          group['requirements'] = [
+            {
+              'deliverable_id': 'FINAL',
+              'label': 'Approved concept paper',
+              'deliverable_type': 'post',
+              'file_format': 'pdf',
+              'required': true,
+              'status': 'accepted',
+              'file_policy': {'mode': 'single'},
+              'documents': [
+                {
+                  ..._document('primary', 'Approved concept paper'),
+                  // Old or stale API permissions must not reopen an accepted archive.
+                  'can_upload': true, 'can_review': true,
+                  'suggested_file_name': 'SmartAgriculturalSupplyPlatform.pdf',
+                  'file': {
+                    'id': 21,
+                    'file_name': 'Approved_Shared_Paper.pdf',
+                    'revision': 1,
+                    'status': 'accepted',
+                    'file_url': '/protected/shared-final.pdf',
+                  },
+                },
+              ],
+            },
+          ];
+          await pumpDefensysWidget(
+            tester,
+            SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: SharedDeliverablesPanel(group: group),
+              ),
+            ),
+            theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+          );
+          expect(find.text('Accepted & archived'), findsOneWidget);
+          expect(find.text('Revision 1 · Archived'), findsOneWidget);
+          expect(find.text('Request revision'), findsNothing);
+          expect(find.text('Upload revision'), findsNothing);
+          expect(find.text('Accept file'), findsNothing);
+          expect(find.text('Details'), findsOneWidget);
+          await capturePreview(
+            tester,
+            find.byType(SharedDeliverablesPanel),
+            'shared-archived-readonly-${width.toInt()}-${dark ? 'dark' : 'light'}',
+            viewport: true,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  for (final dark in [false, true]) {
+    for (final width in [1100.0, 390.0]) {
+      testWidgets(
+        'selected system owns the final paper and alternatives stay in history ($width, $dark)',
+        (tester) async {
+          tester.view.physicalSize = Size(width, 1000);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await loadPreviewFonts();
+          final group = _group()..['selected_key'] = 'c2';
+          (group['requirements'] as List).add({
+            'deliverable_id': 'FINAL',
+            'label': 'Approved shared concept paper',
+            'deliverable_type': 'post',
+            'required': true,
+            'status': 'missing',
+            'file_policy': {'mode': 'single'},
+            'documents': [
+              _document('primary', 'Approved shared concept paper')
+                ..['can_upload'] = false,
+            ],
+          });
+          await pumpDefensysWidget(
+            tester,
+            SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: SharedDeliverablesPanel(group: group),
+              ),
+            ),
+            theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+          );
+          expect(find.text('Selected section system'), findsOneWidget);
+          expect(find.text('Smart Agricultural Supply Platform'), findsNothing);
+          expect(
+            find.text('Upload Approved shared concept paper'),
+            findsOneWidget,
+          );
+          expect(find.text('System 1'), findsNothing);
+          expect(find.text('Earlier proposals (1)'), findsOneWidget);
+          await capturePreview(
+            tester,
+            find.byType(SharedDeliverablesPanel),
+            'shared-selected-${width.toInt()}-${dark ? 'dark' : 'light'}',
+            viewport: true,
+          );
+          await tester.ensureVisible(find.text('Earlier proposals (1)'));
+          await tester.tap(find.text('Earlier proposals (1)'));
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Smart Agricultural Supply Platform'),
+            findsOneWidget,
+          );
+          expect(
+            find.text('Upload Approved shared concept paper'),
+            findsOneWidget,
+          );
+          expect(find.text('Back to selected system'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  test('accepted team modules identify the outstanding PM upload', () {
+    final status = TeamWorkflowStatus.fromStage({
+      'deliverables_configured': true,
+      'has_done_schedule': true,
+      'archive_complete': false,
+      'assessment_progress': {
+        'panel_complete': true,
+        'display_status': 'pending_post_defense',
+      },
+      'post_defense_completion': {
+        'team_complete': true,
+        'shared_complete': false,
+        'shared': {'status': 'awaiting_pm_upload'},
+      },
+    });
+    expect(status.code, 'awaiting_pm_upload');
+    expect(status.nextStep, contains('project manager'));
+  });
+
+  testWidgets(
+    'selected per-system final stays visible while browsing earlier proposals',
+    (tester) async {
+      final group = _group()..['selected_key'] = 'c2';
+      (group['requirements'] as List).add({
+        'deliverable_id': 'FINAL',
+        'label': 'Selected shared paper',
+        'deliverable_type': 'post',
+        'required': true,
+        'status': 'missing',
+        'file_policy': {'mode': 'concepts'},
+        'documents': [
+          _document('c2:paper', 'Selected shared paper', system: 'c2'),
+        ],
+      });
+      await pumpDefensysWidget(
+        tester,
+        SingleChildScrollView(child: SharedDeliverablesPanel(group: group)),
+      );
+      expect(find.text('Upload Selected shared paper'), findsOneWidget);
+      await tester.ensureVisible(find.text('Earlier proposals (1)'));
+      await tester.tap(find.text('Earlier proposals (1)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Upload Selected shared paper'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

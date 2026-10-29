@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from defensys_backend.read_projection import read_memoize
 
 
-def requested_set(current, decisions, outcome, replacement_required=False):
+def requested_set(current, decisions, outcome, replacement_required=False, *, automatic=False):
     """Rejection alone never determines the next hearing's requirements."""
     if outcome != 'for_redefense':
         return None
@@ -21,7 +21,7 @@ def requested_set(current, decisions, outcome, replacement_required=False):
         if action not in ('revise', 'replace', 'omit'):
             raise ValidationError('Specify revise, replace, or not requested for every concept in the next hearing.')
         if action != 'omit':
-            if not item.get('remarks', '').strip():
+            if not automatic and not item.get('remarks', '').strip():
                 raise ValidationError('Record the panel instructions for every requested concept.')
             requested.append({'key': concept['key'], 'action': action, 'feedback': item['remarks'].strip()})
     if not requested:
@@ -81,6 +81,9 @@ def preparing(team, stage):
     from .services import latest_stage_grade
     from student_teams.services import was_stage_endorsed
     if stage is None:
+        return False
+    grade = latest_stage_grade(team, stage.label)
+    if grade and grade.closed_as_failed:
         return False
     current = latest_round(team, stage)
     if current:

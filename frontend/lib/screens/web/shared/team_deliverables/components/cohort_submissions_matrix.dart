@@ -14,7 +14,6 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_types.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
-import 'package:defensys/widgets/repository/defense_material_readiness.dart';
 import 'package:defensys/models/team_workflow_status.dart';
 import 'package:defensys/widgets/repository/workflow_status_style.dart';
 
@@ -135,7 +134,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     final requiredPreItems = allItems.where((d) =>
         d['type'] != 'post' &&
         d['deliverable_type'] != 'post' &&
-        d['requirement_timing'] != 'defense' &&
+
         d['required'] == true &&
         d['is_waived'] != true).toList();
 
@@ -180,8 +179,9 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     return (stats['missing'] as int) > 0 || (stats['pending'] as int) > 0 || DeliverablesTriageHelper.isOverdueOrMissing(team);
   }
 
-  Future<void> _sendTeamReminder(BuildContext context, Map<String, dynamic> team, String stageLabel) async {
+  Future<void> _sendTeamReminder(BuildContext context, Map<String, dynamic> team, String stageLabel, {String? deliverableId}) async {
     final teamId = _asInt(team['id']);
+    if (_remindingTeamIds.contains(teamId)) return;
     final teamName = team['name']?.toString() ?? 'Team';
     final isPit = widget.state.scope == 'pit' || team['is_pit'] == true;
 
@@ -192,7 +192,10 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
       final response = await client.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'stage_label': stageLabel}),
+        body: jsonEncode({
+          'stage_label': stageLabel,
+          if (deliverableId != null) 'deliverable_id': deliverableId,
+        }),
       );
 
       if (response.statusCode == 200) {
@@ -842,7 +845,6 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     final hasPending = pendingCount > 0 || DeliverablesTriageHelper.hasPendingReview(team);
     final isMissing = missingCount > 0 || DeliverablesTriageHelper.isOverdueOrMissing(team);
 
-    final materialsReadiness = activeStage['materials_readiness'];
 
     // Resolve pre, post, and deliverables collections
     final preList = (activeStage['pre'] as List?)
@@ -877,10 +879,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
       }
     }
 
-    final beforeEndorsement =
-        allPre.where((d) => d['requirement_timing'] != 'defense').toList();
-    final beforeDefense =
-        allPre.where((d) => d['requirement_timing'] == 'defense').toList();
+    final beforeEndorsement = allPre;
 
     final lacksDeliverables = _teamLacksDeliverables(team);
     final isRemindingThis = _remindingTeamIds.contains(teamId);
@@ -1049,13 +1048,6 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                       }
                     },
                   ),
-                if (materialsReadiness is Map && materialsReadiness.isNotEmpty) ...[
-                  DefenseMaterialReadiness(
-                    readiness: Map<String, dynamic>.from(materialsReadiness),
-                    compact: false,
-                  ),
-                  const SizedBox(height: 14),
-                ],
 
                 // Presentation Only Stage Notice
                 if (isPresentationOnly)
@@ -1094,19 +1086,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                           : 'Files required to be cleared before the adviser can endorse this team.',
                     ),
                     const SizedBox(height: 8),
-                    ...beforeEndorsement.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit, teamId)),
-                    const SizedBox(height: 14),
-                  ],
-
-                  // Section 2: Before Defense Materials
-                  if (beforeDefense.isNotEmpty) ...[
-                    _buildSectionHeader(
-                      icon: LucideIcons.presentation,
-                      title: 'Before Defense Materials',
-                      subtitle: 'Presentation slides and demonstration materials required for panel review.',
-                    ),
-                    const SizedBox(height: 8),
-                    ...beforeDefense.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit, teamId)),
+                    ...beforeEndorsement.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit, team)),
                     const SizedBox(height: 14),
                   ],
 
@@ -1118,11 +1098,11 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                       subtitle: 'Final manuscripts, compliance forms, and project archives.',
                     ),
                     const SizedBox(height: 8),
-                    ...allPost.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit, teamId)),
+                    ...allPost.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit, team)),
                   ],
 
                   // Empty State if no deliverables configured
-                  if (beforeEndorsement.isEmpty && beforeDefense.isEmpty && allPost.isEmpty)
+                  if (beforeEndorsement.isEmpty && allPost.isEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                       alignment: Alignment.center,
@@ -1182,9 +1162,27 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     Map<String, dynamic> item,
     String stageLabel,
     bool isPit,
-    int teamId,
+    Map<String, dynamic> team,
   ) {
-    if ((item['file_policy'] as Map? ?? {}).isNotEmpty) return DocumentGroup(teamId: teamId, stageLabel: stageLabel, item: item);
+    final teamId = _asInt(team['id']);
+    void remind() => _sendTeamReminder(
+      context,
+      team,
+      stageLabel,
+      deliverableId: item['id']?.toString(),
+    );
+    if ((item['file_policy'] as Map? ?? {}).isNotEmpty) {
+      return DocumentGroup(
+        teamId: teamId,
+        stageLabel: stageLabel,
+        item: item,
+        allowUploads: false,
+        onRemind: item['is_waived'] != true && item['required'] == true
+            ? remind
+            : null,
+        reminding: _remindingTeamIds.contains(teamId),
+      );
+    }
     final label = item['label']?.toString() ??
         item['title']?.toString() ??
         item['name']?.toString() ??
@@ -1199,17 +1197,14 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
         ?.toString()
         .toLowerCase();
     final uploaded = item['uploaded'] == true || submission != null;
-    final isLate = submission?['is_late'] == true || item['is_late'] == true;
     final feedback = submission?['feedback']?.toString() ?? '';
-    final timing = item['requirement_timing']?.toString();
-    final isDefense = timing == 'defense';
 
     final isAccepted = subStatus == 'accepted' ||
         subStatus == 'approved' ||
         subStatus == 'passed' ||
         subStatus == 'cleared';
     final isRejected = subStatus == 'rejected' || subStatus == 'needs revision';
-    final isPending = uploaded && !isAccepted && !isRejected && !isDefense;
+    final isPending = uploaded && !isAccepted && !isRejected;
     final isMissing = !uploaded && isRequired && !isWaived;
 
     // Build files list
@@ -1237,7 +1232,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     final fileStyle = WorkflowStatusStyle.of(context,
       isWaived ? WorkflowStatusTone.neutral
         : isRejected ? WorkflowStatusTone.attention
-        : isAccepted || isDefense && uploaded ? WorkflowStatusTone.success
+        : isAccepted ? WorkflowStatusTone.success
         : isPending ? WorkflowStatusTone.active : WorkflowStatusTone.neutral);
     final cardBorder = fileStyle.border;
     IconData leadingIcon = LucideIcons.circle;
@@ -1325,34 +1320,6 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                                     ),
                                   ),
                                 ),
-                              if (timing == 'defense')
-                                ShadBadge.secondary(
-                                  backgroundColor: const Color(0xFFDBEAFE),
-                                  foregroundColor: const Color(0xFF1D4ED8),
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                  child: const Text(
-                                    'BEFORE DEFENSE',
-                                    style: TextStyle(
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              if (isLate)
-                                ShadBadge.secondary(
-                                  backgroundColor: const Color(0xFFFEF3C7),
-                                  foregroundColor: const Color(0xFFB45309),
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                  child: const Text(
-                                    'LATE SUBMISSION',
-                                    style: TextStyle(
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
                               if (isWaived)
                                 ShadBadge.secondary(
                                   backgroundColor: DefensysTokens.surfaceHigherOf(context),
@@ -1372,7 +1339,6 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                         ),
                         const SizedBox(width: 8),
                         _buildDeliverableStatusBadge(
-                          isDefenseUploaded: isDefense && uploaded && !isRejected,
                           isAccepted: isAccepted,
                           isPending: isPending,
                           isRejected: isRejected,
@@ -1475,6 +1441,16 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                           color: isMissing ? const Color(0xFFDC2626) : DefensysTokens.textSecondaryOf(context),
                         ),
                       ),
+                      if (isMissing && item['type'] != 'system' && item['source'] != 'defense_minutes')
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: ShadButton.outline(
+                            size: ShadButtonSize.sm,
+                            leading: const Icon(LucideIcons.bell, size: 13),
+                            onPressed: _remindingTeamIds.contains(teamId) ? null : remind,
+                            child: const Text('Remind'),
+                          ),
+                        ),
                     ],
                   ],
                 ),
@@ -1522,7 +1498,6 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
   }
 
   Widget _buildDeliverableStatusBadge({
-    bool isDefenseUploaded = false,
     required bool isAccepted,
     required bool isPending,
     required bool isRejected,
@@ -1532,7 +1507,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     final style = WorkflowStatusStyle.of(context,
       isWaived ? WorkflowStatusTone.neutral
         : isRejected ? WorkflowStatusTone.attention
-        : isDefenseUploaded || isAccepted ? WorkflowStatusTone.success
+        : isAccepted ? WorkflowStatusTone.success
         : isPending ? WorkflowStatusTone.active : WorkflowStatusTone.neutral);
     final bg = style.background;
     final border = style.border;
@@ -1540,8 +1515,8 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     String text;
     IconData icon;
 
-    if (isDefenseUploaded || isAccepted) {
-      text = isDefenseUploaded ? 'Uploaded' : 'Accepted';
+    if (isAccepted) {
+      text = 'Accepted';
       icon = LucideIcons.checkCircle2;
     } else if (isPending) {
       text = 'Pending Review';

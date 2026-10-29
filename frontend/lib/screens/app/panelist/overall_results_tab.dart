@@ -535,6 +535,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
     final verdictByName = result['verdict_by_name']?.toString() ?? '';
     final attemptCount = result['attempt_count'] ?? 1;
     final hasVerdict = verdict.isNotEmpty;
+    final isAutomatic = (result['outcome_metadata'] as Map?)?['source'] == 'automatic';
     final isForRedefense = [
       'for_redefense',
       'failed',
@@ -695,14 +696,18 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isForRedefense
+                  color: isAutomatic
+                      ? DefensysTokens.surfaceHigherOf(context)
+                      : isForRedefense
                       ? DefensysTokens.dangerBg
                       : isRevisions
                       ? DefensysTokens.revisionBg
                       : DefensysTokens.successBg,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: isForRedefense
+                    color: isAutomatic
+                        ? DefensysTokens.borderOf(context)
+                        : isForRedefense
                         ? DefensysTokens.dangerBorder
                         : isRevisions
                         ? DefensysTokens.revisionBorder
@@ -730,7 +735,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'VERDICT: ${defenseVerdictLabel(verdict).toUpperCase()} (Attempt #$attemptCount)',
+                            '${isAutomatic ? 'OUTCOME' : 'VERDICT'}: ${defenseVerdictLabel(verdict).toUpperCase()} (Attempt #$attemptCount)',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -757,7 +762,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                     if (verdictRemarks.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'Directives: $verdictRemarks',
+                        '${isAutomatic ? 'Recommendations' : 'Directives'}: $verdictRemarks',
                         style: const TextStyle(
                           fontSize: 11,
                           color: DefensysTokens.textDark,
@@ -776,7 +781,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                 const Text('Your concept assessments', style: TextStyle(fontWeight: FontWeight.w600)),
                 for (final concept in (result['concept_assessments'] as List).whereType<Map>())
                   Padding(padding: const EdgeInsets.only(top: 8), child: Text(
-                    '${concept['title']}: ${concept['percentage'] ?? 'Pending'}%${concept['selected'] == true ? ' · Selected' : ''}')),
+                    '${concept['title']}: ${concept['percentage'] == null ? 'Pending' : '${concept['percentage']}%'}${concept['selected'] == true ? ' · Selected' : ''}')),
               ])),
           // ── Panel Score Bar ──
           Padding(

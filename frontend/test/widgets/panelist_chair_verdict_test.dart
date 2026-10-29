@@ -41,7 +41,11 @@ TeamData _chairAssignment({
             },
           },
         }
-      : null,
+      : {
+          'workflow': {
+            'concept_workflow': {'enabled': true},
+          },
+        },
   scheduledDate: TeamData.manilaToday,
   members: const ['Adrian'],
   memberDetails: const [TeamMember(id: '1', name: 'Adrian')],
@@ -70,6 +74,12 @@ TactileButton _verdictSubmit(WidgetTester tester) =>
         matching: find.byWidgetPredicate((widget) => widget is TactileButton),
       ),
     );
+
+Future<void> _openOutcome(WidgetTester tester) async {
+  final tab = find.byKey(const ValueKey('grading-outcome-tab'));
+  await tester.tap(tab);
+  await tester.pumpAndSettle();
+}
 
 void main() {
   setUpAll(loadPreviewFonts);
@@ -110,12 +120,16 @@ void main() {
             onTeamChanged: (_) {},
           ),
         );
+        await _openOutcome(tester);
         expect(find.text('Panel Chair Official Verdict'), findsNothing);
         expect(find.text('Panel Chair Concept Selection'), findsOneWidget);
         expect(find.text('PIT idea 1'), findsOneWidget);
         expect(find.text('PIT idea 2'), findsOneWidget);
         expect(find.text('PIT idea 3'), findsOneWidget);
-        expect(find.byKey(const ValueKey('submit-pit-concept-decision-btn')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('submit-pit-concept-decision-btn')),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
       },
     );
@@ -143,6 +157,7 @@ void main() {
             onTeamChanged: (_) {},
           ),
         );
+        await _openOutcome(tester);
         expect(find.text('Panel Chair Project Verdict'), findsOneWidget);
         expect(
           find.text('Issue the defense verdict for Team AgriSense.'),
@@ -176,7 +191,7 @@ void main() {
             ),
           );
           await show(team);
-          expect(find.text('Panel Chair'), findsWidgets);
+          await _openOutcome(tester);
           expect(find.text('Panel Chair Official Verdict'), findsOneWidget);
           expect(
             find.text(
@@ -206,6 +221,10 @@ void main() {
             expect(radio.enabled, isFalse);
           }
           // A locally completed score still needs backend submission before a verdict is available.
+          await tester.tap(
+            find.byKey(const ValueKey('grading-evaluation-tab')),
+          );
+          await tester.pumpAndSettle();
           await tester.ensureVisible(
             find.byKey(const ValueKey('start-team-evaluation')),
           );
@@ -218,8 +237,10 @@ void main() {
           await tester.ensureVisible(score);
           await tester.tap(score);
           await tester.pumpAndSettle();
+          await _openOutcome(tester);
           expect(_verdictSubmit(tester).onPressed, isNull);
           await show(_chairAssignment(ready: true, posted: true));
+          await _openOutcome(tester);
           expect(
             find.byKey(const ValueKey('chair-verdict-unavailable')),
             findsNothing,
@@ -246,6 +267,7 @@ void main() {
           onTeamChanged: (_) {},
         ),
       );
+      await _openOutcome(tester);
       expect(find.text('Panel Chair Official Verdict'), findsOneWidget);
       expect(find.text(reason), findsOneWidget);
       expect(_verdictSubmit(tester).onPressed, isNull);
@@ -326,6 +348,11 @@ void main() {
             const TeamMember(id: '2', name: 'Patricia Ong'),
           ],
           criteria: [Criterion('Clarity', 10, id: 1)],
+          workflowGrade: {
+            'workflow': {
+              'concept_workflow': {'enabled': true},
+            },
+          },
           isPosted: true,
           isChair: true,
           panelRubric: {
@@ -345,8 +372,7 @@ void main() {
           ),
         );
 
-        expect(find.text('Team details & presenting members'), findsOneWidget);
-        expect(find.text('Panel Chair'), findsWidgets);
+        await _openOutcome(tester);
 
         // Verify Chair Verdict section
         expect(find.text('Panel Chair Official Verdict'), findsOneWidget);
@@ -394,6 +420,11 @@ void main() {
           verdict: 'approved_with_revisions',
           verdictByName: 'Prof. Daga-ang',
           verdictRemarks: 'Submit chapter 4 manuscript update',
+          workflowGrade: {
+            'workflow': {
+              'concept_workflow': {'enabled': true},
+            },
+          },
           panelRubric: {
             'target_type': 'team',
             'criteria': [
@@ -411,6 +442,7 @@ void main() {
           ),
         );
 
+        await _openOutcome(tester);
         expect(find.text('Panel Chair'), findsNothing);
 
         // Should have read-only verdict card

@@ -1,6 +1,7 @@
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:defensys/navigation/admin_route_paths.dart';
@@ -13,13 +14,12 @@ import 'package:defensys/widgets/feedback/empty_state.dart';
 import 'package:defensys/widgets/feedback/action_banner.dart';
 
 import '../dialogs/student_profile_details_dialog.dart';
+import 'package:defensys/widgets/academic/student_capstone_history.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
 /// The Students & Academic Enrollment view within User Management.
 class StudentsEnrollmentView extends ConsumerStatefulWidget {
-  const StudentsEnrollmentView({
-    super.key,
-    this.onOpenBulkImport,
-  });
+  const StudentsEnrollmentView({super.key, this.onOpenBulkImport});
 
   final VoidCallback? onOpenBulkImport;
 
@@ -28,7 +28,8 @@ class StudentsEnrollmentView extends ConsumerStatefulWidget {
       _StudentsEnrollmentViewState();
 }
 
-class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView> {
+class _StudentsEnrollmentViewState
+    extends ConsumerState<StudentsEnrollmentView> {
   static const _maroon = DefensysUi.primaryMaroon;
   static const _blue = DefensysUi.techBlue;
   static const _muted = DefensysUi.steelGrey;
@@ -43,6 +44,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
 
   String _yearLevelFilter = 'ALL';
   String _sectionFilter = 'ALL';
+  bool _returningCapstoneOnly = false;
 
   @override
   void dispose() {
@@ -64,10 +66,21 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     return 0;
   }
 
-  List<Map<String, dynamic>> _filteredRecords(List<Map<String, dynamic>> records) {
+  List<Map<String, dynamic>> _filteredRecords(
+    List<Map<String, dynamic>> records,
+  ) {
     var list = records;
+    if (_returningCapstoneOnly) {
+      list = list
+          .where(
+            (r) => (r['capstone_participation'] as Map?)?['returning'] == true,
+          )
+          .toList();
+    }
     if (_yearLevelFilter != 'ALL') {
-      list = list.where((r) => r['year_level']?.toString() == _yearLevelFilter).toList();
+      list = list
+          .where((r) => r['year_level']?.toString() == _yearLevelFilter)
+          .toList();
     }
     if (_sectionFilter == 'UNASSIGNED') {
       list = list.where((r) {
@@ -75,7 +88,11 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
         return sec.isEmpty || sec.toUpperCase() == 'BSIT';
       }).toList();
     } else if (_sectionFilter != 'ALL') {
-      list = list.where((r) => (r['section']?.toString().trim() ?? '') == _sectionFilter).toList();
+      list = list
+          .where(
+            (r) => (r['section']?.toString().trim() ?? '') == _sectionFilter,
+          )
+          .toList();
     }
     return list;
   }
@@ -89,7 +106,8 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
 
   Future<void> _showStudentHistory(Map<String, dynamic> record) async {
     final state = ref.read(studentAcademicRecordsProvider);
-    final activeSem = ref.read(academicPeriodProvider).activeSemester ?? state.activeSemester;
+    final activeSem =
+        ref.read(academicPeriodProvider).activeSemester ?? state.activeSemester;
     await StudentProfileDetailsDialog.show(
       context,
       record: record,
@@ -101,14 +119,22 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(studentAcademicRecordsProvider);
-    final activeSem = ref.watch(academicPeriodProvider).activeSemester ?? state.activeSemester;
+    final activeSem =
+        ref.watch(academicPeriodProvider).activeSemester ??
+        state.activeSemester;
     final allFiltered = _filteredRecords(state.records);
     final visibleRows = _visibleRows(allFiltered);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Align(alignment: Alignment.centerRight, child: ReportExportMenu(reportId: 'student-enrollment', params: {'year_level': _yearLevelFilter, 'section': _sectionFilter})),
+        Align(
+          alignment: Alignment.centerRight,
+          child: ReportExportMenu(
+            reportId: 'student-enrollment',
+            params: {'year_level': _yearLevelFilter, 'section': _sectionFilter},
+          ),
+        ),
         const SizedBox(height: 12),
         // Stat Cards
         Row(
@@ -138,7 +164,8 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             Expanded(
               child: _buildMetricCard(
                 title: 'Students',
-                value: '${state.records.isNotEmpty ? _count(state, 'students_with_records') : state.students.length}',
+                value:
+                    '${state.records.isNotEmpty ? _count(state, 'students_with_records') : state.students.length}',
                 subtitle: state.records.isEmpty && state.students.isNotEmpty
                     ? 'Unenrolled student accounts'
                     : 'Distinct student accounts',
@@ -152,7 +179,9 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
               child: _buildMetricCard(
                 title: 'Active Term',
                 value: activeSem?['label']?.toString() ?? 'None Active',
-                subtitle: activeSem?['school_year']?.toString() ?? 'Setup in Academic Periods',
+                subtitle:
+                    activeSem?['school_year']?.toString() ??
+                    'Setup in Academic Periods',
                 icon: Icons.calendar_today_rounded,
                 iconColor: activeSem != null ? _gold : const Color(0xFFD97706),
                 iconBg: const Color(0xFFFEF3C7),
@@ -179,6 +208,22 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: DefensysShadcnScope(
+                  child: ShadCheckbox(
+                    value: _returningCapstoneOnly,
+                    onChanged: (value) => setState(() {
+                      _returningCapstoneOnly = value;
+                      _page = 0;
+                    }),
+                    label: const Text(
+                      'Returning Capstone students awaiting a new roster',
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
               Row(
                 children: [
                   Expanded(
@@ -194,11 +239,21 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                         },
                         decoration: InputDecoration(
                           hintText: 'Search by student name, ID, or email...',
-                          hintStyle: const TextStyle(fontSize: 13, color: _muted),
-                          prefixIcon: const Icon(Icons.search_rounded, size: 18, color: _muted),
+                          hintStyle: const TextStyle(
+                            fontSize: 13,
+                            color: _muted,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.search_rounded,
+                            size: 18,
+                            color: _muted,
+                          ),
                           filled: true,
                           fillColor: const Color(0xFFF9FAFB),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                             borderSide: const BorderSide(color: _line),
@@ -227,8 +282,11 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                         _page = 0;
                         _yearLevelFilter = 'ALL';
                         _sectionFilter = 'ALL';
+                        _returningCapstoneOnly = false;
                       });
-                      ref.read(studentAcademicRecordsProvider.notifier).fetchRecords(
+                      ref
+                          .read(studentAcademicRecordsProvider.notifier)
+                          .fetchRecords(
                             search: '',
                             schoolYear: '',
                             semester: '',
@@ -239,8 +297,13 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _muted,
                       side: const BorderSide(color: _line),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ],
@@ -258,21 +321,23 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                   title: (activeSem == null && state.students.isNotEmpty)
                       ? 'No Active Semester Configured'
                       : (state.students.isNotEmpty && state.records.isEmpty)
-                          ? 'Unenrolled Student Accounts Found'
-                          : 'No Student Records Found',
+                      ? 'Unenrolled Student Accounts Found'
+                      : 'No Student Records Found',
                   description: (activeSem == null && state.students.isNotEmpty)
                       ? '${state.students.length} student account(s) are registered in the system, but no semester is currently active. Please set up and activate an academic semester in Setup & Configuration > Academic Periods to enroll students.'
                       : (state.students.isNotEmpty && state.records.isEmpty)
-                          ? '${state.students.length} student account(s) exist in the system but have not been enrolled in an academic term yet. Use "Batch Enrollment" or "Add Single Student" to enroll them.'
-                          : 'No student records match your active search criteria or filter parameters.',
+                      ? '${state.students.length} student account(s) exist in the system but have not been enrolled in an academic term yet. Use "Batch Enrollment" or "Add Single Student" to enroll them.'
+                      : 'No student records match your active search criteria or filter parameters.',
                   size: DefensysEmptyStateSize.standard,
                   primaryAction: activeSem == null && state.students.isNotEmpty
                       ? DefensysEmptyAction(
                           label: 'Open Academic Periods',
                           icon: Icons.arrow_forward_rounded,
-                          onPressed: () => context.go(AdminRoutes.academicPeriods),
+                          onPressed: () =>
+                              context.go(AdminRoutes.academicPeriods),
                         )
-                      : state.students.isNotEmpty && state.records.isEmpty &&
+                      : state.students.isNotEmpty &&
+                            state.records.isEmpty &&
                             widget.onOpenBulkImport != null
                       ? DefensysEmptyAction(
                           label: 'Open Batch Enrollment',
@@ -362,10 +427,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                 const SizedBox(height: 1),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: textSub,
-                  ),
+                  style: TextStyle(fontSize: 11, color: textSub),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -378,7 +440,9 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
 
   Widget _yearLevelDropdown() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fillBg = isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB);
+    final fillBg = isDark
+        ? DefensysTokens.mistInputFill
+        : const Color(0xFFF9FAFB);
     final borderColor = isDark ? DefensysTokens.mistBorder : _line;
     final textPrimary = isDark ? DefensysTokens.textPrimaryDark : _ink;
 
@@ -394,7 +458,11 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
         child: DropdownButton<String>(
           value: _yearLevelFilter,
           dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
-          style: TextStyle(fontSize: 13, color: textPrimary, fontFamily: DefensysUi.fontFamily),
+          style: TextStyle(
+            fontSize: 13,
+            color: textPrimary,
+            fontFamily: DefensysUi.fontFamily,
+          ),
           items: const [
             DropdownMenuItem(value: 'ALL', child: Text('All Year Levels')),
             DropdownMenuItem(value: '1st Year', child: Text('1st Year')),
@@ -417,7 +485,9 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
 
   Widget _sectionDropdown(List<Map<String, dynamic>> records) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fillBg = isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB);
+    final fillBg = isDark
+        ? DefensysTokens.mistInputFill
+        : const Color(0xFFF9FAFB);
     final borderColor = isDark ? DefensysTokens.mistBorder : _line;
     final textPrimary = isDark ? DefensysTokens.textPrimaryDark : _ink;
 
@@ -431,7 +501,9 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     final sortedSections = sections.toList()..sort();
 
     final validValues = {'ALL', 'UNASSIGNED', ...sortedSections};
-    final effectiveValue = validValues.contains(_sectionFilter) ? _sectionFilter : 'ALL';
+    final effectiveValue = validValues.contains(_sectionFilter)
+        ? _sectionFilter
+        : 'ALL';
 
     return Container(
       height: 42,
@@ -445,7 +517,11 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
         child: DropdownButton<String>(
           value: effectiveValue,
           dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
-          style: TextStyle(fontSize: 13, color: textPrimary, fontFamily: DefensysUi.fontFamily),
+          style: TextStyle(
+            fontSize: 13,
+            color: textPrimary,
+            fontFamily: DefensysUi.fontFamily,
+          ),
           items: [
             const DropdownMenuItem(value: 'ALL', child: Text('All Sections')),
             const DropdownMenuItem(
@@ -453,13 +529,25 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.pending_actions_rounded, size: 14, color: Color(0xFFD97706)),
+                  Icon(
+                    Icons.pending_actions_rounded,
+                    size: 14,
+                    color: Color(0xFFD97706),
+                  ),
                   SizedBox(width: 6),
-                  Text('Unassigned Section', style: TextStyle(color: Color(0xFFB45309), fontWeight: FontWeight.w600)),
+                  Text(
+                    'Unassigned Section',
+                    style: TextStyle(
+                      color: Color(0xFFB45309),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
-            ...sortedSections.map((sec) => DropdownMenuItem(value: sec, child: Text(sec))),
+            ...sortedSections.map(
+              (sec) => DropdownMenuItem(value: sec, child: Text(sec)),
+            ),
           ],
           onChanged: (val) {
             if (val != null) {
@@ -486,7 +574,11 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: state.schoolYear.isEmpty ? '' : state.schoolYear,
-          style: const TextStyle(fontSize: 13, color: _ink, fontFamily: DefensysUi.fontFamily),
+          style: const TextStyle(
+            fontSize: 13,
+            color: _ink,
+            fontFamily: DefensysUi.fontFamily,
+          ),
           items: [
             const DropdownMenuItem(value: '', child: Text('All School Years')),
             ...state.schoolYears.map((sy) {
@@ -496,7 +588,9 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
           ],
           onChanged: (val) {
             setState(() => _page = 0);
-            ref.read(studentAcademicRecordsProvider.notifier).fetchRecords(schoolYear: val ?? '');
+            ref
+                .read(studentAcademicRecordsProvider.notifier)
+                .fetchRecords(schoolYear: val ?? '');
           },
         ),
       ),
@@ -515,15 +609,27 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: state.semester.isEmpty ? '' : state.semester,
-          style: const TextStyle(fontSize: 13, color: _ink, fontFamily: DefensysUi.fontFamily),
+          style: const TextStyle(
+            fontSize: 13,
+            color: _ink,
+            fontFamily: DefensysUi.fontFamily,
+          ),
           items: const [
             DropdownMenuItem(value: '', child: Text('All Semesters')),
-            DropdownMenuItem(value: '1st Semester', child: Text('1st Semester')),
-            DropdownMenuItem(value: '2nd Semester', child: Text('2nd Semester')),
+            DropdownMenuItem(
+              value: '1st Semester',
+              child: Text('1st Semester'),
+            ),
+            DropdownMenuItem(
+              value: '2nd Semester',
+              child: Text('2nd Semester'),
+            ),
           ],
           onChanged: (val) {
             setState(() => _page = 0);
-            ref.read(studentAcademicRecordsProvider.notifier).fetchRecords(semester: val ?? '');
+            ref
+                .read(studentAcademicRecordsProvider.notifier)
+                .fetchRecords(semester: val ?? '');
           },
         ),
       ),
@@ -540,10 +646,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
 
   Widget _buildTable(List<Map<String, dynamic>> rows) {
     return Column(
-      children: [
-        _tableHeader(_columns),
-        ...rows.map((r) => _studentRow(r)),
-      ],
+      children: [_tableHeader(_columns), ...rows.map((r) => _studentRow(r))],
     );
   }
 
@@ -571,7 +674,9 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
         child: Text(
           column.title,
           style: TextStyle(
-            color: isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF5D6678),
+            color: isDark
+                ? DefensysTokens.textSecondaryDark
+                : const Color(0xFF5D6678),
             fontSize: 12,
             fontWeight: FontWeight.w800,
           ),
@@ -594,7 +699,9 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
   Widget _studentRow(Map<String, dynamic> r) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final rowBg = isDark ? DefensysTokens.mistSurface : Colors.white;
-    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB);
+    final borderColor = isDark
+        ? DefensysTokens.mistBorder
+        : const Color(0xFFE5E7EB);
     final textPrimary = isDark ? DefensysTokens.textPrimaryDark : _ink;
     final textSecondary = isDark ? DefensysTokens.textSecondaryDark : _muted;
 
@@ -602,7 +709,8 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     final section = r['section']?.toString().trim() ?? '';
     final sem = r['semester']?.toString() ?? '';
     final period = '${r['semester'] ?? ''}, ${r['school_year'] ?? ''}';
-    final isCapstone = yearLevel.contains('4th') ||
+    final isCapstone =
+        yearLevel.contains('4th') ||
         (yearLevel.contains('3rd') && sem.contains('2nd'));
 
     return Container(
@@ -650,19 +758,26 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             Align(
               alignment: Alignment.centerLeft,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF),
+                  color: isDark
+                      ? const Color(0xFF1E3A8A).withValues(alpha: 0.35)
+                      : const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.7) : const Color(0xFFDBEAFE)),
+                  border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.7)
+                        : const Color(0xFFDBEAFE),
+                  ),
                 ),
                 child: Text(
                   yearLevel,
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
-                    color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+                    color: isDark
+                        ? const Color(0xFF93C5FD)
+                        : const Color(0xFF1D4ED8),
                   ),
                 ),
               ),
@@ -676,18 +791,29 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
               children: [
                 if (section.isEmpty || section.toUpperCase() == 'BSIT')
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFFFBEB),
+                      color: isDark
+                          ? const Color(0xFF78350F).withValues(alpha: 0.35)
+                          : const Color(0xFFFFFBEB),
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.7) : const Color(0xFFFDE68A)),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF78350F).withValues(alpha: 0.7)
+                            : const Color(0xFFFDE68A),
+                      ),
                     ),
                     child: Text(
                       'Unassigned',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                        color: isDark
+                            ? const Color(0xFFFBBF24)
+                            : const Color(0xFFB45309),
                       ),
                     ),
                   )
@@ -708,8 +834,13 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.co_present_rounded,
-                          size: 11, color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A)),
+                      Icon(
+                        Icons.co_present_rounded,
+                        size: 11,
+                        color: isDark
+                            ? const Color(0xFF4ADE80)
+                            : const Color(0xFF16A34A),
+                      ),
                       const SizedBox(width: 3),
                       Flexible(
                         child: Text(
@@ -717,7 +848,9 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
-                            color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF15803D),
+                            color: isDark
+                                ? const Color(0xFF4ADE80)
+                                : const Color(0xFF15803D),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -737,10 +870,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             ),
             flex: 2.4,
           ),
-          _tableCell(
-            _rowActions(r),
-            flex: 1.1,
-          ),
+          _tableCell(_rowActions(r), flex: 1.1),
         ],
       ),
     );
@@ -750,6 +880,24 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (r['capstone_participation'] != null)
+          Tooltip(
+            message: 'Capstone participation history',
+            child: DefensysShadcnScope(
+              child: ShadButton.ghost(
+                onPressed: () {
+                  final id = (r['student_id'] as num?)?.toInt();
+                  if (id != null)
+                    showStudentCapstoneHistory(
+                      context,
+                      id,
+                      r['student_name']?.toString() ?? 'Student',
+                    );
+                },
+                child: const Icon(LucideIcons.history, size: 17),
+              ),
+            ),
+          ),
         Tooltip(
           message: 'Student Details',
           waitDuration: const Duration(milliseconds: 300),
@@ -780,12 +928,18 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
       children: [
         Row(
           children: [
-            const Text('Rows per page: ', style: TextStyle(fontSize: 12.5, color: _muted)),
+            const Text(
+              'Rows per page: ',
+              style: TextStyle(fontSize: 12.5, color: _muted),
+            ),
             DropdownButtonHideUnderline(
               child: DropdownButton<int>(
                 value: _rowsPerPage,
                 items: _rowsPerPageOptions.map((n) {
-                  return DropdownMenuItem(value: n, child: Text('$n', style: const TextStyle(fontSize: 12.5)));
+                  return DropdownMenuItem(
+                    value: n,
+                    child: Text('$n', style: const TextStyle(fontSize: 12.5)),
+                  );
                 }).toList(),
                 onChanged: (n) {
                   if (n != null) {
@@ -812,11 +966,16 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             ),
             Text(
               '${_page + 1} / ${totalPages == 0 ? 1 : totalPages}',
-              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             IconButton(
               icon: const Icon(Icons.chevron_right_rounded),
-              onPressed: _page < totalPages - 1 ? () => setState(() => _page++) : null,
+              onPressed: _page < totalPages - 1
+                  ? () => setState(() => _page++)
+                  : null,
             ),
           ],
         ),

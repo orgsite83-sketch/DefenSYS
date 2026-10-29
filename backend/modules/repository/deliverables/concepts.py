@@ -57,6 +57,9 @@ def title_context_is_open(team, stage):
         return False
     if hasattr(stage, 'event_name'):
         return not stage.is_officially_complete
+    from student_teams.participation import closed_failure
+    if team.participation_review_reason or closed_failure(team):
+        return False
     return not stage.grading_configs.filter(
         semester_id=team.semester_id, is_officially_complete=True).exists()
 
@@ -99,7 +102,7 @@ def documents_snapshot(team, stage, *, clearance_only=False):
     if clearance_only:
         from .services import get_deliverable_definitions_for_team
         ids = [d['id'] for d in get_deliverable_definitions_for_team(team, stage.label)
-               if d['type'] == 'pre' and d.get('requirement_timing') != 'defense']
+               if d['type'] == 'pre']
         submissions = submissions.filter(deliverable_id__in=ids)
     return [{'deliverable_id': s.deliverable_id, 'label': s.label,
              'is_defense_material': definitions.get(s.deliverable_id, {}).get('is_defense_material', False),
@@ -206,7 +209,7 @@ def clearance_blocker(team, stage):
     from .services import get_deliverable_definitions_for_team, submissions_for
     submitted = submissions_for(team, stage.label)
     for d in get_deliverable_definitions_for_team(team, stage.label):
-        if d.get('source') == 'defense_minutes' or not d['required'] or d['type'] != 'pre' or d.get('requirement_timing') == 'defense':
+        if d.get('source') == 'defense_minutes' or not d['required'] or d['type'] != 'pre':
             continue
         if not completeness(submitted.get(d['id']), d, accepted=True, stage=stage):
             return 'Complete the required concept documents before scheduling.'
@@ -228,7 +231,7 @@ def invalidate_clearance(team, stage_label, deliverable_id=None):
     if deliverable_id:
         from .services import definition_for
         definition = definition_for(team, stage_label, deliverable_id)
-        if not definition or definition['type'] != 'pre' or definition.get('requirement_timing') == 'defense':
+        if not definition or definition['type'] != 'pre':
             return
     stage = stage_for(team, stage_label)
     current = latest_round(team, stage)
@@ -292,7 +295,7 @@ def bind_schedule(schedule):
         current.save(update_fields=['schedule', 'documents_snapshot'])
 
 
-def validate_decisions(current, decisions, verdict, replacement_required):
+def validate_decisions(current, decisions, verdict, replacement_required, *, automatic=False):
     if not isinstance(decisions, list) or len(decisions) != len(current.concepts):
         raise ValidationError('Record a decision for every concept in this hearing.')
     if any(not isinstance(d, dict) or not isinstance(d.get('key'), str) for d in decisions):
@@ -309,7 +312,7 @@ def validate_decisions(current, decisions, verdict, replacement_required):
         remarks = d.get('remarks', '')
         if not isinstance(remarks, str) or len(remarks) > 5000:
             raise ValidationError('Concept feedback must be text of up to 5000 characters.')
-        if d['decision'] in ('rejected', 'revise', 'approved_with_revisions') and not remarks.strip():
+        if not automatic and d['decision'] in ('rejected', 'revise', 'approved_with_revisions') and not remarks.strip():
             raise ValidationError('Explain concept rejection or required revisions.')
         c.update(decision=d['decision'], remarks=remarks.strip())
         if 'next_action' in d:
@@ -327,7 +330,7 @@ def validate_decisions(current, decisions, verdict, replacement_required):
 
 
 def record_outcome(grade, decisions, *, replacement_required=False, outcome=None, remarks=None, actor=None,
-                   verification_required=None):
+                   verification_required=None, automatic=False):
     # PIT records a concept decision on the round, independently of academic grades.
     outcome = outcome if outcome is not None else grade.verdict
     remarks = remarks if remarks is not None else grade.verdict_remarks
@@ -343,9 +346,9 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
         raise ValidationError('This defense needs a scheduled concept set before a verdict can be recorded.')
     if latest_round(grade.team, stage).pk != current.pk:
         raise ValidationError('An earlier concept hearing is read-only after the next round has started.')
-    concepts, replacement_required, selected = validate_decisions(current, decisions, outcome, replacement_required)
+    concepts, replacement_required, selected = validate_decisions(current, decisions, outcome, replacement_required, automatic=automatic)
     from .redefense import requested_set, refresh_files, snapshot_hearing
-    plan = requested_set(current, decisions, outcome, replacement_required)
+    plan = requested_set(current, decisions, outcome, replacement_required, automatic=automatic)
     if plan is not None:
         replacement_required = any(item['action'] == 'replace' for item in plan)
         actions = {item['key']: item['action'] for item in plan}
@@ -549,7 +552,7 @@ def override_clearance(team, stage, actor, reason):
         raise ValueError('Accept every required pre-defense file before endorsing the team.')
     submitted = submissions_for(team, stage.label)
     for d in get_deliverable_definitions_for_team(team, stage.label):
-        if d['required'] and d['type'] == 'pre' and d.get('requirement_timing') != 'defense' and not completeness(submitted.get(d['id']), d, stage=stage):
+        if d['required'] and d['type'] == 'pre' and not completeness(submitted.get(d['id']), d, stage=stage):
             raise ValueError('Required documents must be uploaded and corrections resolved before overriding clearance.')
     endorse(team, stage, actor)
     current.refresh_from_db()
@@ -719,6 +722,7 @@ def summary(team, stage):
         'title_progress': title_progress(policy, current),
         'section_project_id': policy.get('section_project_id'),
         'system_concepts': systems,
+        'section_selected_key': current.section_round.selected_key if current and current.section_round_id else '',
         'shared_import_pending': bool(systems and not policy.get('section_project_id')),
         'concepts': title_rows if title_first else [{k: c.get(k, '') for k in ('key', 'title', 'decision')}
             for c in (current.concepts if current else initial_concepts(policy))],

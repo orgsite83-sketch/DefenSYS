@@ -1,6 +1,7 @@
 import 'package:defensys/theme/program_colors.dart';
 import 'grade_correction_dialog.dart';
 import 'incomplete_grading_dialog.dart';
+import 'stage_failure_closure_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:defensys/widgets/repository/concept_workspace.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
@@ -3439,11 +3440,14 @@ Future<bool> reviewGradeGroupCompletion(
   final unresolved = <Map<String, dynamic>>[
     ...readiness.incompleteTeams,
     for (final team in readiness.redefenseTeams)
-      if (!readiness.incompleteTeams.any(
-        (item) =>
-            item['team_id'] == team['team_id'] &&
-            item['team_name'] == team['team_name'],
-      ))
+      if (!readiness.failureCandidates.any(
+            (row) => row['team_id'] == team['team_id'],
+          ) &&
+          !readiness.incompleteTeams.any(
+            (item) =>
+                item['team_id'] == team['team_id'] &&
+                item['team_name'] == team['team_name'],
+          ))
         {
           ...team,
           'missing_components': ['redefense'],
@@ -3485,7 +3489,9 @@ Future<bool> reviewGradeGroupCompletion(
               ? 'This stage or event has already been marked complete. Refresh the Grade Center to see its current status.'
               : (readiness.totalTeams == 0
                     ? 'Schedule teams before marking this stage or event complete.'
-                    : 'Grading readiness has changed. Refresh the Grade Center and check again.'),
+                    : ((readiness.completionBlocker ?? '').isNotEmpty
+                          ? readiness.completionBlocker!
+                          : 'Grading readiness has changed. Refresh the Grade Center and check again.')),
         ),
         actions: [
           TextButton(
@@ -3514,6 +3520,25 @@ Future<bool> reviewGradeGroupCompletion(
                   },
               ]);
 
+  if (readiness.failureCandidates.isNotEmpty) {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => StageFailureClosureDialog(
+        stageLabel: stageLabel,
+        teams: readiness.failureCandidates,
+      ),
+    );
+    if (reason == null) return false;
+    readiness.onApproved?.call({
+      'completion_token': readiness.completionToken,
+      'failure_grade_ids': readiness.failureCandidates
+          .map((row) => row['grade_id'])
+          .toList(),
+      'closure_reason': reason,
+    });
+    return true;
+  }
+
   final confirmed = await showIncompleteGradingTeamsDialog(
     context,
     teams: displayTeams,
@@ -3522,6 +3547,12 @@ Future<bool> reviewGradeGroupCompletion(
     canComplete: true,
   );
 
+  if (confirmed == true) {
+    readiness.onApproved?.call({
+      'completion_token': readiness.completionToken,
+      'failure_grade_ids': <int>[],
+    });
+  }
   return confirmed == true;
 }
 
@@ -4659,6 +4690,7 @@ class GradeCenterActions {
         (grade['workflow'] as Map? ?? {})['assessment_policy'] as Map?;
     final configured = policy?['version'] == 1;
     final rule = (grade['workflow'] as Map? ?? {})['outcome_rule'] as Map?;
+    if (rule?['automatic'] == true) return;
     final allowedVerdicts = rule?['allowed_verdicts'] as List? ?? const [];
     bool allowed(String value) =>
         !configured || allowedVerdicts.contains(value);

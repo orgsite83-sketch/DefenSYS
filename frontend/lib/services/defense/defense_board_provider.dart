@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
-import '../app/data_refresh_provider.dart';
 
 enum DefenseOperationsView { schedules, readiness }
 
@@ -156,33 +155,6 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
       throw Exception(_errorFromResponse(response));
     }
     return Map<String, dynamic>.from(jsonDecode(response.body));
-  }
-
-  Future<void> extendMaterialDeadline({
-    required int scheduleId,
-    required int revision,
-    required DateTime deadline,
-    required String reason,
-    String? mode,
-  }) async {
-    final response = await _client.post(
-      Uri.parse('${ApiConfig.defenseSchedulesUrl}/$scheduleId/material-deadline/'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'deadline': deadline.toUtc().toIso8601String(),
-        'reason': reason,
-        'revision': revision,
-        if (mode != null) 'mode': mode,
-      }),
-    );
-    if (response.statusCode != 200) throw Exception(_errorFromResponse(response));
-    ref.read(dataRefreshProvider.notifier).markChanged(const [
-      DataArea.repository, DataArea.audit, DataArea.dashboard, DataArea.scheduler,
-    ]);
-    final msg = mode == 'late_upload'
-        ? 'Late-upload window opened. Students have been notified.'
-        : 'Material deadline extended. Students have been notified.';
-    await fetchBoard(successMessage: msg);
   }
 
   Future<Map<String, dynamic>> managementContext() async {

@@ -788,8 +788,8 @@ void main() {
           expect(tester.getRect(statuses.at(1)).right, closeTo(file.right, 1));
           final actions = find
               .ancestor(
-                of: find.text('Request corrections'),
-                matching: find.byType(ShadButton),
+                of: find.text('Request revision'),
+                matching: find.byType(Wrap),
               )
               .first;
           final action = tester.getRect(actions);

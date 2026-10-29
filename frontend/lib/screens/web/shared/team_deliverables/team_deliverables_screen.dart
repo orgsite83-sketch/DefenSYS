@@ -344,16 +344,10 @@ class _TeamDeliverablesScreenState
           return (stage['concept_workflow'] as Map?)?['enabled'] == true ||
               TeamWorkflowStatus.items(stage).any(isConceptRequirement);
         });
-    final sharedChecklists = <String, Map<String, dynamic>>{};
-    for (final team in state.teams) {
-      final stage = DeliverablesTriageHelper.resolveActiveStage(team);
-      final summary = stage?['shared_deliverables_summary'];
-      if (summary is Map &&
-          (stage?['concept_workflow'] as Map?)?['enabled'] != true) {
-        final row = Map<String, dynamic>.from(summary);
-        sharedChecklists['${row['section_id']}-${row['context_id']}'] = row;
-      }
-    }
+    final sharedChecklists = sharedChecklistsForTeams(
+      state.teams,
+      stageLabel: state.selectedStage,
+    );
 
     final String pageTitle;
     final String pageSubtitle;
@@ -633,15 +627,16 @@ class _TeamDeliverablesScreenState
                       .fetchDeliverables(),
                 ),
               ),
-          for (final summary in sharedChecklists.values)
-            SharedDeliverablesSection(
-              key: ValueKey(
-                '${summary['section_id']}-${summary['context_id']}',
+          if (!isEvaluator)
+            for (final summary in sharedChecklists)
+              SharedDeliverablesSection(
+                key: ValueKey(
+                  '${summary['section_id']}-${summary['context_id']}',
+                ),
+                teamId: summary['team_id'] as int,
+                stageLabel: '${summary['stage_label']}',
+                summary: summary,
               ),
-              teamId: summary['team_id'] as int,
-              stageLabel: '${summary['stage_label']}',
-              summary: summary,
-            ),
           state.isLoading
               ? const Center(
                   child: Padding(

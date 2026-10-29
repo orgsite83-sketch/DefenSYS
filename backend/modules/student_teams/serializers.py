@@ -66,10 +66,17 @@ class TeamMemberSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     email = serializers.EmailField(source='student.email', read_only=True)
     is_enrolled = serializers.SerializerMethodField()
+    capstone_participation = serializers.SerializerMethodField()
 
     class Meta:
         model = TeamMembership
-        fields = ['id', 'username', 'name', 'email', 'is_leader', 'order', 'is_enrolled']
+        fields = ['id', 'username', 'name', 'email', 'is_leader', 'order', 'is_enrolled', 'capstone_participation']
+
+    def get_capstone_participation(self, obj):
+        if not obj.team.is_capstone:
+            return None
+        from .participation import member_participation
+        return member_participation(obj.team, obj.student_id)
 
     def get_name(self, obj):
         return display_name(obj.student)
@@ -442,16 +449,6 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         semester = self._resolve_semester(attrs)
         attrs['semester'] = semester
 
-        if 'Capstone' in attrs.get('level', getattr(self.instance, 'level', '')):
-            from .capstone_lifecycle import prior_capstone_team
-            additions = set(member_ids) | {attrs['leader_id']}
-            if self.instance:
-                additions -= set(self.instance.memberships.values_list('student_id', flat=True)) | {self.instance.leader_id}
-            previous = prior_capstone_team(additions, semester, exclude_team=self.instance.pk if self.instance else None)
-            if previous:
-                raise serializers.ValidationError({'member_ids':
-                    f'A student already belongs to the earlier Capstone team {previous.name}. Use continuation or returning-team review to preserve the original project history and allowance.'})
-
         user = self.context.get('assigned_by') or self.context.get('user')
         assert_active_semester_for_create(user, semester)
         if self.instance is not None:
@@ -541,6 +538,10 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         if user_is_pit_lead_only(user) and 'Capstone' in attrs['level']:
             raise serializers.ValidationError({'level': 'PIT Leads can only manage PIT teams.'})
 
+        if 'Capstone' in attrs['level']:
+            from .participation import validate_roster
+            validate_roster(set(member_ids), semester, team=self.instance)
+
         if self.instance is None and attrs.get('level') and 'Capstone' in attrs['level']:
             from academic_period_management.capstone_mode import assert_capstone_team_creation_allowed
             try:
@@ -554,7 +555,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             self.instance.pk if self.instance else None,
         )
 
-        existing = StudentTeam.objects.filter(name=attrs['name'], level=attrs['level'])
+        existing = StudentTeam.objects.filter(name=attrs['name'], level=attrs['level'], semester=semester)
         team_id = self.context.get('team_id')
         if team_id:
             existing = existing.exclude(pk=team_id)
@@ -573,6 +574,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        list(Semester.objects.select_for_update().order_by('pk'))
         self._lock_event(validated_data)
         member_ids = validated_data.pop('member_ids')
         self._lock_members(member_ids)
@@ -596,6 +598,9 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             current_defense_stage=validated_data.get('current_defense_stage') or None,
         )
         self._sync_members(team, member_ids, validated_data['leader'].id)
+        if team.is_capstone:
+            from .participation import confirm_roster
+            confirm_roster(team, set(member_ids), actor=self.context.get('assigned_by') or self.context.get('user'))
         # Capture staff-supplied input explicitly. Display titles may later be
         # replaced by a panel selection and must never seed another hearing.
         from .concept_policy import contexts_for, context_key
@@ -623,6 +628,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        list(Semester.objects.select_for_update().order_by('pk'))
         instance = StudentTeam.objects.select_for_update().get(pk=instance.pk)
         self._lock_event(validated_data)
         adviser_id = getattr(validated_data.get('adviser'), 'pk', None)
@@ -667,6 +673,9 @@ class StudentTeamWriteSerializer(serializers.Serializer):
                 instance.project_pending = True
         instance.save()
         self._sync_members(instance, member_ids, validated_data['leader'].id)
+        if instance.is_capstone:
+            from .participation import confirm_roster
+            confirm_roster(instance, set(member_ids), actor=self.context.get('assigned_by') or self.context.get('user'))
         assigned_by = self.context.get('assigned_by') or self.context.get('user')
         self._ensure_adviser_role(instance.adviser, changed_by=assigned_by)
         record_team_adviser_change(

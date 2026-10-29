@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/models/schedule_import_models.dart';
 
 void main() {
-  test('PIT scheduling skips endorsement only without required scheduling files', () {
+  test('PIT scheduling requires endorsement for every required pre-defense file', () {
     const event = 'System Concept Pitching';
     final team = <String, dynamic>{
       'level': '1st Year PIT',
@@ -16,8 +16,8 @@ void main() {
         {'deliverable_type': 'pre', 'required': false, 'requirement_timing': 'scheduling'},
       ],
     };
-    expect(pitEventRequiresEndorsement(defenseFilesOnly), isFalse);
-    expect(isPitTeamReadyToSchedule(team, event, defenseFilesOnly), isTrue);
+    expect(pitEventRequiresEndorsement(defenseFilesOnly), isTrue);
+    expect(isPitTeamReadyToSchedule(team, event, defenseFilesOnly), isFalse);
 
     final schedulingFile = <String, dynamic>{
       'year_level': '1st Year',

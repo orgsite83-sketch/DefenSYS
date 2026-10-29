@@ -7,101 +7,94 @@ class DefenseMaterialsCard extends StatelessWidget {
     super.key,
     required this.materials,
     required this.onView,
+    this.embedded = false,
+    this.flat = false,
+    this.title = 'Defense materials',
+    this.emptyLabel = 'No materials uploaded yet.',
   });
   final List<Map<String, dynamic>> materials;
   final ValueChanged<Map<String, dynamic>> onView;
+  final bool embedded, flat;
+  final String title, emptyLabel;
+  int get fileCount => materials.where((row) => row['missing'] != true).length;
 
   Widget _file(BuildContext context, Map<String, dynamic> material) {
+    final missing = material['missing'] == true;
     final submission = material['submission'] is Map
         ? material['submission'] as Map
         : null;
     final label =
-        (material['label']?.toString().isNotEmpty == true
-                ? material['label']
-                : material['name'])
-            ?.toString() ??
-        'Defense material';
+        (material['requirement_label'] ??
+                material['label'] ??
+                material['name'] ??
+                'Defense material')
+            .toString();
     final explicit = material['file_name']?.toString() ?? '';
-    final fileName = explicit.isNotEmpty && explicit != 'File'
+    final fileName = missing
+        ? 'Not uploaded'
+        : explicit.isNotEmpty && explicit != 'File'
         ? explicit
         : submission?['file_name']?.toString() ??
               material['suggested_file_name']?.toString() ??
               'File';
-    final extension = fileName.contains('.')
+    final extension = !missing && fileName.contains('.')
         ? fileName.split('.').last.toUpperCase()
         : '';
-    final icon = extension == 'PDF'
-        ? Icons.picture_as_pdf_outlined
-        : Icons.description_outlined;
-    final accent = DefensysTokens.maroonOf(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 42,
-            padding: const EdgeInsets.symmetric(vertical: 9),
+            width: 34,
+            height: 40,
             decoration: BoxDecoration(
-              color: accent.withValues(alpha: .07),
-              borderRadius: BorderRadius.circular(9),
+              color: DefensysTokens.surfaceHigherOf(context),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: DefensysTokens.maroonTextOf(context),
-                ),
-                if (extension.isNotEmpty && extension.length <= 4) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    extension,
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: DefensysTokens.maroonTextOf(context),
-                    ),
-                  ),
-                ],
-              ],
+            child: Icon(
+              extension == 'PDF'
+                  ? Icons.picture_as_pdf_outlined
+                  : Icons.description_outlined,
+              size: 19,
+              color: DefensysTokens.maroonTextOf(context),
             ),
           ),
-          const SizedBox(width: 11),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      height: 1.4,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Tooltip(
-                  message: fileName,
-                  child: Text(
+                  const SizedBox(height: 4),
+                  SelectableText(
                     fileName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 11,
-                      height: 1.35,
+                      height: 1.45,
                       color: DefensysTokens.textSecondaryOf(context),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 8),
           Semantics(
-            label: 'View $label',
+            label: 'View $label, $fileName',
             child: ShadButton.outline(
               height: 44,
+              enabled: !missing,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               onPressed: () => onView(material),
               child: const Text('View', style: TextStyle(fontSize: 12)),
@@ -112,81 +105,68 @@ class DefenseMaterialsCard extends StatelessWidget {
     );
   }
 
-  @override
-  Widget build(BuildContext context) => ShadCard(
-    backgroundColor: DefensysTokens.surfaceOf(context),
-    radius: BorderRadius.circular(16),
-    border: ShadBorder.all(
-      color: DefensysTokens.borderOf(context),
-      radius: BorderRadius.circular(16),
-    ),
-    shadows: const [],
-    padding: const EdgeInsets.all(18),
-    width: double.infinity,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+  Widget _content(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (!embedded) ...[
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Defense materials',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -.2,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Manuscripts & presentation files',
-                    style: TextStyle(
-                      fontSize: 11,
-                      height: 1.4,
-                      color: DefensysTokens.textSecondaryOf(context),
-                    ),
-                  ),
-                ],
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
               ),
             ),
-            const SizedBox(width: 8),
-            ShadBadge.outline(
-              child: Text(
-                '${materials.length} ${materials.length == 1 ? 'file' : 'files'}',
-                style: const TextStyle(fontSize: 10),
+            const SizedBox(width: 10),
+            Text(
+              '$fileCount ${fileCount == 1 ? 'file' : 'files'}',
+              style: TextStyle(
+                fontSize: 11,
+                color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
         ),
-        if (materials.isEmpty) ...[
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Icon(
-                Icons.folder_open_outlined,
-                size: 21,
-                color: DefensysTokens.textSecondaryOf(context),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'No materials uploaded yet.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: DefensysTokens.textSecondaryOf(context),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ] else ...[
-          for (final material in materials) _file(context, material),
-        ],
+        const SizedBox(height: 6),
       ],
-    ),
+      if (materials.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Text(
+            emptyLabel,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.5,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ),
+      for (final (index, material) in materials.indexed) ...[
+        if (index > 0)
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
+        _file(context, material),
+      ],
+    ],
   );
+
+  @override
+  Widget build(BuildContext context) => embedded || flat
+      ? _content(context)
+      : ShadCard(
+          backgroundColor: DefensysTokens.surfaceOf(context),
+          radius: BorderRadius.circular(16),
+          border: ShadBorder.all(
+            color: DefensysTokens.borderOf(context),
+            radius: BorderRadius.circular(16),
+          ),
+          shadows: const [],
+          padding: const EdgeInsets.all(18),
+          width: double.infinity,
+          child: _content(context),
+        );
 }

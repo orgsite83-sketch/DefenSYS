@@ -29,6 +29,11 @@ import time
 from typing import Dict, List, Optional
 import requests
 
+if __package__:
+    from . import upload_deliverables as common
+else:
+    import upload_deliverables as common
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BACKEND_PATH = os.path.join(REPO_ROOT, "backend")
 if BACKEND_PATH not in sys.path:
@@ -124,13 +129,13 @@ def fetch_adviser_users(specific_usernames: Optional[List[str]] = None, team_id:
 def get_jwt_token_for_user(username: str) -> Optional[str]:
     init_django()
     from django.contrib.auth import get_user_model  # type: ignore
-    from authentication_access_control.tokens import DefensysRefreshToken  # type: ignore
+    from rest_framework_simplejwt.tokens import AccessToken  # type: ignore
 
     User = get_user_model()
     try:
-        user = User.objects.get(username=username)
-        refresh = DefensysRefreshToken.for_user(user)
-        return str(refresh.access_token)
+        with common.local_read_only():
+            user = User.objects.get(username=username, role__in=['faculty', 'admin'], is_active=True)
+            return str(AccessToken.for_user(user))
     except Exception as e:
         print(f"  [FAIL] Failed to generate token for {username}: {e}")
         return None

@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.test import override_settings
 from tempfile import TemporaryDirectory
+from urllib.parse import parse_qs, urlsplit
 
 from academic_period_management.models import SchoolYear, Semester
 from defense.scheduler.models import DefenseSchedule, SchedulePanelist
@@ -366,6 +367,9 @@ class MinutesCrudApiTests(APITestCase):
         self.assertEqual(notification.workspace, 'adviser')
         self.assertEqual(notification.priority, 'HIGH')
         self.assertEqual(notification.action_payload['schedule_id'], self.schedule.pk)
+        route = urlsplit(notification.action_route)
+        self.assertEqual(route.path, f'/faculty/deliverables/teams/{self.team.pk}')
+        self.assertEqual(parse_qs(route.query), {'scope': ['capstone'], 'tab': ['defense'], 'stage': [self.stage.label]})
         self.assertEqual(notification.message, f"The minutes for {self.team.name}'s Project Proposal defense are ready for your review and signature")
 
     def test_adviser_signing_flow(self):
@@ -402,7 +406,7 @@ class MinutesCrudApiTests(APITestCase):
         self.assertIsNotNone(notification)
         self.assertEqual(notification.title, "Minutes Awaiting Final Signature")
         self.assertEqual(notification.workspace, 'admin')
-        self.assertEqual(notification.action_route, f'/admin/defense-board/minutes/{self.schedule.pk}')
+        self.assertEqual(notification.action_route, f'/admin/defense-board?minutes={self.schedule.pk}')
         self.assertEqual(notification.message, f"The minutes for {self.team.name}'s Project Proposal defense have been reviewed by the adviser and await your signature")
 
     def test_chairman_signing_and_pdf_generation(self):

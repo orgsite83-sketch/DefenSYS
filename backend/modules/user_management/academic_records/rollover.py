@@ -3,7 +3,6 @@ from django.db import transaction
 from django.db.models import Case, IntegerField, Q, Value, When
 from rest_framework.exceptions import ValidationError
 
-from academic_period_management.capstone_mode import sync_capstone_flags_after_rollover
 from academic_period_management.models import Semester
 from academic_period_management.services import active_semester
 from student_teams.models import StudentTeam
@@ -82,39 +81,6 @@ def next_rollover_semester(record):
     return year_level, semester_label, semester
 
 
-def advance_capstone_teams(target, selected_sources):
-    """Carry selected, fully enrolled rosters forward one school year only."""
-    if target.label != Semester.FIRST or not selected_sources:
-        return 0
-    selection = Q(pk__in=[])
-    for source_id, student_ids in selected_sources.items():
-        selection |= Q(semester_id=source_id) & (
-            Q(leader_id__in=student_ids) | Q(memberships__student_id__in=student_ids))
-    start, end = map(int, target.school_year.label.split('-'))
-    previous_year = f'{start - 1}-{end - 1}'
-    teams = (
-        StudentTeam.objects.select_for_update(of=('self',))
-        .filter(level__in=[StudentTeam.LEVEL_3_CAPSTONE, StudentTeam.LEVEL_4_CAPSTONE],
-                semester__label=Semester.SECOND, semester__school_year__label=previous_year)
-        .filter(selection)
-        .select_related('semester').prefetch_related('memberships').order_by('pk')
-    )
-    enrolled = set(StudentAcademicRecord.objects.filter(
-        semester=target, year_level=StudentAcademicRecord.FOURTH_YEAR,
-    ).values_list('student_id', flat=True))
-    updates = 0
-    seen = set()
-    for team in teams:
-        if team.pk in seen:
-            continue
-        seen.add(team.pk)
-        roster = {membership.student_id for membership in team.memberships.all()} | {team.leader_id}
-        if not roster.issubset(enrolled):
-            continue
-        from student_teams.capstone_lifecycle import continue_enrolled_normal_team
-        updates += int(continue_enrolled_normal_team(team, target))
-    sync_capstone_flags_after_rollover(target, updates)
-    return updates
 
 
 @transaction.atomic
@@ -226,6 +192,6 @@ def confirm_rollover(actions, default_semester):
         if record:
             selected_by_target.setdefault(target.pk, {}).setdefault(record.semester_id, set()).add(user.pk)
 
-    team_updates = sum(advance_capstone_teams(targets[target_id], student_ids)
-                       for target_id, student_ids in sorted(selected_by_target.items()))
+    # Enrollment reconciliation never migrates a team or creates a Capstone participation.
+    team_updates = 0
     return created, skipped, team_updates

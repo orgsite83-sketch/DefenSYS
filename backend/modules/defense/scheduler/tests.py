@@ -2316,7 +2316,7 @@ class PitEventGradingConfigTests(APITestCase):
         stage = stage_payload(self.team, event_name)
         self.assertTrue(stage['endorsement_required'])
         self.assertFalse(stage['required_complete'])
-        self.assertEqual(stage['materials_readiness']['required_total'], 0)
+        self.assertNotIn('materials_readiness', stage)
 
         payload = self.pit_payload(event_name=event_name, team_id=self.team.id)
         response = self.client.post('/api/defense/schedules/', payload, format='json')
