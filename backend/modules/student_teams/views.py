@@ -8,7 +8,6 @@ from rest_framework.response import Response
 from defensys_backend.read_projection import ReadAPIView as APIView
 
 from academic_period_management.capstone_mode import (
-    assert_capstone_team_creation_allowed,
     capstone_mode_payload,
 )
 from academic_period_management.models import Semester
@@ -550,19 +549,6 @@ def _normalize_adviser_filter(raw):
     return ADVISER_FILTER_ALL
 
 
-def _reject_capstone_bulk_import_if_closed(user, *, section=''):
-    from .team_levels import user_is_admin
-
-    if (section or '').strip():
-        return None
-    if not user_is_admin(user):
-        return None
-    active = active_semester()
-    try:
-        assert_capstone_team_creation_allowed(active)
-    except ValueError as exc:
-        return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-    return None
 
 
 def _bulk_rows_for_event(request, rows):
@@ -586,9 +572,6 @@ class BulkImportTeamsPreviewView(APIView):
 
     def post(self, request):
         section = request.data.get('section', '').strip()
-        blocked = None if request.data.get('event_name') else _reject_capstone_bulk_import_if_closed(request.user, section=section)
-        if blocked is not None:
-            return blocked
 
         rows = request.data.get('teams', [])
         if not isinstance(rows, list):
@@ -651,9 +634,6 @@ class BulkImportTeamsView(APIView):
     @transaction.atomic
     def post(self, request):
         section = request.data.get('section', '').strip()
-        blocked = None if request.data.get('event_name') else _reject_capstone_bulk_import_if_closed(request.user, section=section)
-        if blocked is not None:
-            return blocked
 
         rows = request.data.get('teams', [])
         if not isinstance(rows, list):
@@ -852,7 +832,7 @@ class BulkImportTeamsView(APIView):
         created = [team for _, team in imported]
         errors.sort(key=lambda item: item['row'])
         skipped.sort(key=lambda item: item['row'])
-        if errors and (any(team.is_capstone for team in created) or any('Capstone' in str(row.get('level', '')) or row.get('year_level') == '4th Year' for row in rows)):
+        if errors and (any(team.is_capstone for team in created) or any('Capstone' in row.get('level', '') for row in preflight)):
             transaction.set_rollback(True)
             return Response({'created': [], 'created_count': 0, 'imported_rows': [], 'errors': errors,
                 'error_count': len(errors), 'detail': 'No Capstone roster changes were saved. Correct the listed rows and review again.'}, status=400)

@@ -9,6 +9,7 @@ from django.utils import timezone
 def backfill(apps, schema_editor):
     Team = apps.get_model('student_teams', 'StudentTeam')
     Journey = apps.get_model('student_teams', 'HistoricalCapstoneJourney')
+    Recovery = apps.get_model('student_teams', 'HistoricalCapstoneRecovery')
     Term = apps.get_model('academic_period_management', 'Semester')
     Recorded = apps.get_model('student_teams', 'TeamTermParticipation')
     Membership = apps.get_model('student_teams', 'TeamMembership')
@@ -21,9 +22,8 @@ def backfill(apps, schema_editor):
     journeys = {j.team_id: j for j in Journey.objects.using(db).all()}
     def key(term):
         return term.school_year.label, {'1st Semester': 1, '2nd Semester': 2, 'Summer': 3}[term.label]
-    teams = list(Team.objects.using(db).filter(level__icontains='Capstone'))
-    teams.sort(key=lambda t: (key(terms[t.semester_id]), t.pk))
-    for team in teams:
+    entries = []
+    for team in Team.objects.using(db).filter(level__icontains='Capstone'):
         records = list(Recorded.objects.using(db).filter(team_id=team.pk).order_by('pk'))
         journey = journeys.get(team.pk)
         intake = terms.get(journey.intake_semester_id) if journey else None
@@ -32,7 +32,12 @@ def backfill(apps, schema_editor):
             if terms[team.semester_id].label == '2nd Semester' and team.capstone_phase != 'extended':
                 candidates.append(terms[team.semester_id])
             intake = min(candidates, key=key) if candidates else None
+        entries.append((team, records, intake))
+    entries.sort(key=lambda entry: (key(entry[2] or terms[entry[0].semester_id]), key(terms[entry[0].semester_id]), entry[0].pk))
+    for team, records, intake in entries:
         review = 'Retired Extended/replacement context requires an audited participation review.' if team.capstone_phase == 'extended' or team.project_version != 1 else ''
+        if Recovery.objects.using(db).filter(team_id=team.pk, consumed_at__isnull=False).exists():
+            review = 'Academic work under a consumed historical recovery grant requires an audited participation review.'
         if not intake:
             review = 'Original Capstone intake cannot be established from recorded history.'
         Team.objects.using(db).filter(pk=team.pk).update(intake_semester_id=intake.pk if intake else None,
@@ -41,7 +46,10 @@ def backfill(apps, schema_editor):
             continue
         latest = {}
         for grade in Grade.objects.using(db).filter(team_id=team.pk, scope='capstone', project_version=team.project_version).order_by('updated_at', 'pk'):
-            latest[grade.defense_stage_id] = grade
+            substantive = bool(grade.status == 'published' or grade.verdict or grade.schedule_id
+                or any(value is not None for value in (grade.panel_score, grade.adviser_score, grade.peer_score)))
+            if substantive or grade.defense_stage_id not in latest:
+                latest[grade.defense_stage_id] = grade
         failed = any(g.status == 'published' and (g.verdict in ('failed', 'project_rejected') or (g.outcome_metadata or {}).get('closure', {}).get('failed')) for g in latest.values())
         failed = failed or any(r.outcome == 'failed' and r.closed_at for r in records)
         state = 'needs_review' if review else 'failed' if failed else 'completed' if any(r.outcome == 'completed' and r.closed_at for r in records) else 'active'

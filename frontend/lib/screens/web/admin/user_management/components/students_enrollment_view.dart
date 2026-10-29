@@ -887,12 +887,13 @@ class _StudentsEnrollmentViewState
               child: ShadButton.ghost(
                 onPressed: () {
                   final id = (r['student_id'] as num?)?.toInt();
-                  if (id != null)
+                  if (id != null) {
                     showStudentCapstoneHistory(
                       context,
                       id,
                       r['student_name']?.toString() ?? 'Student',
                     );
+                  }
                 },
                 child: const Icon(LucideIcons.history, size: 17),
               ),

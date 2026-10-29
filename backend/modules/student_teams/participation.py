@@ -71,7 +71,10 @@ def validate_roster(student_ids, term, *, team=None):
     if set(students) != set(student_ids):
         raise ValidationError({'member_ids': 'All members must be active student accounts.'})
     if team:
-        require_open(team)
+        try:
+            require_open(team)
+        except DomainValidationError as exc:
+            raise ValidationError({'member_ids': exc.messages}) from exc
     errors = []
     for student_id in sorted(student_ids):
         person = students[student_id]
@@ -157,8 +160,15 @@ def finalize_failed(team, actor=None):
         row = capture_participation(team)
         row.outcome, row.closed_at = 'failed', timezone.now()
         row.save(update_fields=['outcome', 'closed_at', 'updated_at'])
-    participation_ids = Placement.objects.filter(team=team, ended_at__isnull=True).values('participation_id')
-    Participation.objects.filter(pk__in=participation_ids).update(state=Participation.FAILED)
+    close_placements(team, Participation.FAILED)
+
+
+def close_placements(team, state):
+    placements = Placement.objects.filter(team=team, ended_at__isnull=True)
+    ids = list(placements.values_list('participation_id', flat=True))
+    Participation.objects.filter(pk__in=ids).update(state=state)
+    placements.update(ended_at=timezone.now(), snapshot={'team_name': team.name,
+        'project_title': team.project_title, 'semester_id': team.semester_id})
 
 
 def student_history(student_id):
@@ -179,6 +189,7 @@ def member_participation(team, student_id):
 def roster_preview(student_ids, term):
     """Proposed numbers for review only; enrollment/import preview allocates nothing."""
     result = []
+    students = {s.pk: s for s in get_user_model().objects.filter(pk__in=student_ids)}
     for student_id in sorted(student_ids):
         latest = Participation.objects.filter(student_id=student_id).order_by('-number').first()
         same = bool(latest and latest.intake_semester_id == term.pk)
@@ -188,7 +199,9 @@ def roster_preview(student_ids, term):
             intakes = {intake_for(team).pk for team in previous_evidence(student_id)
                 if intake_for(team) and closed_failure(team) and term_key(intake_for(team)) < term_key(term)}
             number = len(intakes) + 1
-        result.append({'student_id': student_id, 'number': number, 'returning': number > 1,
+        person = students[student_id]
+        result.append({'student_id': student_id, 'name': person.get_full_name() or person.username,
+            'username': person.username, 'number': number, 'returning': number > 1,
             'already_confirmed': same, 'proposed': not same})
     return result
 
@@ -196,3 +209,27 @@ def roster_preview(student_ids, term):
 def existing_roster(student_ids, term, name, level):
     team = StudentTeam.objects.filter(semester=term, name=name, level=level).first()
     return team if team and roster_ids(team) == set(student_ids) else None
+
+
+def reconcile_enrollment_sections(term, student_ids):
+    """Reconcile a migrated roster only after all destination enrollments exist."""
+    from user_management.academic_records.models import StudentAcademicRecord
+    if not term.is_active:
+        return
+    teams = StudentTeam.objects.filter(semester=term, intake_semester__isnull=False,
+        level__icontains='Capstone', participation_review_reason='').filter(
+        Q(leader_id__in=student_ids) | Q(memberships__student_id__in=student_ids)).distinct()
+    for team in teams:
+        if team.intake_semester_id == term.pk or team.term_participations.filter(semester=term, closed_at__isnull=False).exists():
+            continue
+        ids = roster_ids(team)
+        records = list(StudentAcademicRecord.objects.filter(semester=term, student_id__in=ids))
+        sections = {r.section.strip() for r in records}
+        if (len(records) == len(ids) and all(r.year_level == '4th Year' for r in records)
+                and len(sections) == 1 and '' not in sections):
+            section = sections.pop()
+            if team.section != section:
+                team.section = section
+                team.save(update_fields=['section', 'updated_at'])
+                from .capstone_lifecycle import capture_participation
+                capture_participation(team)

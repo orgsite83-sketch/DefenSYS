@@ -22,7 +22,7 @@ User = get_user_model()
 class CapstoneModeTests(APITestCase):
     def test_default_flags_for_first_and_second_semester(self):
         creation, phase = default_capstone_flags_for_label(Semester.FIRST)
-        self.assertTrue(creation)
+        self.assertFalse(creation)
         self.assertEqual(phase, Semester.PHASE_CAPSTONE_2)
 
         creation, phase = default_capstone_flags_for_label(Semester.SECOND)
@@ -39,7 +39,7 @@ class CapstoneModeTests(APITestCase):
         )
         info = capstone_operating_mode(semester)
         self.assertEqual(info['mode'], MODE_CAPSTONE_2_CONTINUE)
-        self.assertTrue(info['can_create_capstone_teams'])
+        self.assertFalse(info['can_create_capstone_teams'])
 
     def test_operating_mode_capstone_1_intake(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
@@ -76,7 +76,7 @@ class CapstoneModeTests(APITestCase):
         )
         info = capstone_operating_mode(first)
         self.assertEqual(info['mode'], MODE_CAPSTONE_2_CONTINUE)
-        self.assertTrue(info['can_create_capstone_teams'])
+        self.assertFalse(info['can_create_capstone_teams'])
 
     def test_create_semester_applies_capstone_defaults(self):
         admin = User.objects.create_user(
@@ -93,7 +93,7 @@ class CapstoneModeTests(APITestCase):
             format='json',
         )
         self.assertEqual(first.status_code, 201)
-        self.assertTrue(first.data['semester']['capstone_team_creation_enabled'])
+        self.assertFalse(first.data['semester']['capstone_team_creation_enabled'])
         self.assertEqual(first.data['semester']['capstone_program_phase'], Semester.PHASE_CAPSTONE_2)
 
         second = self.client.post(
@@ -140,7 +140,7 @@ class CapstoneModeTests(APITestCase):
             derive_capstone_program_phase(first),
             Semester.PHASE_CAPSTONE_2,
         )
-        self.assertTrue(derive_capstone_team_creation_enabled(first))
+        self.assertFalse(derive_capstone_team_creation_enabled(first))
 
     def test_normalize_second_semester(self):
         school_year = SchoolYear.objects.create(label='2026-2027')

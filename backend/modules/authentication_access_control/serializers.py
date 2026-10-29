@@ -74,8 +74,9 @@ class UserSerializer(serializers.ModelSerializer):
         return assignments.exists()
 
     def get_team_id(self, obj):
-        membership = obj.team_memberships.first()
-        return str(membership.team_id) if membership else None
+        from student_teams.current_identity import current_team_for_student
+        team = current_team_for_student(obj)
+        return str(team.pk) if team else None
 
     def get_name(self, obj):
         full_name = f"{obj.first_name} {obj.last_name}".strip()

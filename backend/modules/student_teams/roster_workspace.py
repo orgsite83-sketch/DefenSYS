@@ -297,6 +297,8 @@ def validate_rows(term, year, section, rows, event, *, allow_unassigned=False, e
         members.extend(ids)
     if len(names) != len(set(names)) or (not event or event.team_membership_policy != 'multiple') and len(members) != len(set(members)):
         raise ValidationError('Resolve repeated team names and students before applying this complete roster.')
+    from .roster_enrollment import require_roster_enrollment
+    require_roster_enrollment(members, term)
     enrollment_sections = Q(section=section)
     if allow_unassigned:
         # A reviewed import can establish a class section; other operations cannot.
@@ -628,6 +630,9 @@ def apply(request, token):
     ids = sorted({i for row in state['rows'] for i in row.get('member_ids', [m['id'] for m in row.get('members', [])])})
     list(get_user_model().objects.select_for_update().filter(pk__in=ids).order_by('pk'))
     list(StudentAcademicRecord.objects.select_for_update().filter(semester=term, student_id__in=ids).order_by('pk'))
+    if state['data']['operation'] != 'projects':
+        from .roster_enrollment import require_roster_enrollment
+        require_roster_enrollment(ids, term, lock=True)
     if state['fingerprint'] != fingerprint(term, year, section):
         raise ValidationError('Roster, enrollment, projects or event activity changed. Review the replacement again.')
     if project_setup:

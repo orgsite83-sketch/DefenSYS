@@ -549,6 +549,9 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             except ValueError as exc:
                 raise serializers.ValidationError({'non_field_errors': [str(exc)]}) from exc
 
+        from .roster_enrollment import require_roster_enrollment
+        require_roster_enrollment(member_ids, semester)
+
         self._assert_members_available(
             member_ids, semester, attrs['level'],
             attrs.get('current_defense_stage'),
@@ -556,7 +559,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         )
 
         existing = StudentTeam.objects.filter(name=attrs['name'], level=attrs['level'], semester=semester)
-        team_id = self.context.get('team_id')
+        team_id = self.instance.pk if self.instance else self.context.get('team_id')
         if team_id:
             existing = existing.exclude(pk=team_id)
         if existing.exists():
@@ -577,7 +580,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         list(Semester.objects.select_for_update().order_by('pk'))
         self._lock_event(validated_data)
         member_ids = validated_data.pop('member_ids')
-        self._lock_members(member_ids)
+        self._lock_members(member_ids, validated_data['semester'])
         reason = validated_data.pop('adviser_change_reason', '')
         team = StudentTeam.objects.create(
             name=validated_data['name'],
@@ -637,7 +640,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             if reason:
                 raise serializers.ValidationError({'adviser_id': reason})
         member_ids = validated_data.pop('member_ids')
-        self._lock_members(member_ids)
+        self._lock_members(member_ids, validated_data['semester'])
         reason = validated_data.pop('adviser_change_reason', '')
         previous_adviser_id = instance.adviser_id
         previous_project_title = instance.project_title
@@ -655,7 +658,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         instance.leader = validated_data['leader']
         instance.adviser = validated_data.get('adviser')
         instance.status = validated_data.get('status', instance.status)
-        # Term participation/recovery owns this field. Roster edits preserve it.
+        # Term activation owns the phase. Roster edits preserve it.
         instance.ready_for_stage = validated_data.get('ready_for_stage') or None
         instance.current_defense_stage = validated_data.get('current_defense_stage') or None
         from .concept_policy import contexts_for, context_key
@@ -701,10 +704,12 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         return active
 
     @staticmethod
-    def _lock_members(member_ids):
+    def _lock_members(member_ids, semester):
         # Lock stable student rows: membership rows do not exist yet on creation.
         # Ordering ensures overlapping concurrent assignments lock consistently.
         list(User.objects.select_for_update().filter(pk__in=member_ids).order_by('pk'))
+        from .roster_enrollment import require_roster_enrollment
+        require_roster_enrollment(member_ids, semester, lock=True)
 
     @staticmethod
     def _lock_event(data):
@@ -739,7 +744,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
     @transaction.atomic
     def _sync_members(self, team, member_ids, leader_id):
-        self._lock_members(member_ids)
+        self._lock_members(member_ids, team.semester)
         # Recheck after locking, including when another request assigned a student
         # between serializer validation and saving. Never delete another team's roster.
         self._assert_members_available(

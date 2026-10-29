@@ -18,9 +18,9 @@ class ImportSectionMetadataTests(APITestCase):
     def setUp(self):
         self.admin = User.objects.create_user(username='metadata-admin', role='admin')
         school_year = SchoolYear.objects.create(label='2026-2027')
-        self.semester = Semester.objects.create(school_year=school_year, label=Semester.FIRST,
+        self.semester = Semester.objects.create(school_year=school_year, label=Semester.SECOND,
             is_active=True, capstone_team_creation_enabled=True,
-            capstone_program_phase=Semester.PHASE_CAPSTONE_2)
+            capstone_program_phase=Semester.PHASE_CAPSTONE_1)
         self.students = []
         for index in range(8):
             student = User.objects.create_user(username=f'member-{index}', role='student')
@@ -108,7 +108,7 @@ class ImportSectionMetadataTests(APITestCase):
                 self.manager.is_active = state != 'inactive'
                 self.manager.save(update_fields=['is_active'])
                 if state == 'historical_only':
-                    historical = Semester.objects.create(school_year=self.semester.school_year, label=Semester.SECOND)
+                    historical = Semester.objects.create(school_year=self.semester.school_year, label=Semester.FIRST)
                     StudentAcademicRecord.objects.filter(student=self.manager).update(semester=historical)
                 rows = [{**self.rows[0], 'project_manager': 'Missing Student' if state == 'unknown' else self.manager.username}]
                 preview = self.post(preview=True, rows=rows)
@@ -116,7 +116,7 @@ class ImportSectionMetadataTests(APITestCase):
                 self.assertEqual(self.post(rows=rows).data['created_count'], 0)
                 self.assert_no_import_writes()
 
-    def test_only_the_affected_section_is_blocked(self):
+    def test_preview_marks_affected_section_but_capstone_commit_is_atomic(self):
         StudentAcademicRecord.objects.filter(student=self.students[1]).update(section='BSIT-4B')
         independent = {key: value for key, value in self.rows[1].items() if key not in ('system_name', 'project_manager')}
         independent['section'] = 'BSIT-4B'
@@ -124,8 +124,9 @@ class ImportSectionMetadataTests(APITestCase):
         preview = self.post(preview=True, rows=rows, section='BSIT-4A, BSIT-4B')
         self.assertEqual([row['ready'] for row in preview.data['rows']], [False, True], preview.data)
         imported = self.post(rows=rows, section='BSIT-4A, BSIT-4B')
-        self.assertEqual(imported.data['imported_rows'], [2], imported.data)
-        self.assertEqual(StudentTeam.objects.get().section, 'BSIT-4B')
+        self.assertEqual(imported.data['imported_rows'], [], imported.data)
+        self.assertEqual(imported.status_code, 400)
+        self.assertFalse(StudentTeam.objects.exists())
 
     def test_headers_on_one_row_apply_to_every_team_in_the_section(self):
         rows = [self.rows[0], {key: value for key, value in self.rows[1].items()

@@ -1,7 +1,6 @@
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../config/api_config.dart';
@@ -10,9 +9,6 @@ import '../../../../services/authenticated_client.dart';
 import '../../../../services/student_teams_provider.dart';
 import '../../../../services/team_detail_provider.dart';
 import '../../../../services/auth_provider.dart';
-import '../../../../services/academic_period_provider.dart';
-import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
-import 'dart:convert';
 import '../../../../services/app/data_refresh_provider.dart';
 import '../../../../utils/universal_file_viewer.dart';
 import '../../../../toasts/feedback_toast.dart';
@@ -67,7 +63,6 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   String _selectedDeliverableStage = '';
   int? _selectedReportIndex;
   bool _isEditing = false;
-  bool _reusingRoster = false;
   String _studentFilter = '';
   bool _refreshAfterEvaluation = false;
   int _teamRevision = 0;
@@ -268,14 +263,6 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     final project = team?['project_title']?.toString() ?? '';
     final workflow = _overviewConceptWorkflow(team);
     final proposals = conceptRows(workflow['concepts']);
-    final active = ref.watch(academicPeriodProvider).activeSemester;
-    final canReuse =
-        widget.canManage &&
-        team?['is_capstone'] == true &&
-        team?['is_editable'] == false &&
-        team?['status'] == 'Failed' &&
-        active?['label'] == '2nd Semester' &&
-        active?['id'] != team?['semester_id'];
 
     return Row(
       children: [
@@ -324,13 +311,6 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             ],
           ),
         ),
-        if (canReuse)
-          DefensysShadcnScope(
-            child: ShadButton.outline(
-              onPressed: _reusingRoster ? null : () => _reuseRoster(team!),
-              child: Text(_reusingRoster ? 'Saving…' : 'Reuse roster'),
-            ),
-          ),
         if (widget.canManage && team?['is_editable'] != false && !_isEditing)
           OutlinedButton.icon(
             onPressed: () => setState(() => _isEditing = true),
@@ -369,60 +349,6 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         ],
       ],
     );
-  }
-
-  Future<void> _reuseRoster(Map<String, dynamic> team) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => DefensysShadcnScope(
-        child: ShadDialog(
-          title: const Text('Reuse roster for this Capstone 1 intake?'),
-          description: const Text(
-            'The new participation starts with this batch’s requirements. Previous records stay in History.',
-          ),
-          actions: [
-            ShadButton.outline(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            ShadButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Confirm new participation'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    setState(() => _reusingRoster = true);
-    try {
-      final response = await ref
-          .read(authenticatedHttpClientProvider)
-          .post(
-            Uri.parse('${ApiConfig.teamsUrl}/${team['id']}/reuse-roster/'),
-            body: jsonEncode({}),
-          );
-      if (!mounted) return;
-      final data = jsonDecode(response.body) as Map;
-      if (response.statusCode != 201) {
-        showErrorToast(
-          context,
-          data['detail']?.toString() ??
-              data['member_ids']?.toString() ??
-              'The roster cannot join this intake. Review the student records.',
-        );
-      } else {
-        final id = (data['team'] as Map)['id'];
-        ref.read(dataRefreshProvider.notifier).markChanged({DataArea.teams});
-        context.go(AdminRoutes.teamDetail(int.parse('$id')));
-      }
-    } catch (_) {
-      if (mounted) {
-        showErrorToast(context, 'The roster could not be saved. Try again.');
-      }
-    } finally {
-      if (mounted) setState(() => _reusingRoster = false);
-    }
   }
 
   Map<String, dynamic> _overviewConceptWorkflow(Map<String, dynamic>? team) {
@@ -978,7 +904,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                                   (student['capstone_participation']
                                       as Map?)?['number'],
                                 ),
-                                canOpenHistory: widget.canManage,
+                                canOpenHistory:
+                                    ref.watch(authProvider).user?['role'] ==
+                                    'admin',
                               ),
                             if (isLeader)
                               Container(

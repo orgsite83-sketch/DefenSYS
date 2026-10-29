@@ -1,4 +1,5 @@
 """Event-optional rosters cannot evade preview or commit membership checks."""
+from django.test import override_settings
 from copy import deepcopy
 from rest_framework.test import APITestCase
 
@@ -11,6 +12,7 @@ from .serializers import StudentTeamWriteSerializer
 from rest_framework.exceptions import ValidationError
 
 
+@override_settings(DEFENSYS_TITLE_WORKFLOW_VERSION=1)
 class RosterImportGuardTests(APITestCase):
     setUp = fixtures.TeamFormationTests.setUp
     existing = fixtures.TeamFormationTests.existing

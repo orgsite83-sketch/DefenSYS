@@ -90,6 +90,8 @@ class StudentTeamApiTests(APITestCase):
         concept = DefenseStage.objects.get(label='Concept Proposal')
         concept.is_presentation_only = True
         concept.save()
+        concept.deliverables.update(required=False)
+        concept.deliverables.get_or_create(deliverable_id='OPTIONAL', defaults={'label': 'Optional reference', 'deliverable_type': 'pre', 'required': False})
         team = StudentTeam.objects.create(
             name='Team Stage Ledger',
             project_title='Stage Ledger',
@@ -125,6 +127,8 @@ class StudentTeamApiTests(APITestCase):
         concept = DefenseStage.objects.get(label='Concept Proposal')
         concept.is_presentation_only = True
         concept.save()
+        concept.deliverables.update(required=False)
+        concept.deliverables.get_or_create(deliverable_id='OPTIONAL', defaults={'label': 'Optional reference', 'deliverable_type': 'pre', 'required': False})
         project = DefenseStage.objects.get(label='Project Proposal')
         team = StudentTeam.objects.create(
             name='Team Next Stage',
@@ -179,7 +183,7 @@ class StudentTeamApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn('non_field_errors', response.data)
+        self.assertIn('Capstone 1 intake', str(response.data))
 
     def test_create_team_uses_members_leader_adviser_and_active_semester(self):
         self._activate_capstone_intake_semester()
@@ -211,7 +215,7 @@ class StudentTeamApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['capstone_mode'], 'capstone_2_continue')
-        self.assertTrue(response.data['can_create_capstone_teams'])
+        self.assertFalse(response.data['can_create_capstone_teams'])
         self.assertIn('capstone_mode_message', response.data)
 
         # Test off mode with a Summer semester
@@ -671,7 +675,7 @@ class StudentTeamApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['error_count'], 1)
         self.assertEqual(response.data['errors'][0]['team_name'], 'Team Error Name')
         self.assertEqual(response.data['errors'][0]['row'], 1)
@@ -1006,7 +1010,7 @@ class StudentTeamApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['created_count'], 0)
         self.assertEqual(response.data['error_count'], 1)
         self.assertFalse(StudentTeam.objects.filter(name='Team Bad Adviser').exists())
@@ -1147,7 +1151,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(year, '')
         self.assertEqual(len(issues), 1)
 
-    def test_admin_bulk_import_rejects_mixed_member_year_levels(self):
+    def test_admin_bulk_import_allows_third_and_fourth_year_capstone_intake(self):
         self._activate_capstone_intake_semester()
         student_4th = User.objects.create_user(
             username='2024-0003',
@@ -1176,11 +1180,11 @@ class StudentTeamApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['error_count'], 1)
-        self.assertFalse(StudentTeam.objects.filter(name='Team Mixed Years').exists())
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['error_count'], 0)
+        self.assertTrue(StudentTeam.objects.filter(name='Team Mixed Years').exists())
 
-    def test_bulk_import_during_capstone_2_with_fourth_year_students(self):
+    def test_bulk_import_rejects_new_capstone_2_participation(self):
         self.second_semester.is_active = False
         self.second_semester.save(update_fields=['is_active'])
         self.first_semester.is_active = True
@@ -1221,12 +1225,10 @@ class StudentTeamApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['created_count'], 1)
-        self.assertEqual(response.data['error_count'], 0)
-        team = StudentTeam.objects.get(name='Team Capstone 2')
-        self.assertEqual(team.level, StudentTeam.LEVEL_4_CAPSTONE)
-        self.assertEqual(team.year_level, '4th Year')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data['created_count'], 0)
+        self.assertIn('Capstone 1 intake', str(response.data))
+        self.assertFalse(StudentTeam.objects.filter(name='Team Capstone 2').exists())
 
     def test_admin_create_team_without_level_infers_capstone(self):
         self._activate_capstone_intake_semester()
@@ -1661,7 +1663,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['stats']['total_teams'], 1)
         self.assertEqual(response.data['migration']['phase'], 15)
 
-    def test_rollover_advances_capstone_team_after_phase_six(self):
+    def test_rollover_does_not_migrate_capstone_team(self):
         next_year = SchoolYear.objects.create(label='2027-2028')
         next_first = Semester.objects.create(school_year=next_year, label=Semester.FIRST, is_active=True)
         record = StudentAcademicRecord.objects.create(
@@ -1687,10 +1689,9 @@ class StudentTeamApiTests(APITestCase):
 
         team.refresh_from_db()
         self.assertIn(response.status_code, (200, 201))
-        self.assertEqual(response.data['team_updates'], 1)
-        self.assertEqual(team.level, StudentTeam.LEVEL_4_CAPSTONE)
-        self.assertEqual(team.capstone_phase, StudentTeam.PHASE_ACTIVE)
-        self.assertEqual(team.semester_id, next_first.pk)
+        self.assertEqual(response.data['team_updates'], 0)
+        self.assertEqual(team.level, StudentTeam.LEVEL_3_CAPSTONE)
+        self.assertEqual(team.semester_id, self.second_semester.pk)
 
     def test_weekly_progress_list_filters_by_team_id(self):
         from datetime import date
@@ -1969,8 +1970,9 @@ class StudentTeamApiTests(APITestCase):
             },
             format='json',
         )
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['team']['level'], StudentTeam.LEVEL_4_CAPSTONE)
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('Capstone 1 intake', str(response.data))
+        self.assertFalse(StudentTeam.objects.filter(name='Valid Capstone 2 Team').exists())
 
         student_3rd = User.objects.create_user(
             username='2024-0005',

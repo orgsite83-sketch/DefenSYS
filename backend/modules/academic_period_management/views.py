@@ -177,7 +177,8 @@ class SemesterStatusView(APIView):
                 raise ValidationError({
                     'is_active': 'Choose another semester to activate instead of deactivating the active semester directly.',
                 })
-            activation = SemesterActivationSerializer(data=request.data)
+            activation = SemesterActivationSerializer(data={key: value for key, value in request.data.items()
+                if key not in ('is_active', 'active')})
             activation.is_valid(raise_exception=True)
             switch_active_semester(semester, request.user, **activation.validated_data)
             semester.refresh_from_db()

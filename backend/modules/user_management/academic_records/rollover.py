@@ -85,7 +85,7 @@ def next_rollover_semester(record):
 
 @transaction.atomic
 def confirm_rollover(actions, default_semester):
-    """Validate and save the whole batch together, including accounts and teams."""
+    """Validate and save enrollment; activation exclusively owns team movement."""
     list(Semester.objects.select_for_update().order_by('pk'))
     User = get_user_model()
     records = {record.pk: record for record in StudentAcademicRecord.objects.filter(
@@ -117,7 +117,6 @@ def confirm_rollover(actions, default_semester):
         pk__in=target_ids_by_row,
     ).select_related('school_year').order_by('pk')}
     created, skipped = [], []
-    selected_by_target = {}
     seen = set()
 
     for index, item in enumerate(actions):
@@ -189,9 +188,9 @@ def confirm_rollover(actions, default_semester):
             action=StudentAcademicRecord.ACTION_MANUAL if action == 'create' else action,
             rolled_from=record,
         ))
-        if record:
-            selected_by_target.setdefault(target.pk, {}).setdefault(record.semester_id, set()).add(user.pk)
-
     # Enrollment reconciliation never migrates a team or creates a Capstone participation.
+    from student_teams.participation import reconcile_enrollment_sections
+    for term_id in {r.semester_id for r in created}:
+        reconcile_enrollment_sections(targets[term_id], {r.student_id for r in created if r.semester_id == term_id})
     team_updates = 0
     return created, skipped, team_updates

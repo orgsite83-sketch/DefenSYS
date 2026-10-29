@@ -28,7 +28,7 @@ class WorkflowStepProgress extends StatelessWidget {
         ),
         child: Row(
           children: [
-            for (int i = 1; i <= 3; i++) ...[
+            for (int i = 1; i <= labels.length; i++) ...[
               if (i > 1)
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 16),
@@ -40,7 +40,7 @@ class WorkflowStepProgress extends StatelessWidget {
                 ),
               Expanded(
                 child: Semantics(
-                  label: '${labels[i - 1]}, step $i of 3',
+                  label: '${labels[i - 1]}, step $i of ${labels.length}',
                   selected: currentStep == i,
                   child: Row(
                     children: [

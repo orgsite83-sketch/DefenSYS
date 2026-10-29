@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/team_import_review.dart';
+import 'package:defensys/widgets/academic/student_capstone_history.dart';
 
 import '../widgets/defensys_admin_shell.dart';
 
@@ -1126,6 +1127,19 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           const SizedBox(height: 12),
 
           // Member Cards + Add Member Picker (if under capacity)
+          for (final participation
+              in _previewForRow(index + 1)?['participation_preview'] as List? ??
+                  [])
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '${participation['name']} · ${capstoneParticipationLabel(participation['number'] as int?)}${participation['proposed'] == true ? ' on confirmation' : ''}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ),
           Wrap(
             spacing: 8,
             runSpacing: 8,

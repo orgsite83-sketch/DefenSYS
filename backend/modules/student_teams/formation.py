@@ -61,9 +61,10 @@ def formation_scope(user, data, *, lock=False, roster_only=False, generation=Tru
 
 def roster(semester, level, year, event, user=None, *, generation=True):
     records = StudentAcademicRecord.objects.filter(
-        semester=semester, year_level=year, student__role='student', student__is_active=True,
+        semester=semester, student__role='student', student__is_active=True,
     ).select_related('student').order_by(
         'section', 'student__last_name', 'student__first_name', 'student__username', 'student_id')
+    records = records.filter(year_level__in=['3rd Year', '4th Year']) if 'Capstone' in level else records.filter(year_level=year)
     permitted = (set(instructor_sections(user, semester, year).values_list('section', flat=True))
                  if generation else allowed_sections(user, semester, year)) if user else None
     if permitted is not None:
@@ -158,6 +159,9 @@ def preview(user, data):
             s['section'] for s in students if s['section'] and s['section'].upper() != 'BSIT'}):
         raise ValidationError({'sections': 'Choose existing sections from the current roster.'})
     selected_ids = data.get('student_ids', []) if custom else None
+    if custom and selected_ids:
+        from .roster_enrollment import require_roster_enrollment
+        require_roster_enrollment(selected_ids, semester)
     if custom and (not selected_ids or not set(selected_ids) <= {s['id'] for s in students if s['eligible']}):
         raise ValidationError('Select available students from your authorized roster.')
     selected = [s for s in students if s['eligible'] and
@@ -243,6 +247,8 @@ def create_from_preview(request, data):
     # All requests acquire stable student locks before checking availability.
     expected_ids = [row[0] for row in expected.get('students', [])]
     list(get_user_model().objects.select_for_update().filter(pk__in=expected_ids).order_by('pk'))
+    from .roster_enrollment import require_roster_enrollment
+    require_roster_enrollment(expected_ids, semester, lock=True)
     students = roster(semester, level, year, event, request.user)
     if not data.get('include_assigned', False):
         students = [{**s, 'eligible': s['eligible'] and not s['assigned']} for s in students]

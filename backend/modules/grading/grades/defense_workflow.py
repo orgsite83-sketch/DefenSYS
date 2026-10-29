@@ -215,7 +215,7 @@ def workflow_payload(grade, actor=None):
 
 
 @transaction.atomic
-def apply_workflow_action(grade, *, actor, action, reason='', project_title='', review_date=None):
+def apply_workflow_action(grade, *, actor, action, reason='', review_date=None):
     team = StudentTeam.objects.select_for_update().get(pk=grade.team_id)
     grade = TeamGrade.objects.select_for_update(of=('self',)).select_related('team', 'defense_stage', 'semester').get(pk=grade.pk)
     require_current(grade)
@@ -266,6 +266,6 @@ def apply_workflow_action(grade, *, actor, action, reason='', project_title='', 
         grade.save()
     else:
         raise ValidationError('Select a valid workflow action.')
-    audit(grade, actor, f'defense.{action}', reason=reason, replacement_project_title=project_title,
+    audit(grade, actor, f'defense.{action}', reason=reason,
           review_date=str(review_date) if review_date else None)
     return team

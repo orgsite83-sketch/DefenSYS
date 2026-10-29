@@ -878,6 +878,8 @@ def is_stage_unlocked_by_admin(team, stage_label, deliverable_type=None):
 
 def ensure_submission_editable(team, stage_label, deliverable_type, submission=None, *, allow_replacement=False, deliverable_id=None, lock=None):
     """Keep upload and removal rules aligned with the review state."""
+    from student_teams.participation import require_open
+    require_open(team)
     from .stage_access import manually_locked, deliverable_override
     specific = deliverable_override(team, stage_label, submission.deliverable_id if submission else deliverable_id)
     if specific is False or (specific is None and manually_locked(team, stage_label, deliverable_type)):
@@ -1056,9 +1058,9 @@ def stage_payload(team, stage_label, evaluator=None):
         can_faculty_review_pre = True
 
     grade_data = None
-    if is_capstone and stage_grade and stage_grade.status != TeamGrade.STATUS_PUBLISHED and (
-        team.project_version > 1 or stage_grade.attempt_count > 1
-    ):
+    if (is_capstone and stage_grade and stage_grade.status != TeamGrade.STATUS_PUBLISHED
+            and stage_grade.verdict == TeamGrade.VERDICT_FOR_REDEFENSE
+            and not stage_grade.closed_as_failed):
         is_stage_officially_complete = False
     if stage_grade:
         from grading.grades.defense_workflow import workflow_payload
@@ -1857,6 +1859,8 @@ def check_review_assignment(actor, team):
 @transaction.atomic
 def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user, clear_defense_revisions=False, file_id=None, revision_scope='paper', title_review_token=None):
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
+    from student_teams.participation import require_open
+    require_open(team)
     definition = definition_for(team, stage_label, deliverable_id)
     if definition and definition.get('source') == 'defense_minutes':
         raise PermissionError('Use the defense minutes signing workflow to approve this record.')

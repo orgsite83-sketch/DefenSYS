@@ -422,7 +422,17 @@ class _SemesterTransitionDialogState
         ),
         const SizedBox(height: 14),
         _note(
-          '$continuing teams continuing to Capstone 2\n$completed completed teams in History\n$failed failed teams in History\n$review teams requiring review',
+          [
+            if (continuing > 0)
+              '$continuing ${continuing == 1 ? 'team' : 'teams'} continuing to Capstone 2',
+            if (completed > 0)
+              '$completed completed ${completed == 1 ? 'team' : 'teams'} in History',
+            if (failed > 0)
+              '$failed failed ${failed == 1 ? 'team' : 'teams'} in History',
+            if (review > 0)
+              '$review ${review == 1 ? 'team requires' : 'teams require'} review',
+            if (_teams.isEmpty) 'No Capstone roster changes for this switch.',
+          ].join('\n'),
         ),
         if (pending) ...[
           const SizedBox(height: 12),
@@ -437,6 +447,11 @@ class _SemesterTransitionDialogState
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
+        if ((_preview['issues'] as List? ?? []).isEmpty)
+          Text(
+            'No outstanding semester checks.',
+            style: TextStyle(color: _muted, fontSize: 12),
+          ),
         ...(_preview['issues'] as List? ?? []).map((raw) {
           final issue = raw as Map;
           return Padding(

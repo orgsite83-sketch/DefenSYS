@@ -65,6 +65,7 @@ class TeamReadinessLifecycleTests(APITestCase):
         grade = TeamGrade.objects.get(schedule=self.schedule)
         grade.adviser_score = 80
         grade.peer_score = 80
+        grade.peer_score_is_override = True
         grade.save()
         self.assert_readiness('awaiting_completion', verdict='approved')
         response = self.client.patch('/api/grading/grades/group-settings/', {

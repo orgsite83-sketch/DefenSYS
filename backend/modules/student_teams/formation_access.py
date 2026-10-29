@@ -77,6 +77,8 @@ def check_member_sections(user, semester, level, section, member_ids, *, importi
     """A team label never grants access to another instructor's students."""
     from user_management.academic_records.models import StudentAcademicRecord
     require_formation_scope(user, semester, level, section if section else None)
+    from .roster_enrollment import require_roster_enrollment
+    require_roster_enrollment(member_ids, semester)
     records = list(StudentAcademicRecord.objects.filter(
         semester=semester, student_id__in=member_ids))
     year = level.rsplit(' ', 1)[0]

@@ -45,6 +45,72 @@ void main() {
     expect(next.error, isNull);
   });
 
+  test('manual roster errors retain every missing student name and ID', () async {
+    const ana =
+        'Ana Reyes (2023-0184) is not enrolled in 2nd Semester, A.Y. 2026-2027.';
+    const bea =
+        'Bea Santos (2026-0311) is not enrolled in 2nd Semester, A.Y. 2026-2027.';
+    setApiHttpClientForTesting(
+      MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'member_ids': [ana, bea],
+          }),
+          400,
+        ),
+      ),
+    );
+    final container = ProviderContainer(overrides: authTestOverrides());
+    addTearDown(container.dispose);
+    final saved = await container
+        .read(studentTeamsProvider.notifier)
+          .addTeam({'name': 'Team Harbor'});
+    expect(saved, isFalse);
+    expect(container.read(studentTeamsProvider).error, '$ana\n$bea');
+  });
+
+  test(
+    'blocked import retains row, team and all affected students instead of generic detail',
+    () async {
+      const ana =
+          'Ana Reyes (2023-0184) is not enrolled in 2nd Semester, A.Y. 2026-2027.';
+      const bea =
+          'Bea Santos (2026-0311) is not enrolled in 2nd Semester, A.Y. 2026-2027.';
+      setApiHttpClientForTesting(
+        MockClient(
+          (request) async => http.Response(
+            jsonEncode({
+              'detail': 'No Capstone roster changes were saved.',
+              'created_count': 0,
+              'errors': [
+                {
+                  'row': 1,
+                  'sheet_row': 2,
+                  'team_name': 'Team Harbor',
+                  'errors': [ana, bea],
+                },
+              ],
+            }),
+            400,
+          ),
+        ),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final result = await container
+          .read(studentTeamsProvider.notifier)
+          .bulkImport([
+            {'team_name': 'Team Harbor'},
+          ]);
+      expect(result, isNull);
+      final error = container.read(studentTeamsProvider).error!;
+      expect(error, contains('Row 2 · Team Harbor'));
+      expect(error, contains(ana));
+      expect(error, contains(bea));
+      expect(error, isNot(contains('No Capstone roster changes were saved.')));
+    },
+  );
+
   test(
     'PIT import keeps event context when the directory has no explicit level',
     () async {

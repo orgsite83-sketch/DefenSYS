@@ -17,7 +17,6 @@ from academic_period_management.models import Semester
 from .models import StudentTeam, TeamStageProgress, TeamTermParticipation
 
 
-
 def year_after(label):
     start, end = map(int, label.split('-'))
     return f'{start + 1}-{end + 1}'
@@ -82,14 +81,6 @@ def requirement_for_label(team, label):
     stage_id = DefenseStage.objects.filter(label=label).values_list('pk', flat=True).first()
     return next((item for item in requirements_for(team)
                  if item['id'] == stage_id or item['label'] == label), None)
-
-
-
-
-
-
-
-
 
 
 def evidence_team(team, grade, requirement=None):
@@ -214,6 +205,10 @@ def historical_payload(row):
         'assessments': list(TeamGrade.all_objects.filter(team_id=row.team_id, semester_id=row.semester_id)
             .order_by('project_version', 'id').values('id', 'project_version', 'project_title_snapshot',
                 'defense_stage_id', 'stage_label', 'status', 'verdict', 'final_grade'))})
+    from .participation import member_participation
+    payload['members'] = [dict(member, id=member['student_id'],
+        capstone_participation=member_participation(row.team, member['student_id']))
+        for member in payload.get('members', [])]
     return payload
 
 
@@ -223,6 +218,8 @@ def build_capstone_review(source, target):
     from user_management.academic_records.models import StudentAcademicRecord
     from .participation import failure_for, intake_for, roster_ids
     from django.contrib.auth import get_user_model
+    from defense.scheduler.models import DefenseSchedule
+    from repository.deliverables.models import DeliverableSubmission, DeliverableSubmissionFile
     kind = transition_kind(source, target)
     teams = StudentTeam.objects.filter(semester=source, level__icontains='Capstone') if source else StudentTeam.objects.none()
     rows, fingerprints = [], []
@@ -251,12 +248,17 @@ def build_capstone_review(source, target):
                 reason = 'No reliable completed source-term assessment is recorded.'
             else:
                 stage_ids = {g.defense_stage_id for g in grades}
-                applicable = [r for r in requirements if r['id'] in stage_ids]
+                stage_ids.update(team.stage_progress.filter(semester=source,
+                    project_version=team.project_version).exclude(status='locked').values_list('defense_stage_id', flat=True))
+                # All prerequisites through the last evidenced source stage
+                # apply, including an endorsed but unfinished source stage.
+                positions = [i for i, requirement in enumerate(requirements) if requirement['id'] in stage_ids]
+                applicable = requirements[:max(positions) + 1] if positions else []
                 open_hearing = team.defense_schedules.filter(project_version=team.project_version, status='scheduled').exists() if hasattr(team, 'defense_schedules') else False
                 from defense.scheduler.models import DefenseSchedule
                 open_hearing = open_hearing or DefenseSchedule.objects.filter(team=team, project_version=team.project_version, status='scheduled', scope='capstone').exists()
                 unfinished = [r['label'] for r in applicable if not stage_cleared(team, r)]
-                if open_hearing or unfinished or len(applicable) != len(stage_ids):
+                if open_hearing or unfinished or not stage_ids <= {r['id'] for r in applicable}:
                     reason = 'Source-term assessment or clearance is incomplete' + (': ' + ', '.join(unfinished) if unfinished else '.')
                 elif set(get_user_model().objects.filter(pk__in=roster, is_active=True, role='student').values_list('pk', flat=True)) != roster:
                     reason = 'A continuing member has an inactive or invalid student account.'
@@ -281,7 +283,12 @@ def build_capstone_review(source, target):
         fingerprints.append({'team': team_snapshot(team), 'row': row, 'requirements': requirements,
             'enrollment': enrollment,
             'students': list(get_user_model().objects.filter(pk__in=roster).order_by('pk').values('id', 'is_active', 'role')),
-            'grades': list(TeamGrade.all_objects.filter(team=team, project_version=team.project_version).order_by('pk').values('id', 'semester_id', 'status', 'verdict', 'updated_at', 'outcome_metadata'))})
+            'grades': list(TeamGrade.all_objects.filter(team=team, project_version=team.project_version).order_by('pk').values('id', 'semester_id', 'status', 'verdict', 'updated_at', 'outcome_metadata')),
+            'schedules': list(DefenseSchedule.objects.filter(team=team, project_version=team.project_version).order_by('pk').values('id', 'status', 'updated_at')),
+            'progress': list(team.stage_progress.order_by('pk').values('id', 'status', 'updated_at')),
+            'documents': list(DeliverableSubmission.all_objects.filter(team=team, project_version=team.project_version).order_by('pk').values('id', 'status', 'file_name', 'reviewed_at', 'revision_review_unlocked')),
+            'files': list(DeliverableSubmissionFile.objects.filter(submission__team=team,
+                submission__project_version=team.project_version).order_by('pk').values('id', 'status', 'reviewed_at'))})
     counts = {key: sum(r['destination'] == key for r in rows) for key in ('history', 'failed_history', 'continue', 'needs_review')}
     revision = sha256(json.dumps({'source': source.pk if source else None,
         'target': [target.school_year_id, target.label, target.starts_on, target.ends_on],
@@ -290,15 +297,8 @@ def build_capstone_review(source, target):
             'requires_review': bool(rows)}
 
 
-
-
-
-
-
-
 def apply_capstone_transition(source, target, review, *, actor, log):
     """Activate only eligible normal continuation; failed/closed work stays historical."""
-    from .models import StudentCapstoneParticipation, StudentCapstonePlacement
     from .participation import confirm_roster, roster_ids
     if review['kind'] not in ('continue', 'close_cycle'):
         return []
@@ -329,17 +329,9 @@ def apply_capstone_transition(source, target, review, *, actor, log):
             new.save(update_fields=['transition', 'updated_at'])
             applied.append(team.pk)
         elif item['outcome'] in ('failed', 'completed'):
-            ids = StudentCapstonePlacement.objects.filter(team=team).values('participation_id')
-            StudentCapstoneParticipation.objects.filter(pk__in=ids).update(state=item['outcome'])
+            from .participation import close_placements
+            close_placements(team, item['outcome'])
     return applied
-
-
-
-
-
-
-
-
 
 
 def teams_in_recorded_term(queryset, semester):

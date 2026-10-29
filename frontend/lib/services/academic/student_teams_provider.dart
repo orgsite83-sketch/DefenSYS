@@ -166,7 +166,8 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? resolvedLevel = level;
     if (resolvedLevel == null && state.level.isEmpty) {
       final user = ref.read(authProvider).user;
-      final isAdmin = user != null &&
+      final isAdmin =
+          user != null &&
           (user['role']?.toString() == 'admin' || user['is_superuser'] == true);
       if (isAdmin) {
         resolvedLevel = 'Capstone';
@@ -175,9 +176,13 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     final nextSearch = search ?? state.search;
     final nextLevel = resolvedLevel ?? state.level;
     final nextStatus = status ?? state.status;
-    final nextYearLevel = clearYearLevel ? null : (yearLevel ?? state.yearLevel);
+    final nextYearLevel = clearYearLevel
+        ? null
+        : (yearLevel ?? state.yearLevel);
     final nextSection = section ?? state.section;
-    final nextEventName = clearEventName ? null : (eventName ?? state.eventName);
+    final nextEventName = clearEventName
+        ? null
+        : (eventName ?? state.eventName);
 
     state = state.copyWith(
       isLoading: state.teams.isEmpty,
@@ -202,10 +207,14 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           if (nextLevel.isNotEmpty) 'level': nextLevel,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           'scope': _listScope,
-          if (nextYearLevel != null && nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
-          if (nextSection != null && nextSection.isNotEmpty) 'section': nextSection,
-          if (nextEventName != null && nextEventName.isNotEmpty) 'event_name': nextEventName,
-          if (nextEventName == null || nextEventName.isEmpty) 'roster_view': 'current',
+          if (nextYearLevel != null && nextYearLevel.isNotEmpty)
+            'year_level': nextYearLevel,
+          if (nextSection != null && nextSection.isNotEmpty)
+            'section': nextSection,
+          if (nextEventName != null && nextEventName.isNotEmpty)
+            'event_name': nextEventName,
+          if (nextEventName == null || nextEventName.isEmpty)
+            'roster_view': 'current',
         },
       );
       final response = await _client.get(uri);
@@ -242,7 +251,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -272,10 +281,12 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
 
     try {
       final response = await _client.patch(
-        Uri.parse('$baseUrl/$teamId/').replace(queryParameters: {
-          if (state.workspace.isNotEmpty) 'workspace': state.workspace,
-        }),
-        
+        Uri.parse('$baseUrl/$teamId/').replace(
+          queryParameters: {
+            if (state.workspace.isNotEmpty) 'workspace': state.workspace,
+          },
+        ),
+
         body: jsonEncode(payload),
       );
 
@@ -303,13 +314,15 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? yearLevel,
     String? section,
   }) async {
-    final uri = Uri.parse(baseUrl).replace(queryParameters: {
-      if (state.workspace.isNotEmpty) 'workspace': state.workspace,
-      if (level.isNotEmpty) 'level': level,
-      'scope': scope,
-      if (yearLevel?.isNotEmpty == true) 'year_level': yearLevel!,
-      if (section?.isNotEmpty == true) 'section': section!,
-    });
+    final uri = Uri.parse(baseUrl).replace(
+      queryParameters: {
+        if (state.workspace.isNotEmpty) 'workspace': state.workspace,
+        if (level.isNotEmpty) 'level': level,
+        'scope': scope,
+        if (yearLevel?.isNotEmpty == true) 'year_level': yearLevel!,
+        if (section?.isNotEmpty == true) 'section': section!,
+      },
+    );
     final response = await _client.get(uri);
     if (response.statusCode != 200) {
       throw Exception(_errorFromResponse(response));
@@ -334,7 +347,11 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     Map<String, dynamic> payload, {
     String? scope,
   }) async {
-    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$teamId/section/'),
@@ -359,7 +376,10 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         ]);
         return true;
       }
-      state = state.copyWith(isSaving: false, error: _errorFromResponse(response));
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
     }
@@ -374,12 +394,16 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final urlStr = force ? '$baseUrl/$teamId/?force=true' : '$baseUrl/$teamId/';
+      final urlStr = force
+          ? '$baseUrl/$teamId/?force=true'
+          : '$baseUrl/$teamId/';
       final response = await _client.delete(
-        Uri.parse(urlStr).replace(queryParameters: {
-          if (force) 'force': 'true',
-          if (state.workspace.isNotEmpty) 'workspace': state.workspace,
-        }),
+        Uri.parse(urlStr).replace(
+          queryParameters: {
+            if (force) 'force': 'true',
+            if (state.workspace.isNotEmpty) 'workspace': state.workspace,
+          },
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -409,7 +433,6 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     }
   }
 
-
   Future<Map<String, dynamic>?> bulkImportPreview(
     List<Map<String, dynamic>> rows, {
     String adviserFilter = 'all',
@@ -429,10 +452,12 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/bulk-import/preview/'),
-        
+
         body: jsonEncode({
           'teams': rows,
-            if (state.eventName != null && !state.level.toUpperCase().contains('CAPSTONE')) 'event_name': state.eventName,
+          if (state.eventName != null &&
+              !state.level.toUpperCase().contains('CAPSTONE'))
+            'event_name': state.eventName,
           'adviser_filter': adviserFilter,
           if (csvColumns != null) 'csv_columns': csvColumns,
           if (section != null) 'section': section,
@@ -441,7 +466,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         }),
       );
 
-      if (!ref.mounted || requestRevision != _previewRequestRevision) return null;
+      if (!ref.mounted || requestRevision != _previewRequestRevision) {
+        return null;
+      }
       if (response.statusCode == 200) {
         return Map<String, dynamic>.from(jsonDecode(response.body));
       }
@@ -449,7 +476,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       state = state.copyWith(error: _errorFromResponse(response));
       return null;
     } catch (e) {
-      if (!ref.mounted || requestRevision != _previewRequestRevision) return null;
+      if (!ref.mounted || requestRevision != _previewRequestRevision) {
+        return null;
+      }
       state = state.copyWith(error: 'Connection error: $e');
       return null;
     }
@@ -477,10 +506,12 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/bulk-import/'),
-        
+
         body: jsonEncode({
           'teams': rows,
-            if (state.eventName != null && !state.level.toUpperCase().contains('CAPSTONE')) 'event_name': state.eventName,
+          if (state.eventName != null &&
+              !state.level.toUpperCase().contains('CAPSTONE'))
+            'event_name': state.eventName,
           'adviser_filter': adviserFilter,
           if (csvColumns != null) 'csv_columns': csvColumns,
           if (section != null) 'section': section,
@@ -515,7 +546,6 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     try {
       final response = await _client.get(
         Uri.parse('$baseUrl/$teamId/adviser-history/'),
-        
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -540,13 +570,16 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     ]);
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   Future<void> refreshAfterGeneration(int count) async {
     _markDependentDataChanged();
-    await fetchTeams(successMessage: '$count teams created. Leaders can complete team setup in their portal.');
+    await fetchTeams(
+      successMessage:
+          '$count teams created. Leaders can complete team setup in their portal.',
+    );
   }
-
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(
@@ -596,16 +629,45 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
   String _errorFromResponse(http.Response response) {
     try {
       final data = jsonDecode(response.body);
+      String messages(dynamic value) {
+        if (value is List) {
+          return value
+              .map(messages)
+              .where((text) => text.isNotEmpty)
+              .join('\n');
+        }
+        if (value is Map) {
+          return value.entries
+              .where((entry) => entry.key != 'code')
+              .map((entry) => messages(entry.value))
+              .where((text) => text.isNotEmpty)
+              .join('\n');
+        }
+        return value?.toString() ?? '';
+      }
+
       if (data is Map) {
+        final rows = data['errors'];
+        if (rows is List) {
+          final errors = <String>[];
+          for (final row in rows.whereType<Map>()) {
+            final detail = messages(row['errors']);
+            if (detail.isEmpty) continue;
+            final label = [
+              if (row['sheet_row'] != null || row['row'] != null)
+                'Row ${row['sheet_row'] ?? row['row']}',
+              if ('${row['team_name'] ?? ''}'.isNotEmpty) '${row['team_name']}',
+            ].join(' · ');
+            errors.add(label.isEmpty ? detail : '$label: $detail');
+          }
+          if (errors.isNotEmpty) return errors.join('\n');
+        }
         if (data['detail'] != null) {
-          return data['detail'].toString();
+          return messages(data['detail']);
         }
         if (data.isNotEmpty) {
-          final firstValue = data.values.first;
-          if (firstValue is List && firstValue.isNotEmpty) {
-            return firstValue.first.toString();
-          }
-          return firstValue.toString();
+          final detail = messages(data);
+          if (detail.isNotEmpty) return detail;
         }
       }
     } catch (_) {

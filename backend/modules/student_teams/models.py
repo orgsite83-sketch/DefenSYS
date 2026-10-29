@@ -132,9 +132,6 @@ class StudentTeam(models.Model):
         'academic_period_management.Semester', null=True, blank=True,
         related_name='capstone_intake_teams', on_delete=models.PROTECT,
     )
-    previous_team = models.ForeignKey(
-        'self', null=True, blank=True, related_name='returning_rosters', on_delete=models.PROTECT,
-    )
     participation_review_reason = models.TextField(blank=True, default='')
     leader = models.ForeignKey(
         settings.AUTH_USER_MODEL,

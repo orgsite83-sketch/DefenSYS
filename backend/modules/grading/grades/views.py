@@ -584,13 +584,15 @@ class TeamGradeWorkflowView(APIView):
     def post(self, request, grade_id):
         grade = get_object_or_404(workspace_grades_for(request.user, request.query_params.get('workspace')), pk=grade_id)
         from .defense_workflow import apply_workflow_action
+        unknown = set(request.data) - {'action', 'reason', 'review_date'}
+        if unknown:
+            raise drf_serializers.ValidationError({key: 'Unsupported workflow field.' for key in sorted(unknown)})
         review_date = drf_serializers.DateField(allow_null=True).run_validation(request.data.get('review_date'))
         action = request.data.get('action', '')
         reason = drf_serializers.CharField(allow_blank=True).run_validation(request.data.get('reason', ''))
-        title = drf_serializers.CharField(allow_blank=True, max_length=255).run_validation(request.data.get('project_title', ''))
         try:
             team = apply_workflow_action(grade, actor=request.user, action=action,
-                reason=reason, project_title=title, review_date=review_date)
+                reason=reason, review_date=review_date)
         except PermissionError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except DjangoValidationError as exc:

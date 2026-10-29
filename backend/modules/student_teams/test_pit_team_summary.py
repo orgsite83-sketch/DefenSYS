@@ -3,6 +3,7 @@ from datetime import date
 from unittest.mock import patch
 
 from django.db import connection
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
@@ -13,6 +14,7 @@ from . import test_formation as fixtures
 from .pit_rosters import register, set_endorsed
 
 
+@override_settings(DEFENSYS_TITLE_WORKFLOW_VERSION=1)
 class PITTeamSummaryTests(APITestCase):
     existing = fixtures.TeamFormationTests.existing
 

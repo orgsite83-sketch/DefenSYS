@@ -1,4 +1,5 @@
 """Default inheritance, explicit exceptions, and preservation of event history."""
+from django.test import override_settings
 from copy import deepcopy
 from rest_framework.test import APITestCase
 from defense.scheduler.models import PitEventGradingConfig
@@ -9,6 +10,7 @@ from .models import StudentTeam, PITSectionRoster, PITEventRoster
 from .pit_rosters import resolve, register, effective_ids
 
 
+@override_settings(DEFENSYS_TITLE_WORKFLOW_VERSION=1)
 class PITRosterTests(APITestCase):
     setUp = fixtures.TeamFormationTests.setUp
     existing = fixtures.TeamFormationTests.existing

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../theme/defensys_tokens.dart';
 import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import '../../../../../widgets/academic/student_capstone_history.dart';
+import '../../../../../services/auth_provider.dart';
 
 Future<void> showHistoricalTeam(
   BuildContext context,
@@ -70,6 +73,37 @@ Future<void> showHistoricalTeam(
                         ),
                       ),
                       const SizedBox(height: 20),
+                      for (final member in team['members'] as List? ?? [])
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Wrap(
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 12,
+                            children: [
+                              Text('${member['name']}'),
+                              Consumer(
+                                builder: (context, ref, _) =>
+                                    StudentCapstoneParticipationButton(
+                                      studentId:
+                                          (member['student_id'] ?? member['id'])
+                                              as int,
+                                      name: '${member['name']}',
+                                      number:
+                                          (member['capstone_participation']
+                                                  as Map?)?['number']
+                                              as int?,
+                                      canOpenHistory:
+                                          ref
+                                              .watch(authProvider)
+                                              .user?['role'] ==
+                                          'admin',
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 20),
                       Text(
                         'Assessments in this term',
                         style: TextStyle(
@@ -106,12 +140,16 @@ Future<void> showHistoricalTeam(
                 ),
               ),
               const SizedBox(height: 20),
-              Align(
-                alignment: Alignment.centerRight,
-                child: ShadButton.outline(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Close'),
-                ),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  ShadButton.outline(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
               ),
             ],
           ),

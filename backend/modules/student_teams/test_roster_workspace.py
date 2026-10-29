@@ -1,4 +1,5 @@
 """Roster changes run in the isolated Django test database only."""
+from django.test import override_settings
 from copy import deepcopy
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
@@ -9,6 +10,7 @@ from .models import StudentTeam, PITSectionRoster, PITEventRoster, PITRosterTeam
 from .pit_rosters import register, effective_ids
 
 
+@override_settings(DEFENSYS_TITLE_WORKFLOW_VERSION=1)
 class RosterWorkspaceTests(APITestCase):
     setUp = fixtures.TeamFormationTests.setUp
     existing = fixtures.TeamFormationTests.existing
@@ -155,7 +157,10 @@ class RosterWorkspaceTests(APITestCase):
             response = self.client.post('/api/teams/rosters/preview/', self.section_import(), format='json')
             self.assertEqual(response.status_code, 403, response.data)
         record.delete()
-        self.assertEqual(self.client.post('/api/teams/rosters/preview/', self.section_import(), format='json').status_code, 403)
+        response = self.client.post('/api/teams/rosters/preview/', self.section_import(), format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn(self.students[0].username, str(response.data))
+        self.assertIn('is not enrolled', str(response.data))
         self.assertFalse(StudentTeam.objects.exists())
 
     def test_instructor_import_rechecks_assignment_and_unsectioned_enrollment_at_apply(self):

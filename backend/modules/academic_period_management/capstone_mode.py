@@ -32,7 +32,7 @@ def derive_capstone_program_phase(semester):
 
 
 def derive_capstone_team_creation_enabled(semester):
-    """Team creation open during Capstone 1 intake and Capstone 2 continuation."""
+    """New participation starts only during a regular Capstone 1 intake."""
     phase = derive_capstone_program_phase(semester)
     return phase == Semester.PHASE_CAPSTONE_1
 
@@ -41,23 +41,6 @@ def normalize_capstone_flags(semester):
     """Derive and persist capstone phase from term and roster data."""
     semester.capstone_program_phase = derive_capstone_program_phase(semester)
     return ['capstone_program_phase']
-
-
-def sync_capstone_flags_after_rollover(active_semester, team_updates):
-    """Refresh 1st Semester capstone flags after capstone teams are bumped."""
-    if team_updates <= 0 or active_semester is None:
-        return
-
-    first_semester = active_semester.school_year.semesters.filter(
-        label=Semester.FIRST,
-    ).first()
-    if first_semester is None:
-        return
-
-    normalize_capstone_flags(first_semester)
-    first_semester.save(
-        update_fields=['capstone_program_phase'],
-    )
 
 
 def capstone_operating_mode(semester):

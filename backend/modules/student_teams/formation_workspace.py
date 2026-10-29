@@ -120,7 +120,8 @@ def roster_preview(user, data):
         if not user_record:
             issues.append('Student account not found. Ask the chair/admin to enroll this student.')
         elif not record:
-            issues.append('No enrollment for this semester. Ask the chair/admin to enroll this student.')
+            from .roster_enrollment import missing_enrollment_issues
+            issues.extend(missing_enrollment_issues([user_record.pk], term))
         elif record.year_level != year:
             issues.append(f'Student is enrolled in {record.year_level}, not {year}.')
         conflict = bool(record and not empty_section(record.section) and record.section != section)
@@ -185,6 +186,8 @@ class SectionRosterCommitView(ImportAPIView):
         list(User.objects.select_for_update().filter(pk__in=ids).order_by('pk'))
         list(StudentAcademicRecord.objects.select_for_update().filter(student_id__in=ids).order_by('pk'))
         term, rows = roster_preview(request.user, payload['data'])
+        from .roster_enrollment import require_roster_enrollment
+        require_roster_enrollment(ids, term, lock=True)
         if [term.pk, rows] != payload['state'] or any(row['issues'] for row in rows):
             raise ValidationError('The roster changed. Review the class list again before saving.')
         updated = 0
@@ -240,7 +243,7 @@ def _team_import_preview(user, data):
         if raw.get('level') and raw['level'] != level:
             issues.append('The file program/year differs from the selected context.')
         require_formation_scope(user, term, level, row['section'])
-        existing = StudentTeam.objects.filter(name=name, level=level).first()
+        existing = StudentTeam.objects.filter(name=name, level=level, semester=term).first()
         setup = setups.get(row['section'], {})
         shared = setup.get('architecture') == 'shared'
         if shared:
@@ -284,15 +287,15 @@ def _team_import_preview(user, data):
                 issues.append('This shared section already has a different instructor. Resolve the section instructor assignment before importing its shared project.')
             for record in StudentAcademicRecord.objects.filter(student_id__in=resolved, semester=term).order_by('student_id'):
                 record_state.append([record.student_id, record.year_level, record.section])
-                if record.year_level != year:
+                if record.year_level != year and not ('Capstone' in level and record.year_level in ('3rd Year', '4th Year')):
                     issues.append(f'{record.student.username} is enrolled in another year level.')
                 if row['section'] and not empty_section(record.section) and record.section != row['section']:
                     if not is_manager(user) or data.get('resolve_conflicts') is not True:
                         issues.append(f'{record.student.username}: existing section {record.section}; ask your lead to review the reassignment.')
                     else:
                         warnings.append(f'{record.student.username}: section changes from {record.section} to {row["section"]}.')
-            if len(record_state) != len(set(resolved)):
-                issues.append('All members need an enrollment in the selected semester.')
+            from .roster_enrollment import missing_enrollment_issues
+            issues.extend(missing_enrollment_issues(resolved, term))
             if len(resolved) != len(set(resolved)):
                 issues.append('The same student is listed more than once in this team.')
             if (not event or event.team_membership_policy != 'multiple') and batch_members.intersection(resolved):
@@ -313,10 +316,13 @@ def _team_import_preview(user, data):
         action = 'update' if existing else 'create'
         if existing:
             warnings.append('Existing team matched. Review its changes before importing; no duplicate team will be created.')
+        from .participation import roster_preview as participation_preview
+        participations = participation_preview(payload['member_ids'], term) if payload and 'Capstone' in level and not issues else []
         results.append({'row': index, 'team_name': name, 'section': row['section'],
             'ready': not issues, 'issues': issues, 'warnings': warnings, 'action': action,
-            'member_count': len(payload['member_ids']) if payload else 0})
+            'member_count': len(payload['member_ids']) if payload else 0, 'participation_preview': participations})
         state.append({'payload': payload, 'records': record_state, 'existing_id': existing.pk if existing else None,
+                      'participations': participations,
                       'updated_at': existing.updated_at.isoformat() if existing else None,
                       'members': list(existing.memberships.order_by('student_id').values_list('student_id', flat=True)) if existing else [],
                       'issues': issues})
@@ -341,7 +347,7 @@ def _team_import_preview(user, data):
 
 
 def import_ready(user, data, rows):
-    return bool(rows) and (any(r['ready'] for r in rows) if is_manager(user) and data.get('partial') is True
+    return bool(rows) and (any(r['ready'] for r in rows) if 'PIT' in data.get('level', '') and is_manager(user) and data.get('partial') is True
         else all(r['ready'] for r in rows))
 
 
@@ -379,6 +385,8 @@ class PreparedTeamsCommitView(ImportAPIView):
         list(User.objects.select_for_update().filter(pk__in=ids).order_by('pk'))
         list(StudentTeam.objects.select_for_update().filter(pk__in=[r['existing_id'] for r in preview['state'][2] if r['existing_id']]).order_by('pk'))
         list(StudentAcademicRecord.objects.select_for_update().filter(student_id__in=ids, semester=term).order_by('pk'))
+        from .roster_enrollment import require_roster_enrollment
+        require_roster_enrollment(ids, term, lock=True)
         term, event, rows, state = team_import_preview(request.user, preview['data'])
         if import_state(term, event, state) != preview['state'] or not import_ready(request.user, preview['data'], rows):
             raise ValidationError('Teams, roster, or event settings changed. Review the import again.')

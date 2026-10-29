@@ -67,3 +67,12 @@ def current_student_team(owned_teams):
     if len(teams) > 1:
         raise ValidationError('Your Current roster has overlapping team memberships. Ask your instructor to review it.')
     return teams[0] if teams else None
+
+
+def current_team_for_student(student):
+    if getattr(student, 'role', None) != 'student':
+        return None
+    from django.db.models import Q
+    from .models import StudentTeam
+    return current_student_team(StudentTeam.objects.filter(
+        Q(memberships__student=student) | Q(leader=student)).select_related('semester'))

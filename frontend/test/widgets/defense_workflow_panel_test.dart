@@ -26,10 +26,8 @@ Map<String, dynamic> _grade(String verdict, {bool verification = false}) => {
   'workflow': {
     'chair_id': 2,
     'adviser_id': 3,
-    'retake_authorized': false,
     'passed_and_cleared': false,
     'previous_projects': [],
-    'recovery_history': [],
   },
 };
 
@@ -127,7 +125,7 @@ void main() {
     }
   }
   testWidgets(
-    'failed teams show admin recovery actions and no scheduling shortcut',
+    'finalized failure offers no recovery action or scheduling shortcut',
     (tester) async {
       await pumpDefensysWidget(
         tester,
@@ -137,30 +135,20 @@ void main() {
         ),
         overrides: [authProvider.overrideWith(() => _WorkflowAuth('admin', 1))],
       );
-      expect(find.text('Progression blocked'), findsOneWidget);
-      expect(find.text('Authorize another attempt'), findsOneWidget);
-      expect(find.text('Authorize replacement concept'), findsOneWidget);
+      expect(find.text('Participation closed as Failed'), findsOneWidget);
+      expect(find.text('Authorize another attempt'), findsNothing);
+      expect(find.text('Authorize replacement concept'), findsNothing);
       expect(find.text('Open Defense Scheduler'), findsNothing);
       await capturePreview(
         tester,
         find.byKey(const ValueKey('workflow-preview')),
         'defense-workflow-failed',
       );
-      await tester.tap(find.text('Authorize replacement concept'));
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('Keep the current adviser and team members.'),
-        findsOneWidget,
-      );
-      final save = find.widgetWithText(FilledButton, 'Save decision');
-      expect(tester.widget<FilledButton>(save).onPressed, isNull);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets('rejected concepts only offer replacement recovery', (
+  testWidgets('rejected concepts cannot reopen the closed participation', (
     tester,
   ) async {
     await pumpDefensysWidget(
@@ -169,7 +157,7 @@ void main() {
       overrides: [authProvider.overrideWith(() => _WorkflowAuth('admin', 1))],
     );
     expect(find.text('Authorize another attempt'), findsNothing);
-    expect(find.text('Authorize replacement concept'), findsOneWidget);
+    expect(find.text('Authorize replacement concept'), findsNothing);
   });
 
   testWidgets(

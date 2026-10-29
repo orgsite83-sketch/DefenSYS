@@ -897,11 +897,6 @@ class _PitLeadCohortSectionDetailScreenState
         bg = const Color(0xFFFEE2E2);
         border = const Color(0xFFFCA5A5);
         break;
-      case 'Delayed/Extended':
-        color = const Color(0xFFB45309);
-        bg = const Color(0xFFFEF3C7);
-        border = const Color(0xFFFDE68A);
-        break;
       default:
         color = const Color(0xFFB45309);
         bg = const Color(0xFFFEF3C7);

@@ -1,5 +1,5 @@
 from django.urls import include, path
-from .participation_views import StudentParticipationHistoryView, ReuseCapstoneRosterView
+from .participation_views import StudentParticipationHistoryView
 from .roster_views import CurrentRosterView
 from .roster_workspace_views import (RosterWorkspaceView, RosterPreviewView, RosterApplyView,
     RosterProjectSetupView, EventTeamSetupView, RosterExportView)
@@ -23,7 +23,6 @@ from .views import (
 
 urlpatterns = [
     path('students/<int:student_id>/capstone-history/', StudentParticipationHistoryView.as_view(), name='student_capstone_history'),
-    path('<int:team_id>/reuse-roster/', ReuseCapstoneRosterView.as_view(), name='reuse_capstone_roster'),
     path('rosters/', RosterWorkspaceView.as_view(), name='pit_roster_workspace'),
     path('rosters/preview/', RosterPreviewView.as_view(), name='pit_roster_preview'),
     path('rosters/apply/', RosterApplyView.as_view(), name='pit_roster_apply'),

@@ -12,6 +12,12 @@ User = get_user_model()
 _import_users = ContextVar('team_import_users', default=None)
 
 
+def participation_preview(student_ids):
+    from .participation import roster_preview
+    from .term_scope import get_active_semester
+    return roster_preview(student_ids, get_active_semester())
+
+
 @contextmanager
 def import_user_lookup():
     """One account projection per review; retain the normal name/ID matching rules."""
@@ -665,6 +671,11 @@ def validate_bulk_team_row(
             if not (data.get('section') or '').strip():
                 issues.append('A section is required to assign a PIT instructor.')
 
+    if member_user_ids:
+        from .roster_enrollment import missing_enrollment_issues
+        from .term_scope import get_active_semester
+        issues.extend(missing_enrollment_issues(member_user_ids, get_active_semester()))
+
     if member_user_ids and not issues:
         if not pit_row:
             from .participation import validate_roster, existing_roster
@@ -720,9 +731,7 @@ def validate_bulk_team_row(
         'data': data,
         'concept_assignment': concept_assignment,
         'concept_requirement': concept_requirement,
-        'participation_preview': ([] if pit_row or issues else __import__(
-            'student_teams.participation', fromlist=['roster_preview']).roster_preview(member_user_ids,
-                __import__('student_teams.term_scope', fromlist=['get_active_semester']).get_active_semester())),
+        'participation_preview': participation_preview(member_user_ids) if not pit_row and not issues else [],
     }
 
 

@@ -157,6 +157,11 @@ def infer_year_level_from_members(member_ids, semester=None, *, leader_id=None):
 
     unique = sorted(set(years))
     if len(unique) > 1:
+        # A regular Capstone intake may mix returning fourth-year students
+        # with first-time third-year students. Official enrollment is unchanged.
+        term = _active_semester(semester)
+        if term and term.label == Semester.SECOND and set(unique) <= {'3rd Year', '4th Year'}:
+            return default_capstone_year(term), []
         return '', [
             'Team members belong to different year levels '
             f'({", ".join(unique)}). Use students from the same cohort.'

@@ -204,8 +204,9 @@ def _project_manager_fields(user, active_semester=None):
 
 def _user_payload(user, active_semester=None):
     is_project_manager, managed_section = _project_manager_fields(user, active_semester)
-    membership = user.team_memberships.first()
-    team_id = str(membership.team_id) if membership else None
+    from student_teams.current_identity import current_team_for_student
+    team = current_team_for_student(user)
+    team_id = str(team.pk) if team else None
     return {
         'id': user.id,
         'username': user.username,

@@ -145,11 +145,9 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         }
 
     def get_team_id(self, obj):
-        prefetched = getattr(obj, '_prefetched_objects_cache', {}).get('team_memberships')
-        if prefetched is not None:
-            return str(prefetched[0].team_id) if prefetched else None
-        membership = obj.team_memberships.first()
-        return str(membership.team_id) if membership else None
+        from student_teams.current_identity import current_team_for_student
+        team = current_team_for_student(obj)
+        return str(team.pk) if team else None
 
     def get_name(self, obj):
         full_name = f'{obj.first_name} {obj.last_name}'.strip()

@@ -26,12 +26,8 @@ def user_group_name(user_id: int) -> str:
 
 
 def _student_team_for_user(user):
-    return (
-        StudentTeam.objects.select_related('semester')
-        .filter(memberships__student=user)
-        .order_by('-updated_at', '-id')
-        .first()
-    )
+    from student_teams.current_identity import current_team_for_student
+    return current_team_for_student(user)
 
 
 def groups_for_user(user) -> set[str]:

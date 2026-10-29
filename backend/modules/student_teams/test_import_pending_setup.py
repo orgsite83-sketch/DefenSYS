@@ -48,7 +48,11 @@ class CapstoneImportSetupTests(APITestCase):
                     self.assertFalse(team.setup_pending)
                     self.assertEqual(team.project_pending, not bool(title))
                     self.assertEqual(team.project_title, title)
+                from .models import StudentCapstonePlacement, StudentCapstoneParticipation
+                StudentCapstonePlacement.objects.all().delete()
+                StudentCapstoneParticipation.objects.all().delete()
                 StudentTeam.objects.all().delete()
+                self.client.force_authenticate(self.admin)
                 self.client.force_authenticate(self.admin)
 
 

@@ -1282,7 +1282,7 @@ class GradeContextService:
     @staticmethod
     @transaction.atomic
     def get_or_create_for_schedule(schedule, *, repair_placeholders=True):
-        # Serialize attempt replacement with recovery and verdict changes.
+        # Serialize hearing replacement with verdict changes.
         StudentTeam.objects.select_for_update().get(pk=schedule.team_id)
         from student_teams.models import TeamTermParticipation
         if schedule.scope == 'capstone' and TeamTermParticipation.objects.filter(

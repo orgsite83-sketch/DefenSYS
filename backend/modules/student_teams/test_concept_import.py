@@ -148,7 +148,11 @@ class ConceptImportTests(APITestCase):
                 current = concepts.get_round(team, stage)
                 self.assertEqual(len(current.concepts), 3)
                 self.assertTrue(all(c['title'] == '' for c in current.concepts))
+                from .models import StudentCapstonePlacement, StudentCapstoneParticipation
+                StudentCapstonePlacement.objects.all().delete()
+                StudentCapstoneParticipation.objects.all().delete()
                 StudentTeam.objects.all().delete()
+                self.client.force_authenticate(self.admin)
                 self.client.force_authenticate(self.admin)
 
     def test_old_assigned_section_does_not_block_imports_without_titles(self):
