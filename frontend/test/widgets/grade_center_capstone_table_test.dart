@@ -153,10 +153,7 @@ void main() {
             }
           }
           if (scenario.enabled) {
-            expect(
-              find.text('All 2 teams are ready'),
-              findsOneWidget,
-            );
+            expect(find.text('All 2 teams are ready'), findsOneWidget);
             await tester.tap(
               find.widgetWithText(ElevatedButton, 'Mark Complete').last,
             );
@@ -318,6 +315,26 @@ void main() {
         optionalEnabled: true,
         greenComponents: {'Peer'},
       ),
+      (
+        name: 'closed PIT peer grading retains partial progress',
+        scope: 'pit',
+        teamCount: 16,
+        panelDone: 16,
+        adviserDone: 0,
+        peerDone: 8,
+        optionalEnabled: false,
+        greenComponents: {'Panel'},
+      ),
+      (
+        name: 'completed PIT event retains completed peer evaluations',
+        scope: 'pit',
+        teamCount: 16,
+        panelDone: 16,
+        adviserDone: 0,
+        peerDone: 16,
+        optionalEnabled: false,
+        greenComponents: {'Panel', 'Peer'},
+      ),
     ]) {
       testWidgets(
         '${scenario.name} uses accurate component colors (${isDark ? 'dark' : 'light'})',
@@ -329,6 +346,10 @@ void main() {
 
           const label = 'Evaluation Stage';
           final isPit = scenario.scope == 'pit';
+          final isComplete =
+              isPit &&
+              !scenario.optionalEnabled &&
+              scenario.peerDone == scenario.teamCount;
           final state = GradeCenterState(
             grades: List.generate(
               scenario.teamCount,
@@ -347,7 +368,7 @@ void main() {
             },
             groupSettings: {
               '${scenario.scope}|$label': {
-                'is_officially_complete': false,
+                'is_officially_complete': isComplete,
                 'peer_grading_enabled': isPit && scenario.optionalEnabled,
               },
             },
@@ -405,10 +426,23 @@ void main() {
             );
           }
           expect(
-            find.text(scenario.teamCount > 0 ? 'IN PROGRESS' : 'NOT STARTED'),
+            find.text(
+              isComplete
+                  ? 'OFFICIALLY COMPLETE'
+                  : scenario.teamCount > 0
+                  ? 'IN PROGRESS'
+                  : 'NOT STARTED',
+            ),
             findsOneWidget,
           );
-          if (isPit) expect(find.text('Adviser'), findsNothing);
+          if (isPit) {
+            expect(find.text('Adviser'), findsNothing);
+            expect(find.text('Disabled'), findsNothing);
+            expect(
+              find.text('${scenario.peerDone}/${scenario.teamCount} done'),
+              findsWidgets,
+            );
+          }
         },
       );
     }

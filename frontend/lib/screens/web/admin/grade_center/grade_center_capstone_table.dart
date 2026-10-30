@@ -835,9 +835,11 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     final peerCompleteCount = groupGrades
         .where((g) => g['peer_eval_complete'] == true)
         .length;
+    // PIT's switch controls new submissions; closing it preserves progress.
     final peerEnabled =
+        isPitRow ||
         row.peerGradingEnabled ||
-        (!isPitRow && capstoneTermPeerEvalEnabled(state));
+        capstoneTermPeerEvalEnabled(state);
     final adviserEnabled = isPitRow
         ? false
         : capstoneTermAdviserGradingEnabled(state);

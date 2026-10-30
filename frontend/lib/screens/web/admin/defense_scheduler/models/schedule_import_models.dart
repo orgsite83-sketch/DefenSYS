@@ -336,6 +336,7 @@ class ScheduleImportPreviewRow {
     this.scheduledStartTime,
     this.adviserId,
     this.adviserName,
+    this.instructorName = '',
     this.stageIssues = const <String>[],
     this.teamIssues = const <String>[],
     this.slotIssues = const <String>[],
@@ -365,6 +366,7 @@ class ScheduleImportPreviewRow {
   final String? scheduledStartTime;
   final int? adviserId;
   final String? adviserName;
+  final String instructorName;
   final List<String> stageIssues;
   final List<String> teamIssues;
   final List<String> slotIssues;
@@ -384,6 +386,8 @@ class ScheduleImportPreviewRow {
       (rowType == ScheduleImportRowType.initialReady ||
           rowType == ScheduleImportRowType.redefenseReady);
   bool get isPit => scope == 'pit';
+  bool get hasInvalidAdviserColumn =>
+      isPit && (source.hasAdviserColumn || source.adviser.trim().isNotEmpty);
   bool get isRedefense => rowType == ScheduleImportRowType.redefenseReady;
   bool get isAlreadyPassed => rowType == ScheduleImportRowType.alreadyPassed;
   bool get isAlreadyScheduled =>
@@ -403,7 +407,7 @@ class ScheduleImportPreviewRow {
   Set<int> get attendanceIds => {
     ...panelistIds,
     if (documenterId != null) documenterId!,
-    if (adviserId != null) adviserId!,
+    if (!isPit && adviserId != null) adviserId!,
   };
 
   String get effectiveEndTime {
@@ -433,7 +437,8 @@ class ScheduleImportPreviewRow {
       source.panelMembers.isEmpty ? '-' : source.panelMembers.join(', ');
   String get documenterLabel =>
       (!isPit && source.documenter.isNotEmpty) ? source.documenter : '-';
-  String get adviserLabel => adviserName ?? source.adviser;
+  String get adviserLabel => isPit ? '' : adviserName ?? source.adviser;
+  String get facultyLabel => isPit ? instructorName : adviserLabel;
 
   Map<String, dynamic> toPayload() {
     if (scope == 'pit') {
@@ -789,6 +794,12 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final stageIssues = <String>[];
     final teamIssues = <String>[];
     final slotIssues = <String>[...source.parseIssues];
+    if (isPit &&
+        (source.hasAdviserColumn || source.adviser.trim().isNotEmpty)) {
+      slotIssues.add(
+        'PIT schedules use Instructor, not Adviser. Correct the Adviser column to Instructor and use the assigned section instructor, then upload again.',
+      );
+    }
     final panelistEligibilityIds = <int>[];
     final panelistEligibilityIssues = <String>[];
     var hasUnresolvedFaculty = false;
@@ -805,13 +816,33 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final matchedTeam = state.teams
         .where((team) => asInt(team['id']) == teamMatch.id)
         .firstOrNull;
-    // The imported schedule uses the team's assigned adviser, which may differ
-    // from an outdated spreadsheet. Validate that person's availability.
+    // PIT responsibility comes from section assignments, never Adviser cells.
+    final instructorNames = (matchedTeam?['instructors'] as List? ?? const [])
+        .whereType<Map>()
+        .map((person) => person['name']?.toString().trim() ?? '')
+        .where((name) => name.isNotEmpty)
+        .join(', ');
+    final storedInstructor =
+        matchedTeam?['instructor_name']?.toString().trim() ?? '';
+    final instructorName = isPit
+        ? (storedInstructor.isNotEmpty ? storedInstructor : instructorNames)
+        : '';
+    // Advisers belong to Capstone. Legacy PIT spreadsheets/drafts may still
+    // contain this column, but it must not create an adviser or attendance rule.
     final storedAdviser = matchedTeam?['adviser_name']?.toString().trim() ?? '';
-    final adviserName = storedAdviser.isEmpty ? source.adviser : storedAdviser;
-    final adviserId = asInt(matchedTeam?['adviser_id']) ??
-        asInt(matchedTeam?['adviser']) ??
-        (adviserName.trim().isEmpty ? null : matchPanelist(adviserName, state).id);
+    final adviserName = isPit
+        ? ''
+        : storedAdviser.isEmpty
+        ? source.adviser
+        : storedAdviser;
+    // Prefer the assigned Capstone adviser over an outdated spreadsheet name.
+    final adviserId = isPit
+        ? null
+        : asInt(matchedTeam?['adviser_id']) ??
+              asInt(matchedTeam?['adviser']) ??
+              (adviserName.trim().isEmpty
+                  ? null
+                  : matchPanelist(adviserName, state).id);
     final panelistMatches = <ImportNameMatch>[];
 
     final chairMatch = matchPanelist(source.chair, state);
@@ -1029,7 +1060,8 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
             orElse: () => <String, dynamic>{},
           );
           final eventYear = pitConfig['year_level']?.toString().trim() ?? '';
-          if (eventYear.isEmpty || eventYear != team['year_level']?.toString().trim()) {
+          if (eventYear.isEmpty ||
+              eventYear != team['year_level']?.toString().trim()) {
             rowType = ScheduleImportRowType.notEndorsed;
             teamIssues.add('$teamName is outside this PIT event year level.');
           } else if (pitConfig['is_officially_complete'] == true) {
@@ -1099,6 +1131,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       scheduledStartTime: startTime,
       adviserName: adviserName,
       adviserId: adviserId,
+      instructorName: instructorName,
       stageIssues: stageIssues,
       teamIssues: teamIssues,
       slotIssues: slotIssues,
@@ -1246,7 +1279,7 @@ void _validatePreviewTimeConflicts(
             asInt(person['id'])!,
         if (asInt(existing['documenter']) != null)
           asInt(existing['documenter'])!,
-        if (asInt(existing['adviser_id']) != null)
+        if (existing['scope'] != 'pit' && asInt(existing['adviser_id']) != null)
           asInt(existing['adviser_id'])!,
       };
       final otherRoom = existing['room']?.toString() ?? '';

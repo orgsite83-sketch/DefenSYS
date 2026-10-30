@@ -6,6 +6,32 @@ import 'package:excel/excel.dart';
 
 void main() {
   group('schedule header safety', () {
+    test(
+      'instructors stay separate from advisers through merged rows and draft copies',
+      () {
+        final parsed = parseScheduleImportMatrix([
+          ['Time', 'Team Name', 'Instructor', 'Adviser', 'Chair Panel'],
+          [
+            '08:00-08:30',
+            'Team Alpha',
+            'Jonathan Beltran',
+            'Ricardo Fontanilla',
+            'Maricel Suarez',
+          ],
+          ['08:30-09:00', 'Team Beta', '', '', 'Maricel Suarez'],
+        ]);
+        final restored = ParsedScheduleImport.fromJson(parsed.toJson());
+        for (final row in restored.rows) {
+          expect(row.instructor, 'Jonathan Beltran');
+          expect(row.adviser, 'Ricardo Fontanilla');
+          expect(row.hasAdviserColumn, isTrue);
+          expect(row.copyWith().hasAdviserColumn, isTrue);
+          expect(row.copyWith(room: 'Room 303').instructor, 'Jonathan Beltran');
+          expect(row.parseIssues, isEmpty);
+        }
+      },
+    );
+
     for (final alias in [
       'Chair',
       'Panel Chair',

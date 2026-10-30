@@ -8,11 +8,12 @@ class DefenseScheduleTemplateDay {
     required this.room,
     required this.teams,
     required this.adviser,
+    this.instructor = '',
     required this.panels,
     this.documenter = '',
   });
 
-  final String stage, date, room, adviser, documenter;
+  final String stage, date, room, adviser, instructor, documenter;
   final List<String> teams;
   final List<List<String>> panels;
 
@@ -56,7 +57,8 @@ List<DefenseScheduleTemplateDay> defenseScheduleTemplateDays({
               'Team SafeCity',
               'Team CodeLearners',
             ],
-      adviser: 'Prof. Alex Santos',
+      adviser: isCapstone ? 'Prof. Alex Santos' : '',
+      instructor: isCapstone ? '' : 'Prof. Alex Santos',
       panels: panels,
       documenter: isCapstone ? 'Engr. Mark Mendoza' : '',
     ),
@@ -72,7 +74,8 @@ List<DefenseScheduleTemplateDay> defenseScheduleTemplateDays({
               'Team EduTrack',
               'Team EcoRoute',
             ],
-      adviser: 'Prof. Jamie Reyes',
+      adviser: isCapstone ? 'Prof. Jamie Reyes' : '',
+      instructor: isCapstone ? '' : 'Prof. Jamie Reyes',
       panels: panels.reversed.toList(),
       documenter: isCapstone ? 'Engr. Dana Cruz' : '',
     ),
@@ -94,7 +97,7 @@ List<int> generateDefenseScheduleExcelBytes({required bool isCapstone}) {
     '#',
     'Time',
     'Team Name',
-    'Adviser',
+    isCapstone ? 'Adviser' : 'Instructor',
     'Panel Chair',
     'Panel Member 1',
     'Panel Member 2',
@@ -134,7 +137,7 @@ List<int> generateDefenseScheduleExcelBytes({required bool isCapstone}) {
     18.0,
     17.0,
     20.0,
-    20.0,
+    if (isCapstone) 20.0,
   ];
   for (var column = 0; column < headers.length; column++) {
     sheet.setColumnWidth(firstColumn + column, widths[column]);
@@ -172,7 +175,7 @@ List<int> generateDefenseScheduleExcelBytes({required bool isCapstone}) {
           IntCellValue(slot + 1),
           TextCellValue(day.timeForSlot(slot)),
           TextCellValue(day.teams[slot]),
-          null, // Shared adviser cells are merged within this day only.
+          null, // Shared adviser/instructor cells are merged per day.
           ...day.panels[slot ~/ 2].map(TextCellValue.new),
           if (isCapstone) null,
         ],
@@ -193,7 +196,11 @@ List<int> generateDefenseScheduleExcelBytes({required bool isCapstone}) {
     }
     final firstSlotRow = blockStart + 5;
     final lastSlotRow = blockStart + blockLength;
-    mergeLabel('G$firstSlotRow', 'G$lastSlotRow', day.adviser);
+    mergeLabel(
+      'G$firstSlotRow',
+      'G$lastSlotRow',
+      isCapstone ? day.adviser : day.instructor,
+    );
     if (isCapstone) {
       mergeLabel('L$firstSlotRow', 'L$lastSlotRow', day.documenter);
     }

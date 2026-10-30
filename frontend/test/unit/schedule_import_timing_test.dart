@@ -351,7 +351,10 @@ void main() {
   });
 
   test('PIT payloads also use adjusted start times', () {
-    final rows = _preview([_row(1, '08:00'), _row(2, '08:30')], scope: 'pit');
+    final rows = _preview([
+      _row(1, '08:00', adviser: '').copyWith(instructor: 'Instructor One'),
+      _row(2, '08:30', adviser: '').copyWith(instructor: 'Instructor One'),
+    ], scope: 'pit');
     expect(rows.last.toPayload()['start_time'], '09:00');
     expect(rows.last.toPayload()['scope'], 'pit');
     expect(rows.every((r) => r.ready), isTrue);

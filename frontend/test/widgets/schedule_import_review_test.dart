@@ -83,6 +83,12 @@ class _Scheduler extends DefenseSchedulerNotifier {
   }
 
   @override
+  Future<Map<String, dynamic>?> fetchPitEventConfig({
+    String? eventName,
+    int? semesterId,
+  }) async => fixture.pitEvents.firstOrNull;
+
+  @override
   Future<Map<String, dynamic>> importSchedules(
     List<Map<String, dynamic>> payloads, {
     void Function(int completed, int total)? onProgress,
@@ -130,7 +136,10 @@ class _Stages extends DefenseStagesNotifier {
   int count = 16,
   bool unknownLastTeam = false,
   bool blankLastRoom = false,
+  bool isPit = false,
+  bool legacyAdviser = false,
 }) {
+  final target = isPit ? 'Concept Pitching' : _stage;
   final rows = [
     for (var i = 0; i < count; i++)
       ParsedScheduleImportRow(
@@ -139,7 +148,11 @@ class _Stages extends DefenseStagesNotifier {
             '${8 + (i % 4) ~/ 2}:${i.isEven ? '00' : '30'} - ${8 + ((i % 4) + 1) ~/ 2}:${i.isEven ? '30' : '00'}',
         teamName: 'Team ${i + 1}',
         projectTitle: 'Project ${i + 1}',
-        adviser: i < 8 ? 'Ricardo Fontanilla' : 'Andrea Santos',
+        adviser: isPit
+            ? (legacyAdviser ? 'Jonathan Beltran' : '')
+            : i < 8
+            ? 'Ricardo Fontanilla'
+            : 'Andrea Santos',
         members: const [],
         chair: i < 8 ? 'Maricel Suarez' : 'Renato Villanueva',
         panelMembers: i < 8
@@ -152,7 +165,7 @@ class _Stages extends DefenseStagesNotifier {
             ? 'Room 301'
             : 'Room 302',
         date: i % 8 < 4 ? '2026-10-20' : '2026-10-21',
-        stage: _stage,
+        stage: target,
         startTime: '${8 + (i % 4) ~/ 2}:${i.isEven ? '00' : '30'}',
         endTime: '${8 + ((i % 4) + 1) ~/ 2}:${i.isEven ? '30' : '00'}',
         slotDuration: 30,
@@ -160,10 +173,11 @@ class _Stages extends DefenseStagesNotifier {
   ];
   return (
     draft: ScheduleImportDraft(
-      parsed: ParsedScheduleImport(stage: _stage, rows: rows),
-      scope: 'capstone',
+      parsed: ParsedScheduleImport(stage: target, rows: rows),
+      scope: isPit ? 'pit' : 'capstone',
       fileName: 'defense_schedule.xlsx',
-      stageId: 10,
+      stageId: isPit ? null : 10,
+      eventName: isPit ? target : '',
       duration: '30',
       date: '2026-10-20',
       panelRubricId: 1,
@@ -173,6 +187,18 @@ class _Stages extends DefenseStagesNotifier {
     ),
     state: DefenseSchedulerState(
       canApprovePanelists: true,
+      canSchedulePit: isPit,
+      pitEvents: [
+        if (isPit)
+          {
+            'event_name': target,
+            'year_level': '3rd Year',
+            'panel_rubric_id': 1,
+            'peer_rubric_id': 3,
+            'panel_weight': 80,
+            'peer_weight': 20,
+          },
+      ],
       activeSemester: const {
         'id': 1,
         'display_name': '1st Semester, A.Y. 2026-2027',
@@ -197,8 +223,14 @@ class _Stages extends DefenseStagesNotifier {
             'id': i + 1,
             'name': 'Team ${i + 1}',
             'project_title': 'Project ${i + 1}',
-            'level': 'Capstone 1',
-            'ready_for_stage': _stage,
+            'level': isPit ? '3rd Year PIT' : 'Capstone 1',
+            'year_level': '3rd Year',
+            'instructors': isPit
+                ? [
+                    {'id': 102, 'name': 'Jonathan Beltran'},
+                  ]
+                : [],
+            'ready_for_stage': target,
             'completed_stages': <String>[],
             'scheduled_stages': <String>[],
             'redefense_stages': <String>[],
@@ -220,6 +252,8 @@ Future<_Scheduler> _pumpReview(
   bool dark = false,
   VoidCallback? onBack,
   bool seedDraft = true,
+  bool isPit = false,
+  bool legacyAdviser = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -229,11 +263,13 @@ Future<_Scheduler> _pumpReview(
     count: count,
     unknownLastTeam: unknownLastTeam,
     blankLastRoom: blankLastRoom,
+    isPit: isPit,
+    legacyAdviser: legacyAdviser,
   );
   FlutterSecureStorage.setMockInitialValues({});
   SharedPreferences.setMockInitialValues({
     if (seedDraft)
-      'defense_schedule_import_draft_capstone': jsonEncode(
+      'defense_schedule_import_draft_${fixture.draft.scope}': jsonEncode(
         fixture.draft.toJson(),
       ),
   });
@@ -253,8 +289,9 @@ Future<_Scheduler> _pumpReview(
         theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
         home: Scaffold(
           body: DefenseScheduleBulkImportView(
-            scope: 'capstone',
-            initialStageId: 10,
+            scope: fixture.draft.scope,
+            initialStageId: isPit ? null : 10,
+            initialEventName: isPit ? 'Concept Pitching' : null,
             onBack: onBack ?? () {},
           ),
         ),
@@ -353,6 +390,62 @@ Future<GoRouter> _pumpRoutedReview(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+    'PIT review flags an Adviser column from a restored legacy spreadsheet',
+    (tester) async {
+      final scheduler = await _pumpReview(
+        tester,
+        count: 1,
+        isPit: true,
+        legacyAdviser: true,
+      );
+      expect(find.text('Adviser'), findsNothing);
+      expect(find.text('Instructor'), findsWidgets);
+      final table = tester.widget<DataTable>(find.byType(DataTable).first);
+      expect(
+        (table.rows.single.cells[2].child as Text).data,
+        'Jonathan Beltran',
+      );
+      expect(
+        find.textContaining('PIT schedules use Instructor, not Adviser'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('team adviser cannot'), findsNothing);
+      expect(scheduler.imports, isEmpty);
+      expect(find.text('Import 1 slot'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('PIT review imports with its assigned section instructor', (
+    tester,
+  ) async {
+    final scheduler = await _pumpReview(tester, count: 1, isPit: true);
+    expect(find.text('Adviser'), findsNothing);
+    expect(find.text('Instructor'), findsWidgets);
+    await _tap(tester, find.text('Import 1 slot'));
+    expect(scheduler.imports.single.single['scope'], 'pit');
+    expect(scheduler.imports.single.single.containsKey('adviser_id'), isFalse);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  for (final isPit in [true, false]) {
+    testWidgets(
+      '${isPit ? 'PIT' : 'Capstone'} template shows only its own roles',
+      (tester) async {
+        await _pumpReview(tester, isPit: isPit, seedDraft: false);
+        expect(find.text('Adviser'), isPit ? findsNothing : findsWidgets);
+        expect(find.text('Instructor'), isPit ? findsWidgets : findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
   testWidgets(
     'pending import displays progress and prevents another confirmation',
     (tester) async {

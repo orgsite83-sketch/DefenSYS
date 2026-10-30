@@ -8,6 +8,91 @@ void main() {
     const stageId = 10;
     const stageLabel = 'Project Proposal';
 
+    for (final year in ['1st Year', '2nd Year', '3rd Year']) {
+      for (final sheetAdviser in [
+        'Jonathan Beltran',
+        'Ricardo Fontanilla',
+        '',
+        null,
+      ]) {
+        test(
+          '$year PIT flags Adviser $sheetAdviser and shows the assigned instructor after draft restore',
+          () {
+            const event = 'Concept Pitching';
+            final parsed = parseScheduleImportMatrix([
+              [
+                'Time',
+                'Team Name',
+                sheetAdviser == null ? 'Instructor' : 'Adviser',
+                'Chair Panel',
+              ],
+              [
+                '09:00-09:30',
+                'Team Alpha',
+                sheetAdviser ?? 'Jonathan Beltran',
+                'Jonathan Beltran',
+              ],
+            ]);
+            final rows = buildScheduleImportPreviewRows(
+              ParsedScheduleImport.fromJson(parsed.toJson()),
+              DefenseSchedulerState(
+                activeSemester: const {'id': 1, 'name': '1st Semester'},
+                faculty: const [
+                  {'id': 101, 'name': 'Jonathan Beltran'},
+                  {'id': 103, 'name': 'Ricardo Fontanilla'},
+                ],
+                teams: [
+                  {
+                    'id': 1,
+                    'name': 'Team Alpha',
+                    'level': '$year PIT',
+                    'year_level': year,
+                    'adviser': null,
+                    'adviser_name': null,
+                    'instructor_name': 'Jonathan Beltran',
+                  },
+                ],
+                pitEvents: [
+                  {'event_name': event, 'year_level': year},
+                ],
+              ),
+              scope: 'pit',
+              stageId: null,
+              eventName: event,
+              date: '2026-06-18',
+              room: 'Room 301',
+              fallbackDuration: 30,
+              panelRubricId: 1,
+              adviserRubricId: null,
+              peerRubricId: 2,
+              panelWeight: 80,
+              peerWeight: 20,
+            );
+            final row = rows.single;
+            expect(row.ready, sheetAdviser == null);
+            expect(row.hasInvalidAdviserColumn, sheetAdviser != null);
+            expect(
+              row.slotIssues.any(
+                (issue) => issue.contains('team adviser cannot'),
+              ),
+              isFalse,
+            );
+            if (sheetAdviser != null) {
+              expect(
+                row.slotIssues,
+                contains(contains('PIT schedules use Instructor, not Adviser')),
+              );
+            }
+            expect(row.adviserId, isNull);
+            expect(row.adviserLabel, isEmpty);
+            expect(row.facultyLabel, 'Jonathan Beltran');
+            expect(row.attendanceIds, {101});
+            expect(row.toPayload().keys, isNot(contains('adviser_id')));
+          },
+        );
+      }
+    }
+
     test('PIT import requires endorsement for every required pre-deliverable', () {
       const event = 'System Concept Pitching';
       final source = ParsedScheduleImport(rows: [
@@ -67,6 +152,7 @@ void main() {
     });
 
     final testState = DefenseSchedulerState(
+      activeSemester: const {'id': 2, 'name': '2nd Semester'},
       defenseStages: const [
         {'id': stageId, 'label': stageLabel},
       ],
@@ -81,7 +167,8 @@ void main() {
           'id': 1,
           'name': 'Team Alpha',
           'project_title': 'Project Alpha',
-          'level': 'Capstone 1',
+          'level': '3rd Year Capstone',
+          'year_level': '3rd Year',
           'ready_for_stage': stageLabel,
           'completed_stages': <String>[],
           'scheduled_stages': <String>[],

@@ -12,6 +12,7 @@ const _headerAliases = <String, List<String>>{
   'Team Name': ['teamname', 'team'],
   'Capstone Project': ['capstoneproject', 'project', 'projecttitle'],
   'Adviser': ['adviser', 'advisor'],
+  'Instructor': ['instructor', 'sectioninstructor', 'pitinstructor'],
   'Team Members': ['teammembers', 'members', 'studentmembers'],
   'Chair': [
     'chair',
@@ -139,6 +140,8 @@ class ParsedScheduleImportRow {
     required this.teamName,
     required this.projectTitle,
     required this.adviser,
+    this.instructor = '',
+    this.hasAdviserColumn = false,
     required this.members,
     required this.chair,
     required this.panelMembers,
@@ -161,6 +164,8 @@ class ParsedScheduleImportRow {
   final String teamName;
   final String projectTitle;
   final String adviser;
+  final String instructor;
+  final bool hasAdviserColumn;
   final List<String> members;
   final String chair;
   final List<String> panelMembers;
@@ -184,6 +189,8 @@ class ParsedScheduleImportRow {
     'team_name': teamName,
     'project_title': projectTitle,
     'adviser': adviser,
+    'instructor': instructor,
+    'has_adviser_column': hasAdviserColumn,
     'members': members,
     'chair': chair,
     'panel_members': panelMembers,
@@ -210,6 +217,8 @@ class ParsedScheduleImportRow {
       teamName: json['team_name']?.toString() ?? '',
       projectTitle: json['project_title']?.toString() ?? '',
       adviser: json['adviser']?.toString() ?? '',
+      instructor: json['instructor']?.toString() ?? '',
+      hasAdviserColumn: json['has_adviser_column'] == true,
       members:
           (json['members'] as List?)?.map((e) => e.toString()).toList() ??
           const [],
@@ -242,6 +251,8 @@ class ParsedScheduleImportRow {
     String? teamName,
     String? projectTitle,
     String? adviser,
+    String? instructor,
+    bool? hasAdviserColumn,
     List<String>? members,
     String? chair,
     List<String>? panelMembers,
@@ -264,6 +275,8 @@ class ParsedScheduleImportRow {
       teamName: teamName ?? this.teamName,
       projectTitle: projectTitle ?? this.projectTitle,
       adviser: adviser ?? this.adviser,
+      instructor: instructor ?? this.instructor,
+      hasAdviserColumn: hasAdviserColumn ?? this.hasAdviserColumn,
       members: members ?? this.members,
       chair: chair ?? this.chair,
       panelMembers: panelMembers ?? this.panelMembers,
@@ -359,6 +372,7 @@ ParsedScheduleImport parseScheduleImportMatrix(
   var teamCol = -1;
   var projectCol = -1;
   var adviserCol = -1;
+  var instructorCol = -1;
   var memberCol = -1;
   var chairCol = -1;
   var panelCols = <int>[];
@@ -402,6 +416,7 @@ ParsedScheduleImport parseScheduleImportMatrix(
     if (teamCol < 0) teamCol = roles.indexOf('Team Name');
     projectCol = column('Capstone Project');
     adviserCol = column('Adviser');
+    instructorCol = column('Instructor');
     memberCol = column('Team Members');
     chairCol = column('Chair');
     panelCols = [
@@ -573,6 +588,7 @@ ParsedScheduleImport parseScheduleImportMatrix(
     final teamName = read(teamCol);
     final project = read(projectCol);
     final adviser = read(adviserCol, fill: true);
+    final instructor = read(instructorCol, fill: true);
     final chair = read(chairCol, fill: false);
     final documenter = read(documenterCol, fill: true);
     final colRoom = read(roomCol, fill: true);
@@ -604,6 +620,8 @@ ParsedScheduleImport parseScheduleImportMatrix(
         teamName: teamName,
         projectTitle: project,
         adviser: adviser,
+        instructor: instructor,
+        hasAdviserColumn: adviserCol >= 0,
         chair: chair,
         panelMembers: [
           for (final panelCol in panelCols) read(panelCol, fill: false),
@@ -635,6 +653,8 @@ ParsedScheduleImport parseScheduleImportMatrix(
           teamName: group.teamName,
           projectTitle: group.projectTitle,
           adviser: group.adviser,
+          instructor: group.instructor,
+          hasAdviserColumn: group.hasAdviserColumn,
           members: group.members,
           chair: group.chair,
           panelMembers: group.panelMembers,
@@ -1083,6 +1103,8 @@ class _ImportGroup {
     required this.teamName,
     required this.projectTitle,
     required this.adviser,
+    required this.instructor,
+    required this.hasAdviserColumn,
     required this.chair,
     required this.panelMembers,
     required this.documenter,
@@ -1097,6 +1119,8 @@ class _ImportGroup {
   final String teamName;
   final String projectTitle;
   final String adviser;
+  final String instructor;
+  final bool hasAdviserColumn;
   final String chair;
   final List<String> panelMembers;
   final String documenter;

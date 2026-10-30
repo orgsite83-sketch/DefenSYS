@@ -56,6 +56,11 @@ void main() {
         sheet.cell(CellIndex.indexByString('G7')).value.toString(),
         'Prof. Alex Santos',
       );
+      final headers = sheet.rows[5]
+          .map((cell) => cell?.value.toString())
+          .toList();
+      expect(headers.contains('Adviser'), isCapstone);
+      expect(headers.contains('Instructor'), !isCapstone);
       // The Excel decoder drops alignment and merged-cell styles. Check the
       // retained body styles here and merged geometry/import behavior separately.
       final bodyStyle = sheet.cell(CellIndex.indexByString('F8')).cellStyle!;
@@ -134,7 +139,15 @@ void main() {
           final firstDay = index < 4;
           expect(
             row.adviser,
-            firstDay ? 'Prof. Alex Santos' : 'Prof. Jamie Reyes',
+            isCapstone
+                ? (firstDay ? 'Prof. Alex Santos' : 'Prof. Jamie Reyes')
+                : '',
+          );
+          expect(
+            row.instructor,
+            isCapstone
+                ? ''
+                : (firstDay ? 'Prof. Alex Santos' : 'Prof. Jamie Reyes'),
           );
           expect(
             row.documenter,
@@ -224,7 +237,15 @@ void main() {
         isCapstone ? '6/18/2026' : '5/18/2026',
       });
       expect(
-        result.rows.every((row) => row.adviser == 'Prof. Alex Santos'),
+        result.rows.every(
+          (row) => row.adviser == (isCapstone ? 'Prof. Alex Santos' : ''),
+        ),
+        isTrue,
+      );
+      expect(
+        result.rows.every(
+          (row) => row.instructor == (isCapstone ? '' : 'Prof. Alex Santos'),
+        ),
         isTrue,
       );
     });

@@ -1394,7 +1394,10 @@ class _DefenseScheduleBulkImportViewState
                         _isPit ? 'PIT Project' : 'Capstone Project',
                         isRequired: true,
                       ),
-                      _buildTemplateSpecTag('Adviser', isRequired: true),
+                      _buildTemplateSpecTag(
+                        _isPit ? 'Instructor' : 'Adviser',
+                        isRequired: true,
+                      ),
                       _buildTemplateSpecTag('Panelists', isRequired: true),
                       if (!_isPit) _buildTemplateSpecTag('Documenter'),
                     ],
@@ -2178,8 +2181,8 @@ class _DefenseScheduleBulkImportViewState
       return [
         row.teamLabel,
         row.projectLabel,
-        row.source.adviser,
-        row.adviserLabel,
+        if (!_isPit) row.source.adviser,
+        row.facultyLabel,
         row.panelLabel,
         row.room,
         row.source.documenter,
@@ -2564,7 +2567,7 @@ class _DefenseScheduleBulkImportViewState
             columns: [
               const DataColumn(label: Text('Time')),
               const DataColumn(label: Text('Team / source')),
-              const DataColumn(label: Text('Adviser')),
+              DataColumn(label: Text(_isPit ? 'Instructor' : 'Adviser')),
               if (group.committeeVaries)
                 const DataColumn(label: Text('Committee')),
               const DataColumn(label: Text('Status')),
@@ -2651,8 +2654,8 @@ class _DefenseScheduleBulkImportViewState
                       ),
                       DataCell(
                         Text(
-                          row.adviserLabel.isEmpty ? '—' : row.adviserLabel,
-                          style: row.adviserLabel.isEmpty ? secondary : primary,
+                          row.facultyLabel.isEmpty ? '—' : row.facultyLabel,
+                          style: row.facultyLabel.isEmpty ? secondary : primary,
                         ),
                       ),
                       if (group.committeeVaries)
@@ -2788,7 +2791,9 @@ class _DefenseScheduleBulkImportViewState
         .toList();
     if (remainingSlotIssues.isNotEmpty) {
       final hasFileIssue =
-          row.source.parseIssues.isNotEmpty || row.source.chair.trim().isEmpty;
+          row.source.parseIssues.isNotEmpty ||
+          row.source.chair.trim().isEmpty ||
+          row.hasInvalidAdviserColumn;
       final needsFacultyReview =
           !hasFileIssue &&
           row.hasUnresolvedFaculty &&
@@ -3452,7 +3457,11 @@ class _DefenseScheduleBulkImportViewState
               _buildColumnHeaderCell('#', flex: 1),
               _buildColumnHeaderCell('Time', flex: 3, isRequired: true),
               _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
-              _buildColumnHeaderCell('Adviser', flex: 4, isRequired: true),
+              _buildColumnHeaderCell(
+                isPit ? 'Instructor' : 'Adviser',
+                flex: 4,
+                isRequired: true,
+              ),
               _buildColumnHeaderCell('Panel Chair', flex: 4, isRequired: true),
               _buildColumnHeaderCell(
                 'Panel Member 1',
@@ -3611,7 +3620,7 @@ class _DefenseScheduleBulkImportViewState
             isBold: true,
             color: const Color(0xFF1E293B),
           ),
-          merged(day.adviser),
+          merged(isPit ? day.instructor : day.adviser),
           column(
             List.generate(rowCount, (row) => day.panels[row ~/ 2][0]),
             flex: 4,
@@ -3754,7 +3763,7 @@ class _CommitteeSessionGroup {
   List<String> get distinctAdvisers {
     final list = <String>[];
     for (final r in rows) {
-      final adv = r.source.adviser.trim();
+      final adv = r.adviserLabel.trim();
       if (adv.isNotEmpty && adv != '-' && !list.contains(adv)) {
         list.add(adv);
       }
