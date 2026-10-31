@@ -17,6 +17,10 @@ User = get_user_model()
 
 
 class DashboardApiTests(APITestCase):
+    def setUp(self):
+        from defense.testing import seed_stage_fixtures
+        seed_stage_fixtures()
+
     def test_schedule_planner_shares_bookings_but_scopes_record_access(self):
         admin = User.objects.create_user(username='planner-admin', password='pass12345', role='admin')
         pit_lead = User.objects.create_user(

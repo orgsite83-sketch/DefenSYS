@@ -33,8 +33,8 @@ def supplied_title(team, stage):
 
 def contexts_for(team):
     if team.is_capstone:
-        from defense.stages.models import DefenseStage
-        return DefenseStage.objects.filter(concept_config__enabled=True).order_by('display_order', 'pk')
+        from defense.stages.context import stages_for_semester
+        return stages_for_semester(team.semester).filter(concept_config__enabled=True)
     from defense.scheduler.event_scope import pit_events_for_team
     return pit_events_for_team(team).filter(concept_config__enabled=True).order_by('pk')
 

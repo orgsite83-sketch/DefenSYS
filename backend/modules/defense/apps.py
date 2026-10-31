@@ -6,3 +6,6 @@ class DefenseConfig(AppConfig):
     name = 'defense'
     label = 'defense'
     verbose_name = 'Defense'
+
+    def ready(self):
+        from . import template_files  # noqa: F401 - register attachment cleanup

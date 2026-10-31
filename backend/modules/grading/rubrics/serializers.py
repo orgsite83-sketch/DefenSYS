@@ -489,7 +489,12 @@ class RubricWriteSerializer(serializers.Serializer):
             return None
 
         try:
-            return DefenseStage.objects.get(pk=stage_id, is_active=True)
+            stage = DefenseStage.objects.get(pk=stage_id, is_active=True)
+            if stage.setup_semester_id and stage.setup_semester_id != attrs['semester'].pk:
+                from defense.stages.context import setup_stage_ids
+                if stage.pk not in setup_stage_ids(attrs['semester']):
+                    raise serializers.ValidationError({'defense_stage_id': 'Choose a stage configured for this semester.'})
+            return stage
         except DefenseStage.DoesNotExist as exc:
             raise serializers.ValidationError({'defense_stage_id': 'Defense stage does not exist or is inactive.'}) from exc
 

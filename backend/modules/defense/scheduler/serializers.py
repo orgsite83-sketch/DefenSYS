@@ -907,7 +907,12 @@ class ScheduleBaseSerializer(serializers.Serializer):
         if not stage_id:
             raise serializers.ValidationError({'defense_stage_id': 'Capstone schedules require a defense stage.'})
         try:
-            return DefenseStage.objects.get(pk=stage_id, is_active=True)
+            stage = DefenseStage.objects.get(pk=stage_id, is_active=True)
+            if stage.setup_semester_id and stage.setup_semester_id != attrs['semester'].pk:
+                from defense.stages.context import setup_stage_ids
+                if stage.pk not in setup_stage_ids(attrs['semester']):
+                    raise serializers.ValidationError({'defense_stage_id': 'Choose a stage configured for this semester.'})
+            return stage
         except DefenseStage.DoesNotExist as exc:
             raise serializers.ValidationError({'defense_stage_id': 'Defense stage does not exist or is inactive.'}) from exc
 
@@ -1829,7 +1834,8 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
     if can_schedule_pit:
         allowed_scopes.append(DefenseSchedule.SCOPE_PIT)
 
-    stages = DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')
+    from defense.stages.context import stages_for_semester
+    stages = stages_for_semester(semester).filter(is_active=True)
     rubrics = (
         Rubric.objects.select_related('semester', 'semester__school_year', 'defense_stage', 'created_by')
         .filter(status=Rubric.STATUS_PUBLISHED)

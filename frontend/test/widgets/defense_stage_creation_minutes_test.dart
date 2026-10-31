@@ -8,6 +8,7 @@ import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/services/rubric_engine_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/utils/stage_setup_draft.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -245,6 +246,11 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         await tester.runAsync(() => loadPreviewFonts());
+        if (requiredMinutes) {
+          await StageSetupDraftStore(userId: '1', semesterId: 3).save(
+            StageSetupDraft(fields: {'label': 'Concept Proposal', 'display_order': 4}, tab: 0),
+          );
+        }
         final stages = _StagesNotifier();
         final router = GoRouter(
           initialLocation: AdminRoutes.defenseStages,
@@ -286,8 +292,9 @@ void main() {
             'stage-setup-empty-centered',
           );
         }
-        await tester.tap(find.text('Add stage'));
+        await tester.tap(find.text(requiredMinutes ? 'Resume draft' : 'Add stage'));
         await tester.pumpAndSettle();
+        expect(find.text('Position 1 of 1'), findsOneWidget);
         await tester.enterText(
           find.byType(TextField).first,
           'Concept Proposal',

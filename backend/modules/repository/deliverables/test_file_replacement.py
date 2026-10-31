@@ -31,6 +31,8 @@ class ApprovedFileReplacementTests(APITestCase):
         self.assertEqual(historical.uploaded_at, original_time)
 
     def setUp(self):
+        from defense.testing import seed_stage_fixtures
+        seed_stage_fixtures()
         media = TemporaryDirectory(prefix='defensys-replacement-test-')
         self.addCleanup(media.cleanup)
         settings = override_settings(MEDIA_ROOT=media.name)

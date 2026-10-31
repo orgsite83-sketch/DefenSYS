@@ -28,6 +28,11 @@ coverage.xml
 *.sqlite3
 db.sqlite3
 
+# Local recovery archives and isolated development uploads
+.backups/
+.sandbox/
+deployment/backup/backups/
+
 # Agent pipeline intermediates (regenerate; see docs/AGENTS.md)
 .tmp/
 

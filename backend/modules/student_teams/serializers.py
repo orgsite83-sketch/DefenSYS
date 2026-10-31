@@ -425,15 +425,8 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         attrs['semester'] = semester
 
         user = self.context.get('assigned_by') or self.context.get('user')
-        assert_active_semester_for_create(user, semester)
+        self._assert_write_scope(semester, self.instance)
         if self.instance is not None:
-            if self.context.get('formation'):
-                from .formation_access import require_formation_scope
-                if self.instance.semester_id != semester.pk:
-                    raise serializers.ValidationError('Historical teams cannot be changed by an import.')
-                require_formation_scope(user, semester, self.instance.level, self.instance.section)
-            else:
-                assert_team_writable(user, self.instance)
             if not attrs.get('level'):
                 attrs['level'] = self.instance.level
             if not attrs.get('year_level'):
@@ -558,9 +551,22 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             adviser.save(update_fields=['is_adviser'])
             record_role_changes(adviser, before_flags, changed_by=changed_by)
 
+    def _assert_write_scope(self, semester, instance=None):
+        user = self.context.get('assigned_by') or self.context.get('user')
+        assert_active_semester_for_create(user, semester)
+        if instance is not None:
+            if self.context.get('formation'):
+                from .formation_access import require_formation_scope
+                if instance.semester_id != semester.pk or term_status_for_team(instance) != 'active':
+                    raise serializers.ValidationError('Historical teams cannot be changed by an import.')
+                require_formation_scope(user, semester, instance.level, instance.section)
+            else:
+                assert_team_writable(user, instance)
+
     @transaction.atomic
     def create(self, validated_data):
         list(Semester.objects.select_for_update().order_by('pk'))
+        self._assert_write_scope(validated_data['semester'])
         self._lock_event(validated_data)
         member_ids = validated_data.pop('member_ids')
         self._lock_members(member_ids, validated_data['semester'])
@@ -616,6 +622,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
     def update(self, instance, validated_data):
         list(Semester.objects.select_for_update().order_by('pk'))
         instance = StudentTeam.objects.select_for_update().get(pk=instance.pk)
+        self._assert_write_scope(validated_data['semester'], instance)
         self._lock_event(validated_data)
         adviser_id = getattr(validated_data.get('adviser'), 'pk', None)
         if instance.adviser_id != adviser_id:

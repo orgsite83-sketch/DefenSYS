@@ -39,14 +39,14 @@ def transition_kind(source, target):
 
 
 @read_memoize(copy=True)
-def configured_requirements():
-    from defense.stages.models import DefenseStage
+def configured_requirements(semester=None):
+    from defense.stages.context import stages_for_semester
     from repository.deliverables.services import get_deliverable_definitions
     return [{'id': stage.pk, 'label': stage.label, 'order': stage.display_order,
              'presentation_only': False,
-             'definitions': get_deliverable_definitions(stage.label),
+             'definitions': get_deliverable_definitions(stage.label, stage=stage),
              'updated_at': stage.updated_at.isoformat()}
-            for stage in DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id')]
+            for stage in stages_for_semester(semester).filter(is_active=True)]
 
 
 @read_memoize(copy=True)
@@ -59,7 +59,7 @@ def requirements_for(team):
     captured = participation.requirements if participation else []
     if captured and participation.closed_at:
         return captured
-    current = configured_requirements()
+    current = configured_requirements(team.semester)
     if not captured:
         return current
     used = set(TeamStageProgress.all_objects.filter(team=team, project_version=team.project_version)
@@ -72,15 +72,19 @@ def requirements_for(team):
     result = [item if item['id'] in used else by_id.get(item['id'], item) for item in captured
               if item['id'] in used or item['id'] in by_id]
     known = {item['id'] for item in result}
-    return sorted(result + [item for item in current if item['id'] not in known], key=lambda item: item['order'])
+    from .capstone_context import inherited_stage_ids
+    inherited = set(inherited_stage_ids(team))
+    return sorted(result + [item for item in current if item['id'] not in known],
+        key=lambda item: (item['id'] not in inherited, item['order']))
 
 
 @read_memoize(copy=True)
 def requirement_for_label(team, label):
-    from defense.stages.models import DefenseStage
-    stage_id = DefenseStage.objects.filter(label=label).values_list('pk', flat=True).first()
-    return next((item for item in requirements_for(team)
-                 if item['id'] == stage_id or item['label'] == label), None)
+    from defense.stages.context import setup_stage_ids
+    from .capstone_context import inherited_stage_ids
+    matches = [item for item in requirements_for(team) if item['label'] == label]
+    current = setup_stage_ids(team.semester) - set(inherited_stage_ids(team))
+    return next((item for item in matches if item['id'] in current), matches[0] if matches else None)
 
 
 def evidence_team(team, grade, requirement=None):

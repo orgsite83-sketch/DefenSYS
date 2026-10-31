@@ -12,6 +12,8 @@ User = get_user_model()
 
 class DefenseBoardApiTests(APITestCase):
     def setUp(self):
+        from defense.testing import seed_stage_fixtures
+        seed_stage_fixtures()
         self.admin = User.objects.create_user(
             username='admin-user',
             password='pass12345',

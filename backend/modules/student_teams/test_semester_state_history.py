@@ -199,6 +199,11 @@ class SemesterStateHistoryTests(APITestCase):
         self.make_team('New intake', self.extension)
         self.extension.is_active = True
         self.extension.save(update_fields=['is_active'])
+        # Reuse requires deliberate setup in this intake; publication of the
+        # preceding batch's definition alone is not new-term configuration.
+        for stage in (self.first, self.second):
+            StageGradingConfig.objects.create(defense_stage=stage, semester=self.extension,
+                panel_weight=100, adviser_weight=0, peer_weight=0)
         response = self.client.get('/api/dashboards/admin/')
         self.assertEqual(response.status_code, 200, response.data)
         item = next(item for item in response.data['action_items'] if item['id'] == 'stages_without_rubrics')

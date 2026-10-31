@@ -1,5 +1,9 @@
 # DefenSYS demo automation guide
 
+For a full local backup and a fresh database to test the workflow yourself,
+see [Local development setup](LOCAL_DEVELOPMENT.md). Sandbox commands use a
+separate database and uploads folder.
+
 Copy-and-paste PowerShell commands for uploading team files, faculty review and endorsement, panelist and peer evaluations, post-defense acceptance/archiving, adviser grading, and minutes drafts.
 
 The first-year examples use **System Concept Pitching** and the existing sample files. These scripts simulate demo workflow actions through the application APIs. Generated grades and comments do not assess the quality of the actual work.

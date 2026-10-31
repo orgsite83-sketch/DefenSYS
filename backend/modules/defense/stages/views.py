@@ -1,4 +1,5 @@
 from django.db import transaction
+from defense.template_files import template_save
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -35,50 +36,106 @@ def record_setup_event(stage, request, action, *, semester=None, old_values=None
                 'name': request.user.get_full_name() or request.user.username}, **(values or {})})
 
 
-def normalize_stage_orders():
+def normalize_stage_orders(semester=None):
     """Ensure all defense stages have contiguous, unique display_order values (1, 2, 3...)."""
-    stages = list(DefenseStage.objects.all().order_by('display_order', 'id'))
+    from .context import stages_for_semester
+    stages = list(stages_for_semester(semester))
     with transaction.atomic():
         for index, stage in enumerate(stages, start=1):
             if stage.display_order != index:
                 DefenseStage.objects.filter(pk=stage.pk).update(display_order=index)
 
 
-def ordered_stages(include_inactive=True):
-    queryset = DefenseStage.objects.all()
+def ordered_stages(include_inactive=True, *, semester=None, all_terms=False):
+    from .context import stages_for_semester
+    queryset = DefenseStage.objects.all() if all_terms else stages_for_semester(semester)
     if not include_inactive:
         queryset = queryset.filter(is_active=True)
-    return list(queryset.prefetch_related('deliverables').order_by('display_order', 'id'))
+    return list(queryset.prefetch_related('deliverables', 'template_attachments').order_by('display_order', 'id'))
 
 
-def counts_payload():
-    stages = DefenseStage.objects.all()
-    return {
-        'total': stages.count(),
-        'active': stages.filter(is_active=True).count(),
-        'inactive': stages.filter(is_active=False).count(),
-    }
+def stage_list_payload(semester=None, *, request=None):
+    from .context import setup_stage_ids
 
-
-def stage_list_payload(semester=None):
     if not semester:
-        from academic_period_management.models import Semester
-        semester = Semester.objects.filter(is_active=True).first()
-    stages = ordered_stages()
-    active = [stage for stage in stages if stage.is_active]
-    return {
-        'stages': DefenseStageSerializer(
-            stages,
-            many=True,
-            context={'ordered_stages': stages, 'semester': semester},
-        ).data,
-        'active_stages': DefenseStageSerializer(
-            active,
-            many=True,
-            context={'ordered_stages': active, 'semester': semester},
-        ).data,
-        'counts': counts_payload(),
-    }
+        semester = resolve_semester()
+    ordered = ordered_stages(all_terms=True)
+    ids = setup_stage_ids(semester)
+    serialized = list(DefenseStageSerializer(ordered, many=True,
+        context={'ordered_stages': ordered, 'semester': semester}).data)
+    stages = [{**stage, 'semester_id': semester.pk if semester else None,
+        'history_read_only': bool(semester and not semester.is_active)}
+        for stage in serialized if stage['id'] in ids]
+    groups = []
+    history_options = {}
+    if request is not None:
+        from student_teams.capstone_context import phase_for, phase_label, inherited_stage_ids
+        from student_teams.capstone_history import history_payload, history_teams_for
+        from student_teams.participation import intake_for
+        from student_teams.capstone_lifecycle import term_key
+
+        visible = history_teams_for(request.user)
+        params = request.query_params.copy()
+        historical = params.get('scope') == 'history'
+        # History should initially open the latest recorded intake, rather
+        # than an unrelated new intake with no historical setup yet.
+        if historical and not params.get('intake_id'):
+            recorded = visible.filter(term_participations__closed_at__isnull=False).select_related(
+                'semester__school_year', 'intake_semester__school_year').distinct()
+            intakes = [intake_for(team) for team in recorded]
+            intakes = [term for term in intakes if term is not None]
+            if intakes:
+                params['intake_id'] = str(max(intakes, key=term_key).pk)
+        history = history_payload(visible, params, user=request.user, include_details=False)
+        history_options = history['capstone_history']
+        option_terms = Semester.objects.in_bulk({s['semester_id'] for s in history_options['stages']})
+        history_options['stages'] = [s for s in history_options['stages']
+            if s['id'] in setup_stage_ids(option_terms[s['semester_id']])]
+        grouped = {}
+        if historical:
+            for row in history['teams']:
+                key = (row['semester_id'], row['phase'])
+                group = grouped.setdefault(key, {'semester_id': row['semester_id'],
+                    'phase': row['phase'], 'phase_label': row['phase_label'],
+                    'display_semester': row['display_semester'], 'stage_ids': set(), 'read_only': True})
+                group['stage_ids'].update(r['id'] for r in row['stage_requirements'])
+            for group in grouped.values():
+                term = Semester.objects.select_related('school_year').get(pk=group['semester_id'])
+                # An open current intake may still have a legacy global
+                # requirements snapshot. Only its actual setup belongs here.
+                group['stage_ids'].intersection_update(setup_stage_ids(term))
+                selected = params.get('stage_key', '')
+                group_ids = {i for i in group.pop('stage_ids')
+                    if not selected or f'{term.pk}:{i}' == selected}
+                group_stages = [s for s in ordered if s.pk in group_ids]
+                group['stages'] = [{**s, 'semester_id': term.pk, 'history_read_only': True}
+                    for s in DefenseStageSerializer(group_stages, many=True,
+                        context={'semester': term, 'ordered_stages': group_stages}).data]
+            stages = [stage for group in grouped.values() for stage in group['stages']]
+        elif semester:
+            # Current Term is independent of History's selected intake and
+            # never includes a source semester from the continuous timeline.
+            teams = visible.filter(semester=semester, level__icontains='Capstone').select_related(
+                'semester__school_year', 'intake_semester__school_year')
+            for team in teams:
+                phase = phase_for(team)
+                group = grouped.setdefault((semester.pk, phase), {'semester_id': semester.pk,
+                    'phase': phase, 'phase_label': phase_label(phase),
+                    'display_semester': semester.display_name,
+                    'stage_ids': set(), 'read_only': not semester.is_active})
+                group['stage_ids'].update(ids - set(inherited_stage_ids(team)))
+            for group in grouped.values():
+                group_ids = group.pop('stage_ids')
+                group['stages'] = [stage for stage in stages if stage['id'] in group_ids]
+            if grouped:
+                shown = {stage['id'] for group in grouped.values() for stage in group['stages']}
+                stages = [stage for stage in stages if stage['id'] in shown]
+        groups = list(grouped.values())
+    active = [stage for stage in stages if stage['is_active']]
+    return {'stages': stages, 'active_stages': active,
+        'counts': {'total': len(stages), 'active': len(active), 'inactive': len(stages) - len(active)},
+        'phase_groups': groups, 'capstone_history': history_options,
+        'sequence_stages': [s for s in serialized if s['id'] in ids]}
 
 
 class DefenseStageListCreateView(APIView):
@@ -89,42 +146,22 @@ class DefenseStageListCreateView(APIView):
 
     def get(self, request):
         semester = resolve_semester(request.query_params.get('semester_id'))
-        payload = stage_list_payload(semester)
-        from student_teams.capstone_history import history_payload, history_teams_for
-        history = history_payload(history_teams_for(request.user), request.query_params,
-            user=request.user, include_details=False)
-        payload['capstone_history'] = history['capstone_history']
-        grouped = {}
-        for row in history['teams']:
-            term_id = row['semester_id']
-            group = grouped.setdefault(term_id, {'semester_id': term_id,
-                'phase': row['phase'], 'phase_label': row['phase_label'],
-                'display_semester': row['display_semester'], 'stage_ids': set(),
-                'read_only': request.query_params.get('scope') == 'history' or not semester or term_id != semester.pk})
-            group['stage_ids'].update(r['id'] for r in row['stage_requirements'])
-        for group in grouped.values():
-            term = Semester.objects.select_related('school_year').get(pk=group['semester_id'])
-            ids = group.pop('stage_ids')
-            selected = request.query_params.get('stage_key', '')
-            if selected:
-                ids = {i for i in ids if f'{term.pk}:{i}' == selected}
-            stages = list(DefenseStage.objects.filter(pk__in=ids).order_by('display_order', 'pk'))
-            group['stages'] = [{**s, 'semester_id': term.pk,
-                'history_read_only': group['read_only']} for s in DefenseStageSerializer(stages, many=True,
-                    context={'semester': term, 'ordered_stages': ordered_stages()}).data]
-        payload['phase_groups'] = list(grouped.values())
-        if request.query_params.get('scope') == 'history' and not grouped:
-            payload.update(stages=[], active_stages=[], counts={'total': 0, 'active': 0, 'inactive': 0})
-        return Response(payload)
+        return Response(stage_list_payload(semester, request=request))
 
+    @template_save()
     def post(self, request):
         from .serializers import check_stage_structure_locked as check_stage_locked
+        semester = resolve_semester()
+        if request.data.get('semester_id') is not None and (
+                not semester or str(request.data['semester_id']) != str(semester.pk)):
+            return Response({'semester_id': 'The active semester changed. Reopen stage setup for the current semester.'},
+                status=status.HTTP_409_CONFLICT)
 
         requested_order = request.data.get('display_order')
         if requested_order is not None:
             try:
                 requested_order = int(requested_order)
-                all_existing = list(DefenseStage.objects.all().order_by('display_order', 'id'))
+                all_existing = ordered_stages(semester=semester)
                 for s in all_existing:
                     locked, _ = check_stage_locked(s)
                     if locked and s.display_order >= requested_order:
@@ -135,14 +172,14 @@ class DefenseStageListCreateView(APIView):
             except (ValueError, TypeError):
                 pass
 
-        serializer = DefenseStageWriteSerializer(data=request.data)
+        serializer = DefenseStageWriteSerializer(data=request.data, context={'semester': semester})
         serializer.is_valid(raise_exception=True)
         
         with transaction.atomic():
             stage = serializer.save()
             # If a specific display_order was requested, place it and re-normalize
             requested_order = serializer.validated_data.get('display_order')
-            all_stages = list(DefenseStage.objects.exclude(pk=stage.pk).order_by('display_order', 'id'))
+            all_stages = [s for s in ordered_stages(semester=semester) if s.pk != stage.pk]
             if requested_order is not None:
                 insert_idx = max(0, min(requested_order - 1, len(all_stages)))
                 all_stages.insert(insert_idx, stage)
@@ -150,19 +187,20 @@ class DefenseStageListCreateView(APIView):
                 all_stages.append(stage)
             
             for index, s in enumerate(all_stages, start=1):
-                DefenseStage.objects.filter(pk=s.pk).update(display_order=index)
+                if s.display_order != index:
+                    DefenseStage.objects.filter(pk=s.pk).update(display_order=index)
             stage.refresh_from_db()
 
-            record_setup_event(stage, request, 'capstone.stage_created',
+            record_setup_event(stage, request, 'capstone.stage_created', semester=semester,
                 values={'display_order': stage.display_order})
 
         return Response(
             {
                 'stage': DefenseStageSerializer(
                     stage,
-                    context={'ordered_stages': ordered_stages()},
+                    context={'ordered_stages': ordered_stages(semester=semester), 'semester': semester},
                 ).data,
-                **stage_list_payload(),
+                **stage_list_payload(request=request),
             },
             status=status.HTTP_201_CREATED,
         )
@@ -174,7 +212,7 @@ def _stage_detail_payload(stage, request):
     payload = {
         'stage': DefenseStageSerializer(
             stage,
-            context={'ordered_stages': ordered_stages(), 'semester': semester},
+            context={'ordered_stages': ordered_stages(semester=semester), 'semester': semester},
         ).data,
     }
     if semester:
@@ -198,10 +236,16 @@ class DefenseStageDetailView(APIView):
         stage = self.get_object(stage_id)
         return Response(_stage_detail_payload(stage, request))
 
+    @template_save()
     def patch(self, request, stage_id):
         from .serializers import check_stage_structure_locked as check_stage_locked
 
         stage = self.get_object(stage_id)
+        semester = resolve_semester()
+        from .context import setup_stage_ids
+        if stage.pk not in setup_stage_ids(semester):
+            return Response({'detail': 'This stage belongs to a historical setup. Add a new stage for the current batch.'},
+                status=status.HTTP_409_CONFLICT)
         locked, reason = check_stage_locked(stage)
 
         requested_order = request.data.get('display_order')
@@ -214,7 +258,7 @@ class DefenseStageDetailView(APIView):
                         status=status.HTTP_409_CONFLICT,
                     )
                 if not locked and requested_order != stage.display_order:
-                    other_stages = list(DefenseStage.objects.exclude(pk=stage.pk).order_by('display_order', 'id'))
+                    other_stages = [s for s in ordered_stages(semester=semester) if s.pk != stage.pk]
                     insert_idx = max(0, min(requested_order - 1, len(other_stages)))
                     for idx, s in enumerate(other_stages):
                         s_locked, _ = check_stage_locked(s)
@@ -226,7 +270,8 @@ class DefenseStageDetailView(APIView):
             except (ValueError, TypeError):
                 pass
 
-        serializer = DefenseStageWriteSerializer(stage, data=request.data, partial=True)
+        serializer = DefenseStageWriteSerializer(stage, data=request.data, partial=True,
+            context={'semester': semester})
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
@@ -235,7 +280,7 @@ class DefenseStageDetailView(APIView):
             new_order = serializer.validated_data.get('display_order')
 
             if new_order is not None and new_order != old_order:
-                other_stages = list(DefenseStage.objects.exclude(pk=stage.pk).order_by('display_order', 'id'))
+                other_stages = [s for s in ordered_stages(semester=semester) if s.pk != stage.pk]
                 insert_idx = max(0, min(new_order - 1, len(other_stages)))
                 other_stages.insert(insert_idx, stage)
                 for index, s in enumerate(other_stages, start=1):
@@ -257,7 +302,7 @@ class DefenseStageDetailView(APIView):
                     if semester:
                         StudentTeam.objects.filter(semester=semester, ready_for_stage=stage.label).update(ready_for_stage=None)
             else:
-                normalize_stage_orders()
+                normalize_stage_orders(semester)
                 stage.refresh_from_db()
 
         return Response({
@@ -265,7 +310,7 @@ class DefenseStageDetailView(APIView):
                 stage,
                 context={'ordered_stages': ordered_stages()},
             ).data,
-            **stage_list_payload(),
+            **stage_list_payload(request=request),
         })
 
     def delete(self, request, stage_id):
@@ -274,6 +319,10 @@ class DefenseStageDetailView(APIView):
         from defense.configuration_locks import context_deletion_lock
 
         stage = self.get_object(stage_id)
+        from .context import setup_stage_ids
+        if stage.pk not in setup_stage_ids(resolve_semester()):
+            return Response({'warning': 'Historical stages cannot be deleted from the current batch.'},
+                status=status.HTTP_409_CONFLICT)
         locked, reason = check_stage_locked(stage)
         if not locked:
             locked, reason = context_deletion_lock(stage)
@@ -298,7 +347,7 @@ class DefenseStageDetailView(APIView):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
-        return Response(stage_list_payload(), status=status.HTTP_200_OK)
+        return Response(stage_list_payload(request=request), status=status.HTTP_200_OK)
 
 
 class DefenseStageReorderView(APIView):
@@ -314,7 +363,8 @@ class DefenseStageReorderView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        existing_stages = {s.id: s for s in DefenseStage.objects.all()}
+        semester = resolve_semester()
+        existing_stages = {s.id: s for s in ordered_stages(semester=semester)}
         # Check all IDs provided exist
         for sid in stage_ids:
             if sid not in existing_stages:
@@ -324,7 +374,7 @@ class DefenseStageReorderView(APIView):
                 )
 
         # Enforce that locked stages cannot be reordered or moved
-        all_ordered = list(DefenseStage.objects.all().order_by('display_order', 'id'))
+        all_ordered = list(existing_stages.values())
         completed_stages = [s for s in all_ordered if check_stage_locked(s)[0]]
         if completed_stages:
             for idx, c_stage in enumerate(completed_stages):
@@ -372,12 +422,13 @@ class DefenseStageReorderView(APIView):
                 except (ValueError, TypeError):
                     pass
 
-        return Response(stage_list_payload(), status=status.HTTP_200_OK)
+        return Response(stage_list_payload(request=request), status=status.HTTP_200_OK)
 
 
 class StageDeliverableListCreateView(APIView):
     permission_classes = [IsSystemAdmin]
 
+    @template_save()
     def post(self, request, stage_id):
         from .serializers import check_stage_locked
 
@@ -400,6 +451,7 @@ class StageDeliverableListCreateView(APIView):
 class StageDeliverableDetailView(APIView):
     permission_classes = [IsSystemAdmin]
 
+    @template_save()
     def patch(self, request, stage_id, deliverable_id):
         from .serializers import check_stage_locked
 
@@ -433,6 +485,7 @@ class StageDeliverableDetailView(APIView):
         deliverable.refresh_from_db()
         return Response(StageDeliverableSerializer(deliverable).data)
 
+    @template_save()
     def delete(self, request, stage_id, deliverable_id):
         from .serializers import check_stage_locked
         from defense.configuration_locks import DATA_REASON, requirement_has_data
@@ -495,6 +548,11 @@ class StageGradingConfigView(APIView):
                 {'semester_id': 'No active semester is configured.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if stage.setup_semester_id and stage.setup_semester_id != semester.pk:
+            from .context import setup_stage_ids
+            if stage.pk not in setup_stage_ids(semester):
+                return Response({'semester_id': 'This stage belongs to a different batch. Configure that batch separately.'},
+                    status=status.HTTP_409_CONFLICT)
         config = get_or_create_stage_grading_config(stage, semester)
         before = dict(StageGradingConfigSerializer(config).data)
         serializer = StageGradingConfigWriteSerializer(

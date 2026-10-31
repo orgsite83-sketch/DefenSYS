@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/repository/deliverable_template.dart';
 import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'package:defensys/widgets/repository/concept_workspace.dart';
 import 'package:defensys/widgets/repository/document_group.dart';
@@ -1053,6 +1054,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             const SizedBox(height: 10),
 
             // Main Action Container (Uploaded vs Empty vs WPR)
+            DeliverableTemplateDownload(template: item['template']),
             if (isWPR) ...[
               Container(
                 width: double.infinity,

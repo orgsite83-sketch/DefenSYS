@@ -303,6 +303,10 @@ List<Map<String, dynamic>> deliverablePresetItems(
     .map(
       (row) => _copy(row)
         ..remove('id')
+        ..remove('template')
+        ..remove('template_action')
+        ..remove('template_selection_name')
+        ..remove('template_selection_size')
         ..remove('team_deliverable_id')
         ..remove('has_data')
         ..remove('is_locked')
@@ -321,6 +325,10 @@ void applyDeliverablePresetItems(
   for (final source in items) {
     final row = _copy(source)
       ..remove('id')
+      ..remove('template')
+      ..remove('template_action')
+      ..remove('template_selection_name')
+      ..remove('template_selection_size')
       ..remove('team_deliverable_id')
       ..remove('has_data')
       ..remove('is_locked')

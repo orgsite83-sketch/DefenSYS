@@ -24,6 +24,8 @@ class DefenseSchedulerApiTests(APITestCase):
         return self.client.patch(url, {'reason': 'Recorded operational change for this test', 'revision': row.revision, **data}, **kwargs)
 
     def setUp(self):
+        from defense.testing import seed_stage_fixtures
+        seed_stage_fixtures()
         self.admin = User.objects.create_user(
             username='admin-user',
             password='pass12345',
@@ -1547,6 +1549,8 @@ class DefenseSchedulerApiTests(APITestCase):
 
 class PitEventGradingConfigTests(APITestCase):
     def setUp(self):
+        from defense.testing import seed_stage_fixtures
+        seed_stage_fixtures()
         self.admin = User.objects.create_user(
             username='pit-admin',
             password='pass12345',

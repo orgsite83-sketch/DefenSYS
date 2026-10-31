@@ -66,8 +66,8 @@ def _scope(user, *, scope='global', team=None, program_scope='capstone', year_le
     if year_level:
         teams = teams.filter(year_level=year_level)
     if program_scope == 'capstone':
-        from defense.stages.models import DefenseStage
-        stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order').values_list('label', flat=True))
+        from defense.stages.context import stages_for_semester
+        stages = list(stages_for_semester(semester).filter(is_active=True).values_list('label', flat=True))
     else:
         from defense.scheduler.models import PitEventGradingConfig
         events = PitEventGradingConfig.objects.filter(semester=semester).exclude(year_level='')

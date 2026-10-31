@@ -1,10 +1,13 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
+from defensys_backend.db_guard import current_database_name, is_test_database
 from defense.stages.models import DefenseStage
 
 class Command(BaseCommand):
-    help = 'Seeds default defense stages'
+    help = 'Create defense stage fixtures in isolated test databases only.'
 
     def handle(self, *args, **kwargs):
+        if not is_test_database(current_database_name()):
+            raise CommandError('Stage fixtures are test-only. Configure stages in the application.')
         defaults = [
             {
                 'label': 'Concept Proposal',
@@ -40,4 +43,5 @@ class Command(BaseCommand):
             if created:
                 count += 1
                 
-        self.stdout.write(self.style.SUCCESS(f'Successfully seeded {count} defense stages.'))
+        if kwargs.get('verbosity', 1):
+            self.stdout.write(self.style.SUCCESS(f'Successfully seeded {count} defense stages.'))

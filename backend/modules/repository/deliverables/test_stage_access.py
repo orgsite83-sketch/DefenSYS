@@ -18,6 +18,8 @@ from student_teams.models import StudentTeam, TeamMembership, TeamStageProgress
 
 class StageFileAccessTests(APITestCase):
     def setUp(self):
+        from defense.testing import seed_stage_fixtures
+        seed_stage_fixtures()
         media = TemporaryDirectory(prefix='defensys-stage-access-test-')
         self.addCleanup(media.cleanup)
         settings = override_settings(MEDIA_ROOT=media.name)

@@ -1,3 +1,4 @@
+from defense.stages.context import stage_for_label
 from decimal import Decimal
 from defensys_backend.read_projection import read_memoize, read_projection
 
@@ -1395,7 +1396,7 @@ class GradeContextService:
         if scope == TeamGrade.SCOPE_CAPSTONE and not _is_unscheduled_placeholder_label(stage_label):
             from defense.stages.models import DefenseStage
 
-            defense_stage = DefenseStage.objects.filter(label=stage_label).first()
+            defense_stage = stage_for_label(stage_label, team=team)
             if defense_stage:
                 from student_teams.capstone_lifecycle import latest_stage_assessment, requirement_for_label, stage_cleared
                 prior = latest_stage_assessment(team, defense_stage.pk)
@@ -1495,8 +1496,20 @@ class GradeContextService:
         return canonical
 
     @staticmethod
+    def _lock_for_finalization(grade):
+        # Activation locks the team before capturing/closing its source term.
+        # Reload the assessment under that same lock before checking editability.
+        StudentTeam.objects.select_for_update().get(pk=grade.team_id)
+        schedule_id = TeamGrade.objects.values_list('schedule_id', flat=True).get(pk=grade.pk)
+        if schedule_id:
+            DefenseSchedule.objects.select_for_update().get(pk=schedule_id)
+        return TeamGrade.objects.select_for_update(of=('self',)).select_related(
+            'team', 'schedule', 'semester', 'defense_stage', 'pit_event_config').get(pk=grade.pk)
+
+    @staticmethod
     @transaction.atomic
     def finalize_for_archive(grade, user=None):
+        grade = GradeContextService._lock_for_finalization(grade)
         from .defense_workflow import require_current
         require_current(grade)
         old_values = {
@@ -1563,6 +1576,7 @@ class GradeContextService:
     @staticmethod
     @transaction.atomic
     def publish(grade, user=None):
+        grade = GradeContextService._lock_for_finalization(grade)
         from .defense_workflow import require_current, passed_and_cleared
         require_current(grade)
         from repository.deliverables.pit_decisions import completion_blocker
@@ -1684,7 +1698,7 @@ def _stage_grading_config_for_grade(grade):
     elif grade.schedule and grade.schedule.defense_stage_id:
         stage = grade.schedule.defense_stage
     else:
-        stage = DefenseStage.objects.filter(label=grade.stage_label).first()
+        stage = stage_for_label(grade.stage_label, semester=grade.semester)
     if stage is None:
         return None
     return get_or_create_stage_grading_config(stage, grade.semester)
@@ -1924,7 +1938,7 @@ def _capstone_group_settings(semester, stage_label=None, *, defense_stage=None):
     from defense.stages.grading_config import get_or_create_stage_grading_config, grading_config_payload
     from defense.stages.models import DefenseStage
 
-    stage = defense_stage or DefenseStage.objects.filter(label=stage_label).first()
+    stage = defense_stage or stage_for_label(stage_label, semester=semester)
     if stage is None:
         return _default_group_settings(TeamGrade.SCOPE_CAPSTONE, stage_label)
     config = get_or_create_stage_grading_config(stage, semester)
@@ -2003,7 +2017,8 @@ def build_group_settings_map(grades_queryset, semester, *, user=None):
     from authentication_access_control.scopes import is_admin_user, is_pit_lead_only
     from defense.scheduler.event_scope import pit_events_for_user
     if is_admin_user(user):
-        for stage in DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label'):
+        from defense.stages.context import stages_for_semester
+        for stage in stages_for_semester(semester).filter(is_active=True):
             _put(TeamGrade.SCOPE_CAPSTONE, stage.label, defense_stage=stage)
     if is_admin_user(user) or is_pit_lead_only(user):
         for config in pit_events_for_user(user, semester=semester):
@@ -2270,7 +2285,7 @@ def cohort_grading_teams_for_group(
             from defense.stages.models import DefenseStage
             stage = grade.defense_stage or getattr(config, 'defense_stage', None)
             if stage is None:
-                stage = DefenseStage.objects.filter(label=grade.stage_label).first()
+                stage = stage_for_label(grade.stage_label, semester=grade.semester)
             minutes = stage_minutes_requirement(grade.team, stage)
         minutes_required = bool(minutes and minutes.get('required'))
         minutes_complete = not minutes_required or minutes['completed']
@@ -2435,7 +2450,7 @@ def group_completion_readiness(*, semester, scope, stage_label, user):
     else:
         from defense.stages.models import DefenseStage, StageGradingConfig
 
-        stage = DefenseStage.objects.filter(label=label).first()
+        stage = stage_for_label(label, semester=semester)
         if stage is None:
             raise ValidationError({'stage_label': 'No defense stage found.'})
         config = StageGradingConfig.objects.filter(
@@ -2746,7 +2761,8 @@ class StageCompletionService:
                 if getattr(config, 'defense_stage', None):
                     from defense.stages.models import DefenseStage
                     from student_teams.models import StudentTeam
-                    active_stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id'))
+                    from defense.stages.context import stages_for_semester
+                    active_stages = list(stages_for_semester(semester).filter(is_active=True))
                     curr_idx = -1
                     for i, stg in enumerate(active_stages):
                         if stg.id == config.defense_stage_id:
@@ -2827,7 +2843,7 @@ def update_group_settings(
     else:
         from defense.stages.models import DefenseStage, StageGradingConfig
 
-        stage = DefenseStage.objects.filter(label=label).first()
+        stage = stage_for_label(label, semester=semester)
         if stage is None:
             raise ValidationError({'stage_label': f'No defense stage found for "{label}".'})
         config = StageGradingConfig.objects.filter(semester=semester, defense_stage=stage).first()

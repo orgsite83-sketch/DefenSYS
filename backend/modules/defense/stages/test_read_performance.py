@@ -77,7 +77,7 @@ class StageSetupReadPerformanceTests(APITestCase):
         self.client.force_authenticate(self.admin)
         self.first.label = 'Updated discovery workshop'
         self.first.save(update_fields=['label'])
-        response = self.client.get('/api/defense/stages/')
+        response = self.client.get('/api/defense/stages/', {'scope': 'history', 'intake_id': self.intake.pk})
         self.assertEqual(next(s for s in response.data['stages'] if s['id'] == self.first.pk)['label'], self.first.label)
 
     def test_participation_read_reuse_is_invalidated_by_grade_writes(self):

@@ -20,7 +20,8 @@ def stage_for(team, label):
         requirement = getattr(team, '_capstone_requirement', None)
         if requirement:
             return DefenseStage.objects.filter(pk=requirement['id']).first()
-        return DefenseStage.objects.filter(label=label).first()
+        from defense.stages.context import stage_for_label
+        return stage_for_label(label, team=team)
     from defense.scheduler.event_scope import pit_events_for_team
     return pit_events_for_team(team).filter(event_name__iexact=label).first()
 

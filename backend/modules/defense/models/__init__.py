@@ -1,4 +1,5 @@
 from defense.stages.models import DefenseStage, StageDeliverable
+from defense.template_models import DeliverableTemplate
 from defense.scheduler.models import DefenseSchedule, SchedulePanelist, PanelistEvaluationDraft
 from defense.minutes.models import DefenseMinutes, MinutesPanelistComment, DefenseMinutesRevision
 

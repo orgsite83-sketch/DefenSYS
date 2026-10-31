@@ -1,39 +1,7 @@
+"""Create the schema; administrators configure defense stages themselves."""
+
 from django.db import migrations, models
 import django.db.models.deletion
-
-
-def seed_default_stages(apps, schema_editor):
-    DefenseStage = apps.get_model('defense', 'DefenseStage')
-    defaults = [
-        {
-            'label': 'Concept Proposal',
-            'code': 'concept-proposal',
-            'display_order': 1,
-            'description': 'Initial presentation of the project concept, problem statement, and proposed solution.',
-        },
-        {
-            'label': 'Project Proposal',
-            'code': 'project-proposal',
-            'display_order': 2,
-            'description': 'Detailed proposal including methodology, timeline, and technical specifications.',
-        },
-        {
-            'label': 'Final Defense',
-            'code': 'final-defense',
-            'display_order': 3,
-            'description': 'Final presentation of the completed project with full system demonstration.',
-        },
-    ]
-    for item in defaults:
-        DefenseStage.objects.get_or_create(
-            label=item['label'],
-            defaults={
-                'code': item['code'],
-                'display_order': item['display_order'],
-                'description': item['description'],
-                'is_active': True,
-            },
-        )
 
 
 class Migration(migrations.Migration):
@@ -83,5 +51,4 @@ class Migration(migrations.Migration):
             model_name='stagedeliverable',
             constraint=models.UniqueConstraint(fields=('defense_stage', 'deliverable_id'), name='unique_deliverable_per_stage'),
         ),
-        migrations.RunPython(seed_default_stages, migrations.RunPython.noop),
     ]

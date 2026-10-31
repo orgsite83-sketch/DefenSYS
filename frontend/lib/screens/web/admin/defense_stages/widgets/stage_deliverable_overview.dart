@@ -298,6 +298,8 @@ class _DeliverableSummaryRow extends StatelessWidget {
     final parts = <String>[
       _format,
       item['required'] == true ? 'Required' : 'Optional',
+      if (item['template_action'] != 'remove' &&
+          (item['template'] != null || item['template_action'] == 'replace')) 'Template attached',
     ];
     if (!isPost && item['is_defense_material'] == true) {
       parts.add('Panelist material');

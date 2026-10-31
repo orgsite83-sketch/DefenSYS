@@ -1068,8 +1068,9 @@ class AdminDashboardView(APIView):
                     to_attr='active_configs',
                 )
             )
+        from defense.stages.context import stages_for_semester
         active_stages = list(
-            DefenseStage.objects.filter(is_active=True)
+            stages_for_semester(active_sem).filter(is_active=True)
             .prefetch_related(*active_stage_prefetch)
             .order_by('display_order', 'id')
         )

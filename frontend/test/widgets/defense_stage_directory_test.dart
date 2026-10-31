@@ -134,6 +134,7 @@ void main() {
           dark: dark,
           state: DefenseStagesState(
             stages: stages,
+            historyScope: 'history',
             phaseGroups: [
               {
                 'phase_label': 'Capstone 1',
@@ -150,7 +151,7 @@ void main() {
               {
                 'phase_label': 'Capstone 2',
                 'display_semester': '1st Semester, A.Y. 2026–2027',
-                'read_only': false,
+                'read_only': true,
                 'stages': <Map<String, dynamic>>[],
               },
             ],
@@ -176,6 +177,29 @@ void main() {
       },
     );
   }
+
+  testWidgets('current term does not display historical sequence labels or years', (tester) async {
+    await pumpDirectory(tester, state: DefenseStagesState(
+      sequenceStages: stages,
+      phaseGroups: [
+        {
+          'phase_label': 'Capstone 1',
+          'display_semester': '2nd Semester, A.Y. 2026-2027',
+          'read_only': false,
+          'stages': <Map<String, dynamic>>[],
+        },
+      ],
+    ));
+    expect(find.text('Capstone 1'), findsOneWidget);
+    expect(find.text('2nd Semester, A.Y. 2026-2027'), findsOneWidget);
+    expect(find.text('No stages configured for this semester'), findsOneWidget);
+    expect(find.text('Awaiting stage setup'), findsOneWidget);
+    expect(find.text('Concept Proposal'), findsNothing);
+    expect(find.text('Project Proposal'), findsNothing);
+    expect(find.text('2nd Semester, A.Y. 2025-2026'), findsNothing);
+    expect(find.text('0'), findsNWidgets(3));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'scheduled stage remains Published with an explicit lock reason',

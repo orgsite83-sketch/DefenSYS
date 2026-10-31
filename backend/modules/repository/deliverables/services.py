@@ -20,7 +20,8 @@ from .concepts import stage_for as document_context
 @read_memoize(copy=True)
 def _active_stage_labels():
     try:
-        return list(DefenseStage.objects.filter(is_active=True)
+        from defense.stages.context import stages_for_semester
+        return list(stages_for_semester().filter(is_active=True)
                     .order_by('display_order', 'label').values_list('label', flat=True))
     except Exception:
         return []
@@ -60,10 +61,14 @@ def default_stage_label():
 
 
 @read_memoize(copy=True)
-def get_deliverable_definitions(stage_label):
+def get_deliverable_definitions(stage_label, *, semester=None, stage=None):
     """Load deliverable definitions configured in Defense Stages (database only)."""
     try:
-        stage = DefenseStage.objects.prefetch_related('deliverables').get(label=stage_label)
+        if stage is None:
+            from defense.stages.context import stage_for_label
+            stage = stage_for_label(stage_label, semester=semester)
+        if stage is None:
+            return []
         deliverables = stage.deliverables.all()
         definitions = [
             {
@@ -136,7 +141,7 @@ def get_deliverable_definitions_for_team(team, stage_label):
 def get_deliverable_definitions_for_scope(scope, semester_id, stage_label, *, year_level=None):
     """Use the record's term/scope when reading historical defenses."""
     if scope == 'capstone':
-        return get_deliverable_definitions(stage_label)
+        return get_deliverable_definitions(stage_label, semester=semester_id)
     
     # It's a PIT team! stage_label here is the event name.
     from defense.scheduler.models import PitEventGradingConfig
@@ -184,8 +189,9 @@ from academic_period_management.services import active_semester
 
 
 @read_memoize
-def defense_stage_for_label(stage_label):
-    return DefenseStage.objects.filter(label=stage_label).first()
+def defense_stage_for_label(stage_label, *, team=None, semester=None):
+    from defense.stages.context import stage_for_label
+    return stage_for_label(stage_label, team=team, semester=semester)
 
 
 def definition_for(team, stage_label, deliverable_id):
@@ -475,7 +481,7 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
         from .redefense import preparing
         if preparing(team, document_context(team, stage_label)):
             return True
-        stage_obj = defense_stage_for_label(stage_label) if team.is_capstone else None
+        stage_obj = defense_stage_for_label(stage_label, team=team) if team.is_capstone else None
         endorsed = was_stage_endorsed(team, stage_obj) if stage_obj else pit_endorsed(team, stage_label)
         return not (endorsed or is_stage_defense_done(team, stage_label))
 
@@ -661,7 +667,7 @@ def team_stage_status(team, stage_label):
     configured = stage_deliverables_configured(team, stage_label)
     if not configured:
         return 'not_configured'
-    is_endorsed = was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else pit_endorsed(team, stage_label)
+    is_endorsed = was_stage_endorsed(team, defense_stage_for_label(stage_label, team=team)) if team.is_capstone else pit_endorsed(team, stage_label)
     if is_endorsed:
         return 'endorsed'
     if required_complete(team, stage_label):
@@ -700,7 +706,7 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
     from django.utils import timezone
 
     is_capstone = getattr(team, 'is_capstone', False)
-    stage_obj = defense_stage_for_label(stage_label) if is_capstone else None
+    stage_obj = defense_stage_for_label(stage_label, team=team) if is_capstone else None
     progress = get_stage_progress(team, stage_obj) if stage_obj else None
     progress_status = progress.status if progress else ('ready' if (pit_endorsed(team, stage_label) if team.is_pit else team.ready_for_stage == stage_label) else 'locked')
 
@@ -802,7 +808,7 @@ def is_stage_defense_done(team, stage_label):
         from defense.scheduler.event_scope import pit_events_for_team
         if not pit_events_for_team(team).filter(event_name__iexact=stage_label).exists():
             return False
-    stage_obj = defense_stage_for_label(stage_label) if is_capstone else None
+    stage_obj = defense_stage_for_label(stage_label, team=team) if is_capstone else None
     progress = get_stage_progress(team, stage_obj) if stage_obj else None
     progress_status = progress.status if progress else ''
 
@@ -922,7 +928,7 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
             and not (is_redefense and not definition.get('is_defense_material')
                      and (definition.get('file_policy') or {}).get('mode') != 'concepts')
             and not is_stage_defense_done(team, stage_label)
-            and not (was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else pit_endorsed(team, stage_label)))
+            and not (was_stage_endorsed(team, defense_stage_for_label(stage_label, team=team)) if team.is_capstone else pit_endorsed(team, stage_label)))
         if not grouped_corrections and not grouped_draft:
             raise PermissionError(
                 'Accepted deliverables are locked. Reopen the submission for revision before changing its file.'
@@ -936,7 +942,7 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
             raise PermissionError('Post-Defense submissions are locked until this defense is done.')
         return
 
-    stage = defense_stage_for_label(stage_label) if team.is_capstone else None
+    stage = defense_stage_for_label(stage_label, team=team) if team.is_capstone else None
     endorsed = (was_stage_endorsed(team, stage) if stage else pit_endorsed(team, stage_label)) and not is_redefense
     if not is_redefense and (endorsed or is_stage_defense_done(team, stage_label)) and not is_stage_unlocked_by_admin(
         team, stage_label, deliverable_type='pre'
@@ -1000,7 +1006,7 @@ def stage_payload(team, stage_label, evaluator=None):
     semester_label = team.semester.label if team.semester_id else Semester.FIRST
 
     is_capstone = getattr(team, 'is_capstone', False)
-    stage_obj = defense_stage_for_label(stage_label) if is_capstone else None
+    stage_obj = defense_stage_for_label(stage_label, team=team) if is_capstone else None
     progress = get_stage_progress(team, stage_obj) if stage_obj else None
     progress_status = progress.status if progress else ('ready' if (pit_endorsed(team, stage_label) if team.is_pit else team.ready_for_stage == stage_label) else 'locked')
     is_endorsed = was_stage_endorsed(team, stage_obj) if is_capstone else pit_endorsed(team, stage_label)
@@ -1051,6 +1057,8 @@ def stage_payload(team, stage_label, evaluator=None):
     can_faculty_review_post = is_defense_done
     from .concepts import latest_round, enabled as concepts_enabled
     concept_context = document_context(team, stage_label)
+    from defense.template_files import template_map, template_metadata
+    templates = template_map(concept_context)
     open_concepts = latest_round(team, concept_context)
     from .concept_completion import post_defense_state
     concept_access = post_defense_state(team, concept_context)
@@ -1182,6 +1190,7 @@ def stage_payload(team, stage_label, evaluator=None):
             'archive_note': item.get('archive_note', ''),
             'file_format': item.get('file_format', 'any'),
             'file_policy': item.get('file_policy', {}),
+            'template': template_metadata(concept_context, item['id'], attachments=templates),
             'document_slots': slots,
             'suggested_file_name': suggested,
             'uploaded': document_completeness(submission, item, stage=concept_context),
@@ -1797,7 +1806,7 @@ def remove_submission(team, stage_label, deliverable_id, file_id=None):
         team._prefetched_objects_cache.pop('deliverable_submissions', None)
     if (pit_endorsed(team, stage_label) if team.is_pit else team.ready_for_stage == stage_label) and not required_complete(team, stage_label):
         if team.is_capstone:
-            stage = defense_stage_for_label(stage_label)
+            stage = defense_stage_for_label(stage_label, team=team)
             if stage is not None:
                 mark_stage_locked(team, stage)
             else:
@@ -1822,7 +1831,7 @@ def endorse_team(team, stage_label, user=None):
     if not required_complete(team, stage_label):
         raise ValueError('All required scheduling deliverables must be cleared before endorsement.')
     if team.is_capstone:
-        stage = defense_stage_for_label(stage_label)
+        stage = defense_stage_for_label(stage_label, team=team)
         if stage is None:
             raise ValueError('Defense stage does not exist.')
         try:
@@ -1848,7 +1857,7 @@ def endorse_team(team, stage_label, user=None):
 def unendorse_team(team, stage_label):
     from defense.scheduler.models import DefenseSchedule
     if team.is_capstone:
-        stage = defense_stage_for_label(stage_label)
+        stage = defense_stage_for_label(stage_label, team=team)
         if stage is None:
             raise ValueError('Defense stage does not exist.')
 
@@ -2040,7 +2049,7 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     if status_val == DeliverableSubmission.STATUS_REJECTED and not is_defense_done:
         if (pit_endorsed(team, stage_label) if team.is_pit else team.ready_for_stage == stage_label) and not required_complete(team, stage_label):
             if team.is_capstone:
-                stage = defense_stage_for_label(stage_label)
+                stage = defense_stage_for_label(stage_label, team=team)
                 if stage is not None:
                     mark_stage_locked(team, stage)
                 else:

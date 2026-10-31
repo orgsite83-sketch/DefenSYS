@@ -8,6 +8,8 @@ For copy-and-paste workflow commands, see the [demo automation guide](../AUTOMAT
 
 ## Available Tools
 
+- `setup_sandbox.py`: Create a fresh local `defensys_sandbox` database, apply migrations, and use separate uploads without copying accounts or teams. Existing databases are refused. See [local development setup](../LOCAL_DEVELOPMENT.md). Full recovery backups use the existing `deployment/backup/backup_db.py --full` tool.
+
 - `profile_faculty_reads.py`: PostgreSQL READ ONLY API profiler. Run with `backend/venv/Scripts/python.exe` from the repository root. Use `--stage-setup --admin` for stage directory/detail and Capstone rubrics, or `--deliverable-responses` for existing adviser response generation without saving reviews. Add `--uncached` to compare read reuse and `--response-mode full` to measure legacy full-list responses. Reports server time, query counts and response bytes; excludes network, UI and review saving.
 
 - `audit_section_hearing_state.py`: Read-only section workflow/API inspection. Add `--section BSIT-4A --continuity-only` to compare current shared-system display with preserved source-term section assignments, approved projects, versioned team links, term participations, and transition records. PostgreSQL enforces a read-only transaction; this mode performs no API probes or academic-data corrections and writes its report to `.tmp/section-shared-continuity.json`.

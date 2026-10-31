@@ -1,5 +1,11 @@
 # DefenSYS Database Backup & Restore Guide
 
+For a complete **local** recovery ZIP (database, uploads, working source and
+configuration), run `backend/venv/Scripts/python.exe deployment/backup/backup_db.py --full`
+from the project root. See [local backup and fresh development setup](../../LOCAL_DEVELOPMENT.md)
+for verification, recovery and isolated sandbox commands. The database-only
+commands below do not include uploaded files.
+
 This directory contains automated scripts to manage PostgreSQL database backups and restorations for the DefenSYS monorepo. S3 off-server backups have been removed to focus entirely on server-based local backup administration.
 
 ---

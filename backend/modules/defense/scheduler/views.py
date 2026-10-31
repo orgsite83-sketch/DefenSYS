@@ -41,6 +41,7 @@ from .panelist_evaluation import (
 from academic_period_management.models import Semester
 
 from .pit_config import check_pit_event_locked, get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
+from defense.template_files import template_save
 from .event_scope import pit_events_for_user, require_event_management, require_pit_year
 from .serializers import (
     ConfirmSchedulePlanSerializer,
@@ -240,6 +241,7 @@ class PitEventConfigLookupView(APIView):
         config.delete()
         return Response({'success': True}, status=status.HTTP_200_OK)
 
+    @template_save(pit=True)
     def post(self, request):
         event_name = request.data.get('event_name', '').strip()
         if not event_name:

@@ -487,6 +487,9 @@ def pit_event_config_payload(config):
     if config is None:
         return None
     is_locked, lock_reason = check_pit_event_locked(config)
+    from defense.template_files import template_metadata, template_map
+    from defense.configuration_locks import shared_definitions_with_locks
+    attachments = template_map(config)
     deliverables_data = [
         {
             'id': d.id,
@@ -503,6 +506,7 @@ def pit_event_config_payload(config):
             'deadline_hours_before': d.deadline_hours_before,
             'file_format': getattr(d, 'file_format', 'any') or 'any',
             'file_policy': d.file_policy,
+            'template': template_metadata(config, d.deliverable_id, attachments=attachments),
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
     ]
@@ -524,7 +528,7 @@ def pit_event_config_payload(config):
         'is_officially_complete': config.is_officially_complete,
         'peer_grading_enabled': config.peer_grading_enabled,
         'concept_config': config.concept_config,
-        'shared_deliverables': shared_definitions(config),
+        'shared_deliverables': shared_definitions_with_locks(config),
         'team_membership_policy': config.team_membership_policy,
         'project_setup_policy': config.project_setup_policy,
         'roster_setup_opened': config.section_rosters.filter(started_at__isnull=False).exists(),

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'template_configuration.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -16,6 +17,9 @@ class DefenseStagesState {
   final bool isSaving;
   final List<Map<String, dynamic>> stages;
   final List<Map<String, dynamic>> activeStages;
+  final List<Map<String, dynamic>> sequenceStages;
+  List<Map<String, dynamic>> get pipelineStages =>
+      sequenceStages.isEmpty ? stages : sequenceStages;
   final Map<String, dynamic> counts;
   final List<Map<String, dynamic>> phaseGroups;
   final Map<String, dynamic> capstoneHistory;
@@ -28,6 +32,7 @@ class DefenseStagesState {
     this.isSaving = false,
     this.stages = const [],
     this.activeStages = const [],
+    this.sequenceStages = const [],
     this.counts = const {},
     this.phaseGroups = const [],
     this.capstoneHistory = const {},
@@ -44,6 +49,7 @@ class DefenseStagesState {
     bool? isSaving,
     List<Map<String, dynamic>>? stages,
     List<Map<String, dynamic>>? activeStages,
+    List<Map<String, dynamic>>? sequenceStages,
     Map<String, dynamic>? counts,
     List<Map<String, dynamic>>? phaseGroups,
     Map<String, dynamic>? capstoneHistory,
@@ -61,6 +67,7 @@ class DefenseStagesState {
       isSaving: isSaving ?? this.isSaving,
       stages: stages ?? this.stages,
       activeStages: activeStages ?? this.activeStages,
+      sequenceStages: sequenceStages ?? this.sequenceStages,
       counts: counts ?? this.counts,
       phaseGroups: phaseGroups ?? this.phaseGroups,
       capstoneHistory: capstoneHistory ?? this.capstoneHistory,
@@ -159,10 +166,8 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     }
 
     try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/'),
-        body: jsonEncode(cleanedPayload),
-      );
+      final response = await saveTemplateConfiguration(_client, 'POST',
+        Uri.parse('$baseUrl/'), {...cleanedPayload, '_templateDrafts': payload['_templateDrafts']});
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
@@ -206,10 +211,8 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     }
 
     try {
-      final response = await _client.patch(
-        Uri.parse('$baseUrl/$stageId/'),
-        body: jsonEncode(cleanedPayload),
-      );
+      final response = await saveTemplateConfiguration(_client, 'PATCH',
+        Uri.parse('$baseUrl/$stageId/'), {...cleanedPayload, '_templateDrafts': payload['_templateDrafts']});
 
       if (response.statusCode == 200) {
         _applyPayload(
@@ -333,7 +336,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     int delta, {
     String? endorsedTeamsAction,
   }) async {
-    final list = List<Map<String, dynamic>>.from(state.stages);
+    final list = List<Map<String, dynamic>>.from(state.pipelineStages);
     final currentIndex = list.indexWhere((s) => _asInt(s['id']) == stageId);
     if (currentIndex == -1) return false;
 
@@ -419,6 +422,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       isSaving: false,
       stages: _readMapList(payload['stages']),
       activeStages: _readMapList(payload['active_stages']),
+      sequenceStages: _readMapList(payload['sequence_stages']),
       phaseGroups: _readMapList(payload['phase_groups']),
       capstoneHistory: payload['capstone_history'] is Map
           ? Map<String, dynamic>.from(payload['capstone_history'])

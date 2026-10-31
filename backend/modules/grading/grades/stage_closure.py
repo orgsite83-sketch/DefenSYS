@@ -74,8 +74,9 @@ def completion_token(grades, cohort, config):
 
 
 def finalize_failure(grade, actor, reason):
-    from .defense_workflow import audit
+    from .defense_workflow import audit, require_current
     from .services import _apply_team_result_from_grade
+    require_current(grade)
     rule = outcome_payload(grade)
     if not eligible_failure(grade):
         raise ValidationError('The assessment or re-defense schedule changed. Review stage completion again.')

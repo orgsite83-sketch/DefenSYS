@@ -106,7 +106,8 @@ def options(user, data, *, generation=True):
             pit_events_for_user(user, semester=semester).filter(year_level=year,
                 concept_config__enabled=True, is_officially_complete=False).order_by('pk'))
     else:
-        contexts = list(DefenseStage.objects.filter(concept_config__enabled=True).order_by('display_order'))
+        from defense.stages.context import stages_for_semester
+        contexts = list(stages_for_semester(semester).filter(concept_config__enabled=True))
     reviewers = get_user_model().objects.filter(role='faculty', is_active=True)
     if not is_manager(user):
         reviewers = reviewers.filter(pk__in=assignments.values('faculty_id'))
@@ -316,8 +317,9 @@ def generation_concept_context(event, data, *, semester=None, pit_year=None):
             event_name=data.get('stage_label'), concept_config__enabled=True,
             is_officially_complete=False).first()
     else:
-        from defense.stages.models import DefenseStage
-        context = DefenseStage.objects.filter(label=data.get('stage_label'), concept_config__enabled=True).first()
+        from defense.stages.context import stages_for_semester
+        context = stages_for_semester(semester).filter(
+            label=data.get('stage_label'), concept_config__enabled=True).first()
     if not context or not context.concept_config.get('enabled'):
         raise ValidationError('Select a stage/event with concept selection enabled for the shared system.')
     return context

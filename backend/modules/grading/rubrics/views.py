@@ -118,7 +118,8 @@ def _scopes_for_user(user):
 def options_payload(user=None):
     from .pit_assignment import pit_event_options
     semesters = Semester.objects.select_related('school_year').order_by('-school_year__label', 'label')
-    stages = DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')
+    from defense.stages.context import stages_for_semester
+    stages = stages_for_semester(active_semester()).filter(is_active=True)
     return {
         'active_semester': SemesterSerializer(active_semester()).data if active_semester() else None,
         'semesters': SemesterSerializer(semesters, many=True).data,

@@ -1,3 +1,4 @@
+import 'deliverable_template.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -316,6 +317,7 @@ class _SharedDeliverablesPanelState
             ),
           ),
           const SizedBox(height: 10),
+          DeliverableTemplateDownload(template: requirement['template']),
           for (final document in documents) ...[
             if (post &&
                 '${document['suggested_file_name'] ?? requirement['suggested_file_name'] ?? ''}'

@@ -128,7 +128,9 @@ class DefenseStage(models.Model):
         choices=[('reassess', 'Require fresh assessments'), ('retain', 'Retain adviser and peer scores')])
     from defense.document_policy import validate_concept_config
     concept_config = models.JSONField(default=dict, blank=True, validators=[validate_concept_config])
-    label = models.CharField(max_length=120, unique=True)
+    setup_semester = models.ForeignKey('academic_period_management.Semester',
+        null=True, blank=True, on_delete=models.PROTECT, related_name='defense_stage_definitions')
+    label = models.CharField(max_length=120)
     code = models.SlugField(max_length=140, unique=True, blank=True)
     display_order = models.PositiveSmallIntegerField(default=1)
     description = models.TextField(blank=True)
@@ -148,6 +150,11 @@ class DefenseStage(models.Model):
         app_label = 'defense'
         db_table = 'defense_stages_stage'
         ordering = ['display_order', 'label']
+        constraints = [
+            models.UniqueConstraint(fields=['setup_semester', 'label'], name='unique_stage_label_per_setup_term'),
+            models.UniqueConstraint(fields=['label'], condition=models.Q(setup_semester__isnull=True),
+                name='unique_legacy_stage_label'),
+        ]
 
     def save(self, *args, **kwargs):
         if self.pk:
@@ -240,7 +247,8 @@ class StageGradingConfig(models.Model):
         from django.db.models import Q
 
         TeamGrade.objects.filter(
-            Q(defense_stage=self.defense_stage) | Q(semester=self.semester, scope=TeamGrade.SCOPE_CAPSTONE, stage_label__iexact=self.defense_stage.label),
+            Q(defense_stage=self.defense_stage) | Q(defense_stage__isnull=True,
+                semester=self.semester, scope=TeamGrade.SCOPE_CAPSTONE, stage_label__iexact=self.defense_stage.label),
             semester=self.semester,
             scope=TeamGrade.SCOPE_CAPSTONE,
             status=TeamGrade.STATUS_PENDING,

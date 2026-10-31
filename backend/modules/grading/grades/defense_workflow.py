@@ -50,6 +50,11 @@ def legacy_finalized_pass(grade):
 def require_current(grade):
     if grade.project_version != grade.team.project_version:
         raise ValidationError('This assessment belongs to a previous project and is read-only.')
+    if grade.is_capstone:
+        from student_teams.models import TeamTermParticipation
+        if TeamTermParticipation.objects.filter(team_id=grade.team_id,
+                semester_id=grade.semester_id, closed_at__isnull=False).exists():
+            raise ValidationError('This term participation is closed. Use the historical correction process.')
 
 
 def audit(grade, actor, action, **values):

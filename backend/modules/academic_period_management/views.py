@@ -216,6 +216,8 @@ class SemesterStatusView(APIView):
 
         if update_fields:
             semester.save(update_fields=list(dict.fromkeys(update_fields)))
+            # Activation may have completed since this settings request loaded.
+            semester.refresh_from_db(fields=['is_active'])
             if 'capstone_peer_evaluation_enabled' in update_fields or 'capstone_adviser_grading_enabled' in update_fields:
                 from realtime.broadcast import notify_capstone_evaluation_flags
 

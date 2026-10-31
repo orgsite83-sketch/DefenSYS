@@ -32,6 +32,15 @@ def context_submissions(context):
         legacy &= (Q(archive_team_level__icontains='PIT')
                    | Q(archive_team_level='', team__level__icontains='PIT'))
         return rows.filter(Q(pit_event_config=context) | legacy)
+    if context.setup_semester_id:
+        rows = rows.filter(Q(archive_semester_id=context.setup_semester_id)
+            | Q(archive_semester__isnull=True, team__semester_id=context.setup_semester_id))
+    else:
+        from defense.stages.models import DefenseStage
+        other_terms = DefenseStage.objects.filter(label__iexact=context.label,
+            setup_semester__isnull=False).values('setup_semester_id')
+        rows = rows.exclude(Q(archive_semester_id__in=other_terms)
+            | Q(archive_semester__isnull=True, team__semester_id__in=other_terms))
     return rows.filter(stage_label__iexact=context.label, pit_event_config__isnull=True).filter(
         Q(archive_team_level__icontains='Capstone')
         | Q(archive_team_level='', team__level__icontains='Capstone'))
@@ -58,9 +67,10 @@ def grade_configuration_lock(context, semester=None):
         # Explicit semester means only that term's grading weights and rubrics.
         if configs.filter(is_officially_complete=True).exists():
             return True, 'This stage is officially complete.'
-        grades = TeamGrade.all_objects.filter(
-            Q(defense_stage=context) | Q(defense_stage__isnull=True, scope='capstone',
-                                        stage_label__iexact=context.label))
+        legacy = Q(defense_stage__isnull=True, scope='capstone', stage_label__iexact=context.label)
+        if context.setup_semester_id:
+            legacy &= Q(semester_id=context.setup_semester_id)
+        grades = TeamGrade.all_objects.filter(Q(defense_stage=context) | legacy)
         schedules = DefenseSchedule.objects.filter(defense_stage=context)
         if semester is not None:
             grades = grades.filter(semester=semester)
@@ -126,7 +136,11 @@ def requirement_lock(context, row, *, shared=False):
 
 def shared_definitions_with_locks(context):
     from defense.shared_deliverables import shared_definitions
-    return [{**row, **requirement_lock(context, row, shared=True)} for row in shared_definitions(context)]
+    from defense.template_files import template_metadata, template_map
+    definitions, attachments = shared_definitions(context), template_map(context)
+    return [{**row, **requirement_lock(context, row, shared=True),
+             'template': template_metadata(context, row['deliverable_id'], shared=True,
+                 definitions=definitions, attachments=attachments)} for row in definitions]
 
 
 def validate_shared_changes(context, proposed):

@@ -1,4 +1,6 @@
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
+import '../../../../widgets/repository/deliverable_template.dart';
+import '../../../../services/defense/template_configuration.dart';
 import '../../../../widgets/repository/shared_deliverables_editor.dart';
 import '../../../../widgets/repository/deliverable_submission_settings.dart';
 import 'package:flutter/material.dart';
@@ -173,7 +175,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   @override
   Widget build(BuildContext context) {
     ref.listen(academicPeriodProvider.select((state) => state.activeSemester?['id']),
-        (_, _) => _loadCreationDraft(),);
+        (previous, next) {
+          _loadCreationDraft();
+          if (previous != null && previous != next) {
+            ref.read(defenseStagesProvider.notifier).fetchStages(
+              scope: 'active', intake: '', phase: '', stage: '',
+            );
+          }
+        },);
     ref.listen(authProvider.select((state) => state.user?['id']),
         (_, _) => _loadCreationDraft(),);
     ref.listen<DefenseStagesState>(
@@ -233,8 +242,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         stageId: _asInt(stage['id'])!,
         stageLabel: stage['label']?.toString() ?? 'Stage',
         delta: delta,
-        currentIndex: index,
-        allStages: state.stages,
+        currentIndex: state.pipelineStages.indexWhere((s) => s['id'] == stage['id']),
+        allStages: state.pipelineStages,
       ),
     );
   }
@@ -1100,6 +1109,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   },
                 ),
 
+                DeliverableTemplateEditor(item: item,
+                  enabled: item['is_locked'] != true && item['has_data'] != true,
+                  onChanged: () => setDialogState(() {})),
                 Builder(
                   builder: (context) {
                     final isAdvancedExpanded =
@@ -1364,7 +1376,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final description = TextEditingController(
       text: setup?['description']?.toString() ?? '',
     );
-    final existingStages = ref.read(defenseStagesProvider).stages;
+    final existingStages = ref.read(defenseStagesProvider).pipelineStages;
     final totalExisting = existingStages.length;
     final currentOrder = stage != null ? _asInt(stage['display_order']) : null;
     final stageIsLocked = editing && stageSetupLocked(stage);
@@ -2191,6 +2203,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     }
 
     final payload = {
+      if (semesterId != null) 'semester_id': semesterId,
       'label': label.text.trim(),
       'code': codeCtrl.text.trim(),
       'display_order': selectedPosition,
@@ -2206,6 +2219,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       'deliverables': deliverables,
       'shared_deliverables': configuredSharedDeliverables(deliverables, sharedDeliverables,),
       if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
+      '_templateDrafts': templateDrafts(deliverables, sharedDeliverables),
     };
 
     bool configured = false;

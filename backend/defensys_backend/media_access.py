@@ -50,6 +50,11 @@ def _can_read_submission(user, submission):
 
 def can_read_media(user, name):
     """Unknown files fail closed; knowing a storage path grants no access."""
+    if name.startswith('deliverable_templates/'):
+        from defense.template_models import DeliverableTemplate
+        from defense.template_files import can_read_template
+        attachment = DeliverableTemplate.objects.select_related('defense_stage', 'pit_event_config').filter(file=name).first()
+        return bool(attachment and can_read_template(user, attachment))
     from defense.minutes.models import DefenseMinutes
     from defense.minutes.views import has_minutes_view_permission
     from repository.archive.models import ArchiveEntry

@@ -19,6 +19,8 @@ from .serializers import SystemAuditLogSerializer
 
 class AuditReferenceTests(APITestCase):
     def setUp(self):
+        from defense.testing import seed_stage_fixtures
+        seed_stage_fixtures()
         users = get_user_model()
         self.admin = users.objects.create_user(username='reference-admin', role='admin')
         self.student = users.objects.create_user(username='reference-student', role='student')

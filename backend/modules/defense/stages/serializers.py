@@ -16,8 +16,10 @@ from defense.configuration_locks import (
 class StageDeliverableSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         from defense.deliverable_policy import faculty_review_definition
+        from defense.template_files import template_metadata
         row = faculty_review_definition(super().to_representation(instance))
-        return {**row, **requirement_lock(instance.defense_stage, row)}
+        return {**row, **requirement_lock(instance.defense_stage, row),
+                'template': template_metadata(instance.defense_stage, instance.deliverable_id)}
 
     class Meta:
         model = StageDeliverable
@@ -376,8 +378,10 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = DefenseStage
         fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'deliverables']
+        validators = []
         extra_kwargs = {
-            'code': {'required': False, 'allow_blank': True},
+            'label': {'validators': []},
+            'code': {'required': False, 'allow_blank': True, 'validators': []},
             'display_order': {'required': False},
             'description': {'required': False, 'allow_blank': True},
             'is_active': {'required': False},
@@ -385,7 +389,11 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         }
 
     def validate_label(self, value):
-        queryset = DefenseStage.objects.filter(label__iexact=value.strip())
+        from .context import stages_for_semester
+        from .grading_config import resolve_semester
+        semester = self.context.get('semester') or (
+            self.instance.setup_semester if self.instance else None) or resolve_semester()
+        queryset = stages_for_semester(semester).filter(label__iexact=value.strip())
         if self.instance is not None:
             queryset = queryset.exclude(pk=self.instance.pk)
         if queryset.exists():
@@ -401,7 +409,8 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         if value and value.strip():
             from .models import clean_custom_code
             code = clean_custom_code(value.strip())
-            queryset = DefenseStage.objects.filter(code__iexact=code)
+            from .context import stages_for_semester
+            queryset = stages_for_semester(self.context.get('semester')).filter(code__iexact=code)
             if self.instance is not None:
                 queryset = queryset.exclude(pk=self.instance.pk)
             if queryset.exists():
@@ -427,9 +436,13 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         deliverables_data = validated_data.pop('deliverables', [])
+        from .grading_config import resolve_semester
+        from .context import stages_for_semester
+        semester = self.context.get('semester') or resolve_semester()
+        validated_data['setup_semester'] = semester
         
         if not validated_data.get('display_order'):
-            max_order = DefenseStage.objects.order_by('-display_order').values_list('display_order', flat=True).first()
+            max_order = stages_for_semester(semester).order_by('-display_order').values_list('display_order', flat=True).first()
             validated_data['display_order'] = (max_order or 0) + 1
         
         stage = super().create(validated_data)

@@ -563,6 +563,8 @@ def payload(profile, actor):
     if not full_access and not panel_access(actor, profile):
         raise PermissionError('Only the linked section members and authorized faculty can read its shared checklist.')
     context = profile['context']
+    from defense.template_files import template_map, template_metadata
+    templates = template_map(context)
     if hasattr(context, 'event_name'):
         from django.contrib.auth import get_user_model
         from user_management.models import SectionInstructorAssignment
@@ -635,6 +637,8 @@ def payload(profile, actor):
                                     'slot_key': slot['key']} for old in current_paper.concept.papers.filter(
                                         purpose=definition['legacy_purpose'], is_current=False))
         requirements.append({**definition, 'id': definition['deliverable_id'], 'status': status, 'documents': documents,
+            'template': template_metadata(context, definition['deliverable_id'], shared=True,
+                definitions=profile['definitions'], attachments=templates) if full_access else None,
             'suggested_file_name': archive_file_name(profile, definition, '') if definition['deliverable_type'] == 'post' else '',
             'files': current, 'history': history, 'unavailable_reason': reason,
             'can_add_attachment': not reason and actor.pk == profile['manager'].pk and

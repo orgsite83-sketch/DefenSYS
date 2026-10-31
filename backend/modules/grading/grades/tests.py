@@ -32,6 +32,8 @@ class GradeCenterApiTests(APITestCase):
         return self.client.patch(url, {'reason': 'Recorded administrative correction for this test', 'expected_updated_at': row.updated_at.isoformat(), **data}, **kwargs)
 
     def setUp(self):
+        from defense.testing import seed_stage_fixtures
+        seed_stage_fixtures()
         self.admin = User.objects.create_user(
             username='admin-user',
             password='pass12345',

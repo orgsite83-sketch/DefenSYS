@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'template_configuration.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -639,10 +640,8 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     );
 
     try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/pit-event-config/'),
-        body: jsonEncode(payload),
-      );
+      final response = await saveTemplateConfiguration(_client, 'POST',
+        Uri.parse('$baseUrl/pit-event-config/'), payload);
 
       if (response.statusCode == 200) {
         state = state.copyWith(

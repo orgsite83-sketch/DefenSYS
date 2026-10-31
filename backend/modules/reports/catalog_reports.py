@@ -235,7 +235,8 @@ def setup_report(request, *, pit=False):
         if selected:
             items = items.filter(semester=selected)
     else:
-        items = DefenseStage.objects.prefetch_related('deliverables').order_by('display_order', 'pk')
+        from defense.stages.context import stages_for_semester
+        items = stages_for_semester(selected).prefetch_related('deliverables')
     for item in items:
         label = item.event_name if pit else item.label
         if is_pit_lead_only(request.user) and item.year_level != request.user.pit_lead_year:

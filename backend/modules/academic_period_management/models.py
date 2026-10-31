@@ -124,7 +124,10 @@ class Semester(models.Model):
 
     def save(self, *args, **kwargs):
         with transaction.atomic():
-            if self.is_active:
+            # A settings/calendar save may still hold the old active flag after
+            # activation finished. Only an actual is_active write can switch it.
+            update_fields = kwargs.get('update_fields')
+            if self.is_active and (update_fields is None or 'is_active' in update_fields):
                 Semester.objects.exclude(pk=self.pk).filter(is_active=True).update(is_active=False)
             super().save(*args, **kwargs)
 

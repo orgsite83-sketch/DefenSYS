@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'deliverable_template.dart';
 
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -202,6 +203,10 @@ class _SharedDeliverablesEditorState extends State<SharedDeliverablesEditor> {
                       continue;
                     }
                     final copy = sharedDeliverablePayload([source]).single;
+                    copy.remove('template');
+                    copy.remove('template_action');
+                    copy.remove('template_selection_name');
+                    copy.remove('template_selection_size');
                     copy.remove('id');
                     copy.remove('legacy_purpose');
                     copy['deliverable_id'] = _nextId(result);
@@ -473,6 +478,8 @@ class _SharedRequirementEditorState extends State<_SharedRequirementEditor> {
                       change('file_policy', value);
                     },
                   ),
+                  DeliverableTemplateEditor(item: item, enabled: widget.enabled,
+                    onChanged: () { widget.onChanged(); setState(() {}); }),
                   if (advanced)
                     Container(
                       margin: const EdgeInsets.only(top: 12),

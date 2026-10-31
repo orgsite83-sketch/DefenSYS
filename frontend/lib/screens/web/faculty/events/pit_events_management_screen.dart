@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
+import '../../../../widgets/repository/deliverable_template.dart';
+import '../../../../services/defense/template_configuration.dart';
 import '../../../../widgets/repository/shared_deliverables_editor.dart';
 import '../../../../widgets/repository/deliverable_submission_settings.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
@@ -976,6 +978,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   bool _allowPop = false;
 
   bool _checkIfDirty() {
+    if ([..._deliverables, ..._sharedDeliverables].any((row) => row['template_action'] != null)) return true;
     final initialEventName = widget.config?['event_name']?.toString() ?? '';
     final initialCode = widget.config?['event_code']?.toString() ?? '';
     final initialTemplate = (widget.config?['archive_file_template'] ?? widget.config?['vault_file_template'])?.toString() ?? '';
@@ -1281,6 +1284,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': deliverablesPayload,
       'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables,),
+      '_templateDrafts': templateDrafts(_deliverables, _sharedDeliverables),
     };
 
     final success = await ref.read(defenseSchedulerProvider.notifier).savePitEventConfig(payload);
@@ -1953,6 +1957,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                   },
                 ),
 
+                DeliverableTemplateEditor(item: item,
+                  enabled: !isLocked && item['is_locked'] != true && item['has_data'] != true,
+                  onChanged: () { _markDirty(); setState(() {}); }),
                 Builder(
                   builder: (context) {
                     final isAdvancedExpanded =

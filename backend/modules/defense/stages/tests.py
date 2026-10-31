@@ -11,6 +11,7 @@ from grading.grades.services import weights_for_schedule
 from grading.rubrics.models import Rubric
 from student_teams.models import StudentTeam
 from defense.stages.models import DefenseStage, StageGradingConfig
+from defense.testing import seed_stage_fixtures
 
 
 User = get_user_model()
@@ -18,6 +19,7 @@ User = get_user_model()
 
 class DefenseStageApiTests(APITestCase):
     def setUp(self):
+        seed_stage_fixtures()
         self.admin = User.objects.create_user(
             username='admin-user',
             password='pass12345',
@@ -26,7 +28,7 @@ class DefenseStageApiTests(APITestCase):
         )
         self.client.force_authenticate(user=self.admin)
 
-    def test_default_stages_are_seeded_by_migration(self):
+    def test_explicit_stage_fixtures_are_listed_in_order(self):
         response = self.client.get('/api/defense/stages/')
 
         self.assertEqual(response.status_code, 200)
@@ -244,6 +246,7 @@ class DefenseStageApiTests(APITestCase):
 
 class StageGradingConfigApiTests(APITestCase):
     def setUp(self):
+        seed_stage_fixtures()
         self.admin = User.objects.create_user(
             username='admin-weights',
             password='pass12345',

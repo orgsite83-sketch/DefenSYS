@@ -1,3 +1,5 @@
+import '../../../../widgets/repository/deliverable_template.dart';
+import '../../../../services/defense/template_configuration.dart';
 import 'widgets/stage_minutes_settings.dart';
 import 'widgets/stage_outcome_settings.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
@@ -579,6 +581,7 @@ class _DefenseStageEditorScreenState
             'deliverables': _deliverables,
             'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables,),
             if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
+            '_templateDrafts': templateDrafts(_deliverables, _sharedDeliverables),
           },
         );
 
@@ -634,7 +637,7 @@ class _DefenseStageEditorScreenState
 
 
   Widget _buildPositionSelector() {
-    final allStages = ref.watch(defenseStagesProvider).stages;
+    final allStages = ref.watch(defenseStagesProvider).pipelineStages;
     final totalStages = allStages.length;
     final currentPos = _orderPosition.clamp(1, totalStages > 0 ? totalStages : 1,);
     final initialOrder = _asInt(_stage?['display_order']);
@@ -1042,7 +1045,7 @@ class _DefenseStageEditorScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               StageDeliverablePresetsBar(
-                                existingStages: ref.read(defenseStagesProvider).stages,
+                                existingStages: ref.read(defenseStagesProvider).pipelineStages,
                                 currentDeliverables: deliverablePresetItems(_deliverables, _sharedDeliverables,),
                                 enabled: !_isLocked && !configuredItemsHaveData,
                                 onApplyDeliverables: (newDeliverables) {
@@ -1960,6 +1963,8 @@ class _DefenseStageEditorScreenState
                   },
                 ),
 
+                DeliverableTemplateEditor(item: item, enabled: !isLocked,
+                  onChanged: () { _markDirty(); setState(() {}); }),
                 Builder(
                   builder: (context) {
                     final isAdvancedExpanded =
