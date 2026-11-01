@@ -21,7 +21,10 @@ import '../helpers/capture_preview.dart';
 import '../helpers/auth_test_overrides.dart';
 
 class _StagesNotifier extends DefenseStagesNotifier {
+  _StagesNotifier({this.conceptSelection = false});
+  final bool conceptSelection;
   Map<String, dynamic>? saved;
+  Map<String, dynamic>? gradingSaved;
 
   @override
   DefenseStagesState build() => const DefenseStagesState();
@@ -50,6 +53,8 @@ class _StagesNotifier extends DefenseStagesNotifier {
       'display_order': 1,
       'is_presentation_only': true,
       'qualifying_score': 75,
+      'concept_config': {'enabled': conceptSelection, 'required_count': 3},
+      'shared_deliverables': [],
       'deliverables': [
         {
           'deliverable_id': 'PAPER',
@@ -72,7 +77,10 @@ class _StagesNotifier extends DefenseStagesNotifier {
     int stageId,
     int semesterId,
     Map<String, dynamic> weights,
-  ) async => true;
+  ) async {
+    gradingSaved = Map<String, dynamic>.from(weights);
+    return true;
+  }
 }
 
 class _PeriodsNotifier extends AcademicPeriodNotifier {
@@ -164,6 +172,35 @@ class _TemplatePicker extends FilePicker {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('concept editor saves panel-only weights with ordinary hidden draft defaults', (tester) async {
+    tester.view.physicalSize = const Size(1440, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final stages = _StagesNotifier(conceptSelection: true);
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...authTestOverrides(),
+      defenseStagesProvider.overrideWith(() => stages),
+      academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+      rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+    ], child: MaterialApp(theme: AppTheme.lightTheme, home: Scaffold(
+      body: DefenseStageEditorScreen(stageId: 9, initialTab: 1, onBack: () {}),
+    ))));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('panel-fixed-weight')), findsOneWidget);
+    expect(find.byKey(const ValueKey('adviser-weight')), findsNothing);
+    expect(find.byKey(const ValueKey('peer-weight')), findsNothing);
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect(stages.gradingSaved?['panel_weight'], 100);
+    expect(stages.gradingSaved?['adviser_weight'], 0);
+    expect(stages.gradingSaved?['peer_weight'], 0);
+    expect(stages.gradingSaved?.containsKey('adviser_rubric_id'), false);
+    expect(stages.gradingSaved?.containsKey('peer_rubric_id'), false);
+    expect((stages.saved?['concept_config'] as Map?)?['enabled'], true);
+    expect(tester.takeException(), isNull);
+  });
   for (final scope in ['team', 'shared']) {
     testWidgets('restored $scope template keeps Add Stage open until reselected or removed', (tester) async {
       tester.view.physicalSize = const Size(1440, 1200);

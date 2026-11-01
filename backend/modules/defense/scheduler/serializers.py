@@ -1086,6 +1086,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        from .capstone_planning import lock_calendar_resources
+        lock_calendar_resources()
         from academic_period_management.calendar import validate_defense_date
         validated_data['semester'] = validate_defense_date(
             validated_data['semester'], validated_data['scheduled_date'], lock=True)
@@ -1097,6 +1099,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         # A retry can validate while an earlier request is still committing.
         # Recheck after the team lock so a lost response cannot duplicate it.
         self._validate_duplicate(validated_data)
+        from .sessions import validate_plan_conflicts
+        validate_plan_conflicts([validated_data])
         if validated_data['scope'] == 'pit':
             from .models import PitEventGradingConfig
             PitEventGradingConfig.objects.select_for_update().get(pk=validated_data['pit_event_config'].pk)
@@ -1577,6 +1581,8 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
     @transaction.atomic
     def save(self):
         attrs = self.validated_data
+        from .capstone_planning import lock_calendar_resources
+        lock_calendar_resources()
         from academic_period_management.models import Semester
         attrs['semester'] = Semester.objects.select_for_update().get(pk=attrs['semester'].pk)
         # Serialize confirmations for the same teams and recheck the preview

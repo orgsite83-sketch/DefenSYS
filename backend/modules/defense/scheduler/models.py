@@ -107,6 +107,11 @@ class DefenseSchedule(models.Model):
         blank=True,
         on_delete=models.SET_NULL,
     )
+    continuing_assignment = models.ForeignKey('CapstonePeopleAssignment', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='schedules')
+    planning_batch = models.ForeignKey('CapstonePlanningBatch', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='schedules')
+    planning_block_key = models.CharField(max_length=80, blank=True, default='')
     scheduled_date = models.DateField()
     start_time = models.TimeField()
     slot_duration = models.PositiveSmallIntegerField(default=60)
@@ -304,6 +309,74 @@ class DefenseSchedule(models.Model):
 
     def __str__(self):
         return f'{self.team} - {self.stage_label} on {self.scheduled_date}'
+
+
+class CapstonePeopleAssignment(models.Model):
+    """Continuing project roster, independent of its semester or actual hearings."""
+    team = models.ForeignKey('student_teams.StudentTeam', on_delete=models.PROTECT, related_name='people_assignments')
+    project_version = models.PositiveIntegerField()
+    intake_semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT,
+        related_name='capstone_people_assignments')
+    source_semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT,
+        related_name='+')
+    initial_stage = models.ForeignKey('defense.DefenseStage', on_delete=models.PROTECT, related_name='+')
+    adviser = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    documenter = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    revision = models.PositiveIntegerField(default=1)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'defense'
+        constraints = [models.UniqueConstraint(fields=['team', 'project_version', 'intake_semester'],
+            name='unique_capstone_project_people')]
+
+
+class CapstoneAssignmentMember(models.Model):
+    assignment = models.ForeignKey(CapstonePeopleAssignment, on_delete=models.CASCADE, related_name='members')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    external = models.ForeignKey('user_management.ExternalEvaluator', null=True, blank=True, on_delete=models.PROTECT)
+    is_chair = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        app_label = 'defense'
+        ordering = ['order', 'pk']
+        constraints = [
+            models.CheckConstraint(condition=(models.Q(user__isnull=False, external__isnull=True) |
+                models.Q(user__isnull=True, external__isnull=False, is_chair=False)), name='capstone_member_one_identity'),
+            models.UniqueConstraint(fields=['assignment', 'user'], name='capstone_unique_member_user'),
+            models.UniqueConstraint(fields=['assignment', 'external'], name='capstone_unique_member_external'),
+            models.UniqueConstraint(fields=['assignment'], condition=models.Q(is_chair=True), name='capstone_one_chair'),
+        ]
+
+
+class CapstoneAssignmentRevision(models.Model):
+    assignment = models.ForeignKey(CapstonePeopleAssignment, on_delete=models.PROTECT, related_name='history')
+    revision = models.PositiveIntegerField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    reason = models.TextField(blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'defense'
+        constraints = [models.UniqueConstraint(fields=['assignment', 'revision'], name='capstone_people_revision')]
+
+
+class CapstonePlanningBatch(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    idempotency_key = models.UUIDField(unique=True)
+    request_hash = models.CharField(max_length=64)
+    inputs = models.JSONField()
+    fingerprint = models.CharField(max_length=64)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'defense'
 
 
 class SchedulePanelist(models.Model):

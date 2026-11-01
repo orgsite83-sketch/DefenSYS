@@ -58,7 +58,8 @@ def assessment_document_sheets(records, *, student, team_rows, coverage):
             components = [('Panel Defense Evaluation', 'panel', 'Composite panel rubric score')]
             if grade.is_capstone and grade.adviser_weight:
                 components.append(('Project Adviser Grade', 'adviser', f'Assessed by {_name(team.adviser)}'))
-            components.append(('Individual Peer Evaluation', 'peer', 'Internal peer rubric average'))
+            if not grade.panel_only_evaluation:
+                components.append(('Individual Peer Evaluation', 'peer', 'Internal peer rubric average'))
             rows = [{'component': label, 'weight': getattr(grade, key + '_weight'), 'score': _percent(values[key]),
                      'weighted': values[key + '_weighted'] if values[key + '_weighted'] is not None else 'Pending', 'source': source}
                     for label, key, source in components]
@@ -77,14 +78,15 @@ def assessment_document_sheets(records, *, student, team_rows, coverage):
             if grade.is_capstone and grade.adviser_weight:
                 columns += [_column('adviser_rating', 'Adviser Rating', 14, 'percentage'),
                             _column('adviser_weighted', f'Adviser Contribution\n({grade.adviser_weight}%)', 15, 'number')]
-            columns += [_column('peer_rating', 'Peer Rating', 14, 'percentage'),
-                        _column('peer_weighted', f'Peer Contribution\n({grade.peer_weight}%)', 15, 'number'),
-                        _column('total', 'Total Score', 14, 'number'), _column('status', 'Grade Status', 20)]
+            if not grade.panel_only_evaluation:
+                columns += [_column('peer_rating', 'Peer Rating', 14, 'percentage'),
+                            _column('peer_weighted', f'Peer Contribution\n({grade.peer_weight}%)', 15, 'number')]
+            columns += [_column('total', 'Total Score', 14, 'number'), _column('status', 'Grade Status', 20)]
             for row, member in zip(rows, members):
                 row['name'] += '\n(Leader)' if member.pk == team.leader_id else ''
                 row['status'] = row['grade_status']
                 for key in ('panel_weighted', 'adviser_weighted', 'peer_weighted', 'total'):
-                    row[key] = _points(row[key])
+                    row[key] = _points(row[key]) if row[key] != 'N/A' else 'N/A'
             title = f'{scope} Team Grade Report - {team.name}'
             section = 'Master Student Grade Sheet'
         name = grade.stage_label or 'Assessment'

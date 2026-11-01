@@ -806,17 +806,23 @@ def weights_for_schedule(schedule):
     Resolves grading weights for a defense schedule.
 
     Resolution Precedence (first match wins):
-    1. Stage-specific / Event-specific Config (StageGradingConfig / PitEventGradingConfig)
-    2. Rubric Custom Weights (if schedule.rubric has weights defined)
-    3. Scope System-Wide Defaults (default_weights)
+    1. The hearing's captured weights, when present
+    2. Stage / event configuration, including continuing project setup context
+    3. Rubric Custom Weights (if schedule.rubric has weights defined)
+    4. Scope System-Wide Defaults (default_weights)
 
     Note: Existing TeamGrade records are NOT automatically updated by this function
     once created. See the save() method on StageGradingConfig/PitEventGradingConfig
-    for retroactive pending sync.
+    for pending sync of uncaptured assessments.
     """
-    if schedule and (schedule.assessment_policy or {}).get('version') == 1:
+    if schedule and (schedule.assessment_policy or {}).get('weights'):
         return dict(schedule.assessment_policy['weights'])
     if schedule and schedule.scope == TeamGrade.SCOPE_CAPSTONE and schedule.defense_stage_id:
+        if getattr(schedule, 'continuing_assignment_id', None):
+            from defense.stages.grading_config import project_stage_config
+            config = project_stage_config(schedule.defense_stage, schedule.semester, schedule.team)
+            if config:
+                return config.as_weights_dict()
         from defense.stages.grading_config import weights_for_capstone_stage
 
         return weights_for_capstone_stage(schedule.defense_stage, schedule.semester)
@@ -1123,6 +1129,8 @@ def adviser_capstone_grades_for_user(user):
     canonical_rows = []
     for grade in grades:
         canonical = resolve_canonical_capstone_grade(grade)
+        if canonical is not None and canonical.panel_only_evaluation:
+            continue
         if canonical is not None and canonical.id not in seen_grade_ids:
             seen_grade_ids.add(canonical.id)
             canonical_rows.append(canonical)
@@ -1334,6 +1342,8 @@ class GradeContextService:
                         'score_carryover', getattr(concept_context, 'score_carryover', 'reassess')) == 'reassess')
                     or (schedule.scope != 'capstone' and enabled(concept_context)
                         and concept_context.concept_config.get('score_carryover', 'reassess') == 'reassess')))
+                from .evaluation_policy import PANEL_ONLY_CONCEPT
+                concept_reassessment = concept_reassessment or (schedule.assessment_policy or {}).get('evaluation_mode') == PANEL_ONLY_CONCEPT
                 if (grade.scope != TeamGrade.SCOPE_CAPSTONE and not enabled(concept_context)) or concept_reassessment:
                     grade.adviser_score = None
                     grade.adviser_score_is_override = False
@@ -1830,7 +1840,7 @@ def require_matching_rubric(grade, evaluation_type):
 
 
 def assigned_adviser_rubric_payload(grade):
-    rubric = find_matching_rubric(grade, Rubric.EVAL_ADVISER)
+    rubric = None if grade.panel_only_evaluation else find_matching_rubric(grade, Rubric.EVAL_ADVISER)
     if rubric is None:
         return {
             'assigned_adviser_rubric_id': None,
@@ -2082,9 +2092,11 @@ def _empty_auto_finalize_result():
 
 
 def peer_required_for_grade(grade, semester, scope, config):
+    if grade.panel_only_evaluation:
+        return False
     from .peer_eval import peer_submission_count
 
-    peer_w = getattr(config, 'peer_weight', None)
+    peer_w = grade.peer_weight if grade.schedule_id and (grade.schedule.assessment_policy or {}).get('weights') else getattr(config, 'peer_weight', None)
     if peer_w is None:
         peer_w = getattr(grade, 'peer_weight', 20)
 
@@ -2101,6 +2113,8 @@ def peer_required_for_grade(grade, semester, scope, config):
 
 
 def adviser_required_for_grade(grade, semester):
+    if grade.panel_only_evaluation:
+        return False
     if grade.scope != TeamGrade.SCOPE_CAPSTONE:
         return False
     if grade.adviser_weight <= 0:

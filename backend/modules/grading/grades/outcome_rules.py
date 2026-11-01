@@ -15,7 +15,10 @@ def capture_policy(schedule):
     from .services import weights_for_schedule
     stage = schedule.defense_stage
     rubric = schedule.rubric
+    from .evaluation_policy import concept_stage, PANEL_ONLY_CONCEPT, PANEL_ONLY_WEIGHTS
+    panel_only = concept_stage(stage)
     return {
+        'evaluation_mode': PANEL_ONLY_CONCEPT if panel_only else 'standard',
         'version': 1 if stage.qualifying_score is not None else 0,
         'repeat_files_version': 1,
         'automatic_outcomes': bool(stage.qualifying_score is not None),
@@ -25,7 +28,7 @@ def capture_policy(schedule):
         'per_concept': bool(stage.qualifying_score is not None and stage.concept_config.get('enabled')),
         'rubric_id': rubric.pk if rubric else None,
         'target_type': rubric.target_type if rubric else 'team',
-        'weights': weights_for_schedule(schedule),
+        'weights': dict(PANEL_ONLY_WEIGHTS) if panel_only else weights_for_schedule(schedule),
         'criteria': [{'id': c.pk, 'name': c.name, 'max_score': str(c.max_score),
                       'weight': str(c.weight) if c.weight is not None else None,
                       'target_type': c.target_type} for c in rubric.criteria.all()] if rubric else [],

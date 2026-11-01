@@ -5,6 +5,7 @@ No logins, credentials, submissions, notifications or workflow changes are made.
 Detailed, regenerable evidence is saved under .tmp/.
 """
 import json
+import argparse
 import os
 from collections import Counter
 from pathlib import Path
@@ -138,7 +139,35 @@ def collect():
     return result
 
 
+def concept_evaluation_inventory():
+    """Counts only: report preserved captures without modifying live hearings."""
+    from django.db.models import Count, Q
+    from defense.scheduler.models import DefenseSchedule
+    from defense.stages.context import stages_for_semester
+    from academic_period_management.models import Semester
+    from grading.grades.evaluation_policy import PANEL_ONLY_CONCEPT
+
+    semester = Semester.objects.filter(is_active=True).first()
+    if semester is None:
+        return {'read_only': True, 'active_semester': None, 'stages': [], 'captures': []}
+    stages = list(stages_for_semester(semester).filter(concept_config__enabled=True).values('id', 'label'))
+    rows = list(DefenseSchedule.objects.filter(scope='capstone', semester=semester).filter(
+        Q(defense_stage_id__in=[stage['id'] for stage in stages]) |
+        Q(assessment_policy__per_concept=True)).values(
+            'defense_stage_id', 'defense_stage__label', 'status',
+            'assessment_policy__evaluation_mode').annotate(count=Count('pk')).order_by('defense_stage_id', 'status'))
+    return {'read_only': True, 'active_semester': semester.pk, 'stages': stages, 'captures': rows,
+            'panel_only_captures': sum(row['count'] for row in rows
+                if row['assessment_policy__evaluation_mode'] == PANEL_ONLY_CONCEPT),
+            'preserved_prior_captures': sum(row['count'] for row in rows
+                if row['assessment_policy__evaluation_mode'] != PANEL_ONLY_CONCEPT)}
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--concept-evaluation-only', action='store_true',
+                        help='Only inventory concept evaluation captures; no account or API reads.')
+    options = parser.parse_args()
     import django
     django.setup()
     from django.db import connection, transaction
@@ -147,10 +176,13 @@ def main():
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute('SET TRANSACTION READ ONLY')
-        result = collect()
-    output = ROOT / '.tmp' / 'active-workflow-audit.json'
+        result = concept_evaluation_inventory() if options.concept_evaluation_only else collect()
+    output = ROOT / '.tmp' / ('concept-evaluation-inventory.json' if options.concept_evaluation_only else 'active-workflow-audit.json')
     output.parent.mkdir(exist_ok=True)
     output.write_text(json.dumps(result, indent=2, default=str), encoding='utf-8')
+    if options.concept_evaluation_only:
+        print(json.dumps({'output': str(output), **result}, default=str))
+        return
     print(json.dumps({'output': str(output), 'semester': result.get('semester'),
         'team_counts': result.get('team_counts'), 'setup_issues': [s for s in result['setup'] if not s['ready']],
         'team_projections': len(result['teams']), 'api_reads': len(result['api_reads']),

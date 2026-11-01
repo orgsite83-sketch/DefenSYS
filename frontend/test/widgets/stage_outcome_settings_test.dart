@@ -19,70 +19,90 @@ void main() {
   });
   for (final width in [320.0, 1100.0]) {
     for (final dark in [false, true]) {
-      testWidgets('outcome and repeat policies fit $width dark=$dark', (
-        tester,
-      ) async {
-        tester.view.physicalSize = Size(width, 950);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        final score = TextEditingController(text: '75');
-        addTearDown(score.dispose);
-        var carry = 'reassess';
-        await pumpDefensysWidget(
-          tester,
-          DefensysShadcnScope(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: RepaintBoundary(
-                  key: const ValueKey('outcome-settings-preview'),
-                  child: StatefulBuilder(
-                    builder: (_, update) => StageOutcomeSettings(
-                      scoreController: score,
-                      scoreCarryover: carry,
-                      conceptSelection: true,
-                      onChanged: () => update(() {}),
-                      onCarryoverChanged: (v) => update(() => carry = v),
+      for (final concept in [false, true]) {
+        testWidgets(
+          'outcome and repeat policies fit $width dark=$dark concept=$concept',
+          (tester) async {
+            tester.view.physicalSize = Size(width, 950);
+            tester.view.devicePixelRatio = 1;
+            addTearDown(tester.view.resetPhysicalSize);
+            addTearDown(tester.view.resetDevicePixelRatio);
+            final score = TextEditingController(text: '75');
+            addTearDown(score.dispose);
+            var carry = 'reassess';
+            await pumpDefensysWidget(
+              tester,
+              DefensysShadcnScope(
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: RepaintBoundary(
+                      key: const ValueKey('outcome-settings-preview'),
+                      child: StatefulBuilder(
+                        builder: (_, update) => StageOutcomeSettings(
+                          scoreController: score,
+                          scoreCarryover: carry,
+                          conceptSelection: concept,
+                          onChanged: () => update(() {}),
+                          onCarryoverChanged: (v) => update(() => carry = v),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-          theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+              theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+            );
+            expect(find.byType(ShadInput), findsOneWidget);
+            expect(find.text('Defense rules'), findsOneWidget);
+            if (concept) {
+              expect(
+                find.text('Adviser and peer scores on re-defense'),
+                findsNothing,
+              );
+            } else {
+              expect(
+                tester
+                    .getTopLeft(
+                      find.text('Adviser and peer scores on re-defense'),
+                    )
+                    .dy,
+                greaterThan(
+                  tester.getTopLeft(find.text('Panel qualifying score')).dy,
+                ),
+              );
+            }
+            await tester.enterText(
+              find.byKey(const ValueKey('minimum-qualifying-score')),
+              '80',
+            );
+            await tester.pumpAndSettle();
+            expect(
+              find.text(
+                concept
+                    ? 'Concepts need 80% to qualify for panel selection.'
+                    : 'Below 80% requires re-defense.',
+              ),
+              findsOneWidget,
+            );
+            if (!concept) {
+              await tester.ensureVisible(find.text('Keep previous scores'));
+              await tester.tap(find.text('Keep previous scores'));
+              await tester.pumpAndSettle();
+              expect(carry, 'retain');
+            } else {
+              expect(find.text('Keep previous scores'), findsNothing);
+            }
+            expect(score.text, '80');
+            expect(tester.takeException(), isNull);
+            await capturePreview(
+              tester,
+              find.byKey(const ValueKey('outcome-settings-preview')),
+              'phase3-outcome-${width.toInt()}-${dark ? 'dark' : 'light'}-$concept',
+            );
+          },
         );
-        expect(find.byType(ShadInput), findsOneWidget);
-        expect(find.text('Defense rules'), findsOneWidget);
-        expect(
-          tester
-              .getTopLeft(find.text('Adviser and peer scores on re-defense'))
-              .dy,
-          greaterThan(
-            tester.getTopLeft(find.text('Panel qualifying score')).dy,
-          ),
-        );
-        await tester.enterText(
-          find.byKey(const ValueKey('minimum-qualifying-score')),
-          '80',
-        );
-        await tester.pumpAndSettle();
-        expect(
-          find.text('Concepts need 80% to qualify for panel selection.'),
-          findsOneWidget,
-        );
-        await tester.ensureVisible(find.text('Keep previous scores'));
-        await tester.tap(find.text('Keep previous scores'));
-        await tester.pumpAndSettle();
-        expect(carry, 'retain');
-        expect(score.text, '80');
-        expect(tester.takeException(), isNull);
-        await capturePreview(
-          tester,
-          find.byKey(const ValueKey('outcome-settings-preview')),
-          'phase3-outcome-${width.toInt()}-${dark ? 'dark' : 'light'}',
-        );
-      });
+      }
     }
   }
 }

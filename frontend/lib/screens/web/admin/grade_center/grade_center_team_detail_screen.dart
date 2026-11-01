@@ -708,7 +708,9 @@ class _GradeCenterTeamDetailScreenState
                       ),
                       const SizedBox(height: 1),
                       Text(
-                        isPit
+                        peerWeight == 0 && adviserWeight == 0
+                            ? 'Official Stage Grade Matrix · Panelist Scores (${panelWeight.toStringAsFixed(0)}%)'
+                            : isPit
                             ? 'Official Stage Grade Matrix · Panelist Scores (${panelWeight.toStringAsFixed(0)}%) + Peer Rating (${peerWeight.toStringAsFixed(0)}%)'
                             : 'Official Stage Grade Matrix · Panelist Scores (${panelWeight.toStringAsFixed(0)}%) + Adviser Rating (${adviserWeight.toStringAsFixed(0)}%) + Peer Rating (${peerWeight.toStringAsFixed(0)}%)',
                         style: TextStyle(
@@ -728,7 +730,7 @@ class _GradeCenterTeamDetailScreenState
           LayoutBuilder(
             builder: (context, constraints) {
               final totalCols =
-                  6 + panelists.length + (!isPit && adviserWeight > 0 ? 2 : 0);
+                  4 + panelists.length + (!isPit && adviserWeight > 0 ? 2 : 0) + (peerWeight > 0 ? 2 : 0);
               final dynamicSpacing = ((constraints.maxWidth - 550) / totalCols)
                   .clamp(16.0, 42.0);
 
@@ -904,6 +906,7 @@ class _GradeCenterTeamDetailScreenState
                           ),
                         ],
                         // 7. Peer Rating & 20% (Sky Blue)
+                        if (peerWeight > 0) ...[
                         DataColumn(
                           label: Text(
                             'Peer Rating',
@@ -946,6 +949,7 @@ class _GradeCenterTeamDetailScreenState
                           ),
                         ),
                         // 8. TOTAL
+                        ],
                         DataColumn(
                           label: Container(
                             padding: const EdgeInsets.symmetric(
@@ -1222,6 +1226,7 @@ class _GradeCenterTeamDetailScreenState
                               ),
                             ],
                             // 7. Peer Rating & 20% (Sky Blue Pill)
+                            if (peerWeight > 0) ...[
                             DataCell(
                               s.peerScore != null
                                   ? Text(
@@ -1283,6 +1288,7 @@ class _GradeCenterTeamDetailScreenState
                                     ),
                             ),
                             // 8. TOTAL
+                            ],
                             DataCell(
                               s.finalGrade != null
                                   ? Container(
@@ -1388,6 +1394,7 @@ class _GradeCenterTeamDetailScreenState
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 1024;
         final leftPane = _buildStudentRosterPane(
+          peerApplicable: peerWeight > 0,
           students: students,
           selectedStudentId: _selectedStudentId,
           onSelectStudent: (sid) => setState(() => _selectedStudentId = sid),
@@ -1430,6 +1437,7 @@ class _GradeCenterTeamDetailScreenState
   // LEFT PANE: STUDENT ROSTER MASTER LIST
   // ==========================================
   Widget _buildStudentRosterPane({
+    required bool peerApplicable,
     required List<_StudentDetailData> students,
     required int? selectedStudentId,
     required ValueChanged<int?> onSelectStudent,
@@ -1748,6 +1756,7 @@ class _GradeCenterTeamDetailScreenState
                                 isDark: isDark,
                               ),
                             ],
+                            if (peerApplicable) ...[
                             const SizedBox(width: 6),
                             _miniFormulaTag(
                               'Peer',
@@ -1755,6 +1764,7 @@ class _GradeCenterTeamDetailScreenState
                               const Color(0xFF0284C7),
                               isDark: isDark,
                             ),
+                            ],
                             const Spacer(),
                             Icon(
                               Icons.arrow_forward_ios_rounded,
@@ -2053,6 +2063,7 @@ class _GradeCenterTeamDetailScreenState
                 ],
 
                 // 3. PEER EVALUATION SECTION (Full Criteria + All Teammate Ratings)
+                if (peerWeight > 0) ...[
                 const SizedBox(height: 20),
                 _buildEvaluatorSectionCard(
                   title: 'Peer Evaluation',
@@ -2078,6 +2089,7 @@ class _GradeCenterTeamDetailScreenState
                     isDark: isDark,
                   ),
                 ),
+                ],
               ],
             ),
           ),

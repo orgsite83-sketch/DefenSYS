@@ -134,6 +134,8 @@ class ConfiguredSharedConceptTests(APITestCase):
 
     def test_shared_expansion_keeps_rows_and_module_file_versions(self):
         current = concepts.get_round(self.team, self.event)
+        concepts.save_titles(self.team, self.event,
+            [{'key': c['key'], 'title': f"Module {c['key']}"} for c in current.concepts], actor=self.first)
         submission = upsert_submission(self.team, self.event.label, 'CONCEPTS', 'module.pdf', '10 B', self.pm,
             file=SimpleUploadedFile('module.pdf', b'%PDF-1.4 retained module'), slot_key='c1:paper')
         original_file = submission.files.get(is_current=True)

@@ -151,7 +151,7 @@ class DefenseSchedulerApiTests(APITestCase):
         payload.update(overrides)
         return payload
 
-    def create_ready_team(self, name='Team MirrorSync', username='2024-0002'):
+    def create_ready_team(self, name='Team MirrorSync', username='2024-0002', adviser=None):
         student = User.objects.create_user(
             username=username,
             password='pass12345',
@@ -164,12 +164,12 @@ class DefenseSchedulerApiTests(APITestCase):
             year_level='3rd Year',
             semester=self.semester,
             leader=student,
-            adviser=self.adviser,
+            adviser=adviser or self.adviser,
             ready_for_stage=self.stage.label,
         )
         TeamMembership.objects.create(team=team, student=student, is_leader=True, order=0)
         self._complete_prior_stages(team)
-        mark_stage_ready(team, self.stage, user=self.adviser)
+        mark_stage_ready(team, self.stage, user=adviser or self.adviser)
         return team
 
     def _complete_prior_stages(self, team):

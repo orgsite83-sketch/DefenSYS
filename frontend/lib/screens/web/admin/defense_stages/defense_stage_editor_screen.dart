@@ -72,6 +72,7 @@ class _DefenseStageEditorScreenState
   Map<String, dynamic> _weeklyTemplate = weeklyTemplateDraft(null);
   Map<String, dynamic> _conceptConfig = {};
   final _qualifyingScore = TextEditingController();
+  final _slotDuration = TextEditingController();
   String _scoreCarryover = 'reassess';
   final _panel = TextEditingController(text: '50');
   final _adviser = TextEditingController(text: '30');
@@ -146,6 +147,7 @@ class _DefenseStageEditorScreenState
       'rubric_assignment_changes': _editedRubricRoles.toList(),
       'rubric_assignment_base': _serverRubricIds,
       'grading_config': {
+        'default_slot_duration_minutes': _slotDuration.text,
         'panel_weight': _panel.text,
         'adviser_weight': _adviser.text,
         'peer_weight': _peer.text,
@@ -324,6 +326,7 @@ class _DefenseStageEditorScreenState
     _minutesName.dispose();
     _qualifyingScore.dispose();
     _panel.dispose();
+    _slotDuration.dispose();
     _adviser.dispose();
     _peer.dispose();
     for (final item in deliverableSetupItems(_deliverables, _sharedDeliverables,)) {
@@ -457,6 +460,7 @@ class _DefenseStageEditorScreenState
   }
 
   void _applyWeights(Map<String, dynamic> grading) {
+    _slotDuration.text = grading['default_slot_duration_minutes']?.toString() ?? '';
     _panel.text = grading['panel_weight']?.toString() ?? '50';
     _adviser.text = grading['adviser_weight']?.toString() ?? '30';
     _peer.text = grading['peer_weight']?.toString() ?? '20';
@@ -494,15 +498,20 @@ class _DefenseStageEditorScreenState
     return int.tryParse(value?.toString() ?? '');
   }
 
-  int get _weightTotal {
-    final p = int.tryParse(_panel.text.trim()) ?? 0;
-    final a = int.tryParse(_adviser.text.trim()) ?? 0;
-    final r = int.tryParse(_peer.text.trim()) ?? 0;
-    return p + a + r;
-  }
+  Map<String, int> get _effectiveWeights => stageEvaluationWeights(
+    conceptSelection: _conceptConfig['enabled'] == true,
+    panel: _panel.text, adviser: _adviser.text, peer: _peer.text,
+  );
+
+  int get _weightTotal => _effectiveWeights.values.fold(0, (sum, value) => sum + value);
 
   Future<void> _save() async {
     if (_isLocked) return;
+    final slotDuration = int.tryParse(_slotDuration.text.trim());
+    if (_slotDuration.text.trim().isNotEmpty && (slotDuration == null || slotDuration < 15 || slotDuration > 240)) {
+      setState(() { _activeTab = 1; _error = 'Default scheduling duration must be from 15 to 240 minutes.'; });
+      return;
+    }
     final weeklyError = weeklySettingsError(_weeklyConfig, _weeklyTemplate, requireTemplate: _isActive);
     if (weeklyError != null) {
       setState(() { _activeTab = 0; _error = weeklyError; });
@@ -610,12 +619,11 @@ class _DefenseStageEditorScreenState
     final weightsOk = stageOk && (_structureLocked || await ref
         .read(defenseStagesProvider.notifier)
         .updateGradingConfig(widget.stageId, _semesterId!, {
-          'panel_weight': int.tryParse(_panel.text.trim()) ?? 0,
-          'adviser_weight': int.tryParse(_adviser.text.trim()) ?? 0,
-          'peer_weight': int.tryParse(_peer.text.trim()) ?? 0,
+          'default_slot_duration_minutes': int.tryParse(_slotDuration.text.trim()),
+          ..._effectiveWeights,
           if (_editedRubricRoles.contains('panel')) 'panel_rubric_id': _panelRubricId,
-          if (_editedRubricRoles.contains('adviser')) 'adviser_rubric_id': _adviserRubricId,
-          if (_editedRubricRoles.contains('peer')) 'peer_rubric_id': _peerRubricId,
+          if (_conceptConfig['enabled'] != true && _editedRubricRoles.contains('adviser')) 'adviser_rubric_id': _adviserRubricId,
+          if (_conceptConfig['enabled'] != true && _editedRubricRoles.contains('peer')) 'peer_rubric_id': _peerRubricId,
         }));
 
     if (!mounted) return;
@@ -801,10 +809,7 @@ class _DefenseStageEditorScreenState
       );
     }
 
-    final panelVal = int.tryParse(_panel.text.trim()) ?? 0;
-    final adviserVal = int.tryParse(_adviser.text.trim()) ?? 0;
-    final peerVal = int.tryParse(_peer.text.trim()) ?? 0;
-    final hasWeightError = (panelVal + adviserVal + peerVal) != 100;
+    final hasWeightError = _weightTotal != 100;
     final preDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables,).where((d) => d['deliverable_type'] == 'pre').toList();
     final postDeliverables = deliverableSetupItems(_deliverables, _sharedDeliverables,).where((d) => d['deliverable_type'] == 'post').toList();
 
@@ -1028,6 +1033,7 @@ class _DefenseStageEditorScreenState
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               GradingSetupSection(
+                                panelOnly: _conceptConfig['enabled'] == true,
                                 enabled: !_saving && !_structureLocked,
                                 canManageRubrics: !_saving && !_savingDraft,
                                 onManageRubrics: _openRubrics,
@@ -1064,6 +1070,15 @@ class _DefenseStageEditorScreenState
                                 enabled: !_saving && !_structureLocked,
                                 onChanged: () { setState(() {}); _markDirty(); },
                                 onCarryoverChanged: (v) { setState(() => _scoreCarryover = v); _markDirty(); },),
+                              const SizedBox(height: 20),
+                              DefensysShadcnScope(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                const Text('Default scheduling minutes per team (optional)'),
+                                const SizedBox(height: 8),
+                                ShadInput(controller: _slotDuration, enabled: !_saving && !_structureLocked,
+                                  keyboardType: TextInputType.number, placeholder: const Text('15–240 minutes; leave empty to require entry'),
+                                  style: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter),
+                                  onChanged: (_) => _markDirty()),
+                              ])),
                             ],
                           ),
 

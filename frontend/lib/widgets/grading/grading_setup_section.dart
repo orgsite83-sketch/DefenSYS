@@ -36,23 +36,31 @@ class GradingSetupSection extends StatelessWidget {
     required this.onManageRubrics,
     this.enabled = true,
     this.canManageRubrics = true,
+    this.panelOnly = false,
   });
   final List<GradingRoleSetup> roles;
   final String resetLabel;
   final VoidCallback onReset, onManageRubrics;
-  final bool enabled, canManageRubrics;
+  final bool enabled, canManageRubrics, panelOnly;
 
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(
     child: AnimatedBuilder(
       animation: Listenable.merge(roles.map((role) => role.weightController)),
       builder: (context, _) {
+        final roles = panelOnly
+            ? this.roles.where((role) => role.role == 'panel').toList()
+            : this.roles;
         final muted = DefensysTokens.textSecondaryOf(context);
         final noRubrics = roles.every(
           (role) => role.rubrics.isEmpty && role.rubricId == null,
         );
         final values = roles
-            .map((role) => int.tryParse(role.weightController.text.trim()))
+            .map(
+              (role) => panelOnly
+                  ? 100
+                  : int.tryParse(role.weightController.text.trim()),
+            )
             .toList();
         final total = values.fold(0, (sum, value) => sum + (value ?? 0));
         final valid =
@@ -62,7 +70,8 @@ class GradingSetupSection extends StatelessWidget {
             );
         final missingRubric = roles.any(
           (role) =>
-              (int.tryParse(role.weightController.text.trim()) ?? 0) > 0 &&
+              (panelOnly ||
+                  (int.tryParse(role.weightController.text.trim()) ?? 0) > 0) &&
               role.rubricId == null,
         );
         return LayoutBuilder(
@@ -95,6 +104,13 @@ class GradingSetupSection extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
+                if (panelOnly) ...[
+                  Text(
+                    'Panel-only evaluation. Adviser and peer evaluations are not required.',
+                    style: DefensysTokens.caption.copyWith(color: muted),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (!compact) ...[
                   Row(
                     children: [
@@ -130,6 +146,7 @@ class GradingSetupSection extends StatelessWidget {
                       role: role,
                       compact: compact,
                       enabled: enabled,
+                      fixedWeight: panelOnly,
                     ),
                   ),
                 ],
@@ -158,17 +175,18 @@ class GradingSetupSection extends StatelessWidget {
                         ),
                       ),
                     ),
-                    ShadButton.ghost(
-                      size: ShadButtonSize.sm,
-                      enabled: enabled,
-                      onPressed: enabled ? onReset : null,
-                      child: Text(
-                        resetLabel,
-                        style: DefensysTokens.tableCell.copyWith(
-                          color: DefensysTokens.textPrimaryOf(context),
+                    if (!panelOnly)
+                      ShadButton.ghost(
+                        size: ShadButtonSize.sm,
+                        enabled: enabled,
+                        onPressed: enabled ? onReset : null,
+                        child: Text(
+                          resetLabel,
+                          style: DefensysTokens.tableCell.copyWith(
+                            color: DefensysTokens.textPrimaryOf(context),
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 if (noRubrics || missingRubric) ...[
@@ -194,31 +212,40 @@ class _GradingRoleRow extends StatelessWidget {
     required this.role,
     required this.compact,
     required this.enabled,
+    this.fixedWeight = false,
   });
   final GradingRoleSetup role;
-  final bool compact, enabled;
+  final bool compact, enabled, fixedWeight;
 
   @override
   Widget build(BuildContext context) {
     final weight = Semantics(
       label: '${role.label} grade weight',
-      child: ShadInput(
-        key: ValueKey('${role.role}-weight'),
-        controller: role.weightController,
-        style: DefensysTokens.tableCell.copyWith(
-          color: DefensysTokens.textPrimaryOf(context),
-        ),
-        enabled: enabled,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        trailing: Text(
-          '%',
-          style: DefensysTokens.tableCell.copyWith(
-            color: DefensysTokens.textSecondaryOf(context),
-          ),
-        ),
-        onChanged: role.onWeightChanged,
-      ),
+      child: fixedWeight
+          ? Text(
+              '100%',
+              key: const ValueKey('panel-fixed-weight'),
+              style: DefensysTokens.tableCell.copyWith(
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            )
+          : ShadInput(
+              key: ValueKey('${role.role}-weight'),
+              controller: role.weightController,
+              style: DefensysTokens.tableCell.copyWith(
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+              enabled: enabled,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              trailing: Text(
+                '%',
+                style: DefensysTokens.tableCell.copyWith(
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              onChanged: role.onWeightChanged,
+            ),
     );
     final rubric = _RubricSelect(role: role, enabled: enabled);
     final label = Text(

@@ -102,38 +102,40 @@ class StageOutcomeSettings extends StatelessWidget {
                 );
               },
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Divider(
-                height: 1,
-                color: DefensysTokens.borderOf(context),
+            if (!conceptSelection) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Divider(
+                  height: 1,
+                  color: DefensysTokens.borderOf(context),
+                ),
               ),
-            ),
-            Text('Adviser and peer scores on re-defense', style: labelStyle),
-            const SizedBox(height: 12),
-            ShadRadioGroup<String>(
-              key: ValueKey('repeat-scores-$scoreCarryover'),
-              initialValue: scoreCarryover,
-              enabled: enabled,
-              axis: Axis.horizontal,
-              spacing: 24,
-              runSpacing: 12,
-              items: [
-                ShadRadio(
-                  value: 'reassess',
-                  label: Text('Collect new scores', style: controlStyle),
-                ),
-                ShadRadio(
-                  value: 'retain',
-                  label: Text('Keep previous scores', style: controlStyle),
-                ),
-              ],
-              onChanged: (value) {
-                if (value != null && value != scoreCarryover) {
-                  onCarryoverChanged(value);
-                }
-              },
-            ),
+              Text('Adviser and peer scores on re-defense', style: labelStyle),
+              const SizedBox(height: 12),
+              ShadRadioGroup<String>(
+                key: ValueKey('repeat-scores-$scoreCarryover'),
+                initialValue: scoreCarryover,
+                enabled: enabled,
+                axis: Axis.horizontal,
+                spacing: 24,
+                runSpacing: 12,
+                items: [
+                  ShadRadio(
+                    value: 'reassess',
+                    label: Text('Collect new scores', style: controlStyle),
+                  ),
+                  ShadRadio(
+                    value: 'retain',
+                    label: Text('Keep previous scores', style: controlStyle),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null && value != scoreCarryover) {
+                    onCarryoverChanged(value);
+                  }
+                },
+              ),
+            ],
             const SizedBox(height: 8),
             Text('Panelists evaluate again on every attempt.', style: muted),
           ],

@@ -40,9 +40,10 @@ class ConceptProjectReportTests(APITestCase):
 
     def make_team(self, name, students, level=StudentTeam.LEVEL_3_PIT, semester=None):
         students = [User.objects.create_user(username=s, role='student', first_name='Duplicate', last_name='Name') for s in students]
+        year_level = level.split(' PIT')[0].split(' Capstone')[0]
         team = StudentTeam.objects.create(name=name, project_title='Display title is not a decision',
-            level=level, year_level=level.split(' PIT')[0].split(' Capstone')[0], semester=semester or self.source,
-            section='BSIT-3A', leader=students[0], adviser=self.adviser)
+            level=level, year_level=year_level, semester=semester or self.source,
+            section=f'BSIT-{year_level[0]}A', leader=students[0], adviser=self.adviser)
         for index, student in enumerate(students):
             TeamMembership.objects.create(team=team, student=student, is_leader=index == 0)
             StudentAcademicRecord.objects.create(student=student, semester=team.semester, year_level=team.year_level, section=team.section)
@@ -223,9 +224,8 @@ class ConceptProjectReportTests(APITestCase):
         self.source.save()
         self.target.is_active = True
         self.target.save()
-        stage = DefenseStage.objects.order_by('display_order', 'pk').first()
-        stage.concept_config = {'enabled': True, 'required_count': 2}
-        stage.save()
+        DefenseStage.objects.create(label='Concept Proposal', setup_semester=self.target, display_order=1,
+            concept_config={'enabled': True, 'required_count': 2}, is_active=True)
         for membership in TeamMembership.objects.filter(team__in=[self.team, self.other]):
             StudentAcademicRecord.objects.create(student=membership.student, semester=self.target, year_level='3rd Year', section='BSIT-3A')
         rows = []
@@ -260,5 +260,10 @@ class ConceptProjectReportTests(APITestCase):
         self.assertFalse(TeamGrade.all_objects.filter(team__in=new, revisions_cleared_at__isnull=False).exists())
         self.round.refresh_from_db()
         self.assertEqual(self.round.concepts, before)
+        imported_team_ids = set(new.values_list('pk', flat=True))
         again = self.client.post('/api/teams/bulk-import/', {'teams': rows}, format='json')
-        self.assertEqual(again.data['created_count'], 0)
+        # The current import response includes reused rosters in `created`.
+        # Idempotence is the same team identities and membership count.
+        self.assertEqual({row['id'] for row in again.data['created']}, imported_team_ids)
+        self.assertEqual(StudentTeam.objects.filter(semester=self.target).count(), 2)
+        self.assertEqual(TeamMembership.objects.filter(team__semester=self.target).count(), 3)

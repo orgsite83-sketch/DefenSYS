@@ -154,6 +154,8 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     panel_complete = serializers.SerializerMethodField()
     adviser_complete = serializers.SerializerMethodField()
     adviser_required = serializers.SerializerMethodField()
+    peer_required = serializers.SerializerMethodField()
+    panel_only_evaluation = serializers.BooleanField(read_only=True)
     is_officially_complete = serializers.SerializerMethodField()
     grading_ready = serializers.SerializerMethodField()
     missing_components = serializers.SerializerMethodField()
@@ -223,6 +225,8 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'panel_evaluators_required',
             'adviser_complete',
             'adviser_required',
+            'peer_required',
+            'panel_only_evaluation',
             'is_officially_complete',
             'grading_ready',
             'missing_components',
@@ -446,7 +450,7 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     def get_peer_submissions_required(self, obj):
         from .peer_eval import required_peer_submission_count
 
-        return required_peer_submission_count(obj.team)
+        return 0 if obj.panel_only_evaluation else required_peer_submission_count(obj.team)
 
     def get_peer_evaluators_done(self, obj):
         return self._peer_summary(obj)['evaluators_done']
@@ -456,6 +460,8 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def _peer_summary(self, obj):
         from .peer_eval import peer_completion_summary
+        if obj.panel_only_evaluation:
+            return {'evaluators_done': 0, 'evaluators_total': 0}
         if not hasattr(self, '_peer_summary_cache'):
             self._peer_summary_cache = {}
         if obj.pk not in self._peer_summary_cache:
@@ -479,6 +485,9 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def get_adviser_required(self, obj):
         return self._grading_readiness(obj)['adviser_required']
+
+    def get_peer_required(self, obj):
+        return self._grading_readiness(obj)['peer_required']
 
     def get_is_officially_complete(self, obj):
         from .services import group_settings_for_grade
@@ -528,6 +537,11 @@ class TeamGradeUpdateSerializer(serializers.Serializer):
 
         # Block if editing disabled grading components
         grade = self.context['grade']
+        if grade.panel_only_evaluation:
+            errors = {field: 'This evaluation is not required for a panel-only concept hearing.'
+                      for field in ('adviser_score', 'peer_score') if field in attrs}
+            if errors:
+                raise serializers.ValidationError(errors)
         if 'adviser_score' in attrs and grade.scope == TeamGrade.SCOPE_CAPSTONE:
             semester = grade.semester
             if not getattr(semester, 'capstone_adviser_grading_enabled', True):

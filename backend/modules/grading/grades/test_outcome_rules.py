@@ -315,8 +315,14 @@ class PerConceptOutcomeTests(APITestCase):
         self.assertTrue(rule['panel_complete'])
         self.assertEqual([r['score'] for r in rule['assessments']], [70, 90, 70])
 
-    def test_peer_evaluation_does_not_wait_for_the_official_concept_selection(self):
+    def test_legacy_peer_evaluation_does_not_wait_for_the_official_concept_selection(self):
         from .availability import peer_grading_unavailable_reason
+        # A captured mixed-role hearing keeps its contract after the new policy.
+        self.capstone_schedule.assessment_policy.pop('evaluation_mode', None)
+        self.capstone_schedule.assessment_policy['weights'] = {'panel_weight': 50, 'adviser_weight': 30, 'peer_weight': 20}
+        self.capstone_schedule.save(update_fields=['assessment_policy'])
+        self.grade.panel_weight, self.grade.adviser_weight, self.grade.peer_weight = 50, 30, 20
+        self.grade.save()
         self.semester.capstone_peer_evaluation_enabled = True
         self.semester.save()
         self.submit([8, 9, 6])

@@ -421,6 +421,15 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             if reason:
                 raise serializers.ValidationError({'adviser_id': reason})
 
+        if adviser_id and (not self.instance or self.instance.adviser_id != adviser_id):
+            from .adviser_assignments import validate_adviser_capacity
+            from django.core.exceptions import ValidationError as ModelValidationError
+            candidate = self.instance or StudentTeam(level=attrs.get('level', ''))
+            try:
+                validate_adviser_capacity(candidate, adviser_id)
+            except ModelValidationError as exc:
+                raise serializers.ValidationError({'adviser_id': exc.message_dict['adviser']})
+
         semester = self._resolve_semester(attrs)
         attrs['semester'] = semester
 
@@ -566,6 +575,12 @@ class StudentTeamWriteSerializer(serializers.Serializer):
     @transaction.atomic
     def create(self, validated_data):
         list(Semester.objects.select_for_update().order_by('pk'))
+        from .adviser_assignments import validate_adviser_capacity
+        from django.core.exceptions import ValidationError as ModelValidationError
+        try:
+            validate_adviser_capacity(StudentTeam(level=validated_data['level']), getattr(validated_data.get('adviser'), 'pk', None))
+        except ModelValidationError as exc:
+            raise serializers.ValidationError({'adviser_id': exc.message_dict['adviser']})
         self._assert_write_scope(validated_data['semester'])
         self._lock_event(validated_data)
         member_ids = validated_data.pop('member_ids')
@@ -626,6 +641,12 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         self._lock_event(validated_data)
         adviser_id = getattr(validated_data.get('adviser'), 'pk', None)
         if instance.adviser_id != adviser_id:
+            from .adviser_assignments import validate_adviser_capacity
+            from django.core.exceptions import ValidationError as ModelValidationError
+            try:
+                validate_adviser_capacity(instance, adviser_id)
+            except ModelValidationError as exc:
+                raise serializers.ValidationError({'adviser_id': exc.message_dict['adviser']})
             reason = adviser_assignment_conflict(instance, adviser_id)
             if reason:
                 raise serializers.ValidationError({'adviser_id': reason})

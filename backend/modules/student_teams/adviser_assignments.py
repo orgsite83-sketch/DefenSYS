@@ -3,6 +3,38 @@ from django.utils import timezone
 from .models import TeamAdviserAssignment
 
 
+MAX_ACTIVE_CAPSTONE_TEAMS = 4
+
+
+def active_adviser_teams(adviser_id, *, exclude_team_id=None):
+    """Count current open projects, never historical roster/grade copies."""
+    from .models import StudentTeam
+    from django.db.models import F, Q
+    teams = StudentTeam.objects.filter(adviser_id=adviser_id, level__icontains='Capstone').exclude(
+        pk=exclude_team_id).filter(Q(semester__is_active=True) | Q(
+            term_participations__project_version=F('project_version'),
+            term_participations__closed_at__isnull=True)).distinct()
+    result = []
+    for team in teams:
+        latest = team.term_participations.filter(project_version=team.project_version).order_by('-pk').first()
+        if team.status == StudentTeam.STATUS_FAILED or (latest and latest.closed_at and latest.outcome in ('completed', 'failed')):
+            continue
+        from grading.grades.models import TeamGrade
+        if TeamGrade.all_objects.filter(team=team, project_version=team.project_version, status='published').exists():
+            from .capstone_lifecycle import project_outcome
+            outcome, _, _ = project_outcome(team)
+            if outcome in ('completed', 'failed'):
+                continue
+        result.append(team)
+    return result
+
+
+def validate_adviser_capacity(team, adviser_id):
+    from django.core.exceptions import ValidationError
+    if adviser_id and team.is_capstone and len(active_adviser_teams(adviser_id, exclude_team_id=team.pk)) >= MAX_ACTIVE_CAPSTONE_TEAMS:
+        raise ValidationError({'adviser': 'An adviser can supervise at most four concurrent active Capstone teams.'})
+
+
 def adviser_user_id(adviser):
     return adviser.id if adviser is not None else None
 

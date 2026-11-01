@@ -24,8 +24,10 @@ class SchedulePlanSavingTests(APITestCase):
     schedule_payload = fixtures.DefenseSchedulerApiTests.schedule_payload
 
     def test_sixteen_team_plan_preserves_sessions_and_all_save_side_effects(self):
+        advisers = [self.adviser] + [fixtures.User.objects.create_user(username=f'plan-adviser-{i}',
+            role='faculty', is_adviser=True) for i in range(1, 4)]
         teams = [self.team] + [self.create_ready_team(
-            name=f'Plan team {i}', username=f'plan-student-{i}') for i in range(1, 16)]
+            name=f'Plan team {i}', username=f'plan-student-{i}', adviser=advisers[i // 4]) for i in range(1, 16)]
         documenter = fixtures.User.objects.create_user(
             username='plan-documenter', role='faculty', is_documenter=True)
         evaluator = ExternalEvaluator.objects.create(

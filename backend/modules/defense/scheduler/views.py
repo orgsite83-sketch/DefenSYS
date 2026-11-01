@@ -360,6 +360,10 @@ class DefenseScheduleGeneratePlanView(APIView):
     permission_classes = [CanManageModule]
 
     def post(self, request):
+        if request.data.get('planning_mode') == 'adviser_auto':
+            from .capstone_planning import preview_plan
+            with read_projection():
+                return Response(preview_plan(request.user, request.data))
         # A preview is read-only, despite using POST for its configuration.
         # Reuse pure domain reads only within this request; confirmation still
         # validates again against fresh data before committing any schedules.
@@ -381,6 +385,13 @@ class DefenseScheduleConfirmPlanView(APIView):
     permission_classes = [CanManageModule]
 
     def post(self, request):
+        if request.data.get('planning_mode') == 'adviser_auto':
+            from .capstone_planning import confirm_plan
+            batch = confirm_plan(request.user, request.data)
+            ids = list(batch.schedules.order_by('pk').values_list('pk', flat=True))
+            invitations = GuestPanelistCode.objects.filter(schedules__pk__in=ids).distinct()
+            return Response({'batch_id': str(batch.pk), 'schedule_ids': ids, 'created_count': len(ids),
+                'created_invitations': [invitation_payload(item) for item in invitations]}, status=201)
         serializer = ConfirmSchedulePlanSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         schedules = serializer.save()
@@ -407,6 +418,18 @@ class DefenseScheduleConfirmPlanView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class CapstoneSchedulingWorkspaceView(APIView):
+    permission_classes = [CanManageModule]
+
+    def get(self, request):
+        from .capstone_planning import workspace
+        return Response(workspace(request.user, request.query_params.get('semester_id')))
+
+    def post(self, request):
+        from .capstone_planning import save_assignments
+        return Response(save_assignments(request.user, request.data))
 
 
 class DefenseScheduleDetailView(APIView):

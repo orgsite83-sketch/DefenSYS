@@ -148,12 +148,12 @@ def _team_rows(grade):
             'panel_avg': _percent(values['panel']), 'panel_weight': f'{grade.panel_weight}%',
             'adviser_rating': _percent(values['adviser']) if grade.is_capstone and grade.adviser_weight else 'N/A',
             'adviser_weight': f'{grade.adviser_weight}%',
-            'peer_rating': _percent(values['peer']), 'peer_weight': f'{grade.peer_weight}%',
+            'peer_rating': 'N/A' if grade.panel_only_evaluation else _percent(values['peer']), 'peer_weight': f'{grade.peer_weight}%',
             'final_grade': _percent(values['final']), 'grade_status': values['status'],
             'outcome': grade_outcome_label(grade),
             'panel_weighted': _percent(values['panel_weighted']),
             'adviser_weighted': _percent(values['adviser_weighted']) if grade.is_capstone and grade.adviser_weight else 'N/A',
-            'peer_weighted': _percent(values['peer_weighted']),
+            'peer_weighted': 'N/A' if grade.panel_only_evaluation else _percent(values['peer_weighted']),
             'total': _percent(values['final']),
             'panel_evaluators': '; '.join(f'Panel {number}: {name or "Guest panelist"}' for number, name in enumerate(panelists.values(), start=1)),
         }
@@ -172,7 +172,8 @@ def _individual_rows(grade, student):
     components = [('Panel Evaluation', 'panel', grade.panel_weight)]
     if grade.is_capstone and grade.adviser_weight > 0:
         components.append(('Adviser Evaluation', 'adviser', grade.adviser_weight))
-    components.append(('Peer Evaluation', 'peer', grade.peer_weight))
+    if not grade.panel_only_evaluation:
+        components.append(('Peer Evaluation', 'peer', grade.peer_weight))
     rows = [{
         **_context(grade), 'component': label, 'weight': f'{weight}%',
         'score': _percent(values[key]), 'remarks': 'Recorded assessment rating',

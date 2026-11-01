@@ -15,6 +15,7 @@ import 'package:defensys/utils/scheduler/defense_scheduler_draft.dart';
 import 'package:defensys/services/app/unsaved_changes_provider.dart';
 
 import 'components/schedule_run_container.dart';
+import 'components/capstone_scheduling_workspace.dart';
 import 'components/scheduler_toolbar.dart';
 import 'components/team_readiness_tracker.dart';
 import 'dialogs/team_deliverables_review_dialog.dart';
@@ -127,7 +128,7 @@ class _DefenseSchedulerScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
       if (!mounted) return;
-      await _checkDraft();
+      if (_scope == 'pit') await _checkDraft();
       if (!mounted) return;
       if (_scope == 'capstone' && _stageId != null) {
         _prefillCapstoneStageRubrics();
@@ -174,7 +175,7 @@ class _DefenseSchedulerScreenState
       return 'PIT scheduling is closed for this term.';
     }
     if (!_canScheduleCurrentScope(state) &&
-        (state.schedulerMode == 'capstone' || _scope == 'capstone')) {
+        (state.schedulerMode == 'capstone' || _scope == 'capstone') && !isAdmin) {
       return 'Scheduling Capstone defenses is strictly reserved for Administrators.';
     }
     return '';
@@ -735,20 +736,26 @@ class _DefenseSchedulerScreenState
                     ),
                   ),
                 ],
-                const SizedBox(height: 26),
-                SchedulerStepProgress(currentStep: currentStep),
-                const SizedBox(height: 12),
+                SizedBox(height: _scope == 'capstone' ? 20 : 26),
+                if (_scope == 'pit') SchedulerStepProgress(currentStep: currentStep),
+                if (_scope == 'pit') const SizedBox(height: 12),
                 if (_scheduleNoticeMessage(state).isNotEmpty) ...[
                   SchedulerNoticeBanner(message: _scheduleNoticeMessage(state)),
                   const SizedBox(height: 12),
                 ],
-                const SizedBox(height: 12),
+                if (_scope == 'pit') const SizedBox(height: 12),
                 if (state.isLoading &&
                     state.schedules.isEmpty &&
                     state.teams.isEmpty) ...[
                   DefensysSkeleton.list(count: 4, rowHeight: 64),
                 ] else ...[
-                  ScheduleRunContainer(
+                  if (_scope == 'capstone')
+                    CapstoneSchedulingWorkspace(
+                      key: ValueKey('capstone-workspace-${state.activeSemester?['id']}'),
+                      initialStageId: _stageId,
+                      onSaved: () => ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
+                    )
+                  else ScheduleRunContainer(
                     key: ValueKey('scheduler-$_scope-$_draftRevision'),
                     state: state,
                     scope: _scope,
@@ -864,7 +871,7 @@ class _DefenseSchedulerScreenState
                     onPrefillCapstoneStageRubrics: _prefillCapstoneStageRubrics,
                     onPrefillPitEventConfig: _prefillPitEventConfig,
                   ),
-                  if (currentStep == 1) ...[
+                  if (_scope == 'pit' && currentStep == 1) ...[
                     const SizedBox(height: 20),
                     TeamReadinessTracker(
                       state: state,

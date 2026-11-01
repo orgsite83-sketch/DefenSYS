@@ -145,9 +145,9 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
                   if (canManage && scope == 'capstone')
                     Tooltip(
                       message:
-                          'Peer evaluation follows this semester’s grading settings.',
+                          settings['peer_enabled'] == false ? 'Peer evaluation is not required for this stage.' : 'Peer evaluation follows this semester’s grading settings.',
                       child: Text(
-                        'Peer evaluation · ${capstoneTermPeerEvalEnabled(state) ? 'Enabled' : 'Disabled'}',
+                        settings['peer_enabled'] == false ? 'Peer evaluation · Not required' : 'Peer evaluation · ${capstoneTermPeerEvalEnabled(state) ? 'Enabled' : 'Disabled'}',
                         style: TextStyle(
                           fontSize: 12,
                           color: DefensysTokens.textSecondaryOf(context),

@@ -462,7 +462,17 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
             stage.weekly_reporting = save_configuration(stage, weekly)
             stage.save(update_fields=['weekly_reporting'])
         self._create_deliverables(stage, deliverables_data)
+        self._sync_concept_grading(stage)
         return stage
+
+    def _sync_concept_grading(self, stage):
+        from grading.grades.evaluation_policy import concept_stage
+        from .grading_config import get_or_create_stage_grading_config, resolve_semester
+        if concept_stage(stage):
+            semester = self.context.get('semester') or stage.setup_semester or resolve_semester()
+            config = get_or_create_stage_grading_config(stage, semester)
+            if config:
+                config.save(update_fields=['panel_weight', 'adviser_weight', 'peer_weight', 'updated_at'])
 
     def validate(self, attrs):
         from defense.document_policy import validate_concept_config, with_concept_papers
@@ -591,6 +601,8 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         if 'shared_deliverables' in validated_data:
             sync_shared_requirements(instance, validated_data['shared_deliverables'] or [])
         stage = super().update(instance, validated_data)
+        if 'concept_config' in validated_data:
+            self._sync_concept_grading(stage)
         if deliverables_data is not None:
             instance.deliverables.exclude(pk__in=keep).delete()
             for target, item in paired:
@@ -657,6 +669,7 @@ class StageGradingConfigSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'semester_id',
+            'default_slot_duration_minutes',
             'panel_weight',
             'adviser_weight',
             'peer_weight',
@@ -690,6 +703,7 @@ class StageGradingConfigSerializer(serializers.ModelSerializer):
 
 
 class StageGradingConfigWriteSerializer(serializers.Serializer):
+    default_slot_duration_minutes = serializers.IntegerField(min_value=15, max_value=240, required=False, allow_null=True)
     panel_weight = serializers.IntegerField(min_value=0, max_value=100, required=False)
     adviser_weight = serializers.IntegerField(min_value=0, max_value=100, required=False)
     peer_weight = serializers.IntegerField(min_value=0, max_value=100, required=False)
@@ -745,6 +759,14 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         config = self.context['config']
+        from grading.grades.evaluation_policy import concept_stage, PANEL_ONLY_WEIGHTS
+        if concept_stage(config.defense_stage):
+            if any(field in attrs and attrs[field] != value for field, value in PANEL_ONLY_WEIGHTS.items()):
+                raise serializers.ValidationError({'weights': 'Concept selection uses Panel 100%, Adviser 0%, Peer 0%.'})
+            for role in ('adviser', 'peer'):
+                if attrs.get(f'{role}_rubric_id') is not None:
+                    raise serializers.ValidationError({f'{role}_rubric_id': 'This evaluation is not required for concept selection.'})
+            attrs.update(PANEL_ONLY_WEIGHTS)
         panel_weight = attrs.get('panel_weight', config.panel_weight)
         adviser_weight = attrs.get('adviser_weight', config.adviser_weight)
         peer_weight = attrs.get('peer_weight', config.peer_weight)
@@ -784,7 +806,7 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
         config = self.context['config']
         old_rubrics = [config.panel_rubric, config.adviser_rubric, config.peer_rubric]
         update_fields = []
-        for field in ['panel_weight', 'adviser_weight', 'peer_weight']:
+        for field in ['panel_weight', 'adviser_weight', 'peer_weight', 'default_slot_duration_minutes']:
             if field in self.validated_data:
                 setattr(config, field, self.validated_data[field])
                 update_fields.append(field)

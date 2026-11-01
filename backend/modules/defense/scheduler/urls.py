@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    CapstoneSchedulingWorkspaceView,
     DefenseScheduleConfirmPlanView,
     DefenseScheduleDetailView,
     DefenseScheduleGeneratePlanView,
@@ -19,6 +20,7 @@ from .views import (
 
 
 urlpatterns = [
+    path('capstone-workspace/', CapstoneSchedulingWorkspaceView.as_view(), name='capstone_scheduling_workspace'),
     path('', DefenseScheduleListCreateView.as_view(), name='defense_schedules'),
     path('pit-event-config/', PitEventConfigLookupView.as_view(), name='defense_pit_event_config'),
     path('generate-plan/', DefenseScheduleGeneratePlanView.as_view(), name='defense_schedule_generate_plan'),

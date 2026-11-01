@@ -837,12 +837,12 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         .length;
     // PIT's switch controls new submissions; closing it preserves progress.
     final peerEnabled =
-        isPitRow ||
+        (settings['peer_enabled'] as bool?) ?? (isPitRow ||
         row.peerGradingEnabled ||
-        capstoneTermPeerEvalEnabled(state);
+        capstoneTermPeerEvalEnabled(state));
     final adviserEnabled = isPitRow
         ? false
-        : capstoneTermAdviserGradingEnabled(state);
+        : (settings['adviser_enabled'] as bool?) ?? capstoneTermAdviserGradingEnabled(state);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -892,7 +892,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               ? (hasTeams
                     ? '$adviserCompleteCount/${row.teamCount} done'
                     : 'Required')
-              : 'Disabled',
+              : 'Not required',
           adviserComplete:
               adviserEnabled &&
               hasTeams &&
@@ -901,7 +901,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               ? (hasTeams
                     ? '$peerCompleteCount/${row.teamCount} done'
                     : 'Active')
-              : 'Disabled',
+              : 'Not required',
           peerComplete:
               peerEnabled && hasTeams && peerCompleteCount == row.teamCount,
           showAdviser: !isPitRow,

@@ -21,6 +21,8 @@ class StaleOperation(APIException):
 
 
 class OperationSerializer(serializers.Serializer):
+    assignment_scope = serializers.ChoiceField(choices=['defense_only', 'continuing'], default='defense_only')
+    expected_assignment_revisions = serializers.DictField(child=serializers.IntegerField(min_value=1), required=False)
     action = serializers.ChoiceField(choices=['preview_delete', 'preview_update', 'delete', 'update'])
     target = serializers.ChoiceField(choices=['schedule', 'session', 'stage', 'selected', 'stage_selected', 'semester', 'management_selected'], default='schedule')
     anchor_id = serializers.IntegerField(min_value=1)
@@ -93,11 +95,15 @@ def deletion_preview(items):
     entries = []
     for schedule in items:
         blockers = deletion_blockers(schedule)
+        from .capstone_planning import current_assignment
+        continuing = current_assignment(schedule.team) if schedule.scope == 'capstone' else None
         minutes = getattr(schedule, 'minutes', None)
         submitted = schedule.panelist_grade_submissions.filter(is_void=False)
         guest_ids = set(submitted.exclude(guest_code_id=None).values_list('guest_code_id', flat=True))
         panels = list(schedule.panel_assignments.select_related('panelist').order_by('order', 'pk'))
-        entries.append({'id': schedule.pk, 'team_name': schedule.team.name, 'date': str(schedule.scheduled_date),
+        entries.append({'id': schedule.pk, 'team_id': schedule.team_id,
+                        'continuing_assignment_revision': continuing.revision if continuing else None,
+                        'team_name': schedule.team.name, 'date': str(schedule.scheduled_date),
                         'start_time': str(schedule.start_time), 'status': schedule.status,
                         'room': schedule.room, 'operation_state': schedule.operation_state, 'session_id': str(schedule.session_id),
                         'scope': schedule.scope, 'semester_id': schedule.semester_id,
@@ -428,12 +434,49 @@ def execute_operation(actor, data, request=None):
         if timetable_changed and schedule.panelist_grade_submissions.exists():
             raise ValidationError('This defense has recorded evaluations. Pause/resume it without rewriting its original timetable.')
     _validate_conflicts(items, panel_map, external_map)
+    continuing_edits = {}
+    if data.get('assignment_scope') == 'continuing':
+        from .capstone_planning import current_assignment, roster_payload, validate_roster
+        if not (actor.role == 'admin' or actor.is_superuser) or any(s.scope != 'capstone' for s in items):
+            raise PermissionDenied('Continuing assignments are managed by Capstone administrators.')
+        for schedule in items:
+            assignment = current_assignment(schedule.team)
+            if not assignment or assignment.project_version != schedule.project_version:
+                raise ValidationError('Set up this ongoing project’s continuing people before changing future stages.')
+            if data.get('expected_assignment_revisions', {}).get(str(schedule.team_id)) != assignment.revision:
+                raise StaleOperation('The continuing assignment changed. Refresh before applying a permanent replacement.')
+            before = roster_payload(assignment)
+            candidate = {**before}
+            # Apply only explicit intent to the continuing baseline. A temporary
+            # guest/member on the current defense must not leak into it.
+            if panel_intent:
+                candidate['panelist_ids'], candidate['chair_panelist_id'] = apply_intent(
+                    before['panelist_ids'], before['chair_panelist_id'], panel_intent)
+            if external_intent:
+                candidate['external_evaluator_ids'], _ = apply_intent(before['external_evaluator_ids'], None, external_intent)
+            for field in ('panelist_ids', 'chair_panelist_id', 'external_evaluator_ids', 'documenter_id'):
+                if field in changes:
+                    candidate[field] = changes[field]
+            candidate, _, _, _ = validate_roster(schedule.team, candidate, actor)
+            delta = {field: candidate[field] for field in ('chair_panelist_id', 'documenter_id') if candidate[field] != before[field]}
+            for field in ('panelist_ids', 'external_evaluator_ids'):
+                delta['add_' + field] = [pk for pk in candidate[field] if pk not in before[field]]
+                delta['remove_' + field] = [pk for pk in before[field] if pk not in candidate[field]]
+            continuing_edits[schedule.team_id] = {'before': before, 'after': candidate, 'delta': delta,
+                'revision': assignment.revision, 'stage_id': schedule.defense_stage_id}
     review = {'entries': [{'id': s.pk, 'team_name': s.team.name, 'changes': diffs[s.pk],
         'will_change': bool(diffs[s.pk])} for s in items],
         'updated': sum(bool(diffs[s.pk]) for s in items),
-        'unchanged': sum(not diffs[s.pk] for s in items)}
+        'unchanged': sum(not diffs[s.pk] for s in items),
+        'continuing_assignments': [{'team_id': pk, **edit} for pk, edit in continuing_edits.items()]}
     if data['action'] == 'preview_update':
         return review
+    if continuing_edits:
+        from .capstone_planning import save_assignments
+        for team_id, edit in continuing_edits.items():
+            if edit['before'] != edit['after']:
+                save_assignments(actor, {'team_ids': [team_id], 'defense_stage_id': edit['stage_id'],
+                    'expected_revisions': {str(team_id): edit['revision']}, 'changes': edit['delta'], 'reason': data['reason']})
     changed_items = [s for s in items if diffs[s.pk]]
     if not changed_items:
         return review

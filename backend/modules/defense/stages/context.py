@@ -32,7 +32,8 @@ def setup_stage_ids(semester):
         | Q(adviser_rubric__isnull=False) | Q(peer_rubric__isnull=False)
         | ~Q(panel_weight=DEFAULT_PANEL_WEIGHT)
         | ~Q(adviser_weight=DEFAULT_ADVISER_WEIGHT)
-        | ~Q(peer_weight=DEFAULT_PEER_WEIGHT) | Q(peer_grading_enabled=True))
+        | ~Q(peer_weight=DEFAULT_PEER_WEIGHT) | Q(peer_grading_enabled=True)
+        | Q(default_slot_duration_minutes__isnull=False))
     include(configured.values_list('defense_stage_id', 'semester_id'))
     include(TeamGrade.all_objects.filter(scope='capstone').filter(
         Q(status='published') | ~Q(verdict='') | Q(schedule__isnull=False)

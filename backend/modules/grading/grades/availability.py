@@ -45,6 +45,8 @@ def _grade_unavailable_reason(grade):
 
 
 def peer_grading_unavailable_reason(grade):
+    if grade is not None and grade.panel_only_evaluation:
+        return 'Peer evaluation is not required for this concept-selection stage.'
     reason = _grade_unavailable_reason(grade)
     if reason:
         return reason
@@ -103,6 +105,8 @@ def _peer_panel_unavailable_reason(grade):
 
 
 def adviser_grading_unavailable_reason(grade):
+    if grade is not None and grade.panel_only_evaluation:
+        return 'Adviser grading is not required for this concept-selection stage.'
     reason = _grade_unavailable_reason(grade)
     if reason:
         return reason

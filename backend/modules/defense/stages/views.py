@@ -41,6 +41,8 @@ def normalize_stage_orders(semester=None):
     from .context import stages_for_semester
     stages = list(stages_for_semester(semester))
     with transaction.atomic():
+        from defense.scheduler.capstone_planning import lock_calendar_resources
+        lock_calendar_resources()
         for index, stage in enumerate(stages, start=1):
             if stage.display_order != index:
                 DefenseStage.objects.filter(pk=stage.pk).update(display_order=index)
@@ -176,6 +178,8 @@ class DefenseStageListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         
         with transaction.atomic():
+            from defense.scheduler.capstone_planning import lock_calendar_resources
+            lock_calendar_resources()
             stage = serializer.save()
             # If a specific display_order was requested, place it and re-normalize
             requested_order = serializer.validated_data.get('display_order')
@@ -275,6 +279,8 @@ class DefenseStageDetailView(APIView):
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
+            from defense.scheduler.capstone_planning import lock_calendar_resources
+            lock_calendar_resources()
             old_order = stage.display_order
             stage = serializer.save()
             new_order = serializer.validated_data.get('display_order')
@@ -335,6 +341,8 @@ class DefenseStageDetailView(APIView):
             )
         try:
             with transaction.atomic():
+                from defense.scheduler.capstone_planning import lock_calendar_resources
+                lock_calendar_resources()
                 stage.delete()
                 normalize_stage_orders()
         except ProtectedError:
@@ -391,6 +399,8 @@ class DefenseStageReorderView(APIView):
 
         with transaction.atomic():
             # Update provided stages in given order
+            from defense.scheduler.capstone_planning import lock_calendar_resources
+            lock_calendar_resources()
             assigned_order = 1
             for sid in stage_ids:
                 DefenseStage.objects.filter(pk=sid).update(display_order=assigned_order)
@@ -541,6 +551,8 @@ class StageGradingConfigView(APIView):
 
     @transaction.atomic
     def patch(self, request, stage_id):
+        from defense.scheduler.capstone_planning import lock_calendar_resources
+        lock_calendar_resources()
         stage = get_object_or_404(DefenseStage, pk=stage_id)
         semester = resolve_semester(request.query_params.get('semester_id'))
         if semester is None:

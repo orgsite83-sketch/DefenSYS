@@ -55,6 +55,7 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
       : {
           for (final key in ['panel_score', 'adviser_score', 'peer_score'])
             if (_grade[key] != null &&
+                (_grade['panel_only_evaluation'] != true || key == 'panel_score') &&
                 (key != 'adviser_score' ||
                     _grade['adviser_grading_enabled'] == true) &&
                 (key != 'panel_score' || _maps(_details?['scores']).isEmpty))

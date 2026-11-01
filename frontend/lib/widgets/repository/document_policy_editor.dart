@@ -434,7 +434,7 @@ class ConceptSettings extends StatelessWidget {
                   description: Text(
                     isPit
                         ? 'Automatically adds required concept papers. Every team submits the configured count; a supplied project/module fills the first concept. Instructor review and panel approval remain required.'
-                        : 'Automatically adds required concept papers. Every team submits the configured count; a supplied project/module fills the first concept. Adviser review and panel approval remain required.',
+                        : 'Automatically adds required concept papers. Every team submits the configured count; a supplied project/module fills the first concept. Panel evaluation determines the approved concept. Adviser and peer evaluations are not required. Existing title review, document review, and endorsement remain required.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: secondaryColor,
                       height: 1.45,

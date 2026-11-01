@@ -63,7 +63,8 @@ def snapshot(grade):
     values['stage_label'] = grade.stage_label
     values['scope'] = grade.scope
     values['assessment_policy'] = policy_for(grade.schedule)
-    values['adviser_grading_enabled'] = grade.scope == 'capstone' and grade.semester.capstone_adviser_grading_enabled
+    values['adviser_grading_enabled'] = grade.scope == 'capstone' and not grade.panel_only_evaluation and grade.semester.capstone_adviser_grading_enabled
+    values['panel_only_evaluation'] = grade.panel_only_evaluation
     values['individual_grading'] = bool(grade.schedule_id and grade.schedule.rubric and grade.schedule.rubric.target_type in ('individual', 'both'))
     values['attempt_count'] = grade.attempt_count
     values['published_at'] = grade.published_at.isoformat() if grade.published_at else None
@@ -182,6 +183,8 @@ def _perform_change(grade, changes):
         values = changes['aggregate']
         if not isinstance(values, dict) or not values or set(values) - {'panel_score', 'adviser_score', 'peer_score'}:
             raise ValidationError('Choose supported grade components.')
+        if grade.panel_only_evaluation and any(field in values for field in ('adviser_score', 'peer_score')):
+            raise ValidationError('Adviser and peer evaluations are not required for this concept-selection hearing.')
         if 'panel_score' in values and grade.panelist_submissions.exists():
             raise ValidationError('Correct the panelist criterion score instead of overriding its calculated average.')
         if 'adviser_score' in values and (grade.scope == 'pit' or not grade.semester.capstone_adviser_grading_enabled):

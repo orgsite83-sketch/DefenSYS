@@ -12,6 +12,127 @@ import '../helpers/pump_app.dart';
 void main() {
   setUpAll(() => loadPreviewFonts(force: true));
 
+  for (final dark in [false, true]) {
+    for (final width in [390.0, 1100.0]) {
+      testWidgets(
+        'concept evaluation preserves ordinary draft inputs $dark $width',
+        (tester) async {
+          tester.view.physicalSize = Size(width, 900);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          final controllers = [
+            for (final value in ['50', '30', '20'])
+              TextEditingController(text: value),
+          ];
+          final cutoff = TextEditingController(text: '75');
+          addTearDown(() {
+            for (final controller in controllers) {
+              controller.dispose();
+            }
+            cutoff.dispose();
+          });
+          var concept = true;
+          late StateSetter update;
+          await pumpDefensysWidget(
+            tester,
+            StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: RepaintBoundary(
+                      key: const ValueKey('panel-only-preview'),
+                      child: ColoredBox(
+                        color: dark
+                            ? DefensysTokens.mistSurface
+                            : DefensysTokens.surface,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            GradingSetupSection(
+                              panelOnly: concept,
+                              roles: [
+                                for (final (index, label) in [
+                                  'Panel',
+                                  'Adviser',
+                                  'Peer',
+                                ].indexed)
+                                  GradingRoleSetup(
+                                    role: label.toLowerCase(),
+                                    label: label,
+                                    weightController: controllers[index],
+                                    rubricId: index + 1,
+                                    rubrics: [
+                                      {
+                                        'id': index + 1,
+                                        'name': '$label evaluation rubric',
+                                      },
+                                    ],
+                                    onWeightChanged: (_) {},
+                                    onRubricChanged: (_) {},
+                                  ),
+                              ],
+                              resetLabel: 'Reset to 50 / 30 / 20',
+                              onReset: () {},
+                              onManageRubrics: () {},
+                            ),
+                            const SizedBox(height: 24),
+                            StageOutcomeSettings(
+                              scoreController: cutoff,
+                              scoreCarryover: 'reassess',
+                              conceptSelection: concept,
+                              onCarryoverChanged: (_) {},
+                              onChanged: () {},
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+          );
+          expect(
+            find.byKey(const ValueKey('panel-fixed-weight')),
+            findsOneWidget,
+          );
+          expect(find.byType(ShadSelect<int>), findsOneWidget);
+          expect(find.text('Adviser'), findsNothing);
+          expect(find.text('Peer'), findsNothing);
+          expect(find.text('Reset to 50 / 30 / 20'), findsNothing);
+          expect(
+            find.text('Adviser and peer scores on re-defense'),
+            findsNothing,
+          );
+          expect(find.text('Total 100%'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await capturePreview(
+            tester,
+            find.byKey(const ValueKey('panel-only-preview')),
+            'panel-only-concepts/setup-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          );
+          update(() => concept = false);
+          await tester.pumpAndSettle();
+          expect(find.byType(ShadSelect<int>), findsNWidgets(3));
+          expect(controllers.map((controller) => controller.text), [
+            '50',
+            '30',
+            '20',
+          ]);
+          expect(
+            find.text('Adviser and peer scores on re-defense'),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   testWidgets('rubrics can be cleared and refreshed without stale selections', (
     tester,
   ) async {

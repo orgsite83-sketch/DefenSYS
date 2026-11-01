@@ -52,7 +52,10 @@ class SessionSchedulingTests(APITestCase):
         self.assertFalse(DefenseSchedule.objects.filter(team=second).exists())
 
     def test_one_day_session_skips_lunch_and_retains_its_single_session_id(self):
-        teams = [self.team] + [self.create_ready_team(name=f'Team {i}', username=f'day-student-{i}') for i in range(7)]
+        from django.contrib.auth import get_user_model
+        other_adviser = get_user_model().objects.create_user(username='day-second-adviser', role='faculty', is_adviser=True)
+        teams = [self.team] + [self.create_ready_team(name=f'Team {i}', username=f'day-student-{i}',
+            adviser=self.adviser if i < 3 else other_adviser) for i in range(7)]
         sessions = [self.session(team_ids=[t.pk for t in teams], time_blocks=[
             {'start_time': '08:00', 'end_time': '12:00'},
             {'start_time': '13:00', 'end_time': '17:00'},

@@ -2,6 +2,21 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Concept selection owns the effective composition; hidden draft inputs stay
+/// available when an administrator switches back to ordinary grading.
+Map<String, int> stageEvaluationWeights({
+  required bool conceptSelection,
+  required String panel,
+  required String adviser,
+  required String peer,
+}) => conceptSelection
+    ? {'panel_weight': 100, 'adviser_weight': 0, 'peer_weight': 0}
+    : {
+        'panel_weight': int.tryParse(panel.trim()) ?? 0,
+        'adviser_weight': int.tryParse(adviser.trim()) ?? 0,
+        'peer_weight': int.tryParse(peer.trim()) ?? 0,
+      };
+
 /// Work in progress is separate from a saved, unpublished defense stage.
 class StageSetupDraft {
   StageSetupDraft({required Map<String, dynamic> fields, required this.tab})

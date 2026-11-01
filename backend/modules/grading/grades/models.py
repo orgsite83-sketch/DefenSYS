@@ -218,7 +218,14 @@ class TeamGrade(models.Model):
         return all(getattr(self, field) is not None for field in self.required_score_fields)
 
     @property
+    def panel_only_evaluation(self):
+        from .evaluation_policy import panel_only_grade
+        return panel_only_grade(self)
+
+    @property
     def required_score_fields(self):
+        if self.panel_only_evaluation:
+            return ['panel_score']
         fields = ['panel_score', 'peer_score']
         if self.is_capstone and self.adviser_weight > 0:
             fields.append('adviser_score')
@@ -281,12 +288,15 @@ class TeamGrade(models.Model):
         if keep_published and self.status in self.LOCKED_STATUSES and not self.is_complete:
             raise ValidationError({'status': 'A published grade cannot be made incomplete. Reopen it explicitly first.'})
         if self.is_complete:
-            total = (
-                self.panel_score * Decimal(self.panel_weight)
-                + self.peer_score * Decimal(self.peer_weight)
-            )
-            if self.is_capstone and self.adviser_weight > 0:
-                total += self.adviser_score * Decimal(self.adviser_weight)
+            if self.panel_only_evaluation:
+                total = self.panel_score * Decimal('100')
+            else:
+                total = (
+                    self.panel_score * Decimal(self.panel_weight)
+                    + self.peer_score * Decimal(self.peer_weight)
+                )
+                if self.is_capstone and self.adviser_weight > 0:
+                    total += self.adviser_score * Decimal(self.adviser_weight)
             self.final_grade = (total / Decimal('100')).quantize(Decimal('0.01'))
             if self.status not in self.LOCKED_STATUSES:
                 self.status = self.STATUS_PENDING
@@ -298,7 +308,7 @@ class TeamGrade(models.Model):
 
         has_panel = self.panel_score is not None
         has_adviser = (not self.is_capstone or self.adviser_weight == 0 or self.adviser_score is not None)
-        if has_panel and has_adviser and self.peer_score is None:
+        if not self.panel_only_evaluation and has_panel and has_adviser and self.peer_score is None:
             self.status = self.STATUS_AWAITING_PEERS
         else:
             self.status = self.STATUS_PENDING

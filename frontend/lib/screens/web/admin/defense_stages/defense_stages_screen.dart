@@ -1547,10 +1547,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   showSuccessToast(this.context, 'Stage setup draft saved.');
                 }
               }
-              final panelVal = int.tryParse(panelCtrl.text.trim()) ?? 0;
-              final adviserVal = int.tryParse(adviserCtrl.text.trim()) ?? 0;
-              final peerVal = int.tryParse(peerCtrl.text.trim()) ?? 0;
-              final total = panelVal + adviserVal + peerVal;
+              final total = stageEvaluationWeights(
+                conceptSelection: conceptConfig['enabled'] == true,
+                panel: panelCtrl.text, adviser: adviserCtrl.text, peer: peerCtrl.text,
+              ).values.fold(0, (sum, value) => sum + value);
 
               List<Map<String, dynamic>> getRubricOptions(String evaluationType,) {
                 final rubrics = ref.watch(rubricEngineProvider).rubrics;
@@ -1854,6 +1854,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   GradingSetupSection(
+                                    panelOnly: conceptConfig['enabled'] == true,
                                     enabled: !stageIsLocked && !savingDraft,
                                     canManageRubrics: !savingDraft,
                                     onManageRubrics: () => saveAndLeave(openRubrics: true),
@@ -2296,12 +2297,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           newStageId,
           semesterId,
           {
-            'panel_weight': int.tryParse(panelCtrl.text.trim()) ?? 50,
-            'adviser_weight': int.tryParse(adviserCtrl.text.trim()) ?? 30,
-            'peer_weight': int.tryParse(peerCtrl.text.trim()) ?? 20,
+            ...stageEvaluationWeights(
+              conceptSelection: conceptConfig['enabled'] == true,
+              panel: panelCtrl.text, adviser: adviserCtrl.text, peer: peerCtrl.text,
+            ),
             'panel_rubric_id': panelRubricId,
-            'adviser_rubric_id': adviserRubricId,
-            'peer_rubric_id': peerRubricId,
+            if (conceptConfig['enabled'] != true) 'adviser_rubric_id': adviserRubricId,
+            if (conceptConfig['enabled'] != true) 'peer_rubric_id': peerRubricId,
           }
         );
       } else {

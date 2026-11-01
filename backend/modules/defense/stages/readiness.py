@@ -11,12 +11,14 @@ def stage_setup_readiness(stage, config, semester):
     elif config is None:
         issues.append('Configure grade weights and evaluation rubrics.')
     else:
+        from grading.grades.evaluation_policy import concept_stage
+        panel_only = concept_stage(stage)
         if sum((config.panel_weight, config.adviser_weight, config.peer_weight)) != 100:
             issues.append('Grade weights must total 100%.')
         enabled = {
             'panel': True,
-            'adviser': semester.capstone_adviser_grading_enabled,
-            'peer': semester.capstone_peer_evaluation_enabled,
+            'adviser': not panel_only and semester.capstone_adviser_grading_enabled,
+            'peer': not panel_only and semester.capstone_peer_evaluation_enabled,
         }
         for role, is_enabled in enabled.items():
             if not is_enabled or (role != 'panel' and getattr(config, f'{role}_weight') <= 0):

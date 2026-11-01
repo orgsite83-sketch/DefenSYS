@@ -214,8 +214,9 @@ class EvaluationAvailabilityTests(APITestCase):
         adviser = self.submit_adviser()
         self.assertEqual(peer.status_code, 400, peer.data)
         self.assertEqual(adviser.status_code, 400, adviser.data)
-        self.assertIn('active academic term', str(peer.data))
-        self.assertIn('active academic term', str(adviser.data))
+        for response in (peer, adviser):
+            self.assertTrue(any(reason in str(response.data) for reason in
+                ('active academic term', 'term participation is closed')), response.data)
         self.assertEqual(TeamGrade.all_objects.filter(pk=self.grade.pk).values().get(), original)
         self.assertFalse(PeerEvaluationSubmission.objects.filter(team_grade=self.grade).exists())
 

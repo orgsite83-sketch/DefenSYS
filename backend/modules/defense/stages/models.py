@@ -191,6 +191,8 @@ class StageGradingConfig(models.Model):
         related_name='stage_grading_configs',
         on_delete=models.CASCADE,
     )
+    default_slot_duration_minutes = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[DefenseStage.MinValueValidator(15), DefenseStage.MaxValueValidator(240)])
     panel_weight = models.PositiveSmallIntegerField(default=DEFAULT_PANEL_WEIGHT)
     adviser_weight = models.PositiveSmallIntegerField(default=DEFAULT_ADVISER_WEIGHT)
     peer_weight = models.PositiveSmallIntegerField(default=DEFAULT_PEER_WEIGHT)
@@ -242,6 +244,12 @@ class StageGradingConfig(models.Model):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        from grading.grades.evaluation_policy import concept_stage, PANEL_ONLY_WEIGHTS
+        if concept_stage(self.defense_stage):
+            for field, value in PANEL_ONLY_WEIGHTS.items():
+                setattr(self, field, value)
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = set(kwargs['update_fields']) | set(PANEL_ONLY_WEIGHTS)
         self.full_clean()
         super().save(*args, **kwargs)
         from grading.grades.models import TeamGrade
@@ -253,7 +261,7 @@ class StageGradingConfig(models.Model):
             semester=self.semester,
             scope=TeamGrade.SCOPE_CAPSTONE,
             status=TeamGrade.STATUS_PENDING,
-        ).exclude(schedule__assessment_policy__version=1).update(
+        ).filter(Q(schedule__isnull=True) | Q(schedule__assessment_policy={})).update(
             defense_stage=self.defense_stage,
             panel_weight=self.panel_weight,
             adviser_weight=self.adviser_weight,

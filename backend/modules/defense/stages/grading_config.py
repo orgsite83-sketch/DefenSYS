@@ -28,7 +28,10 @@ def resolve_semester(semester_id=None):
 def get_or_create_stage_grading_config(stage, semester, *, defaults=None):
     if stage is None or semester is None:
         return None
-    create_defaults = defaults or default_capstone_weights()
+    from grading.grades.evaluation_policy import concept_stage, PANEL_ONLY_WEIGHTS
+    create_defaults = dict(defaults or default_capstone_weights())
+    if concept_stage(stage):
+        create_defaults.update(PANEL_ONLY_WEIGHTS)
     config, _created = StageGradingConfig.objects.select_related(
         'panel_rubric',
         'adviser_rubric',
@@ -45,8 +48,32 @@ def weights_for_capstone_stage(stage, semester):
     """Return panel/adviser/peer weights for a capstone defense stage."""
     if stage is None or semester is None:
         return default_capstone_weights()
+    from grading.grades.evaluation_policy import concept_stage, PANEL_ONLY_WEIGHTS
+    if concept_stage(stage):
+        return dict(PANEL_ONLY_WEIGHTS)
     config = get_or_create_stage_grading_config(stage, semester)
     return config.as_weights_dict()
+
+
+def project_stage_config(stage, semester, team=None):
+    """Read configured grading/defaults in the project's captured setup context.
+
+    Empty rollover placeholders are not a new setup. No rows are created by
+    this resolver, including when it is used by scheduling previews.
+    """
+    current = StageGradingConfig.objects.filter(defense_stage=stage, semester=semester).first()
+    if current and (any((current.panel_rubric_id, current.adviser_rubric_id, current.peer_rubric_id))
+            or stage.setup_semester_id == semester.pk):
+        return current
+    if team is not None:
+        from student_teams.capstone_lifecycle import requirements_for
+        if stage.pk not in [r['id'] for r in requirements_for(team)]:
+            return None
+    if stage.setup_semester_id and stage.setup_semester_id != semester.pk:
+        source = StageGradingConfig.objects.filter(defense_stage=stage, semester_id=stage.setup_semester_id).first()
+        if source:
+            return source
+    return current
 
 
 def grading_config_payload(config):
@@ -63,6 +90,7 @@ def grading_config_payload(config):
         }
     return {
         'id': config.id,
+        'default_slot_duration_minutes': config.default_slot_duration_minutes,
         'semester_id': config.semester_id,
         'panel_weight': config.panel_weight,
         'adviser_weight': config.adviser_weight,

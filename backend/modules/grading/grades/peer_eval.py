@@ -134,6 +134,10 @@ def peer_completion_summary(grade):
 
 def recalculate_student_grade(sg):
     team_grade = sg.team_grade
+    if team_grade.panel_only_evaluation:
+        sg.final_grade = sg.panel_score.quantize(Decimal('0.01')) if sg.panel_score is not None else None
+        sg.save()
+        return
     has_panel = (team_grade.panel_weight == 0 or sg.panel_score is not None)
     has_peer = (team_grade.peer_weight == 0 or sg.peer_score is not None)
     has_adviser = (team_grade.adviser_weight == 0 or sg.adviser_score is not None)
@@ -184,6 +188,8 @@ def _build_peer_scores_for_complete_grade(grade, memberships):
 
 @transaction.atomic
 def sync_peer_summaries(grade):
+    if grade.panel_only_evaluation:
+        return
     if _has_final_or_overridden_peer_score(grade):
         return
     memberships = list(grade.team.memberships.select_related('student').all())

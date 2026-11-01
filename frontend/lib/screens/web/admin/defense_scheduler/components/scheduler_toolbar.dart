@@ -47,7 +47,11 @@ class SchedulerToolbar extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final semesterLabel =
         state.activeSemester?['display_name']?.toString() ??
-        'No active semester configured';
+        (state.isLoading
+            ? 'Loading academic period…'
+            : state.error != null
+            ? 'Unable to load academic period'
+            : 'No active semester configured');
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,

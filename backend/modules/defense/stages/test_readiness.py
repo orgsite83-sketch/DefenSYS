@@ -19,6 +19,7 @@ class StageSetupReadinessTests(SimpleTestCase):
             qualifying_score=75,
             is_presentation_only=False,
             deliverables=Mock(),
+            weekly_reporting={},
         )
         self.stage.deliverables.exists.return_value = True
         self.semester = SimpleNamespace(
@@ -82,6 +83,14 @@ class StageSetupReadinessTests(SimpleTestCase):
     def test_invalid_weights_do_not_show_ready(self):
         self.config.panel_weight = 60
         self.assertIn('Grade weights must total 100%.', self.readiness()['issues'])
+
+    def test_concept_selection_only_requires_a_panel_rubric(self):
+        self.stage.concept_config = {'enabled': True}
+        self.config.panel_weight, self.config.adviser_weight, self.config.peer_weight = 100, 0, 0
+        self.config.adviser_rubric = self.config.peer_rubric = None
+        result = self.readiness()
+        self.assertTrue(result['ready'], result)
+        self.assertEqual(result['required_rubric_roles'], ['panel'])
 
 
 class StageReadinessSerializerTests(TestCase):

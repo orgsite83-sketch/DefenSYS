@@ -95,6 +95,7 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
       _reason = TextEditingController(),
       _startTime = TextEditingController();
   DateTime? _date;
+  bool _continuing = false;
   bool _documenterChanged = false,
       _busy = true,
       _review = false,
@@ -341,6 +342,11 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
               e['revision'],
       },
       'reason': _reason.text.trim(),
+      if (_continuing && _action == 'edit' && _type == 'capstone') ...{
+        'assignment_scope': 'continuing',
+        'expected_assignment_revisions': {for (final e in _affected)
+          '${e['team_id']}': e['continuing_assignment_revision']},
+      },
       'empty_only': _eligibleOnly,
       if (_action != 'delete') 'changes': changes,
     };
@@ -1141,6 +1147,15 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
         message: 'Choose a scope containing defenses that can be changed.',
       ),
     const SizedBox(height: 16),
+    if (_action == 'edit' && _type == 'capstone' && _affected.isNotEmpty) ...[
+      ShadCheckbox(value: _continuing, enabled: !_busy && _affected.every((e) => e['continuing_assignment_revision'] != null),
+        onChanged: (value) => _change(() => _continuing = value),
+        label: const Text('Apply these people changes to this and future stages')),
+      const SizedBox(height: 8),
+      Text(_continuing ? 'The explicit changes also update each selected project’s continuing assignment.'
+        : 'This defense only. Later stages retain the continuing panel and documenter.'),
+      const SizedBox(height: 16),
+    ],
     if ((_action != 'delete' && _affected.isNotEmpty) ||
         (_action == 'delete' && _eligible > 0))
       WorkflowField(
@@ -1204,6 +1219,11 @@ class _ScheduleManagerDialogState extends ConsumerState<ScheduleManagerDialog> {
         ),
       ),
     const SizedBox(height: 12),
+    if (_continuing && _action == 'edit' && _type == 'capstone') ...[
+      WorkflowNotice(title: 'This and future stages', message:
+        '${_maps(_reviewData?['continuing_assignments']).length} ongoing project assignments will receive these explicit people changes.'),
+      const SizedBox(height: 12),
+    ],
     Text('Reason: ${_reason.text.trim()}'),
     const SizedBox(height: 10),
     const Text(

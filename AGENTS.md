@@ -89,6 +89,13 @@ When debugging or scripting against the Django ORM:
 - **Escape hatch (rare):** set `DEFENSYS_ALLOW_DEV_DB=1` only when you intentionally need to write to the dev database from a script.
 - **Passwords Policy**: Never modify user passwords or credentials in the database unless explicitly requested by the user, or if extremely necessary, confirm with the user beforehand.
 
+## Frontend styling (DefenSYS)
+
+- New or modified interfaces must use the installed Flutter `shadcn_ui` components inside `DefensysShadcnScope`, together with the existing DefenSYS components and `DefensysTokens`.
+- Preserve the established DefenSYS layout, neutral surfaces, maroon actions/accents, spacing, borders, radii, light/dark themes, and typography. Use the shared font token (`DefensysTokens.fontFamilyInter`, currently Inter), including in component text-style overrides.
+- Do not introduce generic pink palettes, pink default selection surfaces, replacement/generic fonts, decorative typefaces, or an independent visual design system.
+- Use Flutter primitives for layout/reordering behavior while keeping visible controls consistent with shadcn and DefenSYS. Preserve responsive layouts, input focus, keyboard access, and readable contrast.
+
 ## Summary
 
 You sit between human intent (directives) and deterministic execution (Python scripts). Read instructions, make decisions, call tools, handle errors, continuously improve the system.

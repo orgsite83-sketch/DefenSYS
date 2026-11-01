@@ -29,6 +29,7 @@ class SchedulerPeoplePicker extends StatefulWidget {
     this.enabled = true,
     this.detailBuilder,
     this.emptyMessage = 'No people available.',
+    this.showClearButton = true,
   });
 
   final List<Map<String, dynamic>> people;
@@ -40,6 +41,7 @@ class SchedulerPeoplePicker extends StatefulWidget {
   final bool enabled;
   final String? Function(Map<String, dynamic>)? detailBuilder;
   final String emptyMessage;
+  final bool showClearButton;
 
   @override
   State<SchedulerPeoplePicker> createState() => _SchedulerPeoplePickerState();
@@ -227,7 +229,7 @@ class _SchedulerPeoplePickerState extends State<SchedulerPeoplePicker> {
                 ),
               ),
             ],
-            if (!widget.multiple && selectedPeople.isNotEmpty)
+            if (!widget.multiple && selectedPeople.isNotEmpty && widget.showClearButton)
               Align(
                 alignment: Alignment.centerRight,
                 child: Tooltip(

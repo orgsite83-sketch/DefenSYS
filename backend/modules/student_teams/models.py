@@ -200,8 +200,20 @@ class StudentTeam(models.Model):
     def save(self, *args, **kwargs):
         if not self.project_title and not self.project_pending:
             self.project_title = self.name
-        self.full_clean()
-        super().save(*args, **kwargs)
+        from django.db import transaction
+        with transaction.atomic():
+            previous = StudentTeam.objects.filter(pk=self.pk).values('adviser_id', 'project_version', 'intake_semester_id', 'level').first() if self.pk else None
+            changed = not previous or any(previous[field] != getattr(self, field) for field in
+                ('adviser_id', 'project_version', 'intake_semester_id', 'level'))
+            if self.is_capstone and self.adviser_id and changed:
+                from defense.scheduler.capstone_planning import lock_calendar_resources
+                from django.contrib.auth import get_user_model
+                from .adviser_assignments import validate_adviser_capacity
+                lock_calendar_resources()
+                get_user_model().objects.select_for_update().get(pk=self.adviser_id)
+                validate_adviser_capacity(self, self.adviser_id)
+            self.full_clean()
+            super().save(*args, **kwargs)
 
     def __str__(self):
         return f'{self.name} ({self.level})'
