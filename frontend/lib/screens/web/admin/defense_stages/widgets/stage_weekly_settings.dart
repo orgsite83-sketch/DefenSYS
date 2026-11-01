@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../services/defense/template_configuration.dart';
 import '../../../../../theme/defensys_tokens.dart';
 import '../../../../../widgets/repository/deliverable_template.dart';
+import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 
 Map<String, dynamic> weeklyTemplateDraft(Map<String, dynamic>? stage) {
   final saved = stage?['weekly_template'];
@@ -104,6 +105,7 @@ class StageWeeklySettings extends StatefulWidget {
     required this.onChanged,
     required this.onTemplateChanged,
     this.semesterLabel,
+    this.compact = false,
   });
 
   final Map<String, dynamic> value;
@@ -112,6 +114,7 @@ class StageWeeklySettings extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>> onChanged;
   final VoidCallback onTemplateChanged;
   final String? semesterLabel;
+  final bool compact;
 
   @override
   State<StageWeeklySettings> createState() => _StageWeeklySettingsState();
@@ -120,6 +123,7 @@ class StageWeeklySettings extends StatefulWidget {
 class _StageWeeklySettingsState extends State<StageWeeklySettings> {
   final _controllers = <String, TextEditingController>{};
   String _reportCountText = '';
+  bool _expanded = false;
 
   int? _number(String key) => int.tryParse('${widget.value[key]}');
   int? get _count => int.tryParse(_reportCountText);
@@ -402,7 +406,16 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
     final time = _displayValue('due_time');
     final weeks = first == last ? 'Week $first' : 'Weeks $first–$last';
 
-    return DefaultTextStyle.merge(
+    void toggle(bool checked) {
+      if (checked) setState(() => _expanded = true);
+      widget.onChanged(_clampRequiredWeeks({
+        'total_weeks': 16, 'due_weekday': 6, 'due_time': '23:59',
+        'required_start': 1, 'required_end': 8,
+        ...value, 'enabled': checked,
+      }));
+    }
+
+    return DefensysShadcnScope(child: DefaultTextStyle.merge(
       style: body,
       child: Container(
         key: const ValueKey('weekly-report-policy'),
@@ -416,6 +429,37 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (widget.compact) ...[
+              Row(children: [
+                Expanded(child: Text('Weekly reports required',
+                  style: DefensysTokens.sectionTitle.copyWith(color: primary))),
+                const SizedBox(width: 12),
+                ShadSwitch(value: active, enabled: enabled, onChanged: toggle,
+                  checkedTrackColor: DefensysTokens.maroon),
+              ]),
+              const SizedBox(height: 6),
+              Text(active && validRange && day != null && day >= 0 && day < 7
+                  ? '$count ${count == 1 ? 'report' : 'reports'} · Every ${weekdays[day]}, $time'
+                  : active ? 'Configure the report schedule and template.'
+                  : 'Require signed weekly reports before adviser endorsement.',
+                style: description),
+              if (active) ...[
+                if (start != null) ...[
+                  const SizedBox(height: 4),
+                  Text('Week 1 starts ${DateFormat('d MMM yyyy').format(start)} · Philippine time', style: description),
+                ],
+                const SizedBox(height: 10),
+                ShadButton.outline(
+                  key: const ValueKey('configure-weekly-reports'),
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  child: Text(_expanded ? 'Hide report settings' : 'Configure reports'),
+                ),
+                if (!_expanded)
+                  if (weeklySettingsError(value, widget.template) case final String error)
+                    Padding(padding: const EdgeInsets.only(top: 8), child: Text(error,
+                      style: description.copyWith(color: Theme.of(context).colorScheme.error))),
+              ],
+            ] else
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               title: Text(
@@ -431,21 +475,9 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
                 ),
               ),
               value: active,
-              onChanged: enabled
-                  ? (checked) => widget.onChanged(
-                      _clampRequiredWeeks({
-                        'total_weeks': 16,
-                        'due_weekday': 6,
-                        'due_time': '23:59',
-                        'required_start': 1,
-                        'required_end': 8,
-                        ...value,
-                        'enabled': checked,
-                      }),
-                    )
-                  : null,
+              onChanged: enabled ? toggle : null,
             ),
-            if (active) ...[
+            if (active && (!widget.compact || _expanded)) ...[
               const SizedBox(height: 16),
               if (widget.semesterLabel != null) ...[
                 Text('For ${widget.semesterLabel}', style: description),
@@ -559,7 +591,7 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

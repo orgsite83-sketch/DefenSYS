@@ -106,7 +106,7 @@ class GradingSetupSection extends StatelessWidget {
                 const SizedBox(height: 12),
                 if (panelOnly) ...[
                   Text(
-                    'Panel-only evaluation. Adviser and peer evaluations are not required.',
+                    'Concept selection is enabled. Grading requires only panel evaluation (100%); adviser and peer evaluations are not required.',
                     style: DefensysTokens.caption.copyWith(color: muted),
                   ),
                   const SizedBox(height: 12),

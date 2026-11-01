@@ -16,15 +16,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../helpers/capture_preview.dart';
+import '../helpers/stage_setup.dart';
 import '../helpers/auth_test_overrides.dart';
 
 class _StagesNotifier extends DefenseStagesNotifier {
-  _StagesNotifier({this.conceptSelection = false});
+  _StagesNotifier({this.conceptSelection = false, this.published = true,
+    this.structureLocked = false, this.gradingConfig = const {}});
   final bool conceptSelection;
+  final bool published;
+  final bool structureLocked;
+  final Map<String, dynamic> gradingConfig;
   Map<String, dynamic>? saved;
   Map<String, dynamic>? gradingSaved;
+  bool gradingSucceeds = true;
+  final saves = <String>[];
 
   @override
   DefenseStagesState build() => const DefenseStagesState();
@@ -38,6 +46,7 @@ class _StagesNotifier extends DefenseStagesNotifier {
 
   @override
   Future<int?> addStage(Map<String, dynamic> payload) async {
+    saves.add('create:${payload['is_active']}');
     saved = Map<String, dynamic>.from(payload);
     return 9;
   }
@@ -49,6 +58,9 @@ class _StagesNotifier extends DefenseStagesNotifier {
   }) async => {
     'stage': {
       'id': stageId,
+      'is_active': published,
+      'structure_locked': structureLocked,
+      if (structureLocked) 'structure_lock_reason': 'Scheduled defenses protect publication.',
       'label': 'Legacy Demo Stage',
       'display_order': 1,
       'is_presentation_only': true,
@@ -64,11 +76,13 @@ class _StagesNotifier extends DefenseStagesNotifier {
         },
       ],
     },
+    'grading_config': gradingConfig,
   };
 
   @override
   Future<bool> updateStage(int stageId, Map<String, dynamic> payload) async {
-    saved = Map<String, dynamic>.from(payload);
+    saves.add('update:${payload['is_active']}');
+    saved = {...?saved, ...payload};
     return true;
   }
 
@@ -79,7 +93,8 @@ class _StagesNotifier extends DefenseStagesNotifier {
     Map<String, dynamic> weights,
   ) async {
     gradingSaved = Map<String, dynamic>.from(weights);
-    return true;
+    saves.add('grading');
+    return gradingSucceeds;
   }
 }
 
@@ -103,7 +118,11 @@ class _PeriodsNotifier extends AcademicPeriodNotifier {
 
 class _RubricsNotifier extends RubricEngineNotifier {
   @override
-  RubricEngineState build() => const RubricEngineState();
+  RubricEngineState build() => RubricEngineState(rubrics: [
+    for (final (index, role) in ['panel', 'adviser', 'peer'].indexed)
+      {'id': index + 1, 'name': 'Test $role rubric', 'scope': 'capstone',
+        'semester_id': 3, 'status': 'published', 'evaluation_type': role},
+  ]);
 
   @override
   Future<void> fetchRubrics({
@@ -170,8 +189,172 @@ class _TemplatePicker extends FilePicker {
   ]);
 }
 
+Future<void> _pumpCreation(WidgetTester tester, _StagesNotifier stages, {bool dark = false}) async {
+  final router = GoRouter(initialLocation: AdminRoutes.defenseStages, routes: [
+    GoRoute(path: AdminRoutes.defenseStages,
+      builder: (_, _) => const Scaffold(body: DefenseStagesScreen())),
+  ]);
+  addTearDown(router.dispose);
+  await tester.pumpWidget(ProviderScope(overrides: [
+    ...authTestOverrides(), defenseStagesProvider.overrideWith(() => stages),
+    academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+    rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+  ], child: RepaintBoundary(key: const ValueKey('stage-layout-preview'),
+    child: MaterialApp.router(theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+      routerConfig: router))));
+  await tester.pumpAndSettle();
+}
+
+Map<String, dynamic> _readyConceptDraft() => {
+  'label': 'Concept Proposal', 'code': 'concept-proposal', 'qualifying_score': 75,
+  'minutes_required': false, 'concept_config': {'enabled': true, 'required_count': 3},
+  'shared_deliverables': [],
+  'grading_config': {'panel_rubric_id': 1},
+  'deliverables': [
+    {'deliverable_id': 'PAPERS', 'label': 'Concept Papers', 'deliverable_type': 'pre',
+      'required': true, 'requirement_timing': 'scheduling', 'file_policy': {'mode': 'concepts'}},
+  ],
+};
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  for (final dark in [false, true]) {
+    for (final size in [const Size(1366, 768), const Size(390, 844)]) {
+      testWidgets('stage workflow choices are visible at ${size.width} in ${dark ? 'dark' : 'light'} mode', (tester) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.runAsync(() => loadPreviewFonts());
+        await _pumpCreation(tester, _StagesNotifier(), dark: dark);
+        await tester.tap(find.text('Add stage'));
+        await tester.pumpAndSettle();
+        final concept = find.byKey(const ValueKey('stage-workflow-concept'));
+        expect(tester.getRect(concept).top, greaterThan(0));
+        expect(tester.getRect(concept).bottom, lessThan(size.height));
+        expect(find.text('Published Stage'), findsNothing);
+        expect(find.text('Publish stage'), findsNothing);
+        await capturePreview(tester, find.byKey(const ValueKey('stage-layout-preview')),
+          'stage-layout-${size.width.toInt()}-${dark ? 'dark' : 'light'}');
+        // The padding around the radio label is also a selection target.
+        await tester.tapAt(tester.getRect(concept).bottomRight - const Offset(10, 10));
+        await tester.pumpAndSettle();
+        expect(find.text('Panel evaluation: 100%'), findsOneWidget);
+        final standard = find.byKey(const ValueKey('stage-workflow-standard'));
+        await tester.ensureVisible(standard);
+        await tester.tapAt(tester.getRect(standard).bottomRight - const Offset(10, 10));
+        await tester.pumpAndSettle();
+        expect(find.text('Panel evaluation: 100%'), findsNothing);
+        final publication = find.byKey(const ValueKey('stage-publication-switch'));
+        await tester.ensureVisible(publication);
+        await tester.pumpAndSettle();
+        expect(find.text('Published stage'), findsOneWidget);
+        expect(find.text('Review stage setup'), findsNothing);
+        expect(tester.getTopLeft(publication).dy,
+          greaterThan(tester.getTopLeft(find.text('Stage description')).dy));
+        await capturePreview(tester, find.byKey(const ValueKey('stage-layout-preview')),
+          'stage-publication-${size.width.toInt()}-${dark ? 'dark' : 'light'}');
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+  for (final gradingSucceeds in [true, false]) {
+    testWidgets('final publish ${gradingSucceeds ? 'follows grading save' : 'stops after grading failure'}', (tester) async {
+      tester.view.physicalSize = const Size(1366, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await StageSetupDraftStore(userId: '1', semesterId: 3).save(
+        StageSetupDraft(fields: _readyConceptDraft(), tab: 0));
+      final stages = _StagesNotifier()..gradingSucceeds = gradingSucceeds;
+      await _pumpCreation(tester, stages);
+      await tester.tap(find.text('Resume draft'));
+      await tester.pumpAndSettle();
+      expect(find.text('Publish stage'), findsNothing);
+      await tester.tap(find.text('2. Grading & Rubrics'));
+      await tester.pumpAndSettle();
+      expect(find.text('Publish stage'), findsNothing);
+      await tester.tap(find.text('3. Deliverables'));
+      await tester.pumpAndSettle();
+      await chooseStagePublication(tester, true);
+      expect(stagePublishEnabled(tester), isTrue);
+      expect(find.text('Review stage setup'), findsNothing);
+      expect(find.byKey(const ValueKey('stage-publication-switch')), findsNothing);
+      await capturePreview(tester, find.byKey(const ValueKey('stage-layout-preview')),
+        'stage-final-review');
+      await tester.tap(find.text('Publish stage'));
+      await tester.pumpAndSettle();
+      expect(stages.saves, ['create:false', 'grading', if (gradingSucceeds) 'update:true']);
+      expect(stages.saved?['is_active'], gradingSucceeds);
+      final draft = await StageSetupDraftStore(userId: '1', semesterId: 3).load();
+      expect(draft, gradingSucceeds ? isNull : isNotNull);
+      expect(tester.takeException(), isNull);
+    });
+  }
+  testWidgets('an unpublished editor publishes only from the final step', (tester) async {
+    tester.view.physicalSize = const Size(1366, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final stages = _StagesNotifier(conceptSelection: true, published: false,
+      gradingConfig: {'panel_rubric_id': 1});
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...authTestOverrides(), defenseStagesProvider.overrideWith(() => stages),
+      academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+      rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+    ], child: MaterialApp(theme: AppTheme.lightTheme, home: Scaffold(
+      body: DefenseStageEditorScreen(stageId: 9, onBack: () {})))));
+    await tester.pumpAndSettle();
+    expect(find.text('Publish stage'), findsNothing);
+    await tester.tap(find.text('2. Grading & Rubrics'));
+    await tester.pumpAndSettle();
+    expect(find.text('Publish stage'), findsNothing);
+    await tester.ensureVisible(find.text('3. Deliverables'));
+    await tester.tap(find.text('3. Deliverables'));
+    await tester.pumpAndSettle();
+    await chooseStagePublication(tester, true);
+    await tester.ensureVisible(find.text('Publish stage'));
+    await tester.tap(find.text('Publish stage'));
+    await tester.pumpAndSettle();
+    expect(stages.saves, ['update:false', 'grading', 'update:true']);
+    expect(stages.saved?['is_active'], isTrue);
+    expect(tester.takeException(), isNull);
+  });
+  for (final locked in [false, true]) {
+    testWidgets('published stage switch ${locked ? 'respects defense locks' : 'returns the stage to draft on save'}', (tester) async {
+      tester.view.physicalSize = const Size(1366, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final stages = _StagesNotifier(conceptSelection: true, structureLocked: locked,
+        gradingConfig: {'panel_rubric_id': 1});
+      await tester.pumpWidget(ProviderScope(overrides: [
+        ...authTestOverrides(), defenseStagesProvider.overrideWith(() => stages),
+        academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+        rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+      ], child: MaterialApp(theme: AppTheme.lightTheme, home: Scaffold(
+        body: DefenseStageEditorScreen(stageId: 9, initialTab: 2, onBack: () {})))));
+      await tester.pumpAndSettle();
+      if (locked) {
+        await tester.ensureVisible(find.text('1. Stage Details'));
+        await tester.tap(find.text('1. Stage Details'));
+        await tester.pumpAndSettle();
+        final toggle = tester.widget<ShadSwitch>(find.byKey(const ValueKey('stage-publication-switch')));
+        expect(toggle.enabled, isFalse);
+        expect(toggle.value, isTrue);
+        expect(find.text('Scheduled defenses protect publication.'), findsWidgets);
+      } else {
+        await chooseStagePublication(tester, false);
+        expect(stages.saves, isEmpty);
+        await tester.ensureVisible(find.text('Unpublish stage'));
+        await tester.tap(find.text('Unpublish stage'));
+        await tester.pumpAndSettle();
+        expect(stages.saves, ['update:false', 'grading']);
+        expect(stages.saved?['is_active'], isFalse);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
   testWidgets('concept editor saves panel-only weights with ordinary hidden draft defaults', (tester) async {
     tester.view.physicalSize = const Size(1440, 1200);
     tester.view.devicePixelRatio = 1;
@@ -190,6 +373,8 @@ void main() {
     expect(find.byKey(const ValueKey('panel-fixed-weight')), findsOneWidget);
     expect(find.byKey(const ValueKey('adviser-weight')), findsNothing);
     expect(find.byKey(const ValueKey('peer-weight')), findsNothing);
+    await tester.tap(find.text('3. Deliverables'));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Save changes'));
     await tester.tap(find.text('Save changes'));
     await tester.pumpAndSettle();
@@ -198,6 +383,7 @@ void main() {
     expect(stages.gradingSaved?['peer_weight'], 0);
     expect(stages.gradingSaved?.containsKey('adviser_rubric_id'), false);
     expect(stages.gradingSaved?.containsKey('peer_rubric_id'), false);
+    expect(stages.gradingSaved?.containsKey('default_slot_duration_minutes'), false);
     expect((stages.saved?['concept_config'] as Map?)?['enabled'], true);
     expect(tester.takeException(), isNull);
   });
@@ -212,6 +398,7 @@ void main() {
         'template_action': 'replace', 'template_selection_name': 'Paper.docx', 'template_selection_size': 8};
       await StageSetupDraftStore(userId: '1', semesterId: 3).save(StageSetupDraft(fields: {
         'label': 'Concept Proposal', 'qualifying_score': 75, 'minutes_required': false,
+        'grading_config': {'panel_rubric_id': 1, 'adviser_rubric_id': 2, 'peer_rubric_id': 3},
         'deliverables': scope == 'team' ? [requirement] : [],
         'shared_deliverables': scope == 'shared' ? [requirement] : [],
       }, tab: 2));
@@ -229,7 +416,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Resume draft'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Add Stage'));
+      expect(stagePublishEnabled(tester), isFalse);
+      await tester.tap(find.text('Save as draft'));
       await tester.pumpAndSettle();
       expect(stages.saved, isNull);
       expect(find.byType(Dialog), findsOneWidget);
@@ -245,7 +433,8 @@ void main() {
         await tester.tap(find.text('Remove'));
       }
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Add Stage'));
+      await chooseStagePublication(tester, true);
+      await tester.tap(find.text('Publish stage'));
       await tester.pumpAndSettle();
       expect(stages.saved, isNotNull);
       final drafts = stages.saved!['_templateDrafts'] as List;
@@ -407,10 +596,10 @@ void main() {
           find.byType(TextField).first,
           'Concept Proposal',
         );
-        await tester.tap(find.text('Signed minutes required'));
+        await chooseStageMinutes(tester, true);
         await tester.pumpAndSettle();
         if (!requiredMinutes) {
-          await tester.tap(find.text('Minutes not required'));
+          await chooseStageMinutes(tester, false);
           await tester.pumpAndSettle();
         }
         if (requiredMinutes) {
@@ -422,6 +611,7 @@ void main() {
         }
         await tester.tap(find.text('2. Grading & Rubrics'));
         await tester.pumpAndSettle();
+        await chooseStageRubrics(tester);
         await tester.ensureVisible(
           find.byKey(const ValueKey('minimum-qualifying-score')),
         );
@@ -514,7 +704,16 @@ void main() {
             'stage-setup-step-three-controls',
           );
         }
-        await tester.tap(find.text('Add Stage'));
+        if (!requiredMinutes) {
+          final add = find.descendant(of: find.byKey(const ValueKey('pre-defense-deliverables-section')), matching: find.text('Add deliverable'));
+          await tester.ensureVisible(add);
+          await tester.tap(add);
+          await tester.pumpAndSettle();
+          await tester.enterText(find.byWidgetPredicate((w) => w is TextField && w.decoration?.labelText == 'Pre-Defense Deliverable Name *'), 'Panel Deck');
+          await tester.pumpAndSettle();
+        }
+        await chooseStagePublication(tester, true);
+        await tester.tap(find.text('Publish stage'));
         await tester.pumpAndSettle();
         expect(stages.saved?['minutes_required'], requiredMinutes);
         expect(stages.saved?['is_presentation_only'], false);
@@ -538,7 +737,7 @@ void main() {
           expect(files[1]['verdict_condition'], 'all_pass');
           expect(files[1]['required'], true);
         } else {
-          expect(stages.saved?['deliverables'], isEmpty);
+          expect((stages.saved?['deliverables'] as List).single['label'], 'Panel Deck');
         }
         expect(tester.takeException(), isNull);
       },

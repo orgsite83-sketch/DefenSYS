@@ -10,10 +10,12 @@ class StageMinutesSettings extends StatelessWidget {
     required this.requiredMinutes,
     required this.enabled,
     required this.onChanged,
+    this.compact = false,
   });
   final bool requiredMinutes;
   final bool enabled;
   final ValueChanged<bool> onChanged;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +25,46 @@ class StageMinutesSettings extends StatelessWidget {
     final textSecondary = DefensysTokens.textSecondaryOf(context);
     final textPrimary = DefensysTokens.textPrimaryOf(context);
     final primaryColor = theme.colorScheme.primary;
+
+    if (compact) {
+      return DefensysShadcnScope(child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: DefensysTokens.backgroundOf(context),
+          borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+          border: Border.all(color: borderColor),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          LayoutBuilder(builder: (context, constraints) {
+            final title = Text('Session documentation',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontWeight: FontWeight.w600, color: textPrimary));
+            final choice = ShadSelect<bool>(
+              key: ValueKey('stage-minutes-$requiredMinutes'),
+              initialValue: requiredMinutes,
+              enabled: enabled,
+              selectedOptionBuilder: (_, selected) => Text(selected ? 'Signed minutes required' : 'Minutes not required'),
+              options: const [
+                ShadOption(value: true, child: Text('Signed minutes required')),
+                ShadOption(value: false, child: Text('Minutes not required')),
+              ],
+              onChanged: (selected) { if (selected != null) onChanged(selected); },
+            );
+            return constraints.maxWidth < 520
+                ? Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [title, const SizedBox(height: 10), choice])
+                : Row(children: [Expanded(child: title), const SizedBox(width: 16), choice]);
+          }),
+          const SizedBox(height: 8),
+          Text(requiredMinutes
+              ? 'Adds signed minutes in Step 3. A documenter is required when scheduling.'
+              : 'No documenter assignment or signed-minutes deliverable.',
+            style: theme.textTheme.bodySmall?.copyWith(color: textSecondary)),
+        ]),
+      ));
+    }
 
     Widget option(
       bool value,

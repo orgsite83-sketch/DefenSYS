@@ -74,6 +74,38 @@ in the app to exercise the entire flow yourself. Current database credentials
 and passwords are unchanged. Sandbox email and SMS use console backends;
 WebSocket events use a process-local channel layer.
 
+## Reset an existing testing sandbox
+
+Preview the exact target and retained administrator count from the project root:
+
+```powershell
+.\backend\venv\Scripts\python.exe execution\reset_sandbox.py --database defensys_sandbox
+```
+
+To clear its testing data:
+
+```powershell
+.\backend\venv\Scripts\python.exe execution\reset_sandbox.py --database defensys_sandbox --apply
+```
+
+The reset only accepts a separate local `defensys_sandbox[_name]` database and
+checks the actual connected database name. It saves and verifies a PostgreSQL
+dump under `.backups/`, then runs Django flush and restores the existing admin
+accounts/groups inside one transaction. Admin identities and password hashes
+must match exactly before commit. Non-admin accounts and application setup,
+teams, schedules, evaluations, submissions, and audit records are cleared;
+schema, migrations, internal permissions, and administrator access remain.
+
+The normal database is accessed only for read-only aggregate counts before and
+after the operation. The reset report records that comparison. Upload files are
+retained on disk, so saved administrator avatars/signatures and the database
+backup's file references remain usable; the cleared test submissions no longer
+appear in the app. Refresh the app after resetting and configure the academic
+periods and workflows again. The command does not change the normal `.env` or
+switch the running backend to another environment.
+
+Safety checks: `backend\venv\Scripts\python.exe -m unittest execution.test_backup_sandbox -v`.
+
 ## Run the app with the fresh database
 
 `setup_sandbox.py` is a one-time step. You can continue using the usual web

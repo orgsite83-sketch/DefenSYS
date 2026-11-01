@@ -139,6 +139,34 @@ class _PdfPicker extends FilePicker {
 }
 
 void main() {
+  testWidgets('compact weekly settings keep the schedule when opened and closed', (tester) async {
+    var policy = Map<String, dynamic>.from(_policy);
+    final template = weeklyTemplateDraft(null)..['template'] = {
+      'original_name': 'Weekly.pdf', 'byte_size': 2048, 'file_url': '/template.pdf',
+    };
+    await pumpDefensysWidget(tester, SingleChildScrollView(child: StatefulBuilder(
+      builder: (context, update) => StageWeeklySettings(
+        compact: true, value: policy, template: template, enabled: true,
+        onChanged: (value) => update(() => policy = value), onTemplateChanged: () {},
+      ),
+    )), overrides: authTestOverrides());
+    expect(find.textContaining('Every Sunday, 11:59 PM'), findsOneWidget);
+    expect(find.byKey(const ValueKey('weekly-report_count')), findsNothing);
+    await tester.tap(find.text('Configure reports'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('weekly-report_count')), '3');
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Hide report settings'));
+    await tester.tap(find.text('Hide report settings'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('weekly-report_count')), findsNothing);
+    expect(find.textContaining('3 reports'), findsOneWidget);
+    await tester.tap(find.text('Configure reports'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextFormField>(find.byKey(const ValueKey('weekly-report_count'))).controller?.text, '3');
+    expect(policy['required_end'], 3);
+    expect(tester.takeException(), isNull);
+  });
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
     SharedPreferences.setMockInitialValues({});

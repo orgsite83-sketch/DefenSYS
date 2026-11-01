@@ -61,6 +61,21 @@ class ArchiveSafetyTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), b'keep this recovery copy')
 
 
+class SandboxResetTargetTests(unittest.TestCase):
+    def test_only_the_separate_named_local_sandbox_is_accepted(self):
+        from execution.reset_sandbox import validate_target
+        validate_target('defensys_sandbox', 'defensys_sandbox', 'defensys_db', 'localhost')
+        for expected, actual, normal, host in [
+            ('defensys_db', 'defensys_db', 'defensys_db', 'localhost'),
+            ('defensys_sandbox', 'defensys_db', 'defensys_db', 'localhost'),
+            ('defensys_sandbox', 'defensys_sandbox', 'defensys_sandbox', 'localhost'),
+            ('defensys_sandbox', 'defensys_sandbox', 'defensys_db', 'example.invalid'),
+        ]:
+            with self.subTest(expected=expected, actual=actual, normal=normal, host=host):
+                with self.assertRaises(ValueError):
+                    validate_target(expected, actual, normal, host)
+
+
 class SandboxSafetyTests(unittest.TestCase):
     def inspect_settings(self, **overrides):
         env = {**os.environ, 'DJANGO_SETTINGS_MODULE': 'defensys_backend.settings_sandbox',

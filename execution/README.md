@@ -9,6 +9,7 @@ For copy-and-paste workflow commands, see the [demo automation guide](../AUTOMAT
 ## Available Tools
 
 - `setup_sandbox.py`: Create a fresh local `defensys_sandbox` database, apply migrations, and use separate uploads without copying accounts or teams. Existing databases are refused. See [local development setup](../LOCAL_DEVELOPMENT.md). Full recovery backups use the existing `deployment/backup/backup_db.py --full` tool.
+- `reset_sandbox.py`: Preview an existing sandbox reset; add `--database defensys_sandbox --apply` to back it up and flush test data while retaining existing administrator identities/passwords. Checks the actual local database identity, restores admin access transactionally, and verifies normal-database table counts using read-only connections. Upload files remain on disk. Never targets the normal database. See [sandbox reset instructions](../LOCAL_DEVELOPMENT.md#reset-an-existing-testing-sandbox).
 
 - `profile_faculty_reads.py`: PostgreSQL READ ONLY API profiler. Run with `backend/venv/Scripts/python.exe` from the repository root. Use `--stage-setup --admin` for stage directory/detail and Capstone rubrics, or `--deliverable-responses` for existing adviser response generation without saving reviews. Add `--uncached` to compare read reuse and `--response-mode full` to measure legacy full-list responses. Reports server time, query counts and response bytes; excludes network, UI and review saving.
 

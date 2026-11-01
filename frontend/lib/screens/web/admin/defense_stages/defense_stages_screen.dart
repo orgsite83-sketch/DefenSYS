@@ -32,6 +32,8 @@ import 'widgets/stage_minutes_settings.dart';
 import 'widgets/stage_outcome_settings.dart';
 import 'widgets/stage_setup_draft_notice.dart';
 import 'widgets/stage_setup_actions.dart';
+import 'widgets/stage_setup_validation.dart';
+import 'widgets/stage_publication_settings.dart';
 import 'widgets/stage_deliverable_overview.dart';
 import 'widgets/stage_deliverable_choices.dart';
 import 'widgets/stage_deliverable_presets_bar.dart';
@@ -258,7 +260,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     Widget? suffixIcon,
     Color? fillColor,
   }) {
-    final effectiveFill = fillColor ?? Colors.white;
+    final effectiveFill = fillColor ?? DefensysTokens.surfaceOf(context);
     return InputDecoration(
       labelText: labelText,
       hintText: hintText,
@@ -267,26 +269,29 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
       isDense: true,
-      labelStyle: const TextStyle(
+      labelStyle: TextStyle(
+        fontFamily: DefensysTokens.fontFamilyInter,
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: AppColors.textSecondary,
+        color: DefensysTokens.textSecondaryOf(context),
       ),
-      hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
-      helperStyle: const TextStyle(
+      hintStyle: TextStyle(fontFamily: DefensysTokens.fontFamilyInter,
+        fontSize: 13, color: DefensysTokens.textSecondaryOf(context)),
+      helperStyle: TextStyle(
+        fontFamily: DefensysTokens.fontFamilyInter,
         fontSize: 11,
-        color: AppColors.textSecondary,
+        color: DefensysTokens.textSecondaryOf(context),
       ),
       filled: true,
       fillColor: effectiveFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -315,18 +320,22 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 10,
+          runSpacing: 4,
           children: [
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                    color: DefensysTokens.textPrimaryOf(context),
                     letterSpacing: -0.1,
                   ),
                 ),
@@ -349,7 +358,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w500,
-                  color: badgeColor ?? AppColors.textSecondary,
+                  color: badgeColor ?? DefensysTokens.textSecondaryOf(context),
                 ),
               ),
           ],
@@ -380,99 +389,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           ),
         ],
       ],
-    );
-  }
-
-  Widget _buildDialogPublishedStageBanner({
-    required bool isActive,
-    required bool isLocked,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isActive ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isActive ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: isActive ? const Color(0xFFDCFCE7) : const Color(0xFFE2E8F0),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isActive ? Icons.check_circle_rounded : Icons.visibility_off_rounded,
-              size: 19,
-              color: isActive ? const Color(0xFF16A34A) : AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 6,
-                  runSpacing: 2,
-                  children: [
-                    const Text(
-                      'Published Stage',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5,),
-                      decoration: BoxDecoration(
-                        color: isActive ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill,),
-                        border: Border.all(
-                          color: isActive ? const Color(0xFF86EFAC) : const Color(0xFFCBD5E1),
-                        ),
-                      ),
-                      child: Text(
-                        isActive ? 'Active' : 'Draft',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: isActive ? const Color(0xFF15803D) : AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 1),
-                const Text(
-                  'When active, this stage is part of the live capstone defense sequence.',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Switch(
-            value: isActive,
-            activeTrackColor: AppColors.maroon,
-            onChanged: isLocked ? null : onChanged,
-          ),
-        ],
-      ),
     );
   }
 
@@ -1416,6 +1332,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final peerCtrl = TextEditingController(text: '20');
     final qualifyingScoreCtrl = TextEditingController(text: setup?['qualifying_score']?.toString() ?? '',);
     var scoreCarryover = setup?['score_carryover']?.toString() ?? (setup?['concept_config'] as Map?)?['score_carryover']?.toString() ?? 'reassess';
+    final wasPublished = stage?['is_active'] == true;
     var isActive = setup?['is_active'] == true;
     var conceptConfig = Map<String, dynamic>.from(setup?['concept_config'] as Map? ?? {},);
     var sharedDeliverables = sharedDeliverableValues(setup?['shared_deliverables'] ??
@@ -1479,6 +1396,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         'description': description.text,
         'display_order': selectedPosition,
         'is_active': isActive,
+        'publication_base': wasPublished,
+        'publication_changed': isActive != wasPublished,
         'is_presentation_only': false,
         'minutes_required': minutesRequired,
         'weekly_reporting': weeklyConfig,
@@ -1572,19 +1491,33 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
               final preDeliverables = deliverableSetupItems(deliverables, sharedDeliverables,).where((d) => d['deliverable_type'] == 'pre').toList();
               final postDeliverables = deliverableSetupItems(deliverables, sharedDeliverables,).where((d) => d['deliverable_type'] == 'post').toList();
+              final review = StageSetupValidation(
+                name: label.text, semesterId: semesterId, semester: activePeriod,
+                qualifyingScore: qualifyingScoreCtrl.text,
+                weights: stageEvaluationWeights(conceptSelection: conceptConfig['enabled'] == true,
+                  panel: panelCtrl.text, adviser: adviserCtrl.text, peer: peerCtrl.text),
+                conceptSelection: conceptConfig['enabled'] == true,
+                rubricIds: {'panel': panelRubricId, 'adviser': adviserRubricId, 'peer': peerRubricId},
+                rubrics: ref.watch(rubricEngineProvider).rubrics,
+                deliverables: deliverableSetupItems(deliverables, sharedDeliverables),
+                weekly: weeklyConfig, weeklyTemplate: weeklyTemplate,
+                minutesRequired: minutesRequired, minutesNumber: minutesNumber.text,
+                stageId: _asInt(stage?['id']),
+              );
 
+              final compactDialog = MediaQuery.sizeOf(context).width < 600;
               return Dialog(
                 backgroundColor: DefensysTokens.surfaceOf(context),
                 surfaceTintColor: Colors.transparent,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24,),
+                insetPadding: EdgeInsets.all(compactDialog ? 8 : 24),
                 clipBehavior: Clip.antiAlias,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxWidth: 960,
-                    maxHeight: MediaQuery.of(dialogContext).size.height * 0.90,
+                    maxHeight: MediaQuery.of(dialogContext).size.height * (compactDialog ? 0.96 : 0.90),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1652,7 +1585,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                       Flexible(
                         child: SingleChildScrollView(
                           key: ValueKey('stage-dialog-step-$activeTab'),
-                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+                          padding: EdgeInsets.fromLTRB(compactDialog ? 16 : 24, 12, compactDialog ? 16 : 24, 20),
                           child: <Widget>[
                               // TAB 0: Stage Identity & Pipeline Flow
                               Column(
@@ -1665,11 +1598,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                       final nameField = _buildDialogFormField(
                                         label: 'Stage Name',
                                         badge: 'Required',
-                                        badgeColor: AppColors.maroon,
+                                        badgeColor: DefensysTokens.maroonTextOf(context),
                                         child: TextField(
                                           controller: label,
-                                          style: const TextStyle(
-                                            color: AppColors.textPrimary,
+                                          style: TextStyle(
+                                            color: DefensysTokens.textPrimaryOf(context),
+                                            fontFamily: DefensysTokens.fontFamilyInter,
                                             fontSize: 13.5,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -1685,8 +1619,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                         badge: 'System Identifier',
                                         child: TextField(
                                           controller: codeCtrl,
-                                          style: const TextStyle(
-                                            color: AppColors.textPrimary,
+                                          style: TextStyle(
+                                            color: DefensysTokens.textPrimaryOf(context),
+                                            fontFamily: DefensysTokens.fontFamilyInter,
                                             fontSize: 13.5,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -1725,65 +1660,50 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   ),
                                   const SizedBox(height: 14),
 
-                                  // 2. Stage Description & Publication Status
-                                  LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final isWide = constraints.maxWidth >= 600;
-                                      final descField = _buildDialogFormField(
-                                        label: 'Stage Description',
-                                        badge: 'Optional',
-                                        child: TextField(
-                                          controller: description,
-                                          minLines: 2,
-                                          maxLines: 2,
-                                          style: const TextStyle(
-                                            color: AppColors.textPrimary,
-                                            fontSize: 13.5,
-                                            height: 1.35,
-                                          ),
-                                          decoration: _dialogInputDecoration(
-                                            hintText: 'Provide brief guidance or objectives for this defense milestone...',
-                                          ),
-                                        ),
-                                      );
-
-                                      final publishedField = _buildDialogFormField(
-                                        label: 'Publication Status',
-                                        badge: isActive ? 'Active' : 'Draft',
-                                        badgeColor: isActive ? const Color(0xFF16A34A) : AppColors.textSecondary,
-                                        child: _buildDialogPublishedStageBanner(
-                                          isActive: isActive,
-                                          isLocked: stageIsLocked,
-                                          onChanged: (val) {
-                                            setDialogState(() => isActive = val,);
-                                          },
-                                        ),
-                                      );
-
-                                      if (!isWide) {
-                                        return Column(
-                                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                                          children: [
-                                            descField,
-                                            const SizedBox(height: 14),
-                                            publishedField,
-                                          ],
-                                        );
+                                  // Stage workflow
+                                  ConceptSettings(
+                                    showWorkflowChoices: true,
+                                    value: conceptConfig,
+                                    enabled: !stageIsLocked,
+                                    onChanged: (value) => setDialogState(() {
+                                      if (conceptConfig['enabled'] != true && value['enabled'] == true && sharedDeliverables.isEmpty) {
+                                        sharedDeliverables = defaultSharedDeliverables();
+                                        ensureConceptPapers(deliverables, value, sharedItems: sharedDeliverables,);
+                                        linkNewSharedConceptDefaults(deliverables, sharedDeliverables,);
                                       }
-
-                                      return Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(flex: 3, child: descField),
-                                          const SizedBox(width: 14),
-                                          Expanded(flex: 2, child: publishedField,),
-                                        ],
-                                      );
-                                    },
+                                      conceptConfig = value;
+                                      ensureConceptPapers(deliverables, value, sharedItems: sharedDeliverables,);
+                                      if (!deliverables.contains(selectedDeliverable,)) selectedDeliverable = null;
+                                    }),
                                   ),
-                                  const SizedBox(height: 16),
-
-                                  // 3. Sequence Position in Pipeline
+                                  const SizedBox(height: 20),
+                                  // Stage requirements
+                                  Text(
+                                    'Stage requirements',
+                                    style: TextStyle(
+                                      fontFamily: DefensysTokens.fontFamilyInter,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: DefensysTokens.textPrimaryOf(context),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  StageMinutesSettings(
+                                    compact: true,
+                                    requiredMinutes: minutesRequired,
+                                    enabled: !stageIsLocked,
+                                    onChanged: (value) => setDialogState(() => minutesRequired = value,),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  StageWeeklySettings(compact: true, value: weeklyConfig, template: weeklyTemplate,
+                                    enabled: !stageIsLocked,
+                                    semesterLabel: activePeriod?['display_name']?.toString() ?? activePeriod?['label']?.toString(),
+                                    onChanged: (value) => setDialogState(() => weeklyConfig = value),
+                                    onTemplateChanged: () => setDialogState(() {})),
+                                  const SizedBox(height: 20),
+                                  Text('Stage information', style: Theme.of(context).textTheme.titleSmall),
+                                  const SizedBox(height: 12),
+                                  // Position in the defense pipeline
                                   Container(
                                     padding: const EdgeInsets.all(14),
                                     decoration: BoxDecoration(
@@ -1808,43 +1728,23 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   ),
                                   const SizedBox(height: 16),
 
-                                  // 4. Session Documentation Policy
-                                  const Text(
-                                    'Stage policies',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textPrimary,
+                                  _buildDialogFormField(
+                                    label: 'Stage description', badge: 'Optional',
+                                    child: TextField(
+                                      controller: description, minLines: 2, maxLines: 3,
+                                      style: TextStyle(color: DefensysTokens.textPrimaryOf(context),
+                                        fontFamily: DefensysTokens.fontFamilyInter, fontSize: 13.5),
+                                      decoration: _dialogInputDecoration(
+                                        hintText: 'Provide brief guidance or objectives for this defense milestone...',
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  StageMinutesSettings(
-                                    requiredMinutes: minutesRequired,
-                                    enabled: !stageIsLocked,
-                                    onChanged: (value) => setDialogState(() => minutesRequired = value,),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  StageWeeklySettings(value: weeklyConfig, template: weeklyTemplate,
-                                    enabled: !stageIsLocked,
-                                    semesterLabel: activePeriod?['display_name']?.toString() ?? activePeriod?['label']?.toString(),
-                                    onChanged: (value) => setDialogState(() => weeklyConfig = value),
-                                    onTemplateChanged: () => setDialogState(() {})),
-                                  const SizedBox(height: 14),
-
-                                  // 5. Concept Settings
-                                  ConceptSettings(
-                                    value: conceptConfig,
-                                    enabled: !stageIsLocked,
-                                    onChanged: (value) => setDialogState(() {
-                                      if (conceptConfig['enabled'] != true && value['enabled'] == true && sharedDeliverables.isEmpty) {
-                                        sharedDeliverables = defaultSharedDeliverables();
-                                        ensureConceptPapers(deliverables, value, sharedItems: sharedDeliverables,);
-                                        linkNewSharedConceptDefaults(deliverables, sharedDeliverables,);
-                                      }
-                                      conceptConfig = value;
-                                      ensureConceptPapers(deliverables, value, sharedItems: sharedDeliverables,);
-                                      if (!deliverables.contains(selectedDeliverable,)) selectedDeliverable = null;
-                                    }),
+                                  const SizedBox(height: 16),
+                                  StagePublicationSettings(
+                                    published: isActive, currentlyPublished: wasPublished,
+                                    enabled: !savingDraft && !stageIsLocked,
+                                    lockReason: stageIsLocked ? lockReason ?? 'Publication is locked for this stage.' : null,
+                                    onChanged: (value) => setDialogState(() => isActive = value),
                                   ),
                                 ],
                               ),
@@ -2047,7 +1947,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               onPressed: () => Navigator.pop(dialogContext, false),
                               style: TextButton.styleFrom(
                                 foregroundColor: DefensysTokens.textSecondaryOf(context,),
-                                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,),
+                                textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontSize: 13, fontWeight: FontWeight.w600,),
                               ),
                               child: const Text('Cancel'),
                             ),
@@ -2071,7 +1971,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   foregroundColor: DefensysTokens.textPrimaryOf(context,),
                                   side: BorderSide(color: DefensysTokens.borderOf(context),),
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10,),
-                                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,),
+                                  textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontSize: 13, fontWeight: FontWeight.w700,),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8),),
                                 ),
                               ),
@@ -2096,13 +1996,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   backgroundColor: AppColors.maroon,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10,),
-                                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,),
+                                  textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontSize: 13, fontWeight: FontWeight.w700,),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8),),
                                 ),
                               ),
-                            if (activeTab < 2 && editing) const SizedBox(width: 10),
-                            if (editing || activeTab == 2)
-                              ElevatedButton.icon(
+                            if (activeTab == 2)
+                              DefensysShadcnScope(child: ShadButton(
                                 onPressed: savingDraft ? null : () async {
                                   final weeklyError = weeklySettingsError(weeklyConfig, weeklyTemplate, requireTemplate: isActive);
                                   if (weeklyError != null) {
@@ -2169,6 +2068,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     showValidationToast(context, templateError);
                                     return;
                                   }
+                                  if (isActive && !wasPublished && !review.ready) {
+                                    setDialogState(() => activeTab = review.firstIncompleteTab);
+                                    showValidationToast(context, review.issues[review.firstIncompleteTab].first);
+                                    return;
+                                  }
                                   setDialogState(() => savingDraft = true,);
                                   final savedDraft = await persistDraft();
                                   if (!dialogContext.mounted || stageDialogRoute?.isActive != true) return;
@@ -2178,13 +2082,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   }
                                   Navigator.pop(dialogContext, true);
                                 },
-                                icon: const Icon(Icons.save_rounded, size: 16),
-                                label: Text(editing ? 'Save Changes' : 'Add Stage',),
-                                style: DefensysTokens.saveButtonStyle(
-                                  isPill: false,
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10,),
-                                ),
-                              ),
+                                leading: Icon(isActive ? Icons.save_rounded : Icons.check_circle_outline_rounded, size: 16),
+                                backgroundColor: DefensysTokens.maroon,
+                                foregroundColor: Colors.white,
+                                child: Text(wasPublished
+                                    ? (isActive ? 'Save changes' : 'Unpublish stage')
+                                    : (isActive ? 'Publish stage' : editing ? 'Save changes' : 'Save as draft')),
+                              )),
                           ],
                         ),
                       ),
@@ -2242,7 +2146,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       'code': codeCtrl.text.trim(),
       'display_order': selectedPosition,
       'description': description.text.trim(),
-      'is_active': isActive,
+      'is_active': isActive && wasPublished,
       'is_presentation_only': false,
       'minutes_required': minutesRequired,
       'weekly_reporting': weeklyConfig,
@@ -2258,6 +2162,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     };
 
     bool configured = false;
+    int? savedStageId = _asInt(stage?['id']);
     if (editing) {
       configured = await ref
           .read(defenseStagesProvider.notifier)
@@ -2265,6 +2170,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     } else {
       final newStageId =
           await ref.read(defenseStagesProvider.notifier).addStage(payload);
+      savedStageId = newStageId;
       if (newStageId != null) {
         // If grading fails after creation, resume that stage instead of adding
         // it again. Keep the complete configuration in its editor draft.
@@ -2309,6 +2215,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       } else {
         configured = newStageId != null;
       }
+    }
+
+    // Publish only after the stage, templates, and grading have saved.
+    if (configured && isActive && !wasPublished && savedStageId != null) {
+      configured = await ref.read(defenseStagesProvider.notifier)
+          .updateStage(savedStageId, {'is_active': true});
     }
 
     if (configured) {

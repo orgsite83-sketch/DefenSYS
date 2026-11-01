@@ -2,6 +2,7 @@ import 'package:defensys/screens/web/admin/defense_stages/widgets/stage_outcome_
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/grading/grading_setup_section.dart';
+import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -33,12 +34,10 @@ void main() {
             cutoff.dispose();
           });
           var concept = true;
-          late StateSetter update;
           await pumpDefensysWidget(
             tester,
             StatefulBuilder(
               builder: (context, setState) {
-                update = setState;
                 return SingleChildScrollView(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -51,6 +50,13 @@ void main() {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            ConceptSettings(
+                              value: {'enabled': concept, 'required_count': 3},
+                              onChanged: (value) => setState(
+                                () => concept = value['enabled'] == true,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
                             GradingSetupSection(
                               panelOnly: concept,
                               roles: [
@@ -115,7 +121,8 @@ void main() {
             find.byKey(const ValueKey('panel-only-preview')),
             'panel-only-concepts/setup-${width.toInt()}-${dark ? 'dark' : 'light'}',
           );
-          update(() => concept = false);
+          await tester.ensureVisible(find.text('Concept selection'));
+          await tester.tap(find.text('Concept selection'));
           await tester.pumpAndSettle();
           expect(find.byType(ShadSelect<int>), findsNWidgets(3));
           expect(controllers.map((controller) => controller.text), [

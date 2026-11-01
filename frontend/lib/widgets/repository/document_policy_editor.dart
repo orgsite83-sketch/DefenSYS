@@ -185,11 +185,13 @@ class ConceptSettings extends StatelessWidget {
     required this.onChanged,
     this.enabled = true,
     this.isPit = false,
+    this.showWorkflowChoices = false,
   });
   final Map<String, dynamic> value;
   final ValueChanged<Map<String, dynamic>> onChanged;
   final bool enabled;
   final bool isPit;
+  final bool showWorkflowChoices;
 
   @override
   Widget build(BuildContext context) {
@@ -233,6 +235,103 @@ class ConceptSettings extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (showWorkflowChoices)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('How will this stage work?',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        color: DefensysTokens.textPrimaryOf(context),
+                        fontWeight: FontWeight.w700,
+                      )),
+                    const SizedBox(height: 4),
+                    Text('Choose whether teams present concepts for selection.',
+                      style: theme.textTheme.bodySmall?.copyWith(color: secondaryColor)),
+                    const SizedBox(height: 14),
+                    LayoutBuilder(builder: (context, constraints) {
+                      final width = constraints.maxWidth < 600
+                          ? constraints.maxWidth : (constraints.maxWidth - 12) / 2;
+                      return ShadRadioGroup<bool>(
+                        initialValue: value['enabled'] == true,
+                        enabled: enabled,
+                        axis: Axis.horizontal,
+                        spacing: 12,
+                        runSpacing: 12,
+                        onChanged: (selected) {
+                          if (selected != null && selected != (value['enabled'] == true)) {
+                            onChanged({'required_count': 3, ...value, 'enabled': selected});
+                          }
+                        },
+                        items: [
+                          for (final concept in [true, false])
+                            SizedBox(
+                              width: width,
+                              child: InkWell(
+                                canRequestFocus: false,
+                                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                                onTap: enabled ? () => onChanged({
+                                  'required_count': 3, ...value, 'enabled': concept,
+                                }) : null,
+                                child: Container(
+                                  key: ValueKey('stage-workflow-${concept ? 'concept' : 'standard'}'),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: DefensysTokens.surfaceOf(context),
+                                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                                    border: Border.all(
+                                      color: (value['enabled'] == true) == concept
+                                          ? DefensysTokens.maroonTextOf(context) : borderColor,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: ShadRadio<bool>(
+                                    value: concept,
+                                    color: DefensysTokens.maroon,
+                                    label: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Wrap(spacing: 8, runSpacing: 4, children: [
+                                          Text(concept ? 'Concept selection' : 'Standard defense',
+                                            style: theme.textTheme.bodyMedium?.copyWith(
+                                              color: DefensysTokens.textPrimaryOf(context),
+                                              fontFamily: DefensysTokens.fontFamilyInter,
+                                              fontWeight: FontWeight.w700,
+                                            )),
+                                          if ((value['enabled'] == true) == concept)
+                                            Text('Selected', style: theme.textTheme.bodySmall?.copyWith(
+                                              color: DefensysTokens.maroonTextOf(context),
+                                              fontWeight: FontWeight.w600,
+                                            )),
+                                        ]),
+                                        const SizedBox(height: 6),
+                                        Text(concept
+                                            ? 'Teams present concepts for panel selection.'
+                                            : "Evaluate the team's existing project.",
+                                          style: theme.textTheme.bodySmall?.copyWith(color: secondaryColor)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    }),
+                    if (value['enabled'] == true && !isPit) ...[
+                      const SizedBox(height: 14),
+                      Text('Panel evaluation: 100%', style: theme.textTheme.bodyMedium?.copyWith(
+                        color: DefensysTokens.textPrimaryOf(context), fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Text('Adviser and peer evaluations are not required.',
+                        style: theme.textTheme.bodySmall?.copyWith(color: secondaryColor)),
+                    ],
+                  ],
+                ),
+              )
+            else
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -249,9 +348,12 @@ class ConceptSettings extends StatelessWidget {
                         ),
                       ),
                       sublabel: Text(
-                        'Review proposed or assigned concepts and keep each defense attempt.',
+                        isPit
+                            ? 'Review proposed or assigned concepts and keep each defense attempt.'
+                            : 'When enabled, grading requires only the panel (100%). Adviser and peer evaluations are not required.',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: secondaryColor,
+                          fontFamily: DefensysTokens.fontFamilyInter,
                         ),
                       ),
                       onChanged: (v) => onChanged({
@@ -265,8 +367,9 @@ class ConceptSettings extends StatelessWidget {
                     const SizedBox(width: 8),
                     ShadBadge.secondary(
                       child: Text(
-                        isPit ? 'PIT Track' : 'Stage Workflow',
+                        isPit ? 'PIT Track' : 'Panel-only grading',
                         style: const TextStyle(
+                          fontFamily: DefensysTokens.fontFamilyInter,
                           fontSize: 10,
                           fontWeight: FontWeight.w500,
                         ),
@@ -434,7 +537,7 @@ class ConceptSettings extends StatelessWidget {
                   description: Text(
                     isPit
                         ? 'Automatically adds required concept papers. Every team submits the configured count; a supplied project/module fills the first concept. Instructor review and panel approval remain required.'
-                        : 'Automatically adds required concept papers. Every team submits the configured count; a supplied project/module fills the first concept. Panel evaluation determines the approved concept. Adviser and peer evaluations are not required. Existing title review, document review, and endorsement remain required.',
+                        : 'Automatically adds required concept papers. Every team submits the configured count; a supplied project/module fills the first concept. Existing title review, document review, and endorsement remain required.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: secondaryColor,
                       height: 1.45,

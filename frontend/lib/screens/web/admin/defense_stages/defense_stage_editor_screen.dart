@@ -22,7 +22,6 @@ import '../../../../utils/stage_setup_draft.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/unsaved_changes.dart';
-import '../../../../widgets/widgets.dart';
 import '../../../../widgets/repository/repository_archive_naming_panel.dart';
 import '../../../../widgets/repository/deliverable_timing_fields.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
@@ -32,6 +31,8 @@ import 'widgets/endorsed_stage_resolution_dialog.dart';
 import 'widgets/stage_setup_draft_notice.dart';
 import 'widgets/stage_setup_confirmation.dart';
 import 'widgets/stage_setup_actions.dart';
+import 'widgets/stage_setup_validation.dart';
+import 'widgets/stage_publication_settings.dart';
 import 'widgets/stage_deliverable_overview.dart';
 import 'widgets/stage_deliverable_choices.dart';
 import 'widgets/stage_deliverable_presets_bar.dart';
@@ -72,7 +73,6 @@ class _DefenseStageEditorScreenState
   Map<String, dynamic> _weeklyTemplate = weeklyTemplateDraft(null);
   Map<String, dynamic> _conceptConfig = {};
   final _qualifyingScore = TextEditingController();
-  final _slotDuration = TextEditingController();
   String _scoreCarryover = 'reassess';
   final _panel = TextEditingController(text: '50');
   final _adviser = TextEditingController(text: '30');
@@ -88,7 +88,8 @@ class _DefenseStageEditorScreenState
 
   int _orderPosition = 1;
   late int _activeTab;
-  bool _isActive = true;
+  bool _isActive = false;
+  bool get _wasPublished => _stage?['is_active'] != false;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -133,6 +134,8 @@ class _DefenseStageEditorScreenState
       'description': _description.text,
       'display_order': _orderPosition,
       'is_active': _isActive,
+      'publication_base': _wasPublished,
+      'publication_changed': _isActive != _wasPublished,
       'is_presentation_only': false,
       'minutes_required': _minutesRequired,
       'weekly_reporting': _weeklyConfig,
@@ -147,7 +150,6 @@ class _DefenseStageEditorScreenState
       'rubric_assignment_changes': _editedRubricRoles.toList(),
       'rubric_assignment_base': _serverRubricIds,
       'grading_config': {
-        'default_slot_duration_minutes': _slotDuration.text,
         'panel_weight': _panel.text,
         'adviser_weight': _adviser.text,
         'peer_weight': _peer.text,
@@ -326,7 +328,6 @@ class _DefenseStageEditorScreenState
     _minutesName.dispose();
     _qualifyingScore.dispose();
     _panel.dispose();
-    _slotDuration.dispose();
     _adviser.dispose();
     _peer.dispose();
     for (final item in deliverableSetupItems(_deliverables, _sharedDeliverables,)) {
@@ -418,6 +419,11 @@ class _DefenseStageEditorScreenState
     _applyStage(restored);
     // Locks and workflow metadata always come from the server.
     _stage = serverStage;
+    // Old snapshots recorded status passively. Replay only an explicit switch
+    // change against the same server status, so an old draft cannot unpublish.
+    _isActive = !_structureLocked && draft.fields['publication_changed'] == true &&
+        draft.fields['publication_base'] == _wasPublished
+        ? draft.fields['is_active'] == true : _wasPublished;
     final grading = draft.fields['grading_config'];
     if (grading is Map && !_structureLocked) {
       // A saved setup snapshot is not an instruction to undo assignments made
@@ -460,7 +466,6 @@ class _DefenseStageEditorScreenState
   }
 
   void _applyWeights(Map<String, dynamic> grading) {
-    _slotDuration.text = grading['default_slot_duration_minutes']?.toString() ?? '';
     _panel.text = grading['panel_weight']?.toString() ?? '50';
     _adviser.text = grading['adviser_weight']?.toString() ?? '30';
     _peer.text = grading['peer_weight']?.toString() ?? '20';
@@ -505,12 +510,30 @@ class _DefenseStageEditorScreenState
 
   int get _weightTotal => _effectiveWeights.values.fold(0, (sum, value) => sum + value);
 
+  StageSetupValidation get _setupValidation => StageSetupValidation(
+    name: _label.text, semesterId: _semesterId,
+    semester: ref.read(academicPeriodProvider).activeSemester,
+    qualifyingScore: _qualifyingScore.text, weights: _effectiveWeights,
+    conceptSelection: _conceptConfig['enabled'] == true,
+    rubricIds: {'panel': _panelRubricId, 'adviser': _adviserRubricId, 'peer': _peerRubricId},
+    rubrics: ref.read(rubricEngineProvider).rubrics,
+    deliverables: deliverableSetupItems(_deliverables, _sharedDeliverables),
+    weekly: _weeklyConfig, weeklyTemplate: _weeklyTemplate,
+    minutesRequired: _minutesRequired, minutesNumber: _minutesNumber.text,
+    stageId: widget.stageId,
+  );
+
   Future<void> _save() async {
     if (_isLocked) return;
-    final slotDuration = int.tryParse(_slotDuration.text.trim());
-    if (_slotDuration.text.trim().isNotEmpty && (slotDuration == null || slotDuration < 15 || slotDuration > 240)) {
-      setState(() { _activeTab = 1; _error = 'Default scheduling duration must be from 15 to 240 minutes.'; });
-      return;
+    if (_isActive && !_wasPublished && !_structureLocked) {
+      final review = _setupValidation;
+      if (!review.ready) {
+        setState(() {
+          _activeTab = review.firstIncompleteTab;
+          _error = review.issues[_activeTab].first;
+        });
+        return;
+      }
     }
     final weeklyError = weeklySettingsError(_weeklyConfig, _weeklyTemplate, requireTemplate: _isActive);
     if (weeklyError != null) {
@@ -586,6 +609,10 @@ class _DefenseStageEditorScreenState
       }
     }
 
+    // Keep publication changes resumable if grading or the final publish fails.
+    if (_isActive != _wasPublished && !await _saveDraft()) return;
+    if (!mounted) return;
+
     setState(() {
       _saving = true;
       _error = null;
@@ -599,7 +626,7 @@ class _DefenseStageEditorScreenState
             'code': _code.text.trim(),
             'display_order': _orderPosition,
             'description': _description.text.trim(),
-            'is_active': _isActive,
+            'is_active': _isActive && _wasPublished,
             'is_presentation_only': false,
             'minutes_required': _minutesRequired,
             'weekly_reporting': _weeklyConfig,
@@ -619,18 +646,20 @@ class _DefenseStageEditorScreenState
     final weightsOk = stageOk && (_structureLocked || await ref
         .read(defenseStagesProvider.notifier)
         .updateGradingConfig(widget.stageId, _semesterId!, {
-          'default_slot_duration_minutes': int.tryParse(_slotDuration.text.trim()),
           ..._effectiveWeights,
           if (_editedRubricRoles.contains('panel')) 'panel_rubric_id': _panelRubricId,
           if (_conceptConfig['enabled'] != true && _editedRubricRoles.contains('adviser')) 'adviser_rubric_id': _adviserRubricId,
           if (_conceptConfig['enabled'] != true && _editedRubricRoles.contains('peer')) 'peer_rubric_id': _peerRubricId,
         }));
 
+    final publishedOk = stageOk && weightsOk && (!_isActive || _wasPublished || _structureLocked ||
+        await ref.read(defenseStagesProvider.notifier).updateStage(widget.stageId, {'is_active': true}));
+
     if (!mounted) return;
 
     setState(() => _saving = false);
 
-    if (stageOk && weightsOk) {
+    if (publishedOk) {
       try {
         await _clearBrowserDraft();
         _savedDraft = null;
@@ -944,21 +973,7 @@ class _DefenseStageEditorScreenState
                                 ],
                               ),
                               const SizedBox(height: 16),
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: _panelBgColor,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: _borderColor),
-                                ),
-                                child: _buildPositionSelector(),
-                              ),
-                              const SizedBox(height: 16),
-                              Text('Stage policies', style: Theme.of(context).textTheme.titleSmall,),
-                              const SizedBox(height: 4),
-                              Text('Enable only the workflows this stage uses.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: _textSecondaryColor),),
-                              const SizedBox(height: 12),
-                              ConceptSettings(value: _conceptConfig, enabled: !_structureLocked, onChanged: (value) {
+                              ConceptSettings(showWorkflowChoices: true, value: _conceptConfig, enabled: !_structureLocked, onChanged: (value) {
                                 setState(() {
                                   if (_conceptConfig['enabled'] != true && value['enabled'] == true && _sharedDeliverables.isEmpty) {
                                     _sharedDeliverables = defaultSharedDeliverables();
@@ -972,16 +987,31 @@ class _DefenseStageEditorScreenState
                                 _markDirty();
                               },),
                               const SizedBox(height: 20),
+                              Text('Stage requirements', style: Theme.of(context).textTheme.titleSmall),
+                              const SizedBox(height: 12),
                               StageMinutesSettings(
+                                compact: true,
                                 requiredMinutes: _minutesRequired, enabled: !_structureLocked,
                                 onChanged: (value) { setState(() { _minutesRequired = value; _error = null; }); _markDirty(); },
                               ),
                               const SizedBox(height: 16),
-                              StageWeeklySettings(value: _weeklyConfig, template: _weeklyTemplate,
+                              StageWeeklySettings(compact: true, value: _weeklyConfig, template: _weeklyTemplate,
                                 enabled: !_structureLocked,
                                 onChanged: (value) { setState(() => _weeklyConfig = value); _markDirty(); },
                                 onTemplateChanged: () { setState(() {}); _markDirty(); }),
                               const SizedBox(height: 20),
+                              Text('Stage information', style: Theme.of(context).textTheme.titleSmall),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: _panelBgColor,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: _borderColor),
+                                ),
+                                child: _buildPositionSelector(),
+                              ),
+                              const SizedBox(height: 16),
                               TextField(
                                 controller: _description,
                                 readOnly: _structureLocked,
@@ -994,36 +1024,14 @@ class _DefenseStageEditorScreenState
                                 ),
                               ),
                               const SizedBox(height: 16),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8,),
-                                decoration: BoxDecoration(
-                                  color: _panelBgColor,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: _borderColor),
-                                ),
-                                child: SwitchListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: Text(
-                                    'Published Stage',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13.5,
-                                      color: _textPrimaryColor,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    'When active, this stage is part of the live capstone defense sequence.',
-                                    style: TextStyle(fontSize: 12, color: _textSecondaryColor,),
-                                  ),
-                                  activeTrackColor: AppColors.maroon,
-                                  value: _isActive,
-                                  onChanged: _structureLocked
-                                      ? null
-                                      : (v) {
-                                          setState(() => _isActive = v);
-                                          _markDirty();
-                                        },
-                                ),
+                              StagePublicationSettings(
+                                published: _isActive, currentlyPublished: _wasPublished,
+                                enabled: !_saving && !_savingDraft && !_structureLocked,
+                                lockReason: _structureLocked ? _lockReason ?? 'Publication is locked because this stage has defense activity.' : null,
+                                onChanged: (value) {
+                                  setState(() => _isActive = value);
+                                  _markDirty();
+                                },
                               ),
                             ],
                           ),
@@ -1070,15 +1078,6 @@ class _DefenseStageEditorScreenState
                                 enabled: !_saving && !_structureLocked,
                                 onChanged: () { setState(() {}); _markDirty(); },
                                 onCarryoverChanged: (v) { setState(() => _scoreCarryover = v); _markDirty(); },),
-                              const SizedBox(height: 20),
-                              DefensysShadcnScope(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                const Text('Default scheduling minutes per team (optional)'),
-                                const SizedBox(height: 8),
-                                ShadInput(controller: _slotDuration, enabled: !_saving && !_structureLocked,
-                                  keyboardType: TextInputType.number, placeholder: const Text('15–240 minutes; leave empty to require entry'),
-                                  style: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter),
-                                  onChanged: (_) => _markDirty()),
-                              ])),
                             ],
                           ),
 
@@ -1207,7 +1206,7 @@ class _DefenseStageEditorScreenState
                             onPressed: _saving ? null : _handleBack,
                             style: TextButton.styleFrom(
                               foregroundColor: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
-                              textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13,),
+                              textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontWeight: FontWeight.w600, fontSize: 13,),
                             ),
                             child: Text(_isLocked ? 'Back to Setup' : 'Cancel'),
                           ),
@@ -1231,7 +1230,7 @@ class _DefenseStageEditorScreenState
                                 foregroundColor: _isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF334155),
                                 side: BorderSide(color: _borderColor),
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10,),
-                                textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13,),
+                                textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontWeight: FontWeight.w600, fontSize: 13,),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -1250,18 +1249,23 @@ class _DefenseStageEditorScreenState
                                 backgroundColor: _isDark ? DefensysTokens.maroon : AppColors.maroon,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10,),
-                                textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13,),
+                                textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontWeight: FontWeight.w700, fontSize: 13,),
                               ),
                             ),
                             const SizedBox(width: 10),
                           ],
-                          if (!_isLocked)
-                            DefensysSaveButton(
-                              onPressed: ((!_structureLocked && hasWeightError) || _savingDraft) ? null : _save,
-                              isSaving: _saving,
-                              label: 'Save changes',
-                            )
-                          else
+                          if (!_isLocked && _activeTab == 2)
+                            DefensysShadcnScope(child: ShadButton(
+                              onPressed: ((!_structureLocked && hasWeightError) || _saving || _savingDraft) ? null : _save,
+                              backgroundColor: DefensysTokens.maroonOf(context), foregroundColor: Colors.white,
+                              leading: _saving
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : Icon(_isActive ? LucideIcons.save : LucideIcons.filePen, size: 16),
+                              child: Text(_saving ? 'Saving…' : _wasPublished
+                                  ? (_isActive ? 'Save changes' : 'Unpublish stage')
+                                  : (_isActive ? 'Publish stage' : 'Save changes')),
+                            ))
+                          else if (_isLocked)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8,),
                               decoration: BoxDecoration(
