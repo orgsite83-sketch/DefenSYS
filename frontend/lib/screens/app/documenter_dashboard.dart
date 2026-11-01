@@ -50,10 +50,17 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
     backgroundColor: DefensysTokens.backgroundOf(context),
     appBar: AppBar(
       automaticallyImplyLeading: false,
-      backgroundColor: DefensysTokens.maroon,
-      foregroundColor: Colors.white,
+      backgroundColor: DefensysTokens.surfaceOf(context),
+      foregroundColor: DefensysTokens.textPrimaryOf(context),
+      titleTextStyle: DefensysTokens.appBarTitle.copyWith(
+        color: DefensysTokens.textPrimaryOf(context),
+      ),
       surfaceTintColor: Colors.transparent,
       elevation: 0,
+      scrolledUnderElevation: 0,
+      shape: Border(
+        bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+      ),
       toolbarHeight: DefensysMobileBrand.usesMobileHeader(context) ? 56 : 72,
       title: DefensysMobileBrand.usesMobileHeader(context)
           ? const DefensysMobileBrand()
@@ -65,7 +72,7 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white70,
+                    color: DefensysTokens.textSecondaryOf(context),
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -74,7 +81,7 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: DefensysTokens.textPrimaryOf(context),
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.3,
@@ -86,7 +93,6 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
         NotificationsBell(
           workspace: 'documenter',
           workspaceLabel: 'Minutes Documenter',
-          color: Colors.white,
         ),
         FacultyAppWorkspaceSwitcher(currentRoute: AppRoutes.documenter),
       ],

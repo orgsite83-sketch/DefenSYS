@@ -1429,15 +1429,23 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
         child: Scaffold(
           appBar: AppBar(
             automaticallyImplyLeading: false,
-            backgroundColor: DefensysTokens.maroon,
-            foregroundColor: Colors.white,
+            backgroundColor: DefensysTokens.surfaceOf(context),
+            foregroundColor: DefensysTokens.textPrimaryOf(context),
+            titleTextStyle: DefensysTokens.appBarTitle.copyWith(
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            shape: Border(
+              bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+            ),
             title: _buildAppBarTitle(),
             actions: [
               if (!_isGuest)
                 const NotificationsBell(
                   workspace: 'panelist',
                   workspaceLabel: 'Panelist',
-                  color: Colors.white,
                 ),
               if (_selectedIndex == 1 && !_loading)
                 DefensysShadcnScope(
@@ -1598,10 +1606,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
               Text(
                 currentTeam.name,
                 maxLines: 1,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.normal,
-                  color: Colors.white70,
+                  color: DefensysTokens.textSecondaryOf(context),
                 ),
                 overflow: TextOverflow.ellipsis,
               ),

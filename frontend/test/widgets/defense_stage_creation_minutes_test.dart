@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/screens/web/admin/defense_stages/defense_stages_screen.dart';
@@ -148,8 +150,77 @@ class _DelayedRubrics extends _RubricsNotifier {
   }
 }
 
+class _TemplatePicker extends FilePicker {
+  @override
+  Future<FilePickerResult?> pickFiles({String? dialogTitle, String? initialDirectory,
+    FileType type = FileType.any, List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading, bool allowCompression = true,
+    int compressionQuality = 30, bool allowMultiple = false, bool withData = false,
+    bool withReadStream = false, bool lockParentWindow = false, bool readSequential = false,
+  }) async => FilePickerResult([
+    PlatformFile(name: 'Paper.docx', size: 8, bytes: Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8])),
+  ]);
+}
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  for (final scope in ['team', 'shared']) {
+    testWidgets('restored $scope template keeps Add Stage open until reselected or removed', (tester) async {
+      tester.view.physicalSize = const Size(1440, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final requirement = <String, dynamic>{'deliverable_id': scope == 'team' ? 'D1' : 'PM1',
+        'label': 'Concept Papers', 'deliverable_type': 'pre', 'required': true,
+        'template_action': 'replace', 'template_selection_name': 'Paper.docx', 'template_selection_size': 8};
+      await StageSetupDraftStore(userId: '1', semesterId: 3).save(StageSetupDraft(fields: {
+        'label': 'Concept Proposal', 'qualifying_score': 75, 'minutes_required': false,
+        'deliverables': scope == 'team' ? [requirement] : [],
+        'shared_deliverables': scope == 'shared' ? [requirement] : [],
+      }, tab: 2));
+      final stages = _StagesNotifier();
+      final router = GoRouter(initialLocation: AdminRoutes.defenseStages, routes: [
+        GoRoute(path: AdminRoutes.defenseStages,
+          builder: (_, _) => const Scaffold(body: DefenseStagesScreen())),
+      ]);
+      addTearDown(router.dispose);
+      await tester.pumpWidget(ProviderScope(overrides: [
+        ...authTestOverrides(), defenseStagesProvider.overrideWith(() => stages),
+        academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+        rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+      ], child: MaterialApp.router(theme: AppTheme.lightTheme, routerConfig: router)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resume draft'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add Stage'));
+      await tester.pumpAndSettle();
+      expect(stages.saved, isNull);
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(find.textContaining('Select the template for "Concept Papers" again'), findsWidgets);
+      expect(find.text('Replace'), findsOneWidget);
+      expect(find.text('Connection Failed'), findsNothing);
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+      if (scope == 'team') {
+        FilePicker.platform = _TemplatePicker();
+        await tester.tap(find.text('Replace'));
+      } else {
+        await tester.tap(find.text('Remove'));
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add Stage'));
+      await tester.pumpAndSettle();
+      expect(stages.saved, isNotNull);
+      final drafts = stages.saved!['_templateDrafts'] as List;
+      final selected = (drafts.single as Map)['row'] as Map;
+      if (scope == 'team') {
+        expect((selected['_templateFile'] as PlatformFile).bytes, isNotEmpty);
+      } else {
+        expect(selected['template_action'], 'remove');
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
   testWidgets('stage editor starts independent reads together', (tester) async {
     tester.view.physicalSize = const Size(1440, 1200);
     tester.view.devicePixelRatio = 1;

@@ -93,7 +93,7 @@ def requirement_rows(team, stage):
     if selected.get('stage_label') != stage:
         raise UploadError('The server selected a different event/stage. Prepare the plan again.')
     return [row for group in ('pre', 'post') for row in selected.get(group, [])
-            if row.get('source') != 'defense_minutes' and row.get('type') in ('pre', 'post')]
+            if row.get('source') not in ('defense_minutes', 'weekly_reports') and row.get('type') in ('pre', 'post')]
 
 
 def repository_file_name(row, item, path):

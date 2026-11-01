@@ -86,6 +86,13 @@ For grouped/concept requirements, use the configured document key or label with 
 
 ## 4. Faculty review and endorsement before defense
 
+Configured Weekly Accomplishment Reports are submitted through the student
+Deliverables collection after physical adviser signing. The generic upload script
+skips this managed requirement. The assigned adviser must review and accept each
+required week in DefenSYS; the review/endorsement script cannot accept weekly
+reports automatically. Missing, pending, or correction-required weeks remain
+endorsement blockers. Accepted late reports satisfy their week.
+
 After uploading the required scheduling files:
 
 ```powershell

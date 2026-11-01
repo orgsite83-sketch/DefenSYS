@@ -49,7 +49,6 @@ import '../admin/curriculum_analytics/curriculum_analytics_screen.dart';
 import '../admin/rubric_engine_screen.dart';
 import '../admin/student_teams_screen.dart';
 import '../uploader/uploader_dashboard.dart';
-import 'weekly_progress_reports_screen.dart';
 import 'pit_lead_dashboard_content.dart';
 import 'pit_lead_cohort_screen.dart';
 import 'pit_student_import_screen.dart';
@@ -380,7 +379,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'deliverables':
         ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
         ref.read(adviserGradingProvider.notifier).fetchAll();
-        ref.read(weeklyProgressProvider.notifier).fetchReports();
         if (ref.read(capstoneDeliverablesProvider).scope == 'capstone') {
           ref.read(adviserDefenseProvider.notifier).fetch(workspace: 'adviser');
         } else {
@@ -389,7 +387,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'adviser_grading':
         ref.read(adviserGradingProvider.notifier).fetchAll();
       case 'weekly_reports':
-        ref.read(weeklyProgressProvider.notifier).fetchReports();
+        ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
       case 'documenter_records':
         ref.read(documenterProvider.notifier).fetchAssignments();
       case 'project_archive':
@@ -1793,13 +1791,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             initialScope: 'capstone',
             isAdviser: true,
             initialTeamId: teamId,
-            initialTab: 2,
+            initialTab: 0,
           );
         }
-        return Container(
-          color: DefensysTokens.surfaceOf(context),
-          child: const WeeklyProgressReportsScreen(),
-        );
+        return const TeamDeliverablesScreen(initialScope: 'capstone');
       case 'adviser_grading':
         final queryParams = routerState.uri.queryParameters;
         final teamIdParam = queryParams['teamId'];

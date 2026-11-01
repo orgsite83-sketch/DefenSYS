@@ -43,6 +43,8 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
 
     def validate_deliverable_id(self, value):
         stage = self.instance.defense_stage if self.instance else self.context.get('stage')
+        if stage and stage.weekly_reporting.get('enabled') and value.strip() == 'WPR':
+            raise serializers.ValidationError('WPR belongs to the managed weekly report collection.')
         if stage and stage.minutes_required and value.strip() == stage.minutes_deliverable_id:
             raise serializers.ValidationError('This number belongs to the system-generated signed-minutes record.')
         return value
@@ -107,6 +109,11 @@ def check_stage_structure_locked(stage, semester=None):
 
 
 class DefenseStageSerializer(serializers.ModelSerializer):
+    weekly_reporting = serializers.SerializerMethodField()
+
+    def get_weekly_reporting(self, obj):
+        from defense.weekly_reporting import policy_payload
+        return policy_payload(obj)
     shared_deliverables = serializers.SerializerMethodField()
 
     def get_shared_deliverables(self, obj):
@@ -146,6 +153,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'qualifying_score',
             'score_carryover',
             'minutes_required',
+            'weekly_reporting',
             'minutes_deliverable_id',
             'minutes_deliverable_label',
             'system_deliverables',
@@ -283,12 +291,14 @@ class DefenseStageSerializer(serializers.ModelSerializer):
         }
 
     def get_deliverables_count(self, obj):
-        return obj.deliverables.count() + int(obj.minutes_required)
+        return obj.deliverables.count() + int(obj.minutes_required) + int(bool(obj.weekly_reporting.get('enabled')))
 
     def get_system_deliverables(self, obj):
         from defense.minutes.requirements import minutes_definition
+        from defense.weekly_reporting import definition as weekly_definition
         definition = minutes_definition(obj)
-        return [definition] if definition else []
+        weekly = weekly_definition(obj)
+        return ([definition] if definition else []) + ([weekly] if weekly else [])
 
     def get_is_officially_complete(self, obj):
         semester = self.context.get('semester')
@@ -377,7 +387,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DefenseStage
-        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'deliverables']
+        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'weekly_reporting', 'deliverables']
         validators = []
         extra_kwargs = {
             'label': {'validators': []},
@@ -435,6 +445,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        weekly = validated_data.pop('weekly_reporting', None)
         deliverables_data = validated_data.pop('deliverables', [])
         from .grading_config import resolve_semester
         from .context import stages_for_semester
@@ -446,11 +457,20 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
             validated_data['display_order'] = (max_order or 0) + 1
         
         stage = super().create(validated_data)
+        if weekly is not None:
+            from defense.weekly_reporting import save_configuration
+            stage.weekly_reporting = save_configuration(stage, weekly)
+            stage.save(update_fields=['weekly_reporting'])
         self._create_deliverables(stage, deliverables_data)
         return stage
 
     def validate(self, attrs):
         from defense.document_policy import validate_concept_config, with_concept_papers
+        from defense.weekly_reporting import validate_configuration, WEEKLY_ID
+        if 'weekly_reporting' in attrs:
+            from .grading_config import resolve_semester
+            semester = self.context.get('semester') or getattr(self.instance, 'setup_semester', None) or resolve_semester()
+            attrs['weekly_reporting'] = validate_configuration(attrs['weekly_reporting'], stage=self.instance, semester=semester)
         if 'concept_config' in attrs and 'score_carryover' not in attrs:
             carryover = attrs['concept_config'].get('score_carryover')
             if carryover is not None:
@@ -472,6 +492,12 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         items = attrs.get('deliverables')
         if items is None:
             items = list(self.instance.deliverables.values()) if self.instance else []
+        weekly = attrs.get('weekly_reporting', getattr(self.instance, 'weekly_reporting', {}))
+        if weekly.get('enabled') and (any(d.get('deliverable_id') == WEEKLY_ID for d in items)
+                or attrs.get('minutes_deliverable_id', getattr(self.instance, 'minutes_deliverable_id', 'MINUTES')) == WEEKLY_ID
+                and attrs.get('minutes_required', getattr(self.instance, 'minutes_required', False))):
+            raise serializers.ValidationError({'weekly_reporting': 'WPR is reserved for the weekly report collection. '
+                'Resolve the existing requirement identifier before enabling it.'})
         shared = attrs.get('shared_deliverables', getattr(self.instance, 'shared_deliverables', None))
         generated = with_concept_papers(items, config, shared_items=shared if isinstance(shared, list) else [])
         if generated != items:
@@ -509,8 +535,13 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(reason)
             structure_locked, reason = check_stage_structure_locked(self.instance)
             if structure_locked and any(getattr(self.instance, key) != value for key, value in attrs.items()
-                    if key not in ('deliverables', 'shared_deliverables', 'qualifying_score', 'score_carryover')):
+                    if key not in ('deliverables', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'weekly_reporting')):
                 raise serializers.ValidationError(reason)
+            if structure_locked and 'weekly_reporting' in attrs:
+                from defense.weekly_reporting import policy_payload
+                old = policy_payload(self.instance)
+                if any(old.get(key) != value for key, value in attrs['weekly_reporting'].items()):
+                    raise serializers.ValidationError(reason)
             if 'shared_deliverables' in attrs:
                 try:
                     validate_shared_changes(self.instance, attrs['shared_deliverables'])
@@ -528,6 +559,10 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
             )
 
         deliverables_data = validated_data.pop('deliverables', None)
+        weekly = validated_data.pop('weekly_reporting', None)
+        if weekly is not None:
+            from defense.weekly_reporting import save_configuration
+            validated_data['weekly_reporting'] = save_configuration(instance, weekly)
         # Validate every edit/removal before any writes, including bulk saves.
         if deliverables_data is not None:
             existing_rows = list(instance.deliverables.all())

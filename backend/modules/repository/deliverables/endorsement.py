@@ -65,6 +65,15 @@ def endorsement_review(team, stage_label, *, definitions=None, submitted=None):
     if team.is_pit and not required:
         reason = reason or 'This PIT event does not require endorsement.'
     for item in required:
+        if item.get('source') == 'weekly_reports':
+            from student_teams.weekly_progress.services import collection_state, current_version, reports_for_collection
+            state = collection_state(team, item)
+            reason = reason or state['weekly_blocker']
+            snapshot.append({'definition': item, 'reports': [
+                (r.pk, v.pk, v.status, v.reviewed_at.isoformat() if v.reviewed_at else None)
+                for r in reports_for_collection(team, item['weekly_reporting'])
+                if (v := current_version(r)) and item['weekly_reporting']['required_start'] <= r.week_number <= item['weekly_reporting']['required_end']]})
+            continue
         submission = submitted.get(item['id'])
         from .documents import completeness, current_files
         from .services import defense_stage_for_label

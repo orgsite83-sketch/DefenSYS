@@ -95,6 +95,12 @@ def grade_configuration_lock(context, semester=None):
 
 @read_memoize
 def requirement_has_data(context, number, *, policy=None, shared=False):
+    if not shared and hasattr(context, 'weekly_reporting'):
+        from .weekly_reporting import WEEKLY_ID, period_for
+        if number == WEEKLY_ID and context.weekly_reporting.get('enabled'):
+            period = period_for(context.weekly_reporting.get('period_id'))
+            if period and period.reports.exists():
+                return True
     from defense.shared_deliverables import shared_definitions
     from repository.deliverables.models import ConceptRound
     from repository.section_concepts.models import (
@@ -193,6 +199,11 @@ def sync_shared_requirements(context, definitions):
 
 @read_memoize
 def context_deletion_lock(context):
+    if hasattr(context, 'weekly_reporting') and context.weekly_reporting.get('enabled'):
+        from .weekly_reporting import period_for
+        period = period_for(context.weekly_reporting.get('period_id'))
+        if period and period.reports.exists():
+            return True, 'This stage has weekly report submissions and cannot be deleted.'
     from repository.deliverables.models import ConceptRound
     from repository.section_concepts.models import SectionConceptProject, SharedDeliverableSet
     locked, reason = grade_configuration_lock(context)

@@ -96,6 +96,16 @@ class _FacultyRequirementsPaneState
   );
 
   Widget moreActions(Map<String, dynamic> item, bool saving) {
+    if (item['source'] == 'weekly_reports') {
+      final summary = RequirementSummary(item);
+      return FacultyRequirementActions(
+        key: ValueKey('requirement-actions-${identity(item)}'),
+        enabled: !saving, multipleFiles: true,
+        onDetails: () => open(item),
+        onViewFile: summary.uploaded > 0 ? () => open(item) : null,
+        onReview: summary.pending > 0 ? () => open(item) : null,
+      );
+    }
     final currentFiles = ((item['submission'] as Map?)?['files'] as List? ?? [])
         .whereType<Map>()
         .where((file) => file['is_current'] != false)
@@ -263,7 +273,7 @@ class _FacultyRequirementsPaneState
             const SizedBox(height: 8),
             widget.buildRequirement(active),
             const SizedBox(height: 12),
-            if (queue.length > 1)
+            if (queue.length > 1 && active['source'] != 'weekly_reports')
               Wrap(
                 alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,

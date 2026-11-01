@@ -372,73 +372,12 @@ class CapstoneDeliverableUnendorseView(APIView):
 
 
 class CompileWeeklyReportsView(APIView):
-    """Generate PDF compilation of weekly progress reports"""
+    """Retired write path; historical compiled PDFs retain their file endpoints."""
     permission_classes = [CanManageDeliverables]
 
     def post(self, request):
-        from .models import DeliverableSubmission
-        from .pdf_generator import generate_weekly_reports_pdf
-        
-        team_id = request.data.get('team_id')
-        stage_label = request.data.get('stage_label')
-        
-        if not team_id or not stage_label:
-            return Response(
-                {'error': 'team_id and stage_label are required.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        team = get_allowed_team(request, team_id)
-        if not check_deliverable_write_permission(request.user, team):
-            return Response({'detail': 'You do not have permission to manage deliverables for this team.'}, status=status.HTTP_403_FORBIDDEN)
-
-        try:
-            # Import WeeklyProgressReport model
-            try:
-                from student_teams.weekly_progress.models import WeeklyProgressReport
-            except ImportError:
-                return Response(
-                    {'error': 'Weekly progress module not found.'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-            
-            # Get all weekly reports for this team
-            reports = WeeklyProgressReport.objects.filter(
-                team=team
-            ).order_by('week_number')
-            
-            if not reports.exists():
-                return Response(
-                    {'error': 'No weekly progress reports found for this team.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Generate PDF
-            pdf_content = generate_weekly_reports_pdf(team, reports)
-            
-            # Save as deliverable
-            file_name = f'{team.name.replace(" ", "_")}_WeeklyReports_Compiled.pdf'
-            file_size = f'{len(pdf_content) / 1024:.2f} KB'
-            
-            from django.core.files.base import ContentFile
-            created = not DeliverableSubmission.objects.filter(
-                team=team, stage_label=stage_label, deliverable_id='WPR',
-            ).exists()
-            upsert_submission(
-                team, stage_label, 'WPR', file_name, file_size, request.user,
-                file=ContentFile(pdf_content, name=file_name),
-            )
-
-            return Response({
-                'success': True,
-                'file_name': file_name,
-                'file_size': file_size,
-                'report_count': reports.count(),
-                'created': created,
-            }, status=status.HTTP_200_OK)
-            
-        except (PermissionError, ValueError, ValidationError) as exc:
-            return deliverable_error_response(exc)
+        return Response({'detail': 'Weekly reports are managed and reviewed individually in Deliverables. '
+            'Existing historical compilations remain available for download.'}, status=status.HTTP_410_GONE)
 
 
 class CapstoneDeliverableReviewView(APIView):

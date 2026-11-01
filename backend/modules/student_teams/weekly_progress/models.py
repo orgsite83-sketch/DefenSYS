@@ -3,7 +3,25 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 
+class WeeklyReportingPeriod(models.Model):
+    """One reusable Capstone reporting calendar for an academic term."""
+    semester = models.OneToOneField('academic_period_management.Semester', on_delete=models.PROTECT,
+        related_name='weekly_reporting_period')
+    starts_on = models.DateField()
+    total_weeks = models.PositiveSmallIntegerField()
+    due_weekday = models.PositiveSmallIntegerField(default=6)
+    due_time = models.TimeField()
+
+    class Meta:
+        app_label = 'student_teams'
+
+
 class WeeklyProgressReport(models.Model):
+    period = models.ForeignKey(WeeklyReportingPeriod, null=True, blank=True,
+        on_delete=models.PROTECT, related_name='reports')
+    semester = models.ForeignKey('academic_period_management.Semester', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='+')
+    project_version = models.PositiveIntegerField(null=True, blank=True)
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name='weekly_progress_reports',
@@ -47,8 +65,11 @@ class WeeklyProgressReport(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['student', 'team', 'week_number'],
+                condition=models.Q(period__isnull=True),
                 name='unique_student_weekly_report',
             ),
+            models.UniqueConstraint(fields=['team', 'period', 'project_version', 'week_number'],
+                condition=models.Q(period__isnull=False), name='unique_managed_team_week'),
         ]
         indexes = [
             models.Index(fields=['student', 'report_date'], name='student_wee_student_059a10_idx'),
@@ -77,3 +98,31 @@ class WeeklyProgressReport(models.Model):
 
     def __str__(self):
         return f'{self.student.username} - Week {self.week_number} ({self.report_date})'
+
+
+class WeeklyReportVersion(models.Model):
+    report = models.ForeignKey(WeeklyProgressReport, on_delete=models.PROTECT, related_name='versions')
+    revision = models.PositiveIntegerField()
+    is_current = models.BooleanField(default=True)
+    file = models.FileField(upload_to='weekly_reports/versions/%Y/%m/', max_length=255)
+    file_name = models.CharField(max_length=255)
+    byte_size = models.PositiveBigIntegerField()
+    sha256 = models.CharField(max_length=64)
+    request_id = models.UUIDField(null=True, blank=True, unique=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='+')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=12, default='pending',
+        choices=[('pending', 'Awaiting review'), ('accepted', 'Accepted'), ('rejected', 'Needs correction')])
+    feedback = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.PROTECT, related_name='+')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        app_label = 'student_teams'
+        ordering = ['-revision']
+        constraints = [
+            models.UniqueConstraint(fields=['report', 'revision'], name='unique_weekly_report_revision'),
+            models.UniqueConstraint(fields=['report'], condition=models.Q(is_current=True),
+                name='unique_current_weekly_report_version'),
+        ]

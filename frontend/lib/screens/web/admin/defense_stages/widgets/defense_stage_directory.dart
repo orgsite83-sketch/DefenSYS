@@ -714,8 +714,9 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   }) {
     final key = stage['id'] ?? index;
     final expanded = _expanded.contains(key);
-    final deliverables = _rows(stage['deliverables']);
-    final system = _rows(stage['system_deliverables']);
+    final managed = _rows(stage['system_deliverables']);
+    final deliverables = [..._rows(stage['deliverables']), ...managed.where((row) => row['source'] == 'weekly_reports')];
+    final system = managed.where((row) => row['source'] != 'weekly_reports').toList();
     final pre = deliverables
         .where((d) => (d['deliverable_type'] ?? d['type']) == 'pre')
         .length;
@@ -969,7 +970,9 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
         ],
       ],
     );
-    final deliverables = _rows(stage['deliverables']);
+    final managed = _rows(stage['system_deliverables']);
+    final system = managed.where((row) => row['source'] != 'weekly_reports').toList();
+    final deliverables = [..._rows(stage['deliverables']), ...managed.where((row) => row['source'] == 'weekly_reports')];
     final pre = deliverables
         .where((d) => (d['deliverable_type'] ?? d['type']) == 'pre')
         .toList();
@@ -982,11 +985,11 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
         SetupRequirementGroup(title: 'Pre-defense requirements', rows: pre),
         const SizedBox(height: 14),
         SetupRequirementGroup(title: 'Post-defense requirements', rows: post),
-        if (_rows(stage['system_deliverables']).isNotEmpty) ...[
+        if (system.isNotEmpty) ...[
           const SizedBox(height: 14),
           SetupRequirementGroup(
             title: 'Documenter requirements',
-            rows: _rows(stage['system_deliverables']),
+            rows: system,
             system: true,
           ),
         ],

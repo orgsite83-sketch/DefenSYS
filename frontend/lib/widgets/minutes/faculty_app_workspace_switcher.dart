@@ -8,6 +8,7 @@ import '../../navigation/admin_route_paths.dart';
 import '../../navigation/workspace_access.dart';
 import '../../navigation/workspace_preference.dart';
 import '../../services/auth_provider.dart';
+import '../../theme/defensys_tokens.dart';
 
 class FacultyAppWorkspaceSwitcher extends ConsumerWidget {
   const FacultyAppWorkspaceSwitcher({
@@ -49,9 +50,11 @@ class FacultyAppWorkspaceSwitcher extends ConsumerWidget {
       padding: const EdgeInsets.only(right: 12),
       child: DefensysActionMenu(
         label: 'Switch workspace',
-        triggerLabel: 'Workspace',
+        triggerLabel: MediaQuery.sizeOf(context).width < 360
+            ? 'Switch'
+            : 'Workspace',
         triggerIcon: LucideIcons.chevronDown,
-        triggerForegroundColor: Colors.white,
+        triggerForegroundColor: DefensysTokens.textPrimaryOf(context),
         items: [
           for (final option in options)
             DefensysMenuItem(

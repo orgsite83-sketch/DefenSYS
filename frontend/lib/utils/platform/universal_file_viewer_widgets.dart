@@ -1373,6 +1373,7 @@ class UniversalDocxViewer extends StatefulWidget {
   final String fileName;
   final VoidCallback onDownload;
   final VoidCallback onOpenInNewTab;
+  final Widget? unavailablePreview;
 
   const UniversalDocxViewer({
     super.key,
@@ -1380,6 +1381,7 @@ class UniversalDocxViewer extends StatefulWidget {
     required this.fileName,
     required this.onDownload,
     required this.onOpenInNewTab,
+    this.unavailablePreview,
   });
 
   @override
@@ -1491,13 +1493,14 @@ class _UniversalDocxViewerState extends State<UniversalDocxViewer> {
     }
 
     if (_items.isEmpty || _parseError != null) {
-      return UniversalDeliverableCard(
-        fileName: widget.fileName,
-        fileSizeBytes: widget.bytes.length,
-        category: FileCategory.officeDoc,
-        onDownload: widget.onDownload,
-        onOpenInNewTab: widget.onOpenInNewTab,
-      );
+      return widget.unavailablePreview ??
+          UniversalDeliverableCard(
+            fileName: widget.fileName,
+            fileSizeBytes: widget.bytes.length,
+            category: FileCategory.officeDoc,
+            onDownload: widget.onDownload,
+            onOpenInNewTab: widget.onOpenInNewTab,
+          );
     }
 
     final isDark = DefensysTokens.isDark(context);

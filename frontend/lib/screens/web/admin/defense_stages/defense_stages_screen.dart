@@ -1,5 +1,6 @@
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import '../../../../widgets/repository/deliverable_template.dart';
+import 'widgets/stage_weekly_settings.dart';
 import '../../../../services/defense/template_configuration.dart';
 import '../../../../widgets/repository/shared_deliverables_editor.dart';
 import '../../../../widgets/repository/deliverable_submission_settings.dart';
@@ -631,6 +632,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     required Map<String, dynamic>? selectedItem,
     required ValueChanged<Map<String, dynamic>?> onSelect,
     String? itemError,
+    Widget? managedRequirement,
   }) {
     final dark = DefensysTokens.isDark(context);
     final sectionAccent = dark
@@ -744,7 +746,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                items.isEmpty
+                if (managedRequirement != null) managedRequirement,
+                items.isEmpty && managedRequirement != null ? const SizedBox.shrink() : items.isEmpty
                     ? InkWell(
                         onTap: onAdd,
                         borderRadius: BorderRadius.circular(8),
@@ -1419,6 +1422,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         (conceptConfig['enabled'] == true ? defaultSharedDeliverables() : []),);
     bool minutesRequired = setup?['minutes_required'] is bool
         ? setup!['minutes_required'] as bool : true;
+    var weeklyConfig = initialWeeklySettings(setup?['weekly_reporting'] as Map?, existingStages);
+    final weeklyTemplate = weeklyTemplateDraft(setup);
     final minutesNumber = TextEditingController(
       text: setup?['minutes_deliverable_id']?.toString() ?? 'MINUTES',
     );
@@ -1476,6 +1481,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         'is_active': isActive,
         'is_presentation_only': false,
         'minutes_required': minutesRequired,
+        'weekly_reporting': weeklyConfig,
+        'weekly_template': weeklyTemplate,
         'concept_config': {...conceptConfig, if (conceptConfig['enabled'] == true) 'review_policy': 'always',},
         'qualifying_score': double.tryParse(qualifyingScoreCtrl.text.trim()),
         'score_carryover': scoreCarryover,
@@ -1634,7 +1641,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                       _buildDialogTabBar(
                         activeTab: activeTab,
                         deliverableCount: deliverableSetupItems(deliverables, sharedDeliverables,).length +
-                            (minutesRequired == true ? 1 : 0),
+                            (minutesRequired == true ? 1 : 0) + (weeklyConfig['enabled'] == true ? 1 : 0),
                         totalWeight: total,
                         onTabSelected: (index) {
                           setDialogState(() => activeTab = index);
@@ -1817,6 +1824,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     onChanged: (value) => setDialogState(() => minutesRequired = value,),
                                   ),
                                   const SizedBox(height: 14),
+                                  StageWeeklySettings(value: weeklyConfig, template: weeklyTemplate,
+                                    enabled: !stageIsLocked,
+                                    semesterLabel: activePeriod?['display_name']?.toString() ?? activePeriod?['label']?.toString(),
+                                    onChanged: (value) => setDialogState(() => weeklyConfig = value),
+                                    onTemplateChanged: () => setDialogState(() {})),
+                                  const SizedBox(height: 14),
 
                                   // 5. Concept Settings
                                   ConceptSettings(
@@ -1896,6 +1909,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   StageDeliverableCounts(
                                     deliverables: deliverableSetupItems(deliverables, sharedDeliverables,),
                                     minutesRequired: minutesRequired == true,
+                                    weeklyRequired: weeklyConfig['enabled'] == true,
                                   ),
                                   // Pre-Defense Gatekeepers
                                   _buildDeliverableSection(
@@ -1905,7 +1919,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     accentColor: const Color(0xFF0F172A),
                                     bgHeaderColor: const Color(0xFFF8FAFC),
                                     borderColor: const Color(0xFFE2E8F0),
-                                    count: preDeliverables.length,
+                                    count: preDeliverables.length + (weeklyConfig['enabled'] == true ? 1 : 0),
+                                    managedRequirement: weeklyConfig['enabled'] == true
+                                      ? StageWeeklyRequirementRow(config: weeklyConfig, onEdit: () => setDialogState(() => activeTab = 0)) : null,
                                         onAdd: () {
                                       setDialogState(() {
                                          final item = <String, dynamic>{
@@ -2087,6 +2103,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             if (editing || activeTab == 2)
                               ElevatedButton.icon(
                                 onPressed: savingDraft ? null : () async {
+                                  final weeklyError = weeklySettingsError(weeklyConfig, weeklyTemplate, requireTemplate: isActive);
+                                  if (weeklyError != null) {
+                                    setDialogState(() => activeTab = 0);
+                                    showValidationToast(context, weeklyError);
+                                    return;
+                                  }
                                   final stageName = label.text.trim();
                                   if (stageName.isEmpty) {
                                     setDialogState(() => activeTab = 0);
@@ -2134,6 +2156,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                         return;
                                       }
                                     }
+                                  }
+                                  for (final item in deliverableSetupItems(deliverables, sharedDeliverables)) {
+                                    final templateError = templateSelectionError(item);
+                                    if (templateError == null) continue;
+                                    setDialogState(() {
+                                      activeTab = 2;
+                                      selectedDeliverable = item;
+                                      deliverableError = templateError;
+                                    });
+                                    showValidationToast(context, templateError);
+                                    return;
                                   }
                                   setDialogState(() => savingDraft = true,);
                                   final savedDraft = await persistDraft();
@@ -2211,6 +2244,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       'is_active': isActive,
       'is_presentation_only': false,
       'minutes_required': minutesRequired,
+      'weekly_reporting': weeklyConfig,
       'concept_config': {...conceptConfig, if (conceptConfig['enabled'] == true) 'review_policy': 'always',},
         'qualifying_score': double.tryParse(qualifyingScoreCtrl.text.trim()),
         'score_carryover': scoreCarryover,
@@ -2219,7 +2253,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       'deliverables': deliverables,
       'shared_deliverables': configuredSharedDeliverables(deliverables, sharedDeliverables,),
       if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
-      '_templateDrafts': templateDrafts(deliverables, sharedDeliverables),
+      '_templateDrafts': templateDrafts([...deliverables, if (weeklyConfig['enabled'] == true) weeklyTemplate], sharedDeliverables),
     };
 
     bool configured = false;

@@ -1,6 +1,7 @@
 import '../../../../widgets/repository/deliverable_template.dart';
 import '../../../../services/defense/template_configuration.dart';
 import 'widgets/stage_minutes_settings.dart';
+import 'widgets/stage_weekly_settings.dart';
 import 'widgets/stage_outcome_settings.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
@@ -67,6 +68,8 @@ class _DefenseStageEditorScreenState
   final _minutesNumber = TextEditingController(text: 'MINUTES');
   final _minutesName = TextEditingController();
   bool _minutesRequired = false;
+  Map<String, dynamic> _weeklyConfig = {'enabled': false};
+  Map<String, dynamic> _weeklyTemplate = weeklyTemplateDraft(null);
   Map<String, dynamic> _conceptConfig = {};
   final _qualifyingScore = TextEditingController();
   String _scoreCarryover = 'reassess';
@@ -131,6 +134,8 @@ class _DefenseStageEditorScreenState
       'is_active': _isActive,
       'is_presentation_only': false,
       'minutes_required': _minutesRequired,
+      'weekly_reporting': _weeklyConfig,
+      'weekly_template': _weeklyTemplate,
       'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always',},
       'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
       'score_carryover': _scoreCarryover,
@@ -438,6 +443,8 @@ class _DefenseStageEditorScreenState
     _qualifyingScore.text = stage['qualifying_score']?.toString() ?? '';
     _scoreCarryover = stage['score_carryover']?.toString() ?? _conceptConfig['score_carryover']?.toString() ?? 'reassess';
     _minutesRequired = stage['minutes_required'] == true;
+    _weeklyConfig = initialWeeklySettings(stage['weekly_reporting'] as Map?, ref.read(defenseStagesProvider).pipelineStages);
+    _weeklyTemplate = weeklyTemplateDraft(stage);
     _minutesNumber.text = stage['minutes_deliverable_id']?.toString() ?? 'MINUTES';
     _minutesName.text = stage['minutes_deliverable_label']?.toString() ?? '';
     final delivs = stage['deliverables'];
@@ -496,6 +503,11 @@ class _DefenseStageEditorScreenState
 
   Future<void> _save() async {
     if (_isLocked) return;
+    final weeklyError = weeklySettingsError(_weeklyConfig, _weeklyTemplate, requireTemplate: _isActive);
+    if (weeklyError != null) {
+      setState(() { _activeTab = 0; _error = weeklyError; });
+      return;
+    }
     if (!_structureLocked && StageOutcomeSettings.validateScore(_qualifyingScore.text) != null) {
       setState(() { _activeTab = 1; _error = 'Set a qualifying panel score from 0 to 100%.'; });
       return;
@@ -517,6 +529,15 @@ class _DefenseStageEditorScreenState
     final configuredItems = deliverableSetupItems(_deliverables, _sharedDeliverables,);
     for (int i = 0; i < configuredItems.length; i++) {
       final d = configuredItems[i];
+      final templateError = templateSelectionError(d);
+      if (templateError != null) {
+        setState(() {
+          _activeTab = 2;
+          _selectedDeliverable = d;
+          _error = templateError;
+        });
+        return;
+      }
       final labelVal = d['label']?.toString().trim() ?? '';
       if (labelVal.isEmpty) {
         setState(() {
@@ -572,6 +593,7 @@ class _DefenseStageEditorScreenState
             'is_active': _isActive,
             'is_presentation_only': false,
             'minutes_required': _minutesRequired,
+            'weekly_reporting': _weeklyConfig,
       'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always',},
       'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
       'score_carryover': _scoreCarryover,
@@ -581,7 +603,7 @@ class _DefenseStageEditorScreenState
             'deliverables': _deliverables,
             'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables,),
             if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
-            '_templateDrafts': templateDrafts(_deliverables, _sharedDeliverables),
+            '_templateDrafts': templateDrafts([..._deliverables, if (_weeklyConfig['enabled'] == true) _weeklyTemplate], _sharedDeliverables),
           },
         );
 
@@ -867,7 +889,7 @@ class _DefenseStageEditorScreenState
                       child: _buildTabBar(
                         activeTab: _activeTab,
                         hasWeightError: hasWeightError,
-                        deliverableCount: deliverableSetupItems(_deliverables, _sharedDeliverables,).length + (_minutesRequired == true ? 1 : 0),
+                        deliverableCount: deliverableSetupItems(_deliverables, _sharedDeliverables,).length + (_minutesRequired == true ? 1 : 0) + (_weeklyConfig['enabled'] == true ? 1 : 0),
                         onTabSelected: (tab) => setState(() => _activeTab = tab),
                       ),
                     ),
@@ -949,6 +971,11 @@ class _DefenseStageEditorScreenState
                                 requiredMinutes: _minutesRequired, enabled: !_structureLocked,
                                 onChanged: (value) { setState(() { _minutesRequired = value; _error = null; }); _markDirty(); },
                               ),
+                              const SizedBox(height: 16),
+                              StageWeeklySettings(value: _weeklyConfig, template: _weeklyTemplate,
+                                enabled: !_structureLocked,
+                                onChanged: (value) { setState(() => _weeklyConfig = value); _markDirty(); },
+                                onTemplateChanged: () { setState(() {}); _markDirty(); }),
                               const SizedBox(height: 20),
                               TextField(
                                 controller: _description,
@@ -1060,6 +1087,7 @@ class _DefenseStageEditorScreenState
                               StageDeliverableCounts(
                                 deliverables: deliverableSetupItems(_deliverables, _sharedDeliverables,),
                                 minutesRequired: _minutesRequired == true,
+                                weeklyRequired: _weeklyConfig['enabled'] == true,
                               ),
                               _buildDeliverableSection(
                                 title: 'Pre-Defense Requirements',
@@ -1068,7 +1096,9 @@ class _DefenseStageEditorScreenState
                                 accentColor: const Color(0xFF0F172A),
                                 bgHeaderColor: const Color(0xFFF8FAFC),
                                 borderColor: const Color(0xFFE2E8F0),
-                                count: preDeliverables.length,
+                                count: preDeliverables.length + (_weeklyConfig['enabled'] == true ? 1 : 0),
+                                managedRequirement: _weeklyConfig['enabled'] == true
+                                  ? StageWeeklyRequirementRow(config: _weeklyConfig, onEdit: () => setState(() => _activeTab = 0)) : null,
                                 onAdd: _isLocked
                                     ? () {}
                                     : () {
@@ -1460,6 +1490,7 @@ class _DefenseStageEditorScreenState
     required String emptyPlaceholderText,
     required List<Map<String, dynamic>> items,
     required bool isPost,
+    Widget? managedRequirement,
   }) {
     final effectiveAccent = _isDark
         ? (isPost ? const Color(0xFFF87171) : const Color(0xFF60A5FA))
@@ -1569,7 +1600,8 @@ class _DefenseStageEditorScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                items.isEmpty
+                if (managedRequirement != null) managedRequirement,
+                items.isEmpty && managedRequirement != null ? const SizedBox.shrink() : items.isEmpty
                     ? InkWell(
                         onTap: _isLocked ? null : onAdd,
                         borderRadius: BorderRadius.circular(8),

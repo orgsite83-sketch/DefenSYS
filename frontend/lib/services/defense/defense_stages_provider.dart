@@ -185,6 +185,9 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
         error: _errorFromResponse(response),
       );
       return null;
+    } on TemplateSelectionException catch (e) {
+      state = state.copyWith(isSaving: false, error: e.message);
+      return null;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return null;
@@ -227,6 +230,9 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
         isSaving: false,
         error: _errorFromResponse(response),
       );
+      return false;
+    } on TemplateSelectionException catch (e) {
+      state = state.copyWith(isSaving: false, error: e.message);
       return false;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: blob:; font-src data: blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Document preview</title>
+  <link rel="stylesheet" href="viewer.css">
+  <script src="vendor/jszip-3.10.2.min.js" defer></script>
+  <script src="vendor/docx-preview-0.4.1.min.js" defer></script>
+  <script src="layout.js" defer></script>
+  <script src="viewer.js" defer></script>
+</head>
+<body>
+  <div id="viewport" role="document" aria-label="Word document preview">
+    <div id="sizer"><div id="pages"></div></div>
+  </div>
+  <div id="document-styles"></div>
+</body>
+</html>

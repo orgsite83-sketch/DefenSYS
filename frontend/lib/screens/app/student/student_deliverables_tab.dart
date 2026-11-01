@@ -5,6 +5,7 @@ import 'package:defensys/widgets/repository/document_group.dart';
 import 'package:defensys/widgets/repository/deliverable_file_widgets.dart';
 import 'dart:async';
 import 'dart:convert';
+import '../../../widgets/repository/weekly_report_collection.dart';
 import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
@@ -944,6 +945,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     bool endorsed, [
     Map<String, dynamic>? stageGrade,
   ]) {
+    if (item['source'] == 'weekly_reports') {
+      return WeeklyReportRequirement(teamId: team['id'] as int, stageLabel: stageLabel, item: item,
+        semesterId: int.tryParse('${team['semester_id']}'), projectVersion: int.tryParse('${team['project_version']}'));
+    }
     if (usesGroupedDocumentCard(item)) {
       return DocumentGroup(
         teamId: team['id'] as int,
@@ -971,7 +976,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final fileLocked = item['can_upload'] is bool ? item['can_upload'] != true :
         !replacementUnlockedByAdmin && (isAccepted || (!isDefenseMaterialAttempt2 && !isRejected &&
         ((item['type'] == 'pre' && endorsed) || item['locked'] == true)));
-    final isWPR = item['id'] == 'WPR';
     final feedback = rawFeedback;
     final rawFormat = item['file_format'] ?? item['fileFormat'];
     final formatInfo = DeliverableFormatInfo.fromFormat(rawFormat?.toString());
@@ -1053,46 +1057,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             ],
             const SizedBox(height: 10),
 
-            // Main Action Container (Uploaded vs Empty vs WPR)
+            // Current file or upload action
             DeliverableTemplateDownload(template: item['template']),
-            if (isWPR) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.surfaceHigherOf(context),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: DefensysTokens.borderOf(context)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.assessment_outlined, size: 16, color: DefensysTokens.maroonTextOf(context)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Weekly Progress Reports (Team)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: DefensysTokens.textPrimaryOf(context),
-                        ),
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => _showWPRDialog(team, stageLabel),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: DefensysTokens.maroonOf(context),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        visualDensity: VisualDensity.compact,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      ),
-                      child: const Text('Weekly Reports', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-              ),
-            ] else if (uploaded) ...[
+            if (uploaded) ...[
               DeliverableUploadedFileTile(
                 fileName: fileName,
                 onDetails: () => _showDeliverableDetailsSheet(team, stageLabel, item, endorsed, stageGrade),
@@ -1363,7 +1330,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final isPost = item['type'] == 'post';
     final isRejected = status == 'rejected' || status == 'Needs Revision';
     final rawFeedback = (submission['feedback'] ?? item['feedback'])?.toString() ?? '';
-    final isWPR = item['id'] == 'WPR';
     final isWaived = item['is_waived'] == true;
     final isRequired = item['required'] == true && !isWaived;
     final stageVerdict = stageGrade?['verdict']?.toString();
@@ -1570,7 +1536,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             const SizedBox(height: 14),
 
             // File Properties & Info (matching reference Image 1)
-            if (uploaded && !isWPR) ...[
+            if (uploaded) ...[
               Text(
                 'FILE PROPERTIES & INFO',
                 style: TextStyle(
@@ -1720,7 +1686,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               const SizedBox(height: 16),
             ],
 
-            if (uploaded && !isWPR)
+            if (uploaded)
               DeliverableDetailsActions(
                 onView: () {
                   Navigator.pop(modalCtx);
@@ -1744,7 +1710,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   _removeFile(team, stageLabel, item);
                 },
               )
-            else if (!fileLocked && !isWaived && !isWPR)
+            else if (!fileLocked && !isWaived)
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -2551,229 +2517,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showWPRDialog(Map<String, dynamic> team, String stageLabel) {
-    final weekNumberCtrl = TextEditingController();
-    final dateCtrl = TextEditingController();
-    final now = DateTime.now();
-    dateCtrl.text = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-
-    String? selectedFileName;
-    String? selectedFileSize;
-    Uint8List? selectedFileBytes;
-    bool isSubmitting = false;
-
-    final studentData = widget.studentData;
-    final leaderName = team['leader_name'] ?? team['leaderName'] as String?;
-    final studentName = studentData?['student']?['name'] as String?;
-    final isLeader = leaderName == studentName;
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) {
-          Future<void> pickFile() async {
-            try {
-              FilePickerResult? result = await FilePicker.platform.pickFiles(
-                type: FileType.custom,
-                allowedExtensions: ['pdf'],
-                withData: true,
-              );
-              if (result != null && result.files.single.name.isNotEmpty) {
-                setState(() {
-                  selectedFileName = result.files.single.name;
-                  selectedFileBytes = result.files.single.bytes;
-                  final bytes = result.files.single.size;
-                  selectedFileSize = '${(bytes / 1024).toStringAsFixed(2)} KB';
-                });
-              }
-            } catch (e) {
-              if (context.mounted) showErrorToast(context, 'Error picking file: $e');
-            }
-          }
-
-          Future<void> submitReport() async {
-            if (weekNumberCtrl.text.trim().isEmpty) {
-              showValidationToast(context, 'Please enter week number');
-              return;
-            }
-            if (selectedFileName == null || selectedFileBytes == null) {
-              showValidationToast(context, 'Please select a PDF file');
-              return;
-            }
-            final week = weekNumberCtrl.text.trim();
-            final fileName = selectedFileName!;
-
-            final confirmed = await confirmDestructive(
-              context,
-              title: 'Submit Weekly Report?',
-              message: 'Week $week — $fileName. This submission will be sent to your adviser.',
-              confirmLabel: 'Submit',
-            );
-            if (!confirmed || !mounted) return;
-
-            setState(() => isSubmitting = true);
-            try {
-              final client = ref.read(authenticatedHttpClientProvider);
-              final request = http.MultipartRequest(
-                'POST',
-                Uri.parse('${ApiConfig.weeklyProgressUrl}/'),
-              );
-              request.fields['team'] = team['id'].toString();
-              request.fields['week_number'] = week;
-              request.fields['report_date'] = dateCtrl.text.trim();
-              request.fields['file_size'] = selectedFileSize ?? '';
-              request.fields['accomplishments'] = '[]';
-              request.fields['contributions'] = '[]';
-              request.fields['issues'] = '[]';
-              request.fields['plans'] = '[]';
-
-              request.files.add(http.MultipartFile.fromBytes(
-                'report_file',
-                selectedFileBytes!,
-                filename: fileName,
-              ));
-
-              final responseStream = await client.sendAuthenticated(request);
-              final response = await http.Response.fromStream(responseStream);
-
-              if (response.statusCode == 201 || response.statusCode == 200) {
-                await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-                      scope: 'capstone',
-                      successMessage: 'Weekly report submitted successfully!',
-                    );
-                if (context.mounted) {
-                  Navigator.pop(dialogContext);
-                }
-              } else {
-                throw Exception('Failed to submit: ${response.body}');
-              }
-            } catch (e) {
-              if (context.mounted) showErrorToast(context, 'Error: $e');
-            } finally {
-              setState(() => isSubmitting = false);
-            }
-          }
-
-          return AlertDialog(
-            title: const Text('Weekly Progress Reports'),
-            content: SizedBox(
-              width: 420,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (!isLeader)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orange.shade200),
-                        ),
-                        child: Text(
-                          'Only the team leader can submit weekly progress reports.',
-                          style: TextStyle(color: Colors.orange.shade800, fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    TextField(
-                      controller: weekNumberCtrl,
-                      keyboardType: TextInputType.number,
-                      enabled: isLeader && !isSubmitting,
-                      decoration: const InputDecoration(
-                        labelText: 'Week Number *',
-                        hintText: 'e.g. 1, 2, 3...',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: dateCtrl,
-                      readOnly: true,
-                      enabled: isLeader && !isSubmitting,
-                      decoration: const InputDecoration(
-                        labelText: 'Report Date',
-                        prefixIcon: Icon(Icons.event),
-                      ),
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2030),
-                        );
-                        if (date != null) {
-                          setState(() {
-                            dateCtrl.text = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-                          });
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    const Text('Upload Report (PDF only) *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: (isLeader && !isSubmitting) ? pickFile : null,
-                      icon: const Icon(Icons.attach_file),
-                      label: const Text('Choose PDF File'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 48),
-                        side: BorderSide(color: DefensysTokens.maroonOf(context)),
-                        foregroundColor: DefensysTokens.maroonOf(context),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (selectedFileName != null)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(selectedFileName!, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                  const SizedBox(height: 2),
-                                  Text(selectedFileSize ?? '', style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext),
-                child: const Text('Close'),
-              ),
-              if (isLeader)
-                ElevatedButton.icon(
-                  onPressed: (isSubmitting || selectedFileName == null) ? null : submitReport,
-                  icon: isSubmitting
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
-                      : const Icon(Icons.send, size: 16),
-                  label: const Text('Submit Report'),
-                  style: ElevatedButton.styleFrom(backgroundColor: DefensysTokens.maroonOf(context), foregroundColor: Colors.white),
-                ),
-            ],
-          );
-        },
       ),
     );
   }

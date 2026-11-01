@@ -12,6 +12,7 @@ import '../../theme/defensys_tokens.dart';
 import '../../toasts/feedback_toast.dart';
 import '../../widgets/export/defensys_pdf_viewer.dart';
 import '../../widgets/file_viewer_dialog_layout.dart';
+import 'docx_layout_viewer_web.dart';
 import 'universal_file_viewer_models.dart';
 import 'universal_file_viewer_widgets.dart';
 
@@ -645,6 +646,15 @@ class _UniversalFileViewerDialogState
         );
 
       case FileCategory.officeDoc:
+        if (widget.fileName.toLowerCase().trim().endsWith('.docx')) {
+          return DocxLayoutViewer(
+            key: ValueKey(_fileBytes),
+            bytes: _fileBytes!,
+            fileName: widget.fileName,
+            onDownload: _downloadFile,
+            onOpenInNewTab: _openInNewTab,
+          );
+        }
         return UniversalDocxViewer(
           bytes: _fileBytes!,
           fileName: widget.fileName,

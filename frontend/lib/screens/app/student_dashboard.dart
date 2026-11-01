@@ -18,11 +18,11 @@ import '../../services/app/data_refresh_provider.dart';
 import '../../services/academic/student_team_tasks_provider.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../widgets/branding/defensys_mobile_brand.dart';
+import '../../widgets/branding/institutional_brand.dart';
 import '../../l10n/l10n_ext.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/offline_banner.dart';
-import '../../notifications/notifications_modal.dart';
 import '../../notifications/notifications_bell.dart';
 import '../../notifications/notifications_provider.dart';
 
@@ -379,12 +379,20 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
           ),
           appBar: AppBar(
             automaticallyImplyLeading: false,
-            backgroundColor: DefensysTokens.maroonOf(context),
-            foregroundColor: Colors.white,
+            backgroundColor: DefensysTokens.surfaceOf(context),
+            foregroundColor: DefensysTokens.textPrimaryOf(context),
+            titleTextStyle: DefensysTokens.appBarTitle.copyWith(
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
+            surfaceTintColor: Colors.transparent,
+            scrolledUnderElevation: 0,
+            shape: Border(
+              bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+            ),
             elevation: 0,
             leading: Builder(
               builder: (ctx) => IconButton(
-                icon: const Icon(Icons.menu_rounded, color: Colors.white),
+                icon: const Icon(Icons.menu_rounded),
                 tooltip: 'Navigation Menu',
                 onPressed: () => Scaffold.of(ctx).openDrawer(),
               ),
@@ -408,7 +416,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                         tabSubtitle,
                         style: TextStyle(
                           fontSize: 11.5,
-                          color: Colors.white.withValues(alpha: 0.85),
+                          color: DefensysTokens.textSecondaryOf(context),
                           fontWeight: FontWeight.w500,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -419,7 +427,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
               const NotificationsBell(
                 workspace: 'student',
                 workspaceLabel: 'Student',
-                color: Colors.white,
               ),
               const SizedBox(width: 4),
             ],
@@ -526,10 +533,8 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         academicPeriod?['semester']?.toString() ??
         'AY 2026-2027';
 
-    final notifState = ref.watch(notificationsProvider('student'));
-
     return Drawer(
-      backgroundColor: Colors.white,
+      backgroundColor: DefensysTokens.surfaceOf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(right: Radius.circular(16)),
       ),
@@ -537,264 +542,284 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         top: false,
         child: Column(
           children: [
-            // Navigation uses the DefenSYS brand, independently of team track.
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.fromLTRB(
-                20,
-                MediaQuery.of(context).padding.top + 20,
-                20,
-                20,
-              ),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    DefensysTokens.maroonOf(context),
-                    DefensysTokens.maroonDark,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white24),
-                        ),
-                        child: const Icon(
-                          Icons.shield_rounded,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text(
-                        'DefenSYS',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 0.5,
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      MediaQuery.of(context).padding.top + 20,
+                      20,
+                      20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.surfaceOf(context),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: DefensysTokens.borderOf(context),
                         ),
                       ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white24),
-                        ),
-                        child: Text(
-                          termName,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 22,
-                        backgroundColor: Colors.white.withValues(alpha: 0.25),
-                        backgroundImage: avatarUrl != null
-                            ? NetworkImage(avatarUrl)
-                            : null,
-                        child: avatarUrl == null
-                            ? Text(
-                                studentName.isNotEmpty
-                                    ? studentName[0].toUpperCase()
-                                    : 'S',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                ),
-                              )
-                            : null,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Text(
-                              studentName,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                            const Expanded(child: DefensysMobileBrand()),
+                            const SizedBox(width: 8),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 104),
+                              child: Tooltip(
+                                message: termName,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: DefensysTokens.surfaceHigherOf(
+                                      context,
+                                    ),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: DefensysTokens.borderOf(context),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    termName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: DefensysTokens.textSecondaryOf(
+                                        context,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              teamName != null
-                                  ? '$roleTag · $teamName'
-                                  : roleTag,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.white.withValues(alpha: 0.85),
-                                fontWeight: FontWeight.w500,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 14),
+                        Tooltip(
+                          message: 'Profile & settings',
+                          child: InkWell(
+                            key: const ValueKey('student_drawer_profile'),
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              Navigator.pop(context);
+                              final profileIndex = _tabKeysFor(
+                                ref.read(dashboardProvider('student')).data,
+                              ).indexOf('profile');
+                              _selectTab(profileIndex);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 24,
+                                    backgroundColor:
+                                        DefensysTokens.surfaceHigherOf(context),
+                                    backgroundImage: avatarUrl != null
+                                        ? NetworkImage(avatarUrl)
+                                        : null,
+                                    child: avatarUrl == null
+                                        ? Text(
+                                            studentName.isNotEmpty
+                                                ? studentName[0].toUpperCase()
+                                                : 'S',
+                                            style: TextStyle(
+                                              color:
+                                                  DefensysTokens.maroonTextOf(
+                                                    context,
+                                                  ),
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 18,
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          studentName,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: DefensysTokens.textPrimaryOf(
+                                              context,
+                                            ),
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          teamName != null
+                                              ? '$roleTag · $teamName'
+                                              : roleTag,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color:
+                                                DefensysTokens.textSecondaryOf(
+                                                  context,
+                                                ),
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 18,
+                                    color: DefensysTokens.textSecondaryOf(
+                                      context,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Student navigation shortcuts and policies.
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 10,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _drawerSectionHeader('QUICK ACCESS'),
+                        _drawerItem(
+                          icon: Icons.upload_file_rounded,
+                          title: 'Deliverables & Manuscripts',
+                          badgeLabel: hasPendingDeliverables ? 'Pending' : null,
+                          badgeColor: const Color(0xFFEA580C),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _selectTab(1);
+                            _eventsSubTabNotifier.value = 1;
+                          },
+                        ),
+                        _drawerItem(
+                          icon: Icons.how_to_reg_rounded,
+                          title: 'Peer Evaluation',
+                          badgeLabel: hasPendingPeerEval ? 'Due Soon' : null,
+                          badgeColor: const Color(0xFFDC2626),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _selectTab(1);
+                            _eventsSubTabNotifier.value = 2;
+                          },
+                        ),
+                        _drawerItem(
+                          icon: Icons.calendar_month_rounded,
+                          title: 'Defense Schedule',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _selectTab(1);
+                            _eventsSubTabNotifier.value = 0;
+                          },
+                        ),
+                        _drawerItem(
+                          icon: Icons.folder_shared_rounded,
+                          title: 'Project Repository',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _selectTab(2);
+                          },
+                        ),
+                        if (showIntegrationTab)
+                          _drawerItem(
+                            icon: Icons.hub_rounded,
+                            title: 'Section Integration Hub',
+                            onTap: () {
+                              Navigator.pop(context);
+                              _selectTab(3);
+                            },
+                          ),
+
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Divider(
+                            color: DefensysTokens.borderOf(context),
+                          ),
+                        ),
+
+                        _drawerSectionHeader('SYSTEM & POLICIES'),
+                        _drawerItem(
+                          icon: Icons.info_outline_rounded,
+                          title: 'About DefenSYS',
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AboutScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _drawerItem(
+                          icon: Icons.privacy_tip_outlined,
+                          title: 'Privacy Policy',
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const PrivacyScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _drawerItem(
+                          icon: Icons.gavel_rounded,
+                          title: 'Terms & Conditions',
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const TermsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
 
-            // Navigation Links / Action Shortcuts (Clean Single-Line Items)
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 8,
-                  horizontal: 10,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: DefensysTokens.borderOf(context)),
                 ),
-                children: [
-                  _drawerSectionHeader('QUICK ACCESS'),
-                  _drawerItem(
-                    icon: Icons.upload_file_rounded,
-                    title: 'Deliverables & Manuscripts',
-                    badgeLabel: hasPendingDeliverables ? 'Pending' : null,
-                    badgeColor: const Color(0xFFEA580C),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _selectTab(1);
-                      _eventsSubTabNotifier.value = 1;
-                    },
-                  ),
-                  _drawerItem(
-                    icon: Icons.how_to_reg_rounded,
-                    title: 'Peer Evaluation',
-                    badgeLabel: hasPendingPeerEval ? 'Due Soon' : null,
-                    badgeColor: const Color(0xFFDC2626),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _selectTab(1);
-                      _eventsSubTabNotifier.value = 2;
-                    },
-                  ),
-                  _drawerItem(
-                    icon: Icons.calendar_month_rounded,
-                    title: 'Defense Schedule',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _selectTab(1);
-                      _eventsSubTabNotifier.value = 0;
-                    },
-                  ),
-                  _drawerItem(
-                    icon: Icons.folder_shared_rounded,
-                    title: 'Project Repository',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _selectTab(2);
-                    },
-                  ),
-                  if (showIntegrationTab)
-                    _drawerItem(
-                      icon: Icons.hub_rounded,
-                      title: 'Section Integration Hub',
-                      onTap: () {
-                        Navigator.pop(context);
-                        _selectTab(3);
-                      },
-                    ),
-                  _drawerItem(
-                    icon: Icons.draw_rounded,
-                    title: 'E-Signature & Security',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _selectTab(showIntegrationTab ? 4 : 3);
-                    },
-                  ),
-                  _drawerItem(
-                    icon: Icons.notifications_outlined,
-                    title: 'Notifications',
-                    badgeCount: notifState.unreadCount,
-                    onTap: () {
-                      Navigator.pop(context);
-                      showNotificationsPanel(
-                        context,
-                        workspace: 'student',
-                        workspaceLabel: 'Student',
-                      );
-                    },
-                  ),
-
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 6),
-                    child: Divider(color: Color(0xFFE2E8F0)),
-                  ),
-
-                  _drawerSectionHeader('SYSTEM & POLICIES'),
-                  _drawerItem(
-                    icon: Icons.person_outline,
-                    title: 'Profile & Settings',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _selectTab(showIntegrationTab ? 4 : 3);
-                    },
-                  ),
-                  _drawerItem(
-                    icon: Icons.info_outline_rounded,
-                    title: 'About DefenSYS',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AboutScreen()),
-                      );
-                    },
-                  ),
-                  _drawerItem(
-                    icon: Icons.privacy_tip_outlined,
-                    title: 'Privacy Policy',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const PrivacyScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _drawerItem(
-                    icon: Icons.gavel_rounded,
-                    title: 'Terms & Conditions',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const TermsScreen()),
-                      );
-                    },
-                  ),
-                ],
               ),
+              child: const InstitutionalBrand(logoHeight: 36, compact: true),
             ),
 
             // Bottom Sign Out Tile
@@ -815,30 +840,38 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     horizontal: 16,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
+                    color: DefensysTokens.isDark(context)
+                        ? const Color(0xFF3A2226)
+                        : const Color(0xFFFEF2F2),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFFFCA5A5)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
                       Icon(
                         Icons.logout_rounded,
-                        color: Color(0xFFDC2626),
+                        color: DefensysTokens.isDark(context)
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFDC2626),
                         size: 18,
                       ),
-                      SizedBox(width: 12),
+                      const SizedBox(width: 12),
                       Text(
                         'Logout',
                         style: TextStyle(
-                          color: Color(0xFFDC2626),
+                          color: DefensysTokens.isDark(context)
+                              ? const Color(0xFFFCA5A5)
+                              : const Color(0xFFDC2626),
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
                         ),
                       ),
-                      Spacer(),
+                      const Spacer(),
                       Icon(
                         Icons.chevron_right_rounded,
-                        color: Color(0xFFDC2626),
+                        color: DefensysTokens.isDark(context)
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFDC2626),
                         size: 18,
                       ),
                     ],
@@ -857,10 +890,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w800,
-          color: DefensysTokens.textSecondary,
+          color: DefensysTokens.textSecondaryOf(context),
           letterSpacing: 1.1,
         ),
       ),
@@ -873,7 +906,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     required VoidCallback onTap,
     String? badgeLabel,
     Color? badgeColor,
-    int? badgeCount,
   }) {
     return InkWell(
       onTap: onTap,
@@ -901,11 +933,12 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                   Flexible(
                     child: Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w600,
-                        color: DefensysTokens.textPrimary,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -938,28 +971,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                 ],
               ),
             ),
-            if (badgeCount != null && badgeCount > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(context),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  badgeCount.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              )
-            else
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 18,
-                color: Color(0xFFCBD5E1),
-              ),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
           ],
         ),
       ),

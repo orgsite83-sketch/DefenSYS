@@ -657,6 +657,9 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
         error: _errorFromResponse(response),
       );
       return false;
+    } on TemplateSelectionException catch (e) {
+      state = state.copyWith(isSaving: false, error: e.message);
+      return false;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;

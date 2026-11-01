@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/defensys_tokens.dart';
 import 'defensys_logo_mark.dart';
 
 /// Identity for root mobile workspaces. Detail routes retain contextual titles.
@@ -17,25 +18,20 @@ class DefensysMobileBrand extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const DefensysLogoMark(
-              size: 26,
-              colorMode: DefensysLogoColorMode.brand,
-            ),
+          DefensysLogoMark(
+            size: 32,
+            colorMode: DefensysTokens.isDark(context)
+                ? DefensysLogoColorMode.white
+                : DefensysLogoColorMode.brand,
           ),
           const SizedBox(width: 9),
-          const Flexible(
+          Flexible(
             child: Text(
               'DefenSYS',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white,
+                color: DefensysTokens.textPrimaryOf(context),
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 letterSpacing: -.4,

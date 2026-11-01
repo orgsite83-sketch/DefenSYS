@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/pump_app.dart';
@@ -161,19 +162,19 @@ void main() {
         onChanged: () {},
       ),
     );
-    final preview = tester.widget<TextButton>(
-      find.ancestor(of: find.text('Preview'), matching: find.byWidgetPredicate((widget) => widget is TextButton)).first,
+    final preview = tester.widget<ShadButton>(
+      find.widgetWithText(ShadButton, 'Preview'),
     );
     expect(preview.onPressed, isNotNull);
     expect(
       tester
-          .widget<TextButton>(find.widgetWithText(TextButton, 'Replace'))
+          .widget<ShadButton>(find.widgetWithText(ShadButton, 'Replace'))
           .onPressed,
       isNull,
     );
     expect(
       tester
-          .widget<TextButton>(find.widgetWithText(TextButton, 'Remove'))
+          .widget<ShadButton>(find.widgetWithText(ShadButton, 'Remove'))
           .onPressed,
       isNull,
     );
@@ -238,22 +239,35 @@ void main() {
           SingleChildScrollView(
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: DeliverableTemplateEditor(
-                item: {
-                  'template': {
-                    'id': 3,
-                    'original_name': '${'very-long-poster-name-' * 8}.png',
-                    'byte_size': 82,
-                    'file_url': '/api/media/files/poster.png',
-                  },
-                },
-                onChanged: () {},
+              child: Column(
+                children: [
+                  DeliverableTemplateEditor(
+                    item: {
+                      'template': {
+                        'id': 3,
+                        'original_name': '${'very-long-poster-name-' * 8}.png',
+                        'byte_size': 82,
+                        'file_url': '/api/media/files/poster.png',
+                      },
+                    },
+                    onChanged: () {},
+                  ),
+                  DeliverableTemplateDownload(
+                    template: {
+                      'id': 3,
+                      'original_name': '${'very-long-poster-name-' * 8}.png',
+                      'byte_size': 82,
+                      'file_url': '/api/media/files/poster.png',
+                    },
+                  ),
+                ],
               ),
             ),
           ),
           theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
         );
-        expect(find.text('Preview'), findsOneWidget);
+        expect(find.text('Preview'), findsNWidgets(2));
+        expect(find.text('Download template'), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
     );
@@ -324,7 +338,7 @@ void main() {
             '_templateDrafts': templateDrafts([row], []),
           },
         ),
-        throwsStateError,
+        throwsA(isA<TemplateSelectionException>()),
       );
       expect(client.requests, isEmpty);
     },

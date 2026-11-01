@@ -57,7 +57,10 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
   void didUpdateWidget(covariant StudentTeamSetupTasks oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.refreshKey != widget.refreshKey) {
-      load(refresh: true);
+      // Refreshing this shared provider also rebuilds the dashboard ancestor.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) load(refresh: true);
+      });
     }
   }
 

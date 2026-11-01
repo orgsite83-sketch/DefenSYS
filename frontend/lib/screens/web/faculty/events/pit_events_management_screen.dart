@@ -1231,6 +1231,15 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     final configuredItems = deliverableSetupItems(_deliverables, _sharedDeliverables,);
     for (int i = 0; i < configuredItems.length; i++) {
       final d = configuredItems[i];
+      final templateError = templateSelectionError(d);
+      if (templateError != null) {
+        setState(() {
+          _activeTab = 2;
+          _selectedDeliverable = d;
+        });
+        showValidationToast(context, templateError);
+        return;
+      }
       final ctrl = d['_labelController'] as TextEditingController?;
       final lbl = (ctrl != null ? ctrl.text : d['label']?.toString() ?? '').trim();
       if (lbl.isEmpty) {

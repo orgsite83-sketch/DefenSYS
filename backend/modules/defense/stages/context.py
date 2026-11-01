@@ -59,8 +59,11 @@ def setup_stage_ids(semester):
     # distinct from a new batch, which has no source participation to carry.
     from student_teams.participation import intake_for
     from student_teams.capstone_context import inherited_stage_ids
-    for team in StudentTeam.objects.filter(semester=semester, level__icontains='Capstone').select_related(
-            'semester__school_year', 'intake_semester__school_year'):
+    # Only closed source terms can contribute source_ids below. Avoid looking up
+    # intake/history for every unrelated current team during a one-team action.
+    for team in StudentTeam.objects.filter(semester=semester, level__icontains='Capstone',
+            term_participations__closed_at__isnull=False).select_related(
+            'semester__school_year', 'intake_semester__school_year').distinct():
         intake = intake_for(team)
         if not intake or intake.pk == semester.pk:
             continue

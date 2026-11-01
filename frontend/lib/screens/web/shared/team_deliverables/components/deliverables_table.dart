@@ -23,13 +23,12 @@ import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
-import 'package:defensys/screens/web/faculty/weekly_progress_reports_screen.dart';
+import 'package:defensys/widgets/repository/weekly_report_collection.dart';
 import 'package:defensys/screens/web/faculty/adviser/adviser_defense_tab.dart';
 import 'package:defensys/screens/web/faculty/pit_instructor/pit_team_schedule_tab.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/components/faculty_teams_overview_export.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/deliverable_submission_detail_modal.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/grade_deliverable_modal.dart';
-import 'package:defensys/screens/web/shared/team_deliverables/dialogs/wpr_management_dialogs.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/screens/web/admin/grade_center/defense_workflow_panel.dart';
 import 'package:defensys/models/adviser_workflow.dart';
@@ -974,6 +973,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     bool hideConceptContext = false,
     String? initialFileKey,
   }) {
+    if (item['source'] == 'weekly_reports') {
+      return WeeklyReportCollection(
+        key: ValueKey('weekly-${team['id']}-$stageLabel-${team['semester_id']}-${team['project_version']}'),
+        teamId: parseAsInt(team['id']), stageLabel: stageLabel, item: item,
+        semesterId: int.tryParse('${team['semester_id']}'), projectVersion: int.tryParse('${team['project_version']}'));
+    }
     if (usesGroupedDocumentCard(item)) {
       final linkToReview =
           widget.compactFaculty &&
@@ -1044,10 +1049,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         : (isPost
               ? currentStageObj['can_faculty_review_post'] == true
               : currentStageObj['can_faculty_review'] == true);
-
-    final isWPR =
-        item['id']?.toString() == 'WPR' ||
-        item['label']?.toString().contains('Weekly Progress Report') == true;
 
     final feedback = submission?['feedback']?.toString();
 
@@ -1144,34 +1145,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   ],
                 ),
               ),
-              if (isWPR) ...[
-                OutlinedButton.icon(
-                  onPressed: () => showApproveWPRDialog(
-                    context: context,
-                    ref: ref,
-                    team: team,
-                    stageLabel: stageLabel,
-                    alreadyApproved: uploaded,
-                    setDialogState: setDialogState,
-                  ),
-                  icon: Icon(
-                    uploaded ? Icons.visibility : Icons.check_circle_outline,
-                    size: 16,
-                  ),
-                  label: Text(uploaded ? 'View WPR' : 'Approve WPR'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: uploaded ? Colors.blue : AppColors.success,
-                    side: BorderSide(
-                      color: uploaded ? Colors.blue : AppColors.success,
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-              ] else if (!uploaded) ...[
+              if (!uploaded) ...[
                 if (isFaculty && !isAdmin) ...[
                   if (isPost) ...[
                     Text(
@@ -1205,7 +1179,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         elevation: 0,
                       ),
                     ),
-              ] else if (uploaded && !isWPR) ...[
+              ] else if (uploaded) ...[
                 const SizedBox(width: 8),
                 Tooltip(
                   message: isAdmin && isPost && subStatus == 'accepted'
@@ -1287,7 +1261,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             ),
           ],
           if (uploaded &&
-              !isWPR &&
               (isFaculty && !isAdmin) &&
               canFacultyReview &&
               !(isPost && subStatus == 'accepted')) ...[
@@ -1574,7 +1547,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     String? badgeText,
     Color? badgeColor,
   }) {
-    final activeTab = _cardActiveTabs[teamId] ?? 0;
+    final savedTab = _cardActiveTabs[teamId] ?? 0;
+    final activeTab = savedTab == 2 ? 0 : savedTab;
     final isActive = activeTab == tabIndex;
     return InkWell(
       onTap: () {
@@ -1691,7 +1665,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         widget.state.scope == 'capstone' ||
         widget.state.scope == 'admin';
 
-    final activeTab = _cardActiveTabs[teamId] ?? 0;
+    final savedTab = _cardActiveTabs[teamId] ?? 0;
+    final activeTab = savedTab == 2 ? 0 : savedTab;
     final reqUploaded = parseAsInt(stage['required_uploaded']);
     final reqTotal = parseAsInt(stage['required_total']);
 
@@ -1711,8 +1686,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 const ShadTab(value: 0, child: Text('Deliverables')),
                 const ShadTab(value: 4, child: Text('Team details')),
                 const ShadTab(value: 1, child: Text('Grades & rubric')),
-                if (widget.state.scope == 'capstone')
-                  const ShadTab(value: 2, child: Text('Weekly reports')),
                 if (widget.isPitInstructor ||
                     widget.isAdviser && widget.state.scope == 'capstone')
                   ShadTab(
@@ -1757,8 +1730,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   ],
                   if (widget.isAdviser && widget.state.scope == 'capstone') ...[
                     const SizedBox(width: 24),
-                    _expandedTabButton(teamId, 2, 'Weekly Reports'),
-                    const SizedBox(width: 24),
                     _expandedTabButton(
                       teamId,
                       3,
@@ -1788,11 +1759,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       onLightSurface: true,
                     ),
                   ),
-                  if (!widget.isAdviser &&
-                      widget.state.scope == 'capstone') ...[
-                    const SizedBox(width: 24),
-                    _expandedTabButton(teamId, 2, 'Weekly Reports'),
-                  ],
                   if (widget.isPitInstructor) ...[
                     const SizedBox(width: 24),
                     _expandedTabButton(teamId, 3, 'Schedule'),
@@ -2270,22 +2236,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             teamId: teamId,
             selectedStage: selectedStage,
             projectVersion: int.tryParse('${team['project_version'] ?? ''}'),
-          ),
-        ] else ...[
-          SizedBox(
-            height: 650,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: DefensysTokens.borderOf(context)),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: WeeklyProgressReportsScreen(
-                  embeddedTeamId: teamId.toString(),
-                ),
-              ),
-            ),
           ),
         ],
       ],

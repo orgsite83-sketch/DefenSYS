@@ -30,7 +30,7 @@ def stage_setup_readiness(stage, config, semester):
             elif rubric.scope != 'capstone' or rubric.evaluation_type != role:
                 issues.append(f'Choose a Capstone {role} evaluation rubric.')
 
-    if not stage.deliverables.exists():
+    if not stage.deliverables.exists() and not stage.weekly_reporting.get('enabled'):
         issues.append('Add student file submission requirements.')
 
     return {

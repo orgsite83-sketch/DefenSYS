@@ -237,6 +237,9 @@ class TeamWorkflowStatus {
       .fold(0, (total, item) => total + pendingFileReviewCount(item));
 
   static int pendingFileReviewCount(Map item) {
+    if (item['source'] == 'weekly_reports') {
+      return ((item['weekly_summary'] as Map?)?['pending'] as num? ?? 0).toInt();
+    }
     if (item['can_faculty_review'] == false ||
         item['is_waived'] == true ||
         item['source'] == 'defense_minutes') {

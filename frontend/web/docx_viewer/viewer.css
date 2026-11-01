@@ -1,0 +1,22 @@
+:root { color-scheme: light; background: #f1f5f9; }
+:root[data-dark="true"] { background: #171b22; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+#viewport { width: 100%; height: 100%; overflow: auto; }
+#sizer { position: relative; margin: 24px auto; }
+#pages {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: max-content;
+  transform-origin: top left;
+}
+#pages > section.docx {
+  flex: none;
+  background: white;
+  margin: 0 !important;
+  box-shadow: 0 2px 12px #00000014;
+}

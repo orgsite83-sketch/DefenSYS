@@ -1,5 +1,6 @@
 """One authorization policy for report metadata and private file bytes."""
 from authentication_access_control.scopes import is_admin_user
+from django.db.models import F, Q
 from .models import WeeklyProgressReport
 
 
@@ -10,7 +11,11 @@ def reports_for(user):
     if is_admin_user(user):
         return reports
     if user.role == 'student':
-        return reports.filter(student=user)
+        # Managed collections belong to the team/week. A new active leader may
+        # continue that team's reports without rewriting the original uploader.
+        return reports.filter(Q(student=user) | Q(period__isnull=False,
+            team__leader=user, team__memberships__student=user, semester__is_active=True,
+            semester_id=F('team__semester_id'), project_version=F('team__project_version'))).distinct()
     if user.role == 'faculty' and user.is_adviser:
         return reports.filter(team__adviser=user, team__level__icontains='Capstone')
     return reports.none()

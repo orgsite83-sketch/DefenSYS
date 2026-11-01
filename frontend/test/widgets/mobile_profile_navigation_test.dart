@@ -213,33 +213,56 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.byType(ProfileScreen), findsOneWidget);
-      expect(find.text('Account & Security'), findsOneWidget);
+      expect(find.text('Account'), findsOneWidget);
       expect(find.text('Settings'), findsOneWidget);
     });
   }
 
-  testWidgets('Student section member opens Profile from the drawer', (
-    tester,
-  ) async {
-    await show(
-      tester,
-      role: 'student',
-      dashboardState: DashboardState(
-        data: {
-          'team': {'section_project_id': 7},
-        },
-      ),
+  for (final hasIntegration in [false, true]) {
+    testWidgets(
+      'Student profile card opens Profile with Integration=$hasIntegration',
+      (tester) async {
+        await show(
+          tester,
+          role: 'student',
+          dashboardState: DashboardState(
+            data: hasIntegration
+                ? {
+                    'team': {'section_project_id': 7},
+                  }
+                : {},
+          ),
+        );
+        await tester.tap(find.byTooltip('Navigation Menu'));
+        await tester.pumpAndSettle();
+        final drawer = find.byType(Drawer);
+        for (final removed in [
+          'Profile & Settings',
+          'E-Signature & Security',
+          'Notifications',
+        ]) {
+          expect(
+            find.descendant(of: drawer, matching: find.text(removed)),
+            findsNothing,
+          );
+        }
+        final shortcut = find.byKey(const ValueKey('student_drawer_profile'));
+        await tester.ensureVisible(shortcut);
+        await tester.pumpAndSettle();
+        await tester.tap(shortcut);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(ProfileScreen), findsOneWidget);
+        expect(find.text('Account'), findsOneWidget);
+        expect(
+          tester
+              .widget<NavigationBar>(find.byType(NavigationBar))
+              .selectedIndex,
+          hasIntegration ? 4 : 3,
+        );
+      },
     );
-    await tester.tap(find.byTooltip('Navigation Menu'));
-    await tester.pumpAndSettle();
-    final shortcut = find.text('Profile & Settings');
-    await tester.ensureVisible(shortcut);
-    await tester.tap(shortcut);
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    expect(find.byType(ProfileScreen), findsOneWidget);
-    expect(find.text('Account & Security'), findsOneWidget);
-  });
+  }
 
   testWidgets(
     'Student Profile stays selected when Integration appears or disappears',
@@ -259,7 +282,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         expect(find.byType(ProfileScreen), findsOneWidget);
-        expect(find.text('Account & Security'), findsOneWidget);
+        expect(find.text('Account'), findsOneWidget);
         expect(find.text('Settings'), findsOneWidget);
       }
     },

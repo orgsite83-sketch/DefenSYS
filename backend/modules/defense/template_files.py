@@ -87,6 +87,10 @@ def _definitions(context):
         'file_policy': row.file_policy} for row in context.deliverables.all()}
     shared = shared_definitions(context)
     rows.update({('shared', row['deliverable_id']): row for row in shared})
+    if hasattr(context, 'weekly_reporting'):
+        from .weekly_reporting import definition
+        if weekly := definition(context):
+            rows[('team', weekly['id'])] = weekly
     return rows
 
 
@@ -95,6 +99,15 @@ def _assert_editable(context, key, definitions):
     locked, reason = grade_configuration_lock(context)
     if locked:
         raise ValidationError({'template': reason})
+    if (hasattr(context, 'weekly_reporting') and context.weekly_reporting.get('enabled')
+            and key == ('team', 'WPR')):
+        from student_teams.weekly_progress.models import WeeklyReportingPeriod
+        WeeklyReportingPeriod.objects.select_for_update().filter(pk=context.weekly_reporting.get('period_id')).first()
+        # Another stage can reuse accepted weeks while attaching its own initial
+        # template. A shared calendar's history must not block this first save.
+        if not DeliverableTemplate.objects.filter(**owner_filter(context),
+                requirement_scope='team', deliverable_id='WPR').exists():
+            return
     row = definitions.get(key, {})
     if requirement_has_data(context, key[1], policy=row.get('file_policy'), shared=key[0] == 'shared'):
         raise ValidationError({'template': DATA_REASON})
@@ -187,7 +200,7 @@ def _refresh_response(value, context, attachments):
             _refresh_response(child, context, attachments)
     elif isinstance(value, dict):
         if value.get('id') == context.pk and 'deliverables' in value:
-            for scope, field in [('team', 'deliverables'), ('shared', 'shared_deliverables')]:
+            for scope, field in [('team', 'deliverables'), ('shared', 'shared_deliverables'), ('team', 'system_deliverables')]:
                 for row in value.get(field) or []:
                     row['template'] = template_metadata(context, row['deliverable_id'],
                         shared=scope == 'shared', attachments=attachments)
@@ -236,6 +249,12 @@ def template_save(*, pit=False):
                     context = model.objects.select_for_update().get(pk=result.get('id') or context.pk)
                     previous_templates = template_map(context)
                     _apply(context, changes, files, before, prior, written, request.user)
+                    if not pit and context.weekly_reporting.get('enabled') and context.is_active:
+                        from .weekly_reporting import WEEKLY_ID
+                        attachment = DeliverableTemplate.objects.filter(defense_stage=context,
+                            requirement_scope='team', deliverable_id=WEEKLY_ID).first()
+                        if not attachment:
+                            raise ValidationError({'weekly_reporting': 'Attach a weekly report template before publishing weekly reporting.'})
                     current_templates = template_map(context)
                     _refresh_response(response.data, context, current_templates)
                     if isinstance(response.data, dict) and 'deliverable_id' in response.data:
@@ -293,7 +312,9 @@ def can_read_template(user, attachment):
             if not pit_events_for_team(team).filter(pk=context.pk).exists():
                 continue
         if attachment.requirement_scope == 'team':
-            return context.deliverables.filter(deliverable_id=attachment.deliverable_id).exists()
+            from .weekly_reporting import WEEKLY_ID
+            return (context.deliverables.filter(deliverable_id=attachment.deliverable_id).exists()
+                or not pit and attachment.deliverable_id == WEEKLY_ID and context.weekly_reporting.get('enabled', False))
         from repository.section_concepts.shared_deliverables import resolve, member_access, staff_access
         profile = resolve(team, context)
         if profile and (member_access(user, profile) or staff_access(user, profile)) and any(

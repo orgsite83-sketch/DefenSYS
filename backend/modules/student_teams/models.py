@@ -3,7 +3,9 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from student_teams.documents.models import TeamDocument  # noqa: F401
-from student_teams.weekly_progress.models import WeeklyProgressReport  # noqa: F401
+from student_teams.weekly_progress.models import (  # noqa: F401
+    WeeklyProgressReport, WeeklyReportingPeriod, WeeklyReportVersion,
+)
 from .project_versions import CurrentProjectManager
 
 

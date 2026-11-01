@@ -41,6 +41,23 @@ const templateExtensions = [
   'zip',
 ];
 
+/// Browser drafts retain selection names, but not the selected file's bytes.
+/// Keep this a form validation error, separate from HTTP/connection failures.
+class TemplateSelectionException implements Exception {
+  const TemplateSelectionException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
+String? templateSelectionError(Map<String, dynamic> row) {
+  if (row['template_action'] != 'replace') return null;
+  final file = row['_templateFile'] as PlatformFile?;
+  if (file?.bytes?.isNotEmpty == true) return null;
+  final label = '${row['label'] ?? 'this deliverable'}'.trim();
+  return 'Select the template for "$label" again, or remove it to continue.';
+}
+
 /// Keep selected bytes only in memory, outside configuration JSON/browser drafts.
 List<Map<String, dynamic>> templateDrafts(
   List<Map<String, dynamic>> teams,
@@ -96,14 +113,13 @@ Future<http.Response> saveTemplateConfiguration(
       if (source != null) 'source_id': source,
     };
     if (action == 'replace') {
-      final file = row['_templateFile'] as PlatformFile?;
-      if (file?.bytes == null || file!.bytes!.isEmpty) {
-        throw StateError(
-          'Select the template for "${row['label']}" again before saving.',
-        );
+      final selectionError = templateSelectionError(Map<String, dynamic>.from(row));
+      if (selectionError != null) {
+        throw TemplateSelectionException(selectionError);
       }
+      final file = row['_templateFile'] as PlatformFile?;
       final key = 'template_${files.length}';
-      files[key] = file;
+      files[key] = file!;
       change['upload_key'] = key;
     }
     changes.add(change);

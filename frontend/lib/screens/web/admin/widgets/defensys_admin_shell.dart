@@ -353,7 +353,7 @@ class _TopNav extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
           ],
-          const Spacer(),
+          const Expanded(child: _UniversityHeaderBrand()),
           if (canDoc) ...[
             IconButton(
               icon: const Icon(Icons.edit_note_rounded),
@@ -376,6 +376,105 @@ class _TopNav extends ConsumerWidget {
           const SizedBox(width: 10),
           const DefensysThemeToggle(),
         ],
+      ),
+    );
+  }
+}
+
+class _UniversityHeaderBrand extends StatelessWidget {
+  const _UniversityHeaderBrand();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
+
+    return Semantics(
+      header: true,
+      label: 'USTP Oroquieta, Department of Information Technology',
+      child: ExcludeSemantics(
+        child: Padding(
+          padding: const EdgeInsets.only(right: 24),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final showName = constraints.maxWidth >= 248;
+              final showDepartment = constraints.maxWidth >= 380;
+              final logo = Image.asset(
+                isDark
+                    ? 'assets/logo-ustp-white.png'
+                    : 'assets/logo-ustp-trans.png',
+                width: 47.32,
+                height: 52,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                isAntiAlias: true,
+              );
+
+              return Row(
+                children: [
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          logo,
+                          const SizedBox(width: 12),
+                          Image.asset(
+                            'assets/logo-dit-seal.png',
+                            width: 46,
+                            height: 46,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                            isAntiAlias: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (showName) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'USTP Oroquieta',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: DefensysTokens.fontFamily,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.3,
+                              height: 1.3,
+                              color: DefensysTokens.textPrimaryOf(context),
+                            ),
+                          ),
+                          if (showDepartment) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              'Department of Information Technology',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: DefensysTokens.fontFamily,
+                                fontSize: 12,
+                                height: 1.3,
+                                color: DefensysTokens.textSecondaryOf(context),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }

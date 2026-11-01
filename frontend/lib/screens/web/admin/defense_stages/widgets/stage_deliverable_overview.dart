@@ -112,16 +112,18 @@ class StageDeliverableCounts extends StatelessWidget {
     super.key,
     required this.deliverables,
     required this.minutesRequired,
+    this.weeklyRequired = false,
   });
 
   final List<Map<String, dynamic>> deliverables;
   final bool minutesRequired;
+  final bool weeklyRequired;
 
   @override
   Widget build(BuildContext context) {
     final pre = deliverables
         .where((item) => item['deliverable_type'] == 'pre')
-        .length;
+        .length + (weeklyRequired ? 1 : 0);
     final post = deliverables
         .where((item) => item['deliverable_type'] == 'post')
         .length;

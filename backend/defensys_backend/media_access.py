@@ -97,7 +97,7 @@ def can_read_media(user, name):
     if TeamDocument.objects.filter(file=name, team__in=document_teams_for(user)).exists():
         return True
     from student_teams.weekly_progress.access import reports_for
-    reports = reports_for(user).filter(report_file=name)
+    reports = reports_for(user).filter(Q(report_file=name) | Q(versions__file=name))
     if reports.exists():
         return True
     for minutes in DefenseMinutes.objects.filter(pdf_file=name).select_related('schedule__team'):

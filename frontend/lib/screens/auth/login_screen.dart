@@ -231,6 +231,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Widget _buildWebLayout(AuthState authState, BoxConstraints constraints) {
     final isCompact = constraints.maxWidth < 980;
+    final compactBranding = isCompact || constraints.maxHeight < 820;
 
     return Scaffold(
       backgroundColor: _palette.background,
@@ -309,7 +310,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       padding: EdgeInsets.symmetric(horizontal: isCompact ? 16 : 32, vertical: 24,
                       ),
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 440),
+                        constraints: const BoxConstraints(maxWidth: 472),
                         child: TweenAnimationBuilder<double>(
                           tween: Tween<double>(begin: 0.0, end: 1.0),
                           duration: const Duration(milliseconds: 650),
@@ -326,9 +327,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // Dedicated Institutional Co-Branded Header above the card
-                              _buildInstitutionalHeader(),
-                              const SizedBox(height: 20),
+                              _buildInstitutionalHeader(
+                                isCompact: compactBranding,
+                              ),
+                              SizedBox(height: compactBranding ? 20 : 24),
                               _buildWebLoginCard(authState, isCompact: isCompact),
                               const SizedBox(height: 24),
                               _buildWebFooter(),
@@ -347,7 +349,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  Widget _buildInstitutionalHeader() {
+  Widget _buildInstitutionalHeader({required bool isCompact}) {
+    // Keep the university mark within its original pixel dimensions at 2x.
+    final logoHeight = isCompact ? 96.0 : 112.0;
+    final sealSize = logoHeight * 0.88;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -359,34 +365,54 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               _palette.isDark
                   ? 'assets/logo-ustp-white.png'
                   : 'assets/logo-ustp-trans.png',
-              height: 44,
+              height: logoHeight,
+              width: logoHeight * 0.91,
               fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              isAntiAlias: true,
+              semanticLabel:
+                  'University of Science and Technology of Southern Philippines',
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 28),
             Container(
               width: 1,
-              height: 32,
-              color: _palette.inputBorder),
-            const SizedBox(width: 16),
-            SizedBox(
-              height: 42,
-              width: 42,
-              child: Image.asset(
-                'assets/logo-legacy.png',
-                fit: BoxFit.contain),
+              height: isCompact ? 60 : 70,
+              color: _palette.border,
+            ),
+            const SizedBox(width: 28),
+            Image.asset(
+              'assets/logo-dit-seal.png',
+              height: sealSize,
+              width: sealSize,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              isAntiAlias: true,
+              semanticLabel: 'Department of Information Technology seal',
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 16),
         Text(
-          'USTP OROQUIETA • DEPARTMENT OF IT',
+          'USTP Oroquieta',
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 12,
+            fontFamily: DefensysTokens.fontFamily,
+            fontSize: isCompact ? 22 : 24,
             fontWeight: FontWeight.w700,
-            color: _palette.label,
-            letterSpacing: 1.0,
+            color: _palette.primaryText,
+            letterSpacing: -0.5,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Department of Information Technology',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: DefensysTokens.fontFamily,
+            fontSize: 13,
+            color: _palette.secondaryText,
+            height: 1.4,
           ),
         ),
       ],
@@ -398,13 +424,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          'Department of Information Technology • USTP Oroquieta Campus © 2026',
+          'Department of Information Technology\nUSTP Oroquieta Campus © 2026',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontFamily: 'Inter',
             color: _palette.secondaryText,
             fontSize: 12,
             fontWeight: FontWeight.w500,
+            height: 1.5,
           ),
         ),
         const SizedBox(height: 8),
@@ -621,64 +648,67 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
       child: Padding(
         padding: EdgeInsets.fromLTRB(
-          isCompact ? 24 : 36,
-          34,
-          isCompact ? 24 : 36,
-          30,
+          isCompact ? 24 : 30,
+          28,
+          isCompact ? 24 : 30,
+          28,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Inline Compact Header Lockup (Option 02)
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                SizedBox(
-                  width: 46,
-                  height: 46,
+                Container(
+                  width: 28,
+                  height: 28,
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: _palette.action,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
                   child: Image.asset(
-                    'assets/logo-web-mark-smooth.png',
+                    'assets/logo-login-mark-58.png',
                     fit: BoxFit.contain,
-                    color: _palette.isDark ? _palette.link : null,
+                    filterQuality: FilterQuality.high,
                   ),
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Welcome back',
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          color: _palette.primaryText,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.4,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Sign in to manage defenses & records.',
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          color: _palette.secondaryText,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w400,
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
+                const SizedBox(width: 9),
+                Text(
+                  'DefenSYS',
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamily,
+                    color: _palette.primaryText,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.35,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 18),
-            Container(
-              height: 1,
-              color: _palette.subtleSurface),
-            const SizedBox(height: 18),
+            Text(
+              'Welcome back',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamily,
+                color: _palette.primaryText,
+                fontSize: 25,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.6,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              'Sign in to manage defenses & records.',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamily,
+                color: _palette.secondaryText,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 24),
             if (sessionBanner != null) ...[
               sessionBanner,
               const SizedBox(height: 14),

@@ -809,6 +809,14 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     ]);
   }
 
+  bool applyWeeklyReportResponse(Map<String, dynamic> payload) {
+    if (payload['selected_stage'] != state.selectedStage) return false;
+    _requestVersion++;
+    final applied = _applyTeamPayload(payload, successMessage: 'Weekly report updated.');
+    if (applied) _markDependentsChanged();
+    return applied;
+  }
+
   bool _applyTeamPayload(
     Map<String, dynamic> payload, {
     required String successMessage,

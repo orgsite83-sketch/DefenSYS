@@ -10,6 +10,7 @@ import 'workflow_status_style.dart';
 /// Single-file policies still use the original requirement card. Named slots,
 /// concepts and attachment groups need their own per-file upload/review targets.
 bool usesGroupedDocumentCard(Map<String, dynamic> item) {
+  if (item['source'] == 'weekly_reports') return true;
   final policy = item['file_policy'] as Map? ?? const {};
   return policy.isNotEmpty && (policy['mode'] ?? 'single') != 'single';
 }

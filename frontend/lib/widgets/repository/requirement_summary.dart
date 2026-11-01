@@ -4,6 +4,24 @@ import 'deliverable_file_widgets.dart';
 /// Read-only presentation of the current files; never changes workflow readiness.
 class RequirementSummary {
   RequirementSummary(Map<String, dynamic> item) {
+    if (item['source'] == 'weekly_reports') {
+      weekly = true;
+      final counts = item['weekly_summary'] as Map? ?? {};
+      required = (counts['required'] as num? ?? 0).toInt();
+      uploaded = (counts['uploaded'] as num? ?? 0).toInt();
+      acceptedFiles = (counts['accepted'] as num? ?? 0).toInt();
+      fileCount = uploaded;
+      missing = (counts['missing'] as num? ?? required).toInt();
+      pending = (counts['pending'] as num? ?? 0).toInt();
+      corrections = (counts['rejected'] as num? ?? 0).toInt();
+      late = (counts['late'] as num? ?? 0).toInt();
+      overdue = (counts['overdue'] as num? ?? 0).toInt();
+      status = item['completed'] == true ? 'Accepted' : corrections > 0
+          ? 'Corrections requested' : missing > 0 ? '$uploaded/$required Uploaded' : 'Under Review';
+      tone = item['completed'] == true ? WorkflowStatusTone.success
+          : corrections > 0 || pending > 0 ? WorkflowStatusTone.attention : WorkflowStatusTone.neutral;
+      return;
+    }
     final policy = item['file_policy'] as Map? ?? {};
     final submission = item['submission'] as Map? ?? {};
     final files = (submission['files'] as List? ?? [])
@@ -100,6 +118,9 @@ class RequirementSummary {
   late int corrections;
   late final String status;
   late final WorkflowStatusTone tone;
+  int late = 0;
+  int overdue = 0;
+  bool weekly = false;
 
   bool get needsAttention => missing > 0 || pending > 0 || corrections > 0;
   String get progress => required == 0
@@ -108,9 +129,12 @@ class RequirementSummary {
       ? '$uploaded uploaded · $required required'
       : '$uploaded/$required';
   String get detail => [
+    if (weekly && acceptedFiles > 0) '$acceptedFiles accepted',
     if (pending > 0) '$pending awaiting review',
     if (corrections > 0) '$corrections corrections requested',
     if (missing > 0) '$missing missing',
+    if (late > 0) '$late late',
+    if (overdue > 0) '$overdue overdue',
   ].join(' · ');
 
   static bool _rejected(dynamic status) =>

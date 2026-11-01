@@ -140,6 +140,14 @@ For future sandbox schema changes:
 .\backend\venv\Scripts\python.exe backend\manage.py migrate --settings=defensys_backend.settings_sandbox
 ```
 
+Rebuilding Flutter does not apply Django migrations. The normal development
+database and the sandbox each need their own migrations, even though they use
+the same source code. For example, a missing `defense.0049_deliverable_template`
+in the sandbox causes stage creation to fail with HTTP 500 while an empty
+stage list and the basic database health check can still succeed. Check the
+running backend's settings and migrate that environment; do not reset the
+database or recreate its accounts to fix a missing table.
+
 To start another empty sandbox without erasing this one:
 
 ```powershell
