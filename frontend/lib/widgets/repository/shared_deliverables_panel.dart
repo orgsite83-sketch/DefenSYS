@@ -7,6 +7,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../models/team_workflow_status.dart';
 import '../../services/academic/section_concept_service.dart';
+import '../../services/auth_provider.dart';
 import '../../services/app/data_refresh_provider.dart';
 import '../../services/network/authenticated_client.dart';
 import '../../theme/defensys_tokens.dart';
@@ -16,6 +17,7 @@ import 'deliverable_file_widgets.dart';
 import 'concept_revision_dialog.dart';
 import 'concept_review_section.dart';
 import 'shared_concept_review.dart';
+import 'deliverable_requirement_card.dart';
 
 List<Map<String, dynamic>> _sharedRows(dynamic value) => (value as List? ?? [])
     .whereType<Map>()
@@ -35,10 +37,14 @@ class SharedDeliverablesPanel extends ConsumerStatefulWidget {
     this.onReviewFiles,
     this.readOnly = false,
     this.normalFlow = false,
+    this.focusedRequirementId,
+    this.focusedSystemKey,
   });
   final Map<String, dynamic> group;
   final bool readOnly;
   final bool normalFlow;
+  final String? focusedRequirementId;
+  final String? focusedSystemKey;
   final ValueChanged<Map<String, dynamic>>? onChanged;
   final String? selectedSystemKey;
   final ValueChanged<String>? onSystemChanged;
@@ -98,6 +104,7 @@ class _SharedDeliverablesPanelState
     Map<String, dynamic> requirement,
     Map<String, dynamic> document,
   ) async {
+    final activity = DeliverablePopupActivity.maybeOf(context);
     final format =
         '${document['file_format'] ?? requirement['file_format'] ?? 'any'}';
     final info = DeliverableFormatInfo.fromFormat(format);
@@ -125,6 +132,7 @@ class _SharedDeliverablesPanelState
       busy = true;
       error = null;
     });
+    activity?.value = true;
     try {
       final suggested =
           '${document['suggested_file_name'] ?? requirement['suggested_file_name'] ?? ''}';
@@ -154,6 +162,7 @@ class _SharedDeliverablesPanelState
         );
       }
     } finally {
+      activity?.value = false;
       if (mounted) setState(() => busy = false);
     }
   }
@@ -224,7 +233,51 @@ class _SharedDeliverablesPanelState
     }
   }
 
-  Widget requirementCard(Map<String, dynamic> requirement, {String? key}) {
+  Map<String, dynamic> summaryItem(
+    Map<String, dynamic> requirement, {
+    String? key,
+  }) {
+    final documents = _sharedRows(
+      requirement['documents'],
+    ).where((row) => key == null || row['system_key'] == key).toList();
+    final policy = Map<String, dynamic>.from(
+      requirement['file_policy'] as Map? ?? {},
+    );
+    return {
+      ...requirement,
+      'id': '${requirement['deliverable_id']}-$key',
+      'type': requirement['deliverable_type'],
+      'file_policy': {
+        ...policy,
+        'mode': policy['mode'] == 'multiple' ? 'multiple' : 'slots',
+      },
+      'document_slots': [
+        for (final document in documents)
+          {
+            'key': document['key'],
+            'required': document['required'] ?? requirement['required'],
+          },
+        if (documents.isEmpty && policy['mode'] != 'multiple')
+          {'key': 'single', 'required': requirement['required']},
+      ],
+      'submission': {
+        'files': [
+          for (final document in documents)
+            if (document['file'] is Map)
+              {
+                ...Map<String, dynamic>.from(document['file'] as Map),
+                'slot_key': document['key'],
+              },
+        ],
+      },
+    };
+  }
+
+  Widget requirementCard(
+    Map<String, dynamic> requirement, {
+    String? key,
+    bool details = false,
+  }) {
     final documents = _sharedRows(
       requirement['documents'],
     ).where((row) => key == null || row['system_key'] == key).toList();
@@ -235,6 +288,25 @@ class _SharedDeliverablesPanelState
         )
         .toList();
     if (mode == 'concepts' && documents.isEmpty) return const SizedBox.shrink();
+    if (!details && ref.watch(authProvider).user?['role'] == 'student') {
+      return DeliverableRequirementCard(
+        item: summaryItem(requirement, key: key),
+        enabled: !busy,
+        onOpen: () => showDeliverableRequirementDialog(
+          context,
+          builder: (context) => SharedDeliverablesPanel(
+            group: group,
+            readOnly: widget.readOnly,
+            focusedRequirementId: '${requirement['deliverable_id']}',
+            focusedSystemKey: key,
+            onChanged: (value) {
+              if (mounted) setState(() => group = value);
+              widget.onChanged?.call(value);
+            },
+          ),
+        ),
+      );
+    }
     final relevantFiles = documents
         .where((row) => row['file'] is Map)
         .map((row) => row['file'] as Map)
@@ -272,38 +344,41 @@ class _SharedDeliverablesPanelState
         ? WorkflowStatusTone.destructive
         : WorkflowStatusTone.neutral;
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: DefensysTokens.surfaceOf(context),
-        border: Border.all(color: DefensysTokens.borderOf(context)),
-        borderRadius: BorderRadius.circular(14),
-      ),
+      margin: details ? EdgeInsets.zero : const EdgeInsets.only(bottom: 12),
+      padding: details ? EdgeInsets.zero : const EdgeInsets.all(14),
+      decoration: details
+          ? null
+          : BoxDecoration(
+              color: DefensysTokens.surfaceOf(context),
+              border: Border.all(color: DefensysTokens.borderOf(context)),
+              borderRadius: BorderRadius.circular(14),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  '${requirement['label']}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: DefensysTokens.textPrimaryOf(context),
+          if (!details)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    '${requirement['label']}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: DeliverableStatusBadge(label: label, tone: tone),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: DeliverableStatusBadge(label: label, tone: tone),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           const SizedBox(height: 4),
           Text(
             requirement['required'] == true
@@ -414,7 +489,8 @@ class _SharedDeliverablesPanelState
               !(post && status == 'accepted'))
             Align(
               alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
+              child: ShadButton.outline(
+                enabled: !busy && requirement['can_add_attachment'] == true,
                 onPressed: !busy && requirement['can_add_attachment'] == true
                     ? () => upload(requirement, {
                         'key': '',
@@ -422,8 +498,8 @@ class _SharedDeliverablesPanelState
                         'max_file_size': requirement['max_file_size'],
                       })
                     : null,
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add attachment'),
+                leading: const Icon(Icons.add, size: 16),
+                child: const Text('Add attachment'),
               ),
             ),
           if (relevantFiles.isEmpty)
@@ -594,6 +670,45 @@ class _SharedDeliverablesPanelState
 
   @override
   Widget build(BuildContext context) {
+    if (widget.focusedRequirementId != null) {
+      final requirement = _sharedRows(group['requirements'])
+          .where(
+            (row) => '${row['deliverable_id']}' == widget.focusedRequirementId,
+          )
+          .firstOrNull;
+      return DeliverableRequirementDialog(
+        item: requirement == null
+            ? {'label': 'Shared deliverable'}
+            : summaryItem(requirement, key: widget.focusedSystemKey),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (busy)
+              LinearProgressIndicator(color: DefensysTokens.maroonOf(context)),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  error!,
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+            if (requirement == null)
+              const Text('This requirement is no longer available.')
+            else
+              requirementCard(
+                requirement,
+                key: widget.focusedSystemKey,
+                details: true,
+              ),
+          ],
+        ),
+      );
+    }
     if (widget.normalFlow) return _normalFlow();
     final requirements = _sharedRows(group['requirements']);
     final allRepeated = requirements

@@ -7,6 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/capture_preview.dart';
 import '../helpers/pump_app.dart';
+import '../helpers/auth_test_overrides.dart';
+
+Future<void> _pumpSharedWidget(WidgetTester tester, Widget child, {ThemeData? theme}) =>
+    pumpDefensysWidget(tester, child, theme: theme, overrides: authTestOverrides());
 
 Map<String, dynamic> _document(
   String key,
@@ -86,7 +90,7 @@ void main() {
           'file_policy': {'mode': 'single'},
         },
       ];
-      await pumpDefensysWidget(
+      await _pumpSharedWidget(
         tester,
         StatefulBuilder(
           builder: (context, update) => SingleChildScrollView(
@@ -126,7 +130,7 @@ void main() {
     tester,
   ) async {
     final rows = defaultSharedDeliverables();
-    await pumpDefensysWidget(
+    await _pumpSharedWidget(
       tester,
       SingleChildScrollView(
         child: SharedDeliverablesEditor(
@@ -160,7 +164,7 @@ void main() {
           addTearDown(tester.view.resetPhysicalSize);
           addTearDown(tester.view.resetDevicePixelRatio);
           await loadPreviewFonts();
-          await pumpDefensysWidget(
+          await _pumpSharedWidget(
             tester,
             SingleChildScrollView(
               child: Padding(
@@ -242,7 +246,7 @@ void main() {
               ],
             },
           ];
-          await pumpDefensysWidget(
+          await _pumpSharedWidget(
             tester,
             SingleChildScrollView(
               child: Padding(
@@ -293,7 +297,7 @@ void main() {
                 ..['can_upload'] = false,
             ],
           });
-          await pumpDefensysWidget(
+          await _pumpSharedWidget(
             tester,
             SingleChildScrollView(
               child: Padding(
@@ -369,7 +373,7 @@ void main() {
           _document('c2:paper', 'Selected shared paper', system: 'c2'),
         ],
       });
-      await pumpDefensysWidget(
+      await _pumpSharedWidget(
         tester,
         SingleChildScrollView(child: SharedDeliverablesPanel(group: group)),
       );

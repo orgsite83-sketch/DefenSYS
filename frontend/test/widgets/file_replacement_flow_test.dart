@@ -6,6 +6,7 @@ import 'package:defensys/services/project_archive_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -119,12 +120,15 @@ void main() {
           ),
         ],
       );
+      expect(find.text('Replace File'), findsNothing);
+      await tester.tap(find.text('Manage files'));
+      await tester.pumpAndSettle();
       expect(find.text('Replace File'), findsOneWidget);
       expect(find.textContaining(replacementReason), findsOneWidget);
       await tester.tap(find.text('wrong.pdf'));
       await tester.pumpAndSettle();
       expect(
-        find.widgetWithText(OutlinedButton, 'Replace File'),
+        find.widgetWithText(ShadButton, 'Replace File'),
         findsOneWidget,
       );
       expect(find.byTooltip('Remove Submission'), findsNothing);
@@ -150,6 +154,8 @@ void main() {
       ],
     );
     expect(find.text('Replace File'), findsNothing);
+    await tester.tap(find.text('Manage files'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('wrong.pdf'));
     await tester.pumpAndSettle();
     expect(find.text('Replace File'), findsNothing);

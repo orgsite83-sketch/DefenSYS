@@ -45,6 +45,33 @@ void main() {
     expect(next.error, isNull);
   });
 
+  test(
+    'blocked deletion shows the backend reason and preserves workspace',
+    () async {
+      http.Request? deletion;
+      const reason =
+          'This team has submitted documents that must be preserved.';
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          if (request.method == 'DELETE') {
+            deletion = request;
+            return http.Response(jsonEncode({'detail': reason}), 409);
+          }
+          return http.Response('{"teams":[]}', 200);
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final notifier = container.read(studentTeamsProvider.notifier);
+      await notifier.fetchTeams(workspace: 'operations');
+      expect(await notifier.deleteTeam(2), isFalse);
+      expect(container.read(studentTeamsProvider).error, reason);
+      expect(container.read(studentTeamsProvider).isSaving, isFalse);
+      expect(deletion!.url.queryParameters['workspace'], 'operations');
+      expect(deletion!.url.queryParameters, isNot(contains('force')));
+    },
+  );
+
   test('history keeps intake phase and stage scope across refreshes', () async {
     final requests = <Uri>[];
     setApiHttpClientForTesting(
@@ -70,7 +97,11 @@ void main() {
     addTearDown(container.dispose);
     final notifier = container.read(studentTeamsProvider.notifier);
     await notifier.fetchTeams(level: 'Capstone', scope: 'history');
-    expect(container.read(studentTeamsProvider).error, isNull, reason: requests.toString());
+    expect(
+      container.read(studentTeamsProvider).error,
+      isNull,
+      reason: requests.toString(),
+    );
     expect(requests, isNotEmpty);
     expect(container.read(studentTeamsProvider).historyIntake, '3');
     await notifier.fetchTeams(historyPhase: 'capstone_1', historyStage: '3:1');
@@ -99,9 +130,9 @@ void main() {
     );
     final container = ProviderContainer(overrides: authTestOverrides());
     addTearDown(container.dispose);
-    final saved = await container
-        .read(studentTeamsProvider.notifier)
-          .addTeam({'name': 'Team Harbor',});
+    final saved = await container.read(studentTeamsProvider.notifier).addTeam({
+      'name': 'Team Harbor',
+    });
     expect(saved, isFalse);
     expect(container.read(studentTeamsProvider).error, '$ana\n$bea');
   });

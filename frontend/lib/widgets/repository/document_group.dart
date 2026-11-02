@@ -14,6 +14,8 @@ import 'deliverable_review_navigation.dart';
 import 'workflow_status_style.dart';
 import 'concept_revision_dialog.dart';
 import 'concept_review_section.dart';
+import 'deliverable_requirement_card.dart';
+import 'deliverable_popup_navigation.dart';
 
 class DocumentGroup extends ConsumerStatefulWidget {
   const DocumentGroup({
@@ -24,6 +26,7 @@ class DocumentGroup extends ConsumerStatefulWidget {
     this.programScope,
     this.focused = false,
     this.framed,
+    this.showHeader = true,
     this.concepts = const [],
     this.projectContext = false,
     this.showConceptContext = true,
@@ -41,6 +44,7 @@ class DocumentGroup extends ConsumerStatefulWidget {
   final String? programScope;
   final bool focused;
   final bool? framed;
+  final bool showHeader;
   final bool projectContext;
   final bool showConceptContext;
   final String? initialSlotKey;
@@ -114,6 +118,8 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
   }
 
   Future<bool> perform(Future<bool> Function() action) async {
+    final activity = DeliverablePopupActivity.maybeOf(context);
+    activity?.value = true;
     setState(() {
       busy = true;
       error = null;
@@ -132,6 +138,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
       if (mounted) setState(() => error = 'Could not complete the action: $e');
       return false;
     } finally {
+      activity?.value = false;
       if (mounted) setState(() => busy = false);
     }
   }
@@ -231,7 +238,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     }
     if (status == 'rejected') {
       final controller = TextEditingController();
-      final saved = await showDialog<bool>(
+      final saved = await showDeliverablePopupStep<bool>(
         context: context,
         builder: (context) => DefensysShadcnScope(
           child: ShadDialog(
@@ -499,8 +506,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                   'Accept the matching title in Concept review before accepting this file.',
                 ),
               ),
-            if (canReview &&
-                !(item['type'] == 'post' && accepted)) ...[
+            if (canReview && !(item['type'] == 'post' && accepted)) ...[
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,
@@ -934,7 +940,9 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (!widget.projectContext && !compactFileReview) ...[
+            if (widget.showHeader &&
+                !widget.projectContext &&
+                !compactFileReview) ...[
               Row(
                 children: [
                   Expanded(

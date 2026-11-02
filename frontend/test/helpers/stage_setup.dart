@@ -43,17 +43,12 @@ Future<void> chooseStagePublication(WidgetTester tester, bool published) async {
 }
 
 Future<void> chooseStageMinutes(WidgetTester tester, bool required) async {
-  final current = find.byKey(ValueKey('stage-minutes-${!required}'));
-  if (current.evaluate().isEmpty) return;
-  await tester.ensureVisible(current);
-  await tester.tap(current);
-  await tester.pumpAndSettle();
-  await tester.tap(
-    find
-        .text(required ? 'Signed minutes required' : 'Minutes not required')
-        .last,
-  );
-  await tester.pumpAndSettle();
+  final toggle = find.byKey(const ValueKey('stage-minutes-switch'));
+  if (tester.widget<ShadSwitch>(toggle).value != required) {
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+  }
 }
 
 Future<void> chooseStageRubrics(WidgetTester tester) async {

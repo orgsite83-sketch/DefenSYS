@@ -12,6 +12,7 @@ const panelRubric = <String, dynamic>{
 StageSetupValidation review({
   bool concept = true,
   Map<String, dynamic> semester = const {},
+  Map<String, int?> rubricIds = const {'panel': 1},
   List<Map<String, dynamic>> rubrics = const [panelRubric],
   List<Map<String, dynamic>> deliverables = const [
     {
@@ -30,7 +31,7 @@ StageSetupValidation review({
       ? {'panel_weight': 100, 'adviser_weight': 0, 'peer_weight': 0}
       : {'panel_weight': 50, 'adviser_weight': 30, 'peer_weight': 20},
   conceptSelection: concept,
-  rubricIds: {'panel': 1},
+  rubricIds: rubricIds,
   rubrics: rubrics,
   deliverables: deliverables,
   weekly: weekly,
@@ -43,11 +44,27 @@ void main() {
   test('concept selection can publish with panel rubric alone', () {
     expect(review().ready, isTrue);
     final standard = review(concept: false);
+    expect(standard.ready, isTrue);
+  });
+
+  test('Select later allows concept and standard setup without rubrics', () {
+    for (final concept in [false, true]) {
+      final result = review(concept: concept, rubricIds: {}, rubrics: []);
+      expect(result.ready, isTrue);
+      expect(result.issues[1], isEmpty);
+    }
+  });
+
+  test('only applicable selected rubrics are validated', () {
+    const rubricIds = {'panel': 1, 'adviser': 2, 'peer': 3};
+    expect(review(rubricIds: rubricIds).ready, isTrue);
+    final standard = review(concept: false, rubricIds: rubricIds);
     expect(standard.ready, isFalse);
     expect(standard.issues[1], hasLength(2));
     expect(
       review(
         concept: false,
+        rubricIds: rubricIds,
         semester: {
           'capstone_adviser_grading_enabled': false,
           'capstone_peer_evaluation_enabled': false,
@@ -62,6 +79,8 @@ void main() {
     () {
       for (final change in [
         {'status': 'draft'},
+        {'scope': 'pit'},
+        {'evaluation_type': 'peer'},
         {'semester_id': 4},
         {'defense_stage_id': 99},
         {'is_locked': true},
@@ -74,6 +93,15 @@ void main() {
         expect(result.ready, isFalse);
         expect(result.firstIncompleteTab, 1);
       }
+    },
+  );
+
+  test(
+    'a selected rubric missing from the available list blocks publication',
+    () {
+      final result = review(rubrics: []);
+      expect(result.ready, isFalse);
+      expect(result.firstIncompleteTab, 1);
     },
   );
 

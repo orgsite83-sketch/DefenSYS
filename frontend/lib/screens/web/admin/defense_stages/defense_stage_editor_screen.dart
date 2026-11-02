@@ -98,6 +98,7 @@ class _DefenseStageEditorScreenState
   List<Map<String, dynamic>> _sharedDeliverables = [];
   Map<String, dynamic>? _selectedDeliverable;
   bool _minutesExpanded = false;
+  final _stageRequirementsKey = GlobalKey();
   Map<String, dynamic>? _stage;
   bool _isDirty = false;
   bool _savingDraft = false;
@@ -124,6 +125,21 @@ class _DefenseStageEditorScreenState
       _unsavedNotifier?.setDirty(true);
       _unsavedDraftNotifier?.setCallback(_saveDraft);
     }
+  }
+
+  void _showStageRequirements() {
+    setState(() => _activeTab = 0);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final target = _stageRequirementsKey.currentContext;
+      if (target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        alignment: 0.15,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+      );
+    });
   }
 
   StageSetupDraft _snapshotDraft() => StageSetupDraft(
@@ -987,7 +1003,7 @@ class _DefenseStageEditorScreenState
                                 _markDirty();
                               },),
                               const SizedBox(height: 20),
-                              Text('Stage requirements', style: Theme.of(context).textTheme.titleSmall),
+                              Text('Stage requirements', key: _stageRequirementsKey, style: Theme.of(context).textTheme.titleSmall),
                               const SizedBox(height: 12),
                               StageMinutesSettings(
                                 compact: true,
@@ -1112,7 +1128,7 @@ class _DefenseStageEditorScreenState
                                 borderColor: const Color(0xFFE2E8F0),
                                 count: preDeliverables.length + (_weeklyConfig['enabled'] == true ? 1 : 0),
                                 managedRequirement: _weeklyConfig['enabled'] == true
-                                  ? StageWeeklyRequirementRow(config: _weeklyConfig, onEdit: () => setState(() => _activeTab = 0)) : null,
+                                  ? StageWeeklyRequirementRow(config: _weeklyConfig, onEdit: _showStageRequirements) : null,
                                 onAdd: _isLocked
                                     ? () {}
                                     : () {
@@ -1187,7 +1203,7 @@ class _DefenseStageEditorScreenState
                                     _minutesExpanded = !_minutesExpanded;
                                     if (_minutesExpanded) _selectedDeliverable = null;
                                   }),
-                                  onConfigure: () => setState(() => _activeTab = 0),
+                                  onConfigure: _showStageRequirements,
                                 ),
                               ],
                             ],
@@ -1669,7 +1685,7 @@ class _DefenseStageEditorScreenState
                           if (item != null) _minutesExpanded = false;
                           _error = null;
                         }),
-                        showGroupHeading: true,
+                        showGroupHeading: false,
                         showReviewHint: false,
                         showDoneEditingButton: false,
                         buildEditor: (item, index) {

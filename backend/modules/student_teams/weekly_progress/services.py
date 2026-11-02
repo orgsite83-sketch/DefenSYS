@@ -129,7 +129,7 @@ def collection_state(team, definition, *, actor=None, details=False, now=None):
     counts = {key: 0 for key in ('uploaded', 'accepted', 'pending', 'rejected', 'missing', 'late', 'overdue')}
     slots, files, weeks, missing, pending, corrections = [], [], [], [], [], []
     blockers = write_blockers(team, config) if details else {}
-    for number in range(1, config['total_weeks'] + 1):
+    for number in required:
         start, end, due = week_dates(config, number)
         report = reports.get(number)
         version = current_version(report)
@@ -191,8 +191,8 @@ def collection_state(team, definition, *, actor=None, details=False, now=None):
             'feedback': '', 'uploaded_at': None} if counts['uploaded'] else None,
         'weekly_summary': {'required': len(required), **counts},
         'weekly_blocker': 'Weekly reports incomplete: ' + '; '.join(reasons) + '.' if reasons else '',
-        'current_week': max(0, min(current, config['total_weeks'])),
-        'period_ended': current > config['total_weeks'], 'weeks': weeks}
+        'current_week': 0 if current < config['required_start'] else min(current, config['required_end']),
+        'period_ended': current > config['required_end'], 'weeks': weeks}
 
 
 def weekly_definition_for(team, stage_label):
@@ -241,7 +241,7 @@ def upload_report(team, stage_label, *, actor, week, file, request_id=None):
         raise PermissionError('Only the assigned team leader can upload weekly reports.')
     try:
         week = int(week)
-        if not 1 <= week <= config['total_weeks']:
+        if not config['required_start'] <= week <= config['required_end']:
             raise ValueError()
         key = UUID(str(request_id)) if request_id else None
     except (TypeError, ValueError, AttributeError):
@@ -311,7 +311,8 @@ def review_report(team, stage_label, *, actor, version_id, decision, feedback=''
         raise PermissionError('Only the assigned Capstone adviser can review weekly reports.')
     version = WeeklyReportVersion.objects.select_for_update().select_related('report').filter(pk=version_id,
         report__team=team, report__period_id=config['period_id'], report__semester_id=team.semester_id,
-        report__project_version=team.project_version).first()
+        report__project_version=team.project_version,
+        report__week_number__gte=config['required_start'], report__week_number__lte=config['required_end']).first()
     if version is None or not version.is_current:
         raise ValidationError('The report changed. Refresh and review the current PDF before accepting it.')
     if reason := write_blocker(team, config, version.report.week_number):

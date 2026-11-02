@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/screens/web/shared/project_archive/dialogs/archive_file_details_dialog.dart';
 import 'package:defensys/widgets/shadcn/defensys_breadcrumb.dart';
+import 'archive_browser_cards.dart';
 
 typedef AuditLogTable = ProjectArchiveTable;
 
@@ -1762,96 +1763,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _folderCard(Map<String, dynamic> folder, {bool list = false}) {
-    final title = folder['title']?.toString() ?? 'Folder';
-    final subtitle = folder['subtitle']?.toString() ?? '';
     final count = folder['file_count'] ?? 0;
     final missing = folder['missing_count'] ?? 0;
-    final countLabel =
-        '$count ${count == 1 ? 'file' : 'files'}${missing == 0 ? '' : ' · $missing missing'}';
-    return Padding(
-      padding: EdgeInsets.only(bottom: list ? 8 : 0),
-      child: Material(
-        color: _isDark ? DefensysTokens.mistPanel : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          key: ValueKey('archiveFolder_${folder['key']}'),
-          onTap: () => ref
-              .read(repositoryAuditProvider.notifier)
-              .fetchEntries(folderKey: folder['key']?.toString() ?? ''),
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            width: double.infinity,
-            constraints: BoxConstraints(minHeight: list ? 72 : 148),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: _isDark
-                    ? DefensysTokens.mistBorder
-                    : const Color(0xFFE2E8F0),
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: list
-                ? Row(
-                    children: [
-                      const Icon(
-                        Icons.folder_rounded,
-                        color: Color(0xFFE8AA12),
-                        size: 30,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(child: _folderLabels(title, subtitle)),
-                      Text(countLabel),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.chevron_right_rounded, size: 18),
-                    ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.folder_rounded,
-                        color: Color(0xFFE8AA12),
-                        size: 34,
-                      ),
-                      const SizedBox(height: 18),
-                      _folderLabels(title, subtitle),
-                      const SizedBox(height: 6),
-                      Text(countLabel, style: const TextStyle(fontSize: 11)),
-                    ],
-                  ),
-          ),
-        ),
-      ),
+    return ArchiveFolderCard(
+      tapKey: ValueKey('archiveFolder_${folder['key']}'),
+      title: '${folder['title'] ?? 'Folder'}', subtitle: '${folder['subtitle'] ?? ''}',
+      countLabel: '$count ${count == 1 ? 'file' : 'files'}${missing == 0 ? '' : ' · $missing missing'}',
+      list: list, onOpen: () => ref.read(repositoryAuditProvider.notifier)
+        .fetchEntries(folderKey: folder['key']?.toString() ?? ''),
     );
   }
-
-  Widget _folderLabels(String title, String subtitle) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Text(
-        title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-      ),
-      if (subtitle.isNotEmpty) ...[
-        const SizedBox(height: 3),
-        Text(
-          subtitle,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 11,
-            color: _isDark
-                ? DefensysTokens.textSecondaryDark
-                : const Color(0xFF64748B),
-          ),
-        ),
-      ],
-    ],
-  );
 
   Widget _folderPager(RepositoryAuditState state) {
     final total =
@@ -1892,29 +1813,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _fileGrid(List<Map<String, dynamic>> entries) {
     if (entries.isEmpty) return _emptyRepositoryTable();
-    final sortedEntries = _applySortingToEntries(entries);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 1200
-            ? 4
-            : constraints.maxWidth >= 840
-            ? 3
-            : constraints.maxWidth >= 540
-            ? 2
-            : 1;
-        const gap = 12.0;
-        final cardWidth =
-            (constraints.maxWidth - gap * (columns - 1)) / columns;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            for (final entry in sortedEntries)
-              SizedBox(width: cardWidth, child: _fileCard(entry)),
-          ],
-        );
-      },
-    );
+    return ArchiveCardGrid(children: [
+      for (final entry in _applySortingToEntries(entries)) _fileCard(entry),
+    ]);
   }
 
   Widget _fileCard(Map<String, dynamic> entry) {
@@ -1931,7 +1832,6 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final fileName = entry['file_name']?.toString() ?? '';
     final uploadedAt = _prettyDate(entry['uploaded_at']);
 
-    final format = DeliverableFormatInfo.fromFileName(fileName);
     final displayTitle = deliverableId.isNotEmpty
         ? (title.startsWith('$deliverableId ·') ||
                   title.startsWith('$deliverableId -')
@@ -1939,128 +1839,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               : '$deliverableId · ${title.isEmpty ? '—' : title}')
         : (title.isEmpty ? (fileName.isNotEmpty ? fileName : '—') : title);
 
-    return Material(
-      color: _isDark ? DefensysTokens.mistPanel : Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        key: ValueKey('archiveFile_${entry['id'] ?? deliverableId}'),
-        onTap: () => ArchiveFileDetailsDialog.show(
-          context: context,
-          entry: entry,
-          onViewPdf: widget.onViewPdf,
-          onDownloadFile: widget.onDownloadFile,
-          onOverrideStatus: widget.onOverrideStatus,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: double.infinity,
-          constraints: const BoxConstraints(minHeight: 180),
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: _isDark
-                  ? DefensysTokens.mistBorder
-                  : const Color(0xFFE2E8F0),
-            ),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Top row: Status Badge aligned to right
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (entry['is_shared_requirement'] == true)
-                    _metaChip(
-                      entry['archive_note']?.toString() ??
-                          'Shared requirement pending',
-                    )
-                  else
-                    _statusBadge(status),
-                ],
-              ),
-              const SizedBox(height: 6),
-
-              // Center: 52x52 Squircle Hero Icon
-              Center(
-                child: Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: isMissing
-                        ? (_isDark
-                              ? const Color(0xFF3F3F46).withValues(alpha: 0.3)
-                              : const Color(0xFFF1F5F9))
-                        : (_isDark
-                              ? format.color.withValues(alpha: 0.25)
-                              : format.color.withValues(alpha: 0.08)),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isMissing
-                          ? (_isDark
-                                ? const Color(0xFF52525B)
-                                : const Color(0xFFCBD5E1))
-                          : (_isDark
-                                ? format.color.withValues(alpha: 0.45)
-                                : format.color.withValues(alpha: 0.22)),
-                      width: 1.2,
-                    ),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    isMissing ? Icons.description_outlined : format.icon,
-                    color: isMissing
-                        ? (_isDark
-                              ? const Color(0xFFA1A1AA)
-                              : const Color(0xFF64748B))
-                        : format.color,
-                    size: 26,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              // File Title (Centered, 2 lines max)
-              Text(
-                displayTitle,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _isDark
-                      ? DefensysTokens.textPrimaryDark
-                      : const Color(0xFF0F172A),
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  height: 1.25,
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Bottom row: Upload Date + Actions
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    hasFile ? uploadedAt : 'Not uploaded',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: _isDark
-                          ? DefensysTokens.textSecondaryDark
-                          : const Color(0xFF94A3B8),
-                    ),
-                  ),
-                  if (hasFile) _rowActions(entry) else const SizedBox.shrink(),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
+    return ArchiveFileCard(
+      tapKey: ValueKey('archiveFile_${entry['id'] ?? deliverableId}'),
+      title: displayTitle, fileName: fileName,
+      metadata: hasFile ? uploadedAt : 'Not uploaded', missing: isMissing,
+      status: entry['is_shared_requirement'] == true
+        ? _metaChip('${entry['archive_note'] ?? 'Shared requirement pending'}') : _statusBadge(status),
+      actions: hasFile ? _rowActions(entry) : null,
+      onOpen: () => ArchiveFileDetailsDialog.show(context: context, entry: entry,
+        onViewPdf: widget.onViewPdf, onDownloadFile: widget.onDownloadFile,
+        onOverrideStatus: widget.onOverrideStatus),
     );
   }
 

@@ -35,6 +35,9 @@ class StudentWeeklyProgressListCreateView(APIView):
         if team_id is not None:
             reports = reports.filter(team_id=team_id)
 
+        if request.query_params.get('legacy') == '1':
+            reports = reports.filter(period__isnull=True)
+
         serializer = WeeklyProgressReportSerializer(reports, many=True)
         return Response({
             'reports': serializer.data,

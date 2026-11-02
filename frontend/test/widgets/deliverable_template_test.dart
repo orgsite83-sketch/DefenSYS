@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:defensys/services/api_http.dart';
+import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/defense/template_configuration.dart';
 import 'package:defensys/services/network/authenticated_client.dart';
 import 'package:defensys/theme/app_theme.dart';
@@ -20,6 +21,15 @@ import '../helpers/pump_app.dart';
 final _image = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=',
 );
+
+class _StudentAuth extends TestAuthNotifier {
+  @override
+  AuthState build() => AuthState(
+    isRestoring: false,
+    token: testAccessToken,
+    user: const {'id': 7, 'role': 'student', 'username': 'student'},
+  );
+}
 
 class _Picker extends FilePicker {
   PlatformFile? next = PlatformFile(
@@ -198,7 +208,7 @@ void main() {
       await pumpDefensysWidget(
         tester,
         DeliverableTemplateDownload(template: template),
-        overrides: authTestOverrides(),
+        overrides: [authProvider.overrideWith(_StudentAuth.new)],
       );
       expect(find.text('Download template'), findsOneWidget);
       await tester.tap(find.text('Preview'));
@@ -265,6 +275,7 @@ void main() {
             ),
           ),
           theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+          overrides: [authProvider.overrideWith(_StudentAuth.new)],
         );
         expect(find.text('Preview'), findsNWidgets(2));
         expect(find.text('Download template'), findsOneWidget);

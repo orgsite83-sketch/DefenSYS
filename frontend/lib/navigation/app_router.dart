@@ -385,8 +385,10 @@ List<GoRoute> _adminSectionRoutes() {
           builder: (_, state) {
             final id = int.parse(state.pathParameters['teamId']!);
             return AdminTeamDetailRoute(
-              key: ValueKey(state.uri.toString()), teamId: id,
-              initialDeliverableStage: state.uri.queryParameters['tab'] == 'deliverables' ? state.uri.queryParameters['stage'] : null,
+              key: ValueKey('team-detail-$id'), teamId: id,
+              initialDeliverableStage: state.uri.queryParameters['stage'],
+              initialTab: state.uri.queryParameters['tab'],
+              initialEvent: state.uri.queryParameters['event_name'],
             );
           },
         ),
@@ -517,7 +519,11 @@ List<GoRoute> _facultySectionRoutes() {
           path: ':teamId',
           builder: (_, state) {
             final id = int.parse(state.pathParameters['teamId']!);
-            return AdminTeamDetailRoute(teamId: id, pitLeadMode: true);
+            return AdminTeamDetailRoute(key: ValueKey('team-detail-$id'),
+              teamId: id, pitLeadMode: true,
+              initialTab: state.uri.queryParameters['tab'],
+              initialDeliverableStage: state.uri.queryParameters['stage'],
+              initialEvent: state.uri.queryParameters['event_name']);
           },
         ),
       ],

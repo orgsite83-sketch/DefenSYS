@@ -49,12 +49,13 @@ class StageSetupValidation {
     ];
     for (final role in roles) {
       final id = rubricIds[role];
+      // "Select later" defers assignment; scheduling still requires rubrics.
+      if (id == null) continue;
       final rubric = rubrics
           .where((rubric) => '${rubric['id']}' == '$id')
           .firstOrNull;
       final assignedStage = rubric?['defense_stage_id'];
-      if (id == null ||
-          rubric == null ||
+      if (rubric == null ||
           rubric['status'] != 'published' ||
           rubric['scope'] != 'capstone' ||
           rubric['evaluation_type'] != role ||

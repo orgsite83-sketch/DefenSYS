@@ -180,9 +180,13 @@ void main() {
     );
 
     expect(find.text('Overview'), findsOneWidget);
-    expect(find.text('Weekly Reports'), findsOneWidget);
+    expect(find.text('Weekly Reports'), findsNothing);
     expect(find.text('Deliverables'), findsOneWidget);
-    expect(find.text('Team Documents'), findsOneWidget);
+    expect(find.text('Team Documents'), findsNothing);
+    expect(find.text('Academic Progress'), findsOneWidget);
+    expect(find.text('ACADEMIC PROGRESS'), findsNothing);
+    await tester.tap(find.text('Academic Progress'));
+    await tester.pumpAndSettle();
     expect(find.text('ACADEMIC PROGRESS'), findsOneWidget);
   });
 
@@ -205,13 +209,47 @@ void main() {
     );
 
     expect(find.text('Overview'), findsOneWidget);
-    expect(find.text('Grades & Events'), findsOneWidget);
+    expect(find.text('Grades & Events'), findsNothing);
+    expect(find.text('Event Progress'), findsOneWidget);
     expect(find.text('Deliverables'), findsOneWidget);
     expect(find.text('Weekly Reports'), findsNothing);
     expect(find.text('Team Documents'), findsNothing);
     expect(find.text('Elena Reyes'), findsOneWidget);
     expect(find.text('View instructor details'), findsNothing);
   });
+
+  testWidgets(
+    'PIT event selection stays aligned across overview and deliverables',
+    (tester) async {
+      await pumpDefensysWidget(
+        tester,
+        TeamDetailPage(
+          teamId: 1,
+          canManage: false,
+          isPitLead: false,
+          onBack: () {},
+        ),
+        overrides: [
+          teamDetailProvider(1).overrideWith(_FakeEventTeamDetailNotifier.new),
+        ],
+      );
+      expect(find.text('Team First'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('team-context-First')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Second').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Team Second'), findsOneWidget);
+      await tester.tap(find.text('Deliverables'));
+      await tester.pumpAndSettle();
+      expect(find.text('Second paper'), findsOneWidget);
+      expect(find.text('First paper'), findsNothing);
+      await tester.tap(find.text('Event Progress'));
+      await tester.pumpAndSettle();
+      expect(find.text('EVENT RESULTS'), findsOneWidget);
+      expect(find.text('Not evaluated'), findsOneWidget);
+      expect(find.text('Weekly Reports'), findsNothing);
+    },
+  );
 
   testWidgets(
     'TeamDetailPage Deliverables tab only shows 1st year events for 1st year PIT team',
@@ -253,7 +291,8 @@ void main() {
           routes: [
             GoRoute(
               path: '/$role/student-teams/1',
-              builder: (_, _) => TeamDetailPage(
+              builder: (_, routeState) => TeamDetailPage(
+                initialTab: routeState.uri.queryParameters['tab'],
                 teamId: 1,
                 canManage: false,
                 isPitLead: role == 'faculty',
@@ -280,6 +319,8 @@ void main() {
             ).overrideWith(_FakeGradedTeamDetailNotifier.new),
           ],
         );
+        await tester.tap(find.text('Academic Progress'));
+        await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('View evaluation details'));
         await tester.tap(find.text('View evaluation details'));
         await tester.pumpAndSettle();
@@ -287,7 +328,7 @@ void main() {
         expect(router.state.uri.queryParameters['fromTeam'], '1');
         // Cross-section navigation switches branches rather than pushing onto
         // the team page. The evaluation route owns the explicit return link.
-        router.go('/$role/student-teams/1');
+        router.go('/$role/student-teams/1?tab=academic-progress');
         await tester.pumpAndSettle();
         expect(find.text('ACADEMIC PROGRESS'), findsOneWidget);
       },
@@ -443,4 +484,56 @@ class _FakePitTeamDetailNotifier extends TeamDetailNotifier {
 
   @override
   Future<void> load() async {}
+}
+
+class _FakeEventTeamDetailNotifier extends TeamDetailNotifier {
+  _FakeEventTeamDetailNotifier() : super(1);
+  @override
+  TeamDetailState build() => TeamDetailState(
+    team: const {
+      'id': 1,
+      'name': 'Team First',
+      'level': '1st Year PIT',
+      'member_ids': <int>[],
+    },
+    selectedEvent: 'First',
+    events: const [
+      {
+        'id': 1,
+        'event_name': 'First',
+        'context': {'scheduling_status': 'preparing'},
+      },
+      {
+        'id': 2,
+        'event_name': 'Second',
+        'context': {'scheduling_status': 'preparing'},
+      },
+    ],
+    deliverableTeam: {
+      'id': 1,
+      'stages': [
+        for (final event in ['First', 'Second'])
+          {
+            'stage_label': event,
+            'deliverables': [
+              {
+                'id': event,
+                'label': '$event paper',
+                'type': 'pre',
+                'required': true,
+              },
+            ],
+          },
+      ],
+    },
+  );
+  @override
+  Future<void> load() async {}
+  @override
+  Future<void> selectEvent(String eventName) async {
+    state = state.copyWith(
+      selectedEvent: eventName,
+      team: {...state.team!, 'name': 'Team $eventName'},
+    );
+  }
 }

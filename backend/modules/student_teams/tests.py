@@ -2075,7 +2075,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.status_code, 403)
         self.assertTrue(StudentTeam.objects.filter(id=team.id).exists())
 
-    def test_delete_team_has_grades_schedules_admin_force_success(self):
+    def test_delete_team_has_grades_schedules_admin_force_blocked(self):
         self._activate_capstone_intake_semester()
         team = StudentTeam.objects.create(
             name='Team Delete Force Success',
@@ -2104,8 +2104,8 @@ class StudentTeamApiTests(APITestCase):
         # Authenticate as admin
         self.client.force_authenticate(user=self.admin)
         response = self.client.delete(f'/api/teams/{team.id}/?force=true')
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(StudentTeam.objects.filter(id=team.id).exists())
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(StudentTeam.objects.filter(id=team.id).exists())
 
     def test_resolve_adviser_optimized(self):
         from .bulk_import import (

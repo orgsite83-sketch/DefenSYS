@@ -200,8 +200,13 @@ void main() {
 
       expect(find.text(_lockedMessage), findsNothing);
       expect(find.text(_postLabel), findsOneWidget);
+      expect(find.text('Upload $_postLabel'), findsNothing);
+      final card=find.byKey(const ValueKey('student-requirement-APPROVED'));
+      await tester.ensureVisible(card);
+      await tester.tap(find.descendant(of:card, matching:find.text('Manage files')));
+      await tester.pumpAndSettle();
       expect(find.text('Upload $_postLabel'), findsOneWidget);
-      expect(find.text('Action Required'), findsOneWidget);
+      expect(find.text('0/1 Uploaded'), findsWidgets);
       expect(notifier.state.hasPendingPostDeliverables, isTrue);
       expect(tester.takeException(), isNull);
     });

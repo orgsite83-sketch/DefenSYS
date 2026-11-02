@@ -854,11 +854,10 @@ void main() {
     );
     final detail = tester.widget<TeamDetailPage>(find.byType(TeamDetailPage));
     expect(detail.initialDeliverableStage, 'Concept Proposal');
-    final context = tester.element(find.byType(TabBar).first);
-    expect(DefaultTabController.of(context).index, 2);
+    expect(find.byKey(const ValueKey('team-detail-tabs-1')), findsOneWidget);
     expect(
       find.text(
-        'No capstone deliverable record for this team (non-capstone or not loaded).',
+        'No defense stages configured for this team.',
       ),
       findsOneWidget,
     );
@@ -893,10 +892,10 @@ void main() {
     await tester.tap(find.text('View').first);
     await tester.pumpAndSettle();
     final detailState = tester.state(find.byType(TeamDetailPage));
-    await tester.tap(find.text('Weekly Reports'));
+    await tester.tap(find.text('Academic Progress'));
     await tester.pumpAndSettle();
     expect(
-      find.text('No weekly progress reports submitted yet.'),
+      find.text('ACADEMIC PROGRESS'),
       findsOneWidget,
     );
 
@@ -919,7 +918,7 @@ void main() {
     expect(router.state.uri.path, '/admin/student-teams/1');
     expect(tester.state(find.byType(TeamDetailPage)), same(detailState));
     expect(
-      find.text('No weekly progress reports submitted yet.'),
+      find.text('ACADEMIC PROGRESS'),
       findsOneWidget,
     );
     expect(
@@ -1014,6 +1013,8 @@ void main() {
         final team = container.read(teamDetailProvider(1).notifier) as _Team;
         expect(team.loads, 1);
 
+        await tester.tap(find.text('Academic Progress'));
+        await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('View evaluation details'));
         await tester.tap(find.text('View evaluation details'));
         await tester.pumpAndSettle();
@@ -1021,6 +1022,7 @@ void main() {
         expect(router.state.uri.queryParameters, {
           'locked': '1',
           'fromTeam': '1',
+          'fromTab': 'academic-progress',
         });
         final evaluationState = tester.state(
           find.byType(GradeCenterTeamDetailScreen),

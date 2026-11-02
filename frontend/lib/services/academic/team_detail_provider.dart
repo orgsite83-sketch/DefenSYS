@@ -27,6 +27,10 @@ class TeamDetailState {
   final String? message;
   final List<Map<String, dynamic>> grades;
   final String? gradesError;
+  final List<Map<String, dynamic>> events;
+  final String? selectedEvent;
+  final String? legacyError;
+  final String? deliverablesError;
 
   const TeamDetailState({
     this.isLoading = false,
@@ -44,6 +48,10 @@ class TeamDetailState {
     this.message,
     this.grades = const [],
     this.gradesError,
+    this.events = const [],
+    this.selectedEvent,
+    this.legacyError,
+    this.deliverablesError,
   });
 
   TeamDetailState copyWith({
@@ -66,6 +74,11 @@ class TeamDetailState {
     List<Map<String, dynamic>>? grades,
     String? gradesError,
     bool clearGradesError = false,
+    List<Map<String, dynamic>>? events,
+    String? selectedEvent,
+    String? legacyError,
+    String? deliverablesError,
+    bool clearSectionErrors = false,
   }) {
     return TeamDetailState(
       isLoading: isLoading ?? this.isLoading,
@@ -85,6 +98,14 @@ class TeamDetailState {
       message: clearMessage ? null : message ?? this.message,
       grades: grades ?? this.grades,
       gradesError: clearGradesError ? null : gradesError ?? this.gradesError,
+      events: events ?? this.events,
+      selectedEvent: selectedEvent ?? this.selectedEvent,
+      legacyError: clearSectionErrors
+          ? legacyError
+          : legacyError ?? this.legacyError,
+      deliverablesError: clearSectionErrors
+          ? deliverablesError
+          : deliverablesError ?? this.deliverablesError,
     );
   }
 }
@@ -93,6 +114,13 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
   TeamDetailNotifier(this._teamId);
 
   final int _teamId;
+  int _generation = 0;
+  String? _eventName;
+
+  Future<void> selectEvent(String eventName) {
+    _eventName = eventName;
+    return load();
+  }
 
   @override
   TeamDetailState build() {
@@ -100,6 +128,7 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
   }
 
   Future<void> load() async {
+    final ticket = ++_generation;
     state = state.copyWith(
       isLoading: true,
       clearError: true,
@@ -109,8 +138,11 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
 
     try {
       final teamResponse = await _client.get(
-        Uri.parse('${ApiConfig.teamsUrl}/$_teamId/'),
+        Uri.parse('${ApiConfig.teamsUrl}/$_teamId/').replace(
+          queryParameters: {if (_eventName != null) 'event_name': _eventName!},
+        ),
       );
+      if (!ref.mounted || ticket != _generation) return;
 
       if (teamResponse.statusCode != 200) {
         state = state.copyWith(
@@ -134,13 +166,28 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
 
       final level = team['level']?.toString() ?? '';
       final isCapstone = level.toUpperCase().contains('CAPSTONE');
+      final selectedEvent = teamPayload['selected_event_name']?.toString();
+      if (!isCapstone) _eventName = selectedEvent;
+      state = state.copyWith(
+        team: team,
+        students: students,
+        advisers: advisers,
+        statuses: statuses,
+        events: _readMapList(teamPayload['team_events']),
+        selectedEvent: selectedEvent,
+      );
 
       // These reads depend only on the team identity, not on each other.
       final historyFuture = isCapstone
           ? _fetchAdviserHistory()
           : Future.value(<Map<String, dynamic>>[]);
-      final documentsFuture = _fetchDocuments();
-      final weeklyReportsFuture = _fetchWeeklyReports();
+      final documentsFuture = teamPayload['legacy_documents_count'] == 0
+          ? Future.value((<Map<String, dynamic>>[], null as String?))
+          : _fetchDocuments();
+      final weeklyReportsFuture =
+          isCapstone && teamPayload['legacy_reports_count'] != 0
+          ? _fetchWeeklyReports()
+          : Future.value((<Map<String, dynamic>>[], null as String?));
       final deliverablesFuture = _fetchDeliverableTeam(isCapstone);
       final gradesFuture = _fetchGrades(isCapstone ? 'capstone' : 'pit');
 
@@ -149,6 +196,7 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
       final weeklyReports = await weeklyReportsFuture;
       final deliverableData = await deliverablesFuture;
       final grades = await gradesFuture;
+      if (!ref.mounted || ticket != _generation) return;
 
       state = state.copyWith(
         isLoading: false,
@@ -157,14 +205,20 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
         advisers: advisers,
         statuses: statuses,
         adviserHistory: adviserHistory,
-        documents: documents,
-        weeklyReports: weeklyReports,
+        documents: documents.$2 == null ? documents.$1 : state.documents,
+        weeklyReports: weeklyReports.$2 == null
+            ? weeklyReports.$1
+            : state.weeklyReports,
         deliverableTeam: deliverableData.$1,
         stageOptions: deliverableData.$2,
         grades: grades.$1,
         gradesError: grades.$2,
+        legacyError: documents.$2 ?? weeklyReports.$2,
+        deliverablesError: deliverableData.$3,
+        clearSectionErrors: true,
       );
     } catch (e) {
+      if (!ref.mounted || ticket != _generation) return;
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
     }
   }
@@ -216,7 +270,13 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
   Future<void> refreshDocuments() async {
     try {
       final documents = await _fetchDocuments();
-      state = state.copyWith(documents: documents);
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        documents: documents.$1,
+        legacyError: documents.$2,
+        clearSectionErrors: true,
+        deliverablesError: state.deliverablesError,
+      );
     } catch (_) {
       // Keep existing list on failure.
     }
@@ -237,34 +297,40 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     return const [];
   }
 
-  Future<List<Map<String, dynamic>>> _fetchDocuments() async {
+  Future<(List<Map<String, dynamic>>, String?)> _fetchDocuments() async {
     try {
       final response = await _client.get(
         Uri.parse('${ApiConfig.teamDocumentsUrl}/?team_id=$_teamId'),
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
-        return _readMapList(payload['documents']);
+        return (_readMapList(payload['documents']), null);
       }
     } catch (_) {
       // Empty on failure.
     }
-    return const [];
+    return (
+      const <Map<String, dynamic>>[],
+      'Legacy documents could not be loaded. Please try again.',
+    );
   }
 
-  Future<List<Map<String, dynamic>>> _fetchWeeklyReports() async {
+  Future<(List<Map<String, dynamic>>, String?)> _fetchWeeklyReports() async {
     try {
       final response = await _client.get(
-        Uri.parse('${ApiConfig.weeklyProgressUrl}/?team_id=$_teamId'),
+        Uri.parse('${ApiConfig.weeklyProgressUrl}/?team_id=$_teamId&legacy=1'),
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
-        return _readMapList(payload['reports']);
+        return (_readMapList(payload['reports']), null);
       }
     } catch (_) {
       // Empty on failure.
     }
-    return const [];
+    return (
+      const <Map<String, dynamic>>[],
+      'Legacy reports could not be loaded. Please try again.',
+    );
   }
 
   Future<(List<Map<String, dynamic>>, String?)> _fetchGrades(
@@ -295,7 +361,7 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     );
   }
 
-  Future<(Map<String, dynamic>?, List<String>)> _fetchDeliverableTeam(
+  Future<(Map<String, dynamic>?, List<String>, String?)> _fetchDeliverableTeam(
     bool isCapstone,
   ) async {
     try {
@@ -305,7 +371,11 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
       );
       final response = await _client.get(uri);
       if (response.statusCode != 200) {
-        return (null, <String>[]);
+        return (
+          null,
+          <String>[],
+          'Deliverables could not be loaded. Please try again.',
+        );
       }
       final payload = Map<String, dynamic>.from(jsonDecode(response.body));
       final teams = _readMapList(payload['teams']);
@@ -319,12 +389,16 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
           final effectiveStageOptions = teamStages.isNotEmpty
               ? teamStages
               : stageOptions;
-          return (team, effectiveStageOptions);
+          return (team, effectiveStageOptions, null);
         }
       }
-      return (null, stageOptions);
+      return (null, stageOptions, null);
     } catch (_) {
-      return (null, <String>[]);
+      return (
+        null,
+        <String>[],
+        'Deliverables could not be loaded. Please try again.',
+      );
     }
   }
 

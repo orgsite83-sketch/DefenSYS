@@ -5,6 +5,7 @@ import '../../../../../services/defense/template_configuration.dart';
 import '../../../../../theme/defensys_tokens.dart';
 import '../../../../../widgets/repository/deliverable_template.dart';
 import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'stage_deliverable_overview.dart';
 
 Map<String, dynamic> weeklyTemplateDraft(Map<String, dynamic>? stage) {
   final saved = stage?['weekly_template'];
@@ -16,8 +17,7 @@ Map<String, dynamic> weeklyTemplateDraft(Map<String, dynamic>? stage) {
     'deliverable_id': 'WPR',
     'label': 'Weekly Accomplishment Reports',
     if (saved is Map) ...Map<String, dynamic>.from(saved),
-    if (saved == null && managed?['template'] != null)
-      'template': managed!['template'],
+    if (managed?['template'] != null) 'template': managed!['template'],
   };
 }
 
@@ -31,23 +31,20 @@ Map<String, dynamic> initialWeeklySettings(
       .whereType<Map>()
       .where((config) => config['enabled'] == true)
       .firstOrNull;
-  return _clampRequiredWeeks({
-    if (shared != null) ...Map<String, dynamic>.from(shared),
+  return {
+    if (shared != null)
+      for (final key in [
+        'period_id',
+        'starts_on',
+        'total_weeks',
+        'due_weekday',
+        'due_time',
+      ])
+        if (shared.containsKey(key)) key: shared[key],
     'enabled': false,
     'required_start': 1,
-    'required_end': 8,
+    'required_end': '',
     if (saved != null) ...Map<String, dynamic>.from(saved),
-  });
-}
-
-Map<String, dynamic> _clampRequiredWeeks(Map<String, dynamic> config) {
-  final total = int.tryParse('${config['total_weeks']}');
-  if (total == null || total < 1 || total > 53) return config;
-  return {
-    ...config,
-    for (final key in ['required_start', 'required_end'])
-      if (int.tryParse('${config[key]}') case final int week)
-        key: week.clamp(1, total),
   };
 }
 
@@ -194,12 +191,15 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
       final first = _number('required_start') ?? 1;
       updated['required_end'] = count == null ? '' : first + count - 1;
     }
-    // Grow a new schedule to fit the report count. Keep saved schedules stable
-    // so existing report dates and deadlines do not change.
-    if (widget.value['period_id'] == null && key == 'report_count') {
+    // New calendars follow the count exactly. Shared calendars can append weeks
+    // for a later stage without changing existing week numbers or deadlines.
+    if (key == 'report_count') {
       final last = int.tryParse('${updated['required_end']}');
-      final total = _number('total_weeks') ?? 16;
-      if (last != null && last > total) updated['total_weeks'] = last;
+      if (widget.value['period_id'] == null) {
+        updated['total_weeks'] = updated['required_end'];
+      } else if (last != null && last > (_number('total_weeks') ?? 0)) {
+        updated['total_weeks'] = last;
+      }
     }
     widget.onChanged(updated);
   }
@@ -277,7 +277,7 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
     final enabled = widget.enabled;
     final primary = DefensysTokens.textPrimaryOf(context);
     final secondary = DefensysTokens.textSecondaryOf(context);
-    final body = DefensysTokens.body.copyWith(color: primary);
+    final body = DefensysTokens.body.copyWith(fontSize: 13, color: primary);
     final description = DefensysTokens.subtitle.copyWith(color: secondary);
     final label = body.copyWith(fontSize: 13, fontWeight: FontWeight.w600);
     final active = value['enabled'] == true;
@@ -312,79 +312,81 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
       'Sunday',
     ];
 
-    InputDecoration decoration({
-      String? hint,
-      IconData? icon,
-      String? error,
-    }) => InputDecoration(
-      hintText: hint,
-      hintStyle: description,
-      errorText: error,
-      errorStyle: DefensysTokens.caption.copyWith(
-        color: Theme.of(context).colorScheme.error,
-      ),
-      errorMaxLines: 3,
-      filled: true,
-      fillColor: DefensysTokens.surfaceOf(context),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      suffixIcon: icon == null ? null : Icon(icon, size: 18, color: secondary),
-    );
+    final controlHeight =
+        40 *
+        (MediaQuery.textScalerOf(context).scale(13) / 13).clamp(
+          1.0,
+          double.infinity,
+        );
 
-    Widget labelled(String text, Widget child, {String? help}) => Column(
+    Widget labelled(String text, Widget child, {String? error}) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(text, style: label),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Semantics(label: text, child: child),
-        if (help != null) ...[
+        if (error != null) ...[
           const SizedBox(height: 6),
-          Text(help, style: description),
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              error,
+              style: DefensysTokens.caption.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
         ],
       ],
     );
 
-    Widget field(
+    Widget picker(
       String key,
-      String text, {
-      String? help,
-      String? error,
-      String? hint,
-      bool numeric = false,
-      IconData? icon,
-      VoidCallback? onTap,
-    }) => labelled(
+      String text,
+      String placeholder,
+      IconData icon,
+      VoidCallback onPressed,
+    ) => labelled(
       text,
-      TextFormField(
+      ShadButton.outline(
         key: ValueKey('weekly-$key'),
-        controller: _controllers.putIfAbsent(
-          key,
-          () => TextEditingController(text: _displayValue(key)),
-        ),
         enabled: enabled,
-        style: body,
-        readOnly: onTap != null,
-        keyboardType: numeric ? TextInputType.number : TextInputType.text,
-        decoration: decoration(hint: hint, icon: icon, error: error),
-        onTap: onTap,
-        onChanged: (text) =>
-            _update(key, numeric ? int.tryParse(text) ?? text : text),
+        onPressed: onPressed,
+        height: controlHeight,
+        expands: true,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        backgroundColor: DefensysTokens.surfaceOf(context),
+        foregroundColor: primary,
+        textStyle: body,
+        trailing: Icon(icon, size: 16, color: secondary),
+        child: Text(
+          _displayValue(key).isEmpty ? placeholder : _displayValue(key),
+          textAlign: TextAlign.start,
+          style: _displayValue(key).isEmpty ? description : body,
+        ),
       ),
-      help: help,
     );
 
-    Widget grid(List<Widget> children, {int maxColumns = 2}) => LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 600 ? maxColumns : 1;
-        final width = (constraints.maxWidth - (columns - 1) * 16) / columns;
-        return Wrap(
-          spacing: 16,
-          runSpacing: 18,
-          children: [
-            for (final child in children) SizedBox(width: width, child: child),
-          ],
+    Widget grid(List<Widget> children, {double minColumnWidth = 190}) =>
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final textScale = MediaQuery.textScalerOf(context).scale(13) / 13;
+            final columns =
+                constraints.maxWidth >= (minColumnWidth * 2 + 12) * textScale
+                ? 2
+                : 1;
+            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (final child in children)
+                  SizedBox(width: width, child: child),
+              ],
+            );
+          },
         );
-      },
-    );
 
     DateTime? due(int week) =>
         start == null || day == null || day < 0 || day > 6
@@ -405,193 +407,319 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
     final lastDue = validRange ? due(last) : null;
     final time = _displayValue('due_time');
     final weeks = first == last ? 'Week $first' : 'Weeks $first–$last';
+    final showSettings = active && (!widget.compact || _expanded);
+    final expansionLabel = _expanded
+        ? 'Hide report settings'
+        : 'Configure reports';
+
+    final scheduleFields = Column(
+      key: const ValueKey('weekly-schedule-fields'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Schedule', style: label),
+        const SizedBox(height: 12),
+        grid([
+          labelled(
+            'Number of weekly reports',
+            ShadInput(
+              key: const ValueKey('weekly-report_count'),
+              controller: _controllers.putIfAbsent(
+                'report_count',
+                () => TextEditingController(text: _reportCountText),
+              ),
+              enabled: enabled,
+              style: body,
+              keyboardType: TextInputType.number,
+              placeholder: Text('e.g. 8', style: description),
+              constraints: BoxConstraints(minHeight: controlHeight),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: ShadDecoration(
+                color: DefensysTokens.surfaceOf(context),
+                hasError: countError != null,
+              ),
+              onChanged: (text) =>
+                  _update('report_count', int.tryParse(text) ?? text),
+            ),
+            error: countError,
+          ),
+          picker(
+            'starts_on',
+            'Week 1 starts on',
+            'Choose a date',
+            Icons.calendar_today_outlined,
+            _chooseDate,
+          ),
+          labelled(
+            'Due every',
+            LayoutBuilder(
+              builder: (context, constraints) => ShadSelect<int>(
+                key: ValueKey('weekly-due-weekday-$day'),
+                initialValue: day != null && day >= 0 && day < 7 ? day : null,
+                enabled: enabled,
+                minWidth: constraints.maxWidth,
+                maxWidth: constraints.maxWidth,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: ShadDecoration(
+                  color: DefensysTokens.surfaceOf(context),
+                ),
+                placeholder: Text('Choose a day', style: description),
+                selectedOptionBuilder: (_, day) =>
+                    Text(weekdays[day], style: body),
+                options: [
+                  for (var i = 0; i < weekdays.length; i++)
+                    ShadOption(
+                      value: i,
+                      child: Text(weekdays[i], style: body),
+                    ),
+                ],
+                onChanged: (day) {
+                  if (day != null) _update('due_weekday', day);
+                },
+              ),
+            ),
+          ),
+          picker(
+            'due_time',
+            'Due at',
+            'Choose a time',
+            Icons.access_time,
+            _chooseTime,
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Text(
+          'Philippine time (Asia/Manila).',
+          style: DefensysTokens.caption.copyWith(color: secondary),
+        ),
+      ],
+    );
+
+    final schedulePreview = Column(
+      key: const ValueKey('weekly-schedule-preview'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Schedule preview', style: label),
+        const SizedBox(height: 8),
+        if (validRange) ...[
+          Text(
+            '$count ${count == 1 ? 'report' : 'reports'} required · $weeks',
+            key: const ValueKey('weekly-range-summary'),
+            style: body.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          if (start != null && firstDue != null && lastDue != null) ...[
+            previewItem(
+              'Reports cover',
+              '${DateFormat('d MMM yyyy').format(start.add(Duration(days: 7 * (first - 1))))} – '
+                  '${DateFormat('d MMM yyyy').format(start.add(Duration(days: 7 * (last - 1) + 6)))}',
+            ),
+            const SizedBox(height: 12),
+            grid([
+              previewItem(
+                count == 1 ? 'Report due' : 'First report due',
+                DateFormat('EEE, d MMM yyyy').format(firstDue),
+                detail: time,
+              ),
+              if (count > 1)
+                previewItem(
+                  'Last report due',
+                  DateFormat('EEE, d MMM yyyy').format(lastDue),
+                  detail: time,
+                ),
+            ], minColumnWidth: 140),
+          ] else
+            Text(
+              'Choose a start date to see the report dates and deadlines.',
+              style: description,
+            ),
+        ] else
+          Text(
+            'Enter a valid report count to preview the schedule.',
+            style: description,
+          ),
+        const SizedBox(height: 12),
+        Text(
+          'Late reports can still be uploaded and accepted.',
+          style: DefensysTokens.caption.copyWith(color: secondary),
+        ),
+      ],
+    );
 
     void toggle(bool checked) {
       if (checked) setState(() => _expanded = true);
-      widget.onChanged(_clampRequiredWeeks({
-        'total_weeks': 16, 'due_weekday': 6, 'due_time': '23:59',
-        'required_start': 1, 'required_end': 8,
-        ...value, 'enabled': checked,
-      }));
+      final updated = <String, dynamic>{
+        'due_weekday': 6,
+        'due_time': '23:59',
+        'required_start': 1,
+        'required_end': '',
+        ...value,
+        'enabled': checked,
+      };
+      if (updated['period_id'] == null) {
+        updated['total_weeks'] = updated['required_end'];
+      }
+      widget.onChanged(updated);
     }
 
-    return DefensysShadcnScope(child: DefaultTextStyle.merge(
-      style: body,
-      child: Container(
-        key: const ValueKey('weekly-report-policy'),
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: DefensysTokens.backgroundOf(context),
-          borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-          border: Border.all(color: DefensysTokens.borderOf(context)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.compact) ...[
-              Row(children: [
-                Expanded(child: Text('Weekly reports required',
-                  style: DefensysTokens.sectionTitle.copyWith(color: primary))),
-                const SizedBox(width: 12),
-                ShadSwitch(value: active, enabled: enabled, onChanged: toggle,
-                  checkedTrackColor: DefensysTokens.maroon),
-              ]),
-              const SizedBox(height: 6),
-              Text(active && validRange && day != null && day >= 0 && day < 7
-                  ? '$count ${count == 1 ? 'report' : 'reports'} · Every ${weekdays[day]}, $time'
-                  : active ? 'Configure the report schedule and template.'
-                  : 'Require signed weekly reports before adviser endorsement.',
-                style: description),
-              if (active) ...[
-                if (start != null) ...[
-                  const SizedBox(height: 4),
-                  Text('Week 1 starts ${DateFormat('d MMM yyyy').format(start)} · Philippine time', style: description),
-                ],
-                const SizedBox(height: 10),
-                ShadButton.outline(
-                  key: const ValueKey('configure-weekly-reports'),
-                  onPressed: () => setState(() => _expanded = !_expanded),
-                  child: Text(_expanded ? 'Hide report settings' : 'Configure reports'),
-                ),
-                if (!_expanded)
-                  if (weeklySettingsError(value, widget.template) case final String error)
-                    Padding(padding: const EdgeInsets.only(top: 8), child: Text(error,
-                      style: description.copyWith(color: Theme.of(context).colorScheme.error))),
-              ],
-            ] else
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                'Weekly reports required',
-                style: DefensysTokens.sectionTitle.copyWith(color: primary),
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Students submit one signed report each week. '
-                  'The adviser accepts the required reports before endorsement.',
-                  style: description,
-                ),
-              ),
-              value: active,
-              onChanged: enabled ? toggle : null,
-            ),
-            if (active && (!widget.compact || _expanded)) ...[
-              const SizedBox(height: 16),
-              if (widget.semesterLabel != null) ...[
-                Text('For ${widget.semesterLabel}', style: description),
-                const SizedBox(height: 16),
-              ],
-              grid([
-                field(
-                  'report_count',
-                  'Number of weekly reports',
-                  numeric: true,
-                  hint: 'e.g. 8',
-                  error: countError,
-                  help: 'One report per week, required for this stage.',
-                ),
-                field(
-                  'starts_on',
-                  'Week 1 starts on',
-                  hint: 'Choose a date',
-                  icon: Icons.calendar_today_outlined,
-                  onTap: _chooseDate,
-                  help: 'Start date for the first reporting week.',
-                ),
-                labelled(
-                  'Due every',
-                  DropdownButtonFormField<int>(
-                    key: ValueKey('weekly-due-weekday-$day'),
-                    initialValue: day != null && day >= 0 && day <= 6
-                        ? day
-                        : null,
-                    style: body,
-                    decoration: decoration(),
-                    items: [
-                      for (var i = 0; i < weekdays.length; i++)
-                        DropdownMenuItem(
-                          value: i,
-                          child: Text(weekdays[i], style: body),
-                        ),
-                    ],
-                    onChanged: enabled
-                        ? (day) => _update('due_weekday', day)
-                        : null,
-                  ),
-                ),
-                field(
-                  'due_time',
-                  'Due at',
-                  icon: Icons.access_time,
-                  onTap: _chooseTime,
-                  help: 'Philippine time (Asia/Manila).',
-                ),
-              ]),
-              const Divider(height: 24),
-              Text('Schedule preview', style: label),
-              const SizedBox(height: 8),
-              if (validRange) ...[
-                Text(
-                  '$count ${count == 1 ? 'report' : 'reports'} required · $weeks',
-                  key: const ValueKey('weekly-range-summary'),
-                  style: body.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 14),
-                if (start != null && firstDue != null && lastDue != null)
-                  grid([
-                    previewItem(
-                      'Reports cover',
-                      '${DateFormat('d MMM yyyy').format(start.add(Duration(days: 7 * (first - 1))))} – '
-                          '${DateFormat('d MMM yyyy').format(start.add(Duration(days: 7 * (last - 1) + 6)))}',
-                    ),
-                    previewItem(
-                      count == 1 ? 'Report due' : 'First report due',
-                      DateFormat('EEE, d MMM yyyy').format(firstDue),
-                      detail: '$time · Philippine time',
-                    ),
-                    if (count > 1)
-                      previewItem(
-                        'Last report due',
-                        DateFormat('EEE, d MMM yyyy').format(lastDue),
-                        detail: '$time · Philippine time',
+    return DefensysShadcnScope(
+      child: DefaultTextStyle.merge(
+        style: body,
+        child: Container(
+          key: const ValueKey('weekly-report-policy'),
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: DefensysTokens.backgroundOf(context),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+            border: Border.all(color: DefensysTokens.borderOf(context)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Weekly reports required',
+                      style: DefensysTokens.sectionTitle.copyWith(
+                        color: primary,
                       ),
-                  ], maxColumns: count == 1 ? 2 : 3)
-                else
-                  Text(
-                    'Choose a start date to see the report dates and deadlines.',
-                    style: description,
+                    ),
                   ),
-              ] else
+                  const SizedBox(width: 12),
+                  Semantics(
+                    label: 'Weekly reports required',
+                    child: ShadSwitch(
+                      key: const ValueKey('weekly-report-switch'),
+                      value: active,
+                      enabled: enabled,
+                      onChanged: toggle,
+                      checkedTrackColor: DefensysTokens.maroon,
+                      thumbColor: Colors.white,
+                    ),
+                  ),
+                  if (widget.compact && active) ...[
+                    const SizedBox(width: 8),
+                    ShadTooltip(
+                      builder: (_) => Text(expansionLabel),
+                      child: Semantics(
+                        label: expansionLabel,
+                        expanded: _expanded,
+                        child: ShadButton.ghost(
+                          key: const ValueKey('configure-weekly-reports'),
+                          width: 32,
+                          height: 32,
+                          padding: EdgeInsets.zero,
+                          foregroundColor: secondary,
+                          onPressed: () =>
+                              setState(() => _expanded = !_expanded),
+                          child: Icon(
+                            _expanded ? Icons.expand_less : Icons.expand_more,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              if (!showSettings) ...[
+                const SizedBox(height: 6),
                 Text(
-                  'Enter a valid report count to preview the schedule.',
+                  active && validRange && day != null && day >= 0 && day < 7
+                      ? '$count ${count == 1 ? 'report' : 'reports'} · Every ${weekdays[day]}, $time'
+                      : active
+                      ? 'Configure the report schedule and template.'
+                      : 'Require signed weekly reports before adviser endorsement.',
                   style: description,
                 ),
-              const SizedBox(height: 14),
-              Text(
-                'Late reports can still be uploaded and accepted.',
-                style: description,
-              ),
-              const Divider(height: 28),
-              DeliverableTemplateEditor(
-                item: widget.template,
-                enabled: enabled,
-                label: 'Report template',
-                requiredTemplate: true,
-                onChanged: widget.onTemplateChanged,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Students use the template to prepare their report, get the adviser’s physical signature, '
-                'then upload the signed PDF.',
-                style: description,
-              ),
+                if (active) ...[
+                  if (start != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Week 1 starts ${DateFormat('d MMM yyyy').format(start)} · Philippine time',
+                      style: description,
+                    ),
+                  ],
+                  if (!_expanded)
+                    if (weeklySettingsError(value, widget.template)
+                        case final String error)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          error,
+                          style: description.copyWith(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                ],
+              ],
+              if (showSettings) ...[
+                const SizedBox(height: 16),
+                if (widget.semesterLabel != null) ...[
+                  Text('For ${widget.semesterLabel}', style: description),
+                  const SizedBox(height: 12),
+                ],
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final textScale =
+                        MediaQuery.textScalerOf(context).scale(13) / 13;
+                    if (constraints.maxWidth < 760 * textScale) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          scheduleFields,
+                          const Divider(height: 24),
+                          schedulePreview,
+                        ],
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(flex: 6, child: scheduleFields),
+                        const SizedBox(width: 24),
+                        Expanded(
+                          flex: 4,
+                          child: Container(
+                            padding: const EdgeInsets.only(left: 24),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                left: BorderSide(
+                                  color: DefensysTokens.borderOf(context),
+                                ),
+                              ),
+                            ),
+                            child: schedulePreview,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const Divider(height: 16),
+                DeliverableTemplateEditor(
+                  item: widget.template,
+                  enabled: enabled,
+                  label: 'Report template',
+                  requiredTemplate: true,
+                  onChanged: widget.onTemplateChanged,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Students obtain the adviser’s physical signature, then upload a signed PDF.',
+                  style: description,
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
-    ));
+    );
   }
 }
 
@@ -605,15 +733,19 @@ class StageWeeklyRequirementRow extends StatelessWidget {
   final VoidCallback onEdit;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-    leading: const Icon(Icons.assignment_outlined, size: 20),
-    title: const Text('Weekly Accomplishment Reports'),
-    subtitle: Text(
-      'Weeks ${config['required_start'] ?? 1}-${config['required_end'] ?? 8} · '
-      'PDF · Required before endorsement · Adviser acceptance',
-    ),
-    trailing: TextButton(onPressed: onEdit, child: const Text('Edit settings')),
-    onTap: onEdit,
-  );
+  Widget build(BuildContext context) {
+    final first = int.tryParse('${config['required_start']}');
+    final last = int.tryParse('${config['required_end']}');
+    final range = first != null && first > 0 && last != null && last >= first
+        ? 'Weeks $first-$last'
+        : 'Set the required report count in Stage Details';
+    return StageCompactRecordRow(
+      title: 'Weekly Accomplishment Reports',
+      summary:
+          '$range · '
+          'PDF · Required before endorsement · Adviser acceptance',
+      icon: Icons.assignment_outlined,
+      onTap: onEdit,
+    );
+  }
 }

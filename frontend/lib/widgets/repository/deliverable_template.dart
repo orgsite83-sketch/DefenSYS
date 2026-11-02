@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../services/auth_provider.dart';
 import '../../services/defense/template_configuration.dart';
 import '../../services/network/authenticated_client.dart';
 import '../../theme/defensys_tokens.dart';
@@ -198,7 +199,8 @@ class _DeliverableTemplateEditorState extends State<DeliverableTemplateEditor> {
   }
 }
 
-/// Read-only access stays independent of submission upload permission.
+/// Student guidance stays available independently of submission upload permission.
+/// Faculty review surfaces focus on submitted work; setup uses the editor above.
 class DeliverableTemplateDownload extends ConsumerStatefulWidget {
   const DeliverableTemplateDownload({super.key, required this.template});
   final dynamic template;
@@ -242,6 +244,12 @@ class _DeliverableTemplateDownloadState
   Widget build(BuildContext context) {
     final template = widget.template;
     if (template is! Map || '${template['file_url'] ?? ''}'.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final student = ref.watch(
+      authProvider.select((state) => state.user?['role'] == 'student'),
+    );
+    if (!student) {
       return const SizedBox.shrink();
     }
     return DefensysShadcnScope(

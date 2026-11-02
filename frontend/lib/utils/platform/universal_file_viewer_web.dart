@@ -12,6 +12,7 @@ import '../../theme/defensys_tokens.dart';
 import '../../toasts/feedback_toast.dart';
 import '../../widgets/export/defensys_pdf_viewer.dart';
 import '../../widgets/file_viewer_dialog_layout.dart';
+import '../../widgets/repository/deliverable_popup_navigation.dart';
 import 'docx_layout_viewer_web.dart';
 import 'universal_file_viewer_models.dart';
 import 'universal_file_viewer_widgets.dart';
@@ -47,6 +48,12 @@ Future<void> viewFileInDialog({
   required String fileName,
   DeliverablePropertiesInfo? propertiesInfo,
 }) async {
+  if (DeliverablePopupNavigation.maybeOf(context) != null) {
+    await showDeliverablePopupStep<void>(context: context, builder: (_) => UniversalFileViewerDialog(
+      fileBytes: fileBytes, fileUrl: fileUrl, fileName: fileName, propertiesInfo: propertiesInfo,
+    ));
+    return;
+  }
   await showDialog(
     context: context,
     barrierDismissible: true,

@@ -418,7 +418,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     return false;
   }
 
-  Future<bool> deleteTeam(int teamId, {bool force = false}) async {
+  Future<bool> deleteTeam(int teamId) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -426,13 +426,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final urlStr = force
-          ? '$baseUrl/$teamId/?force=true'
-          : '$baseUrl/$teamId/';
       final response = await _client.delete(
-        Uri.parse(urlStr).replace(
+        Uri.parse('$baseUrl/$teamId/').replace(
           queryParameters: {
-            if (force) 'force': 'true',
             if (state.workspace.isNotEmpty) 'workspace': state.workspace,
           },
         ),
@@ -445,11 +441,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       }
 
       if (response.statusCode == 409) {
-        final data = jsonDecode(response.body);
-        final warning = data is Map ? data['warning']?.toString() : null;
         state = state.copyWith(
           isSaving: false,
-          error: warning ?? 'This team cannot be deleted.',
+          error: _errorFromResponse(response),
         );
         return false;
       }

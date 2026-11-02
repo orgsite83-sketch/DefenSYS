@@ -24,17 +24,23 @@ class AdminTeamDetailRoute extends ConsumerWidget {
     required this.teamId,
     this.pitLeadMode = false,
     this.initialDeliverableStage,
+    this.initialTab,
+    this.initialEvent,
   });
 
   final int teamId;
   final bool pitLeadMode;
   final String? initialDeliverableStage;
+  final String? initialTab;
+  final String? initialEvent;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return TeamDetailPage(
       teamId: teamId,
       initialDeliverableStage: initialDeliverableStage,
+      initialTab: initialTab,
+      initialEvent: initialEvent,
       canManage: true,
       isPitLead: pitLeadMode,
       pitLeadYear: pitLeadMode
@@ -75,10 +81,23 @@ class AdminGradeTeamDetailRoute extends StatelessWidget {
       returnToTeam: returnTeamId != null,
       onBack: () {
         if (returnTeamId != null) {
+          final teamPath = isFaculty
+              ? FacultyRoutes.teamDetail(returnTeamId)
+              : AdminRoutes.teamDetail(returnTeamId);
+          final fromTab = uri.queryParameters['fromTab'];
+          final fromStage = uri.queryParameters['fromStage'];
           context.go(
-            isFaculty
-                ? FacultyRoutes.teamDetail(returnTeamId)
-                : AdminRoutes.teamDetail(returnTeamId),
+            Uri(
+              path: teamPath,
+              queryParameters: {
+                if (fromTab == 'academic-progress' ||
+                    fromTab == 'event-progress')
+                  'tab': fromTab!,
+                if (fromStage != null) 'stage': fromStage,
+                if (fromTab == 'event-progress' && fromStage != null)
+                  'event_name': fromStage,
+              },
+            ).toString(),
           );
           return;
         }

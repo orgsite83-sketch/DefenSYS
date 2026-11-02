@@ -15,7 +15,7 @@ from rest_framework.test import APITestCase
 from academic_period_management.models import SchoolYear, Semester
 from defense.stages.models import DefenseStage
 from defense.template_models import DeliverableTemplate
-from defense.weekly_reporting import definition, policy_payload, validate_configuration
+from defense.weekly_reporting import definition, policy_payload, validate_configuration, save_configuration
 from repository.deliverables.endorsement import endorsement_review, review_and_endorse
 from repository.deliverables.services import required_complete, team_stage_status, upsert_submission, review_submission
 from student_teams.models import StudentTeam, TeamMembership
@@ -72,11 +72,32 @@ class WeeklyReportCollectionTests(APITestCase):
         self.client.force_authenticate(self.student)
         response = self.client.get(self.url, {'team_id': self.team.pk, 'stage_label': self.stage.label})
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(len(response.data['weeks']), 4)
+        self.assertEqual([week['week_number'] for week in response.data['weeks']], [1, 2])
         self.assertEqual(response.data['weekly_summary']['required'], 2)
-        self.assertEqual(response.data['current_week'], 4)
+        self.assertEqual(response.data['current_week'], 2)
         self.assertTrue(response.data['period_ended'])
         self.assertFalse(WeeklyProgressReport.objects.exists())
+
+    def test_new_calendar_length_comes_from_required_reports_not_legacy_default(self):
+        semester = Semester.objects.create(school_year=self.semester.school_year,
+            label=Semester.FIRST, is_active=False)
+        raw = {'enabled': True, 'starts_on': '2026-10-25', 'due_weekday': 6,
+            'due_time': '23:59', 'required_start': 1, 'required_end': 2, 'total_weeks': 16}
+        for count in (1, 2, 20):
+            clean = validate_configuration({**raw, 'required_end': count}, semester=semester)
+            self.assertEqual(clean['total_weeks'], count)
+        stage = DefenseStage.objects.create(label='Admin count only', setup_semester=semester, is_active=False)
+        saved = save_configuration(stage, raw)
+        period = WeeklyReportingPeriod.objects.get(pk=saved['period_id'])
+        self.assertEqual(period.total_weeks, 2)
+        self.assertEqual(saved['required_end'], 2)
+
+    def test_upload_requires_the_selected_stages_configured_week(self):
+        for week in (0, 3, 16):
+            with self.assertRaisesMessage(Exception, 'valid configured week'):
+                self.upload(week)
+        self.assertFalse(WeeklyProgressReport.objects.exists())
+        self.assertFalse(WeeklyReportVersion.objects.exists())
 
     def test_late_reports_remain_uploadable_and_accepted_late_satisfies_gate(self):
         first = self.upload(2)
@@ -141,6 +162,15 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertEqual(state['weekly_summary']['required'], 4)
         self.assertFalse(state['completed'])
         self.assertEqual(WeeklyProgressReport.objects.count(), 1)
+        third = upload_report(self.team, later.label, actor=self.student, week=3, file=pdf_file())
+        with self.assertRaisesMessage(Exception, 'changed'):
+            self.review(third)
+        review_report(self.team, later.label, actor=self.adviser,
+            version_id=third.pk, decision='accepted')
+        original = collection_state(self.team, definition(self.stage), actor=self.adviser, details=True)
+        self.assertEqual([week['week_number'] for week in original['weeks']], [1, 2])
+        self.assertEqual(original['weekly_summary']['accepted'], 1)
+        self.assertTrue(WeeklyReportVersion.objects.filter(pk=third.pk, status='accepted').exists())
 
     def test_configuration_and_disable_protected_after_report_upload(self):
         self.upload()
@@ -218,8 +248,22 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         attachment = DeliverableTemplate.objects.get(defense_stage=self.stage, deliverable_id='WPR')
         original_file = attachment.file.name
+        # Reopening setup uses GET rather than the attachment-enriched save response.
+        for endpoint in (url, '/api/defense/stages/'):
+            response = self.client.get(endpoint)
+            self.assertEqual(response.status_code, 200, response.data)
+            stage = (response.data['stage'] if endpoint == url else
+                next(stage for stage in response.data['stages'] if stage['id'] == self.stage.pk))
+            weekly = next(row for row in stage['system_deliverables'] if row['source'] == 'weekly_reports')
+            self.assertEqual(weekly['template']['id'], attachment.pk)
+            self.assertEqual(weekly['template']['original_name'], 'weekly.pdf')
+            self.assertEqual(weekly['weekly_reporting']['required_end'], 2)
         response = self.client.patch(url, {'description': 'Preserve the PDF template'}, format='json')
         self.assertEqual(response.status_code, 200, response.data)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, response.data)
+        weekly = next(row for row in response.data['stage']['system_deliverables'] if row['source'] == 'weekly_reports')
+        self.assertEqual(weekly['template']['id'], attachment.pk)
         response = self.client.patch(url, {'configuration': json.dumps({'template_changes': [change]}),
             'template': SimpleUploadedFile('weekly.exe', b'unsupported')}, format='multipart')
         self.assertEqual(response.status_code, 400, response.data)
@@ -274,13 +318,18 @@ class WeeklyReportCollectionTests(APITestCase):
     def test_new_stage_can_attach_its_initial_template_to_an_already_used_period(self):
         self.review(self.upload())
         self.client.force_authenticate(self.admin)
-        config = {**policy_payload(self.stage), 'required_end': 4}
+        config = {**policy_payload(self.stage), 'required_end': 8}
         body = {'label': 'Later weekly stage', 'weekly_reporting': config,
             'template_changes': [{'scope': 'team', 'deliverable_id': 'WPR', 'action': 'replace', 'upload_key': 'template'}]}
         response = self.client.post('/api/defense/stages/', {'configuration': json.dumps(body),
             'template': SimpleUploadedFile('weekly.docx', b'editable Word template')}, format='multipart')
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data['stage']['weekly_reporting']['period_id'], self.period.pk)
+        self.assertEqual(response.data['stage']['weekly_reporting']['required_end'], 8)
+        self.period.refresh_from_db()
+        self.assertEqual(self.period.total_weeks, 8)
+        self.assertEqual(str(self.period.starts_on), '2026-01-05')
+        self.assertEqual(self.stage.weekly_reporting['required_end'], 2)
         self.assertEqual(WeeklyProgressReport.objects.count(), 1)
 
     def test_stage_deletion_and_old_compilation_cannot_remove_or_replace_weekly_evidence(self):
@@ -348,8 +397,10 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         single = len(queries)
         for number in range(7):
+            # Keep the cohort realistic under the four-active-team adviser cap.
             StudentTeam.objects.create(name=f'Other weekly team {number}', semester=self.semester,
-                intake_semester=self.semester, leader=self.student, adviser=self.adviser,
+                intake_semester=self.semester, leader=self.student,
+                adviser=self.adviser if number < 3 else self.unassigned,
                 level=StudentTeam.LEVEL_3_CAPSTONE, year_level='3rd Year')
         with CaptureQueriesContext(connection) as queries:
             response = self.client.post(url, body, format='json')

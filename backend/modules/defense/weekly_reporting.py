@@ -66,15 +66,19 @@ def validate_configuration(raw, *, stage=None, semester=None):
         return {'enabled': False}
     if not semester:
         raise ValidationError({'weekly_reporting': 'Choose the reporting semester.'})
+    period = WeeklyReportingPeriod.objects.filter(semester=semester).first()
     try:
         start = date.fromisoformat(str(raw['starts_on']))
         deadline = time.fromisoformat(str(raw['due_time']))
         numbers = {}
-        for key in ('total_weeks', 'due_weekday', 'required_start', 'required_end'):
+        for key in ('due_weekday', 'required_start', 'required_end'):
             value = raw[key]
             if isinstance(value, bool) or str(value).strip() != str(int(value)):
                 raise ValueError()
             numbers[key] = int(value)
+        # New calendars contain only the administrator's configured weeks. Older
+        # clients may still send the removed calendar default; do not adopt it.
+        numbers['total_weeks'] = max(period.total_weeks, numbers['required_end']) if period else numbers['required_end']
         if not (1 <= numbers['total_weeks'] <= 53 and 0 <= numbers['due_weekday'] <= 6
                 and 1 <= numbers['required_start'] <= numbers['required_end'] <= numbers['total_weeks']):
             raise ValueError()
@@ -84,13 +88,14 @@ def validate_configuration(raw, *, stage=None, semester=None):
         raise ValidationError({'weekly_reporting': 'Enter a start date, weekly deadline, 1-53 reporting weeks, '
             'and a required week range within that period.'})
     clean = {'enabled': True, 'starts_on': str(start), 'due_time': deadline.strftime('%H:%M'), **numbers}
-    period = WeeklyReportingPeriod.objects.filter(semester=semester).first()
     if raw.get('period_id') and (not period or str(raw['period_id']) != str(period.pk)):
         raise ValidationError({'weekly_reporting': 'The reporting period belongs to another semester. Reopen setup.'})
     if period:
         current = {'starts_on': str(period.starts_on), 'total_weeks': period.total_weeks,
             'due_weekday': period.due_weekday, 'due_time': period.due_time.strftime('%H:%M')}
-        calendar_changed = any(clean[key] != current[key] for key in CALENDAR_FIELDS)
+        # Appending weeks for a newly configured stage preserves all prior dates.
+        # Start date and deadline changes still retain their existing protections.
+        calendar_changed = any(clean[key] != current[key] for key in CALENDAR_FIELDS if key != 'total_weeks')
         if calendar_changed and (not old.get('enabled') or used(period)):
             raise ValidationError({'weekly_reporting': 'Use the existing semester reporting calendar. '
                 'A calendar with recorded use cannot be changed.'})

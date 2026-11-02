@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/screens/web/admin/defense_stages/widgets/stage_minutes_settings.dart';
 import 'package:defensys/widgets/defense/system_defense_records.dart';
 
@@ -20,6 +21,7 @@ void main() {
         host(
           StatefulBuilder(
             builder: (context, setState) => StageMinutesSettings(
+              compact: true,
               requiredMinutes: requiredMinutes,
               enabled: true,
               onChanged: (value) => setState(() => requiredMinutes = value),
@@ -27,17 +29,21 @@ void main() {
           ),
         ),
       );
-      expect(
-        tester.getTopLeft(find.text('Signed minutes required')).dx,
-        lessThan(tester.getTopLeft(find.text('Minutes not required')).dx),
-      );
-      await tester.tap(find.text('Signed minutes required'));
+      final toggle = find.byKey(const ValueKey('stage-minutes-switch'));
+      expect(tester.widget<ShadSwitch>(toggle).value, isFalse);
+      await tester.tap(toggle);
       await tester.pump();
       expect(requiredMinutes, isTrue);
-      expect(find.textContaining('Adds a system-generated'), findsOneWidget);
-      await tester.tap(find.text('Minutes not required'));
+      expect(tester.widget<ShadSwitch>(toggle).value, isTrue);
+      expect(find.textContaining('Adds signed minutes in Step 3'), findsOneWidget);
+      await tester.tap(toggle);
       await tester.pump();
       expect(requiredMinutes, isFalse);
+      expect(tester.widget<ShadSwitch>(toggle).value, isFalse);
+      expect(
+        find.text('No documenter assignment or signed-minutes deliverable.'),
+        findsOneWidget,
+      );
     },
   );
 

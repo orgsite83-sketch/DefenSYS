@@ -431,9 +431,16 @@ class StudentTeamDetailView(APIView):
             row = get_object_or_404(TeamTermParticipation.objects.select_related('semester__school_year'),
                 team=team, semester_id=drf_serializers.IntegerField(min_value=1).run_validation(request.query_params['semester_id']), closed_at__isnull=False)
             return Response({'team': historical_payload(row), 'students': [], 'advisers': [], 'read_only': True})
+        from .detail_progress import legacy_counts, pit_progress
+        selected, events = pit_progress(team, request) if team.is_pit else (None, [])
         return Response({
-            'team': StudentTeamSerializer(team, context={'user': request.user}).data,
+            'team': StudentTeamSerializer(team, context={'user': request.user,
+                'request': request, 'selected_pit_event': selected}).data,
+            'team_events': events,
+            'selected_event_name': selected.event_name if selected else None,
+            **legacy_counts(team, request.user),
             **options_payload(team_id=team_id, team_level=team.level, user=request.user,
+                              event_name=selected.event_name if selected else None,
                               workspace=request.query_params.get('workspace'),
                               include_roster_options=request.query_params.get('workspace', '') in ('', 'operations')),
         })
@@ -480,43 +487,25 @@ class StudentTeamDetailView(APIView):
             'counts': counts_payload(user=request.user),
         })
 
+    @transaction.atomic
     def delete(self, request, team_id):
         team = self.get_object(team_id)
         from .term_scope import assert_team_writable
-        from defense.scheduler.models import DefenseSchedule
-        from grading.grades.models import TeamGrade
+        from .deletion import deletion_blockers, remove_unused_placements
+        from django.db.models.deletion import ProtectedError
 
+        # Match roster import/term activation lock order, then prevent academic
+        # evidence from being attached between the checks and the deletion.
+        list(Semester.objects.select_for_update().order_by('pk'))
+        student_ids = set(team.memberships.values_list('student_id', flat=True)) | {team.leader_id}
+        student_ids.update(team.student_placements.values_list('participation__student_id', flat=True))
+        list(User.objects.select_for_update().filter(pk__in=student_ids).order_by('pk'))
+        team = StudentTeam.objects.select_for_update().get(pk=team.pk)
         assert_team_writable(request.user, team)
 
-        if team.student_placements.exists() or team.term_participations.filter(closed_at__isnull=False).exists() or team.historical_recovery_records.exists():
-            return Response({'detail': 'This team has closed academic-period records. Preserve its history.'}, status=409)
-
-        if team.is_pit and (team.pit_event_rosters.filter(started_at__isnull=False).exists()
-                or team.concept_rounds.exists() or team.deliverable_submissions.exists()):
-            return Response({'detail': 'This roster is used by an event. Preserve its teams and import a different roster for future events.'}, status=409)
-
-        has_schedules = DefenseSchedule.objects.filter(team=team).exists()
-        has_grades = TeamGrade.objects.filter(team=team).exists()
-        force = request.query_params.get('force', 'false').lower() == 'true'
-
-        if has_schedules or has_grades:
-            if not force:
-                return Response(
-                    {
-                        'warning': (
-                            'This team has defense schedules or grade records. '
-                            'Deleting it will permanently remove all grades, '
-                            'panelist scores, and peer evaluations. '
-                            'Consider changing the team status instead.'
-                        ),
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
-            if getattr(request.user, 'role', None) != 'admin':
-                return Response(
-                    {'detail': 'Only administrators can force-delete teams with active schedules or grades.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+        blockers = deletion_blockers(team)
+        if blockers:
+            return Response({'detail': '\n'.join(blockers)}, status=status.HTTP_409_CONFLICT)
 
         member_ids = list(team.memberships.values_list('student_id', flat=True))
         audit_values = team_audit_values(
@@ -527,7 +516,16 @@ class StudentTeamDetailView(APIView):
             status=team.status,
         )
         team_pk = team.pk
-        team.delete()
+        try:
+            # A remaining protected reference must roll back placement cleanup.
+            with transaction.atomic():
+                remove_unused_placements(team)
+                team.delete()
+        except ProtectedError:
+            return Response(
+                {'detail': 'This team is referenced by academic history that must be preserved.'},
+                status=status.HTTP_409_CONFLICT,
+            )
         log_high_impact_action(
             category=SystemAuditLog.CATEGORY_STUDENT_TEAMS,
             action='team.delete',
@@ -537,6 +535,7 @@ class StudentTeamDetailView(APIView):
             old_values=audit_values,
             new_values={'deleted': True},
             request=request,
+            strict=True,
         )
         return Response({'counts': counts_payload(user=request.user)}, status=status.HTTP_200_OK)
 

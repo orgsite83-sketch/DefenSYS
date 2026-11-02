@@ -295,9 +295,12 @@ class DefenseStageSerializer(serializers.ModelSerializer):
 
     def get_system_deliverables(self, obj):
         from defense.minutes.requirements import minutes_definition
+        from defense.template_files import template_metadata
         from defense.weekly_reporting import definition as weekly_definition
         definition = minutes_definition(obj)
         weekly = weekly_definition(obj)
+        if weekly:
+            weekly['template'] = template_metadata(obj, weekly['deliverable_id'])
         return ([definition] if definition else []) + ([weekly] if weekly else [])
 
     def get_is_officially_complete(self, obj):

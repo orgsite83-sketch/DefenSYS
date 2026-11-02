@@ -16,6 +16,7 @@ class FacultyRequirementsViewState {
   String filter = 'all';
   String? selected;
   String? selectedFileKey;
+  String? lastOpened;
 }
 
 class FacultyRequirementsPane extends ConsumerStatefulWidget {
@@ -66,6 +67,7 @@ class _FacultyRequirementsPaneState
         entries.firstOrNull;
     setState(() {
       selected = identity(item);
+      view.lastOpened = selected;
       view.selectedFileKey = fileKey ?? first?['key']?.toString();
     });
   }

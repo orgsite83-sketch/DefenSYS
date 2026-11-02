@@ -549,7 +549,7 @@ void main() {
     expect(find.text('Stage status'), findsNothing);
     expect(find.text('Next step'), findsOneWidget);
     expect(find.text('Before endorsement'), findsOneWidget);
-    expect(find.text('Before defense'), findsOneWidget);
+    expect(find.text('Before defense'), findsNothing);
     expect(find.textContaining('No defense date yet'), findsNothing);
     expect(find.textContaining('Defense files ·'), findsNothing);
     expect(find.text('Due after scheduling'), findsNothing);
@@ -557,7 +557,7 @@ void main() {
       find.text(
         'These files do not block endorsement or scheduling. The upload deadline appears once the defense is scheduled.',
       ),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       tester.getTopLeft(find.text('Awaiting endorsement').last).dx,
@@ -575,7 +575,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Endorse team'), findsNWidgets(2));
     expect(
-      find.textContaining('remain due by their scheduled deadline'),
+      find.text('Endorse Team BioPulse for Concept Proposal?'),
       findsOneWidget,
     );
     await tester.tap(find.text('Cancel'));

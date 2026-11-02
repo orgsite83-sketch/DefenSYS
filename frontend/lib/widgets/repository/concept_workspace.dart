@@ -652,6 +652,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (widget.paperContent != null) widget.paperContent!,
+          repeatInstructions(),
           ConceptHistory(workflow: workflow),
         ],
       );

@@ -1,6 +1,3 @@
-import 'dart:typed_data';
-
-import 'package:defensys/screens/app/student/student_deliverables_tab.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/deliverable_submission_detail_modal.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
@@ -121,95 +118,87 @@ void main() {
     },
   );
 
-  for (final student in [true, false]) {
-    testWidgets(
-      '${student ? 'student' : 'shared'} upload recommendation and Copy follow archive selection',
-      (tester) async {
-        tester.view.physicalSize = const Size(480, 1000);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        final previousPicker = FilePicker.platform;
-        final picker = _Picker();
-        FilePicker.platform = picker;
-        addTearDown(() => FilePicker.platform = previousPicker);
-        String? clipboard;
-        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  // Student uploads standardize the selected filename in the direct picker flow.
+  // This legacy shared dialog still supports changing a pending file and Copy.
+  testWidgets(
+    'shared upload recommendation and Copy follow archive selection',
+    (tester) async {
+      tester.view.physicalSize = const Size(480, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final previousPicker = FilePicker.platform;
+      final picker = _Picker();
+      FilePicker.platform = picker;
+      addTearDown(() => FilePicker.platform = previousPicker);
+      String? clipboard;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            clipboard = (call.arguments as Map)['text'] as String;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           SystemChannels.platform,
-          (call) async {
-            if (call.method == 'Clipboard.setData') {
-              clipboard = (call.arguments as Map)['text'] as String;
-            }
-            return null;
-          },
-        );
-        addTearDown(
-          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-            SystemChannels.platform,
-            null,
+          null,
+        ),
+      );
+
+      await pumpDefensysWidget(
+        tester,
+        Consumer(
+          builder: (context, ref, _) => TextButton(
+            onPressed: () => showUploadDialog(
+              context: context,
+              ref: ref,
+              team: _team,
+              stageLabel: 'Final Defense',
+              item: _item,
+            ),
+            child: const Text('Open upload'),
           ),
-        );
+        ),
+        overrides: [
+          capstoneDeliverablesProvider.overrideWith(_Deliverables.new),
+        ],
+      );
+      await tester.tap(find.text('Open upload'));
+      await tester.pumpAndSettle();
+      expect(find.text('Project_PrototypeSourceCode.zip'), findsOneWidget);
+      expect(find.text('Project_PrototypeSourceCode.pdf'), findsNothing);
 
-        await pumpDefensysWidget(
-          tester,
-          student
-              ? const StudentDeliverablesTab(
-                  isCapstone: true,
-                  studentData: null,
-                  hideHeader: true,
-                )
-              : Consumer(
-                  builder: (context, ref, _) => TextButton(
-                    onPressed: () => showUploadDialog(
-                      context: context,
-                      ref: ref,
-                      team: _team,
-                      stageLabel: 'Final Defense',
-                      item: _item,
-                    ),
-                    child: const Text('Open upload'),
-                  ),
-                ),
-          overrides: [
-            capstoneDeliverablesProvider.overrideWith(_Deliverables.new),
-          ],
-        );
+      for (final extension in ['zip', 'rar', '7z']) {
+        picker.extension = extension;
         await tester.tap(
-          find.text(student ? 'Upload Prototype Source Code' : 'Open upload'),
+          extension == 'zip'
+              ? find.text('Click to browse or drop your document here')
+              : find.byTooltip('Change file'),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Project_PrototypeSourceCode.zip'), findsOneWidget);
+        final expected = 'Project_PrototypeSourceCode.$extension';
+        expect(find.text(expected), findsOneWidget);
         expect(find.text('Project_PrototypeSourceCode.pdf'), findsNothing);
+        await tester.tap(find.text('Copy'));
+        await tester.pumpAndSettle();
+        expect(clipboard, expected);
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+      }
 
-        for (final extension in ['zip', 'rar', '7z']) {
-          picker.extension = extension;
-          await tester.tap(
-            extension == 'zip'
-                ? find.text('Click to browse or drop your document here')
-                : find.byTooltip('Change file'),
-          );
-          await tester.pumpAndSettle();
-          final expected = 'Project_PrototypeSourceCode.$extension';
-          expect(find.text(expected), findsOneWidget);
-          expect(find.text('Project_PrototypeSourceCode.pdf'), findsNothing);
-          await tester.tap(find.text('Copy'));
-          await tester.pumpAndSettle();
-          expect(clipboard, expected);
-          await tester.pump(const Duration(seconds: 4));
-          await tester.pumpAndSettle();
-        }
-
-        await tester.tap(find.text('Submit Deliverable'));
-        await tester.pumpAndSettle();
-        expect(find.text('Project_PrototypeSourceCode.7z'), findsNWidgets(2));
-        expect(find.text('Project_PrototypeSourceCode.pdf'), findsNothing);
-        // Inspect the proposed repository name without submitting any file.
-        await tester.tap(find.text('Cancel').last);
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Cancel'));
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull);
-      },
-    );
-  }
+      await tester.tap(find.text('Submit Deliverable'));
+      await tester.pumpAndSettle();
+      expect(find.text('Project_PrototypeSourceCode.7z'), findsNWidgets(2));
+      expect(find.text('Project_PrototypeSourceCode.pdf'), findsNothing);
+      // Inspect the proposed repository name without submitting any file.
+      await tester.tap(find.text('Cancel').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

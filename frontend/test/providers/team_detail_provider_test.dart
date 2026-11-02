@@ -145,4 +145,67 @@ void main() {
       expect(container.read(teamDetailProvider(1)).grades, isEmpty);
     },
   );
+  test('PIT never requests weekly reports, including legacy reports', () async {
+    final requests = <Uri>[];
+    setApiHttpClientForTesting(
+      MockClient((request) async {
+        requests.add(request.url);
+        if (request.url.path.endsWith('/teams/1/')) {
+          return http.Response(
+            jsonEncode({
+              'team': {'id': 1, 'level': '1st Year PIT'},
+              'legacy_documents_count': 0,
+              'legacy_reports_count': 99,
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+    final container = ProviderContainer(overrides: authTestOverrides());
+    addTearDown(container.dispose);
+    await container.read(teamDetailProvider(1).notifier).load();
+    expect(
+      requests.where((uri) => uri.path.contains('weekly-progress')),
+      isEmpty,
+    );
+    expect(container.read(teamDetailProvider(1)).weeklyReports, isEmpty);
+  });
+
+  test('a slower event response cannot overwrite a later selection', () async {
+    final pending = <String, Completer<http.Response>>{};
+    setApiHttpClientForTesting(
+      MockClient((request) async {
+        if (request.url.path.endsWith('/teams/1/')) {
+          final response = Completer<http.Response>();
+          pending[request.url.queryParameters['event_name']!] = response;
+          return response.future;
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+    final container = ProviderContainer(overrides: authTestOverrides());
+    addTearDown(container.dispose);
+    final notifier = container.read(teamDetailProvider(1).notifier);
+    final first = notifier.selectEvent('First');
+    await Future<void>.delayed(Duration.zero);
+    final second = notifier.selectEvent('Second');
+    await Future<void>.delayed(Duration.zero);
+    String body(String event) => jsonEncode({
+      'team': {'id': 1, 'level': '1st Year PIT', 'project_title': event},
+      'selected_event_name': event,
+      'legacy_documents_count': 0,
+      'legacy_reports_count': 0,
+    });
+    pending['Second']!.complete(http.Response(body('Second'), 200));
+    await second;
+    pending['First']!.complete(http.Response(body('First'), 200));
+    await first;
+    expect(container.read(teamDetailProvider(1)).selectedEvent, 'Second');
+    expect(
+      container.read(teamDetailProvider(1)).team?['project_title'],
+      'Second',
+    );
+  });
 }

@@ -16,10 +16,18 @@ class RequirementSummary {
       corrections = (counts['rejected'] as num? ?? 0).toInt();
       late = (counts['late'] as num? ?? 0).toInt();
       overdue = (counts['overdue'] as num? ?? 0).toInt();
-      status = item['completed'] == true ? 'Accepted' : corrections > 0
-          ? 'Corrections requested' : missing > 0 ? '$uploaded/$required Uploaded' : 'Under Review';
-      tone = item['completed'] == true ? WorkflowStatusTone.success
-          : corrections > 0 || pending > 0 ? WorkflowStatusTone.attention : WorkflowStatusTone.neutral;
+      status = item['completed'] == true
+          ? 'Accepted'
+          : corrections > 0
+          ? 'Corrections requested'
+          : missing > 0
+          ? '$uploaded/$required Uploaded'
+          : 'Under Review';
+      tone = item['completed'] == true
+          ? WorkflowStatusTone.success
+          : corrections > 0 || pending > 0
+          ? WorkflowStatusTone.attention
+          : WorkflowStatusTone.neutral;
       return;
     }
     final policy = item['file_policy'] as Map? ?? {};
@@ -73,7 +81,12 @@ class RequirementSummary {
     missing = (required - uploaded).clamp(0, required);
     pending = fileCount == 0
         ? 0
-        : TeamWorkflowStatus.pendingFileReviewCount(item);
+        // A read-only viewer still needs the real submission status. This
+        // presentation count must not depend on permission to review files.
+        : TeamWorkflowStatus.pendingFileReviewCount({
+            ...item,
+            'can_faculty_review': true,
+          });
     corrections = files.isNotEmpty
         ? files.where((file) => _rejected(file['status'])).length
         : !grouped &&

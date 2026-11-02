@@ -93,6 +93,8 @@ class TeamMemberSerializer(serializers.ModelSerializer):
 
 class StudentTeamSerializer(serializers.ModelSerializer):
     def _selected_pit_event(self, team):
+        if 'selected_pit_event' in self.context:
+            return self.context['selected_pit_event']
         from defense.scheduler.models import PitEventGradingConfig
         request = self.context.get('request')
         params = request.query_params if request else {}

@@ -708,7 +708,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         isPost: isPost,
                         selectedItem: selectedItem,
                         onSelect: onSelect,
-                        showGroupHeading: true,
+                        showGroupHeading: false,
                         showReviewHint: false,
                         showDoneEditingButton: false,
                         buildEditor: (item, index) => Column(
@@ -1341,6 +1341,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         ? setup!['minutes_required'] as bool : true;
     var weeklyConfig = initialWeeklySettings(setup?['weekly_reporting'] as Map?, existingStages);
     final weeklyTemplate = weeklyTemplateDraft(setup);
+    final stageRequirementsKey = GlobalKey();
     final minutesNumber = TextEditingController(
       text: setup?['minutes_deliverable_id']?.toString() ?? 'MINUTES',
     );
@@ -1450,6 +1451,21 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           stageDialogRoute = ModalRoute.of<bool>(dialogContext);
           return StatefulBuilder(
             builder: (context, setDialogState) {
+              void showStageRequirements() {
+                setDialogState(() => activeTab = 0);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!dialogContext.mounted) return;
+                  final target = stageRequirementsKey.currentContext;
+                  if (target == null) return;
+                  Scrollable.ensureVisible(
+                    target,
+                    alignment: 0.15,
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                  );
+                });
+              }
+
               Future<void> saveAndLeave({bool openRubrics = false}) async {
                 if (savingDraft) return;
                 setDialogState(() => savingDraft = true);
@@ -1680,6 +1696,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   // Stage requirements
                                   Text(
                                     'Stage requirements',
+                                    key: stageRequirementsKey,
                                     style: TextStyle(
                                       fontFamily: DefensysTokens.fontFamilyInter,
                                       fontSize: 13,
@@ -1822,7 +1839,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     borderColor: const Color(0xFFE2E8F0),
                                     count: preDeliverables.length + (weeklyConfig['enabled'] == true ? 1 : 0),
                                     managedRequirement: weeklyConfig['enabled'] == true
-                                      ? StageWeeklyRequirementRow(config: weeklyConfig, onEdit: () => setDialogState(() => activeTab = 0)) : null,
+                                      ? StageWeeklyRequirementRow(config: weeklyConfig, onEdit: showStageRequirements) : null,
                                         onAdd: () {
                                       setDialogState(() {
                                          final item = <String, dynamic>{
@@ -1923,8 +1940,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                         minutesExpanded = !minutesExpanded;
                                         if (minutesExpanded) selectedDeliverable = null;
                                       }),
-                                      onConfigure: () =>
-                                          setDialogState(() => activeTab = 0),
+                                      onConfigure: showStageRequirements,
                                     ),
                                   ],
                                 ],

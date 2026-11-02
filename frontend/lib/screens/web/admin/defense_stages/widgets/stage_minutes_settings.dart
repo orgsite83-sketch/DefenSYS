@@ -36,28 +36,28 @@ class StageMinutesSettings extends StatelessWidget {
           border: Border.all(color: borderColor),
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          LayoutBuilder(builder: (context, constraints) {
-            final title = Text('Session documentation',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontFamily: DefensysTokens.fontFamilyInter,
-                fontWeight: FontWeight.w600, color: textPrimary));
-            final choice = ShadSelect<bool>(
-              key: ValueKey('stage-minutes-$requiredMinutes'),
-              initialValue: requiredMinutes,
-              enabled: enabled,
-              selectedOptionBuilder: (_, selected) => Text(selected ? 'Signed minutes required' : 'Minutes not required'),
-              options: const [
-                ShadOption(value: true, child: Text('Signed minutes required')),
-                ShadOption(value: false, child: Text('Minutes not required')),
-              ],
-              onChanged: (selected) { if (selected != null) onChanged(selected); },
-            );
-            return constraints.maxWidth < 520
-                ? Column(crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [title, const SizedBox(height: 10), choice])
-                : Row(children: [Expanded(child: title), const SizedBox(width: 16), choice]);
-          }),
-          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Session documentation',
+                  style: DefensysTokens.sectionTitle.copyWith(color: textPrimary),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Semantics(
+                label: 'Signed minutes required',
+                child: ShadSwitch(
+                  key: const ValueKey('stage-minutes-switch'),
+                  value: requiredMinutes,
+                  enabled: enabled,
+                  checkedTrackColor: DefensysTokens.maroon,
+                  onChanged: onChanged,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
           Text(requiredMinutes
               ? 'Adds signed minutes in Step 3. A documenter is required when scheduling.'
               : 'No documenter assignment or signed-minutes deliverable.',

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 
 import '../../../../theme/defensys_tokens.dart';
 import '../grade_center_shared.dart' show asDouble, asInt, statusLabel;
@@ -15,6 +17,7 @@ class AcademicProgressCard extends StatelessWidget {
     required this.onViewEvaluation,
     this.currentStage,
     this.error,
+    this.heading = 'ACADEMIC PROGRESS',
   });
 
   final List<Map<String, dynamic>> grades;
@@ -23,11 +26,15 @@ class AcademicProgressCard extends StatelessWidget {
   final bool isLoading;
   final String? currentStage;
   final String? error;
+  final String heading;
   final VoidCallback onRetry;
   final ValueChanged<Map<String, dynamic>> onViewEvaluation;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      DefensysShadcnScope(child: Builder(builder: _buildCard));
+
+  Widget _buildCard(BuildContext context) {
     final ink = DefensysTokens.textPrimaryOf(context);
     final muted = DefensysTokens.textSecondaryOf(context);
     final rows = <(String, Map<String, dynamic>?)>[];
@@ -71,7 +78,7 @@ class AcademicProgressCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'ACADEMIC PROGRESS',
+                  heading,
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
@@ -101,13 +108,15 @@ class AcademicProgressCard extends StatelessWidget {
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
+              child: ShadButton.outline(
+                size: ShadButtonSize.sm,
+                enabled: !isLoading,
                 onPressed: isLoading ? null : onRetry,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Retry grades'),
+                leading: const Icon(Icons.refresh, size: 16),
+                child: const Text('Retry grades'),
               ),
             ),
-          ] else if (rows.isEmpty) ...[
+          ] else if (rows.isEmpty || isLoading && grades.isEmpty) ...[
             Text(
               isLoading
                   ? 'Loading evaluations…'
@@ -168,6 +177,15 @@ class AcademicProgressCard extends StatelessWidget {
         ? 'In progress'
         : 'Not evaluated';
     final semester = grade?['display_semester']?.toString() ?? '';
+    final recordContext = [
+      if (grade?['project_version'] != null)
+        'Project ${grade!['project_version']}',
+      if (grade?['attempt_count'] != null) 'Attempt ${grade!['attempt_count']}',
+      if (grade?['scheduled_date'] != null) '${grade!['scheduled_date']}',
+      if (grade?['recorded_stage_label'] != null &&
+          grade!['recorded_stage_label'] != label)
+        'Recorded as ${grade['recorded_stage_label']}',
+    ].join(' · ');
     final students = (grade?['peer_per_student'] as List? ?? const [])
         .whereType<Map>();
     final isAverage =
@@ -217,6 +235,17 @@ class AcademicProgressCard extends StatelessWidget {
                           isCapstone ? 'Current stage' : 'Current event',
                       ].join(' · '),
                       style: TextStyle(fontSize: 11.5, color: muted),
+                    ),
+                  ],
+                  if (recordContext.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      recordContext,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: muted,
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                      ),
                     ),
                   ],
                 ],
@@ -299,15 +328,11 @@ class AcademicProgressCard extends StatelessWidget {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: TextButton.icon(
+            child: ShadButton.ghost(
+              size: ShadButtonSize.sm,
+              padding: EdgeInsets.zero,
               onPressed: () => onViewEvaluation(grade),
-              style: TextButton.styleFrom(
-                foregroundColor: DefensysTokens.maroonTextOf(context),
-                padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-              ),
-              iconAlignment: IconAlignment.end,
-              icon: const Icon(Icons.arrow_forward, size: 15),
-              label: const Text(
+              child: const Text(
                 'View evaluation details',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),

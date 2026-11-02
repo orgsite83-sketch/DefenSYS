@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import '../shadcn/defensys_shadcn_scope.dart';
 
 import '../../theme/defensys_tokens.dart';
 import '../../theme/program_colors.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../../models/team_workflow_status.dart';
 import 'workflow_status_style.dart';
+import 'deliverable_popup_navigation.dart';
 
 /// Single-file policies still use the original requirement card. Named slots,
 /// concepts and attachment groups need their own per-file upload/review targets.
@@ -112,66 +114,83 @@ class DeliverableUploadTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
-      child: Row(
-        children: [
-          DeliverableFileTypeBadge(format: format),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final description = Row(
+            children: [
+              DeliverableFileTypeBadge(format: format),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
+                    ),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          if (status != null)
+                            TextSpan(
+                              text: '$status · ',
+                              style: TextStyle(
+                                color: status == 'Missing'
+                                    ? Theme.of(context).colorScheme.error
+                                    : DefensysTokens.textSecondaryOf(context),
+                              ),
+                            ),
+                          TextSpan(
+                            text:
+                                '${status == null ? 'Accepted: ' : ''}$formats · Max $maxFileSizeMb MB',
+                          ),
+                        ],
+                      ),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+          final upload = DefensysShadcnScope(
+            child: ShadButton.outline(
+              size: ShadButtonSize.sm,
+              height: 40,
+              enabled: enabled,
+              onPressed: enabled ? onUpload : null,
+              leading: const Icon(Icons.add_rounded, size: 14),
+              child: const Text('Upload'),
+            ),
+          );
+          if (constraints.maxWidth < 270 ||
+              MediaQuery.textScalerOf(context).scale(1) > 1.15) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: DefensysTokens.textPrimaryOf(context),
-                  ),
-                ),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      if (status != null)
-                        TextSpan(
-                          text: '$status · ',
-                          style: TextStyle(
-                            color: status == 'Missing'
-                                ? Theme.of(context).colorScheme.error
-                                : DefensysTokens.textSecondaryOf(context),
-                          ),
-                        ),
-                      TextSpan(
-                        text:
-                            '${status == null ? 'Accepted: ' : ''}$formats · Max $maxFileSizeMb MB',
-                      ),
-                    ],
-                  ),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: DefensysTokens.textSecondaryOf(context),
-                  ),
-                ),
+                description,
+                const SizedBox(height: 8),
+                Align(alignment: Alignment.centerRight, child: upload),
               ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: enabled ? onUpload : null,
-            icon: const Icon(Icons.add_rounded, size: 14),
-            label: const Text('Upload'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: DefensysTokens.textPrimaryOf(context),
-              side: BorderSide(color: DefensysTokens.borderOf(context)),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              textStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-              visualDensity: VisualDensity.compact,
-            ),
-          ),
-        ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: description),
+              const SizedBox(width: 8),
+              upload,
+            ],
+          );
+        },
       ),
     );
   }
@@ -274,48 +293,38 @@ class DeliverableUploadedFileTile extends StatelessWidget {
               final actions = Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  OutlinedButton(
-                    onPressed: onRevision == null
-                        ? onDetails
-                        : revisionEnabled
-                        ? onRevision
-                        : null,
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: compact
-                          ? DefensysTokens.surfaceOf(context)
-                          : DefensysTokens.surfaceHigherOf(context),
-                      foregroundColor: DefensysTokens.textPrimaryOf(context),
-                      side: BorderSide(
-                        color: compact
-                            ? Colors.transparent
-                            : DefensysTokens.borderOf(context),
+                  DefensysShadcnScope(
+                    child: ShadButton.outline(
+                      size: ShadButtonSize.sm,
+                      height: 40,
+                      textStyle: const TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
                       ),
-                      minimumSize: const Size(0, 28),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 5,
+                      enabled: onRevision == null || revisionEnabled,
+                      onPressed: onRevision == null
+                          ? onDetails
+                          : revisionEnabled
+                          ? onRevision
+                          : null,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            onRevision == null ? 'Details' : 'Upload revision',
+                          ),
+                          const SizedBox(width: 3),
+                          Icon(
+                            onRevision == null
+                                ? compact
+                                      ? Icons.visibility_outlined
+                                      : Icons.chevron_right_rounded
+                                : Icons.upload_file_outlined,
+                            size: 14,
+                          ),
+                        ],
                       ),
-                      textStyle: Theme.of(context).textTheme.labelSmall
-                          ?.copyWith(fontSize: 11, fontWeight: FontWeight.w600),
-                      visualDensity: VisualDensity.standard,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          onRevision == null ? 'Details' : 'Upload revision',
-                        ),
-                        const SizedBox(width: 3),
-                        Icon(
-                          onRevision == null
-                              ? compact
-                                    ? Icons.visibility_outlined
-                                    : Icons.chevron_right_rounded
-                              : Icons.upload_file_outlined,
-                          size: 14,
-                        ),
-                      ],
                     ),
                   ),
                   if (trailing != null) ...[
@@ -354,9 +363,11 @@ class DeliverableStatusBadge extends StatelessWidget {
     super.key,
     required this.label,
     required this.tone,
+    this.maxLines = 1,
   });
   final String label;
   final WorkflowStatusTone tone;
+  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -386,11 +397,12 @@ class DeliverableStatusBadge extends StatelessWidget {
           Flexible(
             child: Text(
               label,
-              maxLines: 1,
+              maxLines: maxLines,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w600,
+                fontFamily: DefensysTokens.fontFamilyInter,
                 color: style.foreground,
               ),
             ),
@@ -457,83 +469,50 @@ class DeliverableDetailsActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
-    );
-    final labelStyle = Theme.of(
-      context,
-    ).textTheme.labelLarge?.copyWith(fontSize: 12, fontWeight: FontWeight.w600);
-    final secondary = OutlinedButton.styleFrom(
-      foregroundColor: DefensysTokens.textPrimaryOf(context),
-      side: BorderSide(color: DefensysTokens.borderOf(context)),
-      shape: shape,
-      minimumSize: const Size(0, 40),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      visualDensity: VisualDensity.standard,
-      textStyle: labelStyle,
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Divider(height: 28, color: DefensysTokens.borderOf(context)),
-        FilledButton.icon(
-          onPressed: onView,
-          icon: const Icon(Icons.visibility_outlined, size: 16),
-          label: const Text('View Document'),
-          style: FilledButton.styleFrom(
+    return DefensysShadcnScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Divider(height: 28, color: DefensysTokens.borderOf(context)),
+          ShadButton(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             backgroundColor: DefensysTokens.maroonOf(context),
             foregroundColor: Colors.white,
-            shape: shape,
-            minimumSize: const Size(0, 40),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            visualDensity: VisualDensity.standard,
-            textStyle: labelStyle,
+            enabled: onView != null,
+            onPressed: onView,
+            leading: const Icon(Icons.visibility_outlined, size: 16),
+            child: const Text('View Document'),
           ),
-        ),
-        if (onReplace != null || onRemove != null) ...[
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              if (onReplace != null)
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onReplace,
-                    icon: Icon(
-                      replacementLabel == 'Upload revision'
-                          ? Icons.upload_file_outlined
-                          : Icons.swap_horiz_rounded,
-                      size: 16,
-                    ),
-                    label: Text(replacementLabel),
-                    style: secondary,
-                  ),
-                ),
-              if (onReplace != null && onRemove != null)
-                const SizedBox(width: 10),
-              if (onRemove != null)
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onRemove,
-                    icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                    label: const Text('Remove'),
-                    style: secondary.copyWith(
-                      foregroundColor: WidgetStatePropertyAll(
-                        Theme.of(context).colorScheme.error,
-                      ),
-                      side: WidgetStatePropertyAll(
-                        BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.error.withValues(alpha: .3),
-                        ),
-                      ),
+          if (onReplace != null || onRemove != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (onReplace != null)
+                  Expanded(
+                    child: ShadButton.outline(
+                      height: 42,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      onPressed: onReplace,
+                      child: Text(replacementLabel),
                     ),
                   ),
-                ),
-            ],
-          ),
+                if (onReplace != null && onRemove != null)
+                  const SizedBox(width: 10),
+                if (onRemove != null)
+                  Expanded(
+                    child: ShadButton.outline(
+                      height: 42,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      onPressed: onRemove,
+                      child: const Text('Remove'),
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -673,7 +652,26 @@ Future<void> showDeliverableFileDetails({
       ],
     ),
   );
-  if (MediaQuery.sizeOf(context).width < 600) {
+  if (DeliverablePopupNavigation.maybeOf(context) != null) {
+    await showDeliverablePopupStep<void>(
+      context: context,
+      builder: (context) => DefensysShadcnScope(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: ShadDialog(
+            constraints: BoxConstraints(
+              maxWidth: 600,
+              maxHeight: MediaQuery.sizeOf(context).height - 24,
+            ),
+            padding: EdgeInsets.zero,
+            closeIcon: const SizedBox.shrink(),
+            removeBorderRadiusWhenTiny: false,
+            child: content(context),
+          ),
+        ),
+      ),
+    );
+  } else if (MediaQuery.sizeOf(context).width < 600) {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,

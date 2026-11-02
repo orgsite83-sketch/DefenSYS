@@ -193,7 +193,7 @@ class GradingSetupSection extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     noRubrics
-                        ? 'No published rubrics available.'
+                        ? 'No published rubrics available. You can select them later, before scheduling.'
                         : 'Attach rubrics before scheduling.',
                     style: DefensysTokens.caption.copyWith(color: muted),
                   ),

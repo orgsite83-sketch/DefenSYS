@@ -247,7 +247,7 @@ void main() {
   setUp(() => FilePicker.platform = _RevisionPicker());
   for (final dark in [false, true]) {
     testWidgets(
-      'single-file policy retains the original student upload card in ${dark ? 'dark' : 'light'} mode',
+      'single-file summary opens the original upload tile in ${dark ? 'dark' : 'light'} mode',
       (tester) async {
         await _surface(tester, const Size(390, 1100));
         addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -271,8 +271,10 @@ void main() {
           ],
         );
         expect(find.byType(DocumentGroup), findsNothing);
+        expect(find.byType(DeliverableUploadTile), findsNothing);
+        await tester.tap(find.text('Manage files'));
+        await tester.pumpAndSettle();
         expect(find.text('Upload Project poster'), findsOneWidget);
-        expect(find.text('Action Required'), findsOneWidget);
         expect(find.text('PDF'), findsOneWidget);
         expect(find.byIcon(Icons.cloud_upload_rounded), findsNothing);
         final upload = find.byType(DeliverableUploadTile);
@@ -287,8 +289,9 @@ void main() {
         expect(tester.takeException(), isNull);
         await capturePreview(
           tester,
-          find.byKey(const ValueKey('file-card-preview')),
+          find.byType(StudentDeliverablesTab),
           'student-single-file-${dark ? 'dark' : 'light'}',
+          viewport: true,
         );
       },
     );
@@ -313,11 +316,13 @@ void main() {
           ),
         ],
       );
+      await tester.tap(find.text('Manage files'));
+      await tester.pumpAndSettle();
       expect(find.text('poster.pdf'), findsOneWidget);
       expect(find.textContaining('Add the validation method.'), findsOneWidget);
       await tester.tap(find.text('poster.pdf'));
       await tester.pumpAndSettle();
-      expect(find.text('FILE PROPERTIES & INFO'), findsOneWidget);
+      expect(find.text('File name'), findsOneWidget);
       expect(find.text('Kyle Pineda'), findsOneWidget);
       expect(find.text('View Document'), findsOneWidget);
       expect(
@@ -856,18 +861,18 @@ void main() {
           final replace = tester.getRect(
             find.descendant(
               of: find.byType(DeliverableDetailsActions),
-              matching: find.widgetWithText(OutlinedButton, scenario.label),
+              matching: find.widgetWithText(ShadButton, scenario.label),
             ),
           );
           final remove = tester.getRect(
-            find.widgetWithText(OutlinedButton, 'Remove'),
+            find.widgetWithText(ShadButton, 'Remove'),
           );
           final view = tester.getRect(
             find
                 .ancestor(
                   of: find.text('View Document'),
                   matching: find.byWidgetPredicate(
-                    (widget) => widget is FilledButton,
+                    (widget) => widget is ShadButton,
                   ),
                 )
                 .first,
@@ -916,6 +921,8 @@ void main() {
           authProvider.overrideWith(_StudentAuth.new),
         ],
       );
+      await tester.tap(find.text('Manage files'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('poster.pdf'));
       await tester.pumpAndSettle();
       expect(find.text('Event'), findsOneWidget);
@@ -1016,7 +1023,7 @@ void main() {
       if (canRevise) {
         expect(find.text('Details'), findsNothing);
         final revision = tester.getRect(
-          find.widgetWithText(OutlinedButton, 'Upload revision'),
+          find.widgetWithText(ShadButton, 'Upload revision'),
         );
         if (scenario.width == 320) {
           expect(
