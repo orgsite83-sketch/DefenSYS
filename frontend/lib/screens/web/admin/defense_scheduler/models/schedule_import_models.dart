@@ -303,6 +303,7 @@ class ImportNameMatch {
 enum ScheduleImportRowType {
   initialReady,
   redefenseReady,
+  preparingRedefense,
   alreadyPassed,
   alreadyScheduled,
   notEndorsed,
@@ -389,6 +390,8 @@ class ScheduleImportPreviewRow {
   bool get hasInvalidAdviserColumn =>
       isPit && (source.hasAdviserColumn || source.adviser.trim().isNotEmpty);
   bool get isRedefense => rowType == ScheduleImportRowType.redefenseReady;
+  bool get isPreparingRedefense =>
+      rowType == ScheduleImportRowType.preparingRedefense;
   bool get isAlreadyPassed => rowType == ScheduleImportRowType.alreadyPassed;
   bool get isAlreadyScheduled =>
       rowType == ScheduleImportRowType.alreadyScheduled;
@@ -742,6 +745,18 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
   return ImportNameMatch(message: 'Documenter "$rawName" was not found.');
 }
 
+bool capstoneImportRubricsConfigured(
+  Map<String, dynamic> stage, {
+  required int? panelRubricId,
+  required int? adviserRubricId,
+  required int? peerRubricId,
+}) {
+  final concepts = stage['concept_config'];
+  final panelOnly = concepts is Map && concepts['enabled'] == true;
+  return panelRubricId != null &&
+      (panelOnly || (adviserRubricId != null && peerRubricId != null));
+}
+
 List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
   ParsedScheduleImport parsed,
   DefenseSchedulerState state, {
@@ -925,9 +940,17 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
           }
         }
       }
-      if (panelRubricId == null ||
-          adviserRubricId == null ||
-          peerRubricId == null) {
+      final stage =
+          state.defenseStages
+              .where((s) => asInt(s['id']) == stageId)
+              .firstOrNull ??
+          <String, dynamic>{};
+      if (!capstoneImportRubricsConfigured(
+        stage,
+        panelRubricId: panelRubricId,
+        adviserRubricId: adviserRubricId,
+        peerRubricId: peerRubricId,
+      )) {
         stageIssues.add('Stage grading rubrics are incomplete.');
       }
     }
@@ -986,41 +1009,74 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
                 ?.map((e) => e.toString().toLowerCase())
                 .toList() ??
             [];
-        final readyForStage = (team['ready_for_stage']?.toString() ?? '')
-            .toLowerCase();
-
-        final isCompleted = completedStages.contains(stageLower);
-        final isScheduled =
-            scheduledStages.contains(stageLower) ||
-            state.schedules.any(
-              (s) =>
-                  asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
-                  asInt(s['defense_stage_id'] ?? s['defense_stage']?['id']) ==
-                      stageId &&
-                  s['status'] == 'scheduled',
-            );
-        final isRedefense =
-            redefenseStages.contains(stageLower) ||
-            (team['stage_progress'] is Map &&
-                team['stage_progress'][stageLabel] == 'for_redefense');
-        final isEndorsed =
-            readyForStage == stageLower ||
-            (team['stage_progress'] is Map &&
-                team['stage_progress'][stageLabel] == 'ready');
+        final readinessMap = team['stage_readiness'];
+        final readiness = readinessMap is Map ? readinessMap['$stageId'] : null;
+        final hasReadiness = readiness is Map;
+        final readinessStatus = hasReadiness
+            ? readiness['status']?.toString()
+            : null;
+        final verdicts = team['stage_verdicts'];
+        final verdict = verdicts is Map ? verdicts[stageLabel] : null;
+        final isCompleted = hasReadiness
+            ? const {'approved', 'completed'}.contains(readinessStatus)
+            : completedStages.contains(stageLower) ||
+                  const {
+                    'approved',
+                    'approved_with_revisions',
+                  }.contains(verdict);
+        final isScheduled = hasReadiness
+            ? readinessStatus == 'scheduled'
+            : scheduledStages.contains(stageLower) ||
+                  state.schedules.any(
+                    (s) =>
+                        asInt(s['team_id'] ?? s['team']?['id']) ==
+                            teamMatch.id &&
+                        asInt(
+                              s['defense_stage_id'] ??
+                                  s['defense_stage']?['id'],
+                            ) ==
+                            stageId &&
+                        s['status'] == 'scheduled' &&
+                        (s['verdict']?.toString() ?? '').isEmpty,
+                  );
+        final isRedefense = hasReadiness
+            ? const {
+                'ready_for_redefense',
+                'preparing_redefense',
+              }.contains(readinessStatus)
+            : redefenseStages.contains(stageLower) ||
+                  (team['stage_progress'] is Map &&
+                      const {
+                        'for_redefense',
+                        'redefense_required',
+                        'ready_to_schedule_redefense',
+                      }.contains(team['stage_progress'][stageLabel]));
+        final canSchedule =
+            !hasPendingSharedRequirements(team, stageLabel) &&
+            (hasReadiness
+                ? readiness['can_schedule'] == true
+                : isTeamStageReady(team, stageLabel));
 
         if (isCompleted) {
           rowType = ScheduleImportRowType.alreadyPassed;
           teamIssues.add(
-            '$teamName has already completed and passed "$stageLabel".',
+            readinessStatus == 'approved'
+                ? '$teamName is already approved for "$stageLabel" and does not need another hearing.'
+                : '$teamName has already completed and passed "$stageLabel".',
           );
         } else if (isScheduled) {
           rowType = ScheduleImportRowType.alreadyScheduled;
           teamIssues.add(
             '$teamName already has an active scheduled slot for "$stageLabel".',
           );
-        } else if (isRedefense) {
+        } else if (isRedefense && canSchedule) {
           rowType = ScheduleImportRowType.redefenseReady;
-        } else if (isEndorsed) {
+        } else if (isRedefense) {
+          rowType = ScheduleImportRowType.preparingRedefense;
+          teamIssues.add(
+            '$teamName is preparing re-defense. Complete the required submissions and fresh endorsement before scheduling.',
+          );
+        } else if (canSchedule) {
           rowType = ScheduleImportRowType.initialReady;
         } else {
           rowType = ScheduleImportRowType.notEndorsed;

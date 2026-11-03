@@ -145,24 +145,46 @@ def adoption_candidate(team, requirements, actor):
 
 
 def team_stage_readiness(team, stage):
-    """Explain eligibility without conflating an unendorsed team and a booked hearing."""
+    """Project scheduler-only labels without changing academic workflow records."""
     from student_teams.services import is_stage_ready, was_stage_endorsed, get_stage_progress
     from student_teams.models import TeamStageProgress
+    from student_teams.capstone_lifecycle import latest_stage_assessment
+    from grading.grades.models import TeamGrade
+    from grading.grades.defense_workflow import legacy_finalized_pass
+
     endorsed = was_stage_endorsed(team, stage)
-    scheduled = DefenseSchedule.objects.filter(team=team, project_version=team.project_version,
-        defense_stage=stage, status='scheduled').exists()
+    grade = latest_stage_assessment(team, stage.pk)
     progress = get_stage_progress(team, stage)
-    if scheduled:
+    approved = bool(grade and not grade.closed_as_failed and (
+        grade.verdict in TeamGrade.PASSING_VERDICTS or legacy_finalized_pass(grade)))
+    redefense = bool(grade and not grade.closed_as_failed and (
+        grade.verdict == TeamGrade.VERDICT_FOR_REDEFENSE or grade.attempt_count > 1))
+    # An old assessed attempt can retain its scheduled flag. Do not let it mask
+    # the new attempt's preparation, and never repair records from this GET.
+    scheduled = (DefenseSchedule.objects.filter(team=team, project_version=team.project_version,
+        semester=team.semester, scope='capstone', defense_stage=stage, status='scheduled')
+        .exclude(grade_records__verdict__in=[value for value, _ in TeamGrade.VERDICT_CHOICES if value])
+        .filter(attempt_grade_snapshots__isnull=True).exists())
+    if approved:
+        state, label = 'approved', 'Approved'
+    elif scheduled:
         state, label = 'scheduled', 'Scheduled'
+    elif is_stage_ready(team, stage):
+        state, label = ('ready_for_redefense', 'Ready for re-defense') if redefense else ('ready', 'Ready to schedule')
+    elif grade and grade.verdict == TeamGrade.VERDICT_FOR_REDEFENSE and not grade.closed_as_failed:
+        state, label = 'preparing_redefense', 'Preparing re-defense'
     elif progress and progress.status in (TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED):
         state, label = 'completed', 'Completed'
-    elif is_stage_ready(team, stage):
-        state, label = 'ready', 'Ready to schedule'
+    elif grade and (grade.closed_as_failed or grade.verdict in ('failed', 'project_rejected')):
+        state = 'failed' if grade.closed_as_failed else grade.verdict
+        label = 'Failed' if state == 'failed' else 'Project rejected'
     elif endorsed:
-        state, label = 'blocked', 'Requirements pending'
+        state, label = 'blocked', 'Not ready to schedule'
     else:
         state, label = 'awaiting_endorsement', 'Awaiting endorsement'
-    return {'status': state, 'label': label, 'endorsed': endorsed, 'can_schedule': state == 'ready'}
+    return {'status': state, 'label': label, 'endorsed': endorsed,
+        'can_schedule': state in ('ready', 'ready_for_redefense'),
+        'include_in_scheduler': state not in ('approved', 'completed', 'scheduled')}
 
 
 @read_projection()

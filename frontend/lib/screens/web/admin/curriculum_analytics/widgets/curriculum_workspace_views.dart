@@ -7,17 +7,23 @@ import 'curriculum_chart_palette.dart';
 import 'curriculum_explorer_charts.dart';
 
 TextStyle _muted(BuildContext c) => TextStyle(
+  fontFamily: DefensysTokens.fontFamilyInter,
   fontSize: 12,
   height: 1.5,
   color: DefensysTokens.textSecondaryOf(c),
 );
 Widget _panel(BuildContext c, String title, String description, Widget body) =>
     ShadCard(
+      backgroundColor: DefensysTokens.surfaceOf(c),
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       title: Text(
         title,
-        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          fontFamily: DefensysTokens.fontFamilyInter,
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       description: Text(description, style: _muted(c)),
       child: Padding(padding: const EdgeInsets.only(top: 18), child: body),
@@ -50,23 +56,19 @@ class CurriculumHistoryOverview extends StatelessWidget {
   });
   final Map<String, dynamic> data;
   final ValueChanged<String> onYear, onComparison;
+
   @override
   Widget build(BuildContext context) {
     final rows = explorerRows(data['annual_performance']);
     final options = explorerRows(data['comparison_options']);
     final latest = rows.where((r) => r['score'] != null).lastOrNull;
-    final chart = _panel(
+    return _panel(
       context,
-      'Performance over time',
-      'One assessment across academic years · average published team grade',
+      'Performance by academic year',
+      'Average published team grade',
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Stage / event',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 6),
           LayoutBuilder(
             builder: (_, c) => ShadSelect<String>(
               key: ValueKey('history-assessment-${data['comparison']}'),
@@ -89,90 +91,48 @@ class CurriculumHistoryOverview extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          if (options.isEmpty)
-            Text(
-              'No recorded assessment results yet. Select a year to inspect its configured stages or events.',
-              style: _muted(context),
-            ),
           _TimeChart(rows: rows, onYear: onYear),
-        ],
-      ),
-    );
-    final summary = _panel(
-      context,
-      'Read the results in context',
-      'Published results describe this assessment; they do not establish learning growth.',
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (latest != null) ...[
-            Text(
-              _score(latest['score']),
-              style: TextStyle(
-                fontSize: 36,
-                fontWeight: FontWeight.w600,
-                color: CurriculumChartPalette.primary(context),
+          if (latest != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Wrap(
+                spacing: 20,
+                runSpacing: 8,
+                children: [
+                  Text(
+                    '${latest['assessed']}/${latest['eligible']} teams assessed',
+                    style: _muted(context),
+                  ),
+                  Text(
+                    '${latest['pending'] ?? 0} pending',
+                    style: _muted(context),
+                  ),
+                ],
               ),
             ),
-            Text(
-              'Latest published average · ${latest['academic_year']}',
-              style: _muted(context),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '${latest['assessed']} / ${latest['eligible']} teams assessed',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            Text(
-              '${latest['pending'] ?? 0} pending · ${latest['assessed_students'] ?? 0} students in assessed teams',
-              style: _muted(context),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Published grade distribution',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-            for (final band in explorerRows(latest['distribution']))
-              Padding(
-                padding: const EdgeInsets.only(top: 7),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text('${band['label']}', style: _muted(context)),
-                    ),
-                    Text('${band['count']} teams', style: _muted(context)),
-                  ],
-                ),
+          if (data['rubric_changed'] == true)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                'Rubric or grading weights changed',
+                style: _muted(context),
               ),
-          ] else
-            Text(
-              'Published scores are not available yet. Missing results remain pending.',
-              style: _muted(context),
             ),
-          const SizedBox(height: 20),
-          ShadAlert(
-            title: Text(
-              data['rubric_changed'] == true
-                  ? 'Rubric or grading weights changed'
-                  : 'Assessment comparability',
-            ),
-            description: Text(
-              data['rubric_changed'] == true
-                  ? 'Interpret these years separately where the rubric or weights differ. A higher average alone does not measure student improvement.'
-                  : 'Matching stage names do not guarantee equivalent difficulty. Current-year results are provisional.',
-            ),
-          ),
           ShadAccordion<String>(
             children: [
               ShadAccordionItem(
                 value: 'rubrics',
-                title: const Text('Rubrics by academic year'),
+                title: const Text('Assessment details'),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Text(
+                      'Different cohorts and rubrics can affect year-to-year averages.',
+                      style: _muted(context),
+                    ),
                     for (final row in rows)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.only(top: 8),
                         child: Text(
                           '${row['academic_year']}: ${(row['rubrics'] as List? ?? []).join(', ')}',
                           style: _muted(context),
@@ -186,7 +146,6 @@ class CurriculumHistoryOverview extends StatelessWidget {
         ],
       ),
     );
-    return _pair(chart, summary);
   }
 }
 
@@ -271,6 +230,7 @@ class _TimeChart extends StatelessWidget {
             tooltipBehavior: TooltipBehavior(enable: true),
             primaryXAxis: CategoryAxis(
               labelStyle: muted,
+              labelIntersectAction: AxisLabelIntersectAction.wrap,
               majorGridLines: const MajorGridLines(width: 0),
               majorTickLines: const MajorTickLines(size: 0),
               axisLine: AxisLine(color: border),
@@ -299,7 +259,7 @@ class _TimeChart extends StatelessWidget {
                   dataLabelSettings: const DataLabelSettings(isVisible: true),
                 )
               else
-                LineSeries<Map<String, dynamic>, String>(
+                ColumnSeries<Map<String, dynamic>, String>(
                   dataSource: rows,
                   xValueMapper: (r, _) => '${r['academic_year']}',
                   yValueMapper: (r, _) => explorerNumber(r['score']),
@@ -307,10 +267,15 @@ class _TimeChart extends StatelessWidget {
                   emptyPointSettings: const EmptyPointSettings(
                     mode: EmptyPointMode.gap,
                   ),
-                  markerSettings: const MarkerSettings(
+                  width: .45,
+                  dataLabelMapper: (r, _) => _score(r['score']),
+                  dataLabelSettings: DataLabelSettings(
                     isVisible: true,
-                    width: 8,
-                    height: 8,
+                    textStyle: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      color: DefensysTokens.textPrimaryOf(context),
+                      fontSize: 12,
+                    ),
                   ),
                   animationDuration: 0,
                   onPointTap: select,

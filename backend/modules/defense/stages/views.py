@@ -324,25 +324,27 @@ class DefenseStageDetailView(APIView):
         from .serializers import check_stage_structure_locked as check_stage_locked
         from defense.configuration_locks import context_deletion_lock
 
-        stage = self.get_object(stage_id)
         from .context import setup_stage_ids
-        if stage.pk not in setup_stage_ids(resolve_semester()):
-            return Response({'warning': 'Historical stages cannot be deleted from the current batch.'},
-                status=status.HTTP_409_CONFLICT)
-        locked, reason = check_stage_locked(stage)
-        if not locked:
-            locked, reason = context_deletion_lock(stage)
-        if locked:
-            return Response(
-                {
-                    'warning': reason or 'This stage is locked and cannot be deleted.',
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
         try:
             with transaction.atomic():
                 from defense.scheduler.capstone_planning import lock_calendar_resources
                 lock_calendar_resources()
+                stage = self.get_object(stage_id)
+                # Upload/review writers lock this same period before resolving
+                # their stage again, so deletion checks see completed writes.
+                if stage.weekly_reporting.get('enabled'):
+                    from student_teams.weekly_progress.models import WeeklyReportingPeriod
+                    WeeklyReportingPeriod.objects.select_for_update().filter(
+                        pk=stage.weekly_reporting.get('period_id')).first()
+                if stage.pk not in setup_stage_ids(resolve_semester()):
+                    return Response({'warning': 'Historical stages cannot be deleted from the current batch.'},
+                        status=status.HTTP_409_CONFLICT)
+                locked, reason = check_stage_locked(stage)
+                if not locked:
+                    locked, reason = context_deletion_lock(stage)
+                if locked:
+                    return Response({'warning': reason or 'This stage is locked and cannot be deleted.'},
+                        status=status.HTTP_409_CONFLICT)
                 stage.delete()
                 normalize_stage_orders()
         except ProtectedError:

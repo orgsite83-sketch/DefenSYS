@@ -28,6 +28,7 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
     this.paperContent,
     this.showTitleCard = true,
     this.showHistory = true,
+    this.showRepeatInstructions = true,
     this.paperBuilder,
     this.initialConceptKey,
     this.onReviewFiles,
@@ -44,6 +45,7 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
   /// Student title management lives in the Team tab; retain hearing context here.
   final bool showTitleCard;
   final bool showHistory;
+  final bool showRepeatInstructions;
   @override
   ConsumerState<ConceptWorkspace> createState() => _ConceptWorkspaceState();
 }
@@ -393,6 +395,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
   }
 
   Widget repeatInstructions() {
+    if (!widget.showRepeatInstructions) return const SizedBox.shrink();
     final requested = concepts.where(
       (c) => '${c['panel_feedback'] ?? ''}'.trim().isNotEmpty,
     );

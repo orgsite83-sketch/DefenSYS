@@ -50,7 +50,7 @@ void main() {
   );
 
   test(
-    'readiness distinguishes waiting, partial, and already-scheduled teams',
+    'readiness distinguishes waiting and partial teams while omitting booked teams',
     () {
       final ready = {
         'ready_stage_ids': [71],
@@ -74,9 +74,13 @@ void main() {
         CapstoneReadinessSummary([waiting], 71).label,
         'Awaiting endorsement',
       );
-      expect(CapstoneReadinessSummary([booked], 71).label, 'Already scheduled');
+      expect(
+        CapstoneReadinessSummary([booked], 71).label,
+        'No teams to schedule',
+      );
       expect(CapstoneReadinessSummary([ready, booked], 71).ready, 1);
-      expect(CapstoneReadinessSummary([ready, booked], 71).endorsed, 2);
+      expect(CapstoneReadinessSummary([ready, booked], 71).total, 1);
+      expect(CapstoneReadinessSummary([ready, booked], 71).endorsed, 1);
     },
   );
   test(
@@ -91,6 +95,50 @@ void main() {
       expect(a.copy().members.length, 4);
     },
   );
+  test(
+    'scheduler visibility is scoped to each stage and omits passed-team counts',
+    () {
+      final passed = <String, dynamic>{
+        'stage_readiness': {
+          '71': {
+            'status': 'approved',
+            'can_schedule': false,
+            'include_in_scheduler': false,
+          },
+          '72': {'status': 'ready', 'can_schedule': true},
+        },
+      };
+      final fresh = <String, dynamic>{
+        'ready_stage_ids': [71],
+      };
+      expect(capstoneTeamNeedsScheduling(passed, 71), isFalse);
+      expect(capstoneTeamNeedsScheduling(passed, 72), isTrue);
+      final summary = CapstoneReadinessSummary([passed, fresh], 71);
+      expect(summary.total, 1);
+      expect(summary.counts, '1 ready to schedule');
+      expect(summary.status, 'ready');
+      expect(
+        CapstoneReadinessSummary([passed], 71).counts,
+        'No teams to schedule',
+      );
+    },
+  );
+
+  test('repeat readiness counts omit already booked repeat attempts', () {
+    Map<String, dynamic> team(String status, {bool ready = false}) => {
+      'stage_readiness': {
+        '71': {'status': status, 'can_schedule': ready},
+      },
+    };
+    final summary = CapstoneReadinessSummary([
+      team('ready_for_redefense', ready: true),
+      team('preparing_redefense'),
+      team('redefense_scheduled'),
+    ], 71);
+    expect(summary.ready, 1);
+    expect(summary.total, 2);
+    expect(summary.counts, '1 ready for re-defense · 1 preparing re-defense');
+  });
   test(
     'temporary member replacement remains separate from permanent documenter change',
     () {

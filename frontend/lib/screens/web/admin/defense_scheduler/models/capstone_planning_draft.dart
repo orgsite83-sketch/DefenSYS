@@ -156,35 +156,65 @@ Map<String, dynamic> capstoneTeamReadiness(
   };
 }
 
+bool capstoneTeamNeedsScheduling(Map<String, dynamic> team, int? stageId) {
+  final state = capstoneTeamReadiness(team, stageId);
+  return state['include_in_scheduler'] != false &&
+      !const {
+        'approved',
+        'completed',
+        'scheduled',
+        'redefense_scheduled',
+      }.contains(state['status']);
+}
+
 class CapstoneReadinessSummary {
   CapstoneReadinessSummary(List<Map<String, dynamic>> teams, int? stageId)
-    : states = teams.map((t) => capstoneTeamReadiness(t, stageId)).toList();
+    : states = teams
+          .where((t) => capstoneTeamNeedsScheduling(t, stageId))
+          .map((t) => capstoneTeamReadiness(t, stageId))
+          .toList();
   final List<Map<String, dynamic>> states;
   int get total => states.length;
   int get ready => states.where((s) => s['can_schedule'] == true).length;
   int get endorsed => states.where((s) => s['endorsed'] == true).length;
-  int get scheduled => states.where((s) => s['status'] == 'scheduled').length;
-  int get completed => states.where((s) => s['status'] == 'completed').length;
+  int get readyForRedefense => states
+      .where(
+        (s) =>
+            s['status'] == 'ready_for_redefense' && s['can_schedule'] == true,
+      )
+      .length;
+  int get preparingRedefense =>
+      states.where((s) => s['status'] == 'preparing_redefense').length;
+  int get awaitingEndorsement =>
+      states.where((s) => s['status'] == 'awaiting_endorsement').length;
+  String get counts => [
+    if (ready - readyForRedefense > 0)
+      '${ready - readyForRedefense} ready to schedule',
+    if (readyForRedefense > 0) '$readyForRedefense ready for re-defense',
+    if (preparingRedefense > 0) '$preparingRedefense preparing re-defense',
+    if (awaitingEndorsement > 0) '$awaitingEndorsement awaiting endorsement',
+    if (total - ready - preparingRedefense - awaitingEndorsement > 0)
+      '${total - ready - preparingRedefense - awaitingEndorsement} pending',
+    if (total == 0) 'No teams to schedule',
+  ].join(' · ');
   String get status => total == 0
       ? 'empty'
       : ready == total
       ? 'ready'
       : ready > 0
       ? 'partial'
-      : completed == total
-      ? 'completed'
-      : scheduled + completed == total
-      ? 'scheduled'
+      : preparingRedefense > 0
+      ? 'preparing_redefense'
       : states.any((s) => s['status'] == 'blocked')
       ? 'blocked'
       : 'awaiting_endorsement';
   String get label => switch (status) {
-    'ready' => 'Ready to schedule',
+    'ready' =>
+      readyForRedefense == total ? 'Ready for re-defense' : 'Ready to schedule',
     'partial' => 'Partly ready',
-    'completed' => 'Completed',
-    'scheduled' => 'Already scheduled',
-    'blocked' => 'Requirements pending',
-    'empty' => 'No teams',
+    'preparing_redefense' => 'Preparing re-defense',
+    'blocked' => 'Not ready to schedule',
+    'empty' => 'No teams to schedule',
     _ => 'Awaiting endorsement',
   };
 }

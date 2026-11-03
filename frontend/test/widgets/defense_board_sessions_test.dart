@@ -268,6 +268,130 @@ Future<void> _menu(
 }
 
 void main() {
+  testWidgets(
+    'new import sessions appear above older hearings in their section',
+    (tester) async {
+      await _pump(
+        tester,
+        external: _External(),
+        schedules: [
+          {
+            ..._defense(
+              1,
+              days: 0,
+              display: 'awaiting_completion',
+              session: 'old',
+            ),
+            'created_at': '2026-11-01T08:00:00Z',
+          },
+          {
+            ..._defense(
+              2,
+              days: 0,
+              display: 'awaiting_evaluation',
+              session: 'new',
+            ),
+            'start_time': '09:00:00',
+            'created_at': '2026-11-04T08:00:00Z',
+          },
+        ],
+      );
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('board-session-new|capstone|1')),
+            )
+            .dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey('board-session-old|capstone|1')),
+              )
+              .dy,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final width in [1400.0, 900.0]) {
+    testWidgets(
+      'mixed sessions identify the exact repeat team at width $width',
+      (tester) async {
+        await _pump(
+          tester,
+          external: _External(),
+          width: width,
+          dark: width == 900,
+          schedules: [
+            {
+              ..._defense(
+                2,
+                days: 0,
+                display: 'awaiting_evaluation',
+                session: 'mixed',
+              ),
+              'start_time': '09:00:00',
+              'assessment': {'attempt_count': 2},
+            },
+            {
+              ..._defense(
+                1,
+                days: 0,
+                display: 'awaiting_evaluation',
+                session: 'mixed',
+              ),
+              'assessment': {'attempt_count': 1},
+              'attempt_count': 9,
+            },
+          ],
+        );
+        expect(find.text('1 re-defense'), findsOneWidget);
+        expect(find.text('Re-defense · Attempt 2'), findsOneWidget);
+        expect(find.byKey(const ValueKey('defense-attempt-1')), findsNothing);
+        expect(
+          tester.getTopLeft(find.text('Team 1')).dy,
+          lessThan(tester.getTopLeft(find.text('Team 2')).dy),
+        );
+        await tester.ensureVisible(find.text('Re-defense · Attempt 2'));
+        await tester.pumpAndSettle();
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('board-session-preview')),
+          'board-repeat-mixed-${width.toInt()}',
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('a repeat session is identifiable while collapsed', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      external: _External(),
+      schedules: [
+        {
+          ..._defense(
+            2,
+            days: 0,
+            display: 'awaiting_evaluation',
+            session: 'repeat',
+          ),
+          'assessment': {'attempt_count': 3},
+        },
+      ],
+    );
+    expect(find.text('Re-defense'), findsOneWidget);
+    expect(find.text('Re-defense · Attempt 3'), findsOneWidget);
+    await tester.tap(find.text('Concept Proposal').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Re-defense'), findsOneWidget);
+    expect(find.text('Re-defense · Attempt 3'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   DefenseSchedulerState readinessState({String capstoneStatus = 'ready'}) =>
       DefenseSchedulerState(
         canScheduleCapstone: true,

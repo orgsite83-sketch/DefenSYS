@@ -22,4 +22,21 @@ abstract final class CurriculumChartPalette {
     1 => secondary(context),
     _ => neutral(context),
   };
+  static Color category(BuildContext context, String label) {
+    if (label.startsWith('Unresolved') || label == 'Unclassified') {
+      return neutral(context);
+    }
+    // Stable identity across years and rank changes, using the existing palette.
+    var hash = 0;
+    for (final rune in label.runes) {
+      hash = (hash * 31 + rune) & 0x7fffffff;
+    }
+    return switch (hash % 5) {
+      0 => primary(context),
+      1 => secondary(context),
+      2 => neutral(context),
+      3 => Color.lerp(primary(context), neutral(context), .45)!,
+      _ => Color.lerp(secondary(context), neutral(context), .6)!,
+    };
+  }
 }

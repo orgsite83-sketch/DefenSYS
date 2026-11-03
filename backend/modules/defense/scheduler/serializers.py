@@ -135,6 +135,18 @@ class PanelistOptionSerializer(serializers.ModelSerializer):
 class ScheduleTeamSerializer(serializers.ModelSerializer):
     concept_workflows = serializers.SerializerMethodField()
     shared_readiness = serializers.SerializerMethodField()
+    stage_readiness = serializers.SerializerMethodField()
+
+    def get_stage_readiness(self, obj):
+        if not obj.is_capstone or not obj.semester_id:
+            return {}
+        from student_teams.capstone_lifecycle import requirements_for
+        from .capstone_planning import team_stage_readiness
+        if '_scheduler_readiness_stages' not in self.context:
+            self.context['_scheduler_readiness_stages'] = {stage.pk: stage for stage in DefenseStage.objects.all()}
+        stages = self.context['_scheduler_readiness_stages']
+        return {str(item['id']): team_stage_readiness(obj, stages[item['id']])
+                for item in requirements_for(obj) if item['id'] in stages}
 
     def get_shared_readiness(self, obj):
         from repository.section_concepts import shared_deliverables as shared
@@ -206,6 +218,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'eligible_stages',
             'concept_workflows',
             'shared_readiness',
+            'stage_readiness',
             'project_version',
         ]
 

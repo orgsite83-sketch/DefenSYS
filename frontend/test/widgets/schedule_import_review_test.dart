@@ -110,6 +110,8 @@ class _Scheduler extends DefenseSchedulerNotifier {
 }
 
 class _Stages extends DefenseStagesNotifier {
+  _Stages({this.panelOnly = false});
+  final bool panelOnly;
   @override
   DefenseStagesState build() => DefenseStagesState();
 
@@ -120,8 +122,8 @@ class _Stages extends DefenseStagesNotifier {
   }) async => {
     'grading_config': {
       'panel_rubric_id': 1,
-      'adviser_rubric_id': 2,
-      'peer_rubric_id': 3,
+      'adviser_rubric_id': panelOnly ? null : 2,
+      'peer_rubric_id': panelOnly ? null : 3,
       'panel_weight': 50,
       'adviser_weight': 30,
       'peer_weight': 20,
@@ -138,6 +140,8 @@ class _Stages extends DefenseStagesNotifier {
   bool blankLastRoom = false,
   bool isPit = false,
   bool legacyAdviser = false,
+  bool conceptPanelOnly = false,
+  String? readinessStatus,
 }) {
   final target = isPit ? 'Concept Pitching' : _stage;
   final rows = [
@@ -173,7 +177,11 @@ class _Stages extends DefenseStagesNotifier {
   ];
   return (
     draft: ScheduleImportDraft(
-      parsed: ParsedScheduleImport(stage: target, rows: rows),
+      parsed: ParsedScheduleImport(
+        stage: target,
+        rows: rows,
+        isRedefense: readinessStatus?.contains('redefense') == true,
+      ),
       scope: isPit ? 'pit' : 'capstone',
       fileName: 'defense_schedule.xlsx',
       stageId: isPit ? null : 10,
@@ -203,8 +211,12 @@ class _Stages extends DefenseStagesNotifier {
         'id': 1,
         'display_name': '1st Semester, A.Y. 2026-2027',
       },
-      defenseStages: const [
-        {'id': 10, 'label': _stage},
+      defenseStages: [
+        {
+          'id': 10,
+          'label': _stage,
+          'concept_config': {'enabled': conceptPanelOnly},
+        },
         {'id': 20, 'label': 'Project Proposal'},
       ],
       faculty: const [
@@ -234,6 +246,15 @@ class _Stages extends DefenseStagesNotifier {
             'completed_stages': <String>[],
             'scheduled_stages': <String>[],
             'redefense_stages': <String>[],
+            if (!isPit && readinessStatus != null)
+              'stage_readiness': {
+                '10': {
+                  'status': readinessStatus,
+                  'can_schedule':
+                      readinessStatus == 'ready' ||
+                      readinessStatus == 'ready_for_redefense',
+                },
+              },
           },
       ],
     ),
@@ -254,6 +275,8 @@ Future<_Scheduler> _pumpReview(
   bool seedDraft = true,
   bool isPit = false,
   bool legacyAdviser = false,
+  bool conceptPanelOnly = false,
+  String? readinessStatus,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -265,6 +288,8 @@ Future<_Scheduler> _pumpReview(
     blankLastRoom: blankLastRoom,
     isPit: isPit,
     legacyAdviser: legacyAdviser,
+    conceptPanelOnly: conceptPanelOnly,
+    readinessStatus: readinessStatus,
   );
   FlutterSecureStorage.setMockInitialValues({});
   SharedPreferences.setMockInitialValues({
@@ -283,7 +308,9 @@ Future<_Scheduler> _pumpReview(
     ProviderScope(
       overrides: [
         defenseSchedulerProvider.overrideWith(() => scheduler),
-        defenseStagesProvider.overrideWith(_Stages.new),
+        defenseStagesProvider.overrideWith(
+          () => _Stages(panelOnly: conceptPanelOnly),
+        ),
       ],
       child: MaterialApp(
         theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
@@ -390,6 +417,47 @@ Future<GoRouter> _pumpRoutedReview(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+    'panel-only repeat import uses the readiness badge without a violet banner',
+    (tester) async {
+      await _pumpReview(
+        tester,
+        count: 1,
+        conceptPanelOnly: true,
+        readinessStatus: 'ready_for_redefense',
+      );
+      expect(find.text('Rubrics configured'), findsOneWidget);
+      expect(find.text('Rubrics incomplete'), findsNothing);
+      expect(find.text('Ready for re-defense'), findsOneWidget);
+      expect(
+        find.textContaining('Detected Re-defense timetable'),
+        findsNothing,
+      );
+      expect(find.text('1 of 1 slots ready to import'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'repeat import stays blocked until fresh endorsement is complete',
+    (tester) async {
+      await _pumpReview(
+        tester,
+        count: 1,
+        conceptPanelOnly: true,
+        readinessStatus: 'preparing_redefense',
+      );
+      expect(find.text('Rubrics configured'), findsOneWidget);
+      expect(find.text('Preparing re-defense'), findsOneWidget);
+      expect(find.text('0 of 1 slots ready to import'), findsOneWidget);
+      expect(
+        find.textContaining('Detected Re-defense timetable'),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'PIT review flags an Adviser column from a restored legacy spreadsheet',
     (tester) async {

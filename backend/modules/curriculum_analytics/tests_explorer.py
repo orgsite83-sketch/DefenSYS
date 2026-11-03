@@ -107,6 +107,42 @@ class CurriculumExplorerTests(APITestCase):
         self.assertEqual([r['id'] for r in response.data['performance']['contexts']], [f'stage:{self.stage.pk}'])
         self.assertEqual(response.data['criteria'][0]['name'], 'Problem relevance')
 
+    def test_linked_workspace_keeps_contexts_and_rubric_summaries_without_eager_team_evidence(self):
+        stage = DefenseStage.objects.create(label='Linked final', display_order=91)
+        rubric = Rubric.objects.create(name='Linked final panel', semester=self.sem,
+            defense_stage=stage, evaluation_type='panel', status='published')
+        RubricCriterion.objects.create(rubric=rubric, name='Final implementation', max_score=20)
+        StageGradingConfig.objects.create(defense_stage=stage, semester=self.sem, panel_rubric=rubric)
+        with patch('curriculum_analytics.explorer.classification_for_document',
+                   side_effect=AssertionError('Performance cannot classify files')):
+            response = self.get(view='year', academic_year=self.year.label, workspace='true')
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data
+        self.assertEqual({r['id'] for r in data['performance']['contexts']},
+                         {r['id'] for r in data['contexts']})
+        bundles = data['assessment_bundles']
+        first = bundles[f'stage:{self.stage.pk}']['panel']['criteria']
+        final = bundles[f'stage:{stage.pk}']['panel']['criteria']
+        self.assertIn('Problem relevance', [r['name'] for r in first])
+        self.assertEqual([r['name'] for r in final], ['Final implementation'])
+        self.assertTrue(all('teams' not in r for roles in bundles.values()
+                            for bundle in roles.values() for r in bundle['criteria']))
+        self.assertFalse(data['criteria_complete'])
+        self.assertTrue(all('teams' not in bundle['assessment_summary']
+                            for roles in bundles.values() for bundle in roles.values()))
+
+    def test_linked_project_collection_retains_range_while_year_detail_is_filtered(self):
+        old_year = SchoolYear.objects.create(label='2024-2025')
+        old_sem = Semester.objects.create(school_year=old_year, label=Semester.FIRST)
+        old_team = self.team('Old linked project', semester=old_sem)
+        response = self.get(view='projects', project_status='all', academic_year=self.year.label)
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data
+        self.assertTrue(all(p['academic_year'] == self.year.label for p in data['projects']))
+        self.assertIn(old_team.pk, [p['team_id'] for p in data['project_collection']])
+        self.assertEqual(sum(r['count'] for r in data['project_output']), len(data['project_collection']))
+        self.assertTrue(all('current_stage' in p for p in data['project_collection']))
+
     def test_workspace_default_range_is_five_recorded_years_and_rubric_changes_are_disclosed(self):
         for start in range(2020, 2026):
             year = SchoolYear.objects.create(label=f'{start}-{start + 1}')

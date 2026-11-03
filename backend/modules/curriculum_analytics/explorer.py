@@ -111,6 +111,7 @@ class CurriculumExplorer:
     context_key = staticmethod(_context_key)
     def __init__(self, user, params):
         self.view = params.get('view') or ''
+        self.include_workspace = params.get('workspace') == 'true'
         if self.view not in ('', 'overview', 'year', 'assessment', 'projects', 'project_output', 'detail'):
             raise ValidationError({'view': 'Select a curriculum analytics view.'})
         self.load_project_evidence = self.view in ('', 'projects', 'detail')
@@ -236,12 +237,15 @@ class CurriculumExplorer:
         self.context_id = context_id or next((c['id'] for c in self.contexts if c['id'] in matching),
                                              self.contexts[0]['id'] if self.contexts else None)
         configure_selection(self, params.get('subject'))
-        self.performance = build_performance(self, self.context_id if self.view == 'assessment' else None) if self.view in ('', 'assessment') else {}
+        self.performance = build_performance(
+            self, self.context_id if self.view == 'assessment' and not self.include_workspace else None,
+        ) if self.view in ('', 'assessment') or self.include_workspace and self.view == 'year' else {}
         active = next((c for c in self.performance.get('contexts', []) if c['id'] == self.context_id), {})
         available = [c['id'] for c in active.get('components', []) if c['available']]
         if available and self.role not in available:
             self.role = available[0]
-        self.criteria = self._criteria() if self.year and self.context_id and self.view in ('', 'assessment') else []
+        self.criteria = self._criteria() if (self.year and self.context_id and
+            self.view in ('', 'assessment') and not self.include_workspace) else []
 
     def _team_in_scope(self, team):
         return (team.is_capstone if self.scope == 'capstone' else
@@ -508,8 +512,9 @@ class CurriculumExplorer:
 
     def _criteria(self):
         definitions, subjects, records = {}, defaultdict(lambda: defaultdict(list)), defaultdict(list)
-        rubrics = list(Rubric.objects.filter(scope=self.scope, evaluation_type=self.role,
-                                             semester__school_year__label=self.year).prefetch_related('criteria'))
+        rubrics = [r for r in self._rubric_objects.values()
+                   if r.evaluation_type == self.role and str(r.semester_id) in self.semesters and
+                   self.semesters[str(r.semester_id)].school_year.label == self.year]
         if self.semester_id:
             rubrics = [r for r in rubrics if str(r.semester_id) == self.semester_id]
         applicable = set()

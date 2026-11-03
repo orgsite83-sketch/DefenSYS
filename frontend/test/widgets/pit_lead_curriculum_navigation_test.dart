@@ -52,7 +52,12 @@ class _Notifications extends NotificationsNotifier {
 class _Explorer extends CurriculumExplorerNotifier {
   final requests = <CurriculumExplorerQuery>[];
   @override
-  Future<void> fetch(CurriculumExplorerQuery query) async {
+  Future<void> fetch(
+    CurriculumExplorerQuery query, {
+    bool force = false,
+    bool loadEvidence = false,
+    bool selection = false,
+  }) async {
     requests.add(query);
     state = CurriculumExplorerState(
       query: query,

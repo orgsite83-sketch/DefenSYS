@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
 import 'package:defensys/utils/import/schedule_import_draft.dart';
@@ -633,10 +634,6 @@ class ScheduleImportDialog {
                             onDismiss: () =>
                                 setDialogState(() => mismatchWarning = null),
                           ),
-                        ],
-                        if (parsed?.isRedefense == true) ...[
-                          const SizedBox(height: 14),
-                          _buildRedefenseBanner(),
                         ],
                         const SizedBox(height: 16),
                         _buildImportContextPanel(
@@ -1701,10 +1698,19 @@ class ScheduleImportDialog {
         : _getRubricName(state, peerRubricId, peerRubricName);
 
     final missingCapstoneRubrics = <String>[];
+    final selectedStage = state.defenseStages
+        .where((stage) => asInt(stage['id']) == stageId)
+        .firstOrNull;
+    final conceptConfig = selectedStage?['concept_config'];
+    final panelOnly = conceptConfig is Map && conceptConfig['enabled'] == true;
     if (!isPit && stageId != null) {
       if (panelRubricId == null) missingCapstoneRubrics.add('Panel');
-      if (adviserRubricId == null) missingCapstoneRubrics.add('Adviser');
-      if (peerRubricId == null) missingCapstoneRubrics.add('Peer');
+      if (!panelOnly && adviserRubricId == null) {
+        missingCapstoneRubrics.add('Adviser');
+      }
+      if (!panelOnly && peerRubricId == null) {
+        missingCapstoneRubrics.add('Peer');
+      }
     }
     final isCapstoneRubricMissing = missingCapstoneRubrics.isNotEmpty;
 
@@ -1904,7 +1910,7 @@ class ScheduleImportDialog {
                 danger: (panelRubricId == null || pRubricName.isEmpty) && !rubricLoading,
                 success: panelRubricId != null && pRubricName.isNotEmpty && !rubricLoading,
               ),
-              if (!isPit) ...[
+              if (!isPit && !panelOnly) ...[
                 _importMetric(
                   'Adviser rubric',
                   rubricLoading
@@ -1921,7 +1927,7 @@ class ScheduleImportDialog {
                   danger: (peerRubricId == null || peRubricName.isEmpty) && !rubricLoading,
                   success: peerRubricId != null && peRubricName.isNotEmpty && !rubricLoading,
                 ),
-              ] else ...[
+              ] else if (isPit) ...[
                 _importMetric(
                   'Peer rubric',
                   rubricLoading
@@ -2002,34 +2008,6 @@ class ScheduleImportDialog {
       child: Text(
         '$label: $value',
         style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w900),
-      ),
-    );
-  }
-
-  static Widget _buildRedefenseBanner() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3E8FF),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFD8B4FE)),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.replay_circle_filled_rounded,
-              color: Color(0xFF7E22CE), size: 20),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Detected Re-defense timetable: Attempt 2 schedules will be created for eligible teams. Attempt 1 grades and remarks will be preserved in audit history.',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF581C87),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -2551,15 +2529,15 @@ class ScheduleImportDialog {
     if (row.ready) {
       if (row.isRedefense) {
         return _statusChipBadge(
-          label: 'Re-defense',
+          label: 'Ready for re-defense',
           icon: Icons.replay_circle_filled_rounded,
-          fg: const Color(0xFF7E22CE),
-          bg: const Color(0xFFF3E8FF),
-          border: const Color(0xFFD8B4FE),
+          fg: DefensysTokens.successText,
+          bg: DefensysTokens.successBg,
+          border: DefensysTokens.successBorder,
         );
       }
       return _statusChipBadge(
-        label: 'Ready',
+        label: row.isPit ? 'Ready' : 'Ready to schedule',
         icon: Icons.check_circle_rounded,
         fg: const Color(0xFF027A48),
         bg: const Color(0xFFECFDF3),
@@ -2575,6 +2553,10 @@ class ScheduleImportDialog {
         bg: const Color(0xFFFFFBEB),
         border: const Color(0xFFFDE68A),
       );
+    }
+    if (row.isPreparingRedefense) {
+      return _statusChipBadge(label: 'Preparing re-defense', icon: Icons.hourglass_empty_rounded,
+        fg: DefensysTokens.warningText, bg: DefensysTokens.warningBg, border: DefensysTokens.warningBorder);
     }
     if (row.isAlreadyPassed) {
       return _statusChipBadge(

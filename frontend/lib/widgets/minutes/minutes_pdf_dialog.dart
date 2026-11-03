@@ -60,6 +60,22 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
   String? _error;
   String? _signError;
   bool _isSigning = false, _pdfReady = false;
+  int _reviewVersion = 0;
+  String? _minutesStatus;
+
+  bool get _finalized => widget.finalized || _minutesStatus == 'completed';
+
+  bool get _allowsSigning =>
+      widget.allowsSigning &&
+      (_minutesStatus == null ||
+          _minutesStatus ==
+              (widget.allowChairmanSigning ? 'adviser_signed' : 'submitted'));
+
+  String get _previewLabel => switch (_minutesStatus) {
+    'submitted' => 'Awaiting adviser signature',
+    'adviser_signed' => 'Signed by adviser · Awaiting chairman signature',
+    _ => 'Draft preview · Saved minutes',
+  };
 
   bool get _hasSignature =>
       ref
@@ -76,9 +92,10 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
   );
 
   Future<void> _signMinutes() async {
-    if (!widget.allowsSigning || _isSigning || !_pdfReady || !_hasSignature) {
+    if (!_allowsSigning || _isSigning || !_pdfReady || !_hasSignature) {
       return;
     }
+    final version = _reviewVersion;
     setState(() {
       _isSigning = true;
       _signError = null;
@@ -96,7 +113,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
             headers: {'Content-Type': 'application/json'},
           )
           .timeout(const Duration(seconds: 30));
-      if (!mounted) return;
+      if (!mounted || version != _reviewVersion) return;
       if (response.statusCode == 200) {
         setState(() => _isSigning = false);
         Navigator.pop(context, true);
@@ -110,7 +127,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
         });
       }
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || version != _reviewVersion) return;
       setState(() {
         _isSigning = false;
         _signError = 'Unable to sign the minutes. Please try again.';
@@ -124,13 +141,28 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
     _load();
   }
 
+  @override
+  void didUpdateWidget(covariant MinutesPdfDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scheduleId != widget.scheduleId ||
+        oldWidget.finalized != widget.finalized ||
+        oldWidget.allowAdviserSigning != widget.allowAdviserSigning ||
+        oldWidget.allowChairmanSigning != widget.allowChairmanSigning) {
+      _load();
+    }
+  }
+
   Future<void> _load() async {
+    final version = ++_reviewVersion;
     setState(() {
       _loading = true;
       _error = null;
       _missing = false;
       _bytes = null;
       _pdfReady = false;
+      _signError = null;
+      _isSigning = false;
+      _minutesStatus = null;
     });
     try {
       final endpoint = widget.finalized ? 'pdf' : 'preview';
@@ -142,11 +174,12 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
             ),
           )
           .timeout(const Duration(seconds: 30));
-      if (!mounted) return;
+      if (!mounted || version != _reviewVersion) return;
       setState(() {
         _loading = false;
         if (response.statusCode == 200) {
           _bytes = response.bodyBytes;
+          _minutesStatus = response.headers['x-minutes-status'];
         } else if (response.statusCode == 404) {
           _missing = true;
         } else {
@@ -154,7 +187,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
         }
       });
     } catch (_) {
-      if (mounted) {
+      if (mounted && version == _reviewVersion) {
         setState(() {
           _loading = false;
           _error = 'Unable to load the minutes PDF. Please try again.';
@@ -314,6 +347,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
   @override
   Widget build(BuildContext context) {
     final layout = FileViewerDialogLayout.of(context);
+    final version = _reviewVersion;
     final hasSignature =
         ref
             .watch(authProvider)
@@ -366,7 +400,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  widget.allowsSigning
+                                  _allowsSigning
                                       ? 'Review minutes'
                                       : widget.teamName,
                                   maxLines: 1,
@@ -378,11 +412,11 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  widget.allowsSigning
+                                  _allowsSigning
                                       ? '${widget.teamName} · ${widget.allowChairmanSigning ? 'Chairman' : 'Adviser'} review'
-                                      : widget.finalized
+                                      : _finalized
                                       ? 'Official signed minutes'
-                                      : 'Draft preview · Saved minutes',
+                                      : _previewLabel,
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: DefensysTokens.textSecondaryOf(
@@ -398,7 +432,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                               !_loading &&
                               _error == null &&
                               !_missing &&
-                              widget.finalized) ...[
+                              _finalized) ...[
                             ShadButton.outline(
                               onPressed: () => downloadBytesFile(
                                 bytes: _bytes!,
@@ -435,8 +469,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                       ),
                     ),
                     const Divider(height: 1),
-                    if (widget.allowsSigning && !hasSignature)
-                      _signaturePrompt(),
+                    if (_allowsSigning && !hasSignature) _signaturePrompt(),
                     Expanded(
                       child: _loading
                           ? const Center(child: CircularProgressIndicator())
@@ -470,17 +503,19 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                               ),
                             )
                           : DefensysPdfViewer(
+                              key: ValueKey((widget.scheduleId, version)),
                               pdfBytes: _bytes!,
-                              onReadyChanged: widget.allowsSigning
+                              onReadyChanged: _allowsSigning
                                   ? (ready) {
-                                      if (mounted) {
+                                      if (mounted &&
+                                          version == _reviewVersion) {
                                         setState(() => _pdfReady = ready);
                                       }
                                     }
                                   : null,
                             ),
                     ),
-                    if (widget.allowsSigning) ...[
+                    if (_allowsSigning) ...[
                       const Divider(height: 1),
                       _signingFooter(hasSignature),
                     ],

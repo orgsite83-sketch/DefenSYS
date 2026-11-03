@@ -110,10 +110,14 @@ void main() {
   for (final isCapstone in [false, true]) {
     for (final shared in [false, true]) {
       testWidgets(
-        '${isCapstone ? 'Capstone' : 'PIT'} deliverables omit the duplicate ${shared ? 'module' : 'concept'} title card',
+        '${isCapstone ? 'Capstone' : 'PIT'} deliverables omit duplicate ${shared ? 'module' : 'concept'} titles and recommendations',
         (tester) async {
           final notifier = _PostDeliverablesNotifier({
             ..._stage(),
+            'grade': {
+              'verdict': 'for_redefense',
+              'verdict_remarks': 'We will meet again',
+            },
             'concept_workflow': {
               'enabled': true,
               'can_edit': true,
@@ -143,7 +147,10 @@ void main() {
           expect(find.text('Save concept titles'), findsNothing);
           expect(find.byType(EditableText), findsNothing);
           expect(find.text('Concept Paper'), findsOneWidget);
-          expect(find.text('Clarify water usage.'), findsOneWidget);
+          expect(find.text('Clarify water usage.'), findsNothing);
+          expect(find.text('We will meet again'), findsNothing);
+          expect(find.textContaining('Revise ·'), findsNothing);
+          expect(find.textContaining('Panel Directives'), findsNothing);
           expect(find.textContaining('Attempt 1'), findsNothing);
           expect(tester.takeException(), isNull);
         },

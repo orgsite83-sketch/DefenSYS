@@ -146,6 +146,7 @@ class CapstoneWorkspaceTests(APITestCase):
         self.assertEqual(scheduled['status'], 'scheduled')
         self.assertTrue(scheduled['endorsed'])
         self.assertFalse(scheduled['can_schedule'])
+        self.assertFalse(scheduled['include_in_scheduler'])
 
     def test_confirmation_is_atomic_and_idempotent_and_preserves_actual_people(self):
         self.save_people()

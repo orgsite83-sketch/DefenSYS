@@ -93,59 +93,73 @@ void main() {
       }
     }
 
-    test('PIT import requires endorsement for every required pre-deliverable', () {
-      const event = 'System Concept Pitching';
-      final source = ParsedScheduleImport(rows: [
-        const ParsedScheduleImportRow(
-          sheetRow: 2,
-          time: '09:00 - 09:30',
-          startTime: '09:00',
-          endTime: '09:30',
-          teamName: 'Team Alpha',
-          projectTitle: 'Project Alpha',
-          adviser: '',
-          members: [],
-          chair: 'Jonathan Beltran',
-          panelMembers: [],
-          documenter: '',
-          room: 'Room 301',
-          date: '2026-06-18',
-          stage: event,
-          slotDuration: 30,
-        ),
-      ]);
-      ScheduleImportPreviewRow preview(String timing) =>
-          buildScheduleImportPreviewRows(
-            source,
-            DefenseSchedulerState(
-              faculty: const [{'id': 101, 'name': 'Jonathan Beltran'}],
-              teams: const [{
-                'id': 1,
-                'name': 'Team Alpha',
-                'project_title': 'Project Alpha',
-                'level': '1st Year PIT',
-                'year_level': '1st Year',
-              }],
-              pitEvents: [{
-                'event_name': event,
-                'year_level': '1st Year',
-                'deliverables': [
-                  {'deliverable_type': 'pre', 'required': true, 'requirement_timing': timing},
-                ],
-              }],
+    test(
+      'PIT import requires endorsement for every required pre-deliverable',
+      () {
+        const event = 'System Concept Pitching';
+        final source = ParsedScheduleImport(
+          rows: [
+            const ParsedScheduleImportRow(
+              sheetRow: 2,
+              time: '09:00 - 09:30',
+              startTime: '09:00',
+              endTime: '09:30',
+              teamName: 'Team Alpha',
+              projectTitle: 'Project Alpha',
+              adviser: '',
+              members: [],
+              chair: 'Jonathan Beltran',
+              panelMembers: [],
+              documenter: '',
+              room: 'Room 301',
+              date: '2026-06-18',
+              stage: event,
+              slotDuration: 30,
             ),
-            scope: 'pit',
-            stageId: null,
-            eventName: event,
-            date: '2026-06-18',
-            room: 'Room 301',
-            fallbackDuration: 30,
-            panelRubricId: 1,
-            adviserRubricId: null,
-            peerRubricId: 2,
-            panelWeight: 80,
-            peerWeight: 20,
-          ).single;
+          ],
+        );
+        ScheduleImportPreviewRow preview(String timing) =>
+            buildScheduleImportPreviewRows(
+              source,
+              DefenseSchedulerState(
+                faculty: const [
+                  {'id': 101, 'name': 'Jonathan Beltran'},
+                ],
+                teams: const [
+                  {
+                    'id': 1,
+                    'name': 'Team Alpha',
+                    'project_title': 'Project Alpha',
+                    'level': '1st Year PIT',
+                    'year_level': '1st Year',
+                  },
+                ],
+                pitEvents: [
+                  {
+                    'event_name': event,
+                    'year_level': '1st Year',
+                    'deliverables': [
+                      {
+                        'deliverable_type': 'pre',
+                        'required': true,
+                        'requirement_timing': timing,
+                      },
+                    ],
+                  },
+                ],
+              ),
+              scope: 'pit',
+              stageId: null,
+              eventName: event,
+              date: '2026-06-18',
+              room: 'Room 301',
+              fallbackDuration: 30,
+              panelRubricId: 1,
+              adviserRubricId: null,
+              peerRubricId: 2,
+              panelWeight: 80,
+              peerWeight: 20,
+            ).single;
 
       expect(preview('defense').rowType, ScheduleImportRowType.notEndorsed);
       expect(preview('scheduling').rowType, ScheduleImportRowType.notEndorsed);
@@ -184,6 +198,9 @@ void main() {
           'completed_stages': <String>[],
           'scheduled_stages': <String>[],
           'redefense_stages': [stageLabel],
+          'stage_readiness': {
+            '10': {'status': 'ready_for_redefense', 'can_schedule': true},
+          },
         },
         // 3. Already passed team
         {
@@ -212,31 +229,146 @@ void main() {
 
     ScheduleImportPreviewRow adviserPreview({
       Map<String, dynamic> teamFields = const {},
+      Map<String, dynamic> stageFields = const {},
+      int? adviserRubricId = 2,
+      int? peerRubricId = 3,
       String sheetAdviser = 'Ricardo Fontanilla',
       String chair = 'Jonathan Beltran',
       List<String> panelMembers = const [],
     }) => buildScheduleImportPreviewRows(
-      ParsedScheduleImport(rows: [ParsedScheduleImportRow(
-        sheetRow: 2, time: '09:00 - 09:30', startTime: '09:00', endTime: '09:30',
-        teamName: 'Team Alpha', projectTitle: 'Project Alpha',
-        adviser: sheetAdviser, members: const [], chair: chair,
-        panelMembers: panelMembers, documenter: 'Cecilia Magbanua',
-        room: 'Room 301', date: '2026-06-18', stage: stageLabel, slotDuration: 30,
-      )]),
-      testState.copyWith(teams: [{...testState.teams.first, ...teamFields}]),
-      scope: 'capstone', stageId: stageId, eventName: '', date: '2026-06-18',
-      room: 'Room 301', fallbackDuration: 30,
-      panelRubricId: 1, adviserRubricId: 2, peerRubricId: 3,
-      panelWeight: 50, peerWeight: 20,
+      ParsedScheduleImport(
+        rows: [
+          ParsedScheduleImportRow(
+            sheetRow: 2,
+            time: '09:00 - 09:30',
+            startTime: '09:00',
+            endTime: '09:30',
+            teamName: 'Team Alpha',
+            projectTitle: 'Project Alpha',
+            adviser: sheetAdviser,
+            members: const [],
+            chair: chair,
+            panelMembers: panelMembers,
+            documenter: 'Cecilia Magbanua',
+            room: 'Room 301',
+            date: '2026-06-18',
+            stage: stageLabel,
+            slotDuration: 30,
+          ),
+        ],
+      ),
+      testState.copyWith(
+        teams: [
+          {...testState.teams.first, ...teamFields},
+        ],
+        defenseStages: [
+          {...testState.defenseStages.first, ...stageFields},
+        ],
+      ),
+      scope: 'capstone',
+      stageId: stageId,
+      eventName: '',
+      date: '2026-06-18',
+      room: 'Room 301',
+      fallbackDuration: 30,
+      panelRubricId: 1,
+      adviserRubricId: adviserRubricId,
+      peerRubricId: peerRubricId,
+      panelWeight: 50,
+      peerWeight: 20,
     ).single;
 
-    test('import blocks assigned adviser as chair despite an outdated spreadsheet name', () {
-      final row = adviserPreview(teamFields: {'adviser': 101, 'adviser_name': 'Jonathan Beltran'});
-      expect(row.adviserId, 101);
-      expect(row.ready, isFalse);
-      expect(row.slotIssues.join(' '), contains('team adviser cannot be a panelist or panel chair'));
-      expect(row.issues.join(' '), contains('Team Alpha'));
+    test('panel-only concept import needs only its panel rubric', () {
+      final row = adviserPreview(
+        stageFields: {
+          'concept_config': {'enabled': true},
+        },
+        adviserRubricId: null,
+        peerRubricId: null,
+      );
+      expect(row.ready, isTrue);
+      expect(row.stageIssues, isEmpty);
+      final regular = adviserPreview(adviserRubricId: null, peerRubricId: null);
+      expect(regular.ready, isFalse);
+      expect(regular.hasStageIssue, isTrue);
     });
+
+    test(
+      'repeat import uses current eligibility instead of a previous verdict or endorsement',
+      () {
+        final preparing = adviserPreview(
+          teamFields: {
+            'redefense_stages': [stageLabel],
+            'stage_readiness': {
+              '10': {'status': 'preparing_redefense', 'can_schedule': false},
+            },
+          },
+        );
+        expect(preparing.rowType, ScheduleImportRowType.preparingRedefense);
+        expect(preparing.ready, isFalse);
+        expect(preparing.teamIssues.single, contains('fresh endorsement'));
+        final ready = adviserPreview(
+          teamFields: {
+            'scheduled_stages': [stageLabel],
+            'stage_readiness': {
+              '10': {'status': 'ready_for_redefense', 'can_schedule': true},
+            },
+          },
+        );
+        expect(ready.rowType, ScheduleImportRowType.redefenseReady);
+        expect(ready.ready, isTrue);
+      },
+    );
+
+    test('approved and booked import rows cannot reuse an old ready flag', () {
+      for (final status in ['approved', 'scheduled']) {
+        final row = adviserPreview(
+          teamFields: {
+            'stage_readiness': {
+              '10': {'status': status, 'can_schedule': false},
+            },
+          },
+        );
+        expect(row.ready, isFalse);
+        expect(
+          row.rowType,
+          status == 'approved'
+              ? ScheduleImportRowType.alreadyPassed
+              : ScheduleImportRowType.alreadyScheduled,
+        );
+      }
+    });
+
+    test(
+      'legacy repeat metadata without scheduling clearance remains preparation',
+      () {
+        final row = adviserPreview(
+          teamFields: {
+            'ready_for_stage': null,
+            'redefense_stages': [stageLabel],
+            'eligible_stages': <String>[],
+          },
+        );
+        expect(row.rowType, ScheduleImportRowType.preparingRedefense);
+        expect(row.ready, isFalse);
+      },
+    );
+
+    test(
+      'import blocks assigned adviser as chair despite an outdated spreadsheet name',
+      () {
+        final row = adviserPreview(
+          teamFields: {'adviser': 101, 'adviser_name': 'Jonathan Beltran'},
+        );
+        expect(row.adviserId, 101);
+        expect(row.ready, isFalse);
+        expect(
+          row.slotIssues.join(' '),
+          contains('team adviser cannot be a panelist or panel chair'),
+        );
+        expect(row.issues.join(' '), contains('Team Alpha'));
+      },
+    );
 
     test('import blocks adviser as ordinary panel member', () {
       final row = adviserPreview(teamFields: {'adviser_id': 103, 'adviser_name': 'Ricardo Fontanilla'},

@@ -120,6 +120,30 @@ Future<void> _waitForPdf(WidgetTester tester) async {
   expect(find.text('1 page'), findsOneWidget);
 }
 
+Future<void> _pumpChangingReview(
+  WidgetTester tester,
+  _Client client,
+  ValueNotifier<int> selected,
+) => tester.pumpWidget(
+  ProviderScope(
+    overrides: [
+      authProvider.overrideWith(() => _Adviser()),
+      authenticatedHttpClientProvider.overrideWithValue(client),
+    ],
+    child: MaterialApp(
+      theme: AppTheme.lightTheme,
+      home: ValueListenableBuilder<int>(
+        valueListenable: selected,
+        builder: (_, id, _) => MinutesPdfDialog(
+          scheduleId: id,
+          finalized: false,
+          allowAdviserSigning: true,
+        ),
+      ),
+    ),
+  ),
+);
+
 final _signButton = find.byKey(const ValueKey('minutes-adviser-sign'));
 
 void main() {
@@ -300,6 +324,36 @@ void main() {
     });
   }
 
+  for (final status in ['draft', 'adviser_signed', 'completed']) {
+    testWidgets('latest PDF status $status overrides a stale signing action', (
+      tester,
+    ) async {
+      when(() => client.get(any())).thenAnswer(
+        (_) async => http.Response.bytes(
+          pdf,
+          200,
+          headers: {'x-minutes-status': status},
+        ),
+      );
+      await _open(tester, client);
+      await _waitForPdf(tester);
+      expect(find.text('Sign as project adviser'), findsNothing);
+      expect(
+        find.text('Download PDF'),
+        status == 'completed' ? findsOneWidget : findsNothing,
+      );
+      if (status == 'adviser_signed') {
+        expect(
+          find.text('Signed by adviser · Awaiting chairman signature'),
+          findsOneWidget,
+        );
+      }
+      verifyNever(() => client.post(any(), headers: any(named: 'headers')));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(milliseconds: 600));
+    });
+  }
+
   testWidgets('preview failure and missing minutes cannot be signed', (
     tester,
   ) async {
@@ -317,6 +371,72 @@ void main() {
     expect(find.text('Minutes have not been prepared yet.'), findsOneWidget);
     expect(tester.widget<ShadButton>(_signButton).enabled, isFalse);
     verifyNever(() => client.post(any(), headers: any(named: 'headers')));
+  });
+
+  testWidgets('switching defense discards the previous preview and readiness', (
+    tester,
+  ) async {
+    final selected = ValueNotifier<int>(19);
+    addTearDown(selected.dispose);
+    final older = Completer<http.Response>();
+    when(() => client.get(any())).thenAnswer((invocation) {
+      final uri = invocation.positionalArguments.first as Uri;
+      requests.add(uri.path);
+      return uri.path.contains('/18/')
+          ? older.future
+          : Future.value(http.Response.bytes(pdf, 200));
+    });
+    await _pumpChangingReview(tester, client, selected);
+    await tester.pump();
+    await _waitForPdf(tester);
+    final previousReady = tester
+        .widget<DefensysPdfViewer>(find.byType(DefensysPdfViewer))
+        .onReadyChanged!;
+    expect(tester.widget<ShadButton>(_signButton).enabled, isTrue);
+
+    selected.value = 18;
+    await tester.pump();
+    expect(requests, [
+      '/api/defense/minutes/19/preview/',
+      '/api/defense/minutes/18/preview/',
+    ]);
+    expect(find.byType(DefensysPdfViewer), findsNothing);
+    expect(tester.widget<ShadButton>(_signButton).enabled, isFalse);
+    previousReady(true);
+    await tester.pump();
+    expect(tester.widget<ShadButton>(_signButton).enabled, isFalse);
+
+    older.complete(http.Response.bytes(pdf, 200));
+    await tester.pump();
+    await _waitForPdf(tester);
+    expect(tester.widget<ShadButton>(_signButton).enabled, isTrue);
+    verifyNever(() => client.post(any(), headers: any(named: 'headers')));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('a delayed preview cannot replace another defense', (
+    tester,
+  ) async {
+    final selected = ValueNotifier<int>(19);
+    addTearDown(selected.dispose);
+    final newer = Completer<http.Response>();
+    when(() => client.get(any())).thenAnswer((invocation) {
+      final uri = invocation.positionalArguments.first as Uri;
+      return uri.path.contains('/19/')
+          ? newer.future
+          : Future.value(http.Response('{}', 404));
+    });
+    await _pumpChangingReview(tester, client, selected);
+    selected.value = 18;
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Minutes have not been prepared yet.'), findsOneWidget);
+    newer.complete(http.Response.bytes(pdf, 200));
+    await tester.pump();
+    expect(find.text('Minutes have not been prepared yet.'), findsOneWidget);
+    expect(find.byType(DefensysPdfViewer), findsNothing);
+    expect(tester.widget<ShadButton>(_signButton).enabled, isFalse);
   });
 
   testWidgets(

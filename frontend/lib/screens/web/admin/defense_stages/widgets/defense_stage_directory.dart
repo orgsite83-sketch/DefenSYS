@@ -584,7 +584,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
         child: const Icon(LucideIcons.lockKeyhole, size: 8, color: Colors.white,),
       );
       tooltipMessage =
-          'Configuration locked · ${stage['lock_reason'] ?? 'Defenses scheduled'}';
+          'Configuration locked · ${stage['lock_reason'] ?? stage['structure_lock_reason'] ?? 'Defenses scheduled'}';
     } else if (!published) {
       borderColor = _border;
       bgColor = _fill;
@@ -698,7 +698,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            'Configuration locked · ${stage['lock_reason'] ?? 'This stage has scheduled defenses or recorded grades.'}',
+            'Configuration locked · ${stage['lock_reason'] ?? stage['structure_lock_reason'] ?? 'This stage has scheduled defenses or recorded grades.'}',
             style: _small.copyWith(fontSize: 12),
           ),
         ),

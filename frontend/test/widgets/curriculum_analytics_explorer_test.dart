@@ -101,10 +101,7 @@ void main() {
     tester,
   ) async {
     await _mount(tester, startAtAssessment: false, noAssessments: true);
-    expect(
-      find.textContaining('No recorded assessment results yet'),
-      findsOneWidget,
-    );
+    expect(find.text('No recorded assessments'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('year-2026-2027')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('assessment-stage:1')), findsOneWidget);
@@ -114,7 +111,7 @@ void main() {
     tester,
   ) async {
     await _mount(tester, startAtAssessment: false);
-    expect(find.text('Performance over time'), findsOneWidget);
+    expect(find.text('Performance by academic year'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('performance-clustered-chart')),
       findsNothing,
@@ -127,13 +124,13 @@ void main() {
     expect(find.byKey(const ValueKey('academic-year-chart')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('assessment-stage:1')));
     await tester.pumpAndSettle();
-    expect(find.text('Evaluator components'), findsOneWidget);
-    expect(find.text('Performance by criterion'), findsOneWidget);
+    expect(find.text('Performance across stages'), findsOneWidget);
+    expect(find.text('Concept Proposal · Panel criteria'), findsOneWidget);
     expect(find.text('Review priorities'), findsNothing);
     await _capture(tester, 'workspace-assessment');
     await tester.tap(find.byKey(const ValueKey('analytics-root')));
     await tester.pumpAndSettle();
-    expect(find.text('Performance over time'), findsOneWidget);
+    expect(find.text('Performance by academic year'), findsOneWidget);
     expect(find.byKey(const ValueKey('criterion-problem')), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -236,8 +233,12 @@ void main() {
     'domain selection and performance evaluator state survive navigation',
     (tester) async {
       await _mount(tester);
-      final tabs = find.byKey(const ValueKey('performance-evaluator-tabs'));
-      await tester.tap(find.descendant(of: tabs, matching: find.text('Peer')));
+      await tester.tap(find.text('Assessment coverage'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('assessment-stage:1-peer')),
+      );
+      await tester.tap(find.byKey(const ValueKey('assessment-stage:1-peer')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Project insights'));
       await tester.pumpAndSettle();
@@ -249,7 +250,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('project-1:1')), findsOneWidget);
       expect(find.byKey(const ValueKey('project-2:1')), findsNothing);
-      await tester.tap(find.text('Back to project mix'));
+      await tester.tap(find.text('Clear filter'));
       await tester.pumpAndSettle();
       expect(
         tester
@@ -261,7 +262,7 @@ void main() {
       );
       await tester.tap(find.text('Performance'));
       await tester.pumpAndSettle();
-      expect(tester.widget<ShadTabs<String>>(tabs).value, 'peer');
+      expect(find.text('Concept Proposal · Peer criteria'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -610,7 +611,12 @@ class _FakeExplorer extends CurriculumExplorerNotifier {
     ),
   );
   @override
-  Future<void> fetch(CurriculumExplorerQuery q) async {
+  Future<void> fetch(
+    CurriculumExplorerQuery q, {
+    bool force = false,
+    bool loadEvidence = false,
+    bool selection = false,
+  }) async {
     fetches++;
     if (q.initial && q.year.isEmpty) {
       q = q.copyWith(year: '2026-2027', initial: false);

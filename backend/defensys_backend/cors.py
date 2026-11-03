@@ -50,7 +50,7 @@ class LocalCorsMiddleware:
             response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
             response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Range'
             response['Access-Control-Max-Age'] = '86400'
-            response['Access-Control-Expose-Headers'] = 'Content-Disposition, Content-Type, Content-Length, Accept-Ranges, Content-Range'
+            response['Access-Control-Expose-Headers'] = 'Content-Disposition, Content-Type, Content-Length, Accept-Ranges, Content-Range, X-Minutes-Status'
             response['Vary'] = 'Origin'
             
             # Add headers for PDF viewing

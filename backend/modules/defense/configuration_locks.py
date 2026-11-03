@@ -198,12 +198,8 @@ def sync_shared_requirements(context, definitions):
 
 
 @read_memoize
-def context_deletion_lock(context):
-    if hasattr(context, 'weekly_reporting') and context.weekly_reporting.get('enabled'):
-        from .weekly_reporting import period_for
-        period = period_for(context.weekly_reporting.get('period_id'))
-        if period and period.reports.exists():
-            return True, 'This stage has weekly report submissions and cannot be deleted.'
+def context_history_lock(context):
+    """Protect this context's history independently of a shared weekly calendar."""
     from repository.deliverables.models import ConceptRound
     from repository.section_concepts.models import SectionConceptProject, SharedDeliverableSet
     locked, reason = grade_configuration_lock(context)
@@ -215,3 +211,26 @@ def context_deletion_lock(context):
             or SharedDeliverableSet.objects.filter(**filters).exists()):
         return True, 'This stage has submissions or linked history and cannot be deleted.'
     return False, None
+
+
+@read_memoize
+def context_deletion_lock(context):
+    if hasattr(context, 'weekly_reporting') and context.weekly_reporting.get('enabled'):
+        from .weekly_reporting import period_for
+        from .stages.models import DefenseStage
+        period = period_for(context.weekly_reporting.get('period_id'))
+        if period:
+            policy = context.weekly_reporting
+            reports = period.reports.filter(week_number__gte=policy.get('required_start', 1),
+                week_number__lte=policy.get('required_end', period.total_weeks))
+            # Reports belong to the shared period. Removing an unused stage is
+            # safe when its recorded weeks remain available in published stages.
+            # Keep the last requirement covering any recorded week protected.
+            remaining = DefenseStage.objects.filter(is_active=True,
+                weekly_reporting__enabled=True, weekly_reporting__period_id=period.pk).exclude(pk=context.pk)
+            for other in remaining.values_list('weekly_reporting', flat=True):
+                reports = reports.exclude(week_number__gte=other.get('required_start', 1),
+                    week_number__lte=other.get('required_end', period.total_weeks))
+            if reports.exists():
+                return True, 'This stage is needed to retain access to recorded weekly reports and cannot be deleted.'
+    return context_history_lock(context)

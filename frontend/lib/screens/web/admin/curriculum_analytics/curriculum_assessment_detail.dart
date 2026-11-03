@@ -12,163 +12,105 @@ extension _AssessmentDetails on _CurriculumAnalyticsScreenState {
       return _strongestFirst ? right.compareTo(left) : left.compareTo(right);
     });
 
-  List<String> _availableRoles(
-    Map<String, dynamic> data,
-    CurriculumExplorerQuery q,
-  ) {
-    final performance = data['performance'] as Map? ?? {};
-    final selected = explorerRows(
-      performance['contexts'],
-    ).where((r) => r['id'] == q.context).firstOrNull;
-    final components = explorerRows(selected?['components']);
-    return ['panel', 'peer', if (q.scope == 'capstone') 'adviser']
-        .where(
-          (role) =>
-              components.isEmpty ||
-              components.any((r) => r['id'] == role && r['available'] == true),
-        )
-        .toList();
-  }
-
   Widget _criteriaView(
     List<Map<String, dynamic>> criteria,
     List<Map<String, dynamic>> contexts,
     Map<String, dynamic> data,
     CurriculumExplorerQuery q,
-  ) => _card(
-    'Performance by criterion',
-    'Recorded ${q.role} rubric evidence · ${_strongestFirst ? 'strongest' : 'weakest'} averages first',
-    Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (contexts.isNotEmpty)
-          LayoutBuilder(
-            builder: (_, constraints) => _field(
-              q.scope == 'capstone' ? 'Stage' : 'Event',
-              {
-                for (final c in contexts)
-                  '${c['id']}':
-                      '${c['label']}${c['semester_label'] != null && q.semester.isEmpty ? ' (${c['semester_label']})' : ''}',
-              },
-              q.context,
-              (value) => _fetch(q.copyWith(context: value, role: 'panel')),
-              width: constraints.maxWidth,
-            ),
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        '${contexts.where((c) => c['id'] == q.context).firstOrNull?['label'] ?? 'Assessment'} · '
+        '${q.role[0].toUpperCase()}${q.role.substring(1)} criteria',
+        style: const TextStyle(
+          fontFamily: DefensysTokens.fontFamilyInter,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      const SizedBox(height: 10),
+      Align(
+        alignment: Alignment.centerRight,
+        child: ShadButton.ghost(
+          key: const ValueKey('criterion-sort'),
+          size: ShadButtonSize.sm,
+          leading: const Icon(LucideIcons.arrowDownUp, size: 14),
+          onPressed: () => _change(() => _strongestFirst = !_strongestFirst),
+          child: Text(_strongestFirst ? 'Strongest first' : 'Weakest first'),
+        ),
+      ),
+      if (criteria.isEmpty)
+        _empty(
+          'No rubric results for this selection',
+          'No published rubric results',
+        )
+      else ...[
+        ..._orderedCriteria(criteria).map(
+          (c) => CurriculumRankedBar(
+            key: ValueKey('criterion-${c['id']}'),
+            label: '${c['name']}',
+            value: explorerNumber(c['score']),
+            reference: q.reference,
+            color: CurriculumChartPalette.evaluator(context, q.role),
+            caption:
+                '${c['assessed']} / ${c['eligible']} ${c['target_type'] == 'individual' ? 'students' : 'teams'} assessed  |  ${c['semester_label'] ?? ''} / ${c['rubric_name']}',
+            onPressed: () => _selectCriterion('${c['id']}'),
           ),
-        const SizedBox(height: 14),
-        ShadTabs<String>(
-          key: const ValueKey('performance-evaluator-tabs'),
-          value: q.role,
-          gap: 0,
-          scrollable: false,
-          onChanged: (role) => _fetch(q.copyWith(role: role)),
-          tabs: [
-            for (final role in _availableRoles(data, q))
-              ShadTab(
-                value: role,
-                child: Flexible(
-                  child: Text(
-                    role[0].toUpperCase() + role.substring(1),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+        ),
+        const CurriculumPercentAxis(),
+      ],
+      ShadAccordion<String>(
+        children: [
+          ShadAccordionItem(
+            value: 'reference',
+            title: Text(
+              'Analysis reference: ${q.reference.toStringAsFixed(0)}%',
+              style: _muted,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    SizedBox(
+                      width: 100,
+                      child: ShadInput(
+                        controller: _reference,
+                        keyboardType: TextInputType.number,
+                        placeholder: const Text('0–100'),
+                      ),
+                    ),
+                    ShadButton.outline(
+                      onPressed: () {
+                        final v = double.tryParse(_reference.text.trim());
+                        if (v == null || !v.isFinite || v < 0 || v > 100) {
+                          _change(
+                            () => _referenceError =
+                                'Enter a number from 0 to 100.',
+                          );
+                          return;
+                        }
+                        _change(() => _referenceError = null);
+                        _fetch(q.copyWith(reference: v));
+                      },
+                      child: const Text('Apply reference'),
+                    ),
+                  ],
                 ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.centerRight,
-          child: ShadButton.ghost(
-            key: const ValueKey('criterion-sort'),
-            size: ShadButtonSize.sm,
-            leading: const Icon(LucideIcons.arrowDownUp, size: 14),
-            onPressed: () => _change(() => _strongestFirst = !_strongestFirst),
-            child: Text(_strongestFirst ? 'Strongest first' : 'Weakest first'),
-          ),
-        ),
-        if (criteria.isEmpty)
-          _empty(
-            'No rubric results for this selection',
-            'Choose another period or assessment. Missing scores are kept out of averages.',
-          )
-        else ...[
-          ..._orderedCriteria(criteria).map(
-            (c) => CurriculumRankedBar(
-              key: ValueKey('criterion-${c['id']}'),
-              label: '${c['name']}',
-              value: explorerNumber(c['score']),
-              reference: q.reference,
-              color: CurriculumChartPalette.evaluator(context, q.role),
-              caption:
-                  '${c['assessed']} / ${c['eligible']} ${c['target_type'] == 'individual' ? 'students' : 'teams'} assessed  |  ${c['semester_label'] ?? ''} / ${c['rubric_name']}',
-              onPressed: () => _selectCriterion('${c['id']}'),
+                if (_referenceError != null)
+                  Text(
+                    _referenceError!,
+                    style: TextStyle(color: DefensysTokens.dangerText),
+                  ),
+              ],
             ),
-          ),
-          const CurriculumPercentAxis(),
-          const SizedBox(height: 14),
-          Text(
-            'Select a criterion to see the teams behind its score.',
-            style: _muted,
           ),
         ],
-        ShadAccordion<String>(
-          children: [
-            ShadAccordionItem(
-              value: 'reference',
-              title: Text(
-                'Analysis reference: ${q.reference.toStringAsFixed(0)}%',
-                style: _muted,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'An optional analysis target. Changing it does not change recorded grades or passing rules.',
-                    style: _muted,
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 8,
-                    children: [
-                      SizedBox(
-                        width: 100,
-                        child: ShadInput(
-                          controller: _reference,
-                          keyboardType: TextInputType.number,
-                          placeholder: const Text('0–100'),
-                        ),
-                      ),
-                      ShadButton.outline(
-                        onPressed: () {
-                          final v = double.tryParse(_reference.text.trim());
-                          if (v == null || !v.isFinite || v < 0 || v > 100) {
-                            _change(
-                              () => _referenceError =
-                                  'Enter a number from 0 to 100.',
-                            );
-                            return;
-                          }
-                          _change(() => _referenceError = null);
-                          _fetch(q.copyWith(reference: v));
-                        },
-                        child: const Text('Apply reference'),
-                      ),
-                    ],
-                  ),
-                  if (_referenceError != null)
-                    Text(
-                      _referenceError!,
-                      style: TextStyle(color: DefensysTokens.dangerText),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ],
-    ),
+      ),
+    ],
   );
 
   Widget _teamView(Map<String, dynamic> c, CurriculumExplorerQuery q) {
@@ -335,7 +277,18 @@ extension _AssessmentDetails on _CurriculumAnalyticsScreenState {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '${p['team_name']} · ${p['category'] ?? 'Unclassified'}',
+                      [
+                        p['team_name'],
+                        if (p['category'] != null &&
+                            p['category'] != 'Unclassified')
+                          p['category'],
+                        if (p['domain'] != null &&
+                            p['domain'] != 'Unresolved domain')
+                          p['domain'],
+                        ...((p['technologies'] as List?) ?? []).take(2),
+                        if (p['classification_status'] == 'unresolved')
+                          'Needs review',
+                      ].whereType<String>().join(' · '),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: _muted,

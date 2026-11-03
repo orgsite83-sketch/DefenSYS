@@ -76,6 +76,7 @@ void main() {
     ValueChanged<Map<String, dynamic>>? configure,
     Future<void> Function()? refresh,
     StageMutation? publish,
+    StageMutation? delete,
   }) async {
     tester.view.physicalSize = Size(width, 1500);
     tester.view.devicePixelRatio = 1;
@@ -97,7 +98,7 @@ void main() {
                 onAdd: () async {},
                 onConfigure: configure ?? (_) {},
                 onPublish: publish ?? (_) async {},
-                onDelete: (_) async {},
+                onDelete: delete ?? (_) async {},
                 onMove: (_, _, _) async {},
               ),
             ),
@@ -217,6 +218,26 @@ void main() {
     },
   );
 
+  testWidgets('structure lock displays its actual reason', (tester) async {
+    const reason = 'Stage settings are protected because teams have recorded progress.';
+    await pumpDirectory(
+      tester,
+      state: DefenseStagesState(stages: [
+        {
+          ...stages[1],
+          'structure_locked': true,
+          'structure_lock_reason': reason,
+        },
+      ]),
+    );
+    expect(find.text('Configuration locked · $reason'), findsOneWidget);
+    expect(
+      find.textContaining('This stage has scheduled defenses or recorded grades.'),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'expanded requirements include rubric names and documenter minutes',
     (tester) async {
@@ -293,6 +314,28 @@ void main() {
           .first,
     );
     expect(delete.enabled, isFalse);
+  });
+
+  testWidgets('unused draft can be deleted beside a completed stage sharing its calendar', (tester) async {
+    Map<String, dynamic>? deleted;
+    const weekly = {'enabled': true, 'period_id': 1, 'required_start': 1, 'required_end': 2};
+    await pumpDirectory(
+      tester,
+      state: DefenseStagesState(stages: [
+        {...stages.first, 'is_officially_complete': true, 'weekly_reporting': weekly},
+        {...stages[1], 'can_delete': true, 'weekly_reporting': {...weekly, 'required_end': 8}},
+      ]),
+      delete: (stage) async => deleted = stage,
+    );
+    await tester.tap(find.byKey(const ValueKey('stage-menu-2')));
+    await tester.pumpAndSettle();
+    final button = tester.widget<ShadButton>(find.ancestor(
+      of: find.text('Delete stage'), matching: find.byType(ShadButton)).first);
+    expect(button.enabled, isTrue);
+    await tester.tap(find.text('Delete stage'));
+    await tester.pumpAndSettle();
+    expect(deleted?['id'], 2);
+    expect(tester.takeException(), isNull);
   });
 
   for (final width in [420.0, 800.0, 1100.0, 1440.0]) {

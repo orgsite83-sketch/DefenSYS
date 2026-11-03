@@ -142,6 +142,8 @@ class DocumenterDashboardApiTests(APITestCase):
 
 class MinutesCrudApiTests(APITestCase):
     def setUp(self):
+        media = self.enterContext(TemporaryDirectory())
+        self.enterContext(override_settings(MEDIA_ROOT=media))
         self.admin = User.objects.create_user(
             username='admin-user',
             password='pass12345',
@@ -239,6 +241,72 @@ class MinutesCrudApiTests(APITestCase):
         # Assign panelists via SchedulePanelist (through model)
         SchedulePanelist.objects.create(schedule=self.schedule, panelist=self.panelist_1, order=1, is_chair=True)
         SchedulePanelist.objects.create(schedule=self.schedule, panelist=self.panelist_2, order=2, is_chair=False)
+
+    def test_signing_redefense_first_keeps_original_minutes_unsigned(self):
+        from io import BytesIO
+        import pdfplumber
+
+        newer = DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE, semester=self.semester,
+            team=self.team, defense_stage=self.stage, scheduled_date='2026-07-01',
+            start_time='09:00', slot_duration=60, room='Room 102',
+            documenter=self.doc_faculty, created_by=self.admin,
+        )
+        for schedule in (self.schedule, newer):
+            self.client.force_authenticate(self.doc_faculty)
+            response = self.client.get(f'/api/defense/minutes/{schedule.pk}/')
+            self.assertEqual(response.status_code, 200)
+            minutes = DefenseMinutes.objects.get(schedule=schedule)
+            minutes.panelist_comments.update(comments=f'Comments for defense {schedule.pk}')
+            response = self.client.post(f'/api/defense/minutes/{schedule.pk}/submit/')
+            self.assertEqual(response.status_code, 200, response.data)
+
+        def image_count(response):
+            self.assertEqual(response.status_code, 200)
+            with pdfplumber.open(BytesIO(response.content)) as pdf:
+                return sum(len(page.images) for page in pdf.pages)
+
+        self.client.force_authenticate(self.adviser_faculty)
+        older_url = f'/api/defense/minutes/{self.schedule.pk}'
+        newer_url = f'/api/defense/minutes/{newer.pk}'
+        original = DefenseMinutes.objects.get(schedule=self.schedule)
+        original_signed_at = original.documenter_signed_at
+        baseline = image_count(self.client.get(f'{older_url}/preview/'))
+        response = self.client.post(f'{newer_url}/sign-adviser/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(image_count(self.client.get(f'{newer_url}/preview/')), baseline + 1)
+        self.assertEqual(self.client.get(f'{newer_url}/preview/')['X-Minutes-Status'], 'adviser_signed')
+
+        # The older attempt must still require its own adviser acceptance.
+        original.refresh_from_db()
+        self.assertEqual(original.status, DefenseMinutes.STATUS_SUBMITTED)
+        self.assertIsNone(original.adviser_signed_at)
+        self.assertIsNone(original.adviser_signed_by_id)
+        self.assertEqual(original.documenter_signed_at, original_signed_at)
+        self.assertEqual(image_count(self.client.get(f'{older_url}/preview/')), baseline)
+        with override_settings(CORS_ALLOWED_ORIGINS=['http://localhost:8080']):
+            preview = self.client.get(f'{older_url}/preview/', HTTP_ORIGIN='http://localhost:8080')
+        self.assertEqual(preview['X-Minutes-Status'], 'submitted')
+        self.assertIn('X-Minutes-Status', preview['Access-Control-Expose-Headers'])
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(f'{older_url}/sign-chairman/')
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post(f'{newer_url}/sign-chairman/')
+        self.assertEqual(response.status_code, 200, response.data)
+        final_pdf = self.client.get(f'{newer_url}/pdf/').content
+        self.assertEqual(image_count(self.client.get(f'{newer_url}/pdf/')), baseline + 2)
+        preview = self.client.get(f'{newer_url}/preview/')
+        self.assertEqual(preview['X-Minutes-Status'], 'completed')
+        self.assertEqual(preview['Cache-Control'], 'no-store')
+        self.assertEqual(preview.content, final_pdf)
+        self.assertEqual(image_count(self.client.get(f'{older_url}/preview/')), baseline)
+
+        self.client.force_authenticate(self.adviser_faculty)
+        response = self.client.post(f'{older_url}/sign-adviser/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(image_count(self.client.get(f'{older_url}/preview/')), baseline + 1)
+        self.assertEqual(self.client.get(f'{newer_url}/pdf/').content, final_pdf)
 
     def test_get_minutes_auto_creates_draft_with_comments(self):
         # Initial state: no minutes record

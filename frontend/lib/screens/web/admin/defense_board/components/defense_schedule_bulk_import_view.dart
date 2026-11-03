@@ -926,11 +926,6 @@ class _DefenseScheduleBulkImportViewState
                     onDismiss: () => setState(() => _mismatchWarning = null),
                   ),
                 ),
-              if (_parsed?.isRedefense == true)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: _buildRedefenseBanner(),
-                ),
               const SizedBox(height: 26),
               if (_parsed != null)
                 _buildPreflightReviewCard(schedState: state, previewRows: rows)
@@ -1741,38 +1736,6 @@ class _DefenseScheduleBulkImportViewState
     );
   }
 
-  Widget _buildRedefenseBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3E8FF),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFD8B4FE)),
-      ),
-      child: const Row(
-        children: [
-          Icon(
-            Icons.replay_circle_filled_rounded,
-            color: Color(0xFF7E22CE),
-            size: 20,
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Detected Re-defense timetable: Attempt 2 schedules will be created for eligible teams. Attempt 1 grades and remarks are preserved in audit history.',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF581C87),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _clearReviewFilters() {
     setState(() {
       _searchCtrl.clear();
@@ -1918,10 +1881,17 @@ class _DefenseScheduleBulkImportViewState
   ) {
     final groups = _partitionIntoCommitteeGroups(rows),
         durations = rows.map((row) => row.duration).toSet();
-    final configured =
-        _panelRubricId != null &&
-        _peerRubricId != null &&
-        (_isPit || _adviserRubricId != null);
+    final configured = _isPit
+        ? _panelRubricId != null && _peerRubricId != null
+        : capstoneImportRubricsConfigured(
+            state.defenseStages
+                    .where((stage) => asInt(stage['id']) == _importStageId)
+                    .firstOrNull ??
+                <String, dynamic>{},
+            panelRubricId: _panelRubricId,
+            adviserRubricId: _adviserRubricId,
+            peerRubricId: _peerRubricId,
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2934,15 +2904,15 @@ class _DefenseScheduleBulkImportViewState
     if (row.ready) {
       if (row.isRedefense) {
         return _statusChipBadge(
-          label: 'Re-defense',
+          label: 'Ready for re-defense',
           icon: Icons.replay_circle_filled_rounded,
-          fg: const Color(0xFF7E22CE),
-          bg: const Color(0xFFF3E8FF),
-          border: const Color(0xFFD8B4FE),
+          fg: DefensysTokens.successText,
+          bg: DefensysTokens.successBg,
+          border: DefensysTokens.successBorder,
         );
       }
       return _statusChipBadge(
-        label: 'Ready',
+        label: row.isPit ? 'Ready' : 'Ready to schedule',
         icon: Icons.check_circle_rounded,
         fg: const Color(0xFF027A48),
         bg: const Color(0xFFECFDF3),
@@ -2957,6 +2927,15 @@ class _DefenseScheduleBulkImportViewState
         fg: const Color(0xFFB45309),
         bg: const Color(0xFFFFFBEB),
         border: const Color(0xFFFDE68A),
+      );
+    }
+    if (row.isPreparingRedefense) {
+      return _statusChipBadge(
+        label: 'Preparing re-defense',
+        icon: Icons.hourglass_empty_rounded,
+        fg: DefensysTokens.warningText,
+        bg: DefensysTokens.warningBg,
+        border: DefensysTokens.warningBorder,
       );
     }
     if (row.isAlreadyPassed) {

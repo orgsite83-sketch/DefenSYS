@@ -7,7 +7,7 @@ from .models import DefenseStage, StageDeliverable, StageGradingConfig
 from .readiness import stage_setup_readiness
 from defense.deliverable_timing import validate_timing
 from defense.configuration_locks import (
-    DATA_REASON, REQUIREMENT_FIELDS, context_deletion_lock,
+    DATA_REASON, REQUIREMENT_FIELDS, context_deletion_lock, context_history_lock,
     grade_configuration_lock, requirement_has_data, requirement_lock,
     shared_definitions_with_locks, validate_shared_changes, sync_shared_requirements,
 )
@@ -97,7 +97,9 @@ def check_stage_structure_locked(stage, semester=None):
     locked, reason = check_stage_locked(stage, semester)
     if locked:
         return locked, reason
-    if context_deletion_lock(stage)[0]:
+    # Reused weekly reports protect their policy/calendar and stage deletion.
+    # They must not block a later stage's initial grading setup or publication.
+    if context_history_lock(stage)[0]:
         return True, 'Stage settings are protected because submissions or linked history exist.'
     from defense.scheduler.models import DefenseSchedule
     from student_teams.models import TeamStageProgress

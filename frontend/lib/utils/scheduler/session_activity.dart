@@ -66,6 +66,17 @@ DateTime? _sessionDate(
   return activity == SessionActivity.past ? dates.last : dates.first;
 }
 
+DateTime? _newestSessionCreation(List<Map<String, dynamic>> schedules) {
+  DateTime? newest;
+  for (final schedule in schedules) {
+    final created = DateTime.tryParse('${schedule['created_at']}');
+    if (created != null && (newest == null || created.isAfter(newest))) {
+      newest = created;
+    }
+  }
+  return newest;
+}
+
 int compareSessionActivity(
   List<Map<String, dynamic>> a,
   List<Map<String, dynamic>> b, {
@@ -75,6 +86,21 @@ int compareSessionActivity(
   final activityB = sessionActivity(b, now: now);
   final priority = activityA.index.compareTo(activityB.index);
   if (priority != 0) return priority;
+  final createdA = _newestSessionCreation(a);
+  final createdB = _newestSessionCreation(b);
+  if (createdA != null || createdB != null) {
+    if (createdA == null) return 1;
+    if (createdB == null) return -1;
+    final newestFirst = createdB.compareTo(createdA);
+    if (newestFirst != 0) return newestFirst;
+    int newestId(List<Map<String, dynamic>> schedules) =>
+        schedules.fold(0, (latest, schedule) {
+          final id = int.tryParse('${schedule['id']}') ?? 0;
+          return id > latest ? id : latest;
+        });
+    final newestRecord = newestId(b).compareTo(newestId(a));
+    if (newestRecord != 0) return newestRecord;
+  }
   if (activityA == SessionActivity.active) {
     bool evaluating(List<Map<String, dynamic>> schedules) => schedules.any(
       (s) =>

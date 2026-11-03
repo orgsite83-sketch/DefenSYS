@@ -112,6 +112,7 @@ class ConfiguredOutcomeTests(APITestCase):
         self.assertEqual(list(self.stage.deliverables.values_list('pk', flat=True)), original)
 
     def test_configured_redefense_requires_new_endorsement(self):
+        from defense.scheduler.capstone_planning import team_stage_readiness
         from defense.stages.models import StageDeliverable
         from repository.deliverables.models import DeliverableSubmission
         from repository.deliverables.services import endorse_team
@@ -125,8 +126,12 @@ class ConfiguredOutcomeTests(APITestCase):
         grade = record_verdict(self.grade, actor=self.admin, verdict='for_redefense', remarks='Revise and present again.')
         self.assertFalse(is_stage_ready(grade.team, self.stage))
         self.assertFalse(was_stage_endorsed(grade.team, self.stage))
+        self.assertEqual(team_stage_readiness(grade.team, self.stage)['status'], 'preparing_redefense')
         endorse_team(grade.team, self.stage.label, self.adviser)
         self.assertTrue(is_stage_ready(grade.team, self.stage))
+        ready = team_stage_readiness(grade.team, self.stage)
+        self.assertEqual(ready['status'], 'ready_for_redefense')
+        self.assertTrue(ready['can_schedule'])
 
     def test_correction_cannot_leave_a_contradictory_approval(self):
         from .corrections import request_correction

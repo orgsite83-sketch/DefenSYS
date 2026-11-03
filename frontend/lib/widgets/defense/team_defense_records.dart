@@ -11,6 +11,7 @@ import '../../toasts/feedback_toast.dart';
 import '../minutes/minutes_pdf_dialog.dart';
 import 'concept_hearing_history.dart';
 import 'defense_history_menu.dart';
+import 'panel_recommendations.dart';
 import '../repository/deliverable_file_widgets.dart';
 
 /// A scheduled defense exists independently of its assessment and minutes.
@@ -424,8 +425,17 @@ class DefenseRecordCard extends StatelessWidget {
     final secondary = DefensysTokens.textSecondaryOf(context);
     final deadline =
         assessment['revision_deadline'] ?? grade?['revision_deadline'];
+    final hearing = conceptHistory
+        .where(
+          (round) =>
+              defenseRecordId(round['schedule_id']) ==
+              defenseRecordId(schedule['id']),
+        )
+        .firstOrNull;
     final remarks =
-        (assessment['verdict_remarks'] ?? grade?['verdict_remarks'])
+        (assessment['verdict_remarks'] ??
+                grade?['verdict_remarks'] ??
+                hearing?['remarks'])
             ?.toString()
             .trim() ??
         '';
@@ -604,13 +614,13 @@ class DefenseRecordCard extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: secondary),
               ),
           ],
-          if (remarks.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              remarks,
-              style: TextStyle(fontSize: 13, color: secondary, height: 1.45),
-            ),
-          ],
+          PanelRecommendations(
+            notes: remarks,
+            concepts: (hearing?['concepts'] as List? ?? [])
+                .whereType<Map>()
+                .map((row) => Map<String, dynamic>.from(row))
+                .toList(),
+          ),
           if (conceptHistory.isNotEmpty || onViewHistory != null) ...[
             const SizedBox(height: 8),
             DefenseHistoryMenu(

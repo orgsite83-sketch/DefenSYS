@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/models/team_workflow_status.dart';
+import 'package:defensys/widgets/repository/workflow_status_style.dart';
 import '../models/capstone_planning_draft.dart';
 
 class CapstoneReadinessBadge extends StatelessWidget {
@@ -14,26 +16,22 @@ class CapstoneReadinessBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = DefensysTokens.isDark(context);
-    final ready = status == 'ready' || status == 'completed';
-    final pending = status == 'partial' || status == 'blocked';
-    final color = ready
-        ? (dark ? DefensysTokens.success : DefensysTokens.successText)
-        : pending
-        ? (dark ? DefensysTokens.warning : DefensysTokens.warningText)
-        : DefensysTokens.textSecondaryOf(context);
-    final background = ready
-        ? (dark
-              ? DefensysTokens.success.withValues(alpha: .1)
-              : DefensysTokens.successBg)
-        : pending
-        ? (dark
-              ? DefensysTokens.warning.withValues(alpha: .1)
-              : DefensysTokens.warningBg)
-        : DefensysTokens.surfaceOf(context);
+    final ready = status == 'ready' || status == 'ready_for_redefense';
+    final pending =
+        status == 'partial' ||
+        status == 'blocked' ||
+        status == 'preparing_redefense';
+    final style = WorkflowStatusStyle.of(
+      context,
+      ready
+          ? WorkflowStatusTone.success
+          : pending
+          ? WorkflowStatusTone.attention
+          : WorkflowStatusTone.neutral,
+    );
     return ShadBadge.outline(
-      backgroundColor: background,
-      foregroundColor: color,
+      backgroundColor: style.background,
+      foregroundColor: style.foreground,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Text(
         label,
@@ -74,6 +72,9 @@ class _CapstoneAdviserReadinessState extends State<CapstoneAdviserReadiness> {
       widget.group.teams,
       widget.stageId,
     );
+    final teams = widget.group.teams
+        .where((team) => capstoneTeamNeedsScheduling(team, widget.stageId))
+        .toList();
     return LayoutBuilder(
       builder: (context, constraints) => SizedBox(
         width: math.min(420, constraints.maxWidth),
@@ -90,18 +91,22 @@ class _CapstoneAdviserReadinessState extends State<CapstoneAdviserReadiness> {
                   children: [
                     Text(
                       '${widget.group.name} · Team readiness',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '${summary.endorsed}/${summary.total} endorsed · ${summary.scheduled} already scheduled',
+                      summary.counts,
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 12,
                         color: DefensysTokens.textSecondaryOf(context),
                       ),
                     ),
                     const SizedBox(height: 14),
-                    for (final team in widget.group.teams) ...[
+                    for (final team in teams) ...[
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
@@ -111,6 +116,9 @@ class _CapstoneAdviserReadinessState extends State<CapstoneAdviserReadiness> {
                               children: [
                                 Text(
                                   '${team['name']}',
+                                  style: const TextStyle(
+                                    fontFamily: DefensysTokens.fontFamilyInter,
+                                  ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -124,6 +132,7 @@ class _CapstoneAdviserReadinessState extends State<CapstoneAdviserReadiness> {
                                       ? 'Endorsed'
                                       : 'Not endorsed',
                                   style: TextStyle(
+                                    fontFamily: DefensysTokens.fontFamilyInter,
                                     fontSize: 12,
                                     color: DefensysTokens.textSecondaryOf(
                                       context,
@@ -144,13 +153,13 @@ class _CapstoneAdviserReadinessState extends State<CapstoneAdviserReadiness> {
                           ),
                         ],
                       ),
-                      if (team != widget.group.teams.last)
-                        const Divider(height: 24),
+                      if (team != teams.last) const Divider(height: 24),
                     ],
                     const SizedBox(height: 14),
                     Text(
                       'Updates automatically from team endorsements and defense schedules.',
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 12,
                         color: DefensysTokens.textSecondaryOf(context),
                       ),
@@ -171,7 +180,7 @@ class _CapstoneAdviserReadinessState extends State<CapstoneAdviserReadiness> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Team readiness · ${summary.ready}/${summary.total} ready',
+                      'Team readiness · ${summary.counts}',
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

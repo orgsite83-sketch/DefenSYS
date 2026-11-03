@@ -42,6 +42,12 @@ import '../../../../utils/scheduler/defense_scheduler_draft.dart';
 import '../../../../utils/scheduler/session_activity.dart';
 import 'components/defense_schedule_bulk_import_view.dart';
 
+int _defenseAttempt(Map<String, dynamic> schedule) {
+  final assessment = schedule['assessment'];
+  final attempt = assessment is Map ? asInt(assessment['attempt_count']) : null;
+  return attempt != null && attempt > 0 ? attempt : 1;
+}
+
 class DefenseBoardScreen extends ConsumerStatefulWidget {
   const DefenseBoardScreen({
     super.key,
@@ -1897,6 +1903,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         : _collapsedSessions.contains(group.key);
 
     return Container(
+      key: ValueKey('board-session-${group.key}'),
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
@@ -1944,6 +1951,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final isPit = group.scope == 'pit';
     final accentColor = isPit ? ProgramColors.pit : ProgramColors.capstone;
     final isDocUnassigned = group.documenterName.isEmpty;
+    final repeatTeams = isPit
+        ? 0
+        : group.schedules.where((schedule) => _defenseAttempt(schedule) > 1).length;
 
     return Material(
       color: _surfaceColor,
@@ -2129,6 +2139,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           runSpacing: 8,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
+                            if (repeatTeams > 0)
+                              _attemptBadge(repeatTeams == group.schedules.length
+                                  ? 'Re-defense' : '$repeatTeams re-defense',
+                                  key: ValueKey('session-attempt-${group.key}')),
                             // Panel Tag & Names
                             Row(
                               mainAxisSize: MainAxisSize.min,
@@ -2223,6 +2237,20 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       ),
     );
   }
+
+  Widget _attemptBadge(String label, {Key? key}) => DefensysShadcnScope(
+    child: ShadBadge.outline(
+      key: key,
+      backgroundColor: DefensysTokens.surfaceHigherOf(context),
+      foregroundColor: _textSecondaryColor,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      child: Text(label, style: const TextStyle(
+        fontFamily: DefensysTokens.fontFamilyInter,
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+      )),
+    ),
+  );
 
   Widget _buildDesktopTeamTable(_SessionGroup group, DefenseBoardState state) {
     final isPit = group.scope == 'pit';
@@ -2324,6 +2352,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                               color: _textPrimaryColor,
                             ),
                           ),
+                          if (!isPit && _defenseAttempt(schedule) > 1) ...[
+                            const SizedBox(height: 4),
+                            _attemptBadge('Re-defense · Attempt ${_defenseAttempt(schedule)}',
+                              key: ValueKey('defense-attempt-${schedule['id']}')),
+                          ],
                           if (projectTitle.isNotEmpty) ...[
                             const SizedBox(height: 2),
                             Text(
@@ -2573,6 +2606,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       _rowActionButtons(state, schedule, group),
                     ],
                   ),
+                  if (!isPit && _defenseAttempt(schedule) > 1) ...[
+                    const SizedBox(height: 4),
+                    _attemptBadge('Re-defense · Attempt ${_defenseAttempt(schedule)}',
+                      key: ValueKey('defense-attempt-${schedule['id']}')),
+                  ],
                   if (projectTitle.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(

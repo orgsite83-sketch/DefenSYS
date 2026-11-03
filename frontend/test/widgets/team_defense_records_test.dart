@@ -5,6 +5,7 @@ import 'package:defensys/services/defense/team_defense_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/defense/team_defense_records.dart';
 import 'package:defensys/widgets/defense/concept_hearing_history.dart';
+import 'package:defensys/widgets/defense/panel_recommendations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -203,6 +204,271 @@ Future<void> _pump(
 );
 
 void main() {
+  for (final isCapstone in [false, true]) {
+    testWidgets(
+      '${isCapstone ? 'Capstone' : 'PIT'} recommendations appear only in the Defense or Schedule tab',
+      (tester) async {
+        final stage = <String, dynamic>{
+          'stage_label': 'Project Proposal',
+          'endorsed': true,
+          'deliverables_configured': true,
+          'grade': {
+            'schedule_id': 18,
+            'verdict': 'for_redefense',
+            'verdict_remarks':
+                'Use the panel recommendations for the next hearing.',
+          },
+          'concept_workflow': {
+            'enabled': true,
+            'can_edit': true,
+            'round': 2,
+            'concepts': [
+              {
+                'key': 'c1',
+                'title': 'Next system title',
+                'requested_action': 'revise',
+                'panel_feedback': 'Copied preparation feedback',
+              },
+            ],
+            'history': [
+              {
+                'schedule_id': 18,
+                'round': 1,
+                'verdict': 'for_redefense',
+                'concepts': [
+                  {
+                    'title': 'Presented system',
+                    'remarks': 'Explain the sensor readings.',
+                  },
+                ],
+              },
+            ],
+          },
+          'deliverables': [
+            {
+              'id': 'PAPER',
+              'label': 'Concept Paper',
+              'type': 'pre',
+              'required': true,
+              'uploaded': true,
+              'can_upload': false,
+              'submission': {'status': 'accepted', 'file_name': 'concept.pdf'},
+            },
+          ],
+        };
+        final team = <String, dynamic>{
+          'id': 7,
+          'name': 'Team AgriSense',
+          'currentStage': 'Project Proposal',
+          'stages': [stage],
+          'selected_stage': stage,
+        };
+        await pumpDefensysWidget(
+          tester,
+          StudentEventsTab(
+            isCapstone: isCapstone,
+            isActive: false,
+            studentData: {
+              'team': team,
+              'current_stage': 'Project Proposal',
+              'stage_options': ['Project Proposal'],
+              'stages': [stage],
+            },
+          ),
+          overrides: [
+            capstoneDeliverablesProvider.overrideWith(
+              () => _Deliverables(teams: [team]),
+            ),
+            teamDefenseProvider.overrideWith(
+              () => _Defenses([
+                _record(18, status: 'done', verdict: 'for_redefense'),
+              ]),
+            ),
+          ],
+        );
+        expect(find.text('Panel recommendations'), findsOneWidget);
+        expect(
+          find.text('Use the panel recommendations for the next hearing.'),
+          findsOneWidget,
+        );
+        expect(find.text('Presented system'), findsOneWidget);
+        expect(find.text('Explain the sensor readings.'), findsOneWidget);
+        expect(find.text('Copied preparation feedback'), findsNothing);
+
+        await tester.ensureVisible(find.text('Deliverables'));
+        await tester.tap(find.text('Deliverables'));
+        await tester.pumpAndSettle();
+        expect(find.text('Concept Paper'), findsOneWidget);
+        expect(find.text('Panel recommendations'), findsNothing);
+        expect(
+          find.text('Use the panel recommendations for the next hearing.'),
+          findsNothing,
+        );
+        expect(find.text('Explain the sensor readings.'), findsNothing);
+        expect(find.text('Copied preparation feedback'), findsNothing);
+        expect(find.textContaining('Revise ·'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final dark in [false, true]) {
+    testWidgets(
+      'Defense shows hearing recommendations once and separate system notes $dark',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 1100);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final record = _record(18, status: 'done', verdict: 'for_redefense');
+        (record['assessment'] as Map)['verdict_remarks'] = 'We will meet again';
+        await _pump(
+          tester,
+          [record],
+          dark: dark,
+          hearingHistory: [
+            {
+              'schedule_id': 18,
+              'round': 1,
+              'remarks': 'We will meet again',
+              'concepts': [
+                {
+                  'key': 'c1',
+                  'title': 'AquaWatch',
+                  'remarks': 'We will meet again',
+                },
+                {
+                  'key': 'c2',
+                  'title': 'FoodRescue',
+                  'remarks': 'Clarify food storage and pickup.',
+                  'panel_score': 99.77,
+                },
+                {
+                  'key': 'c3',
+                  'title': 'SoundSense',
+                  'remarks': 'Explain how noise is measured.',
+                },
+              ],
+            },
+            {
+              'schedule_id': 17,
+              'round': 1,
+              'remarks': 'Unrelated hearing notes',
+              'concepts': [],
+            },
+          ],
+        );
+        expect(find.text('Panel recommendations'), findsOneWidget);
+        expect(find.text('We will meet again'), findsOneWidget);
+        expect(find.text('AquaWatch'), findsNothing);
+        expect(find.text('FoodRescue'), findsOneWidget);
+        expect(find.text('Clarify food storage and pickup.'), findsOneWidget);
+        expect(find.text('SoundSense'), findsOneWidget);
+        expect(find.text('Explain how noise is measured.'), findsOneWidget);
+        expect(find.text('Unrelated hearing notes'), findsNothing);
+        expect(find.textContaining('99.77'), findsNothing);
+        expect(find.textContaining('Revise ·'), findsNothing);
+        await tester.ensureVisible(find.text('Panel recommendations'));
+        await capturePreview(
+          tester,
+          find.byType(TeamDefenseRecordsView),
+          'panel-recommendations-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'an upcoming repeat does not inherit earlier hearing recommendations',
+    (tester) async {
+      await _pump(
+        tester,
+        [_record(19)],
+        hearingHistory: [
+          {
+            'schedule_id': 18,
+            'round': 1,
+            'remarks': 'Earlier recommendation',
+            'concepts': [
+              {'title': 'Earlier system', 'remarks': 'Earlier system note'},
+            ],
+          },
+        ],
+      );
+      expect(find.text('Panel recommendations'), findsNothing);
+      expect(find.text('Earlier recommendation'), findsNothing);
+      expect(find.text('Earlier system note'), findsNothing);
+      expect(find.byTooltip('More history actions'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'PIT stage recommendations use the matching hearing and omit preparation feedback',
+    (tester) async {
+      await pumpDefensysWidget(
+        tester,
+        PanelRecommendations.fromStage({
+          'grade': {'schedule_id': 18},
+          'concept_workflow': {
+            'concepts': [
+              {'title': 'New title', 'panel_feedback': 'Preparation copy'},
+            ],
+            'history': [
+              {
+                'schedule_id': 18,
+                'round': 1,
+                'remarks': 'Recorded recommendation',
+                'concepts': [
+                  {
+                    'title': 'Original title',
+                    'remarks': 'System-specific feedback',
+                  },
+                ],
+              },
+              {'schedule_id': 19, 'round': 2, 'remarks': 'Other hearing'},
+            ],
+          },
+        }),
+      );
+      expect(find.text('Recorded recommendation'), findsOneWidget);
+      expect(find.text('Original title'), findsOneWidget);
+      expect(find.text('System-specific feedback'), findsOneWidget);
+      expect(find.text('Other hearing'), findsNothing);
+      expect(find.text('Preparation copy'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'PIT upcoming hearing does not show an older grade recommendation',
+    (tester) async {
+      await pumpDefensysWidget(
+        tester,
+        PanelRecommendations.fromStage({
+          'schedule': {'id': 19},
+          'grade': {
+            'schedule_id': 18,
+            'verdict_remarks': 'Earlier recommendation',
+          },
+          'hearing_history': [
+            {
+              'schedule_id': 18,
+              'round': 1,
+              'remarks': 'Earlier recommendation',
+            },
+            {'schedule_id': 19, 'round': 2, 'remarks': ''},
+          ],
+        }),
+      );
+      expect(find.text('Panel recommendations'), findsNothing);
+      expect(find.text('Earlier recommendation'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'completed legacy assessment has a public status without numeric grades',
     (tester) async {

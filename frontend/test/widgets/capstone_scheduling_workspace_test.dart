@@ -19,12 +19,14 @@ import 'package:defensys/services/app/unsaved_changes_provider.dart';
 import 'package:defensys/screens/web/admin/defense_board/defense_board_screen.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/components/capstone_scheduling_workspace.dart';
+import 'package:defensys/screens/web/admin/defense_scheduler/components/capstone_adviser_readiness.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/components/scheduler_people_picker.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/components/documenter_workload_summary.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/models/capstone_planning_draft.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/defense_scheduler_screen.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/shadcn/workflow_step_progress.dart';
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/capture_preview.dart';
@@ -723,8 +725,13 @@ void main() {
         findsNothing,
       );
       expect(find.text('Partly ready'), findsOneWidget);
-      expect(find.text('1/2 teams endorsed'), findsOneWidget);
-      final readiness = find.text('Team readiness · 1/2 ready');
+      expect(
+        find.text('1 ready to schedule · 1 awaiting endorsement'),
+        findsOneWidget,
+      );
+      final readiness = find.text(
+        'Team readiness · 1 ready to schedule · 1 awaiting endorsement',
+      );
       await tester.tap(readiness);
       await tester.pumpAndSettle();
       expect(find.text('Team 1'), findsOneWidget);
@@ -749,6 +756,226 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  for (final hiddenState in ['approved', 'scheduled']) {
+    testWidgets(
+      '$hiddenState teams leave readiness counts and the generated scheduling queue',
+      (tester) async {
+        final data = fixture();
+        final teams = data['teams'] as List;
+        teams[1]['adviser_id'] = teams[0]['adviser_id'];
+        teams[1]['adviser_name'] = teams[0]['adviser_name'];
+        teams[0]['stage_readiness'] = {
+          '71': {
+            'status': hiddenState,
+            'label': hiddenState == 'approved' ? 'Approved' : 'Scheduled',
+            'endorsed': true,
+            'can_schedule': false,
+            'include_in_scheduler': false,
+          },
+        };
+        final plans = <Map<String, dynamic>>[];
+        await mount(tester, workspaceData: data, onPlan: plans.add);
+        expect(find.text('1 ready to schedule'), findsOneWidget);
+        expect(find.text('Partly ready'), findsNothing);
+        final readiness = find.text('Team readiness · 1 ready to schedule');
+        await tester.tap(readiness);
+        await tester.pumpAndSettle();
+        expect(find.text('Team 1'), findsNothing);
+        expect(find.text('Team 2'), findsOneWidget);
+        expect(find.text('Requirements pending'), findsNothing);
+        await tester.tap(readiness);
+        await tester.pumpAndSettle();
+        await assignAndPlan(tester);
+        expect(plans.last['team_ids'], [2]);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('adviser groups disappear when all their teams passed', (
+    tester,
+  ) async {
+    final data = fixture();
+    (data['teams'] as List)[0]['stage_readiness'] = {
+      '71': {
+        'status': 'approved',
+        'label': 'Approved',
+        'endorsed': true,
+        'can_schedule': false,
+        'include_in_scheduler': false,
+      },
+    };
+    await mount(tester, workspaceData: data);
+    expect(find.text('Adviser 1'), findsNothing);
+    expect(find.text('Adviser 2'), findsOneWidget);
+    expect(find.text('1 ready to schedule'), findsOneWidget);
+    expect(find.text('Panel chair'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a stage with only passed teams has a clear empty state', (
+    tester,
+  ) async {
+    final data = fixture();
+    for (final team in data['teams'] as List) {
+      team['stage_readiness'] = {
+        '71': {
+          'status': 'approved',
+          'label': 'Approved',
+          'endorsed': true,
+          'can_schedule': false,
+          'include_in_scheduler': false,
+        },
+      };
+    }
+    await mount(tester, workspaceData: data);
+    expect(
+      find.text('No teams need scheduling for this stage.'),
+      findsOneWidget,
+    );
+    expect(find.text('Panel chair'), findsNothing);
+    expect(
+      tester
+          .widget<ShadButton>(find.widgetWithText(ShadButton, 'Assign'))
+          .onPressed,
+      isNull,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final dark in [false, true]) {
+    testWidgets(
+      're-defense readiness omits scheduled teams in ${dark ? 'dark' : 'light'} theme',
+      (tester) async {
+        final data = fixture();
+        final teams = data['teams'] as List;
+        teams[1]['adviser_id'] = teams[0]['adviser_id'];
+        teams[1]['adviser_name'] = teams[0]['adviser_name'];
+        teams[0]['ready_stage_ids'] = [];
+        teams[0]['stage_readiness'] = {
+          '71': {
+            'status': 'preparing_redefense',
+            'label': 'Preparing re-defense',
+            'endorsed': false,
+            'can_schedule': false,
+          },
+        };
+        teams[1]['stage_readiness'] = {
+          '71': {
+            'status': 'ready_for_redefense',
+            'label': 'Ready for re-defense',
+            'endorsed': true,
+            'can_schedule': true,
+          },
+        };
+        teams.add({
+          ...Map<String, dynamic>.from(teams[0]),
+          'id': 3,
+          'name': 'Scheduled team',
+          'stage_readiness': {
+            '71': {
+              'status': 'redefense_scheduled',
+              'label': 'Re-defense scheduled',
+              'endorsed': true,
+              'can_schedule': false,
+            },
+          },
+        });
+        await mount(
+          tester,
+          workspaceData: data,
+          dark: dark,
+          size: dark ? const Size(360, 900) : const Size(1280, 800),
+        );
+        final readiness = find.textContaining('Team readiness ·');
+        await tester.ensureVisible(readiness);
+        await tester.tap(readiness);
+        await tester.pumpAndSettle();
+        expect(find.text('Preparing re-defense'), findsOneWidget);
+        expect(find.text('Ready for re-defense'), findsOneWidget);
+        expect(find.text('Re-defense scheduled'), findsNothing);
+        expect(find.text('Scheduled team'), findsNothing);
+        final badge = tester.widget<ShadBadge>(
+          find.descendant(
+            of: find.byWidgetPredicate(
+              (widget) =>
+                  widget is CapstoneReadinessBadge &&
+                  widget.status == 'ready_for_redefense',
+            ),
+            matching: find.byType(ShadBadge),
+          ),
+        );
+        expect(
+          badge.foregroundColor,
+          dark ? const Color(0xFF6EE7B7) : DefensysTokens.successText,
+        );
+        await capturePreview(
+          tester,
+          find.byType(Scaffold).first,
+          'capstone-readiness-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('ready repeat teams request only missing scheduling details', (
+    tester,
+  ) async {
+    final data = fixture();
+    ((data['stages'] as List).first as Map).remove('default_slot_duration_minutes');
+    for (final team in data['teams'] as List) {
+      team['stage_readiness'] = {
+        '71': {
+          'status': 'ready_for_redefense',
+          'label': 'Ready for re-defense',
+          'endorsed': true,
+          'can_schedule': true,
+        },
+      };
+    }
+    final plans = <Map<String, dynamic>>[];
+    await mount(tester, workspaceData: data, onPlan: plans.add);
+    await tester.ensureVisible(find.text('Assign'));
+    await tester.tap(find.text('Assign'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Recalculate'));
+    await tester.tap(find.text('Recalculate'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Enter minutes per team between 15 and 240. Enter a room.'),
+      findsOneWidget,
+    );
+    expect(find.text('Could not calculate the plan'), findsNothing);
+    expect(find.textContaining('Choose ready teams'), findsNothing);
+    expect(plans, isEmpty);
+    await tester.enterText(find.byType(ShadInput).at(0), '20');
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a room.'), findsOneWidget);
+    await tester.enterText(find.byType(ShadInput).at(1), '301');
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(plans.last['team_ids'], [1, 2]);
+    expect(find.text('Enter a room.'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('date-step errors do not leak back into people assignments', (
+    tester,
+  ) async {
+    await mount(tester, planError: {'detail': 'This room is unavailable.'});
+    await assignAndPlan(tester);
+    expect(find.text('This room is unavailable.'), findsOneWidget);
+    await tester.ensureVisible(find.text('← Assignments'));
+    await tester.tap(find.text('← Assignments'));
+    await tester.pumpAndSettle();
+    expect(find.text('This room is unavailable.'), findsNothing);
+    expect(find.text('Panel chair'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'date planner and review keyboard reordering retain a stable queue',
@@ -932,7 +1159,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.getTopLeft(footer), position);
       expect(find.text('Order & review →').hitTestable(), findsOneWidget);
-      expect(find.text('2/2 teams endorsed'), findsOneWidget);
+      expect(find.text('2 ready to schedule'), findsOneWidget);
       await tester.drag(
         find.byKey(const ValueKey('capstone-workspace-scroll')),
         const Offset(0, 2000),
@@ -1089,7 +1316,7 @@ void main() {
       );
       expect(find.textContaining('defense_stage_id:'), findsNothing);
       expect(find.text('Review stage setup'), findsOneWidget);
-      expect(find.text('2/2 teams endorsed'), findsOneWidget);
+      expect(find.text('2 ready to schedule'), findsOneWidget);
       expect(find.text('Ready to schedule'), findsNothing);
       expect(
         tester

@@ -402,6 +402,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           stage: selectedStage,
                           showTitleCard: false,
                           showHistory: false,
+                          showRepeatInstructions: false,
                         ),
                         _buildRequiredProgressBlock(pre),
                         const SizedBox(height: 16),
@@ -437,9 +438,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                 .map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
                           ],
                         const SizedBox(height: 20),
-                        if (stageGrade != null) ...[
-                          _buildDirectivesCard(stageGrade),
-                        ],
                         if (vault.isNotEmpty) ...[
                           _sectionTitle('Post-Defense Submissions', showRedDot: hasPendingPost),
                           const SizedBox(height: 8),
@@ -660,115 +658,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDirectivesCard(Map<String, dynamic> grade) {
-    final remarks = grade['verdict_remarks']?.toString();
-    final deadline = grade['revision_deadline']?.toString();
-    final verdict = grade['verdict']?.toString();
-    final result = grade['result']?.toString() ?? 'Deliberation Outcome';
-    if ((remarks == null || remarks.trim().isEmpty) && (deadline == null || deadline.trim().isEmpty)) {
-      return const SizedBox.shrink();
-    }
-
-    final isRevisions = verdict == 'approved_with_revisions';
-    final isForRedefense = verdict == 'for_redefense';
-    final Color borderColor = isForRedefense
-        ? const Color(0xFFFECACA)
-        : (isRevisions ? const Color(0xFFFDE68A) : const Color(0xFFBBF7D0));
-    final Color bgColor = isForRedefense
-        ? const Color(0xFFFEF2F2)
-        : (isRevisions ? const Color(0xFFFFFBEB) : const Color(0xFFF0FDF4));
-    final Color accentColor = isForRedefense
-        ? const Color(0xFFDC2626)
-        : (isRevisions ? const Color(0xFFD97706) : const Color(0xFF16A34A));
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: borderColor, width: 1.2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isForRedefense ? Icons.replay_rounded : (isRevisions ? Icons.assignment_late_rounded : Icons.verified_rounded),
-                size: 16,
-                color: accentColor,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Panel Directives ($result)',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: accentColor,
-                  ),
-                ),
-              ),
-              if (deadline != null && deadline.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.surfaceOf(context),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: borderColor),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.schedule_rounded, size: 11, color: accentColor),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Due: $deadline',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: accentColor),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-          if (remarks != null && remarks.trim().isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: DefensysTokens.surfaceOf(context),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: borderColor),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.format_quote_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      remarks,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontStyle: FontStyle.italic,
-                        color: DefensysTokens.textPrimaryOf(context),
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );

@@ -504,8 +504,11 @@ class MinutesPreviewView(APIView):
         if minutes is None:
             return Response({'detail': 'Minutes have not been prepared yet.'}, status=404)
         if minutes.status == DefenseMinutes.STATUS_COMPLETED and minutes.pdf_file:
-            return MinutesPdfView().get(request, schedule_id)
-        response = HttpResponse(generate_minutes_pdf(minutes, draft=True), content_type='application/pdf')
-        response['Content-Disposition'] = 'inline; filename="minutes_preview.pdf"'
+            response = MinutesPdfView().get(request, schedule_id)
+        else:
+            response = HttpResponse(generate_minutes_pdf(minutes, draft=True), content_type='application/pdf')
+            response['Content-Disposition'] = 'inline; filename="minutes_preview.pdf"'
+        # Review actions must reflect this PDF's record, not an older board row.
+        response['X-Minutes-Status'] = minutes.status
         response['Cache-Control'] = 'no-store'
         return response

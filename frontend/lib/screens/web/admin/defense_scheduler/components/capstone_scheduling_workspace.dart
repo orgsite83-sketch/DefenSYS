@@ -201,7 +201,11 @@ class _CapstoneSchedulingWorkspaceState
     _editingRosters.clear();
     _replacementEvents.clear();
     final applicable = _teams
-        .where((t) => (t['applicable_stage_ids'] as List).contains(_stage))
+        .where(
+          (t) =>
+              (t['applicable_stage_ids'] as List).contains(_stage) &&
+              capstoneTeamNeedsScheduling(t, _stage),
+        )
         .toList();
     _groups = capstoneGroups(applicable);
     for (final team in applicable) {
@@ -538,7 +542,16 @@ class _CapstoneSchedulingWorkspaceState
 
   void _goToStep(int step) {
     if (_keyboardReviewGroup != null) _endKeyboardReview(cancel: true);
-    setState(() => _step = step);
+    setState(() {
+      _step = step;
+      if (step == 1) {
+        _generation++;
+        _debounce?.cancel();
+        _previewing = false;
+        _error = null;
+        _stageSetupIssue = false;
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         Scrollable.ensureVisible(
@@ -623,16 +636,33 @@ class _CapstoneSchedulingWorkspaceState
     }
   }
 
+  String? get _planInputIssue {
+    final issues = <String>[];
+    if (_queue.isEmpty) {
+      issues.add('No teams are ready to schedule for this stage.');
+    }
+    if (DateTime.tryParse(_date.text.trim()) == null) {
+      issues.add('Choose a valid start date.');
+    }
+    final minutes = int.tryParse(_minutes.text.trim());
+    if (minutes == null || minutes < 15 || minutes > 240) {
+      issues.add('Enter minutes per team between 15 and 240.');
+    }
+    if (_room.text.trim().isEmpty) {
+      issues.add('Enter a room.');
+    }
+    return issues.isEmpty ? null : issues.join(' ');
+  }
+
   Future<void> _calculate() async {
     final generation = ++_generation;
-    if (_queue.isEmpty ||
-        _room.text.trim().isEmpty ||
-        int.tryParse(_minutes.text) == null ||
-        DateTime.tryParse(_date.text) == null) {
+    if (_planInputIssue != null) {
       setState(() {
         _previewing = false;
-        _error =
-            'Choose ready teams, a start date, minutes per team, and a room.';
+        _preview = null;
+        _confirmKey = '';
+        _error = null;
+        _stageSetupIssue = false;
       });
       return;
     }
@@ -743,8 +773,19 @@ class _CapstoneSchedulingWorkspaceState
         for (var i = 0; i < g.teams.length; i++) {
           g.teams[i] = fresh[g.teams[i]['id']]!;
         }
+        g.teams.removeWhere(
+          (team) => !capstoneTeamNeedsScheduling(team, _stage),
+        );
         g.hasMixedAssignments = false;
       }
+      _groups.removeWhere((group) => group.teams.isEmpty);
+      final visibleIds = {
+        for (final group in _groups)
+          for (final team in group.teams) team['id'],
+      };
+      _rosters.removeWhere((id, _) => !visibleIds.contains(id));
+      _temporaryChanges.removeWhere((id, _) => !visibleIds.contains(id));
+      _editingRosters.removeWhere((id, _) => !visibleIds.contains(id));
       _selected.clear();
       for (final group in _groups) {
         for (final team in group.teams) {
@@ -755,8 +796,9 @@ class _CapstoneSchedulingWorkspaceState
       }
       if (_queue.isEmpty) {
         setState(
-          () => _notice =
-              'Adviser assignments saved. Teams can be scheduled after endorsement.',
+          () => _notice = _groups.isEmpty
+              ? 'No teams need scheduling for this stage.'
+              : 'Adviser assignments saved. Teams can be scheduled after endorsement.',
         );
         await _saveDraft();
         return;
@@ -1054,27 +1096,15 @@ class _CapstoneSchedulingWorkspaceState
     );
     final status = Semantics(
       liveRegion: true,
-      label: 'Team endorsements',
+      label: 'Scheduling readiness',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           CapstoneReadinessBadge(
             key: const ValueKey('overall-readiness'),
-            status: summary.endorsed == summary.total && summary.total > 0
-                ? 'ready'
-                : 'partial',
-            label: '${summary.endorsed}/${summary.total} teams endorsed',
+            status: summary.status,
+            label: summary.counts,
           ),
-          if (summary.scheduled > 0 || summary.completed > 0) ...[
-            const SizedBox(height: 6),
-            Text(
-              '${summary.scheduled} scheduled · ${summary.completed} completed',
-              style: TextStyle(
-                fontSize: 12,
-                color: DefensysTokens.textSecondaryOf(context),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -1225,8 +1255,10 @@ class _CapstoneSchedulingWorkspaceState
   Widget _people() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      const Text(
-        'Assign one panel and documenter per adviser. Endorsed teams are included automatically.',
+      Text(
+        _groups.isEmpty
+            ? 'No teams need scheduling for this stage.'
+            : 'Assign one panel and documenter per adviser. Ready teams are included automatically.',
       ),
       const SizedBox(height: 12),
       for (final group in _groups)
@@ -2032,7 +2064,7 @@ class _CapstoneSchedulingWorkspaceState
           ],
         ] else if (_preview == null)
           Text(
-            'Enter a start date, minutes per team, and a room to calculate the plan.',
+            _planInputIssue ?? 'Recalculate to update the plan.',
             style: _supportingStyle,
           )
         else ...[

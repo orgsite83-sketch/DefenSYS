@@ -364,6 +364,63 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertEqual(self.stage.weekly_reporting['required_end'], 2)
         self.assertEqual(WeeklyProgressReport.objects.count(), 1)
 
+    def test_later_draft_can_finish_grading_and_publish_after_prior_stage_completion(self):
+        from defense.stages.models import StageGradingConfig
+        from grading.rubrics.models import Rubric
+
+        self.review(self.upload())
+        completed = StageGradingConfig.objects.create(defense_stage=self.stage,
+            semester=self.semester, is_officially_complete=True)
+        original_stage = DefenseStage.objects.filter(pk=self.stage.pk).values().get()
+        original_config = StageGradingConfig.objects.filter(pk=completed.pk).values().get()
+        original_reports = list(WeeklyProgressReport.objects.values())
+        original_versions = list(WeeklyReportVersion.objects.values())
+        rubric = Rubric.objects.create(name='Later stage panel', semester=self.semester,
+            scope='capstone', evaluation_type='panel', status='published')
+        self.client.force_authenticate(self.admin)
+        body = {'label': 'Later draft', 'is_active': False, 'qualifying_score': 75,
+            'weekly_reporting': {**policy_payload(self.stage), 'required_end': 8},
+            'template_changes': [{'scope': 'team', 'deliverable_id': 'WPR',
+                'action': 'replace', 'upload_key': 'template'}]}
+        response = self.client.post('/api/defense/stages/', {'configuration': json.dumps(body),
+            'template': SimpleUploadedFile('later.docx', b'Later stage template')}, format='multipart')
+        self.assertEqual(response.status_code, 201, response.data)
+        stage = response.data['stage']
+        self.assertFalse(stage['is_locked'])
+        self.assertFalse(stage['structure_locked'])
+        self.assertIsNone(stage['structure_lock_reason'])
+        url = f'/api/defense/stages/{stage["id"]}/'
+        response = self.client.patch(url + 'grading-config/', {
+            'panel_weight': 100, 'adviser_weight': 0, 'peer_weight': 0,
+            'panel_rubric_id': rubric.pk}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data['grading_config']['is_locked'])
+        response = self.client.patch(url, {'is_active': True}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data['stage']['is_active'])
+        self.assertTrue(response.data['stage']['setup_readiness']['ready'])
+        self.assertFalse(self.client.get(url).data['stage']['structure_locked'])
+        self.assertTrue(self.client.get(f'/api/defense/stages/{self.stage.pk}/').data['stage']['is_locked'])
+        self.assertEqual(DefenseStage.objects.filter(pk=self.stage.pk).values().get(), original_stage)
+        self.assertEqual(StageGradingConfig.objects.filter(pk=completed.pk).values().get(), original_config)
+        self.assertEqual(list(WeeklyProgressReport.objects.values()), original_reports)
+        self.assertEqual(list(WeeklyReportVersion.objects.values()), original_versions)
+
+        # Reusing reports does not permit rewriting their calendar or requirement.
+        later = DefenseStage.objects.get(pk=stage['id'])
+        config = policy_payload(later)
+        for change in ({'enabled': False}, {**config, 'required_end': 7},
+                       {**config, 'due_time': '12:00'}):
+            response = self.client.patch(url, {'weekly_reporting': change}, format='json')
+            self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(self.client.delete(url).status_code, 409)
+        response = self.client.patch(url, {'configuration': json.dumps({
+            'template_changes': body['template_changes']}),
+            'template': SimpleUploadedFile('replacement.docx', b'Changed template')}, format='multipart')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(DeliverableTemplate.objects.get(defense_stage=later,
+            deliverable_id='WPR').original_name, 'later.docx')
+
     def test_stage_deletion_and_old_compilation_cannot_remove_or_replace_weekly_evidence(self):
         self.upload()
         self.client.force_authenticate(self.admin)
@@ -372,6 +429,81 @@ class WeeklyReportCollectionTests(APITestCase):
         response = self.client.post('/api/repository/deliverables/compile-weekly-reports/',
             {'team_id': self.team.pk, 'stage_label': self.stage.label}, format='json')
         self.assertEqual(response.status_code, 410, response.data)
+        self.assertEqual(WeeklyReportVersion.objects.count(), 1)
+
+    def test_unused_shared_weekly_draft_can_be_deleted_without_changing_existing_evidence(self):
+        from defense.stages.models import StageGradingConfig
+
+        version = self.upload()
+        self.review(version)
+        StageGradingConfig.objects.create(defense_stage=self.stage, semester=self.semester,
+            is_officially_complete=True)
+        self.client.force_authenticate(self.admin)
+        body = {'label': 'Unused shared draft', 'is_active': False,
+            'weekly_reporting': {**policy_payload(self.stage), 'required_end': 8},
+            'template_changes': [{'scope': 'team', 'deliverable_id': 'WPR',
+                'action': 'replace', 'upload_key': 'template'}]}
+        response = self.client.post('/api/defense/stages/', {'configuration': json.dumps(body),
+            'template': SimpleUploadedFile('unused.docx', b'Unused draft template')}, format='multipart')
+        self.assertEqual(response.status_code, 201, response.data)
+        stage = response.data['stage']
+        self.assertTrue(stage['can_delete'])
+        url = f'/api/defense/stages/{stage["id"]}/'
+        self.assertTrue(self.client.get(url).data['stage']['can_delete'])
+        listed = self.client.get('/api/defense/stages/')
+        self.assertTrue(next(s for s in listed.data['stages'] if s['id'] == stage['id'])['can_delete'])
+        original_stage = DefenseStage.objects.filter(pk=self.stage.pk).values().get()
+        original_period = WeeklyReportingPeriod.objects.filter(pk=self.period.pk).values().get()
+        original_reports = list(WeeklyProgressReport.objects.values())
+        original_versions = list(WeeklyReportVersion.objects.values())
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(DefenseStage.objects.filter(pk=stage['id']).exists())
+        self.assertFalse(DeliverableTemplate.objects.filter(defense_stage_id=stage['id']).exists())
+        self.assertEqual(DefenseStage.objects.filter(pk=self.stage.pk).values().get(), original_stage)
+        self.assertEqual(WeeklyReportingPeriod.objects.filter(pk=self.period.pk).values().get(), original_period)
+        self.assertEqual(list(WeeklyProgressReport.objects.values()), original_reports)
+        self.assertEqual(list(WeeklyReportVersion.objects.values()), original_versions)
+        self.assertTrue(version.file.storage.exists(version.file.name))
+        response = self.client.delete(f'/api/defense/stages/{self.stage.pk}/')
+        self.assertEqual(response.status_code, 409, response.data)
+
+    def test_reports_outside_an_unused_stages_week_range_do_not_block_deletion(self):
+        self.upload()
+        later = DefenseStage.objects.create(label='Unused later weeks', setup_semester=self.semester,
+            weekly_reporting={'enabled': True, 'period_id': self.period.pk,
+                'required_start': 3, 'required_end': 4})
+        self.client.force_authenticate(self.admin)
+        url = f'/api/defense/stages/{later.pk}/'
+        self.assertTrue(self.client.get(url).data['stage']['can_delete'])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(WeeklyProgressReport.objects.count(), 1)
+        self.assertEqual(WeeklyReportVersion.objects.count(), 1)
+
+    def test_stage_with_recorded_weeks_not_covered_elsewhere_cannot_be_deleted(self):
+        later = DefenseStage.objects.create(label='Used later weeks', setup_semester=self.semester,
+            weekly_reporting={'enabled': True, 'period_id': self.period.pk,
+                'required_start': 1, 'required_end': 4})
+        version = upload_report(self.team, later.label, actor=self.student, week=3, file=pdf_file())
+        self.client.force_authenticate(self.admin)
+        url = f'/api/defense/stages/{later.pk}/'
+        self.assertFalse(self.client.get(url).data['stage']['can_delete'])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertTrue(DefenseStage.objects.filter(pk=later.pk).exists())
+        self.assertTrue(WeeklyReportVersion.objects.filter(pk=version.pk).exists())
+
+    def test_unpublished_sibling_cannot_replace_the_last_live_weekly_requirement(self):
+        self.upload()
+        DefenseStage.objects.create(label='Unpublished weekly copy', setup_semester=self.semester,
+            is_active=False, weekly_reporting=dict(self.stage.weekly_reporting))
+        self.client.force_authenticate(self.admin)
+        url = f'/api/defense/stages/{self.stage.pk}/'
+        self.assertFalse(self.client.get(url).data['stage']['can_delete'])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertTrue(DefenseStage.objects.filter(pk=self.stage.pk).exists())
         self.assertEqual(WeeklyReportVersion.objects.count(), 1)
 
     def test_context_change_or_unpublished_stage_cannot_receive_a_submission(self):

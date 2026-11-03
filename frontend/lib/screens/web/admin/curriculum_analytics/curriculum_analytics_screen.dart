@@ -11,6 +11,8 @@ import 'widgets/curriculum_performance_comparison.dart';
 import 'widgets/curriculum_chart_palette.dart';
 import 'widgets/curriculum_meeting_export.dart';
 import 'widgets/curriculum_workspace_views.dart';
+import 'widgets/curriculum_linked_panels.dart';
+import 'widgets/curriculum_linked_projects.dart';
 part 'curriculum_assessment_detail.dart';
 
 class CurriculumAnalyticsScreen extends ConsumerStatefulWidget {
@@ -27,7 +29,16 @@ class _CurriculumAnalyticsScreenState
   String _filter = 'all', _projectField = 'category';
   String _projectMixDimension = 'application_area';
   bool _strongestFirst = false;
-  int _page = 0;
+  int _performancePage = 0, _projectPage = 0;
+  int get _page => _tab == 'projects' ? _projectPage : _performancePage;
+  set _page(int value) {
+    if (_tab == 'projects') {
+      _projectPage = value;
+    } else {
+      _performancePage = value;
+    }
+  }
+
   final _reference = TextEditingController(text: '75');
   String? _referenceError;
   BuildContext? _shadContext;
@@ -42,6 +53,7 @@ class _CurriculumAnalyticsScreenState
     '3rd Year': '3',
   }[widget.pitYearLevel];
   TextStyle get _muted => TextStyle(
+    fontFamily: DefensysTokens.fontFamilyInter,
     fontSize: 12,
     height: 1.5,
     color: DefensysTokens.textSecondaryOf(context),
@@ -79,20 +91,44 @@ class _CurriculumAnalyticsScreenState
     super.dispose();
   }
 
-  void _fetch(CurriculumExplorerQuery q) {
+  Future<void> _fetch(
+    CurriculumExplorerQuery q, {
+    bool selection = false,
+    bool preserveSelection = false,
+  }) async {
     if (widget.pitYearLevel != null) {
       q = q.copyWith(scope: 'pit', yearLevel: _assignedYear);
     }
     setState(() {
-      _criterionId = null;
-      _teamCategory = null;
-      _projectGroup = null;
-      _page = 0;
-      _filter = 'all';
+      if (!preserveSelection) {
+        if (q.view.startsWith('project')) {
+          _projectGroup = null;
+          _projectPage = 0;
+        } else {
+          _criterionId = null;
+          _teamCategory = null;
+          _performancePage = 0;
+          _filter = 'all';
+        }
+      }
     });
-    ref
+    await ref
         .read(curriculumExplorerProvider.notifier)
-        .fetch(q.copyWith(initial: false));
+        .fetch(q.copyWith(initial: false), selection: selection);
+    if (!mounted) return;
+    final current = ref.read(curriculumExplorerProvider);
+    if (preserveSelection &&
+        _tab == 'performance' &&
+        _criterionId != null &&
+        current.error == null &&
+        current.data['criteria_complete'] == false) {
+      await ref
+          .read(curriculumExplorerProvider.notifier)
+          .fetch(
+            current.query.copyWith(view: 'assessment'),
+            loadEvidence: true,
+          );
+    }
   }
 
   void _switchTab(String tab) {
@@ -113,6 +149,7 @@ class _CurriculumAnalyticsScreenState
             subject: '',
             role: 'panel',
           ),
+      preserveSelection: true,
     );
   }
 
@@ -120,6 +157,9 @@ class _CurriculumAnalyticsScreenState
     final old = ref.read(curriculumExplorerProvider).query;
     _performanceQuery = null;
     _projectsQuery = null;
+    _criterionId = _teamCategory = _projectGroup = null;
+    _performancePage = _projectPage = 0;
+    _filter = 'all';
     _fetch(
       q.copyWith(
         view: _tab == 'performance' ? 'overview' : 'projects',
@@ -137,6 +177,10 @@ class _CurriculumAnalyticsScreenState
 
   void _year(String year) {
     final q = ref.read(curriculumExplorerProvider).query;
+    if (q.year == year && q.view != 'project_output') {
+      if (_tab == 'performance') _change(() => _criterionId = null);
+      return;
+    }
     _fetch(
       q.copyWith(
         view: _tab == 'projects'
@@ -149,16 +193,36 @@ class _CurriculumAnalyticsScreenState
         context: '',
         subject: '',
       ),
+      selection: _tab == 'projects',
     );
   }
 
-  void _selectCriterion(String id) => setState(() {
-    _criterionId = id;
-    _page = 0;
-    _filter = 'all';
-  });
+  void _selectCriterion(String id) {
+    setState(() {
+      _criterionId = id;
+      _page = 0;
+      _filter = 'all';
+    });
+    final state = ref.read(curriculumExplorerProvider);
+    if (state.data['criteria_complete'] == false) {
+      ref
+          .read(curriculumExplorerProvider.notifier)
+          .fetch(state.query.copyWith(view: 'assessment'), loadEvidence: true);
+    }
+  }
 
   void _change(VoidCallback callback) => setState(callback);
+  void _refresh() {
+    final q = ref.read(curriculumExplorerProvider).query;
+    ref
+        .read(curriculumExplorerProvider.notifier)
+        .fetch(
+          q,
+          force: true,
+          loadEvidence: _tab == 'performance' && _criterionId != null,
+        );
+  }
+
   void _group(String field, String value) => setState(() {
     _projectField = field;
     _projectGroup = value;
@@ -207,13 +271,14 @@ class _CurriculumAnalyticsScreenState
     ),
   );
   Widget _card(String title, String description, Widget child) => ShadCard(
+    backgroundColor: DefensysTokens.surfaceOf(context),
     width: double.infinity,
     padding: const EdgeInsets.all(20),
     title: Text(
       title,
       style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
     ),
-    description: Text(description, style: _muted),
+    description: description.isEmpty ? null : Text(description, style: _muted),
     child: Padding(padding: const EdgeInsets.only(top: 18), child: child),
   );
   Widget _empty(String title, String body) => Padding(
@@ -289,11 +354,6 @@ class _CurriculumAnalyticsScreenState
                                 color: DefensysTokens.textPrimaryOf(context),
                               ),
                             ),
-                            const SizedBox(height: 5),
-                            Text(
-                              'Explore cohort results and the projects produced over time.',
-                              style: _muted,
-                            ),
                           ],
                         ),
                         Wrap(
@@ -302,12 +362,12 @@ class _CurriculumAnalyticsScreenState
                           children: [
                             ShadButton.outline(
                               size: ShadButtonSize.sm,
-                              enabled: !state.isLoading,
+                              enabled: !state.isLoading && !state.isRefreshing,
                               leading: const Icon(
                                 LucideIcons.refreshCw,
                                 size: 15,
                               ),
-                              onPressed: () => _fetch(q),
+                              onPressed: _refresh,
                               child: const Text('Refresh'),
                             ),
                             ShadButton.outline(
@@ -510,19 +570,31 @@ class _CurriculumAnalyticsScreenState
                       Align(
                         alignment: Alignment.centerLeft,
                         child: ShadButton.outline(
-                          onPressed: () => _fetch(q),
+                          onPressed: _refresh,
                           child: const Text('Try again'),
                         ),
                       ),
-                    ] else if (state.isLoading || data.isEmpty)
-                      ShadCard(
-                        width: double.infinity,
-                        child: DefensysLoading.section(
-                          height: 350,
-                          label: 'Loading recorded analytics…',
+                    ],
+                    if (state.isRefreshing)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: LinearProgressIndicator(
+                          minHeight: 2,
+                          color: DefensysTokens.maroonOf(context),
+                          backgroundColor: DefensysTokens.borderOf(context),
                         ),
-                      )
-                    else if (q.view == 'overview')
+                      ),
+                    if (state.isLoading || data.isEmpty) ...[
+                      if (state.error == null)
+                        ShadCard(
+                          backgroundColor: DefensysTokens.surfaceOf(context),
+                          width: double.infinity,
+                          child: DefensysLoading.section(
+                            height: 350,
+                            label: 'Loading recorded analytics…',
+                          ),
+                        ),
+                    ] else if (q.view == 'overview')
                       CurriculumHistoryOverview(
                         data: data,
                         onYear: _year,
@@ -530,7 +602,8 @@ class _CurriculumAnalyticsScreenState
                           q.copyWith(comparison: v, year: '', context: ''),
                         ),
                       )
-                    else if (q.view == 'year')
+                    else if (q.view == 'year' &&
+                        data['assessment_bundles'] == null)
                       CurriculumYearOverview(
                         data: data,
                         onAssessment: (id) => _fetch(
@@ -542,12 +615,42 @@ class _CurriculumAnalyticsScreenState
                           ),
                         ),
                       )
-                    else if (q.view == 'assessment')
-                      selected != null
-                          ? _teamView(selected, q)
-                          : _assessmentView(data, criteria, q)
-                    else if (q.view == 'project_output')
+                    else if (q.view == 'assessment' || q.view == 'year') ...[
+                      _assessmentView(data, criteria, q),
+                      if (selected != null) ...[
+                        const SizedBox(height: 20),
+                        if (data['criteria_complete'] == false &&
+                            state.isRefreshing)
+                          DefensysLoading.section(
+                            height: 130,
+                            label: 'Loading team results…',
+                          )
+                        else
+                          _teamView(selected, q),
+                      ],
+                    ] else if (q.view == 'project_output')
                       CurriculumOutputChart(data: data, onYear: _year)
+                    else if (data['project_collection'] is List)
+                      CurriculumLinkedProjects(
+                        data: data,
+                        query: q,
+                        dimension: _projectMixDimension,
+                        onDimension: (v) => _change(() {
+                          _projectMixDimension = v;
+                          _projectGroup = null;
+                          _page = 0;
+                        }),
+                        onYear: _year,
+                        onStatus: (v) => _fetch(q.copyWith(projectStatus: v)),
+                        onGroup: _group,
+                        group: _projectGroup,
+                        groupField: _projectField,
+                        onClear: () => _change(() {
+                          _projectGroup = null;
+                          _page = 0;
+                        }),
+                        projectList: _projectList(data),
+                      )
                     else if (_projectGroup != null)
                       _projectList(data)
                     else
@@ -578,46 +681,62 @@ class _CurriculumAnalyticsScreenState
     List<Map<String, dynamic>> criteria,
     CurriculumExplorerQuery q,
   ) {
-    final summary = data['assessment_summary'] as Map? ?? {};
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          '${q.year} · ${summary['assessed'] ?? 0} / ${summary['eligible'] ?? 0} teams with published results',
-          style: _muted,
-        ),
-        const SizedBox(height: 16),
-        LayoutBuilder(
-          builder: (_, c) {
-            final left = CurriculumPerformanceComparison(
-              data: data,
-              query: q,
-              onSubject: (v) => _fetch(q.copyWith(subject: v)),
-              onAssessment: (id, role) =>
-                  _fetch(q.copyWith(context: id, role: role)),
-            );
-            final right = _criteriaView(
-              criteria,
-              explorerRows(data['contexts']),
-              data,
-              q,
-            );
-            if (c.maxWidth < 1000) {
-              return Column(
-                children: [left, const SizedBox(height: 20), right],
+    final selected = explorerRows(
+      data['contexts'],
+    ).where((c) => c['id'] == q.context).firstOrNull;
+    return _card(
+      q.scope == 'pit'
+          ? 'Performance across events'
+          : 'Performance across stages',
+      '${q.year} · Evaluator scores before weighting',
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                '${selected?['label'] ?? 'Assessment'}',
+                style: const TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Icon(LucideIcons.chevronRight, size: 13),
+              Container(
+                width: 9,
+                height: 9,
+                color: CurriculumChartPalette.evaluator(context, q.role),
+              ),
+              Text(q.role[0].toUpperCase() + q.role.substring(1)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (_, c) {
+              final left = CurriculumPerformanceComparison(
+                embedded: true,
+                data: data,
+                query: q,
+                onSubject: (v) => _fetch(q.copyWith(subject: v)),
+                onAssessment: (id, role) => _fetch(
+                  q.copyWith(view: 'assessment', context: id, role: role),
+                  selection: true,
+                ),
               );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: left),
-                const SizedBox(width: 20),
-                Expanded(child: right),
-              ],
-            );
-          },
-        ),
-      ],
+              final right = _criteriaView(
+                criteria,
+                explorerRows(data['contexts']),
+                data,
+                q,
+              );
+              return CurriculumLinkedPanels(overview: left, detail: right);
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -625,6 +744,7 @@ class _CurriculumAnalyticsScreenState
     final rows = explorerRows(data['projects'])
         .where(
           (p) =>
+              _projectGroup == null ||
               _projectGroup == '__all__' ||
               (_projectField == 'technology'
                   ? (p['technologies'] as List? ?? []).contains(_projectGroup)
@@ -634,7 +754,7 @@ class _CurriculumAnalyticsScreenState
     final page = _page.clamp(0, rows.isEmpty ? 0 : (rows.length - 1) ~/ 8);
     return _card(
       'Contributing projects',
-      '${rows.length} distinct project records in this selection.',
+      '${rows.length} projects',
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -662,11 +782,12 @@ class _CurriculumAnalyticsScreenState
                 onPressed: () => setState(() => _page++),
                 child: const Text('Next'),
               ),
-              ShadButton.link(
-                size: ShadButtonSize.sm,
-                onPressed: () => setState(() => _projectGroup = null),
-                child: const Text('Back to project mix'),
-              ),
+              if (_projectGroup != null)
+                ShadButton.link(
+                  size: ShadButtonSize.sm,
+                  onPressed: () => setState(() => _projectGroup = null),
+                  child: const Text('Clear filter'),
+                ),
             ],
           ),
         ],

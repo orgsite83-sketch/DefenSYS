@@ -280,6 +280,26 @@ class DefenseBoardApiTests(APITestCase):
         self.assertIsNone(record['assessment']['grade_status'])
         self.assertIsNone(record['assessment']['published_result'])
 
+    def test_board_attempt_numbers_belong_to_each_hearing_after_redefense_import(self):
+        from django.utils import timezone
+        from grading.grades.models import TeamGrade
+        from grading.grades.services import GradeContextService
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(self.capstone_schedule)
+        TeamGrade.objects.filter(pk=grade.pk).update(verdict='for_redefense', verdict_at=timezone.now())
+        DefenseSchedule.objects.filter(pk=self.capstone_schedule.pk).update(status='done')
+        repeat = DefenseSchedule.objects.create(team=self.capstone_team, semester=self.semester,
+            defense_stage=self.stage, scheduled_date='2099-05-16', start_time='10:00',
+            slot_duration=60, room='Room 301', created_by=self.admin)
+        GradeContextService.get_or_create_for_schedule(repeat)
+        response = self.client.get('/api/defense/board/', {'scope': 'capstone'})
+        self.assertEqual(response.status_code, 200, response.data)
+        records = {row['id']: row for row in response.data['schedules']}
+        self.assertEqual(records[self.capstone_schedule.pk]['assessment']['attempt_count'], 1)
+        self.assertEqual(records[self.capstone_schedule.pk]['assessment']['verdict'], 'for_redefense')
+        self.assertEqual(records[repeat.pk]['assessment']['attempt_count'], 2)
+        self.assertEqual(records[repeat.pk]['assessment']['verdict'], '')
+        self.assertTrue(records[repeat.pk]['created_at'])
+
     def test_board_lists_schedules_with_counts_and_stage_options(self):
         response = self.client.get('/api/defense/board/')
 

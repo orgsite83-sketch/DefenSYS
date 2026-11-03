@@ -8,6 +8,8 @@ For copy-and-paste workflow commands, see the [demo automation guide](../AUTOMAT
 
 ## Available Tools
 
+- `profile_curriculum_reads.py`: Profiles overview, linked-year and project-range explorer responses using an existing admin in a PostgreSQL READ ONLY transaction. Reports cold/warm milliseconds, query counts and response bytes without document text. Run `backend/venv/Scripts/python.exe execution/profile_curriculum_reads.py --output .tmp/curriculum-profile.json`; optional `--scope pit --year-level 2 --academic-year 2026-2027` narrows the workflow. It creates no accounts or academic records and does not refresh stored classifications.
+
 - `setup_sandbox.py`: Create a fresh local `defensys_sandbox` database, apply migrations, and use separate uploads without copying accounts or teams. Existing databases are refused. See [local development setup](../LOCAL_DEVELOPMENT.md). Full recovery backups use the existing `deployment/backup/backup_db.py --full` tool.
 - `reset_sandbox.py`: Preview an existing sandbox reset; add `--database defensys_sandbox --apply` to back it up and flush test data while retaining existing administrator identities/passwords. Checks the actual local database identity, restores admin access transactionally, and verifies normal-database table counts using read-only connections. Upload files remain on disk. Never targets the normal database. See [sandbox reset instructions](../LOCAL_DEVELOPMENT.md#reset-an-existing-testing-sandbox).
 

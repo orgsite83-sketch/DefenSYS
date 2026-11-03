@@ -1,6 +1,7 @@
 import '../../../widgets/defense/defense_stages_map.dart';
 import '../../../widgets/defense/concept_hearing_history.dart';
 import '../../../widgets/defense/defense_history_menu.dart';
+import '../../../widgets/defense/panel_recommendations.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1009,7 +1010,6 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final verdict =
         gradeData?['verdict']?.toString() ??
         pendingStageInfo['verdict']?.toString();
-    final verdictRemarks = gradeData?['verdict_remarks']?.toString();
     final revisionDeadline = gradeData?['revision_deadline']?.toString();
     final isRevisions = verdict == 'approved_with_revisions';
 
@@ -1148,41 +1148,6 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     height: 1.3,
                   ),
                 ),
-                if (isRevisions &&
-                    verdictRemarks != null &&
-                    verdictRemarks.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: DefensysTokens.surfaceOf(context),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: borderColor),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(
-                          Icons.format_quote_rounded,
-                          size: 14,
-                          color: Color(0xFFD97706),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Panel Directives: "$verdictRemarks"',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontStyle: FontStyle.italic,
-                              color: Color(0xFF78350F),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 10),
                 ElevatedButton.icon(
                   onPressed: () {
@@ -2097,6 +2062,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             ),
             const SizedBox(height: 14),
           ],
+
+          PanelRecommendations.fromStage({
+            ...stageInfo,
+            'grade': stageGradeMap,
+          }),
 
           // Scheduling clearance for this stage or event.
           Row(

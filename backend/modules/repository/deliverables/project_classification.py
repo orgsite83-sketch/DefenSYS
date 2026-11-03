@@ -100,6 +100,17 @@ def section_chunks(text):
     return chunks
 
 
+def focus_feature_input(text):
+    """The current model's feature contract, shared without changing weights.
+
+    Title/section candidates can be evaluated against this boundary later.
+    Keeping this exact representation preserves the existing trained artifact.
+    """
+    chunks = section_chunks(text)
+    prepared = '\n'.join(c['text'] for c in chunks for _ in range(c['weight']))
+    return chunks, prepared
+
+
 def _signals(chunks, taxonomy):
     found = {}
     passages = []
@@ -200,11 +211,10 @@ class ProjectFocusClassifier:
         if not self.is_trained:
             self.train_from_examples()
         text = text or ''
-        chunks = section_chunks(text)
+        chunks, prepared = focus_feature_input(text)
         focus = _signals(chunks, FOCUS_SIGNALS)
         domains = _signals(chunks, DOMAIN_SIGNALS)
         technologies = _signals(chunks, TECHNOLOGY_SIGNALS)
-        prepared = '\n'.join(c['text'] for c in chunks for _ in range(c['weight']))
         features = self.vectorizer.transform([prepared])
         probabilities = self.classifier.predict_proba(features)[0]
         candidates = sorted(({'category': str(c), 'probability': float(p * 100),

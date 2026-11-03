@@ -6,7 +6,7 @@ from rest_framework.exceptions import ValidationError
 from grading.grades.models import TeamGrade
 from grading.grades.defense_workflow import passed_and_cleared
 from .comparisons import comparison_key
-from .performance import members
+from .performance import members, build_performance
 
 
 def archive_completion_allowed(explorer, entry, semester):
@@ -132,7 +132,7 @@ def _completion_periods(explorer, project):
     return periods
 
 
-def _project_collection(explorer):
+def _project_collection(explorer, *, all_years=False):
     collection, years = [], Counter()
     for project in explorer.projects.values():
         periods = _completion_periods(explorer, project) if explorer.project_status == 'completed' else project['periods']
@@ -145,13 +145,16 @@ def _project_collection(explorer):
         period = min(periods, key=lambda s: (s.school_year.label, s.pk)) if explorer.project_status == 'completed' else max(
             periods, key=lambda s: (s.school_year.label, s.pk))
         year = period.school_year.label
-        if year not in explorer.range_years or (explorer.year and explorer.year != year):
+        if year not in explorer.range_years or (not all_years and explorer.year and explorer.year != year):
             continue
         years[year] += 1
         if explorer.view == 'projects':
             historic = _latest([g for g in project['grades'] if g.semester.school_year.label == year])
             project = {**project, 'title': historic.project_title_snapshot if historic and historic.project_title_snapshot else project['title']}
             classification = explorer._category(project, year, '')
+            recorded = _latest([g for g in project['grades'] if g.semester.school_year.label <= year])
+            completed = any(explorer.semesters[p].school_year.label <= year
+                            for p in _completion_periods(explorer, project) if p in explorer.semesters)
             collection.append({'id': project['key'], 'team_id': project['team'].pk,
                 'team_name': project['team'].name, 'project_title': project['title'],
                 'project_version': project['version'], 'academic_year': year,
@@ -159,8 +162,48 @@ def _project_collection(explorer):
                 'application_area': classification.get('application_area', 'Unresolved application area'),
                 'technologies': [t['name'] for t in classification['technologies']],
                 'classification_status': classification['status'], 'classification_reason': classification['reason'],
-                'classification_reason_code': classification['reason_code']})
+                'classification_reason_code': classification['reason_code'],
+                'current_stage': ('Completed' if completed else
+                    recorded.defense_stage.label if recorded and recorded.defense_stage_id else
+                    recorded.pit_event_config.event_name if recorded and recorded.pit_event_config_id else
+                    recorded.stage_label if recorded and recorded.stage_label else 'Not recorded'),
+                'completed': completed})
     return sorted(collection, key=lambda p: (p['academic_year'], p['team_name'])), years
+
+
+def _assessment_workspace(explorer):
+    """One authorized year's compact summaries; team evidence remains lazy.
+
+    Changing a chart's context/evaluator must not repeat the request or equate
+    unrelated rubric criteria. Reuse the already prefetched rubric/grade rows.
+    """
+    performance = explorer.performance or build_performance(explorer)
+    original_context, original_role = explorer.context_id, explorer.role
+    bundles = {}
+    try:
+        for context in performance['contexts']:
+            explorer.context_id = context['id']
+            summary = {k: v for k, v in explorer._assessment_summary().items() if k != 'teams'}
+            by_role = {}
+            for component in context['components']:
+                if not component['available']:
+                    continue
+                explorer.role = component['id']
+                by_role[explorer.role] = {
+                    'criteria': [{k: v for k, v in criterion.items() if k != 'teams'}
+                                 for criterion in explorer._criteria()],
+                    'assessment_summary': summary,
+                }
+            bundles[context['id']] = by_role
+    finally:
+        explorer.context_id, explorer.role = original_context, original_role
+    # Resolve a configured role even when a new concept stage is panel-only.
+    context_id = original_context or next(iter(bundles), '')
+    available = bundles.get(context_id, {})
+    role = original_role if original_role in available else next(iter(available), original_role)
+    selected = available.get(role, {'criteria': [], 'assessment_summary': {}})
+    return {'performance': performance, 'assessment_bundles': bundles,
+            'context': context_id, 'evaluation_type': role, 'criteria_complete': False, **selected}
 
 
 def workspace_payload(explorer):
@@ -202,15 +245,20 @@ def workspace_payload(explorer):
         data.update(stage_results=rows, matched_students=len(set.intersection(*cohorts)) if cohorts else 0)
     elif explorer.view == 'assessment':
         data.update(performance=explorer.performance, criteria=explorer.criteria,
-                    assessment_summary=explorer._assessment_summary(), subject=explorer.subject)
+                    assessment_summary=explorer._assessment_summary(), subject=explorer.subject,
+                    criteria_complete=True)
     else:
-        collection, counts = _project_collection(explorer)
-        data.update(projects=collection, projects_count=sum(counts.values()), project_status=explorer.project_status,
+        collection, counts = _project_collection(explorer, all_years=explorer.view == 'projects')
+        selected = [p for p in collection if not explorer.year or p['academic_year'] == explorer.year]
+        data.update(projects=selected, projects_count=len(selected) if explorer.view == 'projects' else sum(counts.values()), project_status=explorer.project_status,
             project_output=[{'academic_year': y, 'count': counts[y]} for y in explorer.range_years],
             completion_policy=(
                 'Approved project archive, or a published passing result in an officially closed PIT event / last configured Capstone stage with defense revisions cleared. Known earlier-stage archives do not establish final completion. Each project version counts once, in its first documented completion year.'
                 if explorer.project_status == 'completed' else
                 'Includes work in progress. Each project version counts once, in its latest recorded academic year up to the selected end year. Stages, assessment attempts and document copies do not add projects.'))
         if explorer.view == 'projects':
-            data['project_analytics'] = explorer._project_analytics(collection)
+            data['project_collection'] = collection
+            data['project_analytics'] = explorer._project_analytics(selected)
+    if explorer.include_workspace and explorer.year and explorer.view in ('year', 'assessment'):
+        data.update(_assessment_workspace(explorer))
     return data

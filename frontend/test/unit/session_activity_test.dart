@@ -17,6 +17,65 @@ Map<String, dynamic> defense(
 
 void main() {
   test(
+    'newly created sessions precede older work in the same activity section',
+    () {
+      final older = [
+        {
+          ...defense('2026-10-10', display: 'evaluating'),
+          'created_at': '2026-10-01T08:00:00Z',
+          'updated_at': '2026-10-20T08:00:00Z',
+        },
+      ];
+      final imported = [
+        {
+          ...defense('2026-10-09', display: 'awaiting_evaluation'),
+          'created_at': '2026-10-10T08:00:00Z',
+        },
+      ];
+      expect(compareSessionActivity(imported, older, now: now), lessThan(0));
+      expect(compareSessionActivity(older, imported, now: now), greaterThan(0));
+      final upcoming = [
+        {...defense('2026-10-20'), 'created_at': '2026-10-11T08:00:00Z'},
+      ];
+      expect(compareSessionActivity(imported, upcoming, now: now), lessThan(0));
+    },
+  );
+
+  test(
+    'a session uses its most recently added defense and stable creation tie-break',
+    () {
+      final earlier = [
+        {
+          ...defense('2026-10-10'),
+          'id': 1,
+          'created_at': '2026-10-02T08:00:00Z',
+        },
+      ];
+      final session = [
+        {
+          ...defense('2026-10-10'),
+          'id': 2,
+          'created_at': '2026-10-01T08:00:00Z',
+        },
+        {
+          ...defense('2026-10-10'),
+          'id': 3,
+          'created_at': '2026-10-03T08:00:00Z',
+        },
+      ];
+      expect(compareSessionActivity(session, earlier, now: now), lessThan(0));
+      final sameTime = [
+        {
+          ...defense('2026-10-10'),
+          'id': 4,
+          'created_at': '2026-10-03T08:00:00Z',
+        },
+      ];
+      expect(compareSessionActivity(sameTime, session, now: now), lessThan(0));
+    },
+  );
+
+  test(
     'active work precedes upcoming and final sessions regardless of stage',
     () {
       final sessions = [

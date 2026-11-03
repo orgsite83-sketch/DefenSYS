@@ -95,6 +95,7 @@ When debugging or scripting against the Django ORM:
 - Preserve the established DefenSYS layout, neutral surfaces, maroon actions/accents, spacing, borders, radii, light/dark themes, and typography. Use the shared font token (`DefensysTokens.fontFamilyInter`, currently Inter), including in component text-style overrides.
 - Do not introduce generic pink palettes, pink default selection surfaces, replacement/generic fonts, decorative typefaces, or an independent visual design system.
 - Use Flutter primitives for layout/reordering behavior while keeping visible controls consistent with shadcn and DefenSYS. Preserve responsive layouts, input focus, keyboard access, and readable contrast.
+- Keep interface copy concise. Avoid unnecessary helper text; retain explanations only when needed to interpret a metric, make a decision, or recover from an empty/error state.
 
 ## Summary
 
