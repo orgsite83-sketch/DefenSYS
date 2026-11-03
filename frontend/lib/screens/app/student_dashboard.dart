@@ -43,6 +43,9 @@ class StudentDashboard extends ConsumerStatefulWidget {
 
 class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   String _selectedTab = 'team';
+  int? _integrationProjectId;
+  String? _integrationStage;
+  bool _integrationOpenDeliverables = false;
   final _visitedTabs = <String>{};
   final _eventsSubTabNotifier = ValueNotifier<int>(0);
   late final StudentProfile _profile;
@@ -104,8 +107,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         widget.userData?['is_project_manager'] == true ||
         data?['student']?['is_project_manager'] == true;
     final team = data?['team'] as Map<String, dynamic>?;
+    final assignedManager = (ref.read(studentTeamTasksProvider).asData?.value['section_tasks'] as List? ?? [])
+        .whereType<Map>().any((task) => task['role'] == 'project_manager');
     final showIntegrationTab =
-        isPM ||
+        _integrationProjectId != null || isPM || assignedManager ||
         team?['section_project_id'] != null ||
         (team?['system_name']?.toString().trim().isNotEmpty == true) ||
         (data?['student']?['managed_section']?.toString().trim().isNotEmpty ==
@@ -123,7 +128,18 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final key = _tabKeysFor(ref.read(dashboardProvider('student')).data)[index];
     if (key == _selectedTab) return;
     final revisiting = _visitedTabs.contains(key);
-    setState(() => _selectedTab = key);
+    final integrationTask = key == 'integration' ? StudentTaskBadgeHelper.pendingIntegrationTasks(
+      ref.read(studentTeamTasksProvider).asData?.value).firstOrNull : null;
+    setState(() {
+      _selectedTab = key;
+      if (key == 'integration') {
+        _integrationOpenDeliverables = integrationTask != null && integrationTask['needs_title'] != true;
+        if (integrationTask != null) {
+          _integrationProjectId = int.tryParse('${integrationTask['project_id']}');
+          _integrationStage = integrationTask['stage_label']?.toString();
+        }
+      }
+    });
     if (!revisiting) return;
     switch (key) {
       case 'team':
@@ -157,6 +173,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     });
     ref.listen(dashboardProvider('student'), (prev, next) {
       if (prev?.data == next.data) return;
+      if (prev?.data?['team']?['id'] != next.data?['team']?['id']) {
+        _integrationProjectId = null;
+        _integrationStage = null;
+        _integrationOpenDeliverables = false;
+      }
       if (_selectedTab == 'events' && _visitedTabs.contains('events')) return;
       final team = next.data?['team'] as Map<String, dynamic>?;
       if (team != null) {
@@ -185,6 +206,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
 
     final team = dataToPass['team'] as Map<String, dynamic>?;
     final hasPendingTeam = StudentTaskBadgeHelper.hasPendingTeamTasks(dataToPass, setup: setupTasks);
+    final hasPendingIntegration = StudentTaskBadgeHelper.pendingIntegrationTasks(setupTasks).isNotEmpty;
     final isCapstone = team?['isCapstone'] == true;
 
     final isPM =
@@ -263,6 +285,12 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       TeamTab(
         studentData: dataToPass,
         onRefresh: _refreshDashboardAndNotifications,
+        onOpenIntegration: (projectId, stageLabel) => setState(() {
+          _integrationProjectId = projectId;
+          _integrationStage = stageLabel;
+          _integrationOpenDeliverables = true;
+          _selectedTab = 'integration';
+        }),
         onSelectTab: (int index, {int? subTabIndex}) {
           if (subTabIndex != null) {
             _eventsSubTabNotifier.value = subTabIndex;
@@ -278,7 +306,13 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         isActive: _selectedTab == 'events',
       ),
       const RepositoryTab(),
-      if (showIntegrationTab) SectionIntegrationTab(studentData: dataToPass),
+      if (showIntegrationTab) SectionIntegrationTab(
+        studentData: dataToPass,
+        projectId: _integrationProjectId,
+        initialStage: _integrationStage,
+        isActive: _selectedTab == 'integration',
+        openDeliverables: _integrationOpenDeliverables,
+      ),
       const ProfileScreen(showAppBar: false, includeAppSettings: true),
     ];
 
@@ -308,9 +342,12 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         label: l10n.navRepository,
       ),
       if (showIntegrationTab)
-        const NavigationDestination(
-          icon: Icon(Icons.hub_outlined),
-          selectedIcon: Icon(Icons.hub),
+        NavigationDestination(
+          icon: Badge(key: const ValueKey('integration-task-badge'),
+            isLabelVisible: hasPendingIntegration, smallSize: 8,
+            backgroundColor: Colors.redAccent, child: const Icon(Icons.hub_outlined)),
+          selectedIcon: Badge(isLabelVisible: hasPendingIntegration, smallSize: 8,
+            backgroundColor: Colors.redAccent, child: const Icon(Icons.hub)),
           label: 'Integration',
         ),
       const NavigationDestination(

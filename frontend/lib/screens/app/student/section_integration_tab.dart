@@ -1,6 +1,14 @@
+import '../../../widgets/defense/defense_stages_map.dart';
+import '../../../widgets/defense/defense_history_menu.dart';
+import '../../../models/defense_summary_status.dart';
+import '../../../models/team_workflow_status.dart';
+import '../../../widgets/repository/shared_system_stage_history.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../../../widgets/repository/title_review_card.dart';
+import '../../../widgets/repository/concept_review_section.dart';
+import '../../../widgets/repository/deliverable_file_widgets.dart';
+import '../../../utils/universal_file_viewer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -16,12 +24,23 @@ import '../../../widgets/export/defensys_pdf_viewer.dart';
 import '../../../widgets/repository/team_concept_title_editor.dart';
 import '../../../widgets/repository/shared_deliverables_panel.dart';
 import '../../../widgets/repository/shared_concept_review.dart'
-    show systemLetter;
+    show systemLetter, SelectedSharedSystemHeader;
 
 class SectionIntegrationTab extends ConsumerStatefulWidget {
   final Map<String, dynamic> studentData;
+  final int? projectId;
+  final String? initialStage;
+  final bool isActive;
+  final bool openDeliverables;
 
-  const SectionIntegrationTab({super.key, required this.studentData});
+  const SectionIntegrationTab({
+    super.key,
+    required this.studentData,
+    this.projectId,
+    this.initialStage,
+    this.isActive = true,
+    this.openDeliverables = false,
+  });
 
   @override
   ConsumerState<SectionIntegrationTab> createState() =>
@@ -38,6 +57,10 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
   List<Map<String, dynamic>> _sharedGroups = [];
   String? _sharedStage;
   int _loadRevision = 0;
+  List<Map<String, dynamic>> _historyStages = [];
+  bool _historyLoading = false;
+  String? _historyError;
+  bool _showDeliverables = false;
 
   Future<void> _uploadPaper(Map<String, dynamic> system) async {
     if (sectionProject == null) return;
@@ -123,17 +146,49 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
   @override
   void initState() {
     super.initState();
+    _sharedStage = widget.initialStage;
+    _showDeliverables = widget.openDeliverables;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(studentTeamsProvider.notifier).fetchTeams();
       _loadProject();
     });
   }
 
+  @override
+  void didUpdateWidget(covariant SectionIntegrationTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final teamChanged = oldWidget.studentData['team']?['id'] != widget.studentData['team']?['id'];
+    if (widget.openDeliverables &&
+        (!oldWidget.openDeliverables || !oldWidget.isActive && widget.isActive)) {
+      _showDeliverables = true;
+    }
+    if (oldWidget.projectId != widget.projectId ||
+        oldWidget.initialStage != widget.initialStage || teamChanged ||
+        (!oldWidget.isActive && widget.isActive)) {
+      ++_loadRevision;
+      if (teamChanged || oldWidget.projectId != widget.projectId) {
+        sectionProject = null;
+        _historyStages = [];
+        _historyLoading = false;
+        _historyError = null;
+        _sharedGroups = [];
+        _sharedStage = widget.initialStage;
+        _selectedSystemKey = 'c1';
+        _showDeliverables = widget.openDeliverables;
+        _expandedTeamIds.clear();
+      }
+      if (oldWidget.initialStage != widget.initialStage) _sharedStage = widget.initialStage;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadProject();
+      });
+    }
+  }
+
   Future<void> _loadProject() async {
     final revision = ++_loadRevision;
     final teamId = widget.studentData['team']?['id'] as int?;
     final sectionProjectId =
-        widget.studentData['team']?['section_project_id'] as int?;
+        widget.projectId ?? widget.studentData['team']?['section_project_id'] as int?;
 
     setState(() {
       loadingProject = true;
@@ -145,7 +200,7 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
       if (sectionProjectId != null) {
         p = await ref
             .read(sectionConceptServiceProvider)
-            .get(sectionProjectId, teamId: teamId);
+            .get(sectionProjectId, teamId: widget.projectId == null ? teamId : null);
         groups = (p['shared_contexts'] as List? ?? [])
             .whereType<Map>()
             .map((row) => Map<String, dynamic>.from(row))
@@ -213,15 +268,18 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
             _selectedSystemKey = selected;
           }
         });
+        if (projectData['history_available'] == true) {
+          await _loadSharedHistory(revision);
+        }
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && revision == _loadRevision) {
         setState(
           () => projectError = e.toString().replaceFirst('Exception: ', ''),
         );
       }
     } finally {
-      if (mounted) setState(() => loadingProject = false);
+      if (mounted && revision == _loadRevision) setState(() => loadingProject = false);
     }
   }
 
@@ -263,7 +321,7 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
   Widget build(BuildContext context) {
     final teamsState = ref.watch(studentTeamsProvider);
     final userSection =
-        widget.studentData['student']?['managed_section'] ??
+        sectionProject?['section'] ?? widget.studentData['student']?['managed_section'] ??
         widget.studentData['team']?['section'] ??
         '';
 
@@ -298,8 +356,8 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
         .where((group) => group['stage_label'] == _sharedStage)
         .firstOrNull;
     final showConcept =
-        sharedGroup == null ||
-        sharedGroup['stage_label'] == sectionProject?['stage_label'];
+        sectionProject != null &&
+        (_sharedStage ?? sectionProject?['stage_label']) == sectionProject?['stage_label'];
 
     // Extract all teams from sectionProject or fallback to sectionTeams
     final rawTeams = (sectionProject?['teams'] as List? ?? [])
@@ -355,9 +413,8 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                     // 1. Architecture Hero Banner Card
                     _buildHeroBanner(
                       userSection: userSection.toString(),
-                      project: showConcept
-                          ? sectionProject ?? sharedGroup
-                          : sharedGroup,
+                      project: {...?sectionProject, ...?sharedGroup,
+                        'stage_label': _sharedStage ?? sectionProject?['stage_label']},
                     ),
                     if (loadingProject) const LinearProgressIndicator(),
                     if (projectError != null) ...[
@@ -373,20 +430,49 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                         child: const Text('Retry shared proposals'),
                       ),
                     ],
-                    const SizedBox(height: 24),
-                    if (showConcept) _buildSystemToolbar(systems),
                     const SizedBox(height: 16),
+                    _buildStageNavigation(),
+                    const SizedBox(height: 16),
+                    _buildWorkspaceTabs(),
+                    const SizedBox(height: 16),
+                    if (_showDeliverables) ...[
+                      if (sharedGroup != null)
+                        SharedDeliverablesPanel(
+                          key: ValueKey('${sharedGroup['scope']}-${sharedGroup['context_id']}'),
+                          group: sharedGroup,
+                          studentWorkspace: true,
+                          studentMode: SharedSystemPanelMode.deliverables,
+                          showStudentHistory: false,
+                          selectedSystemKey: _selectedSystemKey,
+                          onSystemChanged: (value) => setState(() => _selectedSystemKey = value),
+                          onChanged: (value) => _sharedDocumentsChanged(sharedGroup, value),
+                        )
+                      else if (showConcept && activeSystem != null) ...[
+                        _buildSystemTabs(systems),
+                        const SizedBox(height: 16),
+                        _buildActiveSystemCard(system: activeSystem, letter: activeLetter,
+                          project: sectionProject, isPM: isPM),
+                      ] else
+                        const Text('No shared deliverables are configured for this stage.'),
+                    ] else ...[
+                    if (showConcept && systems.isNotEmpty && '${sectionProject?['selected_key'] ?? sharedGroup?['selected_key'] ?? ''}'.isEmpty) ...[
+                      _buildSystemToolbar(systems),
+                      const SizedBox(height: 16),
+                    ],
                     if (sharedGroup != null)
                       SharedDeliverablesPanel(
                         key: ValueKey(
                           '${sharedGroup['scope']}-${sharedGroup['context_id']}',
                         ),
                         group: sharedGroup,
+                        studentWorkspace: true,
+                        studentMode: SharedSystemPanelMode.details,
+                        showStudentHistory: false,
                         selectedSystemKey: _selectedSystemKey,
                         systemHeaderBuilder:
-                            sectionProject?['title_workflow_version'] == 2
+                            sectionProject != null
                             ? (row) {
-                                final item =
+                                final item = !showConcept ? row :
                                     systems
                                         .where((s) => s['key'] == row['key'])
                                         .firstOrNull ??
@@ -394,9 +480,25 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                                 final snapshot = Map<String, dynamic>.from(
                                   sectionProject!,
                                 );
+                                if ('${sectionProject?['selected_key'] ?? ''}'.isNotEmpty &&
+                                    item['key'] == sectionProject?['selected_key']) {
+                                  return SelectedSharedSystemHeader(system: item,
+                                    status: _systemStatus(item),
+                                    historyAction: _stageHistoryAction());
+                                }
+                                if (!showConcept) { return SelectedSharedSystemHeader(
+                                  system: row, status: _systemStatus(row), historyAction: _stageHistoryAction()); }
+                                if (sectionProject?['title_workflow_version'] != 2) {
+                                  return SelectedSharedSystemHeader(system: item, label: 'Proposed section system',
+                                    status: _systemStatus(item), historyAction: _stageHistoryAction());
+                                }
                                 return TitleReviewCard(
                                   concept: item,
                                   system: true,
+                                  showBlocker: false,
+                                  status: DeliverableStatusBadge(label: _systemStatus(item).label,
+                                    tone: _systemStatus(item).tone),
+                                  footer: _stageHistoryAction(),
                                   onAction: (action, title, reason) async {
                                     await ref
                                         .read(sectionConceptServiceProvider)
@@ -420,32 +522,31 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                             : null,
                         onSystemChanged: (value) =>
                             setState(() => _selectedSystemKey = value),
-                        onChanged: (value) {
-                          setState(() {
-                            final index = _sharedGroups.indexOf(sharedGroup);
-                            if (index >= 0) _sharedGroups[index] = value;
-                          });
-                          if (sectionProject?['imported'] == true &&
-                              value['source_project_id'] != null) {
-                            _loadProject();
-                          }
-                        },
+                        onChanged: (value) => _sharedDocumentsChanged(sharedGroup, value),
                       ),
 
                     // 2. Shared System Segmented Switcher (Systems A, B, C)
-                    if (showConcept && sharedGroup == null)
+                    if (showConcept && sharedGroup == null && systems.isNotEmpty)
                       _buildSystemTabs(systems),
-                    const SizedBox(height: 16),
+                    if (showConcept && sharedGroup == null) const SizedBox(height: 16),
 
                     // 3. Active System Overview Card (Paper status & blueprint info)
-                    if (showConcept && sharedGroup == null)
+                    if (showConcept && sharedGroup == null && activeSystem != null)
                       _buildActiveSystemCard(
                         system: activeSystem,
                         letter: activeLetter,
                         project: sectionProject,
                         isPM: isPM,
                       ),
-                    const SizedBox(height: 24),
+                    if (!showConcept && sharedGroup == null && sectionProject != null)
+                      ShadCard(width: double.infinity, padding: const EdgeInsets.all(16),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                          Text(_sharedStage ?? 'Shared system', style: DefensysTokens.body.copyWith(fontWeight: FontWeight.w600)),
+                          _stageHistoryAction(),
+                        ])),
+                    if (!loadingProject && sectionProject == null && sharedGroup == null)
+                      const Text('No shared system is assigned.'),
+                    const SizedBox(height: 20),
 
                     // 4. Proposed Modules for Active System Header
                     if (showConcept)
@@ -462,7 +563,9 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Proposed Modules for System $activeLetter',
+                              _selectedSystemKey == sectionProject?['selected_key']
+                                  ? 'Team modules'
+                                  : 'Proposed modules for System $activeLetter',
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
@@ -1369,11 +1472,275 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                           );
                         },
                       ),
+                    ],
                   ],
                 ),
               ),
       ),
     );
+  }
+
+  void _sharedDocumentsChanged(
+    Map<String, dynamic> previous,
+    Map<String, dynamic> value,
+  ) {
+    setState(() {
+      final index = _sharedGroups.indexOf(previous);
+      if (index >= 0) _sharedGroups[index] = value;
+    });
+    if (sectionProject?['imported'] == true &&
+        value['source_project_id'] != null) {
+      _loadProject();
+    }
+  }
+
+  Widget _buildWorkspaceTabs() => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = (constraints.maxWidth - 12) / 2;
+      final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.2;
+      return ShadTabs<bool>(
+        key: const ValueKey('integration-workspace-tabs'),
+        value: _showDeliverables,
+        gap: 0,
+        tabsGap: 4,
+        padding: const EdgeInsets.all(4),
+        decoration: ShadDecoration(
+          color: DefensysTokens.surfaceHigherOf(context),
+          border: ShadBorder.all(
+            color: DefensysTokens.borderOf(context),
+            radius: BorderRadius.circular(10),
+          ),
+        ),
+        onChanged: (value) => setState(() => _showDeliverables = value),
+        tabs: [
+          for (final files in [false, true])
+            ShadTab<bool>(
+              value: files,
+              width: width,
+              height: largeText ? 64 : 42,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              selectedBackgroundColor: DefensysTokens.maroonOf(context),
+              selectedForegroundColor: Colors.white,
+              foregroundColor: DefensysTokens.textSecondaryOf(context),
+              child: SizedBox(
+                width: width - 24,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      files ? Icons.folder_outlined : Icons.account_tree_outlined,
+                      size: 15,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        files ? 'Deliverables' : 'System details',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: DefensysTokens.fontFamilyInter,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      );
+    },
+  );
+
+  Future<void> _loadSharedHistory(int revision) async {
+    final id = int.tryParse('${sectionProject?['id'] ?? ''}');
+    if (id == null) return;
+    setState(() {
+      _historyLoading = true;
+      _historyError = null;
+    });
+    try {
+      final result = await ref
+          .read(sectionConceptServiceProvider)
+          .history(
+            id,
+            teamId: widget.projectId == null
+                ? (widget.studentData['team']?['id'] as int?)
+                : null,
+          );
+      if (mounted && revision == _loadRevision) {
+        setState(() {
+          _historyStages = (result['stages'] as List? ?? [])
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList();
+        });
+      }
+    } catch (_) {
+      if (mounted && revision == _loadRevision) {
+        setState(() => _historyError = 'Unable to load stage history.');
+      }
+    } finally {
+      if (mounted && revision == _loadRevision) {
+        setState(() => _historyLoading = false);
+      }
+    }
+  }
+
+  List<Map<String, dynamic>> get _integrationStages {
+    final result = <String, Map<String, dynamic>>{};
+    for (final row in _historyStages) {
+      result['${row['label']}'] = {...row, 'stage_label': row['label']};
+    }
+    for (final value
+        in (widget.studentData['stages'] as List? ?? []).whereType<Map>()) {
+      final label = '${value['stage_label'] ?? ''}';
+      if (label.isNotEmpty) {
+        result[label] = {...?result[label], ...Map<String, dynamic>.from(value)};
+      }
+    }
+    for (final row in _sharedGroups) {
+      final label = '${row['stage_label']}';
+      result[label] = {
+        ...?result[label],
+        ...row,
+        'stage_progress_status': row['stage_status'] == 'complete'
+            ? 'passed'
+            : row['stage_status'],
+      };
+    }
+    final label = '${sectionProject?['stage_label'] ?? ''}';
+    if (result.isEmpty && label.isNotEmpty) {
+      result[label] = {'stage_label': label};
+    }
+    return result.values.toList();
+  }
+
+  DefenseSummaryStatus _systemStatus(Map<String, dynamic> system) {
+    final conceptStage =
+        (_sharedStage ?? sectionProject?['stage_label']) ==
+        sectionProject?['stage_label'];
+    if (!conceptStage &&
+        const {
+          'approved',
+          'approved_with_revisions',
+        }.contains(sectionProject?['verdict']) &&
+        system['key'] == sectionProject?['selected_key']) {
+      return const DefenseSummaryStatus(
+        'Approved system',
+        WorkflowStatusTone.success,
+      );
+    }
+    return DefenseSummaryStatus.resolve(
+      verdict: conceptStage ? (sectionProject?['verdict']?.toString()) : null,
+      progress: conceptStage
+          ? (sectionProject?['hearing_progress']?.toString())
+          : null,
+      presenting:
+          conceptStage && sectionProject?['presentation_started_at'] != null,
+      scheduled:
+          conceptStage &&
+          (sectionProject?['hearing_schedule_ids'] as List? ?? []).isNotEmpty,
+      titleReview: system['title_review'] as Map?,
+      titleAccepted: system['confirmed'] == true,
+    );
+  }
+
+  Widget _stageHistoryAction() => DefenseHistoryMenu(
+    key: const ValueKey('shared-stage-history-menu'),
+    label: 'View stage history',
+    onPressed: _openStageHistory,
+  );
+
+  Future<void> _openStageHistory() async {
+    if (_historyLoading) await _loadSharedHistory(_loadRevision);
+    if (!mounted) return;
+    await showDefenseHistoryDialog(
+      context,
+      title:
+          '${_sharedStage ?? sectionProject?['stage_label'] ?? 'Shared system'} · Stage history',
+      child: StatefulBuilder(
+        builder: (dialogContext, refresh) => _buildStageHistory(
+          onRetry: () async {
+            final loading = _loadSharedHistory(_loadRevision);
+            refresh(() {});
+            await loading;
+            if (dialogContext.mounted) refresh(() {});
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStageHistory({VoidCallback? onRetry}) {
+    if (_historyLoading) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 16),
+        child: LinearProgressIndicator(),
+      );
+    }
+    if (_historyError != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _historyError!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+          ShadButton.outline(
+            onPressed: onRetry,
+            child: const Text('Retry history'),
+          ),
+        ],
+      );
+    }
+    final selected = _sharedStage ?? '${sectionProject?['stage_label'] ?? ''}';
+    final stage = _historyStages
+        .where((row) => row['label'] == selected)
+        .firstOrNull;
+    final records = (stage?['records'] as List? ?? [])
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+    if (_historyStages.isEmpty && selected == sectionProject?['stage_label']) {
+      for (final item
+          in (sectionProject?['history'] as List? ?? []).whereType<Map>()) {
+        final snapshot = item['snapshot'] as Map? ?? {};
+        final teams = snapshot['teams'] as List?;
+        records.add({
+          'id': 'legacy-${item['id'] ?? item['round']}',
+          'kind': 'hearing',
+          'attempt': item['round'],
+          'outcome': item['verdict'],
+          'remarks': item['remarks'],
+          'systems': snapshot['systems'] ?? [],
+          'selected_key': item['selected_key'],
+          'team_count': teams?.length,
+          if (teams != null)
+            'teams': teams
+                .whereType<Map>()
+                .map(
+                  (team) => {
+                    ...team,
+                    'name': team['name'] ?? 'Team name not recorded',
+                  },
+                )
+                .toList(),
+        });
+      }
+      if ((sectionProject?['systems'] as List? ?? []).isNotEmpty) {
+        records.add({
+          'id': 'current-system',
+          'kind': 'hearing',
+          'attempt': sectionProject?['round'],
+          'outcome': sectionProject?['verdict'],
+          'selected_key': sectionProject?['selected_key'],
+          'systems': sectionProject?['systems'],
+          'team_count': null,
+        });
+      }
+    }
+    return SharedSystemStageHistory(records: records, showHeading: false);
   }
 
   Widget _buildHeroBanner({
@@ -1413,13 +1780,21 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                 ),
               ),
               const SizedBox(width: 8),
-              if (project?['concept_selection_enabled'] != false)
+              if (project?['concept_selection_enabled'] != false &&
+                  project?['stage_label'] == sectionProject?['stage_label'])
                 ShadBadge.secondary(child: Text('Attempt $round')),
             ],
           ),
+          if ('${project?['stage_label'] ?? ''}'.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('${project!['stage_label']}', style: TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontSize: 12, color: DefensysTokens.textSecondaryOf(context),
+            )),
+          ],
           const SizedBox(height: 8),
           Text(
-            'PM: $pmName',
+            'Project manager: $pmName',
             style: TextStyle(
               fontSize: 12,
               height: 1.5,
@@ -1428,95 +1803,45 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Reviewers: $reviewerName',
+            'System reviewer: $reviewerName',
             style: TextStyle(
               fontSize: 12,
               height: 1.5,
               color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
-          if (_sharedGroups.length > 1) ...[
-            const SizedBox(height: 14),
-            _buildStageNavigation(),
-          ],
         ],
       ),
     );
   }
 
   Widget _buildStageNavigation() {
-    return ShadTabs<String>(
+    final stages = _integrationStages;
+    if (stages.isEmpty) return const SizedBox.shrink();
+    final active =
+        stages
+            .where((row) => row['stage_status'] == 'current')
+            .firstOrNull?['stage_label'] ??
+        widget.studentData['team']?['currentStage'] ??
+        sectionProject?['stage_label'] ??
+        stages.first['stage_label'];
+    return DefenseStagesMap(
       key: const ValueKey('shared-stage-navigation'),
-      value: _sharedStage,
-      scrollable: true,
-      tabBarAlignment: Alignment.centerLeft,
-      gap: 0,
-      tabsGap: 4,
-      padding: const EdgeInsets.all(4),
-      decoration: ShadDecoration(
-        color: DefensysTokens.surfaceHigherOf(context),
-        border: ShadBorder.all(
-          color: DefensysTokens.borderOf(context),
-          radius: BorderRadius.circular(8),
-        ),
-      ),
-      onChanged: (value) => setState(() => _sharedStage = value),
-      tabs: [
-        for (final group in _sharedGroups)
-          ShadTab<String>(
-            value: '${group['stage_label']}',
-            height: 56,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            selectedBackgroundColor: DefensysTokens.surfaceOf(context),
-            selectedForegroundColor: DefensysTokens.textPrimaryOf(context),
-            foregroundColor: DefensysTokens.textSecondaryOf(context),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${group['stage_label']}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      group['stage_status'] == 'complete'
-                          ? Icons.check_circle_outline
-                          : group['stage_status'] == 'current'
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      size: 11,
-                      color: group['stage_status'] == 'current'
-                          ? DefensysTokens.maroonTextOf(context)
-                          : DefensysTokens.textSecondaryOf(context),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      switch (group['stage_status']) {
-                        'complete' => 'Complete',
-                        'current' => 'Current',
-                        'upcoming' => 'Upcoming',
-                        _ => 'Status unavailable',
-                      },
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: group['stage_status'] == 'current'
-                            ? DefensysTokens.maroonTextOf(context)
-                            : DefensysTokens.textSecondaryOf(context),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-      ],
+      title: 'Shared system stages',
+      inferEarlierComplete: false,
+      stageOptions: stages.map((row) => '${row['stage_label']}').toList(),
+      activeStageName: '$active',
+      selectedStageName: _sharedStage ?? '$active',
+      stagesList: stages,
+      onStageSelected: (value) => setState(() {
+        _sharedStage = value;
+        _showDeliverables = false;
+        final group = _sharedGroups
+            .where((row) => row['stage_label'] == value)
+            .firstOrNull;
+        _selectedSystemKey =
+            '${group?['selected_key'] ?? sectionProject?['selected_key'] ?? 'c1'}';
+      }),
     );
   }
 
@@ -1653,324 +1978,129 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
     required Map<String, dynamic>? project,
     required bool isPM,
   }) {
-    final selectedKey = '${project?['selected_key'] ?? ''}';
-    final isSelected =
-        selectedKey.isNotEmpty &&
-        system != null &&
-        selectedKey == system['key'];
-    final isConfirmed = system?['confirmed'] == true;
+    final selected =
+        '${project?['selected_key'] ?? ''}'.isNotEmpty &&
+        system?['key'] == project?['selected_key'];
     final papers = (system?['papers'] as List? ?? [])
         .whereType<Map>()
-        .map((p) => Map<String, dynamic>.from(p))
+        .map((row) => Map<String, dynamic>.from(row))
         .toList();
-    final current = papers.where((p) => p['is_current'] == true).firstOrNull;
-    final title = system?['title']?.toString().trim() ?? '';
-    final canUpload = system?['can_upload'] == true;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: DefensysTokens.surfaceOf(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isConfirmed
-              ? (Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF4ADE80)
-                    : const Color(0xFF16A34A))
-              : DefensysTokens.borderOf(context),
-          width: isConfirmed ? 1.4 : 1.0,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'System $letter',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: DefensysTokens.textPrimaryOf(context),
-                ),
+    final current = papers.where((row) => row['is_current'] == true).firstOrNull;
+    final title = '${system?['title'] ?? ''}'.trim();
+    if (!_showDeliverables) {
+      return ShadCard(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        child: selected
+            ? SelectedSharedSystemHeader(
+                system: system!,
+                status: _systemStatus(system),
+                historyAction: _stageHistoryAction(),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TitleReviewHeader(
+                    label: 'System $letter',
+                    statusLabel: system?['confirmed'] == true
+                        ? 'Title accepted'
+                        : 'Title review pending',
+                    accepted: system?['confirmed'] == true,
+                    status: DeliverableStatusBadge(label: _systemStatus(system ?? {}).label,
+                      tone: _systemStatus(system ?? {}).tone),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    title.isEmpty ? 'System name not yet provided' : title,
+                    style: DefensysTokens.body.copyWith(
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
+                  ),
+                  _stageHistoryAction(),
+                ],
               ),
-              const Spacer(),
-              if (isSelected)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 2.5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF16A34A),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    '★ Selected System',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                )
-              else if (isConfirmed)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 2.5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDCFCE7),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF86EFAC)),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.check_rounded,
-                        size: 10.5,
-                        color: Color(0xFF15803D),
-                      ),
-                      SizedBox(width: 3),
-                      Text(
-                        'Faculty Confirmed',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF15803D),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 2.5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: DefensysTokens.borderOf(context)),
-                  ),
-                  child: Text(
-                    'Pending Review',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: DefensysTokens.textSecondaryOf(context),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
+      );
+    }
+    final finalPaper = system?['paper_purpose'] == 'final';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (title.isNotEmpty) ...[
           Text(
-            title.isNotEmpty ? title : 'System name not yet provided',
-            style: TextStyle(
-              fontSize: 14.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.2,
-              height: 1.5,
-              color: title.isNotEmpty
-                  ? DefensysTokens.textPrimaryOf(context)
-                  : DefensysTokens.steelGrey,
-              fontStyle: title.isEmpty ? FontStyle.italic : FontStyle.normal,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Concept paper',
-            style: TextStyle(
-              fontSize: 12,
+            title,
+            style: DefensysTokens.body.copyWith(
+              fontFamily: DefensysTokens.fontFamilyInter,
               fontWeight: FontWeight.w600,
               color: DefensysTokens.textPrimaryOf(context),
             ),
           ),
-          const SizedBox(height: 8),
-          if (current == null) ...[
-            if (canUpload && system != null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'No concept paper uploaded for System $letter yet.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.5,
-                      color: DefensysTokens.textSecondaryOf(context),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 40,
-                    child: OutlinedButton.icon(
-                      onPressed: _isUploading
-                          ? null
-                          : () => _uploadPaper(system),
-                      icon: _isUploading
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: DefensysTokens.maroon,
-                              ),
-                            )
-                          : const Icon(Icons.upload_file_rounded, size: 15),
-                      label: Text(
-                        _isUploading
-                            ? 'Uploading PDF...'
-                            : 'Upload Concept Paper (PDF)',
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: DefensysTokens.maroonOf(context),
-                        side: BorderSide(
-                          color: DefensysTokens.maroonOf(
-                            context,
-                          ).withValues(alpha: 0.35),
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            else
-              Row(
-                children: [
-                  Icon(
-                    Icons.description_outlined,
-                    size: 14,
-                    color: DefensysTokens.steelGrey,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Concept paper missing · Awaiting PM upload',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: DefensysTokens.steelGrey,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-          ] else ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: DefensysTokens.panelOf(context),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: DefensysTokens.borderOf(context)),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.picture_as_pdf_outlined,
-                    size: 16,
-                    color: DefensysTokens.maroonOf(context),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${current['file_name']}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          'Revision ${current['revision']}',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            color: DefensysTokens.steelGrey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () => _viewPaper(current),
-                    borderRadius: BorderRadius.circular(4),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+          const SizedBox(height: 16),
+        ],
+        ShadCard(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          title: Text(
+            finalPaper ? 'Post-defense' : 'Pre-defense',
+            style: const TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 12),
+              if (current == null)
+                DeliverableUploadTile(
+                  title: finalPaper
+                      ? 'Approved concept paper'
+                      : 'Upload Concept Paper (PDF)',
+                  format: DeliverableFormatInfo.fromFormat('pdf'),
+                  maxFileSizeMb: 25,
+                  enabled: !_isUploading && system?['can_upload'] == true,
+                  onUpload: () => _uploadPaper(system!),
+                )
+              else
+                DeliverableUploadedFileTile(
+                  fileName: '${current['file_name']}',
+                  subtitle:
+                      'Revision ${current['revision']} · ${current['status'] ?? 'Uploaded'}',
+                  onDetails: () => _viewPaper(current),
+                  onRevision: system?['can_upload'] == true
+                      ? () => _uploadPaper(system!)
+                      : null,
+                  revisionEnabled: !_isUploading,
+                ),
+              if (papers.any((row) => row != current))
+                ShadAccordion<String>(
+                  children: [
+                    ShadAccordionItem(
+                      value: 'versions',
+                      title: const Text('Previous paper versions'),
+                      child: Column(
                         children: [
-                          Text(
-                            'Read Paper',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                              color: DefensysTokens.maroonOf(context),
+                          for (final paper in papers.where(
+                            (row) => row != current,
+                          ))
+                            DeliverableUploadedFileTile(
+                              fileName: '${paper['file_name']}',
+                              subtitle: 'Revision ${paper['revision']}',
+                              onDetails: () => _viewPaper(paper),
                             ),
-                          ),
-                          const SizedBox(width: 3),
-                          Icon(
-                            Icons.arrow_forward_rounded,
-                            size: 13,
-                            color: DefensysTokens.maroonOf(context),
-                          ),
                         ],
                       ),
                     ),
-                  ),
-                  if (canUpload && system != null) ...[
-                    const SizedBox(width: 6),
-                    InkWell(
-                      onTap: _isUploading ? null : () => _uploadPaper(system),
-                      borderRadius: BorderRadius.circular(4),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.sync_rounded,
-                              size: 13,
-                              color: DefensysTokens.maroonOf(context),
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              'Replace',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: DefensysTokens.maroonOf(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   ],
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
+
+
 }

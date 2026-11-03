@@ -90,7 +90,8 @@ def stage_context(team):
     phase = phase_for(team)
     common = {'is_pit': False, 'phase': phase, 'phase_label': phase_label(phase),
         'semester_id': team.semester_id, 'display_semester': team.semester.display_name,
-        'has_configured_stages': bool(applicable), 'concept_workflow': None}
+        'has_configured_stages': bool(applicable), 'concept_workflow': None,
+        'stage_verdict': ''}
     if not applicable:
         return {**common, 'current_stage': None, 'ready_for_stage': None,
             'stage_status': 'awaiting_stage_setup', 'deliverable_count': 0}
@@ -117,7 +118,13 @@ def stage_context(team):
         config = stage.grading_configs.filter(semester=team.semester).select_related(
             'panel_rubric', 'adviser_rubric', 'peer_rubric').first() if stage else None
         status = 'preparing' if stage and stage_setup_readiness(stage, config, team.semester)['ready'] else 'setup_pending'
+    # Preparation for a repeat is a separate fact from the recorded outcome.
+    # Scope this read to the displayed term/project, including historical rows.
+    assessment = TeamGrade.all_objects.filter(team=team, semester=team.semester,
+        project_version=team.project_version, scope=TeamGrade.SCOPE_CAPSTONE,
+        defense_stage_id=current['id']).order_by('-updated_at', '-pk').first()
     return {**common, 'current_stage': stage.label if stage else current['label'],
         'current_stage_id': current['id'], 'ready_for_stage': team.ready_for_stage
             if team.ready_for_stage in by_label else None,
-        'stage_status': status, 'deliverable_count': submission_count(team, current['label'])}
+        'stage_status': status, 'stage_verdict': assessment.verdict if assessment else '',
+        'deliverable_count': submission_count(team, current['label'])}

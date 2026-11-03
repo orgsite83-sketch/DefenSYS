@@ -174,7 +174,7 @@ def grade_center_payload(request, queryset=None, sync_info=None):
         grade_review_queryset(queryset if queryset is not None else raw_base)
     )
     payload = {
-        'grades': TeamGradeSerializer(current, many=True).data,
+        'grades': TeamGradeSerializer(current, many=True, context={'request': request}).data,
         'counts': counts_payload(base, current),
         'active_semester': SemesterSerializer(semester).data if semester else None,
         'selected_semester_id': semester.pk if semester else None,
@@ -592,22 +592,32 @@ class TeamGradeAssessmentView(APIView):
         if not automatic_outcomes(grade.schedule):
             return Response({'detail': 'This hearing uses its captured manual assessment policy.'}, status=400)
         try:
-            if request.data.get('action') == 'select_concept':
-                key = drf_serializers.CharField(max_length=32).run_validation(request.data.get('concept_key'))
-                token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
-                grade = resolve_outcome(grade, actor=request.user, selected_key=key, review_token=token)
-            elif request.data.get('action') == 'redefense_direction':
-                from repository.section_concepts.redefense_direction import confirm
-                direction = drf_serializers.ChoiceField(choices=['shared_module', 'independent']).run_validation(request.data.get('direction'))
-                source_round_id = drf_serializers.IntegerField(min_value=1).run_validation(request.data.get('source_round_id'))
-                token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
-                grade = confirm(grade, actor=request.user, direction=direction,
-                    source_round_id=source_round_id, review_token=token)
-            elif request.data.get('action') == 'recommendations':
-                token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
-                grade = save_recommendations(grade, actor=request.user, notes=request.data.get('recommendations', ''), review_token=token)
-            else:
-                return Response({'detail': 'Choose concept selection, next-attempt direction, or recommendations.'}, status=400)
+            # Decision and optional feedback are one submission. Validate the
+            # decision's reviewed context first; a feedback failure rolls back
+            # the decision and any next-attempt preparation as well.
+            with transaction.atomic():
+                action = request.data.get('action')
+                if action == 'select_concept':
+                    key = drf_serializers.CharField(max_length=32).run_validation(request.data.get('concept_key'))
+                    token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
+                    grade = resolve_outcome(grade, actor=request.user, selected_key=key, review_token=token)
+                elif action == 'redefense_direction':
+                    from repository.section_concepts.redefense_direction import confirm
+                    direction = drf_serializers.ChoiceField(choices=['shared_module', 'independent']).run_validation(request.data.get('direction'))
+                    source_round_id = drf_serializers.IntegerField(min_value=1).run_validation(request.data.get('source_round_id'))
+                    token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
+                    grade = confirm(grade, actor=request.user, direction=direction,
+                        source_round_id=source_round_id, review_token=token,
+                        **({'recommendations': request.data['recommendations']} if 'recommendations' in request.data else {}))
+                elif action == 'recommendations':
+                    token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
+                    grade = save_recommendations(grade, actor=request.user, notes=request.data.get('recommendations', ''), review_token=token)
+                else:
+                    return Response({'detail': 'Choose concept selection, next-attempt direction, or recommendations.'}, status=400)
+                if action == 'select_concept' and 'recommendations' in request.data:
+                    # The decision just validated its token under the same
+                    # locks. Its write changes that token, so do not reuse it.
+                    grade = save_recommendations(grade, actor=request.user, notes=request.data['recommendations'])
         except PermissionError as exc:
             return Response({'detail': str(exc)}, status=403)
         except DjangoValidationError as exc:
@@ -621,7 +631,7 @@ class TeamGradeWorkflowView(APIView):
     def get(self, request, grade_id):
         grade = get_object_or_404(workspace_grades_for(request.user, request.query_params.get('workspace')), pk=grade_id)
         from .defense_workflow import workflow_payload
-        return Response({'workflow': workflow_payload(grade)})
+        return Response({'workflow': workflow_payload(grade, actor=request.user)})
 
     def post(self, request, grade_id):
         grade = get_object_or_404(workspace_grades_for(request.user, request.query_params.get('workspace')), pk=grade_id)

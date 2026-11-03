@@ -179,10 +179,16 @@ void main() {
         ],
       );
       expect(requests, ['/api/repository/section-concepts/']);
-      expect(find.text('Upload Section endorsement'), findsOneWidget);
+      expect(find.text('Section endorsement'), findsNothing);
       expect(find.text('Existing shared system'), findsOneWidget);
-      expect(find.text('PM: Gabriel Navarro'), findsOneWidget);
+      expect(find.text('Project manager: Gabriel Navarro'), findsOneWidget);
       expect(find.textContaining('Attempt'), findsNothing);
+      await tester.tap(find.text('Deliverables'));
+      await tester.pumpAndSettle();
+      expect(find.text('Section endorsement'), findsOneWidget);
+      await tester.tap(find.text('Section endorsement'));
+      await tester.pumpAndSettle();
+      expect(find.text('Upload Section endorsement'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -295,6 +301,9 @@ void main() {
           studentTeamsProvider.overrideWith(_IntegrationTeams.new),
         ],
       );
+      expect(find.text('Upload Concept Paper (PDF)'), findsNothing);
+      await tester.tap(find.text('Deliverables'));
+      await tester.pumpAndSettle();
       expect(find.text('Upload Concept Paper (PDF)'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -923,6 +932,8 @@ void main() {
   testWidgets('a project manager who leads a team sees two distinct tasks', (
     tester,
   ) async {
+    int? openedProject;
+    String? openedStage;
     setApiHttpClientForTesting(
       MockClient(
         (request) async => http.Response(
@@ -962,7 +973,13 @@ void main() {
     );
     await pumpDefensysWidget(
       tester,
-      StudentTeamSetupTasks(onOpenRepository: () {}),
+      StudentTeamSetupTasks(
+        onOpenRepository: () {},
+        onOpenIntegration: (projectId, stageLabel) {
+          openedProject = projectId;
+          openedStage = stageLabel;
+        },
+      ),
       overrides: [authProvider.overrideWith(_Student.new)],
     );
     expect(
@@ -973,6 +990,11 @@ void main() {
       find.text('Submit 3 matching module concepts · PIT Design'),
       findsOneWidget,
     );
+    await tester.tap(find.text('Integration'));
+    await tester.pumpAndSettle();
+    expect(openedProject, 7);
+    expect(openedStage, 'PIT Design');
+    expect(find.byType(SectionConceptWorkspace), findsNothing);
   });
 
   testWidgets(

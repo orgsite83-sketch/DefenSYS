@@ -169,6 +169,7 @@ def workflow_payload(grade, actor=None):
     from .outcome_rules import automatic_outcomes
     from .automatic_outcomes import recommendations_unavailable_reason
     from repository.section_concepts.redefense_direction import payload as direction_payload
+    from repository.section_concepts.selection_corrections import for_grade as selection_correction
     concept_workflow = concept_payload(grade.team, concept_context, actor=actor)
     if concept_workflow and grade.schedule_id:
         from repository.deliverables.models import ConceptRound
@@ -186,12 +187,13 @@ def workflow_payload(grade, actor=None):
                     'section_selected': hearing.section_round.selected_key == c['key']}
                     for c in concept_workflow['hearing_concepts']]
             concept_workflow['hearing_round'] = hearing.number
-    return {
+    data = {
         'concept_workflow': concept_workflow,
         'outcome_rule': outcome_payload(grade),
         'assessment_policy': policy_for(grade.schedule),
         'outcome_metadata': grade.outcome_metadata,
         'redefense_direction': direction_payload(grade, actor),
+        'shared_selection_correction': selection_correction(grade, actor),
         'can_save_recommendations': (automatic_outcomes(grade.schedule) and actor is not None
             and not recommendations_unavailable_reason(grade, actor)),
         'assessment_progress': schedule_progress(grade.schedule, reconcile_status=False) if grade.schedule_id else None,
@@ -219,6 +221,8 @@ def workflow_payload(grade, actor=None):
                                 project_version=grade.project_version).select_related('minutes').order_by('scheduled_date', 'id')],
 
     }
+    from .student_visibility import student_assessment_payload
+    return student_assessment_payload(data, actor)
 
 
 @transaction.atomic

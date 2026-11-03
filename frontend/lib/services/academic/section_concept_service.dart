@@ -44,6 +44,12 @@ class SectionConceptService {
     ),
   );
 
+  Future<Map<String, dynamic>> history(int projectId, {int? teamId}) async => decode(
+    await client.get(Uri.parse('$base/$projectId/history/').replace(
+      queryParameters: teamId == null ? null : {'team_id': '$teamId'},
+    )),
+  );
+
   Future<Map<String, dynamic>> saveImported(
     Map<String, dynamic> project,
     List<Map<String, dynamic>> titles,

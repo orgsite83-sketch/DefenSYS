@@ -156,21 +156,9 @@ class StudentTaskBadgeHelper {
   }) {
     final teams = (setup?['teams'] as List? ?? []).whereType<Map>();
     final events = (setup?['event_teams'] as List? ?? []).whereType<Map>();
-    final sectionTasks = (setup?['section_tasks'] as List? ?? [])
-        .whereType<Map>();
     if (teams.any((t) => t['needs_name'] == true) ||
         events.any(
           (t) => t['needs_name'] == true || t['needs_details'] == true,
-        ) ||
-        sectionTasks.any(
-          (t) =>
-              t['role'] == 'project_manager' &&
-              const {
-                'papers_missing',
-                'corrections_requested',
-                'shared_revisions_pending',
-                'final_paper_pending',
-              }.contains(t['status']),
         )) {
       return true;
     }
@@ -213,6 +201,26 @@ class StudentTaskBadgeHelper {
     }
     return false;
   }
+
+  /// Shared-system actions belong to Integration, independently of team setup.
+  static List<Map<String, dynamic>> pendingIntegrationTasks(
+    Map<String, dynamic>? setup,
+  ) => (setup?['section_tasks'] as List? ?? [])
+      .whereType<Map>()
+      .where(
+        (task) =>
+            task['role'] == 'project_manager' &&
+            (task['requires_action'] == true ||
+                (!task.containsKey('requires_action') &&
+                    const {
+                      'papers_missing',
+                      'corrections_requested',
+                      'shared_revisions_pending',
+                      'final_paper_pending',
+                    }.contains(task['status']))),
+      )
+      .map((task) => Map<String, dynamic>.from(task))
+      .toList();
 
   /// Checks if a deliverable item is pending required action (missing or needs revision).
   static bool isDeliverablePending(Map<String, dynamic> item) {
@@ -812,7 +820,10 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
   bool applyWeeklyReportResponse(Map<String, dynamic> payload) {
     if (payload['selected_stage'] != state.selectedStage) return false;
     _requestVersion++;
-    final applied = _applyTeamPayload(payload, successMessage: 'Weekly report updated.');
+    final applied = _applyTeamPayload(
+      payload,
+      successMessage: 'Weekly report updated.',
+    );
     if (applied) _markDependentsChanged();
     return applied;
   }

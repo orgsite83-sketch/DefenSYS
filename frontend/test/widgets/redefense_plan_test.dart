@@ -51,8 +51,8 @@ void main() {
       );
       await tester.tap(find.textContaining('Attempt 1'));
       await tester.pumpAndSettle();
-      expect(find.text('original_presentation.pdf'), findsOneWidget);
-      expect(find.textContaining('Faculty accepted'), findsOneWidget);
+      expect(find.text('Presented files'), findsNothing);
+      expect(find.text('original_presentation.pdf'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -231,9 +231,9 @@ void main() {
           await tester.ensureVisible(find.textContaining('Attempt 1'));
           await tester.tap(find.textContaining('Attempt 1'));
           await tester.pumpAndSettle();
-          expect(find.text('original_inventory.pdf'), findsOneWidget);
-          expect(find.textContaining('Faculty accepted'), findsOneWidget);
-          expect(find.textContaining('Panel: 65%'), findsOneWidget);
+          expect(find.text('Presented files'), findsNothing);
+          expect(find.text('original_inventory.pdf'), findsNothing);
+          expect(find.textContaining('Panel score:'), findsNothing);
           expect(tester.takeException(), isNull);
           await capturePreview(
             tester,

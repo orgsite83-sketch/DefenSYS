@@ -24,6 +24,8 @@ List<Map<String, dynamic>> _sharedRows(dynamic value) => (value as List? ?? [])
     .map((row) => Map<String, dynamic>.from(row))
     .toList();
 
+enum SharedSystemPanelMode { combined, details, deliverables }
+
 /// The same document-first requirement card used in student deliverables.
 /// Per-concept slots live under their system; section-wide documents occur once.
 class SharedDeliverablesPanel extends ConsumerStatefulWidget {
@@ -37,12 +39,18 @@ class SharedDeliverablesPanel extends ConsumerStatefulWidget {
     this.onReviewFiles,
     this.readOnly = false,
     this.normalFlow = false,
+    this.studentWorkspace = false,
+    this.studentMode = SharedSystemPanelMode.combined,
+    this.showStudentHistory = true,
     this.focusedRequirementId,
     this.focusedSystemKey,
   });
   final Map<String, dynamic> group;
   final bool readOnly;
   final bool normalFlow;
+  final bool studentWorkspace;
+  final SharedSystemPanelMode studentMode;
+  final bool showStudentHistory;
   final String? focusedRequirementId;
   final String? focusedSystemKey;
   final ValueChanged<Map<String, dynamic>>? onChanged;
@@ -291,11 +299,13 @@ class _SharedDeliverablesPanelState
     if (!details && ref.watch(authProvider).user?['role'] == 'student') {
       return DeliverableRequirementCard(
         item: summaryItem(requirement, key: key),
+        compact: widget.studentWorkspace,
         enabled: !busy,
         onOpen: () => showDeliverableRequirementDialog(
           context,
           builder: (context) => SharedDeliverablesPanel(
             group: group,
+            studentWorkspace: widget.studentWorkspace,
             readOnly: widget.readOnly,
             focusedRequirementId: '${requirement['deliverable_id']}',
             focusedSystemKey: key,
@@ -379,8 +389,9 @@ class _SharedDeliverablesPanelState
                 ),
               ],
             ),
-          const SizedBox(height: 4),
-          Text(
+          if (!details) ...[
+            const SizedBox(height: 4),
+            Text(
             requirement['required'] == true
                 ? post
                       ? 'Required after defense'
@@ -390,7 +401,8 @@ class _SharedDeliverablesPanelState
               fontSize: 11.5,
               color: DefensysTokens.textSecondaryOf(context),
             ),
-          ),
+            ),
+          ],
           const SizedBox(height: 10),
           DeliverableTemplateDownload(template: requirement['template']),
           for (final document in documents) ...[
@@ -511,9 +523,12 @@ class _SharedDeliverablesPanelState
                 color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
-          if ('${requirement['unavailable_reason'] ?? ''}'.isNotEmpty)
+          if ((relevantFiles.isEmpty || rejected) &&
+              '${requirement['unavailable_reason'] ?? ''}'.isNotEmpty)
             Text(
-              '${requirement['unavailable_reason']}',
+              requirement['unavailable_reason'] is List
+                  ? (requirement['unavailable_reason'] as List).join('\n')
+                  : '${requirement['unavailable_reason']}',
               style: TextStyle(
                 fontSize: 11,
                 color: DefensysTokens.textSecondaryOf(context),
@@ -668,6 +683,259 @@ class _SharedDeliverablesPanelState
     );
   }
 
+  Widget _studentDocuments(
+    List<Map<String, dynamic>> requirements,
+    Map<String, dynamic>? active,
+  ) {
+    final visible = requirements
+        .where(
+          (row) =>
+              (!showHistory || row['deliverable_type'] != 'post') &&
+              (active != null ||
+                  (row['file_policy'] as Map?)?['mode'] != 'concepts'),
+        )
+        .toList();
+    bool perSystem(Map<String, dynamic> row) =>
+        (row['file_policy'] as Map?)?['mode'] == 'concepts';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final timing in ['pre', 'post'])
+          if (visible.any((row) => row['deliverable_type'] == timing))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: ShadCard(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                title: Text(
+                  timing == 'pre' ? 'Pre-defense' : 'Post-defense',
+                  style: const TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final repeated in [true, false])
+                      if (visible.any(
+                        (row) =>
+                            row['deliverable_type'] == timing &&
+                            perSystem(row) == repeated,
+                      )) ...[
+                        if (visible.any(
+                              (row) =>
+                                  row['deliverable_type'] == timing &&
+                                  perSystem(row),
+                            ) &&
+                            visible.any(
+                              (row) =>
+                                  row['deliverable_type'] == timing &&
+                                  !perSystem(row),
+                            ))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12, bottom: 2),
+                            child: Text(
+                              repeated
+                                  ? 'System ${systemLetter(active?['key'])}'
+                                  : 'Section-wide',
+                              style: TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: DefensysTokens.textSecondaryOf(context),
+                              ),
+                            ),
+                          ),
+                        for (final requirement in visible.where(
+                          (row) =>
+                              row['deliverable_type'] == timing &&
+                              perSystem(row) == repeated,
+                        ))
+                          requirementCard(
+                            requirement,
+                            key: repeated ? '${active!['key']}' : null,
+                          ),
+                      ],
+                  ],
+                ),
+              ),
+            ),
+        if (visible.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'No shared deliverables are configured for this stage.',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 13,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _studentWorkspace() {
+    final systems = _sharedRows(group['systems']);
+    final official = systems
+        .where(
+          (s) =>
+              '${group['selected_key'] ?? ''}'.isNotEmpty &&
+              s['key'] == group['selected_key'],
+        )
+        .firstOrNull;
+    final alternatives = systems.where((s) => s != official).toList();
+    final visible = official == null
+        ? systems
+        : showHistory
+        ? alternatives
+        : [official];
+    final active =
+        visible
+            .where((s) => s['key'] == (systemKey ?? widget.selectedSystemKey))
+            .firstOrNull ??
+        visible.firstOrNull;
+    final selected = official != null && !showHistory;
+    final details = widget.studentMode != SharedSystemPanelMode.deliverables;
+    final files = widget.studentMode != SharedSystemPanelMode.details;
+    final header = active == null
+        ? null
+        : widget.systemHeaderBuilder?.call(active) ??
+              (selected
+                  ? SelectedSharedSystemHeader(system: active)
+                  : Text(
+                      '${active['title'] ?? 'Awaiting system title'}',
+                      style: const TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ));
+
+    return DefensysShadcnScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (busy) const LinearProgressIndicator(),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          if (showHistory)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Earlier proposals',
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          if (visible.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: ShadTabs<String>(
+                value: '${active?['key']}',
+                scrollable: true,
+                tabBarAlignment: Alignment.centerLeft,
+                gap: 0,
+                onChanged: busy
+                    ? null
+                    : (value) {
+                        setState(() => systemKey = value);
+                        widget.onSystemChanged?.call(value);
+                      },
+                tabs: [
+                  for (final system in visible)
+                    ShadTab(
+                      value: '${system['key']}',
+                      child: Text('System ${systemLetter(system['key'])}'),
+                    ),
+                ],
+              ),
+            ),
+          if (details && header != null)
+            if (files)
+              ConceptReviewSection(
+                titleReview: header,
+                deliverables: _studentDocuments(
+                  _sharedRows(group['requirements']),
+                  active,
+                ),
+              )
+            else
+              ShadCard(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                child: header,
+              ),
+          if (files && !details) ...[
+            const Text(
+              'Shared system deliverables',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if ('${active?['title'] ?? ''}'.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                '${active!['title']}',
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 13,
+                  height: 1.45,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            _studentDocuments(_sharedRows(group['requirements']), active),
+          ],
+          if (widget.showStudentHistory && official != null && alternatives.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ShadButton.ghost(
+                  size: ShadButtonSize.sm,
+                  onPressed: busy
+                      ? null
+                      : () {
+                          setState(() {
+                            showHistory = !showHistory;
+                            systemKey =
+                                '${showHistory ? alternatives.first['key'] : official['key']}';
+                          });
+                          widget.onSystemChanged?.call(systemKey!);
+                        },
+                  leading: Icon(
+                    showHistory ? Icons.arrow_back : Icons.history,
+                    size: 15,
+                  ),
+                  child: Text(
+                    showHistory
+                        ? 'Back to selected system'
+                        : 'Earlier proposals (${alternatives.length})',
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.focusedRequirementId != null) {
@@ -710,6 +978,7 @@ class _SharedDeliverablesPanelState
       );
     }
     if (widget.normalFlow) return _normalFlow();
+    if (widget.studentWorkspace) return _studentWorkspace();
     final requirements = _sharedRows(group['requirements']);
     final allRepeated = requirements
         .where((row) => (row['file_policy'] as Map?)?['mode'] == 'concepts')

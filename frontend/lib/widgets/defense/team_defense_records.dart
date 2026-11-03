@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../models/defense_workflow_labels.dart';
 import '../../models/team_defense_record.dart';
 import '../../models/adviser_workflow.dart';
+import '../../models/defense_summary_status.dart';
 import '../adviser/workflow_reminder.dart';
 import '../../services/defense/team_defense_provider.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../toasts/feedback_toast.dart';
 import '../minutes/minutes_pdf_dialog.dart';
+import 'concept_hearing_history.dart';
+import 'defense_history_menu.dart';
+import '../repository/deliverable_file_widgets.dart';
 
 /// A scheduled defense exists independently of its assessment and minutes.
 class TeamDefenseRecordsView extends ConsumerWidget {
@@ -21,6 +24,7 @@ class TeamDefenseRecordsView extends ConsumerWidget {
     this.projectVersion,
     this.semesterId,
     this.allowAdviserReview = false,
+    this.hearingHistory = const [],
   });
 
   final int teamId;
@@ -29,6 +33,7 @@ class TeamDefenseRecordsView extends ConsumerWidget {
   final String? adviserName;
   final int? projectVersion, semesterId;
   final bool allowAdviserReview;
+  final List<Map<String, dynamic>> hearingHistory;
 
   Future<void> _openMinutes(
     BuildContext context,
@@ -65,6 +70,42 @@ class TeamDefenseRecordsView extends ConsumerWidget {
       projectVersion: projectVersion,
       semesterId: semesterId,
     );
+    void openHistory() => showDefenseHistoryDialog(
+      context,
+      title: '$selectedStage · Hearing history',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (hearingHistory.isNotEmpty)
+            ConceptHistory(workflow: {'history': hearingHistory}),
+          if (records.history.isNotEmpty)
+            ExpansionTile(
+              title: Text(
+                'Previous defenses (${records.history.length})',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              tilePadding: EdgeInsets.zero,
+              children: [
+                for (final schedule in records.history)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: DefenseRecordCard(
+                      schedule: schedule,
+                      grade: gradeForDefense(schedule, grades),
+                      historical: true,
+                      adviserName: adviserName,
+                      allowAdviserReview: allowAdviserReview,
+                      onOpenMinutes: () => _openMinutes(context, ref, schedule),
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
     Widget card(Map<String, dynamic> schedule, {bool historical = false}) =>
         DefenseRecordCard(
           key: ValueKey('defense-record-${schedule['id']}'),
@@ -73,29 +114,42 @@ class TeamDefenseRecordsView extends ConsumerWidget {
           adviserName: adviserName,
           historical: historical,
           allowAdviserReview: allowAdviserReview,
+          conceptHistory: hearingHistory
+              .where(
+                (round) =>
+                    defenseRecordId(round['schedule_id']) ==
+                    defenseRecordId(schedule['id']),
+              )
+              .toList(),
+          onViewHistory: hearingHistory.isNotEmpty || records.history.isNotEmpty
+              ? openHistory
+              : null,
           onOpenMinutes: () => _openMinutes(context, ref, schedule),
         );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Material(color: DefensysTokens.surfaceOf(context), child: Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Defense record',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        Material(
+          color: DefensysTokens.surfaceOf(context),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Defense record',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
               ),
-            ),
-            IconButton(
-              tooltip: 'Refresh defense records',
-              onPressed: state.isLoading
-                  ? null
-                  : () => ref.read(teamDefenseProvider.notifier).fetch(),
-              icon: const Icon(Icons.refresh_rounded, size: 19),
-            ),
-          ],
-        )),
+              IconButton(
+                tooltip: 'Refresh defense records',
+                onPressed: state.isLoading
+                    ? null
+                    : () => ref.read(teamDefenseProvider.notifier).fetch(),
+                icon: const Icon(Icons.refresh_rounded, size: 19),
+              ),
+            ],
+          ),
+        ),
         if (state.isLoading) ...[
           const LinearProgressIndicator(minHeight: 2),
           const SizedBox(height: 12),
@@ -142,30 +196,12 @@ class TeamDefenseRecordsView extends ConsumerWidget {
               ],
             ),
           ),
-        if (records.history.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          ExpansionTile(
-            key: PageStorageKey('defense-history-$teamId-$selectedStage'),
-            tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-            childrenPadding: EdgeInsets.zero,
-            shape: const Border(),
-            collapsedShape: const Border(),
-            title: Text(
-              'Previous defenses (${records.history.length})',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              'Earlier attempts and cancelled schedules for $selectedStage',
-            ),
-            children: [
-              for (final schedule in records.history)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: card(schedule, historical: true),
-                ),
-            ],
+        if (records.current == null &&
+            (records.history.isNotEmpty || hearingHistory.isNotEmpty))
+          DefenseHistoryMenu(
+            label: 'View hearing history',
+            onPressed: openHistory,
           ),
-        ],
       ],
     );
   }
@@ -185,6 +221,8 @@ class DefenseRecordCard extends StatelessWidget {
     this.adviserName,
     this.historical = false,
     this.allowAdviserReview = false,
+    this.conceptHistory = const [],
+    this.onViewHistory,
     required this.onOpenMinutes,
   });
 
@@ -192,6 +230,8 @@ class DefenseRecordCard extends StatelessWidget {
   final Map<String, dynamic>? grade;
   final String? adviserName;
   final bool historical, allowAdviserReview;
+  final List<Map<String, dynamic>> conceptHistory;
+  final VoidCallback? onViewHistory;
   final VoidCallback onOpenMinutes;
 
   String _date(BuildContext context, dynamic value) {
@@ -233,28 +273,50 @@ class DefenseRecordCard extends StatelessWidget {
     String value,
   ) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 17, color: DefensysTokens.textSecondaryOf(context)),
-        const SizedBox(width: 9),
-        SizedBox(
-          width: 94,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked =
+            constraints.maxWidth < 300 ||
+            MediaQuery.textScalerOf(context).scale(1) > 1.15;
+        final labelText = Text(
+          label,
+          style: TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontSize: stacked ? 12 : 13,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        );
+        final valueText = Text(
+          value,
+          style: const TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        );
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              size: 17,
               color: DefensysTokens.textSecondaryOf(context),
             ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-          ),
-        ),
-      ],
+            const SizedBox(width: 9),
+            if (stacked)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [labelText, const SizedBox(height: 3), valueText],
+                ),
+              )
+            else ...[
+              SizedBox(width: 94, child: labelText),
+              Expanded(child: valueText),
+            ],
+          ],
+        );
+      },
     ),
   );
 
@@ -284,7 +346,6 @@ class DefenseRecordCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final assessment = (schedule['assessment'] as Map?) ?? const {};
-    final automatic = assessment['automatic_outcomes'] == true;
     final status =
         schedule['display_status']?.toString() ??
         schedule['status']?.toString() ??
@@ -293,6 +354,10 @@ class DefenseRecordCard extends StatelessWidget {
     final verdict = (assessment['verdict'] ?? grade?['verdict'])?.toString();
     final hasVerdict =
         verdict != null && verdict.isNotEmpty && verdict != 'pending';
+    final approvedTitle =
+        {'approved', 'approved_with_revisions'}.contains(verdict)
+        ? assessment['approved_title']?.toString().trim() ?? ''
+        : '';
     final published =
         assessment['grade_status'] == 'published' ||
         grade?['status'] == 'published';
@@ -318,7 +383,12 @@ class DefenseRecordCard extends StatelessWidget {
         status == 'scheduled' &&
         scheduledAt != null &&
         scheduledAt.isAfter(DateTime.now());
-    final display = upcoming ? 'Upcoming' : defenseProgressLabel(status);
+    final summary = DefenseSummaryStatus.resolve(
+      verdict: verdict,
+      progress: status,
+      concept:
+          assessment['concept_selection'] == true || conceptHistory.isNotEmpty,
+    );
     final panel = (schedule['panelists'] as List? ?? []).whereType<Map>().map((
       p,
     ) {
@@ -369,7 +439,8 @@ class DefenseRecordCard extends StatelessWidget {
           if (allowAdviserReview) ...[
             AdviserWorkflowReminder(
               key: ValueKey('adviser-minutes-reminder-${schedule['id']}'),
-              title: minutesGuidance.title, detail: minutesGuidance.detail,
+              title: minutesGuidance.title,
+              detail: minutesGuidance.detail,
               tone: minutesGuidance.tone,
               actionLabel: 'Review and sign minutes',
               onAction: minutesGuidance.needsSignature ? onOpenMinutes : null,
@@ -386,20 +457,6 @@ class DefenseRecordCard extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.surfaceHigherOf(context),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  display,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
                 ),
               ),
             ],
@@ -480,33 +537,58 @@ class DefenseRecordCard extends StatelessWidget {
             ),
           ],
           const Divider(height: 30),
-          _section(automatic ? 'Outcome and completion' : 'Verdict and completion'),
-          Text(
-            hasVerdict
-                ? '${automatic ? 'Outcome' : 'Defense verdict'}: ${defenseVerdictLabel(verdict)}'
-                : (result != null && result != 'pending'
-                      ? 'Published result: ${_resultLabel(result)}'
-                      : (automatic ? defenseProgressLabel(status) : 'Awaiting verdict')),
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              const Text(
+                'Defense outcome',
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              DeliverableStatusBadge(label: summary.label, tone: summary.tone),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Stage completion: ${completed
-                ? 'Completed'
-                : {'scheduled', 'awaiting_evaluation', 'evaluating', 'awaiting_verdict', 'done'}.contains(status)
-                ? 'Pending'
-                : defenseProgressLabel(status)}',
-            style: TextStyle(fontSize: 13, color: secondary),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            published
-                ? (grade?['final_grade'] != null
-                      ? 'Team average: ${_score(grade!['final_grade'])} · Published'
-                      : 'Grade publication: Published')
-                : 'Grade publication: Pending',
-            style: TextStyle(fontSize: 13, color: secondary),
-          ),
+          if (approvedTitle.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              approvedTitle,
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: DefensysTokens.textPrimaryOf(context),
+                height: 1.45,
+              ),
+            ),
+          ],
+          if ((completed && hasVerdict) ||
+              (hasVerdict &&
+                  {
+                    'approved',
+                    'approved_with_revisions',
+                  }.contains(verdict))) ...[
+            const SizedBox(height: 10),
+            Text(
+              completed
+                  ? 'Stage completed'
+                  : assessment['post_defense_complete'] == false ||
+                        status == 'pending_post_defense'
+                  ? 'Post-defense requirements pending'
+                  : 'Stage completion pending',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 13,
+                color: secondary,
+                height: 1.45,
+              ),
+            ),
+          ],
           if (hasVerdict && verdict == 'approved_with_revisions') ...[
             const SizedBox(height: 8),
             Text(
@@ -527,6 +609,23 @@ class DefenseRecordCard extends StatelessWidget {
             Text(
               remarks,
               style: TextStyle(fontSize: 13, color: secondary, height: 1.45),
+            ),
+          ],
+          if (conceptHistory.isNotEmpty || onViewHistory != null) ...[
+            const SizedBox(height: 8),
+            DefenseHistoryMenu(
+              key: ValueKey('hearing-history-${schedule['id']}'),
+              label: 'View hearing history',
+              onPressed:
+                  onViewHistory ??
+                  () => showDefenseHistoryDialog(
+                    context,
+                    title:
+                        '${schedule['stage_label'] ?? 'Defense'} \u00b7 Hearing history',
+                    child: ConceptHistory(
+                      workflow: {'history': conceptHistory},
+                    ),
+                  ),
             ),
           ],
           const Divider(height: 30),
@@ -556,11 +655,6 @@ class DefenseRecordCard extends StatelessWidget {
 
   static String _nonEmpty(dynamic value, String fallback) =>
       value?.toString().trim().isNotEmpty == true ? value.toString() : fallback;
-  static String _resultLabel(String value) => value.isEmpty
-      ? 'Pending'
-      : '${value[0].toUpperCase()}${value.substring(1)}';
-  static String _score(dynamic value) =>
-      double.tryParse(value.toString())?.toStringAsFixed(2) ?? value.toString();
   static String _countdown(DateTime scheduledAt) {
     final left = scheduledAt.difference(DateTime.now());
     if (left.inDays > 0) {

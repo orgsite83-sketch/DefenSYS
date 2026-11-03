@@ -12,10 +12,16 @@ class TitleReviewCard extends StatefulWidget {
     required this.onAction,
     this.system = false,
     this.readOnly = false,
+    this.showBlocker = true,
+    this.status,
+    this.footer,
   });
   final Map<String, dynamic> concept;
   final bool system;
   final bool readOnly;
+  final bool showBlocker;
+  final Widget? status;
+  final Widget? footer;
   final Future<bool> Function(String action, String? title, String? reason)
   onAction;
   @override
@@ -96,6 +102,7 @@ class _TitleReviewCardState extends State<TitleReviewCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           TitleReviewHeader(
+            status: widget.status,
             label: 'Proposed $kind title',
             statusLabel:
                 '${review['status_label'] ?? 'Awaiting student submission'}',
@@ -139,7 +146,8 @@ class _TitleReviewCardState extends State<TitleReviewCard> {
             if (request['scope'] == 'title_and_paper')
               const Text('After title acceptance, upload the updated paper.'),
           ],
-          if ('${review['blocker'] ?? ''}'.isNotEmpty) ...[
+          if (widget.showBlocker &&
+              '${review['blocker'] ?? ''}'.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
               '${review['blocker']}',
@@ -224,6 +232,7 @@ class _TitleReviewCardState extends State<TitleReviewCard> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
+          if (widget.footer != null) widget.footer!,
         ],
       ),
     );

@@ -86,14 +86,23 @@ void main() {
       'stages': [
         {
           'stage_label': 'System Pitching',
-          'grade': {'status': 'published', 'result': 'PASSED', 'final_grade': 92},
+          'grade': {
+            'status': 'published',
+            'result': 'PASSED',
+            'final_grade': 92,
+          },
         },
       ],
     };
-    await pumpDefensysWidget(tester, TeamTab(studentData: data), overrides: [
-      capstoneDeliverablesProvider.overrideWith(_PastEventSelection.new),
-    ]);
-    expect(find.textContaining('Score: 92'), findsOneWidget);
+    await pumpDefensysWidget(
+      tester,
+      TeamTab(studentData: data),
+      overrides: [
+        capstoneDeliverablesProvider.overrideWith(_PastEventSelection.new),
+      ],
+    );
+    expect(find.textContaining('Score: 92'), findsNothing);
+    expect(find.text('Stage cleared'), findsOneWidget);
     expect(find.text('OCT'), findsNothing);
   });
 

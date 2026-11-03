@@ -27,12 +27,14 @@ class TeamTab extends ConsumerStatefulWidget {
   final Map<String, dynamic>? studentData;
   final Future<void> Function()? onRefresh;
   final void Function(int index, {int? subTabIndex})? onSelectTab;
+  final void Function(int projectId, String? stageLabel)? onOpenIntegration;
 
   const TeamTab({
     super.key,
     required this.studentData,
     this.onRefresh,
     this.onSelectTab,
+    this.onOpenIntegration,
   });
 
   @override
@@ -113,7 +115,11 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (onRefresh != null)
-                StudentTeamSetupTasks(onRefresh: onRefresh),
+                StudentTeamSetupTasks(
+                  showSectionTasks: false,
+                  onRefresh: onRefresh,
+                  onOpenIntegration: widget.onOpenIntegration,
+                ),
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -385,7 +391,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             team['setup_pending'] == true ||
             team['project_pending'] == true)
           StudentTeamSetupTasks(
+            showSectionTasks: false,
             onOpenRepository: () => onSelectTab?.call(1, subTabIndex: 1),
+            onOpenIntegration: widget.onOpenIntegration,
             onRefresh: onRefresh,
             refreshKey: delivState.teams,
             showConceptTasks: false,
@@ -1748,7 +1756,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            'Cleared ✓  Score: ${grades['final_grade'] ?? grades['grade'] ?? 'Passed'}',
+                            'Stage cleared',
                             style: const TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.bold,

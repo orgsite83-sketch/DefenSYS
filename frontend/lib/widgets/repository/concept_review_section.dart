@@ -62,11 +62,13 @@ class TitleReviewHeader extends StatelessWidget {
     required this.label,
     required this.statusLabel,
     required this.accepted,
+    this.status,
   });
 
   final String label;
   final String statusLabel;
   final bool accepted;
+  final Widget? status;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -84,7 +86,9 @@ class TitleReviewHeader extends StatelessWidget {
       Flexible(
         child: Align(
           alignment: Alignment.centerRight,
-          child: TitleReviewStatus(label: statusLabel, accepted: accepted),
+          child:
+              status ??
+              TitleReviewStatus(label: statusLabel, accepted: accepted),
         ),
       ),
     ],

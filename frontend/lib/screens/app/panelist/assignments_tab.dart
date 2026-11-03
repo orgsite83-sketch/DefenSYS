@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/shadcn/defensys_filter_chip.dart';
 import 'panelist_models.dart';
+import 'widgets/panel_decision_badge.dart';
 
 class AssignmentsTab extends StatefulWidget {
   final List<TeamData> teams;
@@ -33,7 +34,7 @@ class AssignmentsTab extends StatefulWidget {
 class _AssignmentsTabState extends State<AssignmentsTab> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String _statusFilter = 'all'; // all, upcoming, pending, submitted
+  String _statusFilter = 'all'; // all, upcoming, pending, decision, submitted
   String _scopeFilter = 'all'; // 'all', 'capstone', 'pit'
 
   @override
@@ -62,6 +63,9 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
         continue;
       }
       if (_statusFilter == 'submitted' && !t.isPosted) {
+        continue;
+      }
+      if (_statusFilter == 'decision' && !t.needsChairDecision) {
         continue;
       }
 
@@ -309,6 +313,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
         )
         .length;
     final chairCount = widget.teams.where((t) => t.isChair).length;
+    final decisions = widget.teams.where((t) => t.needsChairDecision).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -337,6 +342,10 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
               const SizedBox(width: 6),
               _statusChip('Needs Grading', 'pending', pending),
               const SizedBox(width: 6),
+              if (!widget.history && (chairCount > 0 || decisions > 0)) ...[
+                _statusChip('Needs Decision', 'decision', decisions),
+                const SizedBox(width: 6),
+              ],
               _statusChip('Upcoming', 'upcoming', upcoming),
               const SizedBox(width: 6),
               _statusChip('Submitted', 'submitted', submitted),
@@ -615,6 +624,10 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                         if (t.isChair) ...[_chairBadge()],
 
                         if (t.hasVerdict) ...[_verdictBadge(t.verdict)],
+                        if (t.teamOutcomeStatus case final status?)
+                          PanelDecisionBadge(status: status),
+                        if (t.sharedDecisionStatus case final status?)
+                          PanelDecisionBadge(status: status),
 
                         // Status Pill (Draft vs Posted vs Scheduled)
                         _statusBadge(t.evaluationStatus),
@@ -629,10 +642,10 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                       children: [
                         Text(
                           t.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 15.5,
                             fontWeight: FontWeight.w700,
-                            color: DefensysTokens.textDark,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -674,6 +687,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                             minimumSize: const Size(0, 44),
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                             textStyle: const TextStyle(
+                              fontFamily: DefensysTokens.fontFamilyInter,
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                             ),

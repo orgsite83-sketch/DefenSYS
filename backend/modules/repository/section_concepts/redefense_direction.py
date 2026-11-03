@@ -10,6 +10,8 @@ from django.db.models import F
 from defensys_backend.read_projection import read_memoize
 from .models import SharedModuleRedefenseDecision as Decision
 
+_NO_RECOMMENDATIONS = object()
+
 
 def independent_team_ids():
     return Decision.objects.filter(direction=Decision.INDEPENDENT,
@@ -162,7 +164,8 @@ def payload(grade, actor=None):
 
 
 @transaction.atomic
-def confirm(grade, *, actor, direction, source_round_id, review_token):
+def confirm(grade, *, actor, direction, source_round_id, review_token,
+            recommendations=_NO_RECOMMENDATIONS):
     from grading.grades.automatic_outcomes import _locked_grade
     from grading.grades.defense_workflow import is_chair, audit
     from repository.deliverables.models import ConceptRound
@@ -234,6 +237,12 @@ def confirm(grade, *, actor, direction, source_round_id, review_token):
         grade.team._section_concept_projects = {}
         grade.team.save(update_fields=['project_title', 'project_pending', 'updated_at'])
         refresh_files(grade.team, grade.defense_stage)
+    if recommendations is not _NO_RECOMMENDATIONS:
+        from grading.grades.automatic_outcomes import save_recommendations
+        # The reviewed direction was validated under these locks. Saving its
+        # feedback here keeps both atomic and leaves idempotent retries above
+        # unable to overwrite recommendations edited after confirmation.
+        grade = save_recommendations(grade, actor=actor, notes=recommendations)
     audit(grade, actor, 'defense.redefense_direction_confirmed',
         direction=direction, source_round_id=source.pk, next_round_id=following.pk,
         decision_id=decision.pk)

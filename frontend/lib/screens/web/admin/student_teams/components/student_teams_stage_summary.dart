@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/models/team_workflow_status.dart';
+import 'package:defensys/widgets/repository/workflow_status_style.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
 String? teamCurrentStageStatus(Map<String, dynamic> team) {
   final context = team['defense_context'];
   if (context is! Map) return null;
+  final verdict = context['stage_verdict']?.toString();
+  if (verdict == 'failed' || verdict == 'project_rejected') return verdict;
   final workflow = context['concept_workflow'];
   if (workflow is Map && workflow['enabled'] == true) {
     return workflow['status']?.toString();
@@ -16,6 +22,10 @@ String? teamCurrentStageStatus(Map<String, dynamic> team) {
 }
 
 String _stageStatusLabel(String? status) => switch (status) {
+  'draft' => 'Awaiting student submission',
+  'submitted' => 'Awaiting title review',
+  'changes_requested' => 'Title revision requested',
+  'titles_accepted' => 'Titles accepted',
   'completed' => 'Completed',
   'awaiting_stage_setup' => 'Awaiting stage setup',
   'setup_pending' => 'Setup pending',
@@ -38,6 +48,7 @@ String _stageStatusLabel(String? status) => switch (status) {
   'ready_to_schedule' => 'Ready to schedule',
   'approved' => 'Concept approved',
   'approved_with_revisions' => 'Revisions required',
+  'for_redefense' => 'Re-defense required',
   'project_rejected' => 'Project rejected',
   'failed' => 'Failed',
   'archived' => 'Stage archived',
@@ -55,6 +66,10 @@ Color _stageStatusColor(String? status, bool isDark) => switch (status) {
   'project_rejected' ||
   'failed' => isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C),
   'replacement_concepts_needed' ||
+  'draft' ||
+  'submitted' ||
+  'changes_requested' ||
+  'for_redefense' ||
   'concepts_needed' ||
   'concept_review_pending' ||
   'concept_endorsement_pending' ||
@@ -70,32 +85,113 @@ Widget currentStageBadge(BuildContext context, Map<String, dynamic> team) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final color = _stageStatusColor(status, isDark);
   return Tooltip(
-    message: status == null
+    message: status == 'failed' || status == 'project_rejected'
+        ? 'Review the recorded outcome.'
+        : status == null
         ? 'No progress update is recorded for this stage.'
         : ((team['defense_context'] as Map? ?? {})['concept_workflow']
                           as Map? ??
                       {})['next_step']
                   ?.toString() ??
               'Progress for this team’s current defense stage.',
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: isDark ? 0.15 : 0.09),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.22)),
-      ),
-      child: Text(
-        _stageStatusLabel(status),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
+    child: DefensysShadcnScope(
+      child: ShadBadge.secondary(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        backgroundColor: color.withValues(alpha: isDark ? 0.15 : 0.09),
+        foregroundColor: color,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(999),
+          side: BorderSide(color: color.withValues(alpha: 0.22)),
+        ),
+        child: Text(
+          _stageStatusLabel(status),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     ),
   );
+}
+
+/// Keep the last outcome visible while the next concept attempt is prepared.
+/// The current step still comes from the existing concept workflow.
+class TeamStageStatus extends StatelessWidget {
+  const TeamStageStatus({super.key, required this.team});
+  final Map<String, dynamic> team;
+
+  @override
+  Widget build(BuildContext context) {
+    final defense = team['defense_context'] as Map? ?? {};
+    final workflow = defense['concept_workflow'] as Map? ?? {};
+    final status = teamCurrentStageStatus(team);
+    final verdict = '${defense['stage_verdict'] ?? ''}';
+    final outcome = switch (verdict) {
+      'approved' => const TeamWorkflowStatus(
+        'approved',
+        'Approved',
+        WorkflowStatusTone.success,
+      ),
+      'approved_with_revisions' => const TeamWorkflowStatus(
+        'approved_with_revisions',
+        'Approved with revisions',
+        WorkflowStatusTone.attention,
+      ),
+      'for_redefense' => const TeamWorkflowStatus(
+        'for_redefense',
+        'Re-defense required',
+        WorkflowStatusTone.attention,
+      ),
+      'failed' => const TeamWorkflowStatus(
+        'failed',
+        'Failed',
+        WorkflowStatusTone.destructive,
+      ),
+      'project_rejected' => const TeamWorkflowStatus(
+        'project_rejected',
+        'Project rejected',
+        WorkflowStatusTone.destructive,
+      ),
+      _ => null,
+    };
+    final nextStep =
+        team['term_status'] == 'historical' ||
+            team['is_editable'] == false ||
+            verdict == 'failed' ||
+            verdict == 'project_rejected'
+        ? ''
+        : '${workflow['next_step'] ?? ''}'.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (outcome != null && verdict != status) ...[
+          Tooltip(
+            message: 'Recorded outcome for this stage.',
+            child: TeamWorkflowBadge(status: outcome, compact: true),
+          ),
+          const SizedBox(height: 4),
+        ],
+        currentStageBadge(context, team),
+        if (nextStep.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            nextStep,
+            style: TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontSize: 10.5,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class StudentTeamsSummaryCards extends StatelessWidget {
@@ -114,19 +210,22 @@ class StudentTeamsSummaryCards extends StatelessWidget {
     final muted = isDark
         ? DefensysTokens.textSecondaryDark
         : DefensysUi.steelGrey;
-    final missingFaculty = state.teams.where((team) {
-      final faculty = isPitContext
-          ? team['instructor_name']
-          : team['adviser_name'] ?? team['adviser'];
-      return faculty == null || faculty.toString().trim().isEmpty;
-    }).map((t) => t['id'] ?? t)
+    final missingFaculty = state.teams
+        .where((team) {
+          final faculty = isPitContext
+              ? team['instructor_name']
+              : team['adviser_name'] ?? team['adviser'];
+          return faculty == null || faculty.toString().trim().isEmpty;
+        })
+        .map((t) => t['id'] ?? t)
         .toSet()
         .length;
     final eventName = state.eventName?.trim() ?? '';
     final historical =
         state.teams.isNotEmpty &&
         state.teams.every((t) => t['is_editable'] == false);
-    final hasSchedulingContext = !historical &&
+    final hasSchedulingContext =
+        !historical &&
         (isPitContext
             ? eventName.isNotEmpty
             : state.teams.any(
@@ -163,7 +262,7 @@ class StudentTeamsSummaryCards extends StatelessWidget {
         id: 'teams',
         label: 'Teams',
         count: state.teams.map((t) => t['id'] ?? t).toSet().length,
-        helper: historical ? 'Selected intake': 'Current list',
+        helper: historical ? 'Selected intake' : 'Current list',
         icon: Icons.groups_2_rounded,
         accent: DefensysUi.primaryMaroon,
       ),

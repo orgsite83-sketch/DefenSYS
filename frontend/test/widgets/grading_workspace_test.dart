@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import '../helpers/pump_app.dart';
 import '../helpers/capture_preview.dart';
 
@@ -434,7 +435,6 @@ void main() {
       );
       await _score(tester, '0');
       await _tap(tester, _key('grading-shared-tab'));
-      await _tap(tester, find.text('Section instructions'));
       await tester.ensureVisible(_sectionNotes());
       await tester.enterText(_sectionNotes(), 'Shared revision notes');
       await tester.ensureVisible(find.text('Request another shared hearing'));
@@ -454,7 +454,7 @@ void main() {
           matching: find.byType(Radio<String>),
         ),
       );
-      await _tap(tester, find.text('Section instructions'));
+      await _tap(tester, find.text('Select with shared revisions'));
       await tester.ensureVisible(_sectionNotes());
       await tester.enterText(_sectionNotes(), 'Keep shared evidence');
       await _tap(tester, _key('grading-evaluation-tab'));
@@ -478,6 +478,12 @@ void main() {
         tester.widget<EditableText>(_sectionNotes()).controller.text,
         'Keep shared evidence',
       );
+      expect(
+        tester
+            .widget<ShadRadioGroup<String>>(find.byType(ShadRadioGroup<String>))
+            .initialValue,
+        'approved_with_revisions',
+      );
       final nextRound = _team(shared: true, teamId: '22');
       nextRound.gradingWorkspace['shared_review']['round_id'] = 99;
       await _show(tester, nextRound, start: false);
@@ -488,10 +494,15 @@ void main() {
             .groupValue,
         isNull,
       );
-      await _tap(tester, find.text('Section instructions'));
       expect(
         tester.widget<EditableText>(_sectionNotes()).controller.text,
         isEmpty,
+      );
+      expect(
+        tester
+            .widget<ShadRadioGroup<String>>(find.byType(ShadRadioGroup<String>))
+            .initialValue,
+        'approved',
       );
       expect(tester.takeException(), isNull);
     },
@@ -659,11 +670,14 @@ void main() {
         },
       );
       when(() => client.post(any(), body: any(named: 'body'))).thenAnswer(
-        (_) async => http.Response(
+        (invocation) async => http.Response(
           jsonEncode({
             ...team.sharedReview!,
             'verdict': 'approved',
             'selected_key': 'c2',
+            'remarks': jsonDecode(
+              invocation.namedArguments[#body] as String,
+            )['remarks'],
           }),
           200,
         ),
@@ -675,6 +689,11 @@ void main() {
           of: _key('shared-system-option-c2'),
           matching: find.byType(Radio<String>),
         ),
+      );
+      await tester.ensureVisible(_sectionNotes());
+      await tester.enterText(
+        _sectionNotes(),
+        'Keep the shared-system evidence current.',
       );
       await _tap(tester, _key('confirm-inline-shared-system'));
       expect(find.text('Team BioPulse'), findsOneWidget);
@@ -689,6 +708,7 @@ void main() {
       expect(body['review_token'], 'captured-section-token');
       expect(body['concepts'][1]['decision'], 'approved');
       expect(body['concepts'][0]['decision'], 'not_selected');
+      expect(body['remarks'], 'Keep the shared-system evidence current.');
       expect(refreshed, 1);
       expect(_key('confirm-inline-shared-system'), findsNothing);
       final stale = _team(shared: true, posted: true);
@@ -710,7 +730,7 @@ void main() {
           'Ask the scheduler to link all team schedules to this section hearing.';
       await _show(tester, team);
       await _tap(tester, _key('grading-shared-tab'));
-      expect(find.text('Decision pending'), findsOneWidget);
+      expect(find.text('Shared decision pending'), findsOneWidget);
       expect(find.text('2 teams · 3 proposals'), findsOneWidget);
       expect(find.text('Section workspace'), findsNothing);
       expect(
@@ -728,6 +748,125 @@ void main() {
         viewport: true,
       );
       expect(find.byType(Radio<String>), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  for (final decision in ['approved_with_revisions', 'for_redefense']) {
+    testWidgets(
+      'shared $decision uses one decision and recommendations submission',
+      (tester) async {
+        final team = _team(shared: true, posted: true);
+        final client = await _show(tester, team);
+        Map<String, dynamic>? sent;
+        when(() => client.post(any(), body: any(named: 'body'))).thenAnswer((
+          invocation,
+        ) async {
+          sent = Map<String, dynamic>.from(
+            jsonDecode(invocation.namedArguments[#body] as String),
+          );
+          return http.Response(
+            jsonEncode({
+              ...team.sharedReview!,
+              'verdict': decision,
+              'selected_key': decision == 'for_redefense' ? '' : 'c2',
+              'remarks': sent!['remarks'],
+            }),
+            200,
+          );
+        });
+        await _tap(tester, _key('grading-shared-tab'));
+        if (decision != 'for_redefense') {
+          await _tap(
+            tester,
+            find.descendant(
+              of: _key('shared-system-option-c2'),
+              matching: find.byType(Radio<String>),
+            ),
+          );
+        }
+        await _tap(
+          tester,
+          find.text(
+            decision == 'for_redefense'
+                ? 'Request another shared hearing'
+                : 'Select with shared revisions',
+          ),
+        );
+        expect(
+          tester
+              .widget<ShadButton>(_key('confirm-inline-shared-system'))
+              .enabled,
+          isFalse,
+        );
+        expect(sent, isNull);
+        await tester.ensureVisible(_sectionNotes());
+        await tester.enterText(
+          _sectionNotes(),
+          'Clarify the shared scope and responsibilities.',
+        );
+        await _tap(tester, _key('confirm-inline-shared-system'));
+        expect(sent, isNull);
+        await _tap(
+          tester,
+          find.text(
+            decision == 'for_redefense'
+                ? 'Request shared hearing'
+                : 'Confirm shared direction',
+          ),
+        );
+        expect(sent!['verdict'], decision);
+        expect(
+          sent!['remarks'],
+          'Clarify the shared scope and responsibilities.',
+        );
+        expect(sent!['round_id'], 12);
+        expect(sent!['review_token'], 'captured-section-token');
+        final concepts = sent!['concepts'] as List;
+        expect(
+          concepts[1]['decision'],
+          decision == 'for_redefense' ? 'rejected' : decision,
+        );
+        verify(() => client.post(any(), body: any(named: 'body'))).called(1);
+        expect(_key('confirm-inline-shared-system'), findsNothing);
+        await tester.pump(const Duration(seconds: 4));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'failed shared decision keeps the choice and recommendations draft',
+    (tester) async {
+      final team = _team(shared: true, posted: true);
+      final client = await _show(tester, team);
+      when(() => client.post(any(), body: any(named: 'body'))).thenAnswer(
+        (_) async => http.Response(
+          '{"detail":"The hearing changed. Review it again."}',
+          400,
+        ),
+      );
+      await _tap(tester, _key('grading-shared-tab'));
+      await _tap(tester, find.text('Request another shared hearing'));
+      await tester.ensureVisible(_sectionNotes());
+      await tester.enterText(
+        _sectionNotes(),
+        'Keep this shared recommendation draft.',
+      );
+      await _tap(tester, _key('confirm-inline-shared-system'));
+      await _tap(tester, find.text('Request shared hearing'));
+      expect(
+        tester.widget<EditableText>(_sectionNotes()).controller.text,
+        'Keep this shared recommendation draft.',
+      );
+      expect(
+        tester
+            .widget<ShadRadioGroup<String>>(find.byType(ShadRadioGroup<String>))
+            .initialValue,
+        'for_redefense',
+      );
+      expect(_key('confirm-inline-shared-system'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },
   );
@@ -757,7 +896,7 @@ void main() {
     (tester) async {
       await _show(tester, _team(shared: true, chair: false), guest: true);
       await _tap(tester, _key('grading-shared-tab'));
-      expect(find.text('Decision pending'), findsOneWidget);
+      expect(find.text('Shared decision pending'), findsOneWidget);
       expect(_key('confirm-inline-shared-system'), findsNothing);
       expect(find.byType(Radio<String>), findsNothing);
       expect(find.textContaining('common panel chair'), findsNothing);
@@ -880,8 +1019,14 @@ void main() {
           'grading-workspace-final/shared-$width-$dark',
           viewport: true,
         );
-        await _tap(tester, find.text('Section instructions'));
-        await tester.ensureVisible(find.text('Request another shared hearing'));
+        expect(find.text('Decision'), findsOneWidget);
+        expect(find.text('Panel recommendations'), findsOneWidget);
+        expect(find.text('Confirm with shared revisions'), findsNothing);
+        expect(
+          tester.getBottomLeft(_key('shared-section-notes')).dy,
+          lessThan(tester.getTopLeft(_key('confirm-inline-shared-system')).dy),
+        );
+        await tester.ensureVisible(_key('confirm-inline-shared-system'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       });

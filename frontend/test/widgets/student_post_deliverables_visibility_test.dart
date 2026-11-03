@@ -144,7 +144,7 @@ void main() {
           expect(find.byType(EditableText), findsNothing);
           expect(find.text('Concept Paper'), findsOneWidget);
           expect(find.text('Clarify water usage.'), findsOneWidget);
-          expect(find.textContaining('Attempt 1'), findsOneWidget);
+          expect(find.textContaining('Attempt 1'), findsNothing);
           expect(tester.takeException(), isNull);
         },
       );

@@ -6,6 +6,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from rest_framework.test import APITestCase
 from defense.scheduler.models import DefenseSchedule
+from defense.scheduler.serializers import DefenseScheduleSerializer
 from defense.stages.models import StageDeliverable
 from repository.deliverables import concepts
 from repository.deliverables.models import ConceptRound
@@ -76,6 +77,8 @@ class ConceptHearingWorkflowTests(APITestCase):
     def test_all_rejected_requires_fresh_review_then_creates_second_assessed_attempt(self):
         response = self.verdict()
         self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(DefenseScheduleSerializer(
+            DefenseSchedule.objects.get(pk=self.capstone_schedule.pk)).data['assessment']['approved_title'], '')
         self.capstone_team.refresh_from_db()
         self.assertNotEqual(self.capstone_team.status, 'Failed')
         self.assertFalse(is_stage_ready(self.capstone_team, self.stage))
@@ -112,6 +115,28 @@ class ConceptHearingWorkflowTests(APITestCase):
         self.assertEqual(self.capstone_team.project_version, 1)
         self.assertEqual(self.grade.project_title_snapshot, 'Concept project 2')
         self.assertFalse(is_stage_ready(self.capstone_team, self.stage))
+        # Scheduling predates selection; the displayed approval must use the
+        # selected concept even if the team is later renamed.
+        self.capstone_team.project_title = 'Later project title'
+        self.capstone_team.save(update_fields=['project_title', 'updated_at'])
+        schedule = DefenseSchedule.objects.get(pk=self.capstone_schedule.pk)
+        assessment = DefenseScheduleSerializer(schedule).data['assessment']
+        self.assertEqual(assessment['approved_title'], 'Concept project 2')
+        self.assertFalse(assessment['is_completed'])
+
+    def test_historical_approval_keeps_the_title_from_its_own_attempt(self):
+        self.assertEqual(self.verdict(approved=True).status_code, 200)
+        self.grade.refresh_from_db()
+        from .services import _snapshot_attempt
+        _snapshot_attempt(self.grade)
+        # The old schedule now reads its immutable attempt history.
+        type(self.grade).all_objects.filter(pk=self.grade.pk).update(
+            schedule=None, verdict='', project_title_snapshot='Later attempt title')
+        schedule = DefenseSchedule.objects.get(pk=self.capstone_schedule.pk)
+        assessment = DefenseScheduleSerializer(schedule).data['assessment']
+        self.assertEqual(assessment['verdict'], 'approved')
+        self.assertEqual(assessment['approved_title'], 'Concept project 2')
+        self.assertEqual(assessment['display_status'], 'assessed')
 
     def test_inconsistent_hearing_verdict_rolls_back_concept_and_grade_changes(self):
         response = self.verdict(verdict='approved')

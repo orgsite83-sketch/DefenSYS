@@ -1,3 +1,6 @@
+import '../../../widgets/defense/defense_stages_map.dart';
+import '../../../widgets/defense/concept_hearing_history.dart';
+import '../../../widgets/defense/defense_history_menu.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -120,11 +123,18 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         .toLowerCase();
     final targetStage =
         _selectedStageForView?.trim().toLowerCase() ?? currentStageLabel;
-    final eventRows = stages.where((s) => s['stage_label']?.toString().trim().toLowerCase() == targetStage
-        && s['team_id'] != null,).toList();
+    final eventRows = stages
+        .where(
+          (s) =>
+              s['stage_label']?.toString().trim().toLowerCase() ==
+                  targetStage &&
+              s['team_id'] != null,
+        )
+        .toList();
     final requestedTeam = ref.read(studentTeamSelectionProvider);
-    final eventRow = eventRows.where((s) => s['team_id'] == requestedTeam).firstOrNull
-        ?? eventRows.firstOrNull;
+    final eventRow =
+        eventRows.where((s) => s['team_id'] == requestedTeam).firstOrNull ??
+        eventRows.firstOrNull;
 
     Map<String, dynamic>? activeSchedule;
     final topSchedule =
@@ -292,24 +302,36 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final selectedTeamId = ref.watch(studentTeamSelectionProvider);
     final eventEntries = (widget.studentData?['stages'] as List? ?? [])
         .whereType<Map>()
-        .where((entry) => entry['stage_label'] == _requestedStage && entry['team'] is Map,)
+        .where(
+          (entry) =>
+              entry['stage_label'] == _requestedStage && entry['team'] is Map,
+        )
         .toList();
-    final eventEntry = eventEntries.where((entry) => entry['team_id'] == selectedTeamId).firstOrNull
-        ?? eventEntries.firstOrNull;
+    final eventEntry =
+        eventEntries
+            .where((entry) => entry['team_id'] == selectedTeamId)
+            .firstOrNull ??
+        eventEntries.firstOrNull;
     final team = !isCapstone && eventEntry != null
         ? Map<String, dynamic>.from(eventEntry['team'] as Map)
         : widget.studentData?['team'] as Map<String, dynamic>?;
     final homeTeamMatches = team?['id'] == widget.studentData?['team']?['id'];
     final scheduleData = homeTeamMatches
         ? (widget.studentData?['schedule'] as Map<String, dynamic>? ??
-            widget.studentData?['defense_schedule'] as Map<String, dynamic>?)
+              widget.studentData?['defense_schedule'] as Map<String, dynamic>?)
         : null;
-    final grades = homeTeamMatches ? (widget.studentData?['grades'] as Map<String, dynamic>?) : null;
+    final grades = homeTeamMatches
+        ? (widget.studentData?['grades'] as Map<String, dynamic>?)
+        : null;
 
-    final peerEvalAllowed = homeTeamMatches && widget.studentData?['peerEvalEnabled'] == true;
-    final evaluationMembers = (team?['members'] as List? ?? widget.studentData?['members'] as List? ?? [])
-        .cast<Map<String, dynamic>>()
-        .toList();
+    final peerEvalAllowed =
+        homeTeamMatches && widget.studentData?['peerEvalEnabled'] == true;
+    final evaluationMembers =
+        (team?['members'] as List? ??
+                widget.studentData?['members'] as List? ??
+                [])
+            .cast<Map<String, dynamic>>()
+            .toList();
 
     final teamData = team?['id'] == null
         ? delivState.teams.firstOrNull
@@ -323,7 +345,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 widget.studentData?['stages'] as List? ??
                 [])
             .cast<Map<String, dynamic>>()
-            .where((entry) => isCapstone || entry['team_id'] == null || entry['team_id'] == team?['id'],)
+            .where(
+              (entry) =>
+                  isCapstone ||
+                  entry['team_id'] == null ||
+                  entry['team_id'] == team?['id'],
+            )
             .toList();
 
     final rawActiveStageName =
@@ -474,15 +501,20 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   ),
                 const SizedBox(height: 12),
                 if (!isCapstone && eventEntries.length > 1)
-                  Wrap(spacing: 8, runSpacing: 8, children: [
-                    for (final entry in eventEntries)
-                      ChoiceChip(
-                        label: Text('${entry['team']['name']}'),
-                        selected: entry['team_id'] == team?['id'],
-                        onSelected: (_) => ref.read(studentTeamSelectionProvider.notifier)
-                            .select(entry['team_id'] as int),
-                      ),
-                  ],),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final entry in eventEntries)
+                        ChoiceChip(
+                          label: Text('${entry['team']['name']}'),
+                          selected: entry['team_id'] == team?['id'],
+                          onSelected: (_) => ref
+                              .read(studentTeamSelectionProvider.notifier)
+                              .select(entry['team_id'] as int),
+                        ),
+                    ],
+                  ),
 
                 // Contextual Notice Banner (Archive for past stages, Upcoming info for future stages - Capstone only)
                 if (isCapstone &&
@@ -815,18 +847,41 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                           ),
                           adviserName: adviserName,
                           grades: stageGrades,
+                          hearingHistory:
+                              (((stageInfo['concept_workflow']
+                                                  as Map?)?['history'] ??
+                                              stageInfo['hearing_history'])
+                                          as List? ??
+                                      [])
+                                  .whereType<Map>()
+                                  .map((row) => Map<String, dynamic>.from(row))
+                                  .toList(),
                         );
                       }
-                      return _buildScheduleTab(
-                        selectedStageName: selectedStage,
-                        activeStageName: activeStageName,
-                        stageOptions: stageOptions,
-                        stagesList: stagesList,
-                        schedule: scheduleData,
-                        grades: grades,
-                        team: team,
-                        adviserName: adviserName,
-                        isCapstone: isCapstone,
+                      final pitHistory = stagesList
+                          .where((row) => row['stage_label'] == selectedStage)
+                          .firstOrNull;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildScheduleTab(
+                            selectedStageName: selectedStage,
+                            activeStageName: activeStageName,
+                            stageOptions: stageOptions,
+                            stagesList: stagesList,
+                            schedule: scheduleData,
+                            grades: grades,
+                            team: team,
+                            adviserName: adviserName,
+                            isCapstone: isCapstone,
+                          ),
+                          if (((pitHistory?['concept_workflow'] as Map?)?['history'] ?? pitHistory?['hearing_history'] ?? const []).isNotEmpty)
+                            DefenseHistoryMenu(label: 'View hearing history',
+                              onPressed: () => showDefenseHistoryDialog(context,
+                                title: '$selectedStage \u00b7 Hearing history',
+                                child: ConceptHistory(workflow: {'history':
+                                  (pitHistory?['concept_workflow'] as Map?)?['history'] ?? pitHistory?['hearing_history'] ?? []}))),
+                        ],
                       );
                     case 1:
                       return StudentDeliverablesTab(
@@ -847,7 +902,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                               ?.cast<Map<String, dynamic>>() ??
                           [];
                       final fallbackSubs =
-                          ((homeTeamMatches ? (widget.studentData?['myPeerSubmissions']) : null) as List?)
+                          ((homeTeamMatches
+                                      ? (widget
+                                            .studentData?['myPeerSubmissions'])
+                                      : null)
+                                  as List?)
                               ?.cast<Map<String, dynamic>>() ??
                           [];
                       final rawSubmissions = stageSubs.isNotEmpty
@@ -1433,446 +1492,15 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     required Map<String, dynamic>? grades,
     required bool isCapstone,
     required ValueChanged<String> onStageSelected,
-  }) {
-    final activeStageIdx = stageOptions.indexWhere(
-      (s) => s.trim().toLowerCase() == activeStageName.trim().toLowerCase(),
-    );
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        color: DefensysTokens.surfaceOf(context),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: DefensysTokens.borderOf(context)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: DefensysTokens.maroonOf(
-                          context,
-                        ).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                      child: Icon(
-                        isCapstone
-                            ? Icons.alt_route_rounded
-                            : Icons.event_available_rounded,
-                        size: 16,
-                        color: DefensysTokens.maroonTextOf(context),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        isCapstone
-                            ? 'Capstone Defense Stages'
-                            : 'Milestone Stages',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: DefensysTokens.textPrimaryOf(context),
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(
-                    context,
-                  ).withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Stage ${activeStageIdx >= 0 ? activeStageIdx + 1 : 1} of ${stageOptions.length}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: DefensysTokens.maroonTextOf(context),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Icon(
-                Icons.touch_app_outlined,
-                size: 11.5,
-                color: DefensysTokens.textSecondaryOf(context),
-              ),
-              SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  'Tap any stage above to inspect its details in the tabs below',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    color: DefensysTokens.textSecondaryOf(context),
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Horizontal Progress Track
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final stepCount = stageOptions.length;
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: List.generate(stepCount * 2 - 1, (index) {
-                  // Even index: Milestone Node
-                  if (index % 2 == 0) {
-                    final stageIdx = index ~/ 2;
-                    final stageLabel = stageOptions[stageIdx];
-                    final normStage = stageLabel.trim().toLowerCase();
-                    final normSelected = selectedStageName.trim().toLowerCase();
-                    final isSelected = normStage == normSelected;
-
-                    final stageInfo = stagesList.firstWhere(
-                      (s) =>
-                          s['stage_label']?.toString().trim().toLowerCase() ==
-                          normStage,
-                      orElse: () => <String, dynamic>{},
-                    );
-
-                    final isCleared =
-                        stageInfo['is_officially_complete'] == true ||
-                        stageInfo['stage_status_detail']?.toString() ==
-                            'passed' ||
-                        stageInfo['stage_progress_status']?.toString() ==
-                            'passed' ||
-                        (stageIdx < activeStageIdx && activeStageIdx != -1);
-
-                    final isActive =
-                        (stageIdx == activeStageIdx) ||
-                        (!isCleared &&
-                            (stageIdx == 0 || stageIdx <= activeStageIdx));
-
-                    final hasPendingPost =
-                        StudentTaskBadgeHelper.hasPendingPostDeliverables(
-                          stageInfo,
-                        );
-                    final gradeData =
-                        (stageInfo['grade'] as Map<String, dynamic>?) ??
-                        (stageInfo['grade'] is Map
-                            ? Map<String, dynamic>.from(
-                                stageInfo['grade'] as Map,
-                              )
-                            : null);
-                    final verdict =
-                        gradeData?['verdict']?.toString() ??
-                        stageInfo['verdict']?.toString();
-
-                    final isForRedefense = verdict == 'for_redefense';
-                    final isRevisionsDue =
-                        isCleared &&
-                        hasPendingPost &&
-                        verdict == 'approved_with_revisions';
-                    final isRequirementsDue =
-                        isCleared &&
-                        hasPendingPost &&
-                        !isRevisionsDue &&
-                        !isForRedefense;
-                    final isStagePassed =
-                        isCleared && !hasPendingPost && !isForRedefense;
-
-                    String statusLabel;
-                    Color statusColor;
-                    IconData? statusIcon;
-                    if (isForRedefense) {
-                      statusLabel = 'For Re-defense';
-                      statusColor = const Color(0xFFDC2626);
-                      statusIcon = Icons.replay_rounded;
-                    } else if (isRevisionsDue) {
-                      statusLabel = 'Revisions Due';
-                      statusColor = const Color(0xFFD97706);
-                      statusIcon = Icons.pending_actions_rounded;
-                    } else if (isRequirementsDue) {
-                      statusLabel = 'Requirements Due';
-                      statusColor = const Color(0xFF2563EB);
-                      statusIcon = Icons.assignment_late_rounded;
-                    } else if (isStagePassed) {
-                      statusLabel = 'Passed';
-                      statusColor = const Color(0xFF15803D);
-                      statusIcon = Icons.check_circle_rounded;
-                    } else {
-                      statusLabel = isActive ? 'Current' : 'Upcoming';
-                      statusColor = isActive
-                          ? DefensysTokens.maroonOf(context)
-                          : const Color(0xFF94A3B8);
-                      statusIcon = null;
-                    }
-
-                    Color nodeBg;
-                    Color nodeBorder;
-                    if (isForRedefense) {
-                      nodeBg = const Color(0xFFEF4444);
-                      nodeBorder = const Color(0xFFDC2626);
-                    } else if (isRevisionsDue) {
-                      nodeBg = const Color(0xFFF59E0B);
-                      nodeBorder = const Color(0xFFD97706);
-                    } else if (isRequirementsDue) {
-                      nodeBg = const Color(0xFF3B82F6);
-                      nodeBorder = const Color(0xFF2563EB);
-                    } else if (isStagePassed) {
-                      nodeBg = const Color(0xFF16A34A);
-                      nodeBorder = const Color(0xFF15803D);
-                    } else {
-                      nodeBg = isActive
-                          ? DefensysTokens.maroonOf(context)
-                          : const Color(0xFFF1F5F9);
-                      nodeBorder = isActive
-                          ? DefensysTokens.maroonOf(context)
-                          : const Color(0xFFCBD5E1);
-                    }
-
-                    Widget nodeInner;
-                    if (isForRedefense) {
-                      nodeInner = const Icon(
-                        Icons.replay_rounded,
-                        size: 18,
-                        color: Colors.white,
-                      );
-                    } else if (isRevisionsDue) {
-                      nodeInner = const Icon(
-                        Icons.pending_actions_rounded,
-                        size: 18,
-                        color: Colors.white,
-                      );
-                    } else if (isRequirementsDue) {
-                      nodeInner = const Icon(
-                        Icons.upload_file_rounded,
-                        size: 18,
-                        color: Colors.white,
-                      );
-                    } else if (isStagePassed) {
-                      nodeInner = const Icon(
-                        Icons.check_rounded,
-                        size: 19,
-                        color: Colors.white,
-                      );
-                    } else if (isActive) {
-                      nodeInner = Text(
-                        '${stageIdx + 1}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                        ),
-                      );
-                    } else {
-                      nodeInner = Icon(
-                        Icons.lock_outline_rounded,
-                        size: 14,
-                        color: DefensysTokens.textSecondaryOf(context),
-                      );
-                    }
-
-                    return Expanded(
-                      flex: 3,
-                      child: InkWell(
-                        onTap: () {
-                          onStageSelected(stageLabel);
-                        },
-                        borderRadius: BorderRadius.circular(10),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 4,
-                            horizontal: 2,
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Status label
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (statusIcon != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 2),
-                                      child: Icon(
-                                        statusIcon,
-                                        size: 9,
-                                        color: statusColor,
-                                      ),
-                                    ),
-                                  Text(
-                                    statusLabel,
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w700,
-                                      color: statusColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-
-                              // Node Circle with Selection Ring
-                              Container(
-                                width: 34,
-                                height: 34,
-                                decoration: BoxDecoration(
-                                  color: nodeBg,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: isSelected ? nodeBorder : nodeBg,
-                                    width: isSelected
-                                        ? 3.0
-                                        : (isActive ? 2.5 : 1.5),
-                                  ),
-                                  boxShadow: isSelected
-                                      ? [
-                                          BoxShadow(
-                                            color: nodeBorder.withValues(
-                                              alpha: 0.45,
-                                            ),
-                                            blurRadius: 10,
-                                            spreadRadius: 2,
-                                          ),
-                                        ]
-                                      : (isActive
-                                            ? [
-                                                BoxShadow(
-                                                  color:
-                                                      DefensysTokens.maroonOf(
-                                                        context,
-                                                      ).withValues(alpha: 0.35),
-                                                  blurRadius: 8,
-                                                  spreadRadius: 1,
-                                                ),
-                                              ]
-                                            : (isCleared
-                                                  ? [
-                                                      BoxShadow(
-                                                        color: nodeBorder
-                                                            .withValues(
-                                                              alpha: 0.25,
-                                                            ),
-                                                        blurRadius: 6,
-                                                        offset: const Offset(
-                                                          0,
-                                                          2,
-                                                        ),
-                                                      ),
-                                                    ]
-                                                  : null)),
-                                ),
-                                child: Center(child: nodeInner),
-                              ),
-                              const SizedBox(height: 6),
-
-                              // Stage Title
-                              Text(
-                                stageLabel,
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w900
-                                      : (isActive
-                                            ? FontWeight.w800
-                                            : (isCleared
-                                                  ? FontWeight.w700
-                                                  : FontWeight.w600)),
-                                  color: isSelected
-                                      ? statusColor
-                                      : (isActive
-                                            ? DefensysTokens.textPrimaryOf(
-                                                context,
-                                              )
-                                            : (isCleared
-                                                  ? DefensysTokens.textPrimaryOf(context)
-                                                  : DefensysTokens.textSecondaryOf(
-                                                      context,
-                                                    ))),
-                                ),
-                              ),
-                              if (isSelected) ...[
-                                const SizedBox(height: 2),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    'Viewing',
-                                    style: TextStyle(
-                                      fontSize: 8.5,
-                                      fontWeight: FontWeight.w800,
-                                      color: statusColor,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  } else {
-                    // Odd index: Connecting track line
-                    final stageBeforeIdx = index ~/ 2;
-                    final isLineCompleted = stageBeforeIdx < activeStageIdx;
-
-                    return Expanded(
-                      flex: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 28),
-                        child: Container(
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: isLineCompleted
-                                ? const Color(0xFF16A34A)
-                                : const Color(0xFFE2E8F0),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                }),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── RICH STAGE STATUS / SCHEDULE SUB-TAB ─────────────────────────────────
+  }) => DefenseStagesMap(
+    stageOptions: stageOptions,
+    activeStageName: activeStageName,
+    selectedStageName: selectedStageName,
+    stagesList: stagesList,
+    grades: grades,
+    isCapstone: isCapstone,
+    onStageSelected: onStageSelected,
+  );
 
   Widget _buildScheduleTab({
     required String selectedStageName,
@@ -1927,11 +1555,6 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             ? grades
             : null);
 
-    final finalScore =
-        stageGradeMap?['final_grade'] ??
-        stageGradeMap?['grade'] ??
-        (isCleared ? (stageInfo['score'] ?? 'Passed') : null);
-
     final resultStr =
         stageGradeMap?['result']?.toString() ?? (isCleared ? 'PASSED' : null);
 
@@ -1944,10 +1567,6 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final remarks =
         stageGradeMap?['remarks']?.toString() ??
         stageInfo['remarks']?.toString();
-
-    final presScore = stageGradeMap?['presentation']?.toString();
-    final techScore = stageGradeMap?['technical']?.toString();
-    final qnaScore = stageGradeMap?['qna']?.toString();
 
     // Resolve Schedule & Venue strictly for selected stage
     final isTopScheduleForStage =
@@ -2214,7 +1833,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Official Grade: ${finalScore ?? 'Passed'} • $completedDate',
+                              'Stage completed \u00b7 $completedDate',
                               style: TextStyle(
                                 fontSize: 11.5,
                                 color: cSubText,
@@ -2229,48 +1848,6 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 );
               },
             ),
-
-            // Rubric Criteria Breakdown (if scores exist)
-            if (presScore != null || techScore != null || qnaScore != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.surfaceHigherOf(context),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: DefensysTokens.borderOf(context)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    if (presScore != null)
-                      Expanded(
-                        child: _buildCriteriaScore(
-                          'Presentation',
-                          '$presScore/30',
-                        ),
-                      ),
-                    if (techScore != null)
-                      Expanded(
-                        child: _buildCriteriaScore(
-                          'Technical',
-                          '$techScore/50',
-                        ),
-                      ),
-                    if (qnaScore != null)
-                      Expanded(
-                        child: _buildCriteriaScore(
-                          'Q&A Defense',
-                          '$qnaScore/20',
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
 
             // Panel Remarks Feedback (if remarks exist)
             if (remarks != null && remarks.trim().isNotEmpty) ...[
@@ -2643,32 +2220,5 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     );
   }
 
-  Widget _buildCriteriaScore(String label, String score) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          score,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            color: DefensysTokens.textPrimaryOf(context),
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 9.5,
-            color: DefensysTokens.textSecondaryOf(context),
-            fontWeight: FontWeight.w500,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    );
-  }
+
 }

@@ -41,6 +41,7 @@ TeamData _team({
   bool canIssue = false,
   List<TeamMember>? roster,
   List<Map<String, dynamic>> drafts = const [],
+  List<Map<String, dynamic>> submitted = const [],
   List<Map<String, dynamic>> materials = const [],
   List<Map<String, dynamic>> concepts = const [],
   String? evaluationContext,
@@ -88,6 +89,7 @@ TeamData _team({
   evaluationContext: evaluationContext ?? 'context-$id-$target',
   draftContext: draftContext,
   draftSubmissions: drafts,
+  submittedSubmissions: submitted,
   defenseMaterials: materials,
   assessmentConcepts: concepts,
   draftSavedAt: drafts.isNotEmpty ? '2026-10-20T08:00:00+08:00' : null,
@@ -198,6 +200,60 @@ Future<_HttpClient> _showSheet(
 }
 
 void main() {
+  testWidgets(
+    'corrected module retains submitted targets and allows missing members',
+    (tester) async {
+      final team = _team(
+        target: 'both',
+        concepts: [
+          {'key': 'c2', 'title': 'Corrected module'},
+        ],
+        submitted: [
+          {
+            'concept_key': 'c2',
+            'student_id': null,
+            'criteria_scores': [
+              {'criterion_id': 1, 'score': 9},
+            ],
+            'remarks': '',
+          },
+        ],
+        drafts: [
+          {
+            'concept_key': 'c2',
+            'student_id': '1',
+            'criteria_scores': [
+              {'criterion_id': 2, 'score': 7},
+            ],
+          },
+        ],
+      );
+      await _showSheet(tester, [team]);
+      expect(_value(tester, 'Clarity'), 9);
+      expect(
+        tester.widget<EvaluationScoreInput>(_picker('Clarity')).enabled,
+        isFalse,
+      );
+      expect(team.evaluationProgress.entered, 2);
+      expect(team.evaluationProgress.required, 3);
+      await _tapVisible(tester, _targetTab('Individuals'));
+      expect(_value(tester, 'Contribution'), 7);
+      expect(
+        tester.widget<EvaluationScoreInput>(_picker('Contribution')).enabled,
+        isTrue,
+      );
+      await _chooseMember(tester, '2');
+      await _tapScore(tester, 'Contribution', '8');
+      expect(team.evaluationProgress.complete, isTrue);
+      await _tapVisible(tester, _targetTab('Team'));
+      expect(_value(tester, 'Clarity'), 9);
+      expect(
+        tester.widget<EvaluationScoreInput>(_picker('Clarity')).enabled,
+        isFalse,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   test(
     'scope refresh retains entered alternatives and zero scores; rubric changes do not reuse drafts',
     () {

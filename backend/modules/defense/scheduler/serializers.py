@@ -648,7 +648,9 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
 
     def get_assessment(self, obj):
         from .progress import schedule_progress
-        return schedule_progress(obj, reconcile_status=False)
+        from grading.grades.student_visibility import student_assessment_payload
+        actor = getattr(self.context.get('request'), 'user', None)
+        return student_assessment_payload(schedule_progress(obj, reconcile_status=False), actor)
 
     def get_project_title(self, obj):
         return obj.project_title_snapshot or obj.team.project_title

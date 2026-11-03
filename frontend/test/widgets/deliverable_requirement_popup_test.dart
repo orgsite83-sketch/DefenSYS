@@ -277,6 +277,21 @@ void main() {
         expect(find.byType(DeliverableRequirementCard), findsNWidgets(3));
         expect(find.byType(DeliverableUploadTile), findsNothing);
         expect(find.byType(WeeklyReportCollection), findsNothing);
+        final conceptCard = find.byKey(
+          const ValueKey('student-requirement-CONCEPTS'),
+        );
+        final status = find.descendant(
+          of: conceptCard,
+          matching: find.text('3 missing'),
+        );
+        final progress = find.descendant(
+          of: conceptCard,
+          matching: find.text('0/3 Uploaded'),
+        );
+        expect(
+          tester.getTopLeft(status).dy,
+          lessThan(tester.getTopLeft(progress).dy),
+        );
         expect(tester.takeException(), isNull);
         await capturePreview(
           tester,
@@ -343,6 +358,22 @@ void main() {
       ),
       findsOneWidget,
     );
+    final card = find.byKey(const ValueKey('student-requirement-FORM'));
+    expect(
+      tester
+          .getTopLeft(
+            find.descendant(of: card, matching: find.text('Accepted')),
+          )
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(
+              find.descendant(of: card, matching: find.text('1/1 Uploaded')),
+            )
+            .dy,
+      ),
+    );
+    await capturePreview(tester, card, 'deliverable-accepted-status-top', viewport: true);
     expect(tester.takeException(), isNull);
   });
 

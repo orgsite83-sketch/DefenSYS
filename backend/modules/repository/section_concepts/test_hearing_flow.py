@@ -124,11 +124,13 @@ class SharedHearingFlowTests(APITestCase):
 
     def test_only_pm_submits_shared_final_and_proposals_remain_preserved(self):
         self.finish()
+        self.assertTrue(services.task_payload(self.pm)[0]['needs_files'])
         with self.assertRaises(PermissionError):
             services.upload(self.project, self.module_team.leader, 'c2',
                 SimpleUploadedFile('final.pdf', b'%PDF-1.4 final'), purpose='final')
         row = services.upload(self.project, self.pm, 'c2',
             SimpleUploadedFile('final.pdf', b'%PDF-1.4 final'), purpose='final')
+        self.assertFalse(services.task_payload(self.pm)[0]['requires_action'])
         services.review(self.project, self.first, row.pk, 'accepted')
         state = services.payload(self.project, self.pm)
         self.assertTrue(state['shared_final_archived'])

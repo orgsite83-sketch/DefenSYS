@@ -105,6 +105,45 @@ def draft_payload(draft, context):
     return {'submissions': draft.submissions, 'saved_at': draft.updated_at.isoformat()}
 
 
+def evaluation_complete(schedule, submissions):
+    """Completion belongs to the current required module, not any old row."""
+    from grading.grades.outcome_rules import concept_keys
+    keys = set(concept_keys(schedule))
+    rows = []
+    for row in submissions:
+        if isinstance(row, dict):
+            if row.get('concept_key', '') in keys:
+                rows.append(row)
+        elif not row.is_void and row.concept_key in keys:
+            rows.append({'student_id': row.student_id, 'concept_key': row.concept_key,
+                'remarks': row.remarks or '', 'criteria_scores': [
+                    {'criterion_id': score.criterion_id, 'score': str(score.score)} for score in row.criterion_scores.all()]})
+    try:
+        validate_evaluation_submissions(schedule, rows)
+        return True
+    except ValidationError:
+        return False
+
+
+def owner_evaluation_complete(schedule, **owner):
+    return evaluation_complete(schedule, schedule.panelist_grade_submissions.filter(
+        is_void=False, **owner).prefetch_related('criterion_scores'))
+
+
+def existing_submission_matches(schedule, item, **owner):
+    """Retain valid submitted blocks when completing a partially captured module."""
+    from decimal import Decimal
+    existing = schedule.panelist_grade_submissions.filter(is_void=False,
+        concept_key=item.get('concept_key', ''), student_id=item.get('student_id'), **owner).first()
+    if not existing:
+        return False
+    recorded = {s.criterion_id: s.score for s in existing.criterion_scores.all()}
+    incoming = {s['criterion_id']: Decimal(str(s['score'])) for s in item['criteria_scores']}
+    if recorded != incoming or (existing.remarks or '').strip() != item.get('remarks', '').strip():
+        raise ValidationError('A submitted assessment cannot be edited. Refresh its recorded scores or request a correction.')
+    return True
+
+
 def retire_submitted_draft(schedule, **owner):
     """Keep unselected private alternatives as drafts, never as panel results."""
     from grading.grades.outcome_rules import concept_keys
@@ -227,7 +266,7 @@ def _save_evaluation_draft(schedule, payload, *, panelist=None, guest=None):
     reason = grading_unavailable_reason(schedule, grade)
     if reason:
         raise ValidationError(reason)
-    if schedule.panelist_grade_submissions.filter(**owner).exists():
+    if owner_evaluation_complete(schedule, **owner):
         raise ValidationError('Your grades have already been submitted and locked.')
     context = evaluation_context(schedule, grade)
     if payload.get('evaluation_context') != context:

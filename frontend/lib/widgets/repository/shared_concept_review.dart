@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../theme/defensys_tokens.dart';
+import '../../models/defense_summary_status.dart';
+import 'deliverable_file_widgets.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 
 List<Map<String, dynamic>> conceptRows(dynamic value) => (value as List? ?? [])
@@ -9,7 +11,8 @@ List<Map<String, dynamic>> conceptRows(dynamic value) => (value as List? ?? [])
     .map((row) => Map<String, dynamic>.from(row))
     .toList();
 
-String systemLetter(dynamic key) => String.fromCharCode(64 + (int.tryParse('$key'.replaceFirst('c', '')) ?? 1));
+String systemLetter(dynamic key) =>
+    String.fromCharCode(64 + (int.tryParse('$key'.replaceFirst('c', '')) ?? 1));
 
 bool isSharedConceptWorkflow(Map<String, dynamic> workflow) =>
     workflow['selection_mode'] == 'shared_module' ||
@@ -38,6 +41,80 @@ String moduleReviewLabel(String status) => switch (status) {
   'ready_for_review' => 'Ready for module review',
   _ => 'Module review pending',
 };
+
+/// Student identity for the selected system; title review remains independent.
+class SelectedSharedSystemHeader extends StatelessWidget {
+  const SelectedSharedSystemHeader({
+    super.key,
+    required this.system,
+    this.verdict,
+    this.status,
+    this.historyAction,
+    this.label = 'Your section system',
+  });
+  final Map<String, dynamic> system;
+  final String? verdict;
+  final DefenseSummaryStatus? status;
+  final Widget? historyAction;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final review = system['title_review'] as Map? ?? {};
+    final accepted =
+        review['state'] == 'accepted' ||
+        (review.isEmpty && system['confirmed'] == true);
+    final currentStatus =
+        status ??
+        DefenseSummaryStatus.resolve(
+          verdict: verdict,
+          titleReview: review,
+          titleAccepted: accepted,
+        );
+    return Column(
+      key: const ValueKey('student-selected-system'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+            DeliverableStatusBadge(
+              label: currentStatus.label,
+              tone: currentStatus.tone,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '${system['title']}',
+          style: TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            height: 1.4,
+            color: DefensysTokens.textPrimaryOf(context),
+          ),
+        ),
+        if (historyAction != null) ...[
+          const SizedBox(height: 8),
+          historyAction!,
+        ],
+      ],
+    );
+  }
+}
 
 class SharedSystemSelectionBanner extends StatelessWidget {
   const SharedSystemSelectionBanner({super.key, required this.project});

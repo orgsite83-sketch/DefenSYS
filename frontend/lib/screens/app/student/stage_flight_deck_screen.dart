@@ -393,7 +393,6 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
         children: stageOptions.map((stage) {
           final isSelected = stage == _currentStageLabel;
           final normStage = stage.trim().toLowerCase();
-          final normActive = activeStageName.trim().toLowerCase();
           final stageIdx = stageOptions.indexOf(stage);
           final activeIdx = stageOptions.indexOf(activeStageName);
 
@@ -498,7 +497,6 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
     required Map<String, dynamic>? stageGrade,
   }) {
     final gradeResult = stageGrade?['result']?.toString().toUpperCase();
-    final gradeScore = stageGrade?['final_grade'] ?? stageGrade?['grade'];
 
     Color headerBg = Colors.white;
     Color borderColor = const Color(0xFFE2E8F0);
@@ -514,9 +512,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
-          gradeScore != null
-              ? 'PASSED • GRADE $gradeScore'
-              : (gradeResult != null ? 'PASSED • $gradeResult' : 'PASSED & ARCHIVED'),
+          (gradeResult != null ? 'PASSED • $gradeResult' : 'PASSED & ARCHIVED'),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 11,
@@ -825,7 +821,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
         // ── MIDDLE: DELIBERATION RECORD OR DELIVERABLES CHECKLIST ──
         if (isOfficiallyComplete) ...[
           _buildBentoCard(
-            title: 'Deliberation Verdict & Grade',
+            title: 'Defense outcome',
             icon: Icons.emoji_events_rounded,
             iconColor: const Color(0xFFD97706),
             child: Column(
@@ -838,7 +834,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'OFFICIAL GRADE',
+                          'RESULT',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
@@ -846,9 +842,8 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                           ),
                         ),
                         Text(
-                          stageGrade?['final_grade']?.toString() ??
-                              stageGrade?['grade']?.toString() ??
-                              'Passed',
+                          stageGrade?['result'] == 'failed' ? 'Not approved'
+                              : stageGrade?['result'] == 'passed' ? 'Passed' : 'Stage completed',
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w900,

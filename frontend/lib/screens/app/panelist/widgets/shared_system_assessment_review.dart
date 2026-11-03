@@ -7,6 +7,7 @@ import '../../../../services/academic/section_concept_service.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/confirm_dialog.dart';
+import '../../../../widgets/grading/shared_selection_correction_dialog.dart';
 import '../panelist_models.dart';
 import 'defense_materials_card.dart';
 
@@ -32,8 +33,8 @@ class _SharedSystemAssessmentReviewState
   late final TextEditingController _notes;
   late String _sourceSignature;
   String? _selection;
+  String _decision = 'approved';
   bool _busy = false;
-  final _instructions = ShadAccordionController<String>();
 
   @override
   void initState() {
@@ -54,7 +55,7 @@ class _SharedSystemAssessmentReviewState
         next['round_id'] != _review['round_id'] || next['id'] != _review['id'];
     if (changed) {
       _selection = null;
-      _instructions.value = [];
+      _decision = 'approved';
       _notes.text = (next['remarks'] ?? '').toString();
     } else if ((_review['verdict'] ?? '').toString().isNotEmpty &&
         (next['verdict'] ?? '').toString().isEmpty) {
@@ -67,7 +68,6 @@ class _SharedSystemAssessmentReviewState
   @override
   void dispose() {
     _notes.dispose();
-    _instructions.dispose();
     super.dispose();
   }
 
@@ -76,18 +76,39 @@ class _SharedSystemAssessmentReviewState
       .map((row) => Map<String, dynamic>.from(row))
       .toList();
 
-  Future<void> _submit(String verdict) async {
+  Future<void> _correctSelection() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final changed = await showSharedSelectionCorrection(
+        context,
+        Map<String, dynamic>.from(_review),
+      );
+      if (changed && mounted) {
+        await widget.onUpdated();
+        if (mounted) showSuccessToast(context, 'Shared selection corrected.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _submit() async {
     if (_busy ||
         _review['can_decide'] != true ||
         (_review['verdict'] ?? '').toString().isNotEmpty) {
       return;
     }
+    final verdict = _decision;
+    final selection = _selection;
+    final notes = _notes.text.trim();
+    final review = Map<String, dynamic>.from(_review);
     final retry = verdict == 'for_redefense';
-    if (!retry && _selection == null) return;
-    if (verdict != 'approved' && _notes.text.trim().isEmpty) return;
+    if (!retry && selection == null) return;
+    if (verdict != 'approved' && notes.isEmpty) return;
     final systems = rows(_review['systems']);
     final selected = systems
-        .where((row) => row['key'] == _selection)
+        .where((row) => row['key'] == selection)
         .firstOrNull;
     final teams = rows(_review['teams']);
     final confirmed = await showConfirmDialog(
@@ -116,26 +137,32 @@ class _SharedSystemAssessmentReviewState
       ),
     );
     if (!confirmed || !mounted) return;
+    if (_review['id'] != review['id'] ||
+        _review['round_id'] != review['round_id']) {
+      showErrorToast(
+        context,
+        'The hearing changed. Review the current decision again.',
+      );
+      return;
+    }
     setState(() => _busy = true);
     try {
       final updated = await ref.read(sectionConceptServiceProvider).action(
-        _review,
+        review,
         'decide',
         {
           'verdict': verdict,
-          'remarks': _notes.text.trim(),
+          'remarks': notes,
           'concepts': [
             for (final system in systems)
               {
                 'key': system['key'],
                 'decision': retry
                     ? 'rejected'
-                    : system['key'] == _selection
+                    : system['key'] == selection
                     ? verdict
                     : 'not_selected',
-                'remarks': retry || system['key'] == _selection
-                    ? _notes.text.trim()
-                    : '',
+                'remarks': retry || system['key'] == selection ? notes : '',
               },
           ],
         },
@@ -289,30 +316,44 @@ class _SharedSystemAssessmentReviewState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          alignment: WrapAlignment.spaceBetween,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Shared systems',
-              style: TextStyle(
-                fontFamily: DefensysTokens.fontFamilyInter,
-                fontSize: 21,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -.4,
-                color: ink,
+            Expanded(
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Shared systems',
+                    style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -.4,
+                      color: ink,
+                    ),
+                  ),
+                  ShadBadge.outline(
+                    child: Text(
+                      _review['verdict'] == 'for_redefense'
+                          ? 'Another hearing required'
+                          : recorded
+                          ? 'System selected'
+                          : canDecide
+                          ? 'Chair decision needed'
+                          : 'Shared decision pending',
+                    ),
+                  ),
+                ],
               ),
             ),
-            ShadBadge.outline(
-              child: Text(
-                _review['verdict'] == 'for_redefense'
-                    ? 'Another hearing required'
-                    : recorded
-                    ? 'System selected'
-                    : 'Decision pending',
-              ),
+            SharedSelectionCorrectionMenu(
+              review: _review,
+              enabled: !_busy,
+              onCorrect: _correctSelection,
             ),
           ],
         ),
@@ -321,6 +362,7 @@ class _SharedSystemAssessmentReviewState
           '$teamCount ${teamCount == 1 ? 'team' : 'teams'} · ${systems.length} ${systems.length == 1 ? 'proposal' : 'proposals'}',
           style: TextStyle(fontSize: 12, color: muted),
         ),
+        SharedSelectionCorrectionHistory(review: _review),
         if (common.isNotEmpty) ...[
           const SizedBox(height: 22),
           DefenseMaterialsCard(
@@ -371,82 +413,70 @@ class _SharedSystemAssessmentReviewState
           ),
         if (!recorded && _review['can_decide'] == true) ...[
           const SizedBox(height: 24),
+          Text(
+            'Decision',
+            style: TextStyle(color: ink, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          ShadRadioGroup<String>(
+            initialValue: _decision,
+            enabled: canDecide,
+            spacing: 14,
+            items: [
+              for (final choice in const {
+                'approved': 'Select the shared system',
+                'approved_with_revisions': 'Select with shared revisions',
+                'for_redefense': 'Request another shared hearing',
+              }.entries)
+                ShadRadio<String>(
+                  value: choice.key,
+                  color: DefensysTokens.maroonTextOf(context),
+                  label: Text(choice.value),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => _decision = value);
+            },
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Panel recommendations',
+            style: TextStyle(color: ink, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 8),
+          ShadInput(
+            key: const ValueKey('shared-section-notes'),
+            controller: _notes,
+            enabled: canDecide,
+            maxLines: 3,
+            maxLength: 5000,
+            placeholder: const Text(
+              'Shared recommendations or required changes',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          if (_decision != 'approved') ...[
+            const SizedBox(height: 6),
+            Text(
+              'Describe the required changes before confirming.',
+              style: TextStyle(fontSize: 12, color: muted),
+            ),
+          ],
+          const SizedBox(height: 12),
           ShadButton(
             key: const ValueKey('confirm-inline-shared-system'),
             height: 0,
             expands: true,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            enabled: canDecide && _selection != null,
-            onPressed: () => _submit('approved'),
+            enabled:
+                canDecide &&
+                (_decision == 'for_redefense' || _selection != null) &&
+                (_decision == 'approved' || _notes.text.trim().isNotEmpty),
+            onPressed: _submit,
             child: Text(
-              _busy ? 'Recording decision...' : 'Confirm shared system',
+              _busy ? 'Recording decision...' : 'Confirm shared decision',
               textAlign: TextAlign.center,
             ),
-          ),
-          const SizedBox(height: 8),
-          ShadAccordion<String>(
-            key: const ValueKey('shared-section-instructions'),
-            controller: _instructions,
-            maintainState: true,
-            children: [
-              ShadAccordionItem(
-                value: 'instructions',
-                title: const Text(
-                  'Section instructions',
-                  style: TextStyle(fontSize: 12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ShadInput(
-                      key: const ValueKey('shared-section-notes'),
-                      controller: _notes,
-                      enabled: canDecide,
-                      maxLines: 3,
-                      maxLength: 5000,
-                      placeholder: const Text(
-                        'Shared recommendations or required changes',
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        ShadButton.outline(
-                          height: 0,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                          enabled:
-                              canDecide &&
-                              _selection != null &&
-                              _notes.text.trim().isNotEmpty,
-                          onPressed: () => _submit('approved_with_revisions'),
-                          child: const Flexible(
-                            child: Text('Confirm with shared revisions'),
-                          ),
-                        ),
-                        ShadButton.outline(
-                          height: 0,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                          enabled: canDecide && _notes.text.trim().isNotEmpty,
-                          onPressed: () => _submit('for_redefense'),
-                          child: const Flexible(
-                            child: Text('Request another shared hearing'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ),
         ] else if ((_review['remarks'] ?? '').toString().isNotEmpty) ...[
           const SizedBox(height: 22),

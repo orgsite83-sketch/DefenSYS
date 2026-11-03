@@ -125,6 +125,16 @@ void main() {
           theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
         );
         await tester.ensureVisible(find.text('Confirm next attempt'));
+        expect(find.text('Decision'), findsOneWidget);
+        expect(find.text('Save recommendations'), findsNothing);
+        expect(
+          tester.getTopLeft(find.text('Panel recommendations')).dy,
+          lessThan(tester.getTopLeft(find.byType(ShadInput)).dy),
+        );
+        expect(
+          tester.getBottomLeft(find.byType(ShadInput)).dy,
+          lessThan(tester.getTopLeft(find.text('Confirm next attempt')).dy),
+        );
         expect(find.byType(ShadRadio<String>), findsNWidgets(2));
         expect(find.text('Improve the selected shared module'), findsOneWidget);
         expect(find.text('Propose three independent concepts'), findsOneWidget);
@@ -140,7 +150,7 @@ void main() {
   }
 
   testWidgets(
-    'chair confirms direction separately and keeps unsaved recommendations',
+    'chair confirms direction and recommendations together in one request',
     (tester) async {
       registerFallbackValue(Uri.parse('http://localhost'));
       final client = _HttpClient();
@@ -151,10 +161,9 @@ void main() {
         sent =
             jsonDecode(invocation.namedArguments[#body] as String)
                 as Map<String, dynamic>;
-        return http.Response(
-          jsonEncode({'grade': _sharedRepeat(recorded: true)}),
-          200,
-        );
+        final saved = _sharedRepeat(recorded: true);
+        saved['verdict_remarks'] = sent!['recommendations'];
+        return http.Response(jsonEncode({'grade': saved}), 200);
       });
       await pumpDefensysWidget(
         tester,
@@ -168,7 +177,7 @@ void main() {
       );
       await tester.enterText(
         find.byType(ShadInput),
-        'Unsaved feedback for the team',
+        'Feedback for the next attempt',
       );
       await tester.ensureVisible(
         find.text('Propose three independent concepts'),
@@ -196,12 +205,14 @@ void main() {
         'direction': 'independent',
         'source_round_id': 21,
         'review_token': 'preparation-token',
+        'recommendations': 'Feedback for the next attempt',
       });
+      verify(() => client.post(any(), body: any(named: 'body'))).called(1);
       expect(find.text('Confirmed by Chair Rivera'), findsOneWidget);
       expect(find.text('Confirm next attempt'), findsNothing);
       expect(
         tester.widget<ShadInput>(find.byType(ShadInput)).controller?.text,
-        'Unsaved feedback for the team',
+        'Feedback for the next attempt',
       );
       expect(tester.takeException(), isNull);
       await tester.pump(const Duration(seconds: 4));
@@ -239,6 +250,10 @@ void main() {
       overrides: [authenticatedHttpClientProvider.overrideWithValue(client)],
     );
     await tester.ensureVisible(find.text('Confirm next attempt'));
+    await tester.enterText(
+      find.byType(ShadInput),
+      'Keep this draft after a failed save.',
+    );
     await tester.tap(find.text('Confirm next attempt'));
     await tester.pumpAndSettle();
     final changed = _sharedRepeat();
@@ -251,6 +266,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(sent?['review_token'], 'preparation-token');
+    expect(sent?['recommendations'], 'Keep this draft after a failed save.');
+    expect(
+      tester.widget<ShadInput>(find.byType(ShadInput)).controller?.text,
+      'Keep this draft after a failed save.',
+    );
     expect(find.text('Confirmed by Chair Rivera'), findsNothing);
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
@@ -282,8 +302,7 @@ void main() {
     );
     await tester.ensureVisible(find.text('Confirm next attempt'));
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('Save recommendations'));
-    expect(tester.takeException(), isNull);
+    expect(find.text('Save recommendations'), findsNothing);
   });
 
   testWidgets('nonchair and ineligible attempts cannot confirm a route', (
@@ -300,13 +319,16 @@ void main() {
         ),
       );
       if (chair) {
-        final button = tester.widget<ShadButton>(
-          find.ancestor(
-            of: find.text('Confirm next attempt'),
-            matching: find.byType(ShadButton),
-          ),
+        expect(find.text('Confirm next attempt'), findsNothing);
+        expect(find.text('Save recommendations'), findsOneWidget);
+        expect(
+          tester
+              .widget<ShadRadioGroup<String>>(
+                find.byType(ShadRadioGroup<String>),
+              )
+              .enabled,
+          isFalse,
         );
-        expect(button.onPressed, isNull);
       } else {
         expect(find.text('Confirm next attempt'), findsNothing);
         expect(find.byType(ShadRadio<String>), findsNothing);
@@ -336,7 +358,13 @@ void main() {
           expect(find.text('Choose the official concept'), findsOneWidget);
           expect(find.text('Submit Verdict'), findsNothing);
           expect(find.text('Failed'), findsNothing);
-          expect(find.text('Save recommendations'), findsOneWidget);
+          expect(find.text('Save recommendations'), findsNothing);
+          expect(
+            tester.getBottomLeft(find.byType(ShadInput)).dy,
+            lessThan(
+              tester.getTopLeft(find.text('Confirm concept selection')).dy,
+            ),
+          );
           final radios = tester
               .widgetList<Radio<String>>(find.byType(Radio<String>))
               .toList();
@@ -375,8 +403,7 @@ void main() {
       );
       await tester.ensureVisible(find.text('Confirm concept selection'));
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('Save recommendations'));
-      expect(tester.takeException(), isNull);
+      expect(find.text('Save recommendations'), findsNothing);
     },
   );
 
@@ -400,7 +427,7 @@ void main() {
   );
 
   testWidgets(
-    'chair selection submits only concept identity and current assessment token',
+    'chair selection submits concept identity, recommendations and current token',
     (tester) async {
       Map<String, dynamic>? sent;
       registerFallbackValue(Uri.parse('http://localhost'));
@@ -431,6 +458,10 @@ void main() {
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
+      await tester.enterText(
+        find.byType(ShadInput),
+        'Strengthen the prototype evidence.',
+      );
       await tester.ensureVisible(find.text('Confirm concept selection'));
       await tester.tap(find.text('Confirm concept selection'));
       await tester.pumpAndSettle();
@@ -438,7 +469,9 @@ void main() {
         'action': 'select_concept',
         'concept_key': 'c2',
         'review_token': 'current-assessment',
+        'recommendations': 'Strengthen the prototype evidence.',
       });
+      verify(() => client.post(any(), body: any(named: 'body'))).called(1);
       expect(find.text('Official concept'), findsOneWidget);
       expect(find.text('Confirm concept selection'), findsNothing);
       expect(tester.takeException(), isNull);

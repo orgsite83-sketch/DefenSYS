@@ -273,21 +273,16 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         _criteria = [];
       }
 
-      if (team.submittedSubmissions.isNotEmpty) {
-        _hydrateSubmittedScores(team);
-      } else if (team.draftSubmissions.isNotEmpty) {
-        _hydrateSubmissions(team.draftSubmissions);
-      }
+      _hydrateSubmissions([
+        ...team.draftSubmissions,
+        ...team.submittedSubmissions,
+      ]);
       if (_criteria.isEmpty &&
           _studentCriteria.values.any((criteria) => criteria.isNotEmpty)) {
         _showIndividualCriteria = true;
       }
       if (team.hasUnsavedChanges) _scheduleAutoSave(team);
     }
-  }
-
-  void _hydrateSubmittedScores(TeamData team) {
-    _hydrateSubmissions(team.submittedSubmissions);
   }
 
   void _hydrateSubmissions(List<Map<String, dynamic>> submissions) {
@@ -1651,16 +1646,23 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   );
 
   Widget _buildEvaluationCard(TeamData team) {
+    final member = team.memberDetails.elementAtOrNull(_selectedStudentIndex);
+    final showStudents = _showingStudents;
+    final targetSubmitted = team.submittedSubmissions.any(
+      (row) =>
+          (team.assessmentConcepts.isEmpty ||
+              row['concept_key'] == _activeConceptKey) &&
+          row['student_id']?.toString() == (showStudents ? member?.id : null),
+    );
     final locked =
         team.isPosted ||
+        targetSubmitted ||
         !team.gradingAvailable ||
         !_isVerified(team) ||
         _isSubmittingGrades ||
         _isReviewingGrades ||
         _isChoosingTeam;
     final hasStudents = _hasStudentCriteria;
-    final member = team.memberDetails.elementAtOrNull(_selectedStudentIndex);
-    final showStudents = _showingStudents;
     final visible = showStudents && member != null
         ? _studentCriteria[member.id] ?? <Criterion>[]
         : _criteria;

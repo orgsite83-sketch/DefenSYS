@@ -992,6 +992,7 @@ def can_submit_files(user, team):
 
 
 def stage_payload(team, stage_label, evaluator=None):
+    from grading.grades.student_visibility import student_assessment_payload
     historical = False
     if team.is_capstone and not getattr(team, '_assessment_semester_id', None):
         from student_teams.capstone_context import inherited_stage_ids
@@ -1332,9 +1333,9 @@ def stage_payload(team, stage_label, evaluator=None):
         'read_only': historical,
         'concept_workflow': concept_workflow,
         'shared_deliverables_summary': shared_checklist,
-        'hearing_history': (hearing_history(team, concept_context)
-                            if not concept_workflow and concept_context else []),
-        'assessment_progress': assessment_progress,
+        'hearing_history': student_assessment_payload((hearing_history(team, concept_context)
+                            if not concept_workflow and concept_context else []), evaluator),
+        'assessment_progress': student_assessment_payload(assessment_progress, evaluator),
         'repeat_preparation': repeat_preparation,
         'endorsement_review': review,
         'peer_eval_unavailable_reason': stage_peer_reason,
@@ -1387,7 +1388,7 @@ def stage_payload(team, stage_label, evaluator=None):
         )),
         'deliverables': rows,
         'schedule': schedule_data,
-        'grade': grade_data,
+        'grade': student_assessment_payload(grade_data, evaluator),
         'peer_criteria': stage_peer_criteria,
         'my_peer_submissions': stage_peer_submissions,
         'peer_eval_complete': stage_peer_complete,
@@ -1443,6 +1444,7 @@ def resolve_team_instructor_or_adviser_name(team):
 
 
 def team_payload(team, selected_stage=None, evaluator=None):
+    from grading.grades.student_visibility import student_assessment_payload
     if team.is_capstone:
         from student_teams.capstone_context import phase_requirements
         from student_teams.capstone_lifecycle import requirements_for
@@ -1559,7 +1561,7 @@ def team_payload(team, selected_stage=None, evaluator=None):
         'submitted_count': team.deliverable_submissions.count(),
         'counts': team_counts_payload(team, selected_payload),
         'members': members,
-        'grade': grade_payload,
+        'grade': student_assessment_payload(grade_payload, evaluator),
     }
 
 

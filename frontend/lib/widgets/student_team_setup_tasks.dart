@@ -11,7 +11,6 @@ import '../services/auth/auth_provider.dart';
 import '../services/capstone_deliverables_provider.dart';
 import '../services/dashboard_provider.dart';
 import '../theme/defensys_tokens.dart';
-import 'repository/section_concept_workspace.dart';
 import '../services/academic/student_team_tasks_provider.dart';
 
 String conceptSetupLabel(Map task) {
@@ -25,14 +24,18 @@ class StudentTeamSetupTasks extends ConsumerStatefulWidget {
   const StudentTeamSetupTasks({
     super.key,
     this.onOpenRepository,
+    this.onOpenIntegration,
     this.onRefresh,
     this.refreshKey,
     this.showConceptTasks = true,
+    this.showSectionTasks = true,
   });
   final VoidCallback? onOpenRepository;
+  final void Function(int projectId, String? stageLabel)? onOpenIntegration;
   final Future<void> Function()? onRefresh;
   final Object? refreshKey;
   final bool showConceptTasks;
+  final bool showSectionTasks;
 
   @override
   ConsumerState<StudentTeamSetupTasks> createState() =>
@@ -172,13 +175,14 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
         if (mounted) { setState(() {
           this.teams = _teams(result);
           this.eventTeams = (result['event_teams'] as List? ?? []).whereType<Map>().map((t) => Map<String, dynamic>.from(t)).toList();
-          sectionTasks = (result['section_tasks'] as List? ?? []).whereType<Map>().map((t) => Map<String, dynamic>.from(t)).toList();
+          this.sectionTasks = (result['section_tasks'] as List? ?? []).whereType<Map>().map((t) => Map<String, dynamic>.from(t)).toList();
           error = null;
         }); }
       });
     });
     final teams = this.teams.where((t) => widget.showConceptTasks || t['needs_name'] == true).toList();
     final eventTeams = this.eventTeams.where((t) => widget.showConceptTasks || t['needs_name'] == true || t['needs_details'] == true).toList();
+    final sectionTasks = widget.showSectionTasks ? this.sectionTasks : <Map<String, dynamic>>[];
     if (teams.isEmpty && sectionTasks.isEmpty && eventTeams.isEmpty && error == null) return const SizedBox.shrink();
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -215,7 +219,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                           Container(
                             padding: const EdgeInsets.all(7),
                             decoration: BoxDecoration(
-                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                              color: DefensysTokens.surfaceHigherOf(context),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Icon(
@@ -274,7 +278,6 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                       for (final task in sectionTasks) ...[
                         () {
                           final statusText = task['status_label'] ?? '${task['status']}'.replaceAll('_', ' ');
-                          final isMissing = statusText.toString().toLowerCase().contains('missing');
 
                           return Container(
                             margin: const EdgeInsets.only(top: 10),
@@ -289,7 +292,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                                 Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                                    color: DefensysTokens.surfaceHigherOf(context),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Icon(
@@ -346,25 +349,17 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                                               color: DefensysTokens.textSecondaryOf(context),
                                             ),
                                           ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: isMissing ? const Color(0xFFFEF3C7) : const Color(0xFFDCFCE7),
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(
-                                                color: isMissing ? const Color(0xFFFDE68A) : const Color(0xFF86EFAC),
-                                              ),
-                                            ),
+                                          DefensysShadcnScope(child: ShadBadge.outline(
                                             child: Text(
                                               statusText.toString(),
                                               style: TextStyle(
                                                 fontFamily: DefensysTokens.fontFamilyInter,
                                                 fontSize: 9.5,
                                                 fontWeight: FontWeight.w700,
-                                                color: isMissing ? const Color(0xFFB45309) : const Color(0xFF15803D),
+                                                color: DefensysTokens.textSecondaryOf(context),
                                               ),
                                             ),
-                                          ),
+                                          )),
                                         ],
                                       ),
                                     ],
@@ -373,32 +368,20 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                                 const SizedBox(width: 10),
                                 SizedBox(
                                   height: 32,
-                                  child: OutlinedButton(
-                                    onPressed: busy ? null : () async {
-                                      await Navigator.of(context).push(
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => SectionConceptWorkspace(
-                                            projectId: task['project_id'] as int,
-                                          ),
-                                        ),
+                                  child: DefensysShadcnScope(child: ShadButton.outline(
+                                    height: 32,
+                                    padding: const EdgeInsets.symmetric(horizontal: 11),
+                                    onPressed: busy || widget.onOpenIntegration == null ? null : () {
+                                      widget.onOpenIntegration!(
+                                        task['project_id'] as int,
+                                        task['stage_label']?.toString(),
                                       );
-                                      if (mounted) await load(refresh: true);
                                     },
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: DefensysTokens.maroonOf(context),
-                                      backgroundColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.05),
-                                      side: BorderSide(
-                                        color: DefensysTokens.maroonOf(context).withValues(alpha: 0.28),
-                                      ),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 11),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text(
-                                          'Open',
+                                          'Integration',
                                           style: TextStyle(
                                             fontFamily: DefensysTokens.fontFamilyInter,
                                             fontSize: 11.5,
@@ -413,7 +396,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                                         ),
                                       ],
                                     ),
-                                  ),
+                                  )),
                                 ),
                               ],
                             ),

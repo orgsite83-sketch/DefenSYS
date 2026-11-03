@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/defense/defense_stages_map.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -157,12 +158,517 @@ Future<void> _pump(
   );
 }
 
+Map<String, dynamic> _selectedProject() {
+  final project = _preview();
+  final systems = [
+    for (var i = 1; i <= 3; i++)
+      {
+        'key': 'c$i',
+        'title': i == 1
+            ? 'HABI: Artisan Heritage & Craft Exchange Platform'
+            : 'Earlier system proposal $i',
+        'title_review': {
+          'state': 'accepted',
+          'status_label': 'Title accepted',
+          'blocker':
+              'This scheduled, decided or historical proposal is read-only.',
+        },
+      },
+  ];
+  final group = {
+    'team_id': 5,
+    'scope': 'capstone',
+    'context_id': 7,
+    'identity': 'section-7-concept-proposal',
+    'section': 'BSIT-3A',
+    'stage_label': 'Concept Proposal',
+    'selected_key': 'c1',
+    'systems': systems,
+    'requirements': [
+      {
+        'deliverable_id': 'PAPERS',
+        'label': 'Concept Papers',
+        'file_format': 'pdf',
+        'deliverable_type': 'pre',
+        'required': true,
+        'status': 'accepted',
+        'file_policy': {'mode': 'concepts'},
+        'unavailable_reason':
+            "['These proposals are attached to a hearing. Use the next revision round for changes.']",
+        'documents': [
+          for (var i = 1; i <= 3; i++)
+            {
+              'key': 'c$i:paper',
+              'system_key': 'c$i',
+              'label': 'Concept paper',
+              'required': true,
+              'can_upload': false,
+              'can_review': false,
+              'file': {
+                'id': i,
+                'file_name': 'system-$i.pdf',
+                'revision': 1,
+                'status': 'accepted',
+              },
+            },
+        ],
+      },
+      {
+        'deliverable_id': 'FINAL',
+        'label': 'Final shared paper',
+        'file_format': 'pdf',
+        'deliverable_type': 'post',
+        'required': true,
+        'status': 'missing',
+        'file_policy': {'mode': 'single'},
+        'documents': [
+          {
+            'key': 'primary',
+            'label': 'Final shared paper',
+            'required': true,
+            'can_upload': true,
+            'file_format': 'pdf',
+          },
+        ],
+      },
+    ],
+  };
+  return {
+    ...project,
+    'id': 7,
+    'imported': false,
+    'selected_key': 'c1',
+    'verdict': 'approved',
+    'title_workflow_version': 2,
+    'systems': systems,
+    'shared_contexts': [group],
+  };
+}
+
+Future<void> _openStageHistory(WidgetTester tester) async {
+  final menu = find.byTooltip('More history actions').first;
+  await tester.ensureVisible(menu);
+  await tester.tap(menu);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('View stage history'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  testWidgets(
+    'system summary advances one status and keeps history in the footer menu',
+    (tester) async {
+      final steps = [
+        ('Title submitted', {'review': 'submitted'}),
+        ('Title accepted', {'review': 'accepted'}),
+        (
+          'Hearing scheduled',
+          {
+            'review': 'accepted',
+            'hearing_progress': 'scheduled',
+            'hearing_schedule_ids': [10],
+          },
+        ),
+        (
+          'Hearing in progress',
+          {
+            'review': 'accepted',
+            'hearing_progress': 'scheduled',
+            'presentation_started_at': '2026-11-03T08:00:00Z',
+          },
+        ),
+        (
+          'Awaiting decision',
+          {
+            'review': 'accepted',
+            'hearing_progress': 'awaiting_concept_selection',
+            'presentation_started_at': '2026-11-03T08:00:00Z',
+          },
+        ),
+        ('Approved', {'review': 'accepted', 'verdict': 'approved'}),
+        (
+          'Approved with revisions',
+          {'review': 'accepted', 'verdict': 'approved_with_revisions'},
+        ),
+        (
+          'Re-defense required',
+          {'review': 'accepted', 'verdict': 'for_redefense'},
+        ),
+      ];
+      for (final step in steps) {
+        await tester.pumpWidget(const SizedBox());
+        final project = _selectedProject()..['verdict'] = '';
+        final values = Map<String, dynamic>.from(step.$2);
+        final state = values.remove('review');
+        project.addAll(values);
+        ((project['systems'] as List).first as Map)['title_review'] = {
+          'state': state,
+        };
+        setApiHttpClientForTesting(
+          MockClient(
+            (request) async => http.Response(jsonEncode(project), 200),
+          ),
+        );
+        await _pump(
+          tester,
+          studentData: const {
+            'student': {'id': 1},
+            'team': {'id': 5, 'section': 'BSIT-3A', 'section_project_id': 7},
+          },
+        );
+        final header = find.byKey(const ValueKey('student-selected-system'));
+        expect(
+          find.descendant(of: header, matching: find.text(step.$1)),
+          findsOneWidget,
+        );
+        expect(find.text('Selected system'), findsNothing);
+        expect(find.textContaining('System outcome:'), findsNothing);
+        expect(find.text('More'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('shared-stage-history')),
+          findsNothing,
+        );
+        final menu = find.byTooltip('More history actions');
+        expect(menu, findsOneWidget);
+        expect(
+          tester.getBottomRight(menu).dx,
+          closeTo(tester.getBottomRight(header).dx, 1),
+        );
+        expect(
+          tester.getBottomRight(menu).dy,
+          closeTo(tester.getBottomRight(header).dy, 1),
+        );
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     FilePicker.platform = _Picker();
   });
   tearDown(resetApiHttpClientForTesting);
+
+  for (final dark in [false, true]) {
+    testWidgets(
+      'stage map opens each configured stage history without changing the system $dark',
+      (tester) async {
+        final project = _selectedProject()..['history_available'] = true;
+        ((project['shared_contexts'] as List).first as Map)['stage_status'] =
+            'complete';
+        final timeline = {
+          'stages': [
+            {
+              'id': 21,
+              'label': 'Concept Proposal',
+              'order': 1,
+              'records': [
+                {
+                  'id': 'hearing-1',
+                  'kind': 'hearing',
+                  'attempt': 1,
+                  'outcome': 'approved',
+                  'selected_key': 'c1',
+                  'team_count': 8,
+                  'roster_basis': 'Recorded roster',
+                  'teams': [
+                    for (var i = 1; i <= 8; i++)
+                      {'id': i, 'name': 'Recorded team $i'},
+                  ],
+                  'systems': [
+                    {'key': 'c1', 'title': 'Original section system'},
+                  ],
+                },
+              ],
+            },
+            {
+              'id': 22,
+              'label': 'Project Proposal',
+              'order': 2,
+              'stage_status': 'current',
+              'records': [
+                {
+                  'id': 'shared-2',
+                  'kind': 'shared_submission',
+                  'team_count': 6,
+                  'joined_count': 0,
+                  'left_count': 2,
+                  'teams': [
+                    for (var i = 1; i <= 6; i++)
+                      {'id': i, 'name': 'Recorded team $i'},
+                  ],
+                  'systems': [
+                    {'key': 'c1', 'title': 'Proposal-stage system record'},
+                  ],
+                },
+              ],
+            },
+            {
+              'id': 23,
+              'label': 'Configured release review',
+              'order': 3,
+              'records': [],
+            },
+          ],
+        };
+        setApiHttpClientForTesting(
+          MockClient(
+            (request) async => http.Response(
+              jsonEncode(
+                request.url.path.endsWith('/history/') ? timeline : project,
+              ),
+              200,
+            ),
+          ),
+        );
+        await _pump(
+          tester,
+          dark: dark,
+          studentData: const {
+            'student': {'id': 1},
+            'team': {'id': 5, 'section': 'BSIT-3A', 'section_project_id': 7},
+          },
+        );
+        expect(find.text('Earlier proposals (2)'), findsNothing);
+        expect(find.text('8 teams'), findsNothing);
+        await _openStageHistory(tester);
+        expect(find.text('8 teams'), findsOneWidget);
+        await tester.ensureVisible(find.text('Shared hearing · Attempt 1'));
+        await tester.tap(find.text('Shared hearing · Attempt 1'));
+        await tester.pumpAndSettle();
+        expect(find.text('Original section system'), findsOneWidget);
+        await capturePreview(
+          tester,
+          find.byType(SectionIntegrationTab),
+          'integration-concept-history-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        await tester.tap(find.text('Close'));
+        await tester.pumpAndSettle();
+        final map = find.byKey(const ValueKey('shared-stage-navigation'));
+        final proposal = find.descendant(
+          of: map,
+          matching: find.text('Project Proposal'),
+        );
+        await tester.ensureVisible(proposal);
+        await tester.tap(proposal);
+        await tester.pumpAndSettle();
+        expect(find.text('8 teams'), findsNothing);
+        expect(find.text('6 teams'), findsNothing);
+        await _openStageHistory(tester);
+        expect(find.text('6 teams'), findsOneWidget);
+        await tester.ensureVisible(find.text('Shared submission'));
+        await tester.tap(find.text('Shared submission'));
+        await tester.pumpAndSettle();
+        expect(find.text('Proposal-stage system record'), findsOneWidget);
+        expect(
+          find.text('Roster change: 0 added, 2 no longer listed'),
+          findsOneWidget,
+        );
+        await capturePreview(
+          tester,
+          find.byType(SectionIntegrationTab),
+          'integration-proposal-history-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        await tester.tap(find.text('Close'));
+        await tester.pumpAndSettle();
+        final release = find.descendant(
+          of: map,
+          matching: find.text('Configured release review'),
+        );
+        await tester.ensureVisible(release);
+        await tester.tap(release);
+        await tester.pumpAndSettle();
+        await _openStageHistory(tester);
+        expect(
+          find.text('No activity recorded for this stage yet.'),
+          findsOneWidget,
+        );
+        expect(find.text('6 teams'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('system selection does not invent faculty title acceptance', (
+    tester,
+  ) async {
+    final project = _selectedProject();
+    (project['systems'] as List).first['title_review'] = {
+      'state': 'submitted',
+      'status_label': 'Awaiting title review',
+    };
+    setApiHttpClientForTesting(
+      MockClient((request) async => http.Response(jsonEncode(project), 200)),
+    );
+    await _pump(
+      tester,
+      studentData: const {
+        'student': {'id': 1},
+        'team': {'id': 5, 'section': 'BSIT-3A', 'section_project_id': 7},
+      },
+    );
+    expect(find.text('Selected system'), findsNothing);
+    expect(find.text('Title accepted'), findsNothing);
+    expect(find.text('Approved'), findsOneWidget);
+  });
+
+  for (final dark in [false, true]) {
+    testWidgets(
+      'selected system is clear once, with documents and proposal history $dark',
+      (tester) async {
+        setApiHttpClientForTesting(
+          MockClient(
+            (request) async =>
+                http.Response(jsonEncode(_selectedProject()), 200),
+          ),
+        );
+        await _pump(
+          tester,
+          dark: dark,
+          studentData: const {
+            'student': {'id': 1},
+            'team': {'id': 5, 'section': 'BSIT-3A', 'section_project_id': 7},
+          },
+        );
+        expect(find.text('Your section system'), findsOneWidget);
+        expect(find.text('Selected system'), findsNothing);
+        expect(find.text('Title accepted'), findsNothing);
+        expect(
+          find.text('HABI: Artisan Heritage & Craft Exchange Platform'),
+          findsOneWidget,
+        );
+        expect(find.text('System proposals'), findsNothing);
+        expect(find.textContaining('titles provided'), findsNothing);
+        expect(find.textContaining('Each team follows'), findsNothing);
+        expect(find.textContaining('Only the selected system'), findsNothing);
+        expect(find.textContaining('This scheduled, decided'), findsNothing);
+        expect(find.text('Approved'), findsOneWidget);
+        expect(find.text('Final shared paper'), findsNothing);
+        expect(find.text('Concept Papers'), findsNothing);
+        expect(find.text('Team AgriPulse'), findsOneWidget);
+        expect(find.text('Earlier system proposal 2'), findsNothing);
+        await capturePreview(
+          tester,
+          find.byType(SectionIntegrationTab),
+          'integration-selected-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+
+        for (final width in [320.0, 1100.0, 390.0]) {
+          tester.view.physicalSize = Size(width, 1000);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          await capturePreview(
+            tester,
+            find.byType(SectionIntegrationTab),
+            'integration-details-${width.toInt()}-${dark ? 'dark' : 'light'}',
+            viewport: true,
+          );
+        }
+        tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        tester.view.physicalSize = const Size(320, 1000);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        tester.platformDispatcher.clearTextScaleFactorTestValue();
+        tester.view.physicalSize = const Size(390, 1000);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Deliverables'));
+        await tester.pumpAndSettle();
+        expect(find.text('Pre-defense'), findsOneWidget);
+        expect(find.text('Post-defense'), findsOneWidget);
+        expect(find.text('PDF · 1 required file'), findsNWidgets(2));
+        expect(find.text('Title accepted'), findsNothing);
+        expect(find.text('Team AgriPulse'), findsNothing);
+        expect(find.text('Final shared paper'), findsOneWidget);
+        await capturePreview(
+          tester,
+          find.byType(SectionIntegrationTab),
+          'integration-deliverables-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        await tester.tap(find.text('Concept Papers'));
+        await tester.pumpAndSettle();
+        expect(find.text('system-1.pdf'), findsOneWidget);
+        expect(
+          find.textContaining('These proposals are attached'),
+          findsNothing,
+        );
+        expect(find.text('Mandatory for oral defense'), findsNothing);
+        await capturePreview(
+          tester,
+          find.byType(SectionIntegrationTab),
+          'integration-file-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        await tester.tap(find.text('Done'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Earlier proposals (2)'), findsNothing);
+        await tester.tap(find.text('System details'));
+        await tester.pumpAndSettle();
+        await _openStageHistory(tester);
+        await tester.ensureVisible(find.text('Shared hearing · Attempt 1'));
+        await tester.tap(find.text('Shared hearing · Attempt 1'));
+        await tester.pumpAndSettle();
+        expect(find.text('Earlier system proposal 2'), findsOneWidget);
+        expect(find.text('Selected system'), findsWidgets);
+        expect(find.text('Concept Papers'), findsNothing);
+        expect(find.text('Team roster not recorded'), findsOneWidget);
+        await tester.tap(find.text('Close'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Deliverables'));
+        await tester.tap(find.text('Deliverables'));
+        await tester.pumpAndSettle();
+        expect(find.text('Final shared paper'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'earlier attempts retain their recorded titles and outcomes in details',
+    (tester) async {
+      final project = _selectedProject()..['round'] = 2;
+      project['history'] = [
+        {
+          'round': 1,
+          'verdict': 'for_redefense',
+          'selected_key': '',
+          'remarks': 'Refine the section proposals.',
+          'snapshot': {
+            'systems': [
+              {'key': 'c2', 'title': 'Original hearing proposal'},
+            ],
+          },
+        },
+      ];
+      setApiHttpClientForTesting(
+        MockClient((request) async => http.Response(jsonEncode(project), 200)),
+      );
+      await _pump(
+        tester,
+        studentData: const {
+          'student': {'id': 1},
+          'team': {'id': 5, 'section': 'BSIT-3A', 'section_project_id': 7},
+        },
+      );
+      expect(find.text('Original hearing proposal'), findsNothing);
+      await _openStageHistory(tester);
+      await tester.tap(find.text('Shared hearing · Attempt 1'));
+      await tester.pumpAndSettle();
+      expect(find.text('Original hearing proposal'), findsOneWidget);
+      expect(find.text('For Re-defense'), findsOneWidget);
+      expect(find.text('Refine the section proposals.'), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Deliverables'));
+      await tester.pumpAndSettle();
+      expect(find.text('Original hearing proposal'), findsNothing);
+      expect(find.text('Final shared paper'), findsOneWidget);
+    },
+  );
 
   for (final dark in [false, true]) {
     for (final width in [500.0, 390.0]) {
@@ -262,15 +768,12 @@ void main() {
           );
           expect(find.byType(DropdownButtonFormField<String>), findsNothing);
           expect(
-            tester.widget<ShadTabs<String>>(navigation).value,
+            tester.widget<DefenseStagesMap>(navigation).selectedStageName,
             'Project Proposal',
           );
           expect(find.text('Current'), findsOneWidget);
-          expect(find.text('Complete'), findsOneWidget);
+          expect(find.text('Passed'), findsOneWidget);
           expect(find.text('Upcoming'), findsOneWidget);
-          expect(find.text('Suggested archive filename'), findsOneWidget);
-          expect(find.text(suggested), findsOneWidget);
-          expect(find.byTooltip('Copy archive filename'), findsOneWidget);
           await capturePreview(
             tester,
             find.byType(SectionIntegrationTab),
@@ -280,7 +783,7 @@ void main() {
           await tester.tap(find.text('Concept Proposal'));
           await tester.pumpAndSettle();
           expect(
-            tester.widget<ShadTabs<String>>(navigation).value,
+            tester.widget<DefenseStagesMap>(navigation).selectedStageName,
             'Concept Proposal',
           );
           expect(
@@ -289,10 +792,17 @@ void main() {
           ); // Browsing does not change workflow state.
           await tester.tap(find.text('Project Proposal'));
           await tester.pumpAndSettle();
+          await tester.tap(find.text('Deliverables'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Approved concept paper'));
+          await tester.pumpAndSettle();
+          expect(find.text('Suggested archive filename'), findsOneWidget);
+          expect(find.text(suggested), findsOneWidget);
+          expect(find.byTooltip('Copy archive filename'), findsOneWidget);
           await tester.ensureVisible(
-            find.widgetWithText(OutlinedButton, 'Upload').first,
+            find.widgetWithText(ShadButton, 'Upload').first,
           );
-          await tester.tap(find.widgetWithText(OutlinedButton, 'Upload').first);
+          await tester.tap(find.widgetWithText(ShadButton, 'Upload').first);
           await tester.pumpAndSettle();
           expect(uploaded, isTrue);
           expect(tester.takeException(), isNull);
@@ -385,15 +895,15 @@ void main() {
           }),
         );
         await _pump(tester, dark: dark);
-        expect(find.text('PM: Gabriel Navarro'), findsOneWidget);
+        expect(find.text('Project manager: Gabriel Navarro'), findsOneWidget);
         expect(
-          find.text('Reviewers: Eduardo Padilla, Grace Hopper'),
+          find.text('System reviewer: Eduardo Padilla, Grace Hopper'),
           findsOneWidget,
         );
         expect(find.text('1 of 3 titles provided'), findsOneWidget);
         expect(find.textContaining('Smart Agro-Industrial'), findsOneWidget);
         expect(find.text('★ Selected System'), findsNothing);
-        expect(find.text('Upload Concept Paper (PDF)'), findsOneWidget);
+        expect(find.text('Upload Concept Paper (PDF)'), findsNothing);
         await capturePreview(
           tester,
           find.byType(SectionIntegrationTab),
@@ -492,11 +1002,15 @@ void main() {
       }),
     );
     await _pump(tester);
+    await tester.tap(find.text('Deliverables'));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Upload Concept Paper (PDF)'));
-    await tester.tap(find.text('Upload Concept Paper (PDF)'));
+    await tester.tap(find.widgetWithText(ShadButton, 'Upload'));
     await tester.pumpAndSettle();
     expect(uploaded, isTrue);
     expect(find.text('system-a.pdf'), findsOneWidget);
+    await tester.tap(find.text('System details'));
+    await tester.pumpAndSettle();
     expect(find.text('1 of 3 titles provided'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

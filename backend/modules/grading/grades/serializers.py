@@ -259,7 +259,9 @@ class TeamGradeSerializer(serializers.ModelSerializer):
                     'verdict_at': None,
                     'revision_deadline': None,
                 })
-        return data
+        from .student_visibility import student_assessment_payload
+        actor = self.context.get('actor') or getattr(self.context.get('request'), 'user', None)
+        return student_assessment_payload(data, actor)
 
     def get_peer_rating_evidence(self, obj):
         from .masterlist import can_view_peer_evidence

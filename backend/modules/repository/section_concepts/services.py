@@ -1118,6 +1118,33 @@ def reassign(project, actor, manager_id, reviewer_id):
           project_manager_id=manager.pk, reviewer_id=reviewer.pk)
 
 
+def _manager_task_action(project, hearing, user):
+    """Use the same title and upload capabilities as Integration's controls."""
+    if project.project_manager_id != user.pk:
+        return {}
+    from repository import title_workflow
+    from . import shared_deliverables
+    editable = not hearing.verdict and not hearing.module_rounds.filter(
+        schedule__isnull=False).exclude(schedule__status='cancelled').exists()
+    needs_title = False
+    for system in hearing.systems.all():
+        item = {'title': system.title, 'title_review': system.title_review}
+        if not title_workflow.enabled(hearing):
+            item['title_review'] = title_workflow.legacy_review(item, saved=True, confirmed=system.confirmed)
+        review = title_workflow.present(item, can_submit=True, editable=editable,
+            assigned=project.title_mode == 'faculty_provided')
+        needs_title |= review['can_submit']
+    profile = shared_deliverables.for_round(hearing)
+    requirements = shared_deliverables.payload(profile, user)['requirements'] if profile else []
+    needs_files = any(
+        document.get('can_upload') and (
+            document.get('file', {}).get('status') == 'rejected' if document.get('file')
+            else requirement.get('required') and document.get('required', True))
+        for requirement in requirements for document in requirement['documents'])
+    return {'needs_title': bool(needs_title), 'needs_files': bool(needs_files),
+            'requires_action': bool(needs_title or needs_files)}
+
+
 def task_payload(user):
     if getattr(user, 'is_guest_panelist', False):
         return []
@@ -1155,7 +1182,8 @@ def task_payload(user):
                     'role': 'project_manager' if manager else 'reviewer',
                     'title': 'Submit shared post-defense documents' if manager else 'Review shared post-defense documents',
                     'status': 'final_paper_pending' if access['unlocked'] else 'section_defense_pending',
-                    'status_label': 'Final paper pending' if access['unlocked'] else 'Waiting for section defense completion'})
+                    'status_label': 'Final paper pending' if access['unlocked'] else 'Waiting for section defense completion',
+                    **_manager_task_action(project, round, user)})
             continue
         manager = project.project_manager_id == user.pk
         reviewer = getattr(user, 'role', '') == 'faculty' and is_reviewer(user, project)
@@ -1177,11 +1205,13 @@ def task_payload(user):
                     'Submit configured shared system documents' if manager else
                     'Review and acknowledge shared system alignment' if acknowledgment_pending and not reviewer else
                     'Confirm system names and review shared documents'),
-                'status': status, 'status_label': status.replace('_', ' ')})
+                'status': status, 'status_label': status.replace('_', ' '),
+                **_manager_task_action(project, round, user)})
     return tasks
 
 
 def payload(project, actor):
+    from .selection_corrections import payload as correction_payload
     from repository.deliverables.concepts import latest_round
     from repository.deliverables.pit_decisions import decision_payload as pit_decision_payload
     round = latest(project)
@@ -1313,7 +1343,17 @@ def payload(project, actor):
             can_submit=is_pm(actor, project), can_review=is_reviewer(actor, project), editable=editable_now, assigned=project.title_mode == 'faculty_provided')
     if title_workflow.enabled(round):
         shared_review.update(acknowledged=True, can_acknowledge=False, can_review_shared_context=False)
-    return {'title_workflow_version': round.title_workflow_version, 'id': project.pk, 'section': project.section.section, 'year_level': project.section.year_level,
+    from defense.scheduler.progress import schedule_progress
+    hearing_schedules = list(round.schedules.exclude(status='cancelled'))
+    hearing_states = {schedule_progress(item, reconcile_status=False)['display_status']
+                      for item in hearing_schedules}
+    awaiting = {'awaiting_concept_selection', 'awaiting_verdict', 'assessed', 'done'}
+    hearing_progress = ('awaiting_concept_selection' if hearing_states and hearing_states <= awaiting
+                        else 'evaluating' if 'evaluating' in hearing_states
+                        else next(iter(hearing_states)) if len(hearing_states) == 1 and hearing_states <= {'paused', 'postponed', 'no_show'}
+                        else 'cancelled' if not hearing_schedules and round.schedules.exists()
+                        else 'scheduled' if hearing_states else None)
+    data = {'title_workflow_version': round.title_workflow_version, 'id': project.pk, 'section': project.section.section, 'year_level': project.section.year_level,
         'historical': not project.section.semester.is_active,
         'configured_count': context.concept_config.get('required_count', 3),
         'can_reconcile_requirements': bool(can_write and can_manage(actor, project) and not round.verdict
@@ -1329,8 +1369,11 @@ def payload(project, actor):
         'reviewer_id': reviewer.pk if reviewer else None, 'reviewer_name': shared_review['reviewer_name'],
         'reviewer_automatic': bool(project.pit_event_config_id and len(list(pit_instructors(project))) == 1),
         'systems': systems, 'teams': teams, 'selected_key': round.selected_key, 'verdict': round.verdict,
+        'history_available': bool(actor and not getattr(actor, 'is_guest_panelist', False)),
+        'selection_correction': correction_payload(round, actor),
         'remarks': round.remarks, 'endorsed': shared_review['cleared'], 'cleared': shared_review['cleared'],
         'presentation_started_at': round.presentation_started_at.isoformat() if round.presentation_started_at else None,
+        'hearing_progress': hearing_progress,
         'post_unlocked': post_access['unlocked'], 'post_unavailable_reason': post_access['reason'],
         'shared_final_archived': shared_final_complete(round),
         'shared_review': shared_review, 'editable': editable_now,
@@ -1349,8 +1392,10 @@ def payload(project, actor):
         'selection_unavailable_reason': selection_blocker(round) if not round.verdict else '',
         'can_decide': bool(not round.verdict and round.presentation_started_at and decision_allowed(round, actor)
             and can_write and not selection_blocker(round)),
-        'hearing_schedule_ids': list(round.schedules.values_list('pk', flat=True)),
+        'hearing_schedule_ids': [item.pk for item in hearing_schedules],
         'available_schedules': [{'id': s.pk, 'team_id': s.team_id, 'team_name': s.team.name,
             'date': str(s.scheduled_date), 'time': str(s.start_time), 'room': s.room} for s in available_schedules(round)],
         'history': [{'id': r.pk, 'round': r.number, 'verdict': r.verdict, 'selected_key': r.selected_key,
             'remarks': r.remarks, 'snapshot': r.decision_snapshot} for r in project.rounds.exclude(pk=round.pk)]}
+    from grading.grades.student_visibility import student_assessment_payload
+    return student_assessment_payload(data, actor)

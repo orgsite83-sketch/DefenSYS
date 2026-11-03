@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../models/team_workflow_status.dart';
 import '../../services/capstone_deliverables_provider.dart';
 import '../../theme/defensys_tokens.dart';
+import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 import 'deliverable_file_widgets.dart';
 import 'requirement_summary.dart';
@@ -17,11 +18,13 @@ class DeliverableRequirementCard extends StatelessWidget {
     required this.item,
     required this.onOpen,
     this.enabled = true,
+    this.compact = false,
   });
 
   final Map<String, dynamic> item;
   final VoidCallback onOpen;
   final bool enabled;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +33,14 @@ class DeliverableRequirementCard extends StatelessWidget {
     final optional = item['required'] == false;
     final waived = item['is_waived'] == true;
     final template = item['template'] is Map;
+    final format = compact && '${item['file_format'] ?? ''}'.isNotEmpty
+        ? DeliverableFormatInfo.fromFormat('${item['file_format']}')
+        : null;
     final metadata = [
+      if (format != null)
+        format.extensions.length == 1
+            ? format.extensions.single.toUpperCase()
+            : format.label,
       if (waived)
         'Waived requirement'
       else if (optional)
@@ -70,6 +80,59 @@ class DeliverableRequirementCard extends StatelessWidget {
       fontFamily: DefensysTokens.fontFamilyInter,
       color: DefensysTokens.textSecondaryOf(context),
     );
+    if (compact) {
+      return DefensysShadcnScope(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: enabled ? onOpen : null,
+            borderRadius: BorderRadius.circular(8),
+            hoverColor: DefensysTokens.surfaceHigherOf(context),
+            focusColor: DefensysTokens.surfaceHigherOf(context),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.description_outlined,
+                    size: 20,
+                    color: DefensysTokens.maroonOf(context),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${item['label'] ?? 'Document'}',
+                          style: DefensysTokens.body.copyWith(
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.textPrimaryOf(context),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(metadata, style: style),
+                        const SizedBox(height: 6),
+                        DeliverableStatusBadge(label: details, tone: tone),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return DefensysShadcnScope(
       child: Padding(
         padding: const EdgeInsets.only(bottom: 12),
@@ -125,25 +188,10 @@ class DeliverableRequirementCard extends StatelessWidget {
                           Text(metadata, style: style),
                         ],
                       );
-                      final progress = Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          DeliverableStatusBadge(
-                            label:
-                                summary.required == 0 ||
-                                    summary.uploaded > summary.required
-                                ? summary.progress
-                                : '${summary.progress} Uploaded',
-                            tone: WorkflowStatusTone.neutral,
-                          ),
-                          if (summary.acceptedFiles > 0) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              '${summary.acceptedFiles} accepted',
-                              style: style,
-                            ),
-                          ],
-                        ],
+                      final status = DeliverableStatusBadge(
+                        label: details,
+                        tone: tone,
+                        maxLines: 3,
                       );
                       if (constraints.maxWidth < 360 ||
                           MediaQuery.textScalerOf(context).scale(1) > 1.15) {
@@ -158,7 +206,7 @@ class DeliverableRequirementCard extends StatelessWidget {
                                 Expanded(
                                   child: Align(
                                     alignment: Alignment.topRight,
-                                    child: progress,
+                                    child: status,
                                   ),
                                 ),
                               ],
@@ -177,7 +225,7 @@ class DeliverableRequirementCard extends StatelessWidget {
                           const SizedBox(width: 12),
                           ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 180),
-                            child: progress,
+                            child: status,
                           ),
                         ],
                       );
@@ -197,10 +245,26 @@ class DeliverableRequirementCard extends StatelessWidget {
                   ),
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      final status = DeliverableStatusBadge(
-                        label: details,
-                        tone: tone,
-                        maxLines: 3,
+                      final progress = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          DeliverableStatusBadge(
+                            label:
+                                summary.required == 0 ||
+                                    summary.uploaded > summary.required
+                                ? summary.progress
+                                : '${summary.progress} Uploaded',
+                            tone: WorkflowStatusTone.neutral,
+                          ),
+                          if (summary.acceptedFiles > 0) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              '${summary.acceptedFiles} accepted',
+                              style: style,
+                            ),
+                          ],
+                        ],
                       );
                       final action = ShadButton.outline(
                         size: ShadButtonSize.sm,
@@ -215,7 +279,7 @@ class DeliverableRequirementCard extends StatelessWidget {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            status,
+                            progress,
                             const SizedBox(height: 8),
                             Align(
                               alignment: Alignment.centerRight,
@@ -229,7 +293,7 @@ class DeliverableRequirementCard extends StatelessWidget {
                           Expanded(
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: status,
+                              child: progress,
                             ),
                           ),
                           const SizedBox(width: 10),

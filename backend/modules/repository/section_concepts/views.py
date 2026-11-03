@@ -26,7 +26,7 @@ class SetupSerializer(serializers.Serializer):
 class ActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['save_titles', 'confirm_title', 'submit_title', 'draft_title', 'accept_title', 'request_title_revision', 'review', 'endorse', 'confirm_modules',
         'schedule_hearing', 'decide', 'module_verdict', 'module_decision', 'clear_module_revisions',
-        'reassign', 'clear_revisions', 'acknowledge', 'start_presentation', 'reconcile_requirements', 'preview_title_workflow', 'apply_title_workflow'])
+        'reassign', 'clear_revisions', 'acknowledge', 'start_presentation', 'reconcile_requirements', 'preview_title_workflow', 'apply_title_workflow', 'correct_selection'])
     reconciliation_token = serializers.CharField(required=False, max_length=64)
     round_id = serializers.IntegerField(min_value=1)
     review_token = serializers.CharField(required=False, max_length=64)
@@ -203,6 +203,9 @@ class SectionProjectDetailView(SectionAPIView):
             services.schedule_hearing(project, actor, d.get('schedule_ids'))
         elif action == 'decide':
             services.decide(project, actor, d.get('concepts'), d.get('verdict'), d['remarks'], team_outcomes=d.get('team_outcomes'))
+        elif action == 'correct_selection':
+            from .selection_corrections import correct
+            correct(project, actor, concept_key=d.get('concept_key'), reason=d['remarks'], review_token=d.get('review_token'))
         elif action == 'start_presentation':
             services.start_presentation(project, actor)
         elif action == 'reassign':
@@ -245,6 +248,19 @@ class SectionProjectDetailView(SectionAPIView):
                     deadline=d.get('revision_deadline'), verification_required=verdict == 'for_redefense',
                     concept_decisions=decisions)
         return Response(services.payload(project, actor))
+
+
+
+class SectionProjectHistoryView(SectionAPIView):
+    def get(self, request, project_id):
+        project = self.project(request, project_id)
+        if getattr(request.user, 'is_guest_panelist', False):
+            raise PermissionError('Shared-system history is available to section members and authorized faculty.')
+        team_id = None
+        if request.query_params.get('team_id'):
+            team_id = serializers.IntegerField(min_value=1).run_validation(request.query_params['team_id'])
+        from .history import history_payload
+        return Response(history_payload(project, request.user, team_id=team_id))
 
 
 class SectionPaperUploadView(SectionAPIView):

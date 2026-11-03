@@ -31,6 +31,21 @@ String _projectTitle(Map<String, dynamic> team) {
 bool _teamIsPit(Map<String, dynamic> team) =>
     team['level']?.toString().toUpperCase().contains('PIT') ?? false;
 
+String? _sharedGroupKey(Map<String, dynamic> team) {
+  final defense = team['defense_context'];
+  final workflow = defense is Map ? defense['concept_workflow'] : null;
+  if (workflow is! Map) return null;
+  final projectId = _asInt(workflow['section_project_id']);
+  if (projectId == null && workflow['shared_import_pending'] != true) {
+    return null;
+  }
+  // Section enrollment is not shared-project membership. Use the current
+  // workflow identity, also separating imported/historical stage contexts.
+  return '${team['semester_id']}:${team['year_level']}:'
+      '${projectId ?? 'imported'}:'
+      '${defense['current_stage_id'] ?? defense['current_stage'] ?? defense['event_label']}';
+}
+
 String _defenseContext(Map<String, dynamic> team) {
   final context = team['defense_context'];
   if (context is Map) {
@@ -321,11 +336,10 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           ),
         ),
         const SizedBox(height: 2),
-        if (
-        team['term_status'] == 'historical')
+        if (team['term_status'] == 'historical')
           Padding(
             padding: const EdgeInsets.only(top: 2, bottom: 4),
-            child:Text(
+            child: Text(
               '${team['phase _label'] ?? ''} · ${team['display_semester']} · ${team['status']}',
               style: TextStyle(fontSize: 11, color: _textSecondary),
             ),
@@ -439,7 +453,8 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
       );
     }
 
-    final memberCountStr = '${team['member_count'] ?? 0} members · ${members.whereType<Map>().where((m) => m['is_enrolled'] == true).length} enrolled';
+    final memberCountStr =
+        '${team['member_count'] ?? 0} members · ${members.whereType<Map>().where((m) => m['is_enrolled'] == true).length} enrolled';
     Widget membersWidget;
     if (hasUnenrolled) {
       membersWidget = Row(
@@ -599,15 +614,9 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
         for (final team in sectionTeams) {
           final defense = team['defense_context'];
           final workflow = defense is Map ? defense['concept_workflow'] : null;
-          final projectId = workflow is Map
-              ? _asInt(workflow['section_project_id'])
-              : null;
-          if (workflow is Map &&
-              (projectId != null ||
-                  workflow['shared_import_pending'] == true)) {
-            sharedWorkflows[projectId == null
-                ? 'imported:$section'
-                : '$projectId'] = {
+          final groupKey = _sharedGroupKey(team);
+          if (workflow is Map && groupKey != null) {
+            sharedWorkflows[groupKey] = {
               ...workflow,
               'stage_label': defense is Map
                   ? defense['event_label'] ?? defense['current_stage'] ?? ''
@@ -624,6 +633,20 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                 final adviser = t['adviser_name']?.toString().trim() ?? '';
                 return adviser == selectedAdviser;
               }).toList();
+
+        final teamGroups = <String, List<Map<String, dynamic>>>{};
+        // Teams outside the shared project stay in the section, above its
+        // shared-system heading, matching the deliverables matrix.
+        final independentTeams = displayedTeams
+            .where((team) => _sharedGroupKey(team) == null)
+            .toList();
+        if (independentTeams.isNotEmpty || displayedTeams.isEmpty) {
+          teamGroups['independent'] = independentTeams;
+        }
+        for (final team in displayedTeams) {
+          final key = _sharedGroupKey(team);
+          if (key != null) teamGroups.putIfAbsent(key, () => []).add(team);
+        }
 
         final isExpanded =
             _sectionExpansionStates[section] ??
@@ -703,8 +726,6 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                       ? DefensysTokens.mistBorder
                       : const Color(0xFFE5E7EB),
                 ),
-                for (final entry in sharedWorkflows.entries)
-                  _sharedProposalNames(entry.value),
                 if (isPit || systemName.isNotEmpty || managerName.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -932,12 +953,23 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Text(
-                                                adv,
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: textColor,
+                                              Flexible(
+                                                child: Tooltip(
+                                                  message: adv,
+                                                  child: Text(
+                                                    adv,
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontFamily: DefensysTokens
+                                                          .fontFamilyInter,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: textColor,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                               const SizedBox(width: 4),
@@ -974,113 +1006,163 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                     },
                   ),
                 ],
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? DefensysTokens.mistSurface
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isDark
-                              ? DefensysTokens.mistBorder
-                              : DefensysTableTokens.cardBorder,
+                for (final group in teamGroups.entries) ...[
+                  if (sharedWorkflows[group.key] case final workflow?)
+                    _sharedProposalNames(workflow),
+                  if (group.key == 'independent' &&
+                      sharedWorkflows.isNotEmpty &&
+                      group.value.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Independent projects',
+                          style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _textSecondary,
+                          ),
                         ),
                       ),
-                      child: DefensysDataTable<Map<String, dynamic>>(
-                        items: displayedTeams,
-                        rowMinHeight: DefensysTableTokens.rowHeightMultiline,
-                        onRowTap: (team) {
-                          final teamId = _asInt(team['id']);
-                          if (teamId != null) _openTeam(team);
-                        },
-                        emptyState: const Padding(
-                          padding: EdgeInsets.symmetric(
-                            vertical: 24,
-                            horizontal: 16,
-                          ),
-                          child: DefensysEmptyState(
-                            icon: Icons.person_search_outlined,
-                            title: 'No Teams for Selected Adviser',
-                            description:
-                                'No teams are assigned to this adviser under this section.',
-                            size: DefensysEmptyStateSize.compact,
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? DefensysTokens.mistSurface
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isDark
+                                ? DefensysTokens.mistBorder
+                                : DefensysTableTokens.cardBorder,
                           ),
                         ),
-                        columns: [
-                          DefensysTableColumn<Map<String, dynamic>>(
-                            title: 'TEAM & PROJECT TITLE',
-                            flex: isPit ? 3.5 : 3.0,
-                            minWidth: 240,
-                            cellBuilder: (context, team, index) =>
-                                _buildTeamTitleCell(team, isPit: isPit),
+                        child: DefensysDataTable<Map<String, dynamic>>(
+                          key: ValueKey(
+                            'section-team-group-$section-${group.key}',
                           ),
-                          DefensysTableColumn<Map<String, dynamic>>(
-                            title: 'LEADER & MEMBERS',
-                            flex: 2.2,
-                            minWidth: 170,
-                            cellBuilder: (context, team, index) =>
-                                _buildLeaderAndMembersCell(team),
+                          items: group.value,
+                          rowMinHeight: DefensysTableTokens.rowHeightMultiline,
+                          onRowTap: (team) {
+                            final teamId = _asInt(team['id']);
+                            if (teamId != null) _openTeam(team);
+                          },
+                          emptyState: const Padding(
+                            padding: EdgeInsets.symmetric(
+                              vertical: 24,
+                              horizontal: 16,
+                            ),
+                            child: DefensysEmptyState(
+                              icon: Icons.person_search_outlined,
+                              title: 'No Teams for Selected Adviser',
+                              description:
+                                  'No teams are assigned to this adviser under this section.',
+                              size: DefensysEmptyStateSize.compact,
+                            ),
                           ),
-                          DefensysTableColumn<Map<String, dynamic>>(
-                            title: isPit ? 'PIT EVENT' : 'CURRENT STAGE',
-                            flex: 2.2,
-                            minWidth: 170,
-                            cellBuilder: (context, team, index) =>
-                                _buildDefenseContextCell(team, isPit: isPit),
-                          ),
-                          if (!isPit)
+                          columns: [
                             DefensysTableColumn<Map<String, dynamic>>(
-                              title: 'STAGE & DELIVERABLES',
-                              flex: 1.6,
-                              minWidth: 175,
-                              cellBuilder: (context, team, index) {
-                                final deliverableCount =
-                                    (team['defense_context'] is Map
-                                            ? team['defense_context']['deliverable_count']
-                                            : null)
-                                        as num? ??
-                                    team['deliverable_count'] as num? ??
-                                    0;
-                                final teamId = _asInt(team['id']);
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    currentStageBadge(context, team),
-                                    const SizedBox(height: 3),
-                                    InkWell(
-                                      onTap: teamId == null
-                                          ? null
-                                          : () => _openTeam(team),
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 2,
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              deliverableCount > 0
-                                                  ? Icons
-                                                        .check_circle_outline_rounded
-                                                  : Icons.description_outlined,
-                                              size: 11,
-                                              color: deliverableCount > 0
-                                                  ? const Color(0xFF059669)
-                                                  : _textSecondary,
-                                            ),
-                                            const SizedBox(width: 3),
-                                            Text(
-                                              deliverableCount > 0
-                                                  ? '$deliverableCount ${deliverableCount == 1 ? 'file' : 'files'} submitted'
-                                                  : 'No files yet',
-                                              style: TextStyle(
-                                                fontSize: 10.5,
+                              title: 'TEAM & PROJECT TITLE',
+                              flex: isPit ? 3.5 : 3.0,
+                              minWidth: 240,
+                              cellBuilder: (context, team, index) =>
+                                  _buildTeamTitleCell(team, isPit: isPit),
+                            ),
+                            DefensysTableColumn<Map<String, dynamic>>(
+                              title: 'LEADER & MEMBERS',
+                              flex: 2.2,
+                              minWidth: 170,
+                              cellBuilder: (context, team, index) =>
+                                  _buildLeaderAndMembersCell(team),
+                            ),
+                            DefensysTableColumn<Map<String, dynamic>>(
+                              title: isPit ? 'PIT EVENT' : 'CURRENT STAGE',
+                              flex: 2.2,
+                              minWidth: 170,
+                              cellBuilder: (context, team, index) =>
+                                  _buildDefenseContextCell(team, isPit: isPit),
+                            ),
+                            if (!isPit)
+                              DefensysTableColumn<Map<String, dynamic>>(
+                                title: 'STAGE & DELIVERABLES',
+                                flex: 1.6,
+                                minWidth: 175,
+                                cellBuilder: (context, team, index) {
+                                  final deliverableCount =
+                                      (team['defense_context'] is Map
+                                              ? team['defense_context']['deliverable_count']
+                                              : null)
+                                          as num? ??
+                                      team['deliverable_count'] as num? ??
+                                      0;
+                                  final teamId = _asInt(team['id']);
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      TeamStageStatus(team: team),
+                                      const SizedBox(height: 3),
+                                      InkWell(
+                                        onTap: teamId == null
+                                            ? null
+                                            : () => _openTeam(team),
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 2,
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                deliverableCount > 0
+                                                    ? Icons
+                                                          .check_circle_outline_rounded
+                                                    : Icons
+                                                          .description_outlined,
+                                                size: 11,
+                                                color: deliverableCount > 0
+                                                    ? const Color(0xFF059669)
+                                                    : _textSecondary,
+                                              ),
+                                              const SizedBox(width: 3),
+                                              Flexible(
+                                                child: Text(
+                                                  deliverableCount > 0
+                                                      ? '$deliverableCount ${deliverableCount == 1 ? 'file' : 'files'} submitted'
+                                                      : 'No files yet',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 10.5,
+                                                    color: deliverableCount > 0
+                                                        ? (_isDark
+                                                              ? const Color(
+                                                                  0xFF6EE7B7,
+                                                                )
+                                                              : const Color(
+                                                                  0xFF047857,
+                                                                ))
+                                                        : _textSecondary,
+                                                    fontWeight:
+                                                        deliverableCount > 0
+                                                        ? FontWeight.w600
+                                                        : FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 2),
+                                              Icon(
+                                                Icons.chevron_right_rounded,
+                                                size: 12,
                                                 color: deliverableCount > 0
                                                     ? (_isDark
                                                           ? const Color(
@@ -1090,73 +1172,57 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                                               0xFF047857,
                                                             ))
                                                     : _textSecondary,
-                                                fontWeight: deliverableCount > 0
-                                                    ? FontWeight.w600
-                                                    : FontWeight.normal,
                                               ),
-                                            ),
-                                            const SizedBox(width: 2),
-                                            Icon(
-                                              Icons.chevron_right_rounded,
-                                              size: 12,
-                                              color: deliverableCount > 0
-                                                  ? (_isDark
-                                                        ? const Color(
-                                                            0xFF6EE7B7,
-                                                          )
-                                                        : const Color(
-                                                            0xFF047857,
-                                                          ))
-                                                  : _textSecondary,
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                       ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            DefensysTableColumn<Map<String, dynamic>>(
+                              title: 'DETAILS',
+                              flex: 0.9,
+                              minWidth: 100,
+                              alignment: Alignment.center,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              headerPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              cellBuilder: (context, team, index) {
+                                final teamId = _asInt(team['id']);
+                                return TextButton.icon(
+                                  onPressed: teamId == null
+                                      ? null
+                                      : () => _openTeam(team),
+                                  icon: const Icon(
+                                    Icons.arrow_forward_rounded,
+                                    size: 15,
+                                  ),
+                                  label: const Text('View'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor:
+                                        DefensysTokens.maroonTextOf(context),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
                                     ),
-                                  ],
+                                    textStyle: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
                                 );
                               },
                             ),
-                          DefensysTableColumn<Map<String, dynamic>>(
-                            title: 'DETAILS',
-                            flex: 0.9,
-                            minWidth: 100,
-                            alignment: Alignment.center,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            headerPadding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                            ),
-                            cellBuilder: (context, team, index) {
-                              final teamId = _asInt(team['id']);
-                              return TextButton.icon(
-                                onPressed: teamId == null
-                                    ? null
-                                    : () => _openTeam(team),
-                                icon: const Icon(
-                                  Icons.arrow_forward_rounded,
-                                  size: 15,
-                                ),
-                                label: const Text('View'),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: DefensysTokens.maroonTextOf(
-                                    context,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  textStyle: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

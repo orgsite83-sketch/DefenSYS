@@ -401,6 +401,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           stageLabel: state.selectedStage,
                           stage: selectedStage,
                           showTitleCard: false,
+                          showHistory: false,
                         ),
                         _buildRequiredProgressBlock(pre),
                         const SizedBox(height: 16),

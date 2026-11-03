@@ -1,7 +1,7 @@
 """Read-only, cohort-first grade tables shared by the workspace and reports.
 
-Enrollment is the left side of the student join: an ungraded/unassigned student
-must not disappear. List assembly never synchronizes or creates grade records.
+Selected assessments contain their scheduled roster; semester coverage retains
+the enrolled cohort. List assembly never synchronizes or creates grade records.
 """
 from collections import defaultdict
 from decimal import Decimal
@@ -13,9 +13,9 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from academic_period_management.models import Semester
 from authentication_access_control.scopes import is_admin_user, is_pit_lead_only
-from authentication_access_control.workspaces import workspace_grades_for, workspace_teams_for
+from authentication_access_control.workspaces import workspace_grades_for, workspace_schedules_for, workspace_teams_for
 from defense.scheduler.event_scope import pit_events_for_user
-from defense.scheduler.models import PitEventGradingConfig
+from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig
 from defense.stages.models import DefenseStage, StageGradingConfig
 from grading.grades.models import StudentStageGrade
 from grading.grades.evaluator_identity import public_guest_name
@@ -222,9 +222,14 @@ def _sources(request, context, assessments):
             and grade.stage_label.casefold() == a['label'].casefold()))]
         for assessment in matches:
             by_assessment[assessment['key']].append(grade)
+    assessment_only = context['coverage'] == 'assessment'
+    schedules = list(workspace_schedules_for(request.user, workspace).filter(
+        semester=semester, scope=scope).exclude(status=DefenseSchedule.STATUS_CANCELLED).values(
+            'id', 'team_id', 'project_version', 'defense_stage_id', 'event_name')) if assessment_only else []
     visible_grade_team_ids = {g.team_id for g in grades}
     teams = StudentTeam.objects.filter(
-        Q(pk__in=workspace_teams_for(request.user, workspace).values('pk')) | Q(pk__in=visible_grade_team_ids))
+        Q(pk__in=workspace_teams_for(request.user, workspace).values('pk')) | Q(pk__in=visible_grade_team_ids)
+        | Q(pk__in={s['team_id'] for s in schedules}))
     teams = teams.filter(Q(semester=semester) | Q(term_participations__semester=semester))
     teams = teams.filter(level__icontains='PIT' if scope == 'pit' else 'Capstone')
     teams = list(teams.select_related('adviser', 'leader').prefetch_related(
@@ -236,7 +241,24 @@ def _sources(request, context, assessments):
         if scope == 'pit':
             from student_teams.pit_rosters import effective_ids
             ids &= set(effective_ids(semester.pk, assessment['year_level'], assessment['config']))
-            ids |= {g.team_id for g in by_assessment[assessment['key']] if g.team_id in team_map}
+            if not assessment_only:
+                ids |= {g.team_id for g in by_assessment[assessment['key']] if g.team_id in team_map}
+        if assessment_only:
+            # Booking validates stage endorsement (or a PIT event's applicable
+            # clearance policy). Keep that hearing evidence after the team's
+            # readiness changes, including completed/archived defenses.
+            scheduled = {s['id']: s for s in schedules if s['team_id'] in ids and (
+                scope == 'capstone' and s['defense_stage_id'] == assessment['id']
+                or scope == 'pit' and s['event_name'].casefold() == assessment['label'].casefold()
+                and _team_context(team_map[s['team_id']], semester)['year_level'] == assessment['year_level'])}
+            eligible_grades = [g for g in by_assessment[assessment['key']] if g.schedule_id in scheduled
+                and (g.team_id, g.project_version) == (
+                    scheduled[g.schedule_id]['team_id'], scheduled[g.schedule_id]['project_version'])]
+            recorded_schedule_ids = {g.schedule_id for g in eligible_grades}
+            scheduled = {sid: s for sid, s in scheduled.items() if sid in recorded_schedule_ids
+                or s['project_version'] == team_map[s['team_id']].project_version}
+            ids &= {s['team_id'] for s in scheduled.values()}
+            by_assessment[assessment['key']] = eligible_grades
         team_ids[assessment['key']] = ids
     records = StudentAcademicRecord.objects.filter(semester=semester, student__role='student')
     if scope == 'pit':
@@ -259,6 +281,12 @@ def _sources(request, context, assessments):
                 if scope == 'pit':
                     allowed |= Q(year_level=assignment.year_level, section=assignment.section)
         records = records.filter(allowed)
+    if assessment_only:
+        roster_ids = set().union(*team_ids.values())
+        student_ids = set().union(*[_member_ids(team_map[tid], semester) for tid in roster_ids])
+        grade_ids = {g.pk for values in by_assessment.values() for g in values}
+        records = records.filter(Q(student_id__in=student_ids) | Q(student_id__in=
+            StudentStageGrade.objects.filter(team_grade_id__in=grade_ids).values('student_id')))
     sections = sorted(set(records.exclude(section='').values_list('section', flat=True)))
     if context['section']:
         records = records.filter(section=context['section'])

@@ -2075,6 +2075,7 @@ class GradeCenterApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+        self.assertNotIn('peerScore', response.data)
         self.assertEqual(
             PeerEvaluationSubmission.objects.filter(
                 team_grade=grade,

@@ -3,7 +3,7 @@ import '../auth_provider.dart';
 import '../app/data_refresh_provider.dart';
 import 'team_formation_service.dart';
 
-/// Shared by the Team banner and navigation badge so they use one task snapshot.
+/// One task snapshot for Team setup and Integration's project-manager badge.
 final studentTeamTasksProvider = FutureProvider<Map<String, dynamic>>((ref) {
   final identity = ref.watch(
     authProvider.select((s) => (s.user?['id'], s.user?['role'])),

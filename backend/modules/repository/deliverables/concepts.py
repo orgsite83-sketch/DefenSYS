@@ -645,7 +645,7 @@ def payload(team, stage, *, history=True, actor=None):
         if title_status != 'titles_accepted':
             status = title_status
     from .pit_decisions import decision_payload
-    return {'enabled': True, 'config': policy, 'round': current.number if current else 1,
+    data = {'enabled': True, 'config': policy, 'round': current.number if current else 1,
         'selection_mode': 'shared_module' if shared_policy else 'team_concept',
         'shared_selection': ({'selected_key': shared_round.selected_key,
             'system_title': next((c.get('system_title', '') for c in concepts
@@ -695,6 +695,9 @@ def payload(team, stage, *, history=True, actor=None):
             'decided_by_name': (r.decided_by.get_full_name() or r.decided_by.username) if r.decided_by else '',
             'remarks': r.remarks, 'concepts': r.concepts, 'documents': r.documents_snapshot,
             'override_reason': r.override_reason} for r in rounds if r.schedule_id or r.verdict] if history else []}
+    from grading.grades.student_visibility import student_assessment_payload
+    return student_assessment_payload(data, actor)
+
 
 
 def summary(team, stage):

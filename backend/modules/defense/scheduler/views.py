@@ -39,6 +39,7 @@ from .panelist_evaluation import (
     verdict_unavailable_reason,
 )
 from academic_period_management.models import Semester
+from student_teams.models import StudentTeam
 
 from .pit_config import check_pit_event_locked, get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
 from defense.template_files import template_save
@@ -588,7 +589,8 @@ class PanelistAssignmentsView(APIView):
 
         for schedule in schedules:
             subs = sub_map.get(schedule.id, [])
-            is_posted = bool(subs)
+            from .panelist_evaluation import evaluation_complete
+            is_posted = evaluation_complete(schedule, subs)
 
             submissions_data = []
             for sub in subs:
@@ -733,7 +735,6 @@ class PanelistGradeSubmissionView(APIView):
             )
 
         try:
-            from student_teams.models import StudentTeam
             from academic_period_management.models import Semester
 
             panelist = request.user
@@ -783,7 +784,8 @@ class PanelistGradeSubmissionView(APIView):
                 return Response({'detail': 'This evaluation has changed. Refresh the assignment before submitting.'}, status=400)
             submissions_payload = validate_evaluation_submissions(schedule, submissions_payload)
 
-            if schedule.panelist_grade_submissions.filter(panelist=panelist).exists():
+            from .panelist_evaluation import owner_evaluation_complete, existing_submission_matches
+            if owner_evaluation_complete(schedule, panelist=panelist):
                 return Response({'detail': 'Your grades have already been submitted and locked.'}, status=400)
 
             if not team.semester:
@@ -826,7 +828,11 @@ class PanelistGradeSubmissionView(APIView):
 
             from django.db import transaction
             with transaction.atomic():
+                StudentTeam.objects.select_for_update().get(pk=team.pk)
+                DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
                 for item in submissions_payload:
+                    if existing_submission_matches(schedule, item, panelist=panelist):
+                        continue
                     student_id = item.get('student_id')
                     student = None
                     if is_individual:
@@ -1142,7 +1148,8 @@ class GuestPanelistAssignmentsView(APIView):
                 is_void=False,
             ).prefetch_related('criterion_scores')
         )
-        is_posted = bool(subs)
+        from .panelist_evaluation import evaluation_complete
+        is_posted = evaluation_complete(schedule, subs)
         team_grade = schedule.grade_records.select_related('verdict_by').first()
 
         submissions_data = []
@@ -1251,7 +1258,8 @@ class GuestPanelistGradeSubmissionView(APIView):
                 return Response({'detail': 'This evaluation has changed. Refresh the assignment before submitting.'}, status=400)
             submissions_payload = validate_evaluation_submissions(schedule, submissions_payload)
 
-            if schedule.panelist_grade_submissions.filter(guest_code_id=principal.guest_code_id).exists():
+            from .panelist_evaluation import owner_evaluation_complete, existing_submission_matches
+            if owner_evaluation_complete(schedule, guest_code_id=principal.guest_code_id):
                 return Response({'detail': 'Your grades have already been submitted and locked.'}, status=400)
 
             if not team.semester:
@@ -1289,7 +1297,11 @@ class GuestPanelistGradeSubmissionView(APIView):
 
             from django.db import transaction
             with transaction.atomic():
+                StudentTeam.objects.select_for_update().get(pk=team.pk)
+                DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
                 for item in submissions_payload:
+                    if existing_submission_matches(schedule, item, guest_code_id=principal.guest_code_id):
+                        continue
                     student_id = item.get('student_id')
                     student = None
                     if is_individual:

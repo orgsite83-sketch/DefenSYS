@@ -43,6 +43,19 @@ def schedule_progress(schedule, *, reconcile_status=True):
               # grade_status lookup which can fall back to another stage attempt.
               'grade_status': grade.status if grade else None,
               'published_result': grade.result if grade and grade.status == TeamGrade.STATUS_PUBLISHED else None}
+    if schedule.scope == 'pit':
+        from .pit_config import get_pit_event_config
+        context = (grade.pit_event_config if grade else None) or get_pit_event_config(
+            schedule.semester, schedule.event_name, year_level=schedule.team.year_level)
+    else:
+        context = schedule.defense_stage
+    result['concept_selection'] = bool(context and context.concept_config.get('enabled'))
+    # Selection can change the title after scheduling. Use this attempt's
+    # recorded title, never the team's current title or a scheduling placeholder.
+    result['approved_title'] = (
+        (grade.project_title_snapshot if grade else history.project_title).strip()
+        if evidence and result['verdict'] in TeamGrade.PASSING_VERDICTS else ''
+    )
     completed = False
     if grade:
         from grading.grades.services import team_grading_readiness

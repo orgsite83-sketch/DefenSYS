@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../models/team_workflow_status.dart';
 
 class TeamMember {
   final String id;
@@ -277,6 +278,139 @@ class TeamData {
     return value is Map ? Map<String, dynamic>.from(value) : null;
   }
 
+  /// Decision duties are separate from this evaluator's submitted scores.
+  /// Only server-authorized actions receive an actionable status.
+  TeamWorkflowStatus? get teamOutcomeStatus {
+    if (!usesConceptWorkspace) return null;
+    final workflow = workflowGrade?['workflow'] as Map? ?? {};
+    final finalized = isCompleted || workflowGrade?['status'] == 'published';
+    final direction = workflow['redefense_direction'];
+    if (!finalized &&
+        isChair &&
+        direction is Map &&
+        '${direction['direction'] ?? ''}'.isEmpty &&
+        direction['can_decide'] == true) {
+      return const TeamWorkflowStatus(
+        'next_attempt_decision_required',
+        'Next attempt decision needed',
+        WorkflowStatusTone.attention,
+      );
+    }
+    if (hasVerdict || '${workflowGrade?['verdict'] ?? ''}'.isNotEmpty) {
+      return null;
+    }
+    if (!usesDefenseVerdict) {
+      if (!hasConceptWorkflow || hasPitConceptDecision) return null;
+      return !finalized && canRecordPitConceptDecision
+          ? const TeamWorkflowStatus(
+              'project_decision_required',
+              'Project decision needed',
+              WorkflowStatusTone.attention,
+            )
+          : const TeamWorkflowStatus(
+              'project_decision_pending',
+              'Project decision pending',
+              WorkflowStatusTone.neutral,
+            );
+    }
+    if (usesAutomaticOutcomes) {
+      final rule = outcomeRule!;
+      if (rule['panel_complete'] == false) {
+        return const TeamWorkflowStatus(
+          'outcome_awaiting_panel',
+          'Outcome: awaiting panel',
+          WorkflowStatusTone.neutral,
+        );
+      }
+      if (hasSharedSystem &&
+          selectedSharedConceptKey.isEmpty &&
+          '${sharedReview?['verdict'] ?? ''}'.isEmpty) {
+        return const TeamWorkflowStatus(
+          'outcome_awaiting_shared_decision',
+          'Outcome: awaiting shared decision',
+          WorkflowStatusTone.neutral,
+        );
+      }
+      final qualifying = (rule['assessments'] as List? ?? [])
+          .whereType<Map>()
+          .where((row) => row['qualifies'] == true)
+          .length;
+      if (!hasSharedSystem &&
+          rule['panel_complete'] == true &&
+          rule['per_concept'] == true &&
+          rule['outcome'] == 'approved' &&
+          qualifying > 1) {
+        return !finalized &&
+                isChair &&
+                workflow['can_save_recommendations'] == true
+            ? const TeamWorkflowStatus(
+                'team_concept_selection_required',
+                'Choose team concept',
+                WorkflowStatusTone.attention,
+              )
+            : const TeamWorkflowStatus(
+                'team_concept_selection_pending',
+                'Awaiting chair concept selection',
+                WorkflowStatusTone.neutral,
+              );
+      }
+    } else if (!finalized && canIssueVerdict) {
+      return const TeamWorkflowStatus(
+        'team_outcome_required',
+        'Team outcome needed',
+        WorkflowStatusTone.attention,
+      );
+    }
+    return const TeamWorkflowStatus(
+      'team_outcome_pending',
+      'Team outcome pending',
+      WorkflowStatusTone.neutral,
+    );
+  }
+
+  TeamWorkflowStatus? get sharedDecisionStatus {
+    final review = sharedReview;
+    if (review == null) return null;
+    final recorded = '${review['verdict'] ?? ''}';
+    if (recorded == 'for_redefense') {
+      return const TeamWorkflowStatus(
+        'shared_redefense',
+        'Shared re-defense required',
+        WorkflowStatusTone.attention,
+      );
+    }
+    if (recorded.isNotEmpty) {
+      return const TeamWorkflowStatus(
+        'shared_decision_recorded',
+        'Shared system selected',
+        WorkflowStatusTone.success,
+      );
+    }
+    return !isCompleted &&
+            workflowGrade?['status'] != 'published' &&
+            review['can_decide'] == true
+        ? const TeamWorkflowStatus(
+            'shared_decision_required',
+            'Shared decision needed',
+            WorkflowStatusTone.attention,
+          )
+        : const TeamWorkflowStatus(
+            'shared_decision_pending',
+            'Shared decision pending',
+            WorkflowStatusTone.neutral,
+          );
+  }
+
+  bool get needsChairDecision =>
+      !isCompleted &&
+      (sharedDecisionStatus?.code == 'shared_decision_required' ||
+          const {
+            'next_attempt_decision_required',
+            'team_concept_selection_required',
+            'team_outcome_required',
+            'project_decision_required',
+          }.contains(teamOutcomeStatus?.code));
+
   bool get hasConceptWorkflow => conceptWorkflow != null;
   bool get hasPitConceptDecision =>
       conceptWorkflow?['decision']?.toString().isNotEmpty ?? false;
@@ -293,6 +427,7 @@ class TeamData {
       conceptWorkflow?['decision_review_token']?.toString() ?? '';
   bool get panelWorkFinished {
     if (isCompleted) return true;
+    if (needsChairDecision) return false;
     if (!isPosted) return false;
     if (usesConceptWorkspace && usesDefenseVerdict && isChair && !hasVerdict) {
       if (!usesAutomaticOutcomes ||
@@ -397,7 +532,9 @@ class TeamData {
         results.fold(0, (n, r) => n + r.required),
       );
     }
-    final answers = isPosted ? submittedSubmissions : draftSubmissions;
+    final answers = isPosted
+        ? submittedSubmissions
+        : [...draftSubmissions, ...submittedSubmissions];
     final scores = <String, num>{};
     for (final submission in answers) {
       if (submission['student_id']?.toString() != studentId) continue;

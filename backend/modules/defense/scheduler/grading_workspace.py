@@ -114,6 +114,8 @@ def shared_context(schedule, hearing, actor):
         'remarks': section_round.remarks, 'can_decide': bool(allowed and not reason),
         'decision_unavailable_reason': reason,
     }
+    from repository.section_concepts.selection_corrections import payload as correction_payload
+    result['shared_review']['selection_correction'] = correction_payload(section_round, actor)
     return result
 
 

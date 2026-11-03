@@ -39,4 +39,5 @@ class StudentPeerEvaluationSubmitView(APIView):
         except DjangoValidationError as exc:
             return Response(exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(payload, status=status.HTTP_200_OK)
+        from .student_visibility import student_assessment_payload
+        return Response(student_assessment_payload(payload, request.user), status=status.HTTP_200_OK)

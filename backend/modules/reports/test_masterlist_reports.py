@@ -12,6 +12,9 @@ class GradeMasterlistReportTests(GradeMasterlistTests):
             'export_format': 'json', **params})
 
     def test_masterlist_preview_and_download_include_all_pages(self):
+        from student_teams.models import TeamMembership
+        for student in self.students[2:]:
+            TeamMembership.objects.create(team=self.team, student=student)
         response = self.report(page=2, page_size=10)
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['total_rows'], 13)
@@ -47,13 +50,24 @@ class GradeMasterlistReportTests(GradeMasterlistTests):
 
     def test_report_access_and_semester_cells_match_masterlist(self):
         self.client.force_authenticate(self.lead)
-        self.assertEqual(self.report().data['total_rows'], 13)
+        self.assertEqual(self.report().data['total_rows'], 2)
         self.assertEqual(self.report(year_level='1st Year').status_code, 403)
         self.assertEqual(self.report(scope='capstone').status_code, 403)
         response = self.report(coverage='semester')
         self.assertEqual(response.status_code, 200, response.data)
         self.assertIn(f'pit:{self.event.pk}', response.data['rows'][0])
         self.assertIn(f'pit:{self.event2.pk}', response.data['rows'][0])
+
+    def test_selected_assessment_exports_only_its_scheduled_roster(self):
+        from defense.scheduler.models import DefenseSchedule
+        response = self.report()
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['total_rows'], 2)
+        DefenseSchedule.objects.filter(pk=self.schedule.pk).update(status=DefenseSchedule.STATUS_CANCELLED)
+        for entity in ('students', 'teams'):
+            response = self.report(entity=entity)
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(response.data['total_rows'], 0)
 
     def test_detailed_export_contains_real_scoped_criteria_and_received_peer_ratings(self):
         import os

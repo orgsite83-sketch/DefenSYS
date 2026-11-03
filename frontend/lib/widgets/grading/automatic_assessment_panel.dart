@@ -12,8 +12,9 @@ import '../../screens/app/panelist/widgets/evaluation_score_input.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 import '../dialogs/confirm_dialog.dart';
 import '../repository/section_concept_workspace.dart';
+import 'shared_selection_correction_dialog.dart';
 
-/// Score-derived results, explicit chair decisions, and separate feedback.
+/// Score-derived results and chair decisions submitted with optional feedback.
 class AutomaticAssessmentPanel extends ConsumerStatefulWidget {
   const AutomaticAssessmentPanel({
     super.key,
@@ -96,13 +97,14 @@ class _AutomaticAssessmentPanelState
               'review_token': action == 'redefense_direction'
                   ? (directionDecision?['review_token'])
                   : (rule?['review_token']),
+              'recommendations':
+                  directionDecision?['recommendations'] ?? _notes.text.trim(),
               if (action == 'select_concept') ...{
                 'concept_key': _selection,
               } else if (action == 'redefense_direction') ...{
                 'direction': directionDecision?['direction'],
                 'source_round_id': directionDecision?['source_round_id'],
-              } else
-                'recommendations': _notes.text.trim(),
+              },
             }),
           );
       if (!mounted) return;
@@ -120,9 +122,9 @@ class _AutomaticAssessmentPanelState
       showSuccessToast(
         context,
         action == 'select_concept'
-            ? 'Concept selected.'
+            ? 'Concept selection and recommendations saved.'
             : action == 'redefense_direction'
-            ? 'Next attempt confirmed.'
+            ? 'Next attempt and recommendations saved.'
             : 'Recommendations saved.',
       );
       widget.onUpdated?.call();
@@ -145,6 +147,7 @@ class _AutomaticAssessmentPanelState
       'direction': _direction,
       'source_round_id': direction['source_round_id'],
       'review_token': direction['review_token'],
+      'recommendations': _notes.text.trim(),
     };
     final independent = _direction == 'independent';
     final impact = direction['impact'] as Map? ?? {};
@@ -189,7 +192,7 @@ class _AutomaticAssessmentPanelState
       children: [
         Divider(height: 28, color: DefensysTokens.borderOf(context)),
         Text(
-          'Next attempt',
+          'Decision',
           style: TextStyle(
             color: DefensysTokens.textPrimaryOf(context),
             fontWeight: FontWeight.w600,
@@ -229,32 +232,23 @@ class _AutomaticAssessmentPanelState
               style: TextStyle(fontSize: 12, color: muted),
             ),
           ],
-          const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ShadButton(
-              backgroundColor: DefensysTokens.maroonOf(context),
-              hoverBackgroundColor: DefensysTokens.maroonDark,
-              foregroundColor: Colors.white,
-              height: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              onPressed:
-                  canDecide &&
-                      (_direction != 'independent' || independentReason.isEmpty)
-                  ? () => _confirmDirection(direction)
-                  : null,
-              child: const Flexible(
-                child: Text(
-                  'Confirm next attempt',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ),
         ] else
           Text(labels['shared_module']!, style: TextStyle(color: muted)),
       ],
     );
+  }
+
+  Future<void> _correctSharedSelection(Map<String, dynamic> review) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      if (await showSharedSelectionCorrection(context, review) && mounted) {
+        widget.onUpdated?.call();
+        showSuccessToast(context, 'Shared selection corrected.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Widget _sharedAssessments(
@@ -502,10 +496,23 @@ class _AutomaticAssessmentPanelState
         _grade['status'] != 'published' &&
         !_busy &&
         workflow['can_save_recommendations'] != false;
+    final nextAttempt = workflow['redefense_direction'] is Map
+        ? workflow['redefense_direction'] as Map
+        : null;
+    final confirmingDirection =
+        widget.isChair &&
+        nextAttempt != null &&
+        '${nextAttempt['direction'] ?? ''}'.isEmpty &&
+        nextAttempt['can_decide'] == true;
     final primary = DefensysTokens.textPrimaryOf(context);
     final muted = DefensysTokens.textSecondaryOf(context);
     final border = DefensysTokens.borderOf(context);
     final progress = workflow['assessment_progress'] as Map? ?? {};
+    final sharedReview = workflow['shared_selection_correction'] is Map
+        ? Map<String, dynamic>.from(
+            workflow['shared_selection_correction'] as Map,
+          )
+        : null;
     final required = progress['panel_evaluators_required'];
     final submitted = progress['panel_evaluators_submitted'];
     String percentage(dynamic value) => value is num
@@ -559,6 +566,12 @@ class _AutomaticAssessmentPanelState
                       color: primary,
                       fontWeight: FontWeight.w600,
                     ),
+                  ),
+                if (widget.isChair && sharedReview != null)
+                  SharedSelectionCorrectionMenu(
+                    review: sharedReview,
+                    enabled: !_busy,
+                    onCorrect: () => _correctSharedSelection(sharedReview),
                   ),
               ],
             ),
@@ -740,27 +753,9 @@ class _AutomaticAssessmentPanelState
                 style: TextStyle(color: primary),
               ),
             ],
-            if (selecting && widget.isChair) ...[
-              const SizedBox(height: 12),
-              ShadButton(
-                height: 0,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                onPressed: canEdit && _selection != null
-                    ? () => _save('select_concept')
-                    : null,
-                child: const Flexible(
-                  child: Text(
-                    'Confirm concept selection',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-            ],
-            if (workflow['redefense_direction'] is Map && !closedFailed)
-              _nextAttempt(workflow['redefense_direction'] as Map),
+            if (sharedReview != null)
+              SharedSelectionCorrectionHistory(review: sharedReview),
+            if (nextAttempt != null && !closedFailed) _nextAttempt(nextAttempt),
             if (widget.isChair && !closedFailed) ...[
               Divider(height: 28, color: border),
               Text(
@@ -778,20 +773,54 @@ class _AutomaticAssessmentPanelState
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerRight,
-                child: ShadButton.outline(
-                  height: 0,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  onPressed: canEdit ? () => _save('recommendations') : null,
-                  child: Flexible(
-                    child: Text(
-                      _busy ? 'Saving...' : 'Save recommendations',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
+                child: confirmingDirection || selecting
+                    ? ShadButton(
+                        backgroundColor: DefensysTokens.maroonOf(context),
+                        hoverBackgroundColor: DefensysTokens.maroonDark,
+                        foregroundColor: Colors.white,
+                        height: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        onPressed: !canEdit
+                            ? null
+                            : confirmingDirection
+                            ? (_direction != 'independent' ||
+                                      '${nextAttempt['independent_unavailable_reason'] ?? ''}'
+                                          .isEmpty)
+                                  ? () => _confirmDirection(nextAttempt)
+                                  : null
+                            : _selection != null
+                            ? () => _save('select_concept')
+                            : null,
+                        child: Flexible(
+                          child: Text(
+                            _busy
+                                ? 'Saving...'
+                                : confirmingDirection
+                                ? 'Confirm next attempt'
+                                : 'Confirm concept selection',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      )
+                    : ShadButton.outline(
+                        height: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        onPressed: canEdit
+                            ? () => _save('recommendations')
+                            : null,
+                        child: Flexible(
+                          child: Text(
+                            _busy ? 'Saving...' : 'Save recommendations',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
               ),
             ] else if ('${_grade['verdict_remarks'] ?? ''}'
                 .trim()

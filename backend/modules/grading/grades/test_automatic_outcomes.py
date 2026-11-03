@@ -154,6 +154,38 @@ class AutomaticConceptOutcomeTests(APITestCase):
         self.grade.refresh_from_db()
         self.assertEqual(self.grade.panel_score, 90)
 
+    def test_api_selection_and_recommendations_are_one_submission(self):
+        self.post([8, 9, 6])
+        self.grade.refresh_from_db()
+        response = self.client.post(f'/api/grading/grades/{self.grade.pk}/assessment/', {
+            'action': 'select_concept', 'concept_key': 'c2',
+            'review_token': outcome_payload(self.grade)['review_token'],
+            'recommendations': 'Strengthen the prototype evidence.',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.grade.refresh_from_db()
+        self.assertEqual(self.grade.verdict, 'approved')
+        self.assertEqual(self.grade.verdict_remarks, 'Strengthen the prototype evidence.')
+        self.assertEqual(self.grade.panel_score, 90)
+        self.assertEqual(ConceptRound.objects.get(schedule=self.capstone_schedule).remarks,
+            'Strengthen the prototype evidence.')
+
+    def test_api_invalid_recommendations_roll_back_concept_selection(self):
+        self.post([8, 9, 6])
+        self.grade.refresh_from_db()
+        response = self.client.post(f'/api/grading/grades/{self.grade.pk}/assessment/', {
+            'action': 'select_concept', 'concept_key': 'c2',
+            'review_token': outcome_payload(self.grade)['review_token'],
+            'recommendations': 'x' * 5001,
+        }, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.grade.refresh_from_db()
+        self.assertEqual(self.grade.verdict, '')
+        self.assertEqual(self.grade.verdict_remarks, '')
+        self.assertIsNone(self.grade.panel_score)
+        hearing = ConceptRound.objects.get(schedule=self.capstone_schedule)
+        self.assertFalse(any(c.get('decision') == 'approved' for c in hearing.concepts))
+
     def closure_preview(self):
         return group_completion_readiness(semester=self.semester, scope='capstone',
             stage_label=self.stage.label, user=self.admin)

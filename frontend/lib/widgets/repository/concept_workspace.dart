@@ -1,13 +1,13 @@
+import '../defense/concept_hearing_history.dart';
+export '../defense/concept_hearing_history.dart';
 import 'package:flutter/material.dart';
 import 'section_concept_workspace.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../services/auth_provider.dart';
 import '../../services/capstone_deliverables_provider.dart';
-import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 import '../../theme/defensys_tokens.dart';
-import '../../models/defense_workflow_labels.dart';
 
 import 'pit_concept_decision_panel.dart';
 import 'shared_concept_review.dart';
@@ -27,6 +27,7 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
     this.onOpenSharedReview,
     this.paperContent,
     this.showTitleCard = true,
+    this.showHistory = true,
     this.paperBuilder,
     this.initialConceptKey,
     this.onReviewFiles,
@@ -42,11 +43,15 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
 
   /// Student title management lives in the Team tab; retain hearing context here.
   final bool showTitleCard;
+  final bool showHistory;
   @override
   ConsumerState<ConceptWorkspace> createState() => _ConceptWorkspaceState();
 }
 
 class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
+  Widget get _hearingHistory => widget.showHistory
+      ? ConceptHistory(workflow: workflow) : const SizedBox.shrink();
+
   final controllers = <String, TextEditingController>{};
   bool busy = false;
   String? error;
@@ -274,7 +279,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
               stageLabel: widget.stageLabel,
               workflow: workflow,
             ),
-          ConceptHistory(workflow: workflow),
+          _hearingHistory,
         ],
       );
     }
@@ -382,7 +387,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
               child: const Text('Clearance exception'),
             ),
           ),
-        ConceptHistory(workflow: workflow),
+        _hearingHistory,
       ],
     );
   }
@@ -640,7 +645,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             error!,
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
-        ConceptHistory(workflow: workflow),
+        _hearingHistory,
       ],
     );
   }
@@ -653,7 +658,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
         children: [
           if (widget.paperContent != null) widget.paperContent!,
           repeatInstructions(),
-          ConceptHistory(workflow: workflow),
+          _hearingHistory,
         ],
       );
     }
@@ -663,9 +668,9 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
       return DefensysShadcnScope(child: titleFirstReview());
     }
     if (workflow['enabled'] != true) {
-      return ConceptHistory(
+      return widget.showHistory ? ConceptHistory(
         workflow: {'history': widget.stage['hearing_history']},
-      );
+      ) : const SizedBox.shrink();
     }
     final user = ref.watch(authProvider).user ?? {};
     final admin = user['role'] == 'admin' || user['is_superuser'] == true;
@@ -699,7 +704,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ConceptHistory(workflow: workflow),
+          _hearingHistory,
           repeatInstructions(),
           if (workflow['decision_scope'] == 'pit')
             PitConceptDecisionPanel(
@@ -1102,7 +1107,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                     'Clearance applies to these concept titles and document versions.',
                   ),
                 ),
-              ConceptHistory(workflow: workflow),
+              _hearingHistory,
             ],
           ),
         ),
@@ -1128,84 +1133,8 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
           workflow: workflow,
           onOpen: openSharedWorkspace,
         ),
-        if (editable) conceptContent else ConceptHistory(workflow: workflow),
+        if (editable) conceptContent else _hearingHistory,
       ],
-    );
-  }
-}
-
-class ConceptHistory extends StatelessWidget {
-  const ConceptHistory({super.key, required this.workflow});
-  final Map<String, dynamic> workflow;
-  @override
-  Widget build(BuildContext context) {
-    final history = (workflow['history'] as List? ?? [])
-        .whereType<Map>()
-        .toList();
-    if (history.isEmpty) return const SizedBox.shrink();
-    return DefensysShadcnScope(
-      child: Column(
-        children: [
-          for (final round in history)
-            ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: Text(
-                'Attempt ${round['round']} · ${'${round['verdict'] ?? ''}'.isEmpty ? 'Scheduled' : defenseProgressLabel('${round['verdict']}')}',
-              ),
-              children: [
-                if (round['next_attempt_direction'] is Map)
-                  ListTile(
-                    title: Text(
-                      (round['next_attempt_direction'] as Map)['direction'] ==
-                              'independent'
-                          ? 'Next attempt: Three independent concepts'
-                          : 'Next attempt: Revise selected shared module',
-                    ),
-                    subtitle: Text(
-                      'Confirmed by ${(round['next_attempt_direction'] as Map)['decided_by']}',
-                    ),
-                  ),
-                if ('${round['remarks'] ?? ''}'.isNotEmpty)
-                  ListTile(title: Text('${round['remarks']}')),
-                for (final c
-                    in (round['concepts'] as List? ?? []).whereType<Map>())
-                  ListTile(
-                    title: Text('${c['title']}'),
-                    subtitle: Text(
-                      '${c['decision'] ?? ''}${c.containsKey('panel_score') ? ' · Panel: ${c['panel_score']}%' : ''}\n${c['remarks'] ?? ''}${c['next_action'] == null ? '' : '\nNext hearing: ${c['next_action'] == 'omit' ? 'Not requested' : c['next_action']}'}',
-                    ),
-                  ),
-                for (final group
-                    in (round['documents'] as List? ?? []).whereType<Map>())
-                  for (final file
-                      in (group['files'] as List? ?? []).whereType<Map>())
-                    ListTile(
-                      dense: true,
-                      title: Text('${file['file_name']}'),
-                      subtitle: Text(
-                        'Revision ${file['revision']} · ${file['status'] == 'accepted' ? 'Faculty accepted' : '${file['status'] ?? 'Submitted'}'} · Presented at this hearing',
-                      ),
-                      trailing: ShadButton.ghost(
-                        size: ShadButtonSize.sm,
-                        onPressed: file['file_url'] == null
-                            ? null
-                            : () => viewFileInDialog(
-                                context: context,
-                                fileUrl: '${file['file_url']}',
-                                fileName: '${file['file_name']}',
-                              ),
-                        child: const Text('View'),
-                      ),
-                    ),
-                if ('${round['override_reason'] ?? ''}'.isNotEmpty)
-                  ListTile(
-                    title: const Text('Clearance exception'),
-                    subtitle: Text('${round['override_reason']}'),
-                  ),
-              ],
-            ),
-        ],
-      ),
     );
   }
 }

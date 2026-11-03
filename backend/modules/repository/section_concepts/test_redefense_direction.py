@@ -143,6 +143,12 @@ class SharedRedefenseDirectionTests(APITestCase):
         self.assertIsNone(shared_deliverables.resolve(self.team, self.stage))
         self.assertEqual(resolve_policy(self.team, self.stage)['source'], 'chair_independent')
         self.assertEqual(services.team_display(self.team)['system_name'], '')
+        from student_teams.serializers import StudentTeamSerializer
+        context = StudentTeamSerializer(self.team).data['defense_context']
+        self.assertEqual(context['stage_verdict'], 'for_redefense')
+        self.assertIsNone(context['concept_workflow']['section_project_id'])
+        self.assertFalse(context['concept_workflow']['shared_import_pending'])
+        self.assertEqual(context['concept_workflow']['system_concepts'], [])
         self.assertEqual(services.module_blocker(self.team, self.stage, following), '')
         from student_teams.capstone_lifecycle import team_snapshot
         self.assertEqual(team_snapshot(self.team)['project_direction'], 'independent')
@@ -198,6 +204,77 @@ class SharedRedefenseDirectionTests(APITestCase):
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['grade']['workflow']['redefense_direction']['direction'], 'independent')
+
+    def post_with_recommendations(self, direction, notes, **overrides):
+        self.grade.refresh_from_db()
+        current = payload(self.grade, self.chair)
+        self.client.force_authenticate(self.chair)
+        return self.client.post(f'/api/grading/grades/{self.grade.pk}/assessment/', {
+            'action': 'redefense_direction', 'direction': direction,
+            'source_round_id': self.source.pk, 'review_token': current['review_token'],
+            'recommendations': notes, **overrides}, format='json')
+
+    def assert_combined_submission(self, direction, notes):
+        following = self.prepare_redefense()
+        response = self.post_with_recommendations(direction, notes)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.grade.refresh_from_db()
+        self.source.refresh_from_db()
+        following.refresh_from_db()
+        self.assertEqual(Decision.objects.get().direction, direction)
+        self.assertEqual(self.grade.verdict_remarks, notes)
+        self.assertEqual(self.source.remarks, notes)
+        self.assertTrue(all(c['panel_feedback'] == notes for c in following.concepts))
+        self.assertEqual(response.data['grade']['verdict_remarks'], notes)
+        return response
+
+    def test_api_shared_direction_and_recommendations_save_together(self):
+        self.assert_combined_submission('shared_module', 'Improve the inventory workflow.')
+
+    def test_api_independent_direction_and_recommendations_save_together(self):
+        self.assert_combined_submission('independent', 'Propose a complete independent inventory system.')
+
+    def test_api_combined_confirmation_keeps_recommendations_optional(self):
+        self.assert_combined_submission('independent', '')
+
+    def test_api_feedback_failure_rolls_back_direction_and_draft_conversion(self):
+        following = self.prepare_redefense()
+        before = deepcopy(following.concepts)
+        for notes in ('x' * 5001, None):
+            with self.subTest(notes_type=type(notes).__name__):
+                response = self.post_with_recommendations('independent', notes)
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertFalse(Decision.objects.exists())
+                self.assertFalse(independent(self.team))
+                self.grade.refresh_from_db()
+                self.source.refresh_from_db()
+                following.refresh_from_db()
+                self.assertEqual(self.grade.verdict_remarks, '')
+                self.assertEqual(self.source.remarks, '')
+                self.assertEqual(following.concepts, before)
+                self.assertEqual(following.section_round_id, self.source.section_round_id)
+
+    def test_api_stale_decision_does_not_save_recommendations(self):
+        self.prepare_redefense()
+        response = self.post_with_recommendations('independent', 'Do not save stale feedback.', review_token='stale')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.grade.refresh_from_db()
+        self.assertEqual(self.grade.verdict_remarks, '')
+        self.assertFalse(Decision.objects.exists())
+
+    def test_api_repeated_combined_confirmation_preserves_newer_feedback(self):
+        from grading.grades.automatic_outcomes import save_recommendations
+        self.prepare_redefense()
+        original_token = payload(self.grade, self.chair)['review_token']
+        response = self.post_with_recommendations('independent', 'Initial feedback.')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.grade.refresh_from_db()
+        save_recommendations(self.grade, actor=self.chair, notes='Updated feedback.')
+        response = self.post_with_recommendations('independent', 'Initial feedback.', review_token=original_token)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.grade.refresh_from_db()
+        self.assertEqual(self.grade.verdict_remarks, 'Updated feedback.')
+        self.assertEqual(Decision.objects.count(), 1)
 
     def test_endorsed_repeat_and_published_outcome_are_not_eligible(self):
         from django.utils import timezone
@@ -422,6 +499,9 @@ class SharedRedefenseDirectionTests(APITestCase):
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class SharedDirectionConcurrencyTests(APITransactionTestCase):
+    # Suppress post_migrate during the flush below: it would recreate content
+    # types with new IDs before restoring the serialized migration fixtures.
+    serialized_rollback = True
     setUp = SharedRedefenseDirectionTests.setUp
     prepare_hearing = SharedRedefenseDirectionTests.prepare_hearing
     prepare_redefense = SharedRedefenseDirectionTests.prepare_redefense
@@ -453,7 +533,8 @@ class SharedDirectionConcurrencyTests(APITransactionTestCase):
                 barrier.wait(timeout=10)
                 try:
                     confirm(grade, actor=self.chair, direction=direction,
-                        source_round_id=self.source.pk, review_token=token)
+                        source_round_id=self.source.pk, review_token=token,
+                        recommendations=f'Feedback for {direction}.')
                     return 'recorded'
                 except ValidationError:
                     return 'stale'
@@ -466,6 +547,8 @@ class SharedDirectionConcurrencyTests(APITransactionTestCase):
         self.assertEqual(Decision.objects.count(), 1)
         following = ConceptRound.objects.get(team=self.team, number=2)
         independent_route = Decision.objects.get().direction == 'independent'
+        self.grade.refresh_from_db()
+        self.assertEqual(self.grade.verdict_remarks, f'Feedback for {Decision.objects.get().direction}.')
         self.assertEqual(independent(self.team), independent_route)
         self.assertEqual(following.section_round_id is None, independent_route)
         self.assertEqual(len(following.concepts), 3 if independent_route else 1)
