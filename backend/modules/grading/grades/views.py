@@ -596,11 +596,18 @@ class TeamGradeAssessmentView(APIView):
                 key = drf_serializers.CharField(max_length=32).run_validation(request.data.get('concept_key'))
                 token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
                 grade = resolve_outcome(grade, actor=request.user, selected_key=key, review_token=token)
+            elif request.data.get('action') == 'redefense_direction':
+                from repository.section_concepts.redefense_direction import confirm
+                direction = drf_serializers.ChoiceField(choices=['shared_module', 'independent']).run_validation(request.data.get('direction'))
+                source_round_id = drf_serializers.IntegerField(min_value=1).run_validation(request.data.get('source_round_id'))
+                token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
+                grade = confirm(grade, actor=request.user, direction=direction,
+                    source_round_id=source_round_id, review_token=token)
             elif request.data.get('action') == 'recommendations':
                 token = drf_serializers.CharField().run_validation(request.data.get('review_token'))
                 grade = save_recommendations(grade, actor=request.user, notes=request.data.get('recommendations', ''), review_token=token)
             else:
-                return Response({'detail': 'Choose concept selection or recommendations.'}, status=400)
+                return Response({'detail': 'Choose concept selection, next-attempt direction, or recommendations.'}, status=400)
         except PermissionError as exc:
             return Response({'detail': str(exc)}, status=403)
         except DjangoValidationError as exc:

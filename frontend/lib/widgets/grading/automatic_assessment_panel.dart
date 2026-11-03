@@ -8,11 +8,12 @@ import '../../config/api_config.dart';
 import '../../services/authenticated_client.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../toasts/feedback_toast.dart';
-import '../../screens/app/panelist/widgets/evaluation_score_picker.dart';
+import '../../screens/app/panelist/widgets/evaluation_score_input.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
+import '../dialogs/confirm_dialog.dart';
 import '../repository/section_concept_workspace.dart';
 
-/// The automatic result and the two distinct chair actions: selection and notes.
+/// Score-derived results, explicit chair decisions, and separate feedback.
 class AutomaticAssessmentPanel extends ConsumerStatefulWidget {
   const AutomaticAssessmentPanel({
     super.key,
@@ -44,6 +45,7 @@ class _AutomaticAssessmentPanelState
   late Map<String, dynamic> _grade;
   late final TextEditingController _notes;
   String? _selection;
+  String _direction = 'shared_module';
   bool _busy = false;
 
   @override
@@ -63,6 +65,7 @@ class _AutomaticAssessmentPanelState
       _grade = widget.grade;
       if (changed) {
         _selection = null;
+        _direction = 'shared_module';
         _notes.text = '${_grade['verdict_remarks'] ?? ''}';
       }
     }
@@ -74,7 +77,10 @@ class _AutomaticAssessmentPanelState
     super.dispose();
   }
 
-  Future<void> _save(String action) async {
+  Future<void> _save(
+    String action, {
+    Map<String, dynamic>? directionDecision,
+  }) async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
@@ -87,9 +93,14 @@ class _AutomaticAssessmentPanelState
             ),
             body: jsonEncode({
               'action': action,
-              'review_token': rule?['review_token'],
+              'review_token': action == 'redefense_direction'
+                  ? (directionDecision?['review_token'])
+                  : (rule?['review_token']),
               if (action == 'select_concept') ...{
                 'concept_key': _selection,
+              } else if (action == 'redefense_direction') ...{
+                'direction': directionDecision?['direction'],
+                'source_round_id': directionDecision?['source_round_id'],
               } else
                 'recommendations': _notes.text.trim(),
             }),
@@ -110,6 +121,8 @@ class _AutomaticAssessmentPanelState
         context,
         action == 'select_concept'
             ? 'Concept selected.'
+            : action == 'redefense_direction'
+            ? 'Next attempt confirmed.'
             : 'Recommendations saved.',
       );
       widget.onUpdated?.call();
@@ -125,11 +138,131 @@ class _AutomaticAssessmentPanelState
     }
   }
 
+  Future<void> _confirmDirection(Map direction) async {
+    final gradeId = _grade['id'];
+    final scheduleId = _grade['schedule_id'];
+    final decision = <String, dynamic>{
+      'direction': _direction,
+      'source_round_id': direction['source_round_id'],
+      'review_token': direction['review_token'],
+    };
+    final independent = _direction == 'independent';
+    final impact = direction['impact'] as Map? ?? {};
+    final remaining = (impact['remaining_teams'] as List? ?? []).join(', ');
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Confirm next attempt',
+      message:
+          '${impact['team'] ?? widget.teamName ?? 'This team'} · Re-defense required\n'
+          '${impact['shared_system'] ?? ''}\n${impact['module'] ?? ''}\n\n'
+          'Attempt ${impact['next_attempt'] ?? ''}: '
+          '${independent ? 'Three independent project proposals, with fresh review and evaluation.' : 'Revise the selected module under the same shared system.'}'
+          '${independent ? '\n${impact['saved_titles'] ?? 0} saved title(s) and ${impact['saved_files'] ?? 0} current file(s) remain reference evidence.' : ''}'
+          '${independent ? '\nRemaining shared teams: ${remaining.isEmpty ? 'None' : remaining}.' : ''}',
+      confirmLabel: 'Confirm next attempt',
+    );
+    if (!confirmed || !mounted) return;
+    if (_grade['id'] != gradeId || _grade['schedule_id'] != scheduleId) {
+      showErrorToast(
+        context,
+        'The attempt changed. Review the current outcome again.',
+      );
+      return;
+    }
+    await _save('redefense_direction', directionDecision: decision);
+  }
+
+  Widget _nextAttempt(Map direction) {
+    final recorded = '${direction['direction'] ?? ''}';
+    final canDecide =
+        widget.isChair && direction['can_decide'] == true && !_busy;
+    final independentReason =
+        '${direction['independent_unavailable_reason'] ?? ''}';
+    final reason = '${direction['unavailable_reason'] ?? ''}';
+    final muted = DefensysTokens.textSecondaryOf(context);
+    const labels = {
+      'shared_module': 'Improve the selected shared module',
+      'independent': 'Propose three independent concepts',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Divider(height: 28, color: DefensysTokens.borderOf(context)),
+        Text(
+          'Next attempt',
+          style: TextStyle(
+            color: DefensysTokens.textPrimaryOf(context),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (recorded.isNotEmpty) ...[
+          Text(labels[recorded] ?? recorded),
+          const SizedBox(height: 6),
+          Text(
+            'Confirmed by ${direction['decided_by'] ?? 'panel chair'}',
+            style: TextStyle(fontSize: 12, color: muted),
+          ),
+        ] else if (widget.isChair) ...[
+          ShadRadioGroup<String>(
+            initialValue: _direction,
+            enabled: canDecide,
+            spacing: 14,
+            items: [
+              for (final item in labels.entries)
+                ShadRadio<String>(
+                  value: item.key,
+                  color: DefensysTokens.maroonTextOf(context),
+                  enabled:
+                      item.key != 'independent' || independentReason.isEmpty,
+                  label: Text(item.value),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => _direction = value);
+            },
+          ),
+          if (independentReason.isNotEmpty || reason.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              reason.isNotEmpty ? reason : independentReason,
+              style: TextStyle(fontSize: 12, color: muted),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ShadButton(
+              backgroundColor: DefensysTokens.maroonOf(context),
+              hoverBackgroundColor: DefensysTokens.maroonDark,
+              foregroundColor: Colors.white,
+              height: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              onPressed:
+                  canDecide &&
+                      (_direction != 'independent' || independentReason.isEmpty)
+                  ? () => _confirmDirection(direction)
+                  : null,
+              child: const Flexible(
+                child: Text(
+                  'Confirm next attempt',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+        ] else
+          Text(labels['shared_module']!, style: TextStyle(color: muted)),
+      ],
+    );
+  }
+
   Widget _sharedAssessments(
     List<Map> rows,
     List<Map> assessments,
     String selectedKey,
     bool complete,
+    String qualifyingScore,
   ) {
     final muted = DefensysTokens.textSecondaryOf(context);
     final ink = DefensysTokens.textPrimaryOf(context);
@@ -232,6 +365,28 @@ class _AutomaticAssessmentPanelState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 6,
+          children: [
+            Text(
+              'Module assessments',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: ink,
+              ),
+            ),
+            Text(
+              'Qualifying score: $qualifyingScore',
+              style: TextStyle(fontSize: 12, color: muted),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         if (selectedKey.isNotEmpty) ...[
           for (final assessment in selected) module(assessment),
           if (selected.isEmpty && selectedCandidate != null)
@@ -254,14 +409,6 @@ class _AutomaticAssessmentPanelState
               ],
             ),
         ] else ...[
-          Text(
-            'Team module assessments',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: ink,
-            ),
-          ),
           for (final assessment in assessments) module(assessment),
         ],
       ],
@@ -342,7 +489,7 @@ class _AutomaticAssessmentPanelState
         : !complete
         ? 'Awaiting panel evaluations'
         : rule['outcome'] == 'pending'
-        ? 'Awaiting section system selection'
+        ? 'Awaiting shared system selection'
         : selecting
         ? 'Choose the official concept'
         : _grade['verdict'] == 'for_redefense'
@@ -364,6 +511,20 @@ class _AutomaticAssessmentPanelState
     String percentage(dynamic value) => value is num
         ? '${formatEvaluationScore(value.toDouble())}%'
         : '$value%';
+    final waitingForSharedSelection =
+        shared &&
+        complete &&
+        selectedKey.isEmpty &&
+        !sharedRepeat &&
+        !closedFailed &&
+        rule['outcome'] == 'pending';
+    final detail = !complete
+        ? (required is num && required > 0 && submitted is num
+              ? '$submitted of $required panelists submitted'
+              : 'All required panel evaluations must be submitted.')
+        : waitingForSharedSelection
+        ? 'The panel chair selects the system in Shared systems.'
+        : (rule['reason'] ?? '').toString();
 
     return DefensysShadcnScope(
       child: Container(
@@ -383,15 +544,13 @@ class _AutomaticAssessmentPanelState
               children: [
                 Expanded(
                   child: Text(
-                    widget.teamName != null
-                        ? '${widget.teamName} outcome'
-                        : widget.embedded
+                    widget.embedded && widget.teamName == null && !shared
                         ? 'Panel qualifying score'
                         : 'Team outcome',
                     style: DefensysTokens.sectionTitle.copyWith(color: primary),
                   ),
                 ),
-                if (widget.teamName == null)
+                if (widget.teamName == null && !shared)
                   Text(
                     rule['qualifying_score'] == null
                         ? 'Not configured'
@@ -403,13 +562,13 @@ class _AutomaticAssessmentPanelState
                   ),
               ],
             ),
-            if (widget.teamName != null) ...[
+            if (widget.teamName != null && !shared) ...[
               const SizedBox(height: 8),
               Text(
-                '${shared ? 'Module' : 'Panel'} qualifying score: ${rule['qualifying_score'] is num ? percentage(rule['qualifying_score']) : 'Not configured'}',
+                'Panel qualifying score: ${rule['qualifying_score'] is num ? percentage(rule['qualifying_score']) : 'Not configured'}',
                 style: TextStyle(fontSize: 12, color: muted),
               ),
-            ] else if (!widget.embedded)
+            ] else if (widget.teamName == null && !widget.embedded && !shared)
               Text(
                 'Panel qualifying score',
                 textAlign: TextAlign.end,
@@ -424,27 +583,9 @@ class _AutomaticAssessmentPanelState
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (!complete || rule['reason']?.toString().isNotEmpty == true) ...[
+            if (detail.isNotEmpty) ...[
               const SizedBox(height: 6),
-              Text(
-                !complete
-                    ? (required is num && required > 0 && submitted is num
-                          ? '$submitted of $required panelists submitted'
-                          : 'All required panel evaluations must be submitted.')
-                    : '${rule['reason']}',
-                style: TextStyle(color: muted, fontSize: 13),
-              ),
-            ],
-            if (shared &&
-                selectedKey.isEmpty &&
-                !sharedRepeat &&
-                !closedFailed &&
-                !complete) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Waiting for shared-system selection',
-                style: TextStyle(color: muted, fontSize: 13),
-              ),
+              Text(detail, style: TextStyle(color: muted, fontSize: 13)),
             ],
             if (widget.showSharedLink && concepts['section_project_id'] != null)
               Align(
@@ -475,7 +616,15 @@ class _AutomaticAssessmentPanelState
               ),
             if (shared) ...[
               const SizedBox(height: 24),
-              _sharedAssessments(rows, assessments, selectedKey, complete),
+              _sharedAssessments(
+                rows,
+                assessments,
+                selectedKey,
+                complete,
+                rule['qualifying_score'] is num
+                    ? percentage(rule['qualifying_score'])
+                    : 'Not configured',
+              ),
             ] else if (rule['per_concept'] == true) ...[
               const SizedBox(height: 12),
               RadioGroup<String>(
@@ -610,6 +759,8 @@ class _AutomaticAssessmentPanelState
                 ),
               ),
             ],
+            if (workflow['redefense_direction'] is Map && !closedFailed)
+              _nextAttempt(workflow['redefense_direction'] as Map),
             if (widget.isChair && !closedFailed) ...[
               Divider(height: 28, color: border),
               Text(

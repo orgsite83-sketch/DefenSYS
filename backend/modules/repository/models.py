@@ -3,7 +3,7 @@ from repository.deliverables.models import DeliverableSubmission, DeliverableSub
 from repository.archive.models import ArchiveEntry, RepositoryReview, UserBookShelf
 from repository.section_concepts.models import (SectionConceptProject, SectionProjectTeam,
     SectionConceptRound, SectionSystemConcept, SectionConceptPaper, SectionConceptAcknowledgment,
-    SharedDeliverableSet, SharedDeliverableFile)
+    SharedDeliverableSet, SharedDeliverableFile, SharedModuleRedefenseDecision)
 
 __all__ = [
     'ArchiveEntry',

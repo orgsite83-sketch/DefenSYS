@@ -54,10 +54,13 @@ class Command(BaseCommand):
         parser.add_argument('--apply', action='store_true')
         parser.add_argument('--review-token')
         parser.add_argument('--reason', default='')
+        parser.add_argument('--shared-module-scope', action='store_true',
+            help='Review selected-module-only scope for unstarted captured shared hearings.')
 
     def handle(self, *args, **options):
         apply = options['apply']
         ids = options['schedule_id']
+        shared_scope = options['shared_module_scope']
         if apply and (not ids or not options['review_token'] or not options['reason'].strip()):
             raise CommandError('Name the schedules and provide the reviewed token and adoption reason.')
         if len(options['reason']) > 5000:
@@ -67,10 +70,17 @@ class Command(BaseCommand):
             if not apply and not already_atomic and connection.vendor == 'postgresql':
                 with connection.cursor() as cursor:
                     cursor.execute('SET TRANSACTION READ ONLY')
-            grades = TeamGrade.objects.filter(scope='capstone',
-                schedule__assessment_policy__version=1).filter(
+            grades = TeamGrade.objects.filter(scope='capstone', schedule__assessment_policy__version=1)
+            if shared_scope:
+                grades = grades.filter(schedule__concept_round__section_round__isnull=False,
+                    schedule__assessment_policy__per_concept=True).filter(
+                    Q(schedule__assessment_policy__shared_module_scope_version=0) |
+                    Q(schedule__assessment_policy__shared_module_scope_version__isnull=True))
+            else:
+                grades = grades.filter(
                     Q(schedule__assessment_policy__automatic_outcomes=False) |
-                    Q(schedule__assessment_policy__automatic_outcomes__isnull=True)).order_by('pk')
+                    Q(schedule__assessment_policy__automatic_outcomes__isnull=True))
+            grades = grades.order_by('pk')
             if ids:
                 grades = grades.filter(schedule_id__in=ids)
             if apply:
@@ -81,10 +91,11 @@ class Command(BaseCommand):
                 grades = grades.select_for_update(of=('self',))
             grades = list(grades.select_related('team', 'semester', 'schedule'))
             rows = [adoption_row(grade) for grade in grades]
-            token = sha256(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()
+            token = sha256(json.dumps({'shared_module_scope': shared_scope, 'hearings': rows},
+                sort_keys=True, default=str).encode()).hexdigest()
             if apply:
                 if sorted(set(ids)) != sorted(row['schedule_id'] for row in rows):
-                    raise CommandError('Every named schedule must still be a captured manual Capstone hearing.')
+                    raise CommandError('Every named schedule must still match the requested captured Capstone policy.')
                 if token != options['review_token'] or any(not row['eligible'] for row in rows):
                     raise CommandError('The hearing review changed or includes started/historical evidence. No adoption applied.')
                 from grading.grades.defense_workflow import audit
@@ -92,16 +103,19 @@ class Command(BaseCommand):
                 now = timezone.now()
                 for grade in grades:
                     before = grade.schedule.assessment_policy
-                    policy = {**before, 'automatic_outcomes': True, 'automatic_outcome_adoption': {
+                    mode = 'shared_module_scope_version' if shared_scope else 'automatic_outcomes'
+                    policy = {**before, mode: 1 if shared_scope else True,
+                        'shared_module_scope_adoption' if shared_scope else 'automatic_outcome_adoption': {
                         'at': now.isoformat(), 'reason': options['reason'].strip(),
                         'prior_policy_hash': sha256(json.dumps(before, sort_keys=True).encode()).hexdigest()}}
                     # Only the captured mode changes. Avoid schedule.save()'s
                     # unrelated readiness side effects; keep all existing inputs.
                     DefenseSchedule.objects.filter(pk=grade.schedule_id).update(
                         assessment_policy=policy, revision=F('revision') + 1, updated_at=now)
-                    audit(grade, None, 'defense.automatic_policy_adopted', reason=options['reason'].strip(),
+                    audit(grade, None, 'defense.shared_module_scope_adopted' if shared_scope else 'defense.automatic_policy_adopted', reason=options['reason'].strip(),
                           schedule_id=grade.schedule_id, prior_policy=before, adopted_policy=policy)
             for row in rows:
                 row.pop('review_context')
         self.stdout.write(json.dumps({'read_only': not apply, 'count': len(rows),
+            'policy': 'shared_module_scope' if shared_scope else 'automatic_outcomes',
             'review_token': token, 'hearings': rows, 'adopted_count': len(rows) if apply else 0}, indent=2))

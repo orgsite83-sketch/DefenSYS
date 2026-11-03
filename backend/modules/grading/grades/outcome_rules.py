@@ -21,6 +21,7 @@ def capture_policy(schedule):
         'evaluation_mode': PANEL_ONLY_CONCEPT if panel_only else 'standard',
         'version': 1 if stage.qualifying_score is not None else 0,
         'repeat_files_version': 1,
+        'shared_module_scope_version': 1 if stage.qualifying_score is not None and stage.concept_config.get('enabled') else 0,
         'automatic_outcomes': bool(stage.qualifying_score is not None),
         'qualifying_score': str(stage.qualifying_score) if stage.qualifying_score is not None else None,
         'score_carryover': (stage.score_carryover if stage.qualifying_score is not None else
@@ -52,8 +53,21 @@ def hearing_concepts(schedule):
     return hearing.concepts if hearing else []
 
 
-def concept_keys(schedule):
+def captured_concept_keys(schedule):
     return [c['key'] for c in hearing_concepts(schedule)] if policy_for(schedule).get('per_concept') else ['']
+
+
+@read_memoize
+def concept_keys(schedule):
+    """Required work may narrow; the captured proposal evidence never changes."""
+    keys = captured_concept_keys(schedule)
+    if policy_for(schedule).get('shared_module_scope_version') == 1:
+        from repository.deliverables.models import ConceptRound
+        hearing = ConceptRound.objects.filter(schedule_id=schedule.pk).select_related('section_round').first()
+        if (hearing and hearing.section_round_id and hearing.section_round.selected_key
+                and hearing.section_round.verdict != 'for_redefense'):
+            return [hearing.section_round.selected_key]
+    return keys
 
 
 def _mean(values):
@@ -76,7 +90,7 @@ def panel_assessments(grade):
     def panelist_percentage_from_criterion_scores(scores):
         return evaluation_percentage(((s.score, s.max_score_snapshot, s.weight_snapshot) for s in scores), rounded=False)
     result = {}
-    for key in concept_keys(schedule):
+    for key in captured_concept_keys(schedule):
         group = [s for s in rows if s.concept_key == key]
         identities = {(s.panelist_id, s.guest_code_id) for s in group}
         students = {}
@@ -142,9 +156,10 @@ def outcome_payload(grade):
     cutoff = Decimal(policy['qualifying_score'])
     assessments = panel_assessments(grade)
     concepts = {c['key']: c for c in hearing_concepts(grade.schedule)}
+    required_keys = set(concept_keys(grade.schedule))
     results = [{'key': key, 'title': concepts.get(key, {}).get('title', ''),
                 'score': float(value['score']) if value['score'] is not None else None,
-                'qualifies': bool(complete and value['score'] is not None and value['score'] >= cutoff)}
+                'qualifies': bool(complete and key in required_keys and value['score'] is not None and value['score'] >= cutoff)}
                for key, value in assessments.items()]
     qualifies = any(r['qualifies'] for r in results)
     blocker = ''

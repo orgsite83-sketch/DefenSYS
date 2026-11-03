@@ -220,7 +220,8 @@ def workspace(actor, term_id=None):
         'pipeline_revision': digest(stages),
         'documenter_workloads': workloads,
         'faculty': PanelistOptionSerializer(faculty, many=True).data,
-        'panelists': PanelistOptionSerializer(faculty, many=True).data,
+        'panelists': PanelistOptionSerializer(faculty.filter(is_panelist=True), many=True).data,
+        'documenters': PanelistOptionSerializer(faculty.filter(is_documenter=True), many=True).data,
         'external_evaluators': [evaluator_payload(e) for e in ExternalEvaluator.objects.filter(status='approved', is_active=True)]}
 
 
@@ -401,15 +402,23 @@ class PlanningScheduleSerializer(DefenseScheduleWriteSerializer):
         pass
 
     def _validate_capstone_stage_setup(self, attrs):
+        from grading.grades.evaluation_policy import concept_stage
         stage = attrs['defense_stage']
         config = config_for(stage, attrs['semester'])
-        if stage.qualifying_score is None or not config or not all((config.panel_rubric_id,
-                config.adviser_rubric_id, config.peer_rubric_id)):
-            raise ValidationError({'defense_stage_id': 'Complete the stage qualifying score and published panel/adviser/peer rubrics in setup.'})
+        panel_only = concept_stage(stage)
+        roles = ('panel',) if panel_only else ('panel', 'adviser', 'peer')
+        if stage.qualifying_score is None or not config or not all(
+                getattr(config, f'{role}_rubric_id') for role in roles):
+            requirements = 'panel rubric' if panel_only else 'panel/adviser/peer rubrics'
+            raise ValidationError({'defense_stage_id':
+                f'Complete the stage qualifying score and published {requirements} in setup.'})
         attrs['rubric'] = config.panel_rubric
-        for rubric in (config.panel_rubric, config.adviser_rubric, config.peer_rubric):
+        for role in roles:
+            rubric = getattr(config, f'{role}_rubric')
             if rubric.status != 'published':
-                raise ValidationError({'defense_stage_id': 'Publish all configured stage rubrics before scheduling.'})
+                message = ('Publish the panel rubric before scheduling.' if panel_only
+                    else 'Publish all configured stage rubrics before scheduling.')
+                raise ValidationError({'defense_stage_id': message})
         return attrs
 
 

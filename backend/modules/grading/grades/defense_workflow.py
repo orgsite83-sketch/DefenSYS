@@ -168,6 +168,7 @@ def workflow_payload(grade, actor=None):
     concept_context = context_for_grade(grade)
     from .outcome_rules import automatic_outcomes
     from .automatic_outcomes import recommendations_unavailable_reason
+    from repository.section_concepts.redefense_direction import payload as direction_payload
     concept_workflow = concept_payload(grade.team, concept_context, actor=actor)
     if concept_workflow and grade.schedule_id:
         from repository.deliverables.models import ConceptRound
@@ -190,6 +191,7 @@ def workflow_payload(grade, actor=None):
         'outcome_rule': outcome_payload(grade),
         'assessment_policy': policy_for(grade.schedule),
         'outcome_metadata': grade.outcome_metadata,
+        'redefense_direction': direction_payload(grade, actor),
         'can_save_recommendations': (automatic_outcomes(grade.schedule) and actor is not None
             and not recommendations_unavailable_reason(grade, actor)),
         'assessment_progress': schedule_progress(grade.schedule, reconcile_status=False) if grade.schedule_id else None,

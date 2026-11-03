@@ -4,7 +4,7 @@ import 'package:defensys/screens/app/panelist_dashboard.dart';
 import 'package:defensys/screens/app/panelist/grade_sheet_tab.dart';
 import 'package:defensys/screens/app/panelist/panelist_stage.dart';
 import 'package:defensys/screens/app/panelist/panelist_models.dart';
-import 'package:defensys/screens/app/panelist/widgets/evaluation_score_picker.dart';
+import 'package:defensys/screens/app/panelist/widgets/evaluation_score_input.dart';
 import 'package:defensys/screens/app/panelist/widgets/panelist_segmented_tabs.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
@@ -239,7 +239,7 @@ void main() {
       );
       await _tap(tester, find.text('Grade Team'));
       await _tap(tester, find.byKey(const ValueKey('confirm-team-selection')));
-      await _tap(tester, find.byKey(const ValueKey('score-value-8')));
+      await _enterScore(tester, '8');
       await tester.tap(find.text('Assignments').last);
       await tester.pump(const Duration(milliseconds: 100));
       expect(
@@ -323,11 +323,7 @@ void main() {
       );
       await _tap(tester, find.byKey(const ValueKey('confirm-team-selection')));
       expect(find.text('Currently grading'), findsOneWidget);
-      final score = find.descendant(
-        of: find.byType(EvaluationScorePicker),
-        matching: find.byKey(const ValueKey('score-value-8')),
-      );
-      await _tap(tester, score);
+      await _enterScore(tester, '8');
       await _tap(tester, find.text('Results').last);
       expect(
         tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
@@ -366,7 +362,7 @@ void main() {
       expect(find.text('Currently grading'), findsOneWidget);
       expect(
         tester
-            .widget<EvaluationScorePicker>(find.byType(EvaluationScorePicker))
+            .widget<EvaluationScoreInput>(find.byType(EvaluationScoreInput))
             .value,
         isNull,
       );
@@ -552,13 +548,7 @@ void main() {
       );
       await _tap(tester, find.text('Grade Team'));
       await _tap(tester, find.byKey(const ValueKey('confirm-team-selection')));
-      await _tap(
-        tester,
-        find.descendant(
-          of: find.byType(EvaluationScorePicker),
-          matching: find.byKey(const ValueKey('score-value-8')),
-        ),
-      );
+      await _enterScore(tester, '8');
       await _tap(tester, find.text('Results').last);
       final activeResults = tester.widget<OverallResultsTab>(
         find.byType(OverallResultsTab),
@@ -861,20 +851,13 @@ void main() {
         find.byKey(const ValueKey('open-panel-workspace')),
         findsOneWidget,
       );
-      final viewport = find.descendant(
-        of: find.byType(GradeSheetTab),
-        matching: find.byType(SingleChildScrollView),
-      );
+      final viewport = find.byKey(const ValueKey('evaluation-scroll'));
       expect(tester.getSize(viewport).height, greaterThan(400));
       expect(
         tester.getSize(find.byKey(const ValueKey('evaluation-footer'))).height,
         lessThan(100),
       );
-      final score = find.descendant(
-        of: find.byType(EvaluationScorePicker),
-        matching: find.byKey(const ValueKey('score-value-8')),
-      );
-      await _tap(tester, score);
+      await _enterScore(tester, '8');
       await _tap(tester, find.byKey(const ValueKey('more-grading-actions')));
       expect(find.text('Save Draft'), findsOneWidget);
       await _tap(tester, find.byKey(const ValueKey('save-evaluation-draft')));
@@ -887,7 +870,7 @@ void main() {
       expect(find.text('Save Draft'), findsNothing);
       await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byType(EvaluationScorePicker));
+      await tester.ensureVisible(find.byType(EvaluationScoreInput));
       await tester.pumpAndSettle();
       await capturePreview(
         tester,
@@ -910,6 +893,17 @@ void main() {
   }
 }
 
+Future<void> _enterScore(WidgetTester tester, String value) async {
+  final field = find.descendant(
+    of: find.byType(EvaluationScoreInput),
+    matching: find.byType(EditableText),
+  );
+  await tester.ensureVisible(field);
+  await tester.enterText(field, value);
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pumpAndSettle();
+}
+
 double? _valueForScore(WidgetTester tester) => tester
-    .widget<EvaluationScorePicker>(find.byType(EvaluationScorePicker))
+    .widget<EvaluationScoreInput>(find.byType(EvaluationScoreInput))
     .value;

@@ -64,6 +64,9 @@ def latest(project):
 def project_for(team, context):
     if context is None or not getattr(team, 'pk', None):
         return None
+    from .redefense_direction import independent
+    if independent(team):
+        return None
     key = (type(context).__name__, context.pk, team.project_version, team.semester_id, team.section, team.year_level)
     cache = getattr(team, '_section_concept_projects', {})
     if key in cache:
@@ -80,9 +83,11 @@ def project_for(team, context):
 
 def active_links(project):
     from django.db.models import F
+    from .redefense_direction import independent_team_ids
     return project.team_links.filter(project_version=F('team__project_version'),
         team__semester_id=project.section.semester_id, team__section=project.section.section,
-        team__year_level=project.section.year_level).select_related('team__semester', 'team__adviser')
+        team__year_level=project.section.year_level).exclude(
+        team_id__in=independent_team_ids()).select_related('team__semester', 'team__adviser')
 
 
 def can_manage(user, project):
@@ -135,6 +140,9 @@ def visible_projects(user, *, team_id=None):
     projects = SectionConceptProject.objects.select_related('section__semester', 'reviewer',
         'project_manager', 'defense_stage', 'pit_event_config').order_by('-pk')
     if team_id is not None:
+        from .redefense_direction import independent_team_ids
+        if independent_team_ids().filter(source_round__team_id=team_id).exists():
+            return []
         from django.db.models import F
         projects = projects.filter(team_links__team_id=team_id,
             team_links__project_version=F('team_links__team__project_version'),
@@ -299,6 +307,9 @@ def configure(actor, teams, context, data):
     if not teams or not context or not context.concept_config.get('enabled'):
         raise ValidationError('Enable concept selection on the selected stage/event first.')
     anchor = teams[0]
+    from .redefense_direction import independent
+    if any(independent(team) for team in teams):
+        raise ValidationError('A chair-authorized independent team cannot be added back to shared proposals.')
     require_formation_scope(actor, anchor.semester, anchor.level, anchor.section)
     if not anchor.section or any((t.section, t.semester_id, t.year_level, t.is_pit) != (
             anchor.section, anchor.semester_id, anchor.year_level, anchor.is_pit) for t in teams):
@@ -434,6 +445,9 @@ def reconcile_requirements(project, actor, *, expected_count=None):
 
 
 def team_display(team, label=None):
+    from .redefense_direction import independent
+    if independent(team):
+        return {'system_name': '', 'project_manager_name': '', 'section_project_id': None}
     projects = SectionConceptProject.objects.filter(team_links__team=team,
         team_links__project_version=team.project_version, section__semester_id=team.semester_id,
         section__section=team.section).select_related('project_manager')
@@ -471,6 +485,9 @@ def team_display(team, label=None):
 
 
 def module_blocker(team, context, current):
+    from .redefense_direction import independent
+    if independent(team):
+        return ''
     project = project_for(team, context)
     if not project:
         from student_teams.models import SectionAssignment
@@ -863,10 +880,14 @@ def decision_allowed(round, actor):
 def selection_blocker(round):
     if round.verdict:
         return 'The section system decision has already been recorded.'
-    schedules = list(round.schedules.all())
+    linked_schedules = list(round.schedules.all())
+    # The decision operation assembles an unstarted hearing from the captured
+    # module schedules. Its read-only preflight must consider that same set;
+    # requiring persisted links here hides the action that would create them.
+    schedules = linked_schedules or list(available_schedules(round))
     expected = set(active_links(round.project).values_list('team_id', flat=True))
     if not schedules or len(schedules) != len(expected) or {s.team_id for s in schedules} != expected:
-        return 'Assemble the current hearing with one schedule for every participating team.'
+        return 'Every participating team needs a current defense schedule for this shared-system round.'
     chairs = [s.panel_assignments.filter(is_chair=True).values_list('panelist_id', flat=True).first() for s in schedules]
     if not chairs[0] or len(set(chairs)) != 1:
         return 'Assign the same current faculty chair to every participating team.'
@@ -880,6 +901,10 @@ def selection_blocker(round):
         current = latest_round(schedule.team, round.project.context)
         if not current or current.schedule_id != schedule.pk or current.section_round_id != round.pk:
             return 'A participating team has a different current defense attempt. Reassemble the hearing.'
+        if not linked_schedules:
+            reason = scheduling_blocker(schedule.team, round.project.context, current)
+            if reason:
+                return f'{schedule.team.name}: {reason}'
         if schedule.project_version != schedule.team.project_version or schedule.semester_id != round.project.section.semester_id:
             return 'A participating schedule belongs to a different project or academic period.'
         if roster_unavailable_reason(schedule):

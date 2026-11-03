@@ -32,11 +32,13 @@ class _Stages extends DefenseStagesNotifier {
   DefenseStagesState build() => const DefenseStagesState(stages: [_stage]);
 
   @override
-  Future<void> fetchStages({String? scope,
+  Future<void> fetchStages({
+    String? scope,
     String? intake,
     String? phase,
     String? stage,
-    String? successMessage,}) async {}
+    String? successMessage,
+  }) async {}
 
   @override
   Future<Map<String, dynamic>?> fetchStageDetail(
@@ -155,10 +157,21 @@ void main() {
             );
           }
 
-          Future<void> toggleConcepts() async {
-            await tester.ensureVisible(find.text('Concept selection'));
-            await tester.tap(find.text('Concept selection'));
+          Future<void> selectWorkflow({required bool concepts}) async {
+            final choice = find.byKey(
+              ValueKey(
+                concepts ? 'stage-workflow-concept' : 'stage-workflow-standard',
+              ),
+            );
+            await tester.ensureVisible(choice);
+            await tester.tap(choice);
             await tester.pumpAndSettle();
+            expect(
+              tester
+                  .widget<ConceptSettings>(find.byType(ConceptSettings))
+                  .value['enabled'],
+              concepts,
+            );
           }
 
           Future<void> showRequirements() async {
@@ -174,7 +187,7 @@ void main() {
             expect(find.text('Approved Concept Paper'), findsWidgets);
           }
 
-          await toggleConcepts();
+          await selectWorkflow(concepts: true);
           await showRequirements();
           expectPapers();
           await capturePreview(
@@ -191,13 +204,7 @@ void main() {
           await tester.ensureVisible(find.text('1. Stage Details'));
           await tester.tap(find.text('1. Stage Details'));
           await tester.pumpAndSettle();
-          await toggleConcepts();
-          expect(
-            tester
-                .widget<ConceptSettings>(find.byType(ConceptSettings))
-                .value['enabled'],
-            false,
-          );
+          await selectWorkflow(concepts: false);
           await showRequirements();
           expect(find.text('Pre-defense: 0'), findsOneWidget);
           expect(find.text('Post-defense: 0'), findsOneWidget);
@@ -206,7 +213,7 @@ void main() {
           await tester.ensureVisible(find.text('1. Stage Details'));
           await tester.tap(find.text('1. Stage Details'));
           await tester.pumpAndSettle();
-          await toggleConcepts();
+          await selectWorkflow(concepts: true);
 
           if (!editing) {
             await tester.tap(find.text('2. Grading & Rubrics'));
@@ -221,7 +228,7 @@ void main() {
           }
           await showRequirements();
           expectPapers();
-          final save = find.text(editing ? 'Save changes' : 'Add Stage');
+          final save = find.text(editing ? 'Save changes' : 'Save as draft');
           await tester.ensureVisible(save);
           await tester.tap(save);
           await tester.pumpAndSettle();

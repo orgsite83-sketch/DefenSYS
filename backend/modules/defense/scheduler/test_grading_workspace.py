@@ -58,6 +58,36 @@ class GradingWorkspaceTests(APITestCase):
         self.assertFalse(value['shared_review']['can_decide'])
         self.assertIn('common panel chair', value['shared_review']['decision_unavailable_reason'])
 
+    def test_ready_unassembled_hearing_can_be_decided_without_get_writes(self):
+        from django.db import connection
+        hearing = services.latest(self.project)
+        hearing.schedules.clear()
+        self.assertTrue(services.decision_allowed(hearing, self.chair))
+        # The normal scheduling path captures the team round before any shared
+        # presentation has assembled its schedule links. Reading must not need
+        # that later write or create it just to expose the existing action.
+        def reject_writes(execute, sql, params, many, context):
+            self.assertNotIn(sql.lstrip().split(None, 1)[0].upper(),
+                             {'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'ALTER', 'CREATE', 'DROP', 'TRUNCATE'})
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(reject_writes):
+            value = self.workspace()['shared_review']
+        self.assertTrue(value['can_decide'], value['decision_unavailable_reason'])
+        self.assertEqual(value['decision_unavailable_reason'], '')
+        self.assertFalse(hearing.schedules.exists())
+        self.assertIsNone(hearing.presentation_started_at)
+
+    def test_unassembled_hearing_still_requires_current_non_cancelled_schedules(self):
+        hearing = services.latest(self.project)
+        hearing.schedules.clear()
+        self.schedule.status = 'cancelled'
+        self.schedule.save(update_fields=['status'])
+        value = self.workspace(self.admin)['shared_review']
+        self.assertFalse(value['can_decide'])
+        self.assertTrue(value['decision_unavailable_reason'])
+        self.assertFalse(hearing.schedules.exists())
+
     def test_external_panelist_reads_only_the_assigned_hearing(self):
         from authentication_access_control.guest_authentication import GuestPanelistPrincipal
         from user_management.models import GuestPanelistCode

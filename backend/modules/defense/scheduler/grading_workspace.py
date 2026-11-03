@@ -72,7 +72,7 @@ def shared_context(schedule, hearing, actor):
     from repository.section_concepts import services, shared_deliverables as shared
 
     section_round = hearing.section_round if hearing and hearing.section_round_id else None
-    profile = shared.for_round(section_round) if section_round else shared.resolve(
+    profile = shared.for_round(section_round, historical=bool(hearing.verdict)) if section_round else shared.resolve(
         schedule.team, _context(schedule, hearing))
     if not profile or not (shared.panel_access(actor, profile) or shared.staff_access(actor, profile)):
         return {}

@@ -261,7 +261,8 @@ class SectionPaperUploadView(SectionAPIView):
 
 class SectionPaperFileView(SectionAPIView):
     def get(self, request, project_id, paper_id):
-        project = self.project(request, project_id)
+        # File-specific historical access also covers a chair-authorized departure.
+        project = get_object_or_404(SectionConceptProject, pk=project_id)
         row = get_object_or_404(SectionConceptPaper, pk=paper_id, concept__round__project=project)
         from .shared_deliverables import can_read_legacy_file
         if not can_read_legacy_file(request.user, row) or not row.file or not row.file.storage.exists(row.file.name):

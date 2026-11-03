@@ -54,6 +54,9 @@ def approved_source(team, context=None):
     from student_teams.capstone_context import inherited_stage_ids
     from .models import SectionConceptProject
     from . import services
+    from .redefense_direction import independent
+    if independent(team):
+        return None
     old = source_participation(team)
     if not old or (context and hasattr(context, 'event_name')):
         return None
@@ -116,6 +119,8 @@ def materialize_section(team):
     # different approved systems after an administrator's section reassignment.
     peers = StudentTeam.objects.filter(semester=team.semester, section=team.section,
         year_level=team.year_level, level__icontains='Capstone')
+    from .redefense_direction import independent_team_ids
+    peers = peers.exclude(pk__in=independent_team_ids())
     for peer in peers:
         other = approved_source(peer)
         if not other or other[0].pk != project.pk:

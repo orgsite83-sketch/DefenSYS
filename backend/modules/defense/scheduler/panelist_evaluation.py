@@ -78,7 +78,7 @@ from defensys_backend.read_projection import read_memoize
 
 
 @read_memoize
-def evaluation_context(schedule, grade=None):
+def evaluation_context(schedule, grade=None, *, include_scope=True):
     rubric = schedule.rubric
     context = {
         'assessment_policy': schedule.assessment_policy,
@@ -93,6 +93,9 @@ def evaluation_context(schedule, grade=None):
         'members': sorted(member.student_id for member in schedule.team.memberships.all()),
         'attempt': grade.attempt_count if grade else 1,
     }
+    if include_scope and schedule.assessment_policy.get('shared_module_scope_version') == 1:
+        from grading.grades.outcome_rules import concept_keys
+        context['required_concept_keys'] = concept_keys(schedule)
     return hashlib.sha256(json.dumps(context, sort_keys=True, default=str).encode()).hexdigest()
 
 
@@ -100,6 +103,20 @@ def draft_payload(draft, context):
     if draft is None or draft.context_signature != context:
         return None
     return {'submissions': draft.submissions, 'saved_at': draft.updated_at.isoformat()}
+
+
+def retire_submitted_draft(schedule, **owner):
+    """Keep unselected private alternatives as drafts, never as panel results."""
+    from grading.grades.outcome_rules import concept_keys
+    required = set(concept_keys(schedule))
+    draft = PanelistEvaluationDraft.objects.filter(schedule=schedule, **owner).first()
+    if draft:
+        remaining = [row for row in draft.submissions if row.get('concept_key', '') not in required]
+        if remaining:
+            draft.submissions = remaining
+            draft.save(update_fields=['submissions', 'updated_at'])
+        else:
+            draft.delete()
 
 
 @read_memoize(copy=True)
@@ -128,8 +145,9 @@ def validate_evaluation_submissions(schedule, submissions, *, partial=False):
             expected.update({student_id: individual_criteria for student_id in members})
     if not expected or (rubric.target_type in ('individual', 'both') and not members):
         raise ValidationError('This team has no members to grade.')
-    from grading.grades.outcome_rules import concept_keys
-    keys = concept_keys(schedule)
+    from grading.grades.outcome_rules import concept_keys, captured_concept_keys
+    # Drafts retain all entered alternatives; only final required work narrows.
+    keys = captured_concept_keys(schedule) if partial else concept_keys(schedule)
     expected = {(key, student): criteria for key in keys for student, criteria in expected.items()}
     seen = set()
     result = []
@@ -217,6 +235,6 @@ def _save_evaluation_draft(schedule, payload, *, panelist=None, guest=None):
     submissions = validate_evaluation_submissions(schedule, payload.get('submissions'), partial=True)
     draft, _ = PanelistEvaluationDraft.objects.update_or_create(
         schedule=schedule, **owner,
-        defaults={'context_signature': context, 'submissions': submissions},
+        defaults={'context_signature': evaluation_context(schedule, grade, include_scope=False), 'submissions': submissions},
     )
-    return draft_payload(draft, context)
+    return draft_payload(draft, evaluation_context(schedule, grade, include_scope=False))

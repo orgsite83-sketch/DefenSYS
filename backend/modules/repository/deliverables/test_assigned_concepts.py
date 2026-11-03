@@ -67,6 +67,8 @@ class AssignedConceptTests(APITestCase):
         self.team.project_title = 'Later selected official project'
         self.team.save()
         self.assertEqual(resolve_policy(self.team, self.stage)['required_count'], 3)
+        concepts.save_titles(self.team, self.stage, [
+            {'key': f'c{i}', 'title': f'Candidate project {i}'} for i in range(1, 4)])
         self.upload()
         self.assertFalse(required_complete(self.team, self.stage.label))
 

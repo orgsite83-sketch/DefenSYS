@@ -285,55 +285,42 @@ class _SharedSystemAssessmentReviewState
     final common = widget.team.sharedMaterials
         .where((f) => (f['candidate_key'] ?? '').toString().isEmpty)
         .toList();
+    final teamCount = rows(_review['teams']).length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Shared systems',
-          style: TextStyle(
-            fontSize: 21,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -.4,
-            color: ink,
-          ),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          alignment: WrapAlignment.spaceBetween,
+          children: [
+            Text(
+              'Shared systems',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 21,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -.4,
+                color: ink,
+              ),
+            ),
+            ShadBadge.outline(
+              child: Text(
+                _review['verdict'] == 'for_redefense'
+                    ? 'Another hearing required'
+                    : recorded
+                    ? 'System selected'
+                    : 'Decision pending',
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 7),
+        const SizedBox(height: 8),
         Text(
-          '${_review['section'] ?? ''} · ${rows(_review['teams']).length} participating teams',
+          '$teamCount ${teamCount == 1 ? 'team' : 'teams'} · ${systems.length} ${systems.length == 1 ? 'proposal' : 'proposals'}',
           style: TextStyle(fontSize: 12, color: muted),
         ),
-        const SizedBox(height: 16),
-        Text(
-          _review['verdict'] == 'for_redefense'
-              ? 'Another shared hearing required'
-              : recorded
-              ? 'Shared decision recorded'
-              : 'One shared system is selected for this section.',
-          style: TextStyle(
-            fontSize: 13,
-            height: 1.5,
-            fontWeight: recorded ? FontWeight.w600 : FontWeight.w400,
-            color: ink,
-          ),
-        ),
-        if (!recorded) ...[
-          const SizedBox(height: 5),
-          Text(
-            'Decision pending',
-            style: TextStyle(fontSize: 12, color: muted),
-          ),
-        ],
-        if (!recorded &&
-            !canDecide &&
-            (_review['decision_unavailable_reason'] ?? '')
-                .toString()
-                .isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            _review['decision_unavailable_reason'].toString(),
-            style: TextStyle(fontSize: 12, height: 1.5, color: muted),
-          ),
-        ],
         if (common.isNotEmpty) ...[
           const SizedBox(height: 22),
           DefenseMaterialsCard(

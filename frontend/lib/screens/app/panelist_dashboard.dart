@@ -516,6 +516,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             gradingUnavailableReason:
                 team['grading_unavailable_reason']?.toString() ?? '',
             evaluationContext: team['evaluation_context']?.toString() ?? '',
+            draftContext: team['draft_context']?.toString() ?? '',
             serverCanIssueVerdict: team['can_issue_verdict'] as bool?,
             verdictUnavailableReason:
                 team['verdict_unavailable_reason']?.toString() ?? '',
@@ -539,16 +540,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             gradeId: (team['grade_id'] as num?)?.toInt(),
           );
           final previous = previousTeams[assignment.scheduleId];
-          if (!assignment.isPosted &&
-              previous != null &&
-              (previous.hasUnsavedChanges ||
-                  (previous.draftSavedAt != null &&
-                      assignment.draftSavedAt == null)) &&
-              previous.evaluationContext == assignment.evaluationContext) {
-            assignment.draftSubmissions = previous.draftSubmissions;
-            assignment.draftSavedAt = previous.draftSavedAt;
-            assignment.hasUnsavedChanges = previous.hasUnsavedChanges;
-          }
+          assignment.retainDraftFrom(previous);
           return assignment;
         }).toList();
 

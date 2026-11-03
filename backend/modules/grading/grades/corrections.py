@@ -34,12 +34,15 @@ def evaluator_completion(grade):
         submissions = submissions.prefetch_related('criterion_scores')
     rows = [row for row in submissions if row.schedule_id == schedule.pk and not row.is_void]
     from defense.scheduler.panelist_evaluation import validate_evaluation_submissions
+    from .outcome_rules import concept_keys
+    required_keys = set(concept_keys(schedule))
     complete = 0
     for pid, gid in expected:
         submissions = [{'student_id': row.student_id, 'concept_key': row.concept_key,
                         'criteria_scores': [{'criterion_id': score.criterion_id, 'score': str(score.score)} for score in row.criterion_scores.all()],
                         'remarks': row.remarks}
-                       for row in rows if row.panelist_id == pid and row.guest_code_id == gid]
+                       for row in rows if row.panelist_id == pid and row.guest_code_id == gid
+                       and row.concept_key in required_keys]
         try:
             validate_evaluation_submissions(schedule, submissions)
             complete += 1

@@ -765,6 +765,8 @@ class ScheduleBaseSerializer(serializers.Serializer):
         return attrs
 
     def _validate_capstone_stage_setup(self, attrs):
+        from grading.grades.evaluation_policy import concept_stage
+        panel_only = concept_stage(attrs['defense_stage'])
         if not self.instance and attrs['defense_stage'].qualifying_score is None:
             raise serializers.ValidationError({'defense_stage_id':
                 'Set the stage minimum qualifying panel score before scheduling a new hearing.'})
@@ -781,9 +783,9 @@ class ScheduleBaseSerializer(serializers.Serializer):
         missing = []
         if not config.panel_rubric_id:
             missing.append('panel')
-        if not config.adviser_rubric_id:
+        if not panel_only and not config.adviser_rubric_id:
             missing.append('adviser')
-        if not config.peer_rubric_id:
+        if not panel_only and not config.peer_rubric_id:
             missing.append('peer')
         if missing:
             raise serializers.ValidationError({
@@ -797,6 +799,10 @@ class ScheduleBaseSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 'rubric_id': 'Panel rubric must match the stage grading configuration.',
             })
+
+        if panel_only:
+            # Also validate the configured fallback when no rubric_id was sent.
+            attrs['rubric'] = self._resolve_rubric({**attrs, 'rubric_id': config.panel_rubric_id})
 
         return attrs
 

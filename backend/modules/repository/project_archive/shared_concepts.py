@@ -190,6 +190,15 @@ def shared_project_entries(scope, request=None):
 def attach_shared_team_context(entries):
     """Join saved project identities, not team names or filename conventions."""
     from repository.section_concepts.models import SectionProjectTeam
+    from repository.deliverables.models import ConceptRound
+    from repository.section_concepts.models import SharedModuleRedefenseDecision
+    independent_rounds = set(ConceptRound.objects.filter(
+        pk__in={e['concept_round_id'] for e in entries if e.get('concept_round_id')},
+        policy_snapshot__source='chair_independent').values_list('pk', flat=True))
+    departures = {(d.source_round.team_id, d.source_round.project_version): d.decided_at
+        for d in SharedModuleRedefenseDecision.objects.filter(direction='independent',
+            source_round__team_id__in={e['team_id'] for e in entries if e.get('team_id')}
+        ).select_related('source_round')}
     links = SectionProjectTeam.objects.filter(team_id__in={e['team_id'] for e in entries if e.get('team_id')}).select_related(
         'project__section__semester__school_year', 'project__defense_stage', 'project__pit_event_config').prefetch_related(
         'project__rounds__systems')
@@ -203,6 +212,16 @@ def attach_shared_team_context(entries):
         if hearing:
             indexed.setdefault(key, {})[link.project_version] = _shared_context(project, hearing)
     for entry in entries:
+        if entry.get('concept_round_id') in independent_rounds:
+            continue
+        departure = departures.get((entry.get('team_id'), entry.get('project_version')))
+        if departure and not entry.get('concept_round_id'):
+            uploaded = entry.get('uploaded_at')
+            if isinstance(uploaded, str):
+                from django.utils.dateparse import parse_datetime
+                uploaded = parse_datetime(uploaded)
+            if uploaded is None or uploaded >= departure:
+                continue
         key = (entry.get('team_id'), entry.get('type'), entry.get('stage'), entry.get('academic_year'), entry.get('semester'))
         versions = indexed.get(key, {})
         context = versions.get(entry.get('project_version'))

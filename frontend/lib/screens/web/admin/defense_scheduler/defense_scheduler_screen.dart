@@ -7,6 +7,7 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
+import 'package:defensys/services/defense_board_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
@@ -175,7 +176,8 @@ class _DefenseSchedulerScreenState
       return 'PIT scheduling is closed for this term.';
     }
     if (!_canScheduleCurrentScope(state) &&
-        (state.schedulerMode == 'capstone' || _scope == 'capstone') && !isAdmin) {
+        (state.schedulerMode == 'capstone' || _scope == 'capstone') &&
+        !isAdmin) {
       return 'Scheduling Capstone defenses is strictly reserved for Administrators.';
     }
     return '';
@@ -433,6 +435,15 @@ class _DefenseSchedulerScreenState
     return '$hour:$minute';
   }
 
+  Future<void> _handleCapstoneSaved() async {
+    await ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+    if (!mounted) return;
+    ref
+        .read(defenseBoardActiveViewProvider.notifier)
+        .setView(DefenseOperationsView.schedules);
+    widget.onBack?.call();
+  }
+
   Future<void> _handleBackRequested() async {
     _draftDebounce?.cancel();
     final isDirty = _planSlots.isNotEmpty || _hasUnsavedConfiguration();
@@ -672,227 +683,254 @@ class _DefenseSchedulerScreenState
           color: DefensysTokens.maroonOf(context),
           onRefresh: () =>
               ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: MediaQuery.sizeOf(context).width < 640
-                ? const EdgeInsets.fromLTRB(16, 20, 16, 24)
-                : DefensysUi.contentPadding,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SchedulerToolbar(state: state, onBack: _handleBackRequested),
-                if (_hasRestoredDraft && _lastDraftSavedAt != null) ...[
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF1E293B)
-                          : const Color(0xFFEFF8FF),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isDark
-                            ? const Color(0xFF334155)
-                            : const Color(0xFFBFDBFE),
+          child: _scope == 'capstone'
+              ? CapstoneSchedulingWorkspace(
+                  key: ValueKey(
+                    'capstone-workspace-${state.activeSemester?['id']}',
+                  ),
+                  initialStageId: _stageId,
+                  scrollable: true,
+                  header: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SchedulerToolbar(
+                        state: state,
+                        onBack: _handleBackRequested,
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.history_rounded,
-                          color: isDark
-                              ? const Color(0xFF60A5FA)
-                              : const Color(0xFF2563EB),
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'In-progress draft restored from ${_formatSavedAt(_lastDraftSavedAt!)}. Continue editing or discard.',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: isDark
-                                  ? DefensysTokens.textPrimaryDark
-                                  : const Color(0xFF1E40AF),
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _discardDraft,
-                          style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFFDC2626),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                          ),
-                          child: const Text('Discard Draft'),
+                      if (_scheduleNoticeMessage(state).isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        SchedulerNoticeBanner(
+                          message: _scheduleNoticeMessage(state),
                         ),
                       ],
-                    ),
+                    ],
                   ),
-                ],
-                SizedBox(height: _scope == 'capstone' ? 20 : 26),
-                if (_scope == 'pit') SchedulerStepProgress(currentStep: currentStep),
-                if (_scope == 'pit') const SizedBox(height: 12),
-                if (_scheduleNoticeMessage(state).isNotEmpty) ...[
-                  SchedulerNoticeBanner(message: _scheduleNoticeMessage(state)),
-                  const SizedBox(height: 12),
-                ],
-                if (_scope == 'pit') const SizedBox(height: 12),
-                if (state.isLoading &&
-                    state.schedules.isEmpty &&
-                    state.teams.isEmpty) ...[
-                  DefensysSkeleton.list(count: 4, rowHeight: 64),
-                ] else ...[
-                  if (_scope == 'capstone')
-                    CapstoneSchedulingWorkspace(
-                      key: ValueKey('capstone-workspace-${state.activeSemester?['id']}'),
-                      initialStageId: _stageId,
-                      onSaved: () => ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
-                    )
-                  else ScheduleRunContainer(
-                    key: ValueKey('scheduler-$_scope-$_draftRevision'),
-                    state: state,
-                    scope: _scope,
-                    stageId: _stageId,
-                    rubricId: _rubricId,
-                    adviserRubricId: _adviserRubricId,
-                    capstonePeerRubricId: _capstonePeerRubricId,
-                    peerRubricId: _peerRubricId,
-                    documenterId: _documenterId,
-                    selectedPanelistIds: _selectedPanelistIds,
-                    eventController: _eventController,
-                    panelWeightController: _panelWeightController,
-                    peerWeightController: _peerWeightController,
-                    dateController: _dateController,
-                    timeController: _timeController,
-                    durationController: _durationController,
-                    roomController: _roomController,
-                    pitTemplateController: _pitTemplateController,
-                    planSlots: _planSlots,
-                    showFinalPreview: _showFinalPreview,
-                    currentStep: _currentStep,
-                    onStepChanged: (step) {
-                      setState(() {
-                        _currentStep = step;
-                        _showFinalPreview = step == 3;
-                      });
-                      _scheduleDraftSave();
-                    },
-                    canScheduleScope: _canScheduleScope,
-                    scheduleNoticeMessage: _scheduleNoticeMessage,
-                    initialSessions: _serializedSessions,
-                    initialSelectedTeamIds: _selectedTeamIds,
-                    onSelectedTeamIdsChanged: (ids) {
-                      _selectedTeamIds = ids;
-                      _scheduleDraftSave();
-                    },
-                    onSessionsChanged: (sessions) {
-                      _serializedSessions = sessions;
-                      _scheduleDraftSave();
-                    },
-                    initialChairId: _selectedChairId,
-                    onChairChanged: (id) {
-                      _selectedChairId = id;
-                      _scheduleDraftSave();
-                    },
-                    initialExternalIds: _selectedExternalIds,
-                    onExternalIdsChanged: (ids) {
-                      _selectedExternalIds = ids;
-                      _scheduleDraftSave();
-                    },
-                    onSuccess: () async {
-                      _draftDebounce?.cancel();
-                      ref
-                          .read(unsavedChangesSaveDraftProvider.notifier)
-                          .setCallback(null);
-                      ref.read(unsavedChangesProvider.notifier).setDirty(false);
-                      final semesterId = asInt(
-                        ref
-                            .read(defenseSchedulerProvider)
-                            .activeSemester?['id'],
-                      );
-                      await clearDefenseSchedulerDraft(
-                        scope: _scope,
-                        semesterId: semesterId,
-                      );
-                      if (mounted) {
-                        widget.onBack?.call();
-                      }
-                    },
-                    onScopeChanged: (val) {
-                      setState(() => _scope = val);
-                      _scheduleDraftSave();
-                    },
-                    onStageChanged: (val) {
-                      setState(() => _stageId = val);
-                      _scheduleDraftSave();
-                    },
-                    onRubricChanged: (val) {
-                      setState(() => _rubricId = val);
-                      _scheduleDraftSave();
-                    },
-                    onAdviserRubricChanged: (val) {
-                      setState(() => _adviserRubricId = val);
-                      _scheduleDraftSave();
-                    },
-                    onCapstonePeerRubricChanged: (val) {
-                      setState(() => _capstonePeerRubricId = val);
-                      _scheduleDraftSave();
-                    },
-                    onPeerRubricChanged: (val) {
-                      setState(() => _peerRubricId = val);
-                      _scheduleDraftSave();
-                    },
-                    onDocumenterChanged: (val) {
-                      setState(() => _documenterId = val);
-                      _scheduleDraftSave();
-                    },
-                    onPanelistsChanged: (val) {
-                      setState(() {
-                        _selectedPanelistIds.clear();
-                        _selectedPanelistIds.addAll(val);
-                      });
-                      _scheduleDraftSave();
-                    },
-                    onPlanSlotsChanged: (val) {
-                      setState(() => _planSlots = val);
-                      _scheduleDraftSave();
-                    },
-                    onShowFinalPreviewChanged: (val) {
-                      setState(() => _showFinalPreview = val);
-                      _scheduleDraftSave();
-                    },
-                    onPrefillCapstoneStageRubrics: _prefillCapstoneStageRubrics,
-                    onPrefillPitEventConfig: _prefillPitEventConfig,
-                  ),
-                  if (_scope == 'pit' && currentStep == 1) ...[
-                    const SizedBox(height: 20),
-                    TeamReadinessTracker(
-                      state: state,
-                      scope: _scope,
-                      activeStageOrEventName: activeStageOrEventName,
-                      onReviewTeamDeliverables: (team, stageLabel) =>
-                          TeamDeliverablesReviewDialog.show(
-                            context,
-                            ref,
-                            team: team,
-                            stageLabel: stageLabel,
-                            scope: _scope,
+                  onSaved: _handleCapstoneSaved,
+                )
+              : SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: MediaQuery.sizeOf(context).width < 640
+                      ? const EdgeInsets.fromLTRB(16, 20, 16, 24)
+                      : DefensysUi.contentPadding,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SchedulerToolbar(
+                        state: state,
+                        onBack: _handleBackRequested,
+                      ),
+                      if (_hasRestoredDraft && _lastDraftSavedAt != null) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
                           ),
-                      onSendReminder: _sendReminder,
-                      isSendingReminder: _isSendingReminder,
-                    ),
-                  ],
-                ],
-              ],
-            ),
-          ),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFEFF8FF),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFBFDBFE),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.history_rounded,
+                                color: isDark
+                                    ? const Color(0xFF60A5FA)
+                                    : const Color(0xFF2563EB),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'In-progress draft restored from ${_formatSavedAt(_lastDraftSavedAt!)}. Continue editing or discard.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: isDark
+                                        ? DefensysTokens.textPrimaryDark
+                                        : const Color(0xFF1E40AF),
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _discardDraft,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFFDC2626),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                ),
+                                child: const Text('Discard Draft'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      SizedBox(height: _scope == 'capstone' ? 20 : 26),
+                      if (_scope == 'pit')
+                        SchedulerStepProgress(currentStep: currentStep),
+                      if (_scope == 'pit') const SizedBox(height: 12),
+                      if (_scheduleNoticeMessage(state).isNotEmpty) ...[
+                        SchedulerNoticeBanner(
+                          message: _scheduleNoticeMessage(state),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (_scope == 'pit') const SizedBox(height: 12),
+                      if (state.isLoading &&
+                          state.schedules.isEmpty &&
+                          state.teams.isEmpty) ...[
+                        DefensysSkeleton.list(count: 4, rowHeight: 64),
+                      ] else ...[
+                        ScheduleRunContainer(
+                          key: ValueKey('scheduler-$_scope-$_draftRevision'),
+                          state: state,
+                          scope: _scope,
+                          stageId: _stageId,
+                          rubricId: _rubricId,
+                          adviserRubricId: _adviserRubricId,
+                          capstonePeerRubricId: _capstonePeerRubricId,
+                          peerRubricId: _peerRubricId,
+                          documenterId: _documenterId,
+                          selectedPanelistIds: _selectedPanelistIds,
+                          eventController: _eventController,
+                          panelWeightController: _panelWeightController,
+                          peerWeightController: _peerWeightController,
+                          dateController: _dateController,
+                          timeController: _timeController,
+                          durationController: _durationController,
+                          roomController: _roomController,
+                          pitTemplateController: _pitTemplateController,
+                          planSlots: _planSlots,
+                          showFinalPreview: _showFinalPreview,
+                          currentStep: _currentStep,
+                          onStepChanged: (step) {
+                            setState(() {
+                              _currentStep = step;
+                              _showFinalPreview = step == 3;
+                            });
+                            _scheduleDraftSave();
+                          },
+                          canScheduleScope: _canScheduleScope,
+                          scheduleNoticeMessage: _scheduleNoticeMessage,
+                          initialSessions: _serializedSessions,
+                          initialSelectedTeamIds: _selectedTeamIds,
+                          onSelectedTeamIdsChanged: (ids) {
+                            _selectedTeamIds = ids;
+                            _scheduleDraftSave();
+                          },
+                          onSessionsChanged: (sessions) {
+                            _serializedSessions = sessions;
+                            _scheduleDraftSave();
+                          },
+                          initialChairId: _selectedChairId,
+                          onChairChanged: (id) {
+                            _selectedChairId = id;
+                            _scheduleDraftSave();
+                          },
+                          initialExternalIds: _selectedExternalIds,
+                          onExternalIdsChanged: (ids) {
+                            _selectedExternalIds = ids;
+                            _scheduleDraftSave();
+                          },
+                          onSuccess: () async {
+                            _draftDebounce?.cancel();
+                            ref
+                                .read(unsavedChangesSaveDraftProvider.notifier)
+                                .setCallback(null);
+                            ref
+                                .read(unsavedChangesProvider.notifier)
+                                .setDirty(false);
+                            final semesterId = asInt(
+                              ref
+                                  .read(defenseSchedulerProvider)
+                                  .activeSemester?['id'],
+                            );
+                            await clearDefenseSchedulerDraft(
+                              scope: _scope,
+                              semesterId: semesterId,
+                            );
+                            if (mounted) {
+                              widget.onBack?.call();
+                            }
+                          },
+                          onScopeChanged: (val) {
+                            setState(() => _scope = val);
+                            _scheduleDraftSave();
+                          },
+                          onStageChanged: (val) {
+                            setState(() => _stageId = val);
+                            _scheduleDraftSave();
+                          },
+                          onRubricChanged: (val) {
+                            setState(() => _rubricId = val);
+                            _scheduleDraftSave();
+                          },
+                          onAdviserRubricChanged: (val) {
+                            setState(() => _adviserRubricId = val);
+                            _scheduleDraftSave();
+                          },
+                          onCapstonePeerRubricChanged: (val) {
+                            setState(() => _capstonePeerRubricId = val);
+                            _scheduleDraftSave();
+                          },
+                          onPeerRubricChanged: (val) {
+                            setState(() => _peerRubricId = val);
+                            _scheduleDraftSave();
+                          },
+                          onDocumenterChanged: (val) {
+                            setState(() => _documenterId = val);
+                            _scheduleDraftSave();
+                          },
+                          onPanelistsChanged: (val) {
+                            setState(() {
+                              _selectedPanelistIds.clear();
+                              _selectedPanelistIds.addAll(val);
+                            });
+                            _scheduleDraftSave();
+                          },
+                          onPlanSlotsChanged: (val) {
+                            setState(() => _planSlots = val);
+                            _scheduleDraftSave();
+                          },
+                          onShowFinalPreviewChanged: (val) {
+                            setState(() => _showFinalPreview = val);
+                            _scheduleDraftSave();
+                          },
+                          onPrefillCapstoneStageRubrics:
+                              _prefillCapstoneStageRubrics,
+                          onPrefillPitEventConfig: _prefillPitEventConfig,
+                        ),
+                        if (_scope == 'pit' && currentStep == 1) ...[
+                          const SizedBox(height: 20),
+                          TeamReadinessTracker(
+                            state: state,
+                            scope: _scope,
+                            activeStageOrEventName: activeStageOrEventName,
+                            onReviewTeamDeliverables: (team, stageLabel) =>
+                                TeamDeliverablesReviewDialog.show(
+                                  context,
+                                  ref,
+                                  team: team,
+                                  stageLabel: stageLabel,
+                                  scope: _scope,
+                                ),
+                            onSendReminder: _sendReminder,
+                            isSendingReminder: _isSendingReminder,
+                          ),
+                        ],
+                      ],
+                    ],
+                  ),
+                ),
         ),
       ),
     );

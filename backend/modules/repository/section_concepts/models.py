@@ -39,6 +39,27 @@ class SectionProjectTeam(models.Model):
         constraints = [models.UniqueConstraint(fields=['project', 'team', 'project_version'], name='section_project_team_unique')]
 
 
+class SharedModuleRedefenseDecision(models.Model):
+    """One chair decision for an assessed round, surviving reused grade records."""
+    SHARED = 'shared_module'
+    INDEPENDENT = 'independent'
+    source_round = models.OneToOneField('repository.ConceptRound', on_delete=models.PROTECT,
+                                       related_name='redefense_direction')
+    next_round = models.OneToOneField('repository.ConceptRound', on_delete=models.PROTECT,
+                                     related_name='preparation_direction')
+    source_grade = models.ForeignKey('grading.TeamGrade', on_delete=models.PROTECT)
+    direction = models.CharField(max_length=20, choices=[
+        (SHARED, 'Improve selected shared module'),
+        (INDEPENDENT, 'Propose three independent concepts')])
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    decided_at = models.DateTimeField(auto_now_add=True)
+    assessment_snapshot = models.JSONField(default=dict)
+    preparation_snapshot = models.JSONField(default=dict)
+
+    class Meta:
+        app_label = 'repository'
+
+
 class SectionConceptRound(models.Model):
     title_workflow_version = models.PositiveSmallIntegerField(default=1)
     shared_requirements_snapshot = models.JSONField(null=True, blank=True, default=None)

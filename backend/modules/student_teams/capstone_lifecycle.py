@@ -160,11 +160,13 @@ def project_outcome(team, requirements=None):
 
 def team_snapshot(team):
     from .serializers import display_name
+    from repository.section_concepts.redefense_direction import independent
     members = [{'student_id': m.student_id, 'username': m.student.username,
                 'name': display_name(m.student), 'is_leader': m.is_leader}
                for m in team.memberships.select_related('student').all()]
     return {'id': team.pk, 'name': team.name, 'project_title': team.project_title,
             'project_version': team.project_version, 'project_pending': team.project_pending,
+            'project_direction': 'independent' if independent(team) else 'default',
             'setup_pending': team.setup_pending, 'level': team.level, 'year_level': team.year_level,
             'section': team.section, 'semester_id': team.semester_id, 'semester': team.semester.label,
             'school_year': team.semester.school_year.label, 'display_semester': team.semester.display_name,

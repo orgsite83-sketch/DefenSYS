@@ -55,6 +55,10 @@ def resolve_policy(team, stage, *, current=None, use_round=True, section_assignm
             return {**config, 'mode': 'proposals', 'required_count': len(current.concepts),
                     'assigned_title': '', 'source': 'existing_round'}
     from repository.section_concepts.services import policy_for
+    from repository.section_concepts.redefense_direction import independent
+    if independent(team):
+        return {**config, 'mode': 'proposals', 'required_count': config.get('required_count', 3),
+                'assigned_title': '', 'seed_title': '', 'source': 'chair_independent'}
     shared = policy_for(team, stage)
     if shared:
         return shared

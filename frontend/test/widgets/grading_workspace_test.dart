@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:defensys/screens/app/panelist/grade_sheet_tab.dart';
 import 'package:defensys/screens/app/panelist/panelist_models.dart';
 import 'package:defensys/screens/app/panelist/assignments_tab.dart';
-import 'package:defensys/screens/app/panelist/widgets/evaluation_score_picker.dart';
+import 'package:defensys/screens/app/panelist/widgets/evaluation_score_input.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/theme/app_theme.dart';
@@ -241,11 +241,14 @@ Future<_Client> _show(
 }
 
 Future<void> _score(WidgetTester tester, String score) async {
-  final picker = find.byType(EvaluationScorePicker);
-  await _tap(
-    tester,
-    find.descendant(of: picker, matching: _key('score-value-$score')),
+  final field = find.descendant(
+    of: find.byType(EvaluationScoreInput),
+    matching: find.byType(EditableText),
   );
+  await tester.ensureVisible(field);
+  await tester.enterText(field, score);
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pumpAndSettle();
 }
 
 Future<void> _select(WidgetTester tester, String key) async {
@@ -354,7 +357,7 @@ void main() {
         'grading-workspace-final/team-details-expanded',
         viewport: true,
       );
-      await tester.ensureVisible(find.byType(EvaluationScorePicker));
+      await tester.ensureVisible(find.byType(EvaluationScoreInput));
       await tester.pumpAndSettle();
       expect(scroll.offset, greaterThan(0));
       await tester.ensureVisible(
@@ -549,7 +552,7 @@ void main() {
       expect(_key('grading-outcome-tab'), findsNothing);
       expect(_key('automatic-assessment-panel'), findsNothing);
       expect(find.text('Submit Verdict'), findsNothing);
-      expect(find.byType(EvaluationScorePicker), findsOneWidget);
+      expect(find.byType(EvaluationScoreInput), findsOneWidget);
       team.isPosted = true;
       expect(team.panelWorkFinished, isTrue);
       expect(team.canIssueVerdict, isFalse);
@@ -572,7 +575,8 @@ void main() {
       await _tap(tester, _key('grading-outcome-tab'));
       expect(_key('evaluation-footer'), findsNothing);
       expect(find.text('1 of 3 panelists submitted'), findsWidgets);
-      expect(find.text('Waiting for shared-system selection'), findsOneWidget);
+      expect(find.text('Waiting for shared-system selection'), findsNothing);
+      expect(find.text('Qualifying score: 75%'), findsOneWidget);
       expect(find.byType(Radio<String>), findsNothing);
       expect(find.text('Open section systems'), findsNothing);
       await _tap(tester, _key('grading-shared-tab'));
@@ -582,7 +586,7 @@ void main() {
       await _tap(tester, _key('grading-evaluation-tab'));
       expect(
         tester
-            .widget<EvaluationScorePicker>(find.byType(EvaluationScorePicker))
+            .widget<EvaluationScoreInput>(find.byType(EvaluationScoreInput))
             .value,
         0,
       );
@@ -592,14 +596,14 @@ void main() {
       expect(find.text('shared-c1.pdf'), findsNothing);
       expect(
         tester
-            .widget<EvaluationScorePicker>(find.byType(EvaluationScorePicker))
+            .widget<EvaluationScoreInput>(find.byType(EvaluationScoreInput))
             .value,
         isNull,
       );
       await _select(tester, 'c1');
       expect(
         tester
-            .widget<EvaluationScorePicker>(find.byType(EvaluationScorePicker))
+            .widget<EvaluationScoreInput>(find.byType(EvaluationScoreInput))
             .value,
         0,
       );
@@ -633,7 +637,7 @@ void main() {
       await _select(tester, 'c2');
       expect(
         tester
-            .widget<EvaluationScorePicker>(find.byType(EvaluationScorePicker))
+            .widget<EvaluationScoreInput>(find.byType(EvaluationScoreInput))
             .value,
         0,
       );
@@ -692,11 +696,62 @@ void main() {
           'Older assignment refresh';
       await _show(tester, stale, start: false);
       expect(_key('confirm-inline-shared-system'), findsNothing);
-      expect(find.text('Shared decision recorded'), findsOneWidget);
+      expect(find.text('System selected'), findsOneWidget);
       await tester.pump(const Duration(seconds: 4));
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets(
+    'blocked shared selection keeps a compact status without helper text',
+    (tester) async {
+      final team = _team(shared: true);
+      team.gradingWorkspace['shared_review']['can_decide'] = false;
+      team.gradingWorkspace['shared_review']['decision_unavailable_reason'] =
+          'Ask the scheduler to link all team schedules to this section hearing.';
+      await _show(tester, team);
+      await _tap(tester, _key('grading-shared-tab'));
+      expect(find.text('Decision pending'), findsOneWidget);
+      expect(find.text('2 teams · 3 proposals'), findsOneWidget);
+      expect(find.text('Section workspace'), findsNothing);
+      expect(
+        find.text('One shared system is selected for this section.'),
+        findsNothing,
+      );
+      expect(find.textContaining('Ask the scheduler'), findsNothing);
+      expect(find.text('Why is selection pending?'), findsNothing);
+      expect(find.text('shared-c1.pdf'), findsOneWidget);
+      expect(_key('confirm-inline-shared-system'), findsNothing);
+      await capturePreview(
+        tester,
+        find.byType(GradeSheetTab),
+        'grading-workspace-final/shared-selection-pending',
+        viewport: true,
+      );
+      expect(find.byType(Radio<String>), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'outcome shows shared selection as the next step after panel completion',
+    (tester) async {
+      final team = _team(shared: true, complete: true);
+      await _show(tester, team);
+      await _tap(tester, _key('grading-outcome-tab'));
+      expect(find.text('Awaiting panel evaluations'), findsNothing);
+      expect(find.text('Awaiting shared system selection'), findsOneWidget);
+      expect(
+        find.text('The panel chair selects the system in Shared systems.'),
+        findsOneWidget,
+      );
+      expect(find.text('Qualifying score: 75%'), findsOneWidget);
+      expect(find.text('Module assessments'), findsOneWidget);
+      expect(find.byType(Radio<String>), findsNothing);
+      expect(_key('confirm-inline-shared-system'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'external panel reads shared review without common chair controls',
     (tester) async {
@@ -705,7 +760,8 @@ void main() {
       expect(find.text('Decision pending'), findsOneWidget);
       expect(_key('confirm-inline-shared-system'), findsNothing);
       expect(find.byType(Radio<String>), findsNothing);
-      expect(find.textContaining('common panel chair'), findsOneWidget);
+      expect(find.textContaining('common panel chair'), findsNothing);
+      expect(find.text('Why is selection pending?'), findsNothing);
     },
   );
   testWidgets('a repeat with only c3 retains its stable key and files', (
@@ -741,7 +797,7 @@ void main() {
       expect(find.text('Scoring Bob'), findsOneWidget);
       expect(
         tester
-            .widget<EvaluationScorePicker>(find.byType(EvaluationScorePicker))
+            .widget<EvaluationScoreInput>(find.byType(EvaluationScoreInput))
             .value,
         0,
       );

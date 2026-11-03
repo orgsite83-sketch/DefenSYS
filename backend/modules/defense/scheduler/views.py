@@ -618,7 +618,7 @@ class PanelistAssignmentsView(APIView):
                 actor=request.user,
             )
             team_payload['draft'] = None if is_posted else draft_payload(
-                drafts.get(schedule.id), team_payload['evaluation_context'],
+                drafts.get(schedule.id), team_payload['draft_context'],
             )
             teams_data.append(team_payload)
 
@@ -878,7 +878,8 @@ class PanelistGradeSubmissionView(APIView):
                         concept_key=item.get('concept_key', ''),
                     )
 
-            PanelistEvaluationDraft.objects.filter(schedule=schedule, panelist=panelist).delete()
+            from .panelist_evaluation import retire_submitted_draft
+            retire_submitted_draft(schedule, panelist=panelist)
             team_grade.refresh_from_db()
             return Response({
                 'success': True,
@@ -907,6 +908,7 @@ class PanelistGradeSubmissionView(APIView):
 
 def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None, actor=None):
     from grading.grades.serializers import TeamGradeSerializer
+    from grading.grades.outcome_rules import concept_keys
     from .grading_workspace import payload as grading_workspace_payload
     from .progress import schedule_progress
     team = schedule.team
@@ -952,6 +954,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     defense_materials = []
     from repository.deliverables.models import ConceptRound
     hearing = ConceptRound.objects.filter(schedule=schedule).first()
+    required_keys = set(concept_keys(schedule))
     if hearing and hearing.verdict:
         material_groups = [g for g in hearing.documents_snapshot if g.get('is_defense_material')]
         for group in material_groups:
@@ -1028,7 +1031,8 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'grade_weights': grade_weights,
         'panel_rubric': panel_rubric,
         'assessment_policy': schedule.assessment_policy,
-        'assessment_concepts': hearing.concepts if hearing and schedule.assessment_policy.get('per_concept') else [],
+        'assessment_concepts': [c for c in hearing.concepts if c['key'] in required_keys]
+            if hearing and schedule.assessment_policy.get('per_concept') else [],
         'is_posted': is_posted,
         'is_submitted': is_posted,
         'schedule_status': schedule.status,
@@ -1038,6 +1042,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'grading_available': not is_posted and not unavailable_reason,
         'grading_unavailable_reason': unavailable_reason,
         'evaluation_context': evaluation_context(schedule, team_grade),
+        'draft_context': evaluation_context(schedule, team_grade, include_scope=False),
         'can_issue_verdict': uses_verdict and is_chair and not verdict_reason,
         'verdict_unavailable_reason': verdict_reason if uses_verdict and is_chair else '',
         'submissions': submissions or [],
@@ -1167,7 +1172,7 @@ class GuestPanelistAssignmentsView(APIView):
             schedule=schedule, guest_code_id=principal.guest_code_id,
         ).first()
         team_payload['draft'] = None if is_posted else draft_payload(
-            draft, team_payload['evaluation_context'],
+            draft, team_payload['draft_context'],
         )
         return team_payload
 
@@ -1336,7 +1341,8 @@ class GuestPanelistGradeSubmissionView(APIView):
                         concept_key=item.get('concept_key', ''),
                     )
 
-            PanelistEvaluationDraft.objects.filter(schedule=schedule, guest_code_id=principal.guest_code_id).delete()
+            from .panelist_evaluation import retire_submitted_draft
+            retire_submitted_draft(schedule, guest_code_id=principal.guest_code_id)
             team_grade.refresh_from_db()
             return Response({
                 'success': True,

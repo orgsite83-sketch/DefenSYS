@@ -21,7 +21,7 @@ import '../../../toasts/feedback_toast.dart';
 import '../../../widgets/tactile_button.dart';
 import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../widgets/grading/automatic_assessment_panel.dart';
-import 'widgets/evaluation_score_picker.dart';
+import 'widgets/evaluation_score_input.dart';
 import 'widgets/evaluation_review_screen.dart';
 import 'widgets/evaluation_navigation.dart';
 import 'widgets/team_grade_chooser.dart';
@@ -77,6 +77,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   final _footerActions = ShadPopoverController();
   final _evaluationKey = GlobalKey();
   final _criterionKeys = <Criterion, GlobalKey>{};
+  final _scoreInputKeys = <Criterion, GlobalKey<EvaluationScoreInputState>>{};
 
   final Map<String, List<Criterion>> _studentCriteria = {};
   final Map<String, TextEditingController> _studentRemarksControllers = {};
@@ -204,6 +205,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
       _criteria = [];
       _criterionKeys.clear();
+      _scoreInputKeys.clear();
       _studentCriteria.clear();
       for (var controller in _studentRemarksControllers.values) {
         controller.dispose();
@@ -406,7 +408,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   void _scheduleAutoSave(TeamData team) {
     _autoSaveTimer?.cancel();
     _autoSaveTimer = Timer(const Duration(milliseconds: 800), () {
-      if (mounted && team.hasUnsavedChanges && !_isSubmittingGrades) {
+      if (mounted &&
+          team.hasUnsavedChanges &&
+          !_isSubmittingGrades &&
+          !_hasInvalidScores) {
         unawaited(_saveDraft(team));
       }
     });
@@ -423,8 +428,20 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   bool get hasPendingChanges =>
       _draftSaveFuture != null || _lastTeam?.hasUnsavedChanges == true;
 
+  bool get _hasInvalidScores => _scoreInputKeys.values.any(
+    (key) => key.currentState?.hasInvalidValue == true,
+  );
+
+  bool _validateScoreInputs() {
+    for (final key in _scoreInputKeys.values) {
+      if (key.currentState?.validate(requestFocus: true) == false) return false;
+    }
+    return true;
+  }
+
   Future<bool> savePendingChanges() async {
     _footerActions.hide();
+    if (!_validateScoreInputs()) return false;
     _autoSaveTimer?.cancel();
     if (_isSubmittingGrades || _isSubmittingVerdict) return false;
     final original = _lastTeam;
@@ -437,6 +454,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }
 
   Future<bool> _saveDraft(TeamData team, {bool feedback = false}) async {
+    if (!_validateScoreInputs()) return false;
     if (_draftSaveFuture != null) return _draftSaveFuture!;
     if (!team.gradingAvailable || _isSubmittingGrades) {
       return !team.hasUnsavedChanges;
@@ -547,6 +565,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         widget.teams.isEmpty) {
       return false;
     }
+    if (!_validateScoreInputs()) return false;
     final current = widget.teams[widget.selectedTeamIndex];
     setState(() => _isChoosingTeam = true);
     try {
@@ -1062,20 +1081,19 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      sharedView
-                          ? 'Section workspace'
-                          : team.isPosted
-                          ? 'Submitted grades'
-                          : _isVerified(team)
-                          ? 'Currently grading'
-                          : 'Verify the presenting team',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: statusColor,
+                    if (_workspaceView == GradingWorkspaceView.evaluation)
+                      Text(
+                        team.isPosted
+                            ? 'Submitted grades'
+                            : _isVerified(team)
+                            ? 'Currently grading'
+                            : 'Verify the presenting team',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: statusColor,
+                        ),
                       ),
-                    ),
                     Text(
                       sharedView
                           ? (team.sharedReview?['section'] ?? 'Shared systems')
@@ -1225,6 +1243,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         _selectedStudentIndex < team.memberDetails.length - 1;
     final saveLabel = team.isPosted
         ? 'Submitted'
+        : _hasInvalidScores
+        ? 'Fix invalid scores'
         : _draftSaveError != null
         ? 'Couldn’t save draft. Your changes are still here.'
         : _isSavingDraft
@@ -1463,6 +1483,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         _isSubmittingVerdict) {
       return;
     }
+    if (!_validateScoreInputs()) return;
     final identity = _identity(team);
     final generation = _formGeneration;
     setState(() => _isNavigatingEvaluation = true);
@@ -1785,7 +1806,12 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 'No panel rubric criteria are configured. Ask the PIT lead or admin to configure this schedule.',
               ),
             ),
-          for (final criterion in visible) _criterionRow(criterion, locked),
+          for (var index = 0; index < visible.length; index++)
+            _criterionRow(
+              visible[index],
+              locked,
+              next: index + 1 < visible.length ? visible[index + 1] : null,
+            ),
           if (visible.isNotEmpty)
             ExpansionTile(
               key: ValueKey(
@@ -1836,6 +1862,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         (!team.isPosted && (!team.gradingAvailable || !_isVerified(team)))) {
       return;
     }
+    if (!_validateScoreInputs()) return;
     final identity = _identity(team);
     setState(() => _isReviewingGrades = true);
     try {
@@ -1843,7 +1870,14 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       if (!mounted || _lastTeam == null || _identity(_lastTeam!) != identity) {
         return;
       }
-      final submissions = _evaluationSubmissions(team);
+      final requiredKeys = team.assessmentConcepts.map((c) => c['key']).toSet();
+      final submissions = _evaluationSubmissions(team)
+          .where(
+            (row) =>
+                requiredKeys.isEmpty ||
+                requiredKeys.contains(row['concept_key']),
+          )
+          .toList();
       final result = await Navigator.push<EvaluationReviewAction>(
         context,
         MaterialPageRoute(
@@ -1911,7 +1945,16 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         setState(() {
           team.isPosted = true;
           team.submittedSubmissions = submissions;
-          team.draftSubmissions = [];
+          final requiredKeys = team.assessmentConcepts
+              .map((c) => c['key'])
+              .toSet();
+          team.draftSubmissions = team.draftSubmissions
+              .where(
+                (row) =>
+                    requiredKeys.isNotEmpty &&
+                    !requiredKeys.contains(row['concept_key']),
+              )
+              .toList();
           team.draftSavedAt = null;
           team.hasUnsavedChanges = false;
           if (team.usesConceptWorkspace) {
@@ -1941,68 +1984,64 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     }
   }
 
-  Widget _criterionRow(Criterion criterion, bool locked) {
-    final scope = _criteria.contains(criterion)
-        ? 'team'
-        : _lastTeam!.memberDetails[_selectedStudentIndex].id;
+  Widget _criterionRow(Criterion criterion, bool locked, {Criterion? next}) {
     return Padding(
       key: _criterionKeys.putIfAbsent(criterion, GlobalKey.new),
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      criterion.name,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+          if (_lastTeam!.isPosted) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        criterion.name,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      criterion.isScored ? 'Score entered' : 'Not scored',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: DefensysTokens.textSecondaryOf(context),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${criterion.isScored ? formatEvaluationScore(criterion.score!) : '—'} / ${formatEvaluationScore(criterion.maxScore)}',
-                key: ValueKey('score-display-$scope-${criterion.id}'),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-          if (criterion.description.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                criterion.description,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: DefensysTokens.textSecondaryOf(context),
+                const SizedBox(width: 8),
+                Text(
+                  '${criterion.isScored ? formatEvaluationScore(criterion.score!) : '—'} / ${formatEvaluationScore(criterion.maxScore)}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-              ),
+              ],
             ),
-          if (!locked) ...[
-            const SizedBox(height: 10),
-            EvaluationScorePicker(
-              key: ValueKey('score-$_formGeneration-$scope-${criterion.id}'),
+            if (criterion.description.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  criterion.description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ),
+          ] else
+            EvaluationScoreInput(
+              key: _scoreInputKeys.putIfAbsent(
+                criterion,
+                () => GlobalKey<EvaluationScoreInputState>(),
+              ),
               label: criterion.name,
+              description: criterion.description,
               maximum: criterion.maxScore,
               value: criterion.score,
-              enabled: !_isNavigatingEvaluation,
+              enabled: !locked && !_isNavigatingEvaluation,
+              onNext: next == null
+                  ? null
+                  : () => _scoreInputKeys[next]?.currentState
+                        ?.requestScoreFocus(),
               onChanged: (score) {
                 if (!mounted ||
                     _lastTeam == null ||
@@ -2019,7 +2058,6 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 });
               },
             ),
-          ],
           const Divider(height: 20),
         ],
       ),

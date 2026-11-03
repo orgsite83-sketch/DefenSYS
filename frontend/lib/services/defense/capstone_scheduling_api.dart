@@ -7,6 +7,16 @@ final capstoneSchedulingApiProvider = Provider(
   (ref) => CapstoneSchedulingApi(ref.read(authenticatedHttpClientProvider)),
 );
 
+class CapstoneSchedulingException implements Exception {
+  const CapstoneSchedulingException(this.message, this.fields);
+  final String message;
+  final Set<String> fields;
+  bool get requiresStageSetup =>
+      fields.contains('defense_stage_id') || fields.contains('rubric_id');
+  @override
+  String toString() => message;
+}
+
 class CapstoneSchedulingApi {
   CapstoneSchedulingApi(this.client);
   final AuthenticatedHttpClient client;
@@ -51,11 +61,14 @@ class CapstoneSchedulingApi {
     if (data is! Map) throw Exception(_responseError(status));
     if (status < 200 || status >= 300) {
       String flatten(dynamic value) => value is Map
-          ? value.entries.map((e) => '${e.key}: ${flatten(e.value)}').join('\n')
+          ? value.values.map(flatten).join('\n')
           : value is List
           ? value.map(flatten).join(' ')
           : '$value';
-      throw Exception(flatten(data));
+      throw CapstoneSchedulingException(
+        flatten(data),
+        data.keys.map((key) => '$key').toSet(),
+      );
     }
     return Map<String, dynamic>.from(data);
   }

@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/services/defense/capstone_scheduling_api.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/app/unsaved_changes_provider.dart';
@@ -14,15 +17,21 @@ import 'package:defensys/widgets/shadcn/workflow_step_progress.dart';
 import '../models/capstone_planning_draft.dart';
 import 'scheduler_people_picker.dart';
 import 'capstone_adviser_readiness.dart';
+import 'capstone_review_group.dart';
+import 'documenter_workload_summary.dart';
 import '../dialogs/capstone_replacement_dialog.dart';
 
 class CapstoneSchedulingWorkspace extends ConsumerStatefulWidget {
   const CapstoneSchedulingWorkspace({
     super.key,
     this.initialStageId,
+    this.header,
+    this.scrollable = false,
     required this.onSaved,
   });
   final int? initialStageId;
+  final Widget? header;
+  final bool scrollable;
   final Future<void> Function() onSaved;
   @override
   ConsumerState<CapstoneSchedulingWorkspace> createState() =>
@@ -35,7 +44,6 @@ class _CapstoneSchedulingWorkspaceState
   final _minutes = TextEditingController();
   final _room = TextEditingController();
   final _gap = TextEditingController(text: '0');
-  final _skipDate = TextEditingController();
   final _windows = <List<TextEditingController>>[];
   final _rosters = <int, CapstoneRosterDraft>{};
   final _temporaryChanges = <int, Map<String, dynamic>>{};
@@ -43,6 +51,12 @@ class _CapstoneSchedulingWorkspaceState
   final _replacementEvents = <Map<String, dynamic>>[];
   final _selected = <int>{};
   final _excluded = <String>{};
+  final _expandedReviewGroups = <String>{};
+  String? _keyboardReviewGroup;
+  List<String>? _keyboardOriginalOrder;
+  bool _pointerReorder = false;
+  int? _pointerReorderFrom;
+  Map<String, dynamic>? _lastReviewPreview;
   List<CapstoneAdviserGroup> _groups = [];
   Map<String, dynamic>? _workspace, _preview;
   List<Map<String, dynamic>> _invitations = [];
@@ -52,6 +66,7 @@ class _CapstoneSchedulingWorkspaceState
   int _step = 1, _generation = 0;
   bool _busy = false, _previewing = false, _sunday = false, _loading = true;
   bool _replacementDialogOpen = false;
+  bool _stageSetupIssue = false;
   BuildContext? _shadContext;
   Timer? _debounce;
   late final UnsavedChangesNotifier _unsaved;
@@ -61,7 +76,27 @@ class _CapstoneSchedulingWorkspaceState
   List<Map<String, dynamic>> get _stages => capstoneMaps(_workspace?['stages']);
   Map<String, dynamic>? get _stageData =>
       _stages.where((s) => s['id'] == _stage).firstOrNull;
-  List<Map<String, dynamic>> get _slots => capstoneMaps(_preview?['slots']);
+  Map<String, dynamic>? get _displayPlan =>
+      _preview ?? (_step == 3 ? _lastReviewPreview : null);
+  List<Map<String, dynamic>> get _slots => capstoneMaps(_displayPlan?['slots']);
+  List<CapstoneAdviserGroup> get _reviewGroups => _groups
+      .where(
+        (group) => group.teams.any(
+          (team) => _selected.contains(capstoneId(team['id'])),
+        ),
+      )
+      .toList();
+  bool get _reordering => _pointerReorder || _keyboardReviewGroup != null;
+  bool get _reviewUpdating =>
+      _reordering || _previewing || (_preview == null && _error == null);
+  bool get _canConfirmReview =>
+      !_busy &&
+      !_replacementDialogOpen &&
+      !_reordering &&
+      !_previewing &&
+      _error == null &&
+      _preview?['complete'] == true &&
+      _confirmKey.isNotEmpty;
   List<int> get _queue => [
     for (final group in _groups)
       for (final team in group.teams)
@@ -115,7 +150,6 @@ class _CapstoneSchedulingWorkspaceState
       _minutes,
       _room,
       _gap,
-      _skipDate,
       ..._windows.expand((w) => w),
     ]) {
       c.dispose();
@@ -152,6 +186,12 @@ class _CapstoneSchedulingWorkspaceState
     _generation++;
     _debounce?.cancel();
     _preview = null;
+    _lastReviewPreview = null;
+    _expandedReviewGroups.clear();
+    _keyboardReviewGroup = null;
+    _keyboardOriginalOrder = null;
+    _pointerReorder = false;
+    _pointerReorderFrom = null;
     _step = 1;
     _selected.clear();
     _excluded.clear();
@@ -268,7 +308,6 @@ class _CapstoneSchedulingWorkspaceState
             _addWindow('${w['start_time']}', '${w['end_time']}');
           }
         }
-        _notice = 'Saved planning inputs restored for this intake and stage.';
       } catch (_) {
         await prefs.remove(_draftKey);
       }
@@ -498,6 +537,7 @@ class _CapstoneSchedulingWorkspaceState
   }
 
   void _goToStep(int step) {
+    if (_keyboardReviewGroup != null) _endKeyboardReview(cancel: true);
     setState(() => _step = step);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -569,8 +609,10 @@ class _CapstoneSchedulingWorkspaceState
   void _changed({bool plan = true}) {
     _generation++;
     _preview = null;
+    _confirmKey = '';
     _previewing = false;
     _error = null;
+    _stageSetupIssue = false;
     _notice = null;
     _unsaved.setDirty(true);
     _saveDraftNotifier.setCallback(_saveDraft);
@@ -597,18 +639,24 @@ class _CapstoneSchedulingWorkspaceState
     setState(() {
       _previewing = true;
       _error = null;
+      _stageSetupIssue = false;
     });
     try {
       final plan = await _api.preview(_inputs());
       if (!mounted || generation != _generation) return;
       setState(() {
         _preview = plan;
+        _lastReviewPreview = plan;
         _confirmKey = _uuid();
       });
       await _saveDraft();
     } catch (e) {
       if (mounted && generation == _generation) {
-        setState(() => _error = _message(e));
+        setState(() {
+          _error = _message(e);
+          _stageSetupIssue =
+              e is CapstoneSchedulingException && e.requiresStageSetup;
+        });
       }
     } finally {
       if (mounted && generation == _generation) {
@@ -731,6 +779,7 @@ class _CapstoneSchedulingWorkspaceState
   }
 
   Future<void> _confirm() async {
+    if (!_canConfirmReview) return;
     final token = _preview?['preview_token'];
     if (token is! String || _preview?['complete'] != true) return;
     setState(() {
@@ -846,7 +895,34 @@ class _CapstoneSchedulingWorkspaceState
     child: Builder(
       builder: (shadContext) {
         _shadContext = shadContext;
-        return _workspaceBody();
+        if (!widget.scrollable) return _workspaceBody();
+        final inset = MediaQuery.sizeOf(context).width < 640 ? 16.0 : 40.0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                key: const ValueKey('capstone-workspace-scroll'),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(inset, 20, inset, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (widget.header != null) ...[
+                      widget.header!,
+                      const SizedBox(height: 20),
+                    ],
+                    _workspaceBody(),
+                  ],
+                ),
+              ),
+            ),
+            if (_step == 2 && _workspace != null && !_loading)
+              _dateActions(horizontalPadding: inset),
+            if (_step == 3 && _workspace != null && !_loading)
+              _reviewActions(horizontalPadding: inset),
+          ],
+        );
       },
     ),
   );
@@ -896,8 +972,22 @@ class _CapstoneSchedulingWorkspaceState
           compactLabels: const ['People', 'Dates', 'Review'],
         ),
         const SizedBox(height: 18),
-        if (_notice != null) _panel(Text(_notice!)),
-        if (_error != null)
+        if (_notice != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                _notice!,
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ),
+          ),
+        if (_error != null && _step == 1)
           _panel(
             Semantics(
               liveRegion: true,
@@ -942,11 +1032,19 @@ class _CapstoneSchedulingWorkspaceState
         Text(
           'Stage: ${_stageData?['label'] ?? 'Not configured'}',
           key: const ValueKey('capstone-stage-context'),
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          style: const TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
         ),
         const SizedBox(height: 5),
         Text(
-          'Panel and documenter assignments by adviser',
+          switch (_step) {
+            2 => 'Set daily sessions, then review the calculated dates.',
+            3 => 'Review adviser order and allocated defense times.',
+            _ => 'Panel and documenter assignments by adviser',
+          },
           style: TextStyle(
             fontSize: 13,
             color: DefensysTokens.textSecondaryOf(context),
@@ -956,23 +1054,27 @@ class _CapstoneSchedulingWorkspaceState
     );
     final status = Semantics(
       liveRegion: true,
-      label: 'Overall team readiness',
+      label: 'Team endorsements',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           CapstoneReadinessBadge(
             key: const ValueKey('overall-readiness'),
-            status: summary.status,
-            label: summary.label,
+            status: summary.endorsed == summary.total && summary.total > 0
+                ? 'ready'
+                : 'partial',
+            label: '${summary.endorsed}/${summary.total} teams endorsed',
           ),
-          const SizedBox(height: 6),
-          Text(
-            '${summary.ready}/${summary.total} teams ready · ${summary.endorsed} endorsed',
-            style: TextStyle(
-              fontSize: 12,
-              color: DefensysTokens.textSecondaryOf(context),
+          if (summary.scheduled > 0 || summary.completed > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${summary.scheduled} scheduled · ${summary.completed} completed',
+              style: TextStyle(
+                fontSize: 12,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1182,16 +1284,8 @@ class _CapstoneSchedulingWorkspaceState
             ],
           ),
         ),
-      _panel(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Documenter workload · current intake teams'),
-            const SizedBox(height: 10),
-            ..._documenterLoads(),
-          ],
-        ),
-      ),
+      _documenterLoads(),
+      const SizedBox(height: 14),
       Wrap(
         alignment: WrapAlignment.end,
         spacing: 10,
@@ -1208,7 +1302,7 @@ class _CapstoneSchedulingWorkspaceState
     ],
   );
 
-  List<Widget> _documenterLoads() {
+  Widget _documenterLoads() {
     final counts = <int, int>{};
     for (final id in _rosters.keys) {
       final roster = _displayRoster(id);
@@ -1216,18 +1310,26 @@ class _CapstoneSchedulingWorkspaceState
         counts.update(roster.documenter!, (v) => v + 1, ifAbsent: () => 1);
       }
     }
-    return [
-      for (final entry in counts.entries)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            '${_personName(entry.key)} · ${entry.value} teams · ${entry.value} expected records for this stage'
-            '${capstoneMaps(_workspace?['documenter_workloads']).where((w) => w['documenter_id'] == entry.key).map((w) => ' · ${w['outstanding_minutes']} outstanding confirmed records').join()}',
-          ),
+    final eligible = capstoneMaps(
+      _workspace?['documenters'],
+    ).map((person) => capstoneId(person['id'])).whereType<int>().toSet();
+    final rows = <DocumenterWorkload>[
+      for (final id in {...eligible, ...counts.keys})
+        DocumenterWorkload(
+          id: id,
+          name: _personName(id),
+          teams: counts[id] ?? 0,
+          eligible: eligible.contains(id),
         ),
-      if (counts.isEmpty)
-        const Text('Assign documenters to see the distribution.'),
-    ];
+    ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final total = counts.values.fold<int>(0, (total, count) => total + count);
+    return _scheduleSection(
+      'Documenter workload',
+      description: total == 0
+          ? '${eligible.length} documenters available · No teams assigned yet'
+          : '$total ${total == 1 ? 'team' : 'teams'} assigned across ${rows.where((row) => row.teams > 0).length} of ${rows.length} documenters',
+      child: DocumenterWorkloadSummary(items: rows),
+    );
   }
 
   String _personName(int id, {bool external = false}) {
@@ -1237,6 +1339,23 @@ class _CapstoneSchedulingWorkspaceState
     final person = people.where((p) => capstoneId(p['id']) == id).firstOrNull;
     return person == null ? 'Person $id' : schedulerPersonName(person);
   }
+
+  Future<void> _openFacultyStaff() async {
+    if (!await _saveDraft() || !mounted) return;
+    context.go('${AdminRoutes.users}?tab=faculty');
+  }
+
+  Widget _roleAvailabilityHelp(String role, String people) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'No eligible $people are available. Assign the $role role in User Management.',
+        style: TextStyle(color: DefensysTokens.textSecondaryOf(context)),
+      ),
+      const SizedBox(height: 8),
+      _button('Faculty & Staff', _openFacultyStaff),
+    ],
+  );
 
   Widget _rosterEditor(
     CapstoneAdviserGroup group,
@@ -1250,6 +1369,7 @@ class _CapstoneSchedulingWorkspaceState
               capstoneId(p['id']) != roster.documenter,
         )
         .length;
+    final noPanelists = facultyCount == 0;
     final canAddFaculty = roster.members.length + 1 < min(facultyCount, 500);
     final canAddExternal =
         roster.externals.length <
@@ -1275,7 +1395,7 @@ class _CapstoneSchedulingWorkspaceState
                 _workspace?[external
                     ? 'external_evaluators'
                     : doc
-                    ? 'faculty'
+                    ? 'documenters'
                     : 'panelists'],
               )
               .where(
@@ -1306,6 +1426,11 @@ class _CapstoneSchedulingWorkspaceState
                   'Choose ${external ? 'external evaluator' : 'person'}',
               emptyMessage: 'No other eligible people are available.',
             ),
+            if (doc && people.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _roleAvailabilityHelp('Documenter', 'documenters'),
+              ),
           ],
         ),
       );
@@ -1371,7 +1496,12 @@ class _CapstoneSchedulingWorkspaceState
             ),
           ],
         ),
-        if (!canAddFaculty || !canAddExternal)
+        if (noPanelists)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: _roleAvailabilityHelp('Defense Panelist', 'panelists'),
+          )
+        else if (!canAddFaculty || !canAddExternal)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
@@ -1420,8 +1550,6 @@ class _CapstoneSchedulingWorkspaceState
   Widget _dates() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text('${_stageData?['label']} · ${_queue.length} teams · One room'),
-      const SizedBox(height: 16),
       LayoutBuilder(
         builder: (context, c) {
           final fields = [
@@ -1430,17 +1558,17 @@ class _CapstoneSchedulingWorkspaceState
             _field('Room', _room),
           ];
           return c.maxWidth < 700
-              ? Column(children: fields)
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: fields,
+                )
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final field in fields)
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 16),
-                          child: field,
-                        ),
-                      ),
+                    for (var i = 0; i < fields.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 16),
+                      Expanded(child: fields[i]),
+                    ],
                   ],
                 );
         },
@@ -1448,147 +1576,296 @@ class _CapstoneSchedulingWorkspaceState
       LayoutBuilder(
         builder: (context, c) => c.maxWidth < 1000
             ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _dateControls(),
-                  const SizedBox(height: 18),
                   _calculated(),
+                  const SizedBox(height: 20),
+                  _dateControls(),
                 ],
               )
             : Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _dateControls()),
+                  Expanded(flex: 3, child: _dateControls()),
                   const SizedBox(width: 24),
-                  Expanded(child: _calculated()),
+                  Expanded(flex: 2, child: _calculated()),
                 ],
               ),
       ),
-      const SizedBox(height: 20),
-      Wrap(
-        alignment: WrapAlignment.end,
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          _button('← Assignments', () => _goToStep(1)),
-          _button('Recalculate', _calculate),
-          _button(
-            'Order & review →',
-            _preview == null || _previewing ? null : () => _goToStep(3),
-            primary: true,
-          ),
-        ],
-      ),
+      if (!widget.scrollable) ...[const SizedBox(height: 20), _dateActions()],
     ],
   );
 
   Widget _dateControls() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: const [Text('Scheduled dates'), Text('Filled automatically')],
-      ),
-      const SizedBox(height: 12),
-      _calendar(),
-      const SizedBox(height: 10),
-      const Text(
-        'Uncheck a scheduled date to skip it. Crossed-out dates are unavailable.',
-      ),
-      const SizedBox(height: 22),
-      const Text('Daily sessions'),
-      const SizedBox(height: 12),
-      for (var i = 0; i < _windows.length; i++)
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      _scheduleSection(
+        'Daily sessions',
+        description: 'Breaks between sessions stay free.',
+        trailing: ShadButton.ghost(
+          size: ShadButtonSize.sm,
+          enabled: !_busy,
+          onPressed: () {
+            _addWindow('17:00', '18:00');
+            _changed();
+          },
+          leading: const Icon(Icons.add_rounded, size: 16),
+          child: const Text('Add session'),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                i == 0
-                    ? 'Morning'
-                    : i == 1
-                    ? 'Afternoon'
-                    : 'Session ${i + 1}',
-              ),
-              const SizedBox(height: 10),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _field('Start', _windows[i][0], hint: 'HH:mm'),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field('End', _windows[i][1], hint: 'HH:mm')),
-                ],
-              ),
-              _button(
-                'Remove session',
-                _windows.length <= 1
-                    ? null
-                    : () {
-                        final removed = _windows.removeAt(i);
-                        for (final c in removed) {
-                          c.dispose();
-                        }
-                        _changed();
-                      },
-              ),
+              if (constraints.maxWidth >= 520) ...[
+                Row(
+                  children: [
+                    const SizedBox(width: 98),
+                    Expanded(child: Text('Start', style: _supportingStyle)),
+                    const SizedBox(width: 36),
+                    Expanded(child: Text('End', style: _supportingStyle)),
+                    const SizedBox(width: 40),
+                  ],
+                ),
+                const SizedBox(height: 6),
+              ],
+              for (var i = 0; i < _windows.length; i++) ...[
+                if (i > 0) const Divider(height: 16),
+                _sessionRow(i),
+              ],
             ],
           ),
         ),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: _button('+ Add session', () {
-          _addWindow('17:00', '18:00');
-          _changed();
-        }),
       ),
-      const SizedBox(height: 20),
-      _panel(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      const SizedBox(height: 16),
+      _scheduleSection(
+        'Scheduled dates',
+        description:
+            'Filled automatically from your sessions. Uncheck a scheduled date to skip it.',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Options'),
-            const SizedBox(height: 12),
-            ShadCheckbox(
-              value: _sunday,
-              enabled: !_busy,
-              onChanged: (v) {
-                _sunday = v;
-                _changed();
-              },
-              label: const Text('Include Sunday'),
-            ),
-            const SizedBox(height: 16),
-            _field('Gap between teams (minutes)', _gap, number: true),
-            _dateField('Unavailable date', _skipDate),
-            _button('Skip date', () {
-              final day = DateTime.tryParse(_skipDate.text.trim());
-              if (day == null) {
-                setState(() => _error = 'Enter a date as YYYY-MM-DD.');
-                return;
-              }
-              _excluded.add(DateFormat('yyyy-MM-dd').format(day));
-              _skipDate.clear();
-              _changed();
-            }),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final day in _excluded)
-                  _button('$day ×', () {
-                    _excluded.remove(day);
-                    _changed();
-                  }),
-              ],
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Monday–Saturday are available. The scheduler calculates the finish within the official semester calendar.',
-            ),
+            _calendar(),
+            const SizedBox(height: 4),
+            Text('Crossed-out dates are unavailable.', style: _supportingStyle),
+            if (_excluded.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Skipped dates', style: _supportingStyle),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  for (final day in (_excluded.toList()..sort()))
+                    ShadButton.ghost(
+                      key: ValueKey('restore-date-$day'),
+                      size: ShadButtonSize.sm,
+                      enabled: !_busy,
+                      leading: const Icon(Icons.undo_rounded, size: 15),
+                      onPressed: () {
+                        _excluded.remove(day);
+                        _changed();
+                      },
+                      child: Text(
+                        'Restore ${DateFormat('MMM d').format(DateTime.parse(day))}',
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
+      ),
+      const SizedBox(height: 12),
+      ShadAccordion<String>(
+        children: [
+          ShadAccordionItem(
+            value: 'scheduling-options',
+            title: const Text('Scheduling options'),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _schedulingOptions(),
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+
+  TextStyle get _supportingStyle => TextStyle(
+    fontFamily: DefensysTokens.fontFamilyInter,
+    fontSize: 12,
+    color: DefensysTokens.textSecondaryOf(context),
+  );
+
+  Widget _scheduleSection(
+    String title, {
+    required Widget child,
+    String? description,
+    Widget? trailing,
+  }) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: DefensysTokens.surfaceOf(context),
+      border: Border.all(color: DefensysTokens.borderOf(context)),
+      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (trailing != null) trailing,
+          ],
+        ),
+        if (description != null) ...[
+          const SizedBox(height: 6),
+          Text(description, style: _supportingStyle),
+        ],
+        const SizedBox(height: 12),
+        child,
+      ],
+    ),
+  );
+
+  Widget _sessionRow(int i) {
+    final name = i == 0
+        ? 'Morning'
+        : i == 1
+        ? 'Afternoon'
+        : 'Session ${i + 1}';
+    Widget time(int position) => Semantics(
+      label: '$name ${position == 0 ? 'start' : 'end'} time',
+      child: ShadInput(
+        key: ValueKey('session-$i-${position == 0 ? 'start' : 'end'}'),
+        controller: _windows[i][position],
+        enabled: !_busy,
+        placeholder: const Text('HH:mm'),
+        style: const TextStyle(
+          fontFamily: DefensysTokens.fontFamilyInter,
+          fontSize: 13,
+        ),
+        onChanged: (_) => _changed(),
+      ),
+    );
+    final remove = Tooltip(
+      message: 'Remove $name session',
+      child: ShadButton.ghost(
+        key: ValueKey('remove-session-$i'),
+        size: ShadButtonSize.sm,
+        enabled: !_busy && _windows.length > 1,
+        onPressed: () {
+          final removed = _windows.removeAt(i);
+          for (final controller in removed) {
+            controller.dispose();
+          }
+          _changed();
+        },
+        child: const Icon(Icons.close_rounded, size: 16),
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 520;
+        return Column(
+          key: ValueKey('schedule-session-$i'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (narrow)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: const TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  remove,
+                ],
+              ),
+            Row(
+              children: [
+                if (!narrow)
+                  SizedBox(
+                    width: 98,
+                    child: Text(
+                      name,
+                      style: const TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (narrow) ...[
+                        Text('Start', style: _supportingStyle),
+                        const SizedBox(height: 6),
+                      ],
+                      time(0),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(10, narrow ? 22 : 0, 10, 0),
+                  child: Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 16,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (narrow) ...[
+                        Text('End', style: _supportingStyle),
+                        const SizedBox(height: 6),
+                      ],
+                      time(1),
+                    ],
+                  ),
+                ),
+                if (!narrow) ...[const SizedBox(width: 8), remove],
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _schedulingOptions() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      ShadCheckbox(
+        value: _sunday,
+        enabled: !_busy,
+        onChanged: (v) {
+          _sunday = v;
+          _changed();
+        },
+        label: const Text('Include Sunday'),
+      ),
+      const SizedBox(height: 16),
+      _field('Gap between teams (minutes)', _gap, number: true),
+      Text(
+        'Monday–Saturday are available. The scheduler calculates the finish within the official semester calendar.',
+        style: _supportingStyle,
       ),
     ],
   );
@@ -1601,67 +1878,115 @@ class _CapstoneSchedulingWorkspaceState
     final used = (_preview?['scheduled_dates'] as List? ?? [])
         .cast<String>()
         .toSet();
-    var last = used.isEmpty
-        ? start.add(const Duration(days: 6))
-        : DateTime.parse(used.last);
-    for (final day in _excluded) {
-      final d = DateTime.tryParse(day);
-      if (d != null && d.isAfter(last)) last = d;
-    }
-    final monday = start.subtract(Duration(days: start.weekday - 1));
-    final weeks = (last.difference(monday).inDays ~/ 7) + 1;
+    DateTime weekOf(DateTime day) =>
+        DateTime(day.year, day.month, day.day - day.weekday + 1);
+    // Show only weeks used by the allocation. A disabled Sunday must not add
+    // the preceding empty week; skipped dates stay restorable below the calendar.
+    final firstAvailable = start.weekday == DateTime.sunday && !_sunday
+        ? start.add(const Duration(days: 1))
+        : start;
+    final weeks =
+        (used.isEmpty
+                ? {weekOf(firstAvailable)}
+                : used.map((day) => weekOf(DateTime.parse(day))).toSet())
+            .toList()
+          ..sort();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var week = 0; week < weeks; week++) ...[
+        for (final monday in weeks) ...[
           Text(
-            '${DateFormat('MMM d').format(monday.add(Duration(days: week * 7)))} – ${DateFormat('MMM d').format(monday.add(Duration(days: week * 7 + 6)))}',
+            '${DateFormat('MMM d').format(monday)} – ${DateFormat('MMM d').format(monday.add(const Duration(days: 6)))}',
+            key: ValueKey(
+              'calendar-week-${DateFormat('yyyy-MM-dd').format(monday)}',
+            ),
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          Row(
             children: [
               for (var day = 0; day < 7; day++)
-                Builder(
-                  builder: (context) {
-                    final d = monday.add(Duration(days: week * 7 + day));
-                    final iso = DateFormat('yyyy-MM-dd').format(d);
-                    final unavailable = _excluded.contains(iso);
-                    final eligible =
-                        !d.isBefore(start) &&
-                        (d.weekday != 7 || _sunday) &&
-                        (_workspace?['ends_on'] == null ||
-                            iso.compareTo('${_workspace!['ends_on']}') <= 0);
-                    return Container(
-                      width: 83,
-                      padding: const EdgeInsets.all(9),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: DefensysTokens.borderOf(context),
-                        ),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: ShadCheckbox(
-                        value: used.contains(iso),
-                        enabled: eligible && !_busy,
-                        onChanged: (_) {
-                          unavailable
-                              ? _excluded.remove(iso)
-                              : _excluded.add(iso);
-                          _changed();
-                        },
-                        label: Text(
-                          DateFormat('E\nd').format(d),
-                          style: TextStyle(
-                            decoration: unavailable
-                                ? TextDecoration.lineThrough
-                                : null,
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(right: day == 6 ? 0 : 4),
+                    child: Builder(
+                      builder: (context) {
+                        final d = monday.add(Duration(days: day));
+                        final iso = DateFormat('yyyy-MM-dd').format(d);
+                        final unavailable = _excluded.contains(iso);
+                        final eligible =
+                            !d.isBefore(start) &&
+                            (d.weekday != 7 || _sunday) &&
+                            (_workspace?['ends_on'] == null ||
+                                iso.compareTo('${_workspace!['ends_on']}') <=
+                                    0);
+                        return Semantics(
+                          label:
+                              '${DateFormat('EEEE, MMMM d').format(d)}${unavailable
+                                  ? ', unavailable'
+                                  : used.contains(iso)
+                                  ? ', scheduled'
+                                  : ', unused'}',
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 2,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: used.contains(iso)
+                                  ? DefensysTokens.maroonOf(
+                                      context,
+                                    ).withValues(alpha: .05)
+                                  : null,
+                              border: Border.all(
+                                color: DefensysTokens.borderOf(context),
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  DateFormat('E').format(d).substring(0, 2),
+                                  maxLines: 1,
+                                  style: _supportingStyle,
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '${d.day}',
+                                  style: TextStyle(
+                                    fontFamily: DefensysTokens.fontFamilyInter,
+                                    fontSize: 14,
+                                    fontWeight: used.contains(iso)
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    color: eligible
+                                        ? DefensysTokens.textPrimaryOf(context)
+                                        : DefensysTokens.textSecondaryOf(
+                                            context,
+                                          ),
+                                    decoration: unavailable
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
+                                ),
+                                const SizedBox(height: 7),
+                                ShadCheckbox(
+                                  key: ValueKey('schedule-date-$iso'),
+                                  value: used.contains(iso),
+                                  enabled: eligible && !_busy,
+                                  onChanged: (_) {
+                                    unavailable
+                                        ? _excluded.remove(iso)
+                                        : _excluded.add(iso);
+                                    _changed();
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ),
-                    );
-                  },
+                        );
+                      },
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -1671,63 +1996,431 @@ class _CapstoneSchedulingWorkspaceState
     );
   }
 
-  Widget _calculated() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const Text('Calculated plan'),
-      const SizedBox(height: 12),
-      if (_previewing) const LinearProgressIndicator(),
-      _panel(
-        Semantics(
-          liveRegion: true,
-          child: Text(
-            _preview == null
-                ? 'Enter the scheduling details to calculate the plan.'
-                : '${_preview!['days']} defense days · ${_preview!['sessions']} sessions\n${_slots.length}/${_queue.length} teams · Finish: ${_preview!['finish'] ?? '—'}',
+  Widget _calculated() => _scheduleSection(
+    'Calculated plan',
+    trailing: ShadButton.ghost(
+      size: ShadButtonSize.sm,
+      enabled: !_busy && !_previewing,
+      onPressed: _calculate,
+      child: const Text('Recalculate'),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_previewing) ...[
+          const LinearProgressIndicator(),
+          const SizedBox(height: 16),
+        ],
+        if (_error != null) ...[
+          Semantics(
+            liveRegion: true,
+            child: ShadAlert.destructive(
+              title: Text(
+                _stageSetupIssue
+                    ? 'Stage setup needs attention'
+                    : 'Could not calculate the plan',
+              ),
+              description: Text(_error!),
+            ),
           ),
-        ),
-      ),
-      if (_preview?['complete'] == false)
-        _panel(
+          if (_stageSetupIssue) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _button('Review stage setup', _openStageSetup),
+            ),
+          ],
+        ] else if (_preview == null)
           Text(
-            '${_preview!['blocking_reason']}\nRemaining teams: ${(_preview!['remaining_team_ids'] as List).length}',
-          ),
+            'Enter a start date, minutes per team, and a room to calculate the plan.',
+            style: _supportingStyle,
+          )
+        else ...[
+          _previewTotals(),
+          _previewDivider(),
+          _previewTiming(),
+          if (_preview?['complete'] == false)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: ShadAlert.destructive(
+                title: const Text('Some teams could not fit'),
+                description: Text(
+                  '${_preview!['blocking_reason']}\nRemaining teams: ${(_preview!['remaining_team_ids'] as List).length}',
+                ),
+              ),
+            ),
+          for (final day in _allocatedDates) ...[
+            _previewDivider(),
+            _previewDay(day),
+          ],
+        ],
+      ],
+    ),
+  );
+
+  List<String> get _allocatedDates =>
+      ((_preview?['scheduled_dates'] as List? ?? [])
+          .cast<String>()
+          .toSet()
+          .toList()
+        ..sort());
+
+  Widget _previewDivider() =>
+      Divider(height: 28, color: DefensysTokens.borderOf(context));
+
+  Widget _previewTotals() => Semantics(
+    liveRegion: true,
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _previewStat(
+          'Teams',
+          '${_slots.length}/${_queue.length}',
+          'plan-teams-count',
+          semantics: '${_slots.length} of ${_queue.length} teams allocated',
         ),
-      for (final day in (_preview?['scheduled_dates'] as List? ?? []))
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        _previewStatDivider(),
+        _previewStat('Days', '${_displayPlan!['days']}', 'plan-days-count'),
+        _previewStatDivider(),
+        _previewStat(
+          'Sessions',
+          '${_displayPlan!['sessions']}',
+          'plan-sessions-count',
+        ),
+      ],
+    ),
+  );
+
+  Widget _previewStatDivider() => Container(
+    width: 1,
+    height: 38,
+    margin: const EdgeInsets.symmetric(horizontal: 16),
+    color: DefensysTokens.borderOf(context),
+  );
+
+  Widget _previewStat(
+    String label,
+    String value,
+    String key, {
+    String? semantics,
+  }) => Expanded(
+    child: Semantics(
+      label: semantics ?? '$label: $value',
+      excludeSemantics: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              key: ValueKey(key),
+              style: const TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontFeatures: [FontFeature.tabularFigures()],
+                fontSize: 24,
+                fontWeight: FontWeight.w600,
+                height: 1.15,
+              ),
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(label, style: _supportingStyle),
+        ],
+      ),
+    ),
+  );
+
+  Widget _previewTiming() {
+    final starts =
+        _slots
+            .map(
+              (slot) => DateTime.tryParse(
+                '${slot['scheduled_date']} ${slot['start_time']}',
+              ),
+            )
+            .whereType<DateTime>()
+            .toList()
+          ..sort();
+    final start = starts.firstOrNull;
+    final end = DateTime.tryParse('${_displayPlan?['finish']}');
+    return Semantics(
+      liveRegion: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = constraints.maxWidth < 320;
+          final first = _previewBoundary(
+            'Start of defense',
+            start,
+            'start',
+            horizontal: stacked,
+          );
+          final last = _previewBoundary(
+            'End of defense',
+            end,
+            'end',
+            horizontal: stacked,
+            accent: true,
+          );
+          return stacked
+              ? Column(children: [first, const SizedBox(height: 14), last])
+              : Row(
+                  children: [
+                    Expanded(child: first),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 16,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                    Expanded(child: last),
+                  ],
+                );
+        },
+      ),
+    );
+  }
+
+  Widget _previewBoundary(
+    String label,
+    DateTime? moment,
+    String name, {
+    bool horizontal = false,
+    bool accent = false,
+  }) {
+    final time = Text(
+      moment == null ? '—' : DateFormat.jm().format(moment),
+      key: ValueKey('plan-$name-time'),
+      style: TextStyle(
+        fontFamily: DefensysTokens.fontFamilyInter,
+        fontFeatures: const [FontFeature.tabularFigures()],
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+        height: 1.2,
+        color: accent
+            ? DefensysTokens.maroonTextOf(context)
+            : DefensysTokens.textPrimaryOf(context),
+      ),
+    );
+    final date = Text(
+      moment == null ? '—' : DateFormat('EEE, MMM d').format(moment),
+      key: ValueKey('plan-$name-date'),
+      style: _supportingStyle,
+    );
+    return Semantics(
+      label:
+          '$label: ${moment == null ? 'Not allocated' : DateFormat('EEE, MMM d · h:mm a').format(moment)}',
+      excludeSemantics: true,
+      child: horizontal
+          ? Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(label, style: _supportingStyle),
+                      const SizedBox(height: 4),
+                      date,
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                time,
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(label, style: _supportingStyle),
+                const SizedBox(height: 6),
+                time,
+                const SizedBox(height: 5),
+                date,
+              ],
+            ),
+    );
+  }
+
+  Widget _previewDay(String day) {
+    final date = DateTime.parse(day);
+    final slots = _slots
+        .where((slot) => slot['scheduled_date'] == day)
+        .toList();
+    final blocks = slots.map((slot) => slot['block_key']).toSet().toList();
+    return Row(
+      key: ValueKey('plan-day-$day'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 42,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: DefensysTokens.surfaceHigherOf(context),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Column(
             children: [
               Text(
-                DateFormat('EEE, MMM d').format(DateTime.parse(day)),
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                '${date.day}',
+                style: const TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  height: 1.2,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               ),
-              for (final block
-                  in _slots
-                      .where((s) => s['scheduled_date'] == day)
-                      .map((s) => s['block_key'])
-                      .toSet()) ...[
-                const Divider(height: 22),
-                Builder(
-                  builder: (_) {
-                    final slots = _slots
-                        .where((s) => s['block_key'] == block)
-                        .toList();
-                    return Text(
-                      '${slots.first['window_index'] == 0
-                          ? 'Morning'
-                          : slots.first['window_index'] == 1
-                          ? 'Afternoon'
-                          : 'Session'} · ${slots.length} teams\n'
-                      '${_time(slots.first['start_time'])} – ${_time(slots.last['end_time'])}',
-                    );
-                  },
+              const SizedBox(height: 2),
+              Text(DateFormat('MMM').format(date), style: _supportingStyle),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      DateFormat('EEEE').format(date),
+                      style: const TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${slots.length} ${slots.length == 1 ? 'team' : 'teams'}',
+                    style: _supportingStyle,
+                  ),
+                ],
+              ),
+              for (final block in blocks) ...[
+                const SizedBox(height: 8),
+                _previewSession(
+                  slots.where((slot) => slot['block_key'] == block).toList(),
+                  showCount: blocks.length > 1,
                 ),
               ],
             ],
           ),
         ),
-    ],
+      ],
+    );
+  }
+
+  Widget _previewSession(
+    List<Map<String, dynamic>> slots, {
+    required bool showCount,
+  }) {
+    final index = capstoneId(slots.first['window_index']) ?? 0;
+    final name = index == 0
+        ? 'Morning'
+        : index == 1
+        ? 'Afternoon'
+        : 'Session ${index + 1}';
+    final label = Text(
+      '$name${showCount ? ' · ${slots.length} ${slots.length == 1 ? 'team' : 'teams'}' : ''}',
+      style: _supportingStyle,
+    );
+    final time = Text(
+      '${_time(slots.first['start_time'])} – ${_time(slots.last['end_time'])}',
+      style: const TextStyle(
+        fontFamily: DefensysTokens.fontFamilyInter,
+        fontFeatures: [FontFeature.tabularFigures()],
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth < 280
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [label, const SizedBox(height: 4), time],
+            )
+          : Row(
+              children: [
+                Expanded(child: label),
+                const SizedBox(width: 12),
+                time,
+              ],
+            ),
+    );
+  }
+
+  Future<void> _openStageSetup() async {
+    if (_stage == null || !await _saveDraft() || !mounted) return;
+    context.go(AdminRoutes.defenseStageEdit(_stage!));
+  }
+
+  Widget _dateActions({double horizontalPadding = 0}) => Container(
+    key: const ValueKey('capstone-date-actions'),
+    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
+    decoration: BoxDecoration(
+      color: DefensysTokens.surfaceOf(context),
+      border: Border(top: BorderSide(color: DefensysTokens.borderOf(context))),
+    ),
+    child: SafeArea(
+      top: false,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final back = Semantics(
+            label: 'Back to assignments',
+            child: _button(
+              constraints.maxWidth < 340 ? '← People' : '← Assignments',
+              () => _goToStep(1),
+            ),
+          );
+          final next = _button(
+            'Order & review →',
+            _preview == null || _previewing || _error != null
+                ? null
+                : () => _goToStep(3),
+            primary: true,
+          );
+          final status = Text(
+            _previewing
+                ? 'Calculating…'
+                : _error != null
+                ? 'Resolve the plan issue to continue'
+                : _preview == null
+                ? 'Complete the scheduling details'
+                : '${_slots.length}/${_queue.length} teams allocated',
+            style: _supportingStyle,
+          );
+          return constraints.maxWidth < 600
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    status,
+                    const SizedBox(height: 10),
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [back, next],
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    back,
+                    const SizedBox(width: 20),
+                    Expanded(child: status),
+                    const SizedBox(width: 12),
+                    next,
+                  ],
+                );
+        },
+      ),
+    ),
   );
 
   String _time(dynamic value) {
@@ -1735,127 +2428,377 @@ class _CapstoneSchedulingWorkspaceState
     return parsed == null ? '$value' : DateFormat.jm().format(parsed);
   }
 
-  void _move(int from, int to) {
-    final group = _groups.removeAt(from);
-    _groups.insert(to, group);
-    _changed();
+  void _announceReview(String key, {bool reveal = false}) {
+    final index = _reviewGroups.indexWhere((group) => group.key == key);
+    if (index < 0) return;
+    unawaited(
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        '${_reviewGroups[index].name}, position ${index + 1} of ${_reviewGroups.length}',
+        Directionality.of(context),
+      ),
+    );
+    if (reveal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final focused = FocusManager.instance.primaryFocus?.context;
+        if (mounted && focused != null) {
+          Scrollable.ensureVisible(
+            focused,
+            duration: const Duration(milliseconds: 120),
+          );
+        }
+      });
+    }
+  }
+
+  void _moveReview(int from, int to, {bool commit = true}) {
+    final visible = _reviewGroups;
+    if (_busy ||
+        from == to ||
+        from < 0 ||
+        to < 0 ||
+        from >= visible.length ||
+        to >= visible.length) {
+      return;
+    }
+    final group = visible[from], anchor = visible[to];
+    _groups.remove(group);
+    _groups.insert(_groups.indexOf(anchor) + (to > from ? 1 : 0), group);
+    if (commit) {
+      _changed();
+    } else {
+      setState(() {});
+    }
+    _announceReview(group.key, reveal: !commit);
+  }
+
+  void _beginKeyboardReview(String key) {
+    if (_busy || _pointerReorder) return;
+    if (_keyboardReviewGroup != null) _endKeyboardReview(cancel: true);
+    setState(() {
+      _keyboardOriginalOrder = _groups.map((group) => group.key).toList();
+      _keyboardReviewGroup = key;
+    });
+    _announceReview(key);
+  }
+
+  void _moveKeyboardReview(int delta) {
+    final index = _reviewGroups.indexWhere(
+      (group) => group.key == _keyboardReviewGroup,
+    );
+    if (index >= 0) _moveReview(index, index + delta, commit: false);
+  }
+
+  void _endKeyboardReview({bool cancel = false}) {
+    final key = _keyboardReviewGroup;
+    final before = _keyboardOriginalOrder;
+    if (key == null || before == null) return;
+    final changed =
+        before.join('|') != _groups.map((group) => group.key).join('|');
+    if (cancel) {
+      final byKey = {for (final group in _groups) group.key: group};
+      _groups = before
+          .map((key) => byKey[key])
+          .whereType<CapstoneAdviserGroup>()
+          .toList();
+    }
+    _keyboardReviewGroup = null;
+    _keyboardOriginalOrder = null;
+    if (!cancel && changed) {
+      _changed();
+    } else {
+      setState(() {});
+    }
+    _announceReview(key);
   }
 
   Widget _sorter() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text(
-        'Adviser scheduling order · ${_slots.length}/${_queue.length} teams',
-      ),
-      const SizedBox(height: 8),
-      const Text(
-        'Drag an adviser or use the arrows. Their teams stay together and dates recalculate.',
-      ),
-      const SizedBox(height: 16),
-      ReorderableListView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        buildDefaultDragHandles: false,
-        itemCount: _groups.length,
-        onReorder: _busy
-            ? (_, _) {}
-            : (from, to) => _move(from, to > from ? to - 1 : to),
-        itemBuilder: (context, index) {
-          final g = _groups[index];
-          final ids = g.teams.map((t) => t['id']).toSet();
-          final slots = _slots
-              .where((s) => ids.contains(s['team_id']))
-              .toList();
-          return Container(
-            key: ValueKey(g.key),
-            child: _panel(
-              Column(
+      LayoutBuilder(
+        builder: (context, constraints) => constraints.maxWidth < 1000
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _reviewSummary(),
+                  const SizedBox(height: 20),
+                  _reviewList(),
+                ],
+              )
+            : Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      ReorderableDragStartListener(
-                        index: index,
-                        enabled: !_busy,
-                        child: const Padding(
-                          padding: EdgeInsets.all(10),
-                          child: Icon(Icons.drag_indicator),
-                        ),
-                      ),
-                      Text(
-                        '${index + 1}. ${g.name}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Text('${slots.length} teams · ${g.intake}'),
-                      _button(
-                        'Move up',
-                        index == 0 ? null : () => _move(index, index - 1),
-                      ),
-                      _button(
-                        'Move down',
-                        index == _groups.length - 1
-                            ? null
-                            : () => _move(index, index + 1),
-                      ),
-                      _button(
-                        g.expanded ? 'Hide teams' : 'View teams',
-                        () => setState(() => g.expanded = !g.expanded),
-                      ),
-                    ],
+                  Expanded(child: _reviewList()),
+                  const SizedBox(width: 24),
+                  SizedBox(
+                    width: min(380, (constraints.maxWidth - 24) * .30),
+                    child: _reviewSummary(),
                   ),
-                  if (slots.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Text(
-                        '${slots.first['scheduled_date']} ${_time(slots.first['start_time'])} → ${slots.last['scheduled_date']} ${_time(slots.last['end_time'])}',
-                      ),
-                    ),
-                  if (g.expanded)
-                    for (final slot in slots)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${slot['team_name']} · ${slot['scheduled_date']} · ${_time(slot['start_time'])} – ${_time(slot['end_time'])} · ${slot['room']}',
-                            ),
-                            Text(
-                              _rosterSummary(
-                                Map<String, dynamic>.from(slot['roster']),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                 ],
               ),
+      ),
+      if (!widget.scrollable) ...[const SizedBox(height: 20), _reviewActions()],
+    ],
+  );
+
+  Widget _reviewList() {
+    final groups = _reviewGroups;
+    final showIntake =
+        groups
+            .map((group) => group.teams.first['intake_semester_id'])
+            .toSet()
+            .length >
+        1;
+    final slotRosters = {
+      for (final slot in _slots)
+        capstoneId(slot['team_id']): Map<String, dynamic>.from(
+          slot['roster'] as Map,
+        ),
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Defense order',
+          style: TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Drag advisers to set the order. Their teams stay together.',
+          style: _supportingStyle,
+        ),
+        const SizedBox(height: 16),
+        ReorderableListView.builder(
+          key: const ValueKey('review-order-list'),
+          primary: false,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          buildDefaultDragHandles: false,
+          itemCount: groups.length,
+          onReorderStart: (index) => setState(() {
+            _pointerReorder = true;
+            _pointerReorderFrom = index;
+          }),
+          onReorderEnd: (to) {
+            final from = _pointerReorderFrom;
+            if (from == null || (to > from ? to - 1 : to) == from) {
+              setState(() {
+                _pointerReorder = false;
+                _pointerReorderFrom = null;
+              });
+            }
+            // A changed drop commits only after Flutter's proxy animation.
+          },
+          onReorder: (from, to) {
+            _moveReview(from, to > from ? to - 1 : to);
+            setState(() {
+              _pointerReorder = false;
+              _pointerReorderFrom = null;
+            });
+          },
+          proxyDecorator: (child, index, animation) => Material(
+            color: Colors.transparent,
+            textStyle: TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              color: DefensysTokens.textPrimaryOf(context),
             ),
+            elevation: 2,
+            shadowColor: DefensysTokens.textPrimaryOf(
+              context,
+            ).withValues(alpha: .08),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            child: child,
+          ),
+          itemBuilder: (context, index) {
+            final group = groups[index];
+            final teams = group.teams
+                .where((team) => _selected.contains(capstoneId(team['id'])))
+                .toList();
+            final ids = teams.map((team) => capstoneId(team['id'])).toSet();
+            final slots =
+                _slots
+                    .where((slot) => ids.contains(capstoneId(slot['team_id'])))
+                    .toList()
+                  ..sort(
+                    (a, b) => '${a['scheduled_date']} ${a['start_time']}'
+                        .compareTo('${b['scheduled_date']} ${b['start_time']}'),
+                  );
+            return CapstoneReviewGroup(
+              key: ValueKey(group.key),
+              group: group,
+              teams: teams,
+              slots: slots,
+              rosters: {
+                for (final id in ids.whereType<int>())
+                  id: slotRosters[id] ?? _actualRoster(id).toJson(),
+              },
+              index: index,
+              count: groups.length,
+              intake: showIntake ? group.intake : null,
+              expanded: _expandedReviewGroups.contains(group.key),
+              enabled: !_busy,
+              keyboardActive: _keyboardReviewGroup == group.key,
+              updating: _reviewUpdating,
+              onToggle: () => setState(
+                () => _expandedReviewGroups.contains(group.key)
+                    ? _expandedReviewGroups.remove(group.key)
+                    : _expandedReviewGroups.add(group.key),
+              ),
+              onPickUp: () => _beginKeyboardReview(group.key),
+              onDrop: _endKeyboardReview,
+              onCancel: () => _endKeyboardReview(cancel: true),
+              onMove: _moveKeyboardReview,
+              onPointerCancel: () {
+                if (_pointerReorder) {
+                  setState(() {
+                    _pointerReorder = false;
+                    _pointerReorderFrom = null;
+                  });
+                }
+              },
+              onAccessibleMove: (delta) {
+                if (_reordering) return;
+                final current = _reviewGroups.indexWhere(
+                  (item) => item.key == group.key,
+                );
+                _moveReview(current, current + delta);
+              },
+              facultyName: _personName,
+              externalName: (id) => _personName(id, external: true),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _reviewSummary() => _scheduleSection(
+    'Schedule summary',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_reviewUpdating) ...[
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              _reordering ? 'Reordering advisers…' : 'Updating times…',
+              style: _supportingStyle,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (_error != null) ...[
+          ShadAlert.destructive(
+            title: const Text('Schedule needs attention'),
+            description: Text(_error!),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _button('Retry calculation', _reordering ? null : _calculate),
+              if (_stageSetupIssue)
+                _button('Review stage setup', _openStageSetup),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (_displayPlan != null) ...[
+          _previewTotals(),
+          _previewDivider(),
+          _previewTiming(),
+          _previewDivider(),
+          Text('Room', style: _supportingStyle),
+          const SizedBox(height: 5),
+          Text(
+            '${_slots.firstOrNull?['room'] ?? _room.text}',
+            style: const TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (_preview?['complete'] == false) ...[
+            const SizedBox(height: 16),
+            ShadAlert.destructive(
+              title: const Text('Some teams could not fit'),
+              description: Text(
+                '${_preview!['blocking_reason']}\nRemaining teams: ${(_preview!['remaining_team_ids'] as List? ?? []).length}',
+              ),
+            ),
+          ],
+        ],
+      ],
+    ),
+  );
+
+  Widget _reviewActions({double horizontalPadding = 0}) => Container(
+    key: const ValueKey('capstone-review-actions'),
+    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 14),
+    decoration: BoxDecoration(
+      color: DefensysTokens.surfaceOf(context),
+      border: Border(top: BorderSide(color: DefensysTokens.borderOf(context))),
+    ),
+    child: SafeArea(
+      top: false,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 700;
+          final back = _button(
+            narrow ? '← Dates' : '← Dates & sessions',
+            _pointerReorder ? null : () => _goToStep(2),
           );
+          final edit = ShadButton.ghost(
+            enabled: !_busy && !_pointerReorder,
+            onPressed: () => _goToStep(1),
+            child: const Text('Edit people'),
+          );
+          final confirm = _button(
+            _busy ? 'Confirming…' : 'Confirm schedule',
+            _canConfirmReview ? _confirm : null,
+            primary: true,
+          );
+          final status = Text(
+            _busy
+                ? 'Confirming schedule…'
+                : _reordering
+                ? 'Drop to update the schedule'
+                : _reviewUpdating
+                ? 'Updating times…'
+                : _error != null
+                ? 'Resolve the schedule issue'
+                : '${_slots.length}/${_queue.length} teams allocated',
+            style: _supportingStyle,
+          );
+          return narrow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    status,
+                    const SizedBox(height: 8),
+                    Row(children: [back, const Spacer(), edit]),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: confirm),
+                  ],
+                )
+              : Row(
+                  children: [
+                    back,
+                    const SizedBox(width: 20),
+                    Expanded(child: status),
+                    edit,
+                    const SizedBox(width: 8),
+                    confirm,
+                  ],
+                );
         },
       ),
-      if (_previewing) const LinearProgressIndicator(),
-      const SizedBox(height: 18),
-      Text('Finish: ${_preview?['finish'] ?? 'Recalculating…'}'),
-      const SizedBox(height: 16),
-      Wrap(
-        alignment: WrapAlignment.end,
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          _button('← Dates & sessions', () => _goToStep(2)),
-          _button('Edit people', () => _goToStep(1)),
-          _button(
-            _busy ? 'Confirming…' : 'Confirm schedule',
-            _preview?['complete'] == true && !_previewing ? _confirm : null,
-            primary: true,
-          ),
-        ],
-      ),
-    ],
+    ),
   );
 
   String _rosterSummary(Map<String, dynamic> r) =>

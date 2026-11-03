@@ -44,6 +44,13 @@ class _Reviews extends CapstoneDeliverablesNotifier {
   bool succeed = true;
   final reviewed = <int?>[];
   final names = <Map<String, dynamic>>[];
+  final endorsed = <int>[];
+  @override
+  Future<bool> endorseTeam(int teamId, String stageLabel) async {
+    endorsed.add(teamId);
+    return succeed;
+  }
+
   @override
   Future<bool> confirmConceptTitle(
     int teamId,
@@ -650,6 +657,88 @@ void main() {
         find.byKey(const ValueKey('requirement-row-CONCEPTS')),
         findsOneWidget,
       );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'switching adviser teams keeps endorsement actions with each team',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1500, 1100));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final reviews = _Reviews();
+      Map<String, dynamic> team(int id, String name, {required bool endorsed}) {
+        final requirement = _requirement(count: 1);
+        requirement['uploaded'] = true;
+        for (final file in requirement['submission']['files']) {
+          file['status'] = 'accepted';
+        }
+        return {
+          'id': id,
+          'name': name,
+          'members': [],
+          'stages': [
+            {
+              'stage_label': 'Concept Proposal',
+              'deliverables_configured': true,
+              'required_complete': true,
+              'required_total': 1,
+              'required_uploaded': 1,
+              'endorsed': endorsed,
+              'can_cancel_endorsement': endorsed,
+              'stage_status_detail': endorsed
+                  ? 'endorsed'
+                  : 'awaiting_endorsement',
+              'endorsement_review': {'can_review_and_endorse': !endorsed},
+              'concept_workflow': {
+                'enabled': true,
+                'can_edit': true,
+                'status': endorsed
+                    ? 'ready_to_schedule'
+                    : 'concept_endorsement_pending',
+              },
+              'pre': [requirement],
+            },
+          ],
+        };
+      }
+
+      await pumpDefensysWidget(
+        tester,
+        SingleChildScrollView(
+          child: DeliverablesTablePane(
+            state: CapstoneDeliverablesState(
+              scope: 'capstone',
+              workspace: 'adviser',
+              selectedStage: 'Concept Proposal',
+              teams: [
+                team(8, 'RiverPixel', endorsed: false),
+                team(9, 'NeonTide', endorsed: true),
+              ],
+            ),
+            initialTeamId: 8,
+            isAdviser: true,
+            compactFaculty: true,
+          ),
+        ),
+        overrides: [
+          ...authTestOverrides(),
+          capstoneDeliverablesProvider.overrideWith(() => reviews),
+        ],
+      );
+      for (var visit = 0; visit < 2; visit++) {
+        expect(find.text('Endorse team'), findsOneWidget);
+        expect(find.text('Cancel Endorsement'), findsNothing);
+        await tester.tap(find.byKey(const ValueKey('faculty-team-choice-t9')));
+        await tester.pumpAndSettle();
+        expect(find.text('Endorse team'), findsNothing);
+        expect(find.text('Cancel Endorsement'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('faculty-team-choice-t8')));
+        await tester.pumpAndSettle();
+      }
+      expect(find.text('Endorse team'), findsOneWidget);
+      expect(find.text('Cancel Endorsement'), findsNothing);
+      expect(reviews.endorsed, isEmpty);
       expect(tester.takeException(), isNull);
     },
   );

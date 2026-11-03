@@ -328,6 +328,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'id': entry_id,
             'source_id': submission.id,
             'file_id': f.id,
+            'concept_round_id': f.concept_round_id,
             'project_version': submission.project_version,
             'slot_key': f.slot_key,
             'concept_round_id': f.concept_round_id,

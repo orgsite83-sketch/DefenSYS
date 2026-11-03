@@ -50,6 +50,9 @@ def _section_title(semester_id, section, year_level):
 
 def system_titles(team, stage, policy):
     """Informational import slots, bound to this project version and hearing."""
+    from .redefense_direction import independent
+    if policy.get('source') == 'chair_independent' or independent(team):
+        return []
     if policy.get('system_concepts'):
         return policy['system_concepts']
     if source_context_key(team) != context_key(stage):
@@ -66,9 +69,10 @@ def imported_state(team, stage):
         semester_id=team.semester_id, section=team.section, year_level=team.year_level).first()
     if not assignment or not assignment.system_name.strip() or not assignment.project_manager_id:
         raise ValidationError('This section needs an imported system name and an assigned project manager.')
+    from .redefense_direction import independent_team_ids
     teams = list(StudentTeam.objects.filter(semester_id=team.semester_id, section=team.section,
         year_level=team.year_level, level=team.level).select_related('leader', 'adviser', 'semester')
-        .prefetch_related('memberships__student').order_by('pk'))
+        .exclude(pk__in=independent_team_ids()).prefetch_related('memberships__student').order_by('pk'))
     if team.is_pit:
         from defense.scheduler.event_scope import pit_events_for_team
         teams = [t for t in teams if pit_events_for_team(t).filter(pk=stage.pk).exists()]

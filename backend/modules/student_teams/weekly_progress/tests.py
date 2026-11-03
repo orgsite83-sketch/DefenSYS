@@ -130,6 +130,38 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertEqual(state['weeks'][1]['timing'], 'upcoming')
         self.assertEqual(state['weekly_summary']['overdue'], 0)
 
+    def test_concept_endorsement_with_weekly_reports_keeps_readiness_and_status_aligned(self):
+        from repository.deliverables.models import ConceptRound
+        from repository.deliverables.services import stage_payload, endorse_team
+        from repository.deliverables.concepts import clearance_blocker
+        from student_teams.services import is_stage_ready
+
+        self.stage.concept_config = {'enabled': True, 'required_count': 1}
+        self.stage.save(update_fields=['concept_config'])
+        ConceptRound.objects.create(team=self.team, defense_stage=self.stage,
+            project_version=self.team.project_version, number=1, title_workflow_version=1,
+            concepts=[{'key': 'c1', 'title': 'Reviewed project', 'decision': '', 'remarks': ''}])
+        self.review(self.upload(1))
+        self.review(self.upload(2))
+
+        # Accepting every week permits endorsement but never performs it.
+        for _ in range(2):
+            before = stage_payload(self.team, self.stage.label, evaluator=self.adviser)
+            self.assertFalse(before['endorsed'])
+            self.assertFalse(before['can_cancel_endorsement'])
+            self.assertEqual(before['concept_workflow']['status'], 'concept_endorsement_pending')
+            self.assertTrue(before['endorsement_review']['can_review_and_endorse'])
+        endorse_team(self.team, self.stage.label, self.adviser)
+
+        # Re-reading the workspace must agree with the saved endorsement.
+        for _ in range(2):
+            after = stage_payload(self.team, self.stage.label, evaluator=self.adviser)
+            self.assertTrue(after['endorsed'])
+            self.assertTrue(after['can_cancel_endorsement'])
+            self.assertEqual(after['concept_workflow']['status'], 'ready_to_schedule')
+            self.assertEqual(clearance_blocker(self.team, self.stage), '')
+            self.assertTrue(is_stage_ready(self.team, self.stage))
+
     def test_correction_preserves_original_time_and_requires_new_current_version(self):
         first = self.upload()
         original_time = first.report.submitted_at

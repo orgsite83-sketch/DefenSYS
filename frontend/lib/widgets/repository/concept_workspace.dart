@@ -1153,6 +1153,18 @@ class ConceptHistory extends StatelessWidget {
                 'Attempt ${round['round']} · ${'${round['verdict'] ?? ''}'.isEmpty ? 'Scheduled' : defenseProgressLabel('${round['verdict']}')}',
               ),
               children: [
+                if (round['next_attempt_direction'] is Map)
+                  ListTile(
+                    title: Text(
+                      (round['next_attempt_direction'] as Map)['direction'] ==
+                              'independent'
+                          ? 'Next attempt: Three independent concepts'
+                          : 'Next attempt: Revise selected shared module',
+                    ),
+                    subtitle: Text(
+                      'Confirmed by ${(round['next_attempt_direction'] as Map)['decided_by']}',
+                    ),
+                  ),
                 if ('${round['remarks'] ?? ''}'.isNotEmpty)
                   ListTile(title: Text('${round['remarks']}')),
                 for (final c

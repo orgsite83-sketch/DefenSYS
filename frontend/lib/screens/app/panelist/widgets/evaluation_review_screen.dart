@@ -4,7 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../panelist_models.dart';
-import 'evaluation_score_picker.dart';
+import 'evaluation_score_input.dart';
 
 class EvaluationReviewAction {
   const EvaluationReviewAction.submit() : submit = true, studentId = null;

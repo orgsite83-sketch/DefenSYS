@@ -4,7 +4,7 @@ import 'package:defensys/screens/app/panelist/panelist_models.dart';
 import 'package:defensys/screens/app/panelist/grade_sheet_tab.dart';
 import 'package:defensys/screens/app/panelist/assignments_tab.dart';
 import 'package:defensys/widgets/tactile_button.dart';
-import 'package:defensys/screens/app/panelist/widgets/evaluation_score_picker.dart';
+import 'package:defensys/screens/app/panelist/widgets/evaluation_score_input.dart';
 
 import '../helpers/pump_app.dart';
 import '../helpers/capture_preview.dart';
@@ -231,11 +231,12 @@ void main() {
           await tester.tap(find.byKey(const ValueKey('start-team-evaluation')));
           await tester.pumpAndSettle();
           final score = find.descendant(
-            of: find.byType(EvaluationScorePicker),
-            matching: find.byKey(const ValueKey('score-value-8')),
+            of: find.byType(EvaluationScoreInput),
+            matching: find.byType(EditableText),
           );
           await tester.ensureVisible(score);
-          await tester.tap(score);
+          await tester.enterText(score, '8');
+          FocusManager.instance.primaryFocus?.unfocus();
           await tester.pumpAndSettle();
           await _openOutcome(tester);
           expect(_verdictSubmit(tester).onPressed, isNull);

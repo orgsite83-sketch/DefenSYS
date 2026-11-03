@@ -6,6 +6,8 @@ import 'package:defensys/services/admin/external_evaluator_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/defense_board_provider.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
+import 'package:defensys/services/defense/capstone_scheduling_api.dart';
+import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:defensys/widgets/table/defensys_segmented_control.dart';
@@ -47,6 +49,19 @@ class _Scheduler extends DefenseSchedulerNotifier {
     String? status,
     String? successMessage,
   }) async {}
+}
+
+class _CapstoneWorkspace extends CapstoneSchedulingApi {
+  _CapstoneWorkspace(super.client);
+
+  @override
+  Future<Map<String, dynamic>> workspace() async => {
+    'semester_id': 1,
+    'stages': [
+      {'id': 1, 'label': 'Final Defense'},
+    ],
+    'teams': [],
+  };
 }
 
 class _Auth extends AuthNotifier {
@@ -144,32 +159,50 @@ const _pitLead = {
   'pit_lead_year': '1st Year',
 };
 
-Future<void> _pumpPlannerLink(WidgetTester tester, String date, {bool focusSession = true}) async {
+Future<void> _pumpPlannerLink(
+  WidgetTester tester,
+  String date, {
+  bool focusSession = true,
+}) async {
   SharedPreferences.setMockInitialValues({});
   tester.view.physicalSize = const Size(1400, 1100);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   final router = GoRouter(
-    initialLocation: '/admin/defense-board?date=$date${focusSession ? '&session=focus&scope=capstone' : ''}',
-    routes: [GoRoute(path: '/admin/defense-board', builder: (_, __) => const DefenseBoardScreen())],
+    initialLocation:
+        '/admin/defense-board?date=$date${focusSession ? '&session=focus&scope=capstone' : ''}',
+    routes: [
+      GoRoute(
+        path: '/admin/defense-board',
+        builder: (_, __) => const DefenseBoardScreen(),
+      ),
+    ],
   );
   addTearDown(router.dispose);
-  await tester.pumpWidget(ProviderScope(
-    overrides: [
-      authProvider.overrideWith(() => _Auth(_admin)),
-      defenseBoardProvider.overrideWith(() => _Board([
-        _defense(1, days: 1, session: 'focus'),
-        _defense(2, days: 1, session: 'other'),
-        _defense(3, days: 2, session: 'later'),
-      ])),
-      defenseSchedulerProvider.overrideWith(_Scheduler.new),
-      externalEvaluatorProvider.overrideWith(_External.new),
-    ],
-    child: MaterialApp.router(routerConfig: router, theme: AppTheme.lightTheme),
-  ));
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        authProvider.overrideWith(() => _Auth(_admin)),
+        defenseBoardProvider.overrideWith(
+          () => _Board([
+            _defense(1, days: 1, session: 'focus'),
+            _defense(2, days: 1, session: 'other'),
+            _defense(3, days: 2, session: 'later'),
+          ]),
+        ),
+        defenseSchedulerProvider.overrideWith(_Scheduler.new),
+        externalEvaluatorProvider.overrideWith(_External.new),
+      ],
+      child: MaterialApp.router(
+        routerConfig: router,
+        theme: AppTheme.lightTheme,
+      ),
+    ),
+  );
   await tester.pumpAndSettle();
 }
+
 Future<void> _pump(
   WidgetTester tester, {
   required _External external,
@@ -191,6 +224,10 @@ Future<void> _pump(
         authProvider.overrideWith(() => _Auth(user)),
         defenseBoardProvider.overrideWith(() => _Board(schedules ?? [])),
         defenseSchedulerProvider.overrideWith(() => _Scheduler(schedulerState)),
+        capstoneSchedulingApiProvider.overrideWith(
+          (ref) =>
+              _CapstoneWorkspace(ref.read(authenticatedHttpClientProvider)),
+        ),
         externalEvaluatorProvider.overrideWith(() => external),
       ],
       child: RepaintBoundary(
@@ -451,7 +488,9 @@ void main() {
   });
 
   for (final width in [1200.0, 1920.0]) {
-    testWidgets('PIT lead has no program switcher at width $width', (tester) async {
+    testWidgets('PIT lead has no program switcher at width $width', (
+      tester,
+    ) async {
       await _pump(
         tester,
         external: _External(),
@@ -473,16 +512,8 @@ void main() {
       tester,
       external: _External(),
       schedules: [
-        {
-          ..._defense(31),
-          'start_time': '16:00:00',
-          'slot_duration': 60,
-        },
-        {
-          ..._defense(32),
-          'start_time': '09:15:00',
-          'slot_duration': 45,
-        },
+        {..._defense(31), 'start_time': '16:00:00', 'slot_duration': 60},
+        {..._defense(32), 'start_time': '09:15:00', 'slot_duration': 45},
       ],
     );
     expect(find.text('16:00–17:00'), findsOneWidget);
@@ -490,20 +521,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('planner session link focuses one session and can show all schedules', (tester) async {
-    final day = DateTime.now().add(const Duration(days: 1));
-    final date = day.toIso8601String().split('T').first;
-    await _pumpPlannerLink(tester, date);
-    expect(find.text('Team 1'), findsOneWidget);
-    expect(find.text('Team 2'), findsNothing);
-    expect(find.textContaining('Session scheduled for'), findsOneWidget);
-    await tester.tap(find.text('Show all schedules'));
-    await tester.pumpAndSettle();
-    expect(find.text('Team 2'), findsOneWidget);
-    expect(find.text('Team 3'), findsOneWidget);
-  });
+  testWidgets(
+    'planner session link focuses one session and can show all schedules',
+    (tester) async {
+      final day = DateTime.now().add(const Duration(days: 1));
+      final date = day.toIso8601String().split('T').first;
+      await _pumpPlannerLink(tester, date);
+      expect(find.text('Team 1'), findsOneWidget);
+      expect(find.text('Team 2'), findsNothing);
+      expect(find.textContaining('Session scheduled for'), findsOneWidget);
+      await tester.tap(find.text('Show all schedules'));
+      await tester.pumpAndSettle();
+      expect(find.text('Team 2'), findsOneWidget);
+      expect(find.text('Team 3'), findsOneWidget);
+    },
+  );
 
-  testWidgets('planner date link includes every session on that day', (tester) async {
+  testWidgets('planner date link includes every session on that day', (
+    tester,
+  ) async {
     final day = DateTime.now().add(const Duration(days: 1));
     final date = day.toIso8601String().split('T').first;
     await _pumpPlannerLink(tester, date, focusSession: false);
@@ -513,7 +549,9 @@ void main() {
     expect(find.textContaining('Schedule for'), findsOneWidget);
   });
 
-  testWidgets('schedule actions are anchored to the upper right', (tester) async {
+  testWidgets('schedule actions are anchored to the upper right', (
+    tester,
+  ) async {
     await _pump(tester, external: _External(), schedules: [], width: 1400);
 
     final action = find.ancestor(
@@ -637,7 +675,9 @@ void main() {
         ],
       ),
       user: {'id': 2, 'role': 'faculty', 'is_pit_lead': true},
-      schedules: [{..._defense(1, scope: 'pit', external: true), 'can_manage': true}],
+      schedules: [
+        {..._defense(1, scope: 'pit', external: true), 'can_manage': true},
+      ],
     );
     await _menu(tester, '1', scope: 'pit');
     await tester.tap(find.text('Evaluator access'));
@@ -660,25 +700,44 @@ void main() {
   });
 
   for (final permission in [false, null]) {
-    testWidgets('PIT lead assignment reads grant no management ($permission)', (tester) async {
+    testWidgets('PIT lead assignment reads grant no management ($permission)', (
+      tester,
+    ) async {
       await _pump(
         tester,
         external: _External(),
-        user: {'id': 2, 'role': 'faculty', 'is_pit_lead': true, 'pit_lead_year': '3rd Year'},
-        schedules: [{
-          ..._defense(1, scope: 'pit', external: true),
-          if (permission != null) 'can_manage': permission,
-          'section': 'BSIT-2A',
-        }],
+        user: {
+          'id': 2,
+          'role': 'faculty',
+          'is_pit_lead': true,
+          'pit_lead_year': '3rd Year',
+        },
+        schedules: [
+          {
+            ..._defense(1, scope: 'pit', external: true),
+            if (permission != null) 'can_manage': permission,
+            'section': 'BSIT-2A',
+          },
+        ],
       );
-      expect(find.byKey(const ValueKey('session-actions-1|pit|1')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('session-actions-1|pit|1')),
+        findsNothing,
+      );
       expect(find.text('Stage actions'), findsNothing);
       final menu = find.byKey(const ValueKey('defense-actions-1'));
       await tester.ensureVisible(menu);
-      await tester.tap(find.descendant(of: menu, matching: find.byIcon(LucideIcons.ellipsis)));
+      await tester.tap(
+        find.descendant(of: menu, matching: find.byIcon(LucideIcons.ellipsis)),
+      );
       await tester.pumpAndSettle();
       expect(find.text('View details'), findsOneWidget);
-      for (final action in ['Edit panel', 'Change room', 'Reschedule defense', 'View change history']) {
+      for (final action in [
+        'Edit panel',
+        'Change room',
+        'Reschedule defense',
+        'View change history',
+      ]) {
         expect(find.text(action), findsNothing);
       }
       expect(tester.takeException(), isNull);

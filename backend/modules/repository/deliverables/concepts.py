@@ -212,6 +212,14 @@ def clearance_blocker(team, stage):
     for d in get_deliverable_definitions_for_team(team, stage.label):
         if d.get('source') == 'defense_minutes' or not d['required'] or d['type'] != 'pre':
             continue
+        if d.get('source') == 'weekly_reports':
+            # Weekly evidence lives in its collection, without an ordinary
+            # DeliverableSubmission. Use the same gate as endorsement.
+            from student_teams.weekly_progress.services import collection_state
+            weekly = collection_state(team, d)
+            if not weekly['completed']:
+                return weekly['weekly_blocker']
+            continue
         if not completeness(submitted.get(d['id']), d, accepted=True, stage=stage):
             return 'Complete the required concept documents before scheduling.'
     return ''
@@ -577,6 +585,14 @@ def payload(team, stage, *, history=True, actor=None):
     rounds = list(ConceptRound.objects.filter(team=team, **context_fields(stage),
         project_version=team.project_version).order_by('-number', '-pk'))
     current = rounds[0] if rounds else None
+    from repository.section_concepts.models import SharedModuleRedefenseDecision
+    directions = {d.source_round_id: {
+        'direction': d.direction,
+        'decided_by': d.decided_by.get_full_name() or d.decided_by.username,
+        'decided_at': d.decided_at.isoformat(),
+        'saved_concepts': d.preparation_snapshot.get('concepts', []),
+    } for d in SharedModuleRedefenseDecision.objects.filter(
+        source_round_id__in=[r.pk for r in rounds]).select_related('decided_by')} if history else {}
     policy = resolve_policy(team, stage, current=current)
     concepts = current.concepts if current else initial_concepts(policy)
     from repository import title_workflow
@@ -674,6 +690,7 @@ def payload(team, stage, *, history=True, actor=None):
             'ready_to_schedule_redefense': f'The {"PIT Lead" if team.is_pit else "administrator"} can schedule the next defense attempt.',
             'scheduled': 'Prepare for the scheduled concept hearing.'}.get(status, 'Review the recorded outcome and stage requirements.')),
         'history': [{'round': r.number, 'schedule_id': r.schedule_id, 'verdict': r.verdict, 'policy': r.policy_snapshot,
+            'next_attempt_direction': directions.get(r.pk),
             'decided_at': r.decided_at.isoformat() if r.decided_at else None,
             'decided_by_name': (r.decided_by.get_full_name() or r.decided_by.username) if r.decided_by else '',
             'remarks': r.remarks, 'concepts': r.concepts, 'documents': r.documents_snapshot,

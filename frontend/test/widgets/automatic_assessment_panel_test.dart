@@ -69,8 +69,250 @@ Map<String, dynamic> _grade({
   },
 };
 
+Map<String, dynamic> _sharedRepeat({
+  bool recorded = false,
+  bool canDecide = true,
+}) {
+  final grade =
+      jsonDecode(jsonEncode(_grade(verdict: 'for_redefense')))
+          as Map<String, dynamic>;
+  final workflow = grade['workflow'] as Map;
+  workflow['redefense_direction'] = {
+    'source_round_id': 21,
+    'next_round_id': 22,
+    'direction': recorded ? 'independent' : '',
+    'decided_by': recorded ? 'Chair Rivera' : '',
+    'can_decide': canDecide && !recorded,
+    'review_token': 'preparation-token',
+    'impact': {
+      'team': 'Team ThreadAtlas',
+      'shared_system': 'HABI: Artisan Heritage & Craft Exchange Platform',
+      'module': 'Inventory Management',
+      'next_attempt': 2,
+      'saved_titles': 1,
+      'saved_files': 1,
+      'remaining_teams': ['Team Weave'],
+    },
+  };
+  workflow['concept_workflow'] = <String, dynamic>{
+    ...workflow['concept_workflow'] as Map,
+    'selection_mode': 'shared_module',
+    'section_selected_key': 'c2',
+  };
+  return grade;
+}
+
 void main() {
   setUpAll(() => loadPreviewFonts(force: true));
+
+  for (final width in [320.0, 390.0, 768.0, 1100.0]) {
+    for (final dark in [false, true]) {
+      testWidgets('shared next-attempt choices fit $width dark=$dark', (
+        tester,
+      ) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await pumpDefensysWidget(
+          tester,
+          SingleChildScrollView(
+            child: AutomaticAssessmentPanel(
+              grade: _sharedRepeat(),
+              isChair: true,
+            ),
+          ),
+          theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+        );
+        await tester.ensureVisible(find.text('Confirm next attempt'));
+        expect(find.byType(ShadRadio<String>), findsNWidgets(2));
+        expect(find.text('Improve the selected shared module'), findsOneWidget);
+        expect(find.text('Propose three independent concepts'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byType(AutomaticAssessmentPanel),
+          'shared-next-attempt-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+      });
+    }
+  }
+
+  testWidgets(
+    'chair confirms direction separately and keeps unsaved recommendations',
+    (tester) async {
+      registerFallbackValue(Uri.parse('http://localhost'));
+      final client = _HttpClient();
+      Map<String, dynamic>? sent;
+      when(() => client.post(any(), body: any(named: 'body'))).thenAnswer((
+        invocation,
+      ) async {
+        sent =
+            jsonDecode(invocation.namedArguments[#body] as String)
+                as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({'grade': _sharedRepeat(recorded: true)}),
+          200,
+        );
+      });
+      await pumpDefensysWidget(
+        tester,
+        SingleChildScrollView(
+          child: AutomaticAssessmentPanel(
+            grade: _sharedRepeat(),
+            isChair: true,
+          ),
+        ),
+        overrides: [authenticatedHttpClientProvider.overrideWithValue(client)],
+      );
+      await tester.enterText(
+        find.byType(ShadInput),
+        'Unsaved feedback for the team',
+      );
+      await tester.ensureVisible(
+        find.text('Propose three independent concepts'),
+      );
+      await tester.tap(find.text('Propose three independent concepts'));
+      await tester.pump();
+      await tester.ensureVisible(find.text('Confirm next attempt'));
+      await tester.tap(find.text('Confirm next attempt'));
+      await tester.pumpAndSettle();
+      expect(sent, isNull);
+      expect(
+        find.textContaining('Team ThreadAtlas · Re-defense required'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Remaining shared teams: Team Weave'),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.widgetWithText(ElevatedButton, 'Confirm next attempt'),
+      );
+      await tester.pumpAndSettle();
+      expect(sent, {
+        'action': 'redefense_direction',
+        'direction': 'independent',
+        'source_round_id': 21,
+        'review_token': 'preparation-token',
+      });
+      expect(find.text('Confirmed by Chair Rivera'), findsOneWidget);
+      expect(find.text('Confirm next attempt'), findsNothing);
+      expect(
+        tester.widget<ShadInput>(find.byType(ShadInput)).controller?.text,
+        'Unsaved feedback for the team',
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('confirmation uses the preparation token the chair reviewed', (
+    tester,
+  ) async {
+    registerFallbackValue(Uri.parse('http://localhost'));
+    final client = _HttpClient();
+    Map<String, dynamic>? sent;
+    when(() => client.post(any(), body: any(named: 'body'))).thenAnswer((
+      invocation,
+    ) async {
+      sent =
+          jsonDecode(invocation.namedArguments[#body] as String)
+              as Map<String, dynamic>;
+      return http.Response(
+        '{"detail":"Preparation changed. Refresh and review again."}',
+        400,
+      );
+    });
+    final current = ValueNotifier(_sharedRepeat());
+    addTearDown(current.dispose);
+    await pumpDefensysWidget(
+      tester,
+      ValueListenableBuilder<Map<String, dynamic>>(
+        valueListenable: current,
+        builder: (context, grade, _) => SingleChildScrollView(
+          child: AutomaticAssessmentPanel(grade: grade, isChair: true),
+        ),
+      ),
+      overrides: [authenticatedHttpClientProvider.overrideWithValue(client)],
+    );
+    await tester.ensureVisible(find.text('Confirm next attempt'));
+    await tester.tap(find.text('Confirm next attempt'));
+    await tester.pumpAndSettle();
+    final changed = _sharedRepeat();
+    changed['workflow']['redefense_direction']['review_token'] =
+        'changed-preparation';
+    current.value = changed;
+    await tester.pump();
+    await tester.tap(
+      find.widgetWithText(ElevatedButton, 'Confirm next attempt'),
+    );
+    await tester.pumpAndSettle();
+    expect(sent?['review_token'], 'preparation-token');
+    expect(find.text('Confirmed by Chair Rivera'), findsNothing);
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shared next-attempt choices wrap with enlarged text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpDefensysWidget(
+      tester,
+      Builder(
+        builder: (context) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(1.5)),
+          child: SingleChildScrollView(
+            child: AutomaticAssessmentPanel(
+              grade: _sharedRepeat(),
+              isChair: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.ensureVisible(find.text('Confirm next attempt'));
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Save recommendations'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('nonchair and ineligible attempts cannot confirm a route', (
+    tester,
+  ) async {
+    for (final chair in [false, true]) {
+      await pumpDefensysWidget(
+        tester,
+        SingleChildScrollView(
+          child: AutomaticAssessmentPanel(
+            grade: _sharedRepeat(canDecide: false),
+            isChair: chair,
+          ),
+        ),
+      );
+      if (chair) {
+        final button = tester.widget<ShadButton>(
+          find.ancestor(
+            of: find.text('Confirm next attempt'),
+            matching: find.byType(ShadButton),
+          ),
+        );
+        expect(button.onPressed, isNull);
+      } else {
+        expect(find.text('Confirm next attempt'), findsNothing);
+        expect(find.byType(ShadRadio<String>), findsNothing);
+      }
+    }
+  });
 
   for (final width in [320.0, 390.0, 768.0, 1100.0]) {
     for (final dark in [false, true]) {

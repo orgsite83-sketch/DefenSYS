@@ -49,6 +49,7 @@ class TeamData {
   final bool? serverGradingAvailable;
   final String gradingUnavailableReason;
   final String evaluationContext;
+  final String draftContext;
   final bool? serverCanIssueVerdict;
   final String verdictUnavailableReason;
   final String scheduleStatus;
@@ -110,6 +111,7 @@ class TeamData {
     this.serverGradingAvailable,
     this.gradingUnavailableReason = '',
     this.evaluationContext = '',
+    this.draftContext = '',
     this.serverCanIssueVerdict,
     this.verdictUnavailableReason = '',
     this.scheduleStatus = 'scheduled',
@@ -324,6 +326,28 @@ class TeamData {
       !isLockedByDate &&
       scheduleStatus == 'scheduled' &&
       (serverCanIssueVerdict ?? isPosted);
+
+  /// A selection narrows final work without changing the underlying rubric.
+  void retainDraftFrom(TeamData? previous) {
+    final signature = draftContext.isEmpty ? evaluationContext : draftContext;
+    final previousSignature = previous == null
+        ? null
+        : previous.draftContext.isEmpty
+        ? previous.evaluationContext
+        : previous.draftContext;
+    if (!isPosted &&
+        previous != null &&
+        previous.scheduleId == scheduleId &&
+        previous.teamId == teamId &&
+        signature == previousSignature &&
+        (previous.hasUnsavedChanges ||
+            (previous.draftSavedAt != null && draftSavedAt == null))) {
+      draftSubmissions = previous.draftSubmissions;
+      draftSavedAt = previous.draftSavedAt;
+      hasUnsavedChanges = previous.hasUnsavedChanges;
+    }
+  }
+
   bool get hasDraft => draftSubmissions.any(
     (s) =>
         (s['criteria_scores'] as List? ?? []).isNotEmpty ||

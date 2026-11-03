@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:defensys/screens/app/panelist/assignments_tab.dart';
 import 'package:defensys/screens/app/panelist/grade_sheet_tab.dart';
 import 'package:defensys/screens/app/panelist/panelist_models.dart';
-import 'package:defensys/screens/app/panelist/widgets/evaluation_score_picker.dart';
+import 'package:defensys/screens/app/panelist/widgets/evaluation_score_input.dart';
 import 'package:defensys/screens/app/panelist/widgets/team_grade_chooser.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
@@ -43,6 +43,8 @@ TeamData _team({
   List<Map<String, dynamic>> drafts = const [],
   List<Map<String, dynamic>> materials = const [],
   List<Map<String, dynamic>> concepts = const [],
+  String? evaluationContext,
+  String draftContext = '',
 }) => TeamData(
   name: longNames
       ? 'Team Smart Agriculture and Crop Monitoring'
@@ -83,7 +85,8 @@ TeamData _team({
   isPosted: false,
   isChair: true,
   serverCanIssueVerdict: canIssue,
-  evaluationContext: 'context-$id-$target',
+  evaluationContext: evaluationContext ?? 'context-$id-$target',
+  draftContext: draftContext,
   draftSubmissions: drafts,
   defenseMaterials: materials,
   assessmentConcepts: concepts,
@@ -105,25 +108,26 @@ TeamData _team({
   },
 );
 Finder _picker(String criterion) => find.byWidgetPredicate(
-  (w) => w is EvaluationScorePicker && w.label == criterion,
+  (w) => w is EvaluationScoreInput && w.label == criterion,
 );
 Finder _targetTab(String label) => find.descendant(
   of: find.byKey(const ValueKey('evaluation-target-tabs')),
   matching: find.text(label),
 );
 double? _value(WidgetTester tester, String criterion) =>
-    tester.widget<EvaluationScorePicker>(_picker(criterion)).value;
+    tester.widget<EvaluationScoreInput>(_picker(criterion)).value;
 Future<void> _tapScore(
   WidgetTester tester,
   String criterion,
   String value,
 ) async {
-  final button = find.descendant(
+  final field = find.descendant(
     of: _picker(criterion),
-    matching: find.byKey(ValueKey('score-value-$value')),
+    matching: find.byType(EditableText),
   );
-  await tester.ensureVisible(button);
-  await tester.tap(button);
+  await tester.ensureVisible(field);
+  await tester.enterText(field, value);
+  FocusManager.instance.primaryFocus?.unfocus();
   await tester.pumpAndSettle();
 }
 
@@ -194,6 +198,40 @@ Future<_HttpClient> _showSheet(
 }
 
 void main() {
+  test(
+    'scope refresh retains entered alternatives and zero scores; rubric changes do not reuse drafts',
+    () {
+      final previous = _team(
+        evaluationContext: 'three-required',
+        draftContext: 'same-rubric',
+        drafts: [
+          {
+            'concept_key': 'c1',
+            'criteria_scores': [
+              {'criterion_id': 1, 'score': 0},
+            ],
+          },
+        ],
+      );
+      previous.hasUnsavedChanges = true;
+      final selected = _team(
+        evaluationContext: 'selected-required',
+        draftContext: 'same-rubric',
+      );
+      selected.retainDraftFrom(previous);
+      expect(
+        selected.draftSubmissions.single['criteria_scores'].single['score'],
+        0,
+      );
+      expect(selected.hasUnsavedChanges, isTrue);
+      final changedRubric = _team(
+        evaluationContext: 'selected-required',
+        draftContext: 'changed-rubric',
+      );
+      changedRubric.retainDraftFrom(previous);
+      expect(changedRubric.draftSubmissions, isEmpty);
+    },
+  );
   testWidgets('configured re-defense confirmation requires fresh endorsement', (
     tester,
   ) async {
@@ -288,6 +326,64 @@ void main() {
     registerFallbackValue(Uri.parse('https://example.test'));
     await loadPreviewFonts();
   });
+  testWidgets(
+    'selected module review submits only required work while keeping alternative drafts',
+    (tester) async {
+      final team = _team(
+        concepts: [
+          {'key': 'c2', 'title': 'Selected module'},
+        ],
+        drafts: [
+          for (final key in ['c1', 'c2', 'c3'])
+            {
+              'concept_key': key,
+              'student_id': null,
+              'criteria_scores': [
+                {'criterion_id': 1, 'score': key == 'c2' ? 8 : 6},
+              ],
+              'remarks': '',
+            },
+        ],
+      );
+      final client = await _showSheet(tester, [team]);
+      Map<String, dynamic>? submitted;
+      when(() => client.post(any(), body: any(named: 'body'))).thenAnswer((
+        invocation,
+      ) async {
+        final uri = invocation.positionalArguments.first as Uri;
+        if (uri.path.endsWith('submit-grades/')) {
+          submitted =
+              jsonDecode(invocation.namedArguments[#body] as String)
+                  as Map<String, dynamic>;
+          return http.Response('{"success":true}', 201);
+        }
+        return _saved();
+      });
+      expect(team.evaluationProgress.required, 1);
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('review-evaluation')),
+      );
+      expect(find.text('Selected module'), findsOneWidget);
+      expect(submitted, isNull);
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('submit-reviewed-grades')),
+      );
+      expect(
+        (submitted!['submissions'] as List).map((row) => row['concept_key']),
+        ['c2'],
+      );
+      expect(team.draftSubmissions.map((row) => row['concept_key']).toSet(), {
+        'c1',
+        'c3',
+      });
+      expect(team.isPosted, isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    },
+  );
   test(
     'Unscored and intentional zero remain distinct; availability uses the day',
     () {
@@ -314,7 +410,7 @@ void main() {
     'Opening a grade sheet requires identity verification before scoring',
     (tester) async {
       await _showSheet(tester, [_team()], start: false);
-      expect(find.byType(EvaluationScorePicker), findsNothing);
+      expect(find.byType(EvaluationScoreInput), findsNothing);
       expect(find.text('Presenting members'), findsOneWidget);
       await _tapVisible(
         tester,
@@ -331,7 +427,7 @@ void main() {
         _team(date: TeamData.manilaToday.add(const Duration(days: 1))),
       ]);
       expect(find.text('Upcoming defense'), findsOneWidget);
-      expect(find.byType(EvaluationScorePicker), findsNothing);
+      expect(find.byType(EvaluationScoreInput), findsNothing);
       expect(find.text('Submit Verdict'), findsNothing);
       await _tapVisible(tester, find.text('Rubric preview'));
       expect(find.text('Clarity'), findsOneWidget);
@@ -363,7 +459,18 @@ void main() {
       await tester.pumpAndSettle();
       await _tapScore(tester, 'Clarity', '0');
       expect(find.text('Your panel score 0.0%'), findsOneWidget);
-      expect(find.text('Score entered'), findsOneWidget);
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(
+                of: _picker('Clarity'),
+                matching: find.byType(EditableText),
+              ),
+            )
+            .controller
+            .text,
+        '0',
+      );
       expect(team.draftSubmissions.single['criteria_scores'], [
         {'criterion_id': 1, 'score': 0.0},
       ]);
@@ -695,7 +802,7 @@ void main() {
       expect(submitBody['submissions'][0]['criteria_scores'][0]['score'], 9);
       expect(team.isPosted, isTrue);
       expect(team.evaluationProgress.complete, isTrue);
-      expect(find.byType(EvaluationScorePicker), findsNothing);
+      expect(find.byType(EvaluationScoreInput), findsNothing);
       expect(find.textContaining('Submitted · Locked'), findsNothing);
       expect(find.textContaining('Submitted'), findsWidgets);
       await tester.pump(const Duration(seconds: 4));
@@ -909,6 +1016,114 @@ void main() {
       );
     },
   );
+  testWidgets(
+    'typed decimals autosave and review retains the score; invalid text blocks review and saving',
+    (tester) async {
+      final team = _team();
+      (team.panelRubric!['criteria'] as List).single['max_score'] = 100;
+      final sheetKey = GlobalKey<GradeSheetTabState>();
+      final client = await _showSheet(tester, [team], sheetKey: sheetKey);
+      await _tapScore(tester, 'Clarity', '87.5');
+      await tester.pump(const Duration(milliseconds: 850));
+      await tester.pumpAndSettle();
+      final body =
+          json.decode(
+                verify(
+                      () => client.post(any(), body: captureAny(named: 'body')),
+                    ).captured.single
+                    as String,
+              )
+              as Map;
+      expect(body['submissions'][0]['criteria_scores'][0]['score'], 87.5);
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('review-evaluation')),
+      );
+      expect(find.text('87.5 / 100'), findsOneWidget);
+      await _tapVisible(tester, find.byKey(const ValueKey('review-edit-team')));
+      expect(_value(tester, 'Clarity'), 87.5);
+      final field = find.descendant(
+        of: _picker('Clarity'),
+        matching: find.byType(EditableText),
+      );
+      await _tapScore(tester, 'Clarity', '101');
+      await tester.pump(const Duration(milliseconds: 850));
+      await tester.pumpAndSettle();
+      expect(_value(tester, 'Clarity'), isNull);
+      expect(tester.widget<EditableText>(field).controller.text, '101');
+      expect(find.text('Fix invalid scores'), findsOneWidget);
+      expect(await sheetKey.currentState!.savePendingChanges(), isFalse);
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('review-evaluation')),
+      );
+      expect(
+        find.byKey(const ValueKey('submit-reviewed-grades')),
+        findsNothing,
+      );
+      await _tapVisible(tester, find.text('Change team'));
+      expect(
+        find.byKey(const ValueKey('confirm-team-selection')),
+        findsNothing,
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('more-grading-actions')),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('save-evaluation-draft')),
+      );
+      expect(tester.widget<EditableText>(field).controller.text, '101');
+      verifyNever(() => client.post(any(), body: any(named: 'body')));
+      await _tapScore(tester, 'Clarity', '0');
+      expect(await sheetKey.currentState!.savePendingChanges(), isTrue);
+      await tester.pumpAndSettle();
+      expect(team.evaluationProgress.complete, isTrue);
+      expect(_value(tester, 'Clarity'), 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('invalid scores stay visible when changing evaluation target', (
+    tester,
+  ) async {
+    final team = _team(target: 'both');
+    await _showSheet(tester, [team]);
+    await _tapScore(tester, 'Clarity', '11');
+    await _tapVisible(tester, _targetTab('Individuals'));
+    expect(_picker('Clarity'), findsOneWidget);
+    expect(_picker('Contribution'), findsNothing);
+    expect(find.text('Enter a score from 0 to 10.'), findsOneWidget);
+    await _tapScore(tester, 'Clarity', '8.25');
+    await _tapVisible(tester, _targetTab('Individuals'));
+    expect(_picker('Contribution'), findsOneWidget);
+    await _tapVisible(tester, _targetTab('Team'));
+    expect(_value(tester, 'Clarity'), 8.25);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('focused score and footer remain above the phone keyboard', (
+    tester,
+  ) async {
+    await _showSheet(tester, [_team()], width: 390);
+    addTearDown(tester.view.resetViewInsets);
+    final field = find.descendant(
+      of: _picker('Clarity'),
+      matching: find.byType(EditableText),
+    );
+    await tester.ensureVisible(field);
+    await tester.tap(field);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(field).bottom, lessThanOrEqualTo(544));
+    expect(
+      tester.getRect(find.byKey(const ValueKey('evaluation-footer'))).bottom,
+      lessThanOrEqualTo(544),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   for (final width in [320.0, 390.0, 800.0]) {
     testWidgets('Grading and team preview fit at $width', (tester) async {
       final team = _team(target: 'both');

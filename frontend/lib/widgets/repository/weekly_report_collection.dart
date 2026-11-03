@@ -846,9 +846,22 @@ class _WeeklyReportCollectionState
       fontFamily: DefensysTokens.fontFamilyInter,
       color: DefensysTokens.textSecondaryOf(context),
     );
-    String coverage(dynamic raw) {
-      final parsed = DateTime.tryParse('$raw');
-      return parsed == null ? '$raw' : DateFormat('MMM d, y').format(parsed);
+    String coverage(Map week) {
+      final start = DateTime.tryParse('${week['starts_on']}');
+      final end = DateTime.tryParse('${week['ends_on']}');
+      if (start == null || end == null) {
+        return [
+          week['starts_on'],
+          week['ends_on'],
+        ].where((value) => value != null && '$value'.isNotEmpty).join(' – ');
+      }
+      if (start.year != end.year) {
+        return '${DateFormat('MMM d, y').format(start)} – ${DateFormat('MMM d, y').format(end)}';
+      }
+      final last = DateFormat(
+        start.month == end.month ? 'd, y' : 'MMM d, y',
+      ).format(end);
+      return '${DateFormat('MMM d').format(start)}–$last';
     }
 
     String date(dynamic raw) {
@@ -858,6 +871,30 @@ class _WeeklyReportCollectionState
           : DateFormat(
               'MMM d, yyyy · h:mm a',
             ).format(parsed.toUtc().add(const Duration(hours: 8)));
+    }
+
+    String submissionSummary(Map week) {
+      final file = week['file'] as Map;
+      final revision = (file['revision'] as num?)?.toInt() ?? 1;
+      final uploaded = date(file['uploaded_at']);
+      return [
+        if (revision > 1) 'Version $revision',
+        if (uploaded.isNotEmpty)
+          '${revision > 1 ? 'Updated' : 'Submitted'} $uploaded',
+        if (uploaded.isEmpty && revision == 1) 'Submitted',
+      ].join(' · ');
+    }
+
+    String submissionDetails(Map week) {
+      final file = week['file'] as Map;
+      final first = date(week['first_submitted_at']);
+      final uploaded = date(file['uploaded_at']);
+      return [
+        if (first.isNotEmpty) 'First submitted $first',
+        if (uploaded.isNotEmpty)
+          'Version ${file['revision'] ?? 1} uploaded $uploaded',
+        'Times in Asia/Manila',
+      ].join('\n');
     }
 
     return DefensysShadcnScope(
@@ -983,7 +1020,7 @@ class _WeeklyReportCollectionState
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${coverage(week['starts_on'])} – ${coverage(week['ends_on'])}\nDue ${date(week['due_at'])} · Asia/Manila',
+                    '${coverage(week)}\nDue ${date(week['due_at'])}',
                     style: caption,
                   ),
                   if (week['file'] is Map) ...[
@@ -1005,9 +1042,9 @@ class _WeeklyReportCollectionState
                       revisionEnabled: !busy,
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      'First submitted ${date(week['first_submitted_at'])} · Version ${week['file']['revision']} uploaded ${date(week['file']['uploaded_at'])}',
-                      style: caption,
+                    Tooltip(
+                      message: submissionDetails(week),
+                      child: Text(submissionSummary(week), style: caption),
                     ),
                     if ('${week['file']['feedback'] ?? ''}'.isNotEmpty)
                       Padding(

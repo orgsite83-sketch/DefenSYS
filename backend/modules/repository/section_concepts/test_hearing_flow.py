@@ -64,6 +64,34 @@ class SharedHearingFlowTests(APITestCase):
             self.assertEqual(concepts.latest_round(team, self.event).schedule.grade_records.get().project_title_snapshot, 'Module c2')
             self.assertFalse(archive_unlocked(team, self.event.label))
 
+    def test_unassembled_shared_choice_accepts_separate_sessions_with_one_common_chair(self):
+        from defense.scheduler.grading_workspace import payload
+        schedules = self.hearing(evaluated=False)
+        hearing = services.latest(self.project)
+        hearing.schedules.clear()
+        # Session membership describes scheduling, not the scope of the
+        # shared-system decision. Both same-session and split-session reads
+        # must expose the action without writing hearing links.
+        from uuid import uuid4
+        for session_id in (schedules[0].session_id, uuid4()):
+            schedules[1].session_id = session_id
+            schedules[1].save(update_fields=['session_id'])
+            with self.subTest(session_id=session_id):
+                for schedule in schedules:
+                    current = concepts.latest_round(schedule.team, self.event)
+                    value = payload(schedule, current, self.panelist, [])['shared_review']
+                    self.assertTrue(value['can_decide'], value['decision_unavailable_reason'])
+                self.assertEqual(services.selection_blocker(hearing), '')
+                self.assertFalse(hearing.schedules.exists())
+        response = self.decision()
+        self.assertEqual(response.status_code, 200, response.data)
+        hearing.refresh_from_db()
+        self.assertEqual(hearing.selected_key, 'c2')
+        self.assertEqual(set(hearing.schedules.values_list('pk', flat=True)),
+                         {schedule.pk for schedule in schedules})
+        self.assertEqual(concepts.latest_round(self.team, self.event).verdict, '')
+        self.assertEqual(concepts.latest_round(self.module_team, self.event).verdict, '')
+
     def test_late_selection_finalizes_only_explicit_already_graded_team_outcomes(self):
         self.hearing()
         response = self.decision(outcomes=[self.outcome(self.team, 'approved_with_revisions', 'Keep this correction.')])

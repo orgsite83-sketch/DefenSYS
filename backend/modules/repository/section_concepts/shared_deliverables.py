@@ -45,6 +45,9 @@ def resolve(team, context):
     historical = bool(getattr(team, '_recorded_term', None)) or bool(
         getattr(team, '_assessment_semester_id', None) and
         StudentTeam.objects.filter(pk=team.pk).exclude(semester_id=team.semester_id).exists())
+    from .redefense_direction import independent, independent_team_ids
+    if not historical and independent(team):
+        return None
     from . import continuation
     continued_source = None
     if not historical and not pit:
@@ -106,6 +109,8 @@ def resolve(team, context):
         return None
     teams = StudentTeam.objects.filter(semester_id=team.semester_id, section=team.section,
         year_level=team.year_level)
+    if not historical:
+        teams = teams.exclude(pk__in=independent_team_ids())
     teams = teams.filter(level__icontains='PIT') if pit else teams.exclude(level__icontains='PIT')
     if pit:
         from student_teams.pit_rosters import effective_ids
@@ -249,11 +254,20 @@ def can_read_file(actor, row):
 def can_read_legacy_file(actor, paper):
     project = paper.concept.round.project
     if not services.can_read(actor, project):
-        return False
+        # A departed independent team retains its earlier hearing's evidence,
+        # without gaining access to later shared work or the live workspace.
+        from .models import SharedModuleRedefenseDecision
+        profile = for_round(paper.concept.round, historical=True)
+        if not profile or getattr(actor, 'is_guest_panelist', False):
+            return False
+        teams = [team.pk for team in profile['teams'] if team_member(actor, team)]
+        return SharedModuleRedefenseDecision.objects.filter(direction='independent',
+            source_round__section_round=paper.concept.round, source_round__team_id__in=teams,
+            decided_at__gte=paper.uploaded_at).exists()
     guest = getattr(actor, 'is_guest_panelist', False)
     if not guest and (services.admin(actor) or services.can_manage(actor, project) or services.is_reviewer(actor, project) or actor.pk == project.project_manager_id):
         return True
-    profile = for_round(paper.concept.round)
+    profile = for_round(paper.concept.round, historical=bool(paper.concept.round.verdict))
     if profile and member_access(actor, profile):
         return True
     return bool(profile and paper.purpose == 'proposal' and any(
