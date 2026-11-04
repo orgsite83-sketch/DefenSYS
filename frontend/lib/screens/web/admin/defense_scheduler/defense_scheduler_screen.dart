@@ -650,6 +650,14 @@ class _DefenseSchedulerScreenState
     final currentStep = _currentStep;
 
     ref.listen(defenseSchedulerProvider, (previous, next) {
+      // Returning from event setup refreshes this retained scheduler branch.
+      if (_scope == 'pit' &&
+          previous != null &&
+          !next.isLoading &&
+          next.error == null &&
+          previous.pitEvents != next.pitEvents) {
+        _prefillPitEventConfig();
+      }
       final error = next.error;
       if (error != null && error.isNotEmpty && error != previous?.error) {
         showErrorToast(context, error);

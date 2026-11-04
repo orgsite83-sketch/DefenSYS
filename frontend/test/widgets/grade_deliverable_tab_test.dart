@@ -4,6 +4,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/grade_deliverable_modal.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
+import 'package:defensys/services/auth_provider.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
 
 import '../helpers/pump_app.dart';
 import '../helpers/capture_preview.dart';
@@ -90,6 +92,65 @@ void main() {
     expect(find.text('Grading is not open yet'), findsOneWidget);
     expect(find.textContaining('Overall assessment'), findsNothing);
     expect(find.text('Awaiting all scores'), findsNothing);
+  });
+
+  testWidgets('PIT grades are informative and exports keep the exact event', (
+    tester,
+  ) async {
+    final notifier = _MockAdviserGradingNotifier([
+      {
+        ...mockGradeRecord,
+        'scope': 'pit',
+        'semester_id': 7,
+        'panel_score': 85.0,
+      },
+    ]);
+    final selectedRubrics = <String, Map<String, dynamic>?>{};
+    await pumpDefensysWidget(
+      tester,
+      SingleChildScrollView(
+        child: GradeDeliverableTab(
+          team: mockTeam,
+          selectedStage: 'Concept Proposal',
+          programScope: 'pit',
+          isAdviser: true,
+          teamCriteriaScoreCtrls: {},
+          teamStudentCriteriaScoreCtrls: {},
+          teamManualScoreCtrls: {},
+          teamSelectedRubrics: selectedRubrics,
+        ),
+      ),
+      overrides: [
+        adviserGradingProvider.overrideWith(() => notifier),
+        authProvider.overrideWith(_GradeExportAuth.new),
+      ],
+    );
+    expect(find.text('Adviser evaluation'), findsNothing);
+    expect(find.text('Submit Adviser Grade'), findsNothing);
+    expect(selectedRubrics, isEmpty);
+    await tester.tap(find.text('Event grade breakdown'));
+    await tester.pumpAndSettle();
+    expect(find.text('Adviser'), findsNothing);
+    expect(find.text('Panel'), findsOneWidget);
+    expect(find.text('Peer'), findsOneWidget);
+    expect(find.text('85.00'), findsOneWidget);
+    var export = tester.widget<ReportExportMenu>(find.byType(ReportExportMenu));
+    expect(export.reportId, 'team-grade');
+    expect(export.params, containsPair('grade_id', '100'));
+    expect(export.params, containsPair('scope', 'pit'));
+    expect(export.params, containsPair('semester_id', '7'));
+    await tester.tap(find.text('Team and all members'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Marcus VILLAR').last);
+    await tester.pumpAndSettle();
+    export = tester.widget<ReportExportMenu>(find.byType(ReportExportMenu));
+    expect(export.reportId, 'individual-grade');
+    expect(export.params, containsPair('student_id', '1'));
+    expect(export.params, containsPair('grade_id', '100'));
+    await tester.tap(find.text('Export').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Export Excel'), findsOneWidget);
+    expect(find.text('Export PDF'), findsOneWidget);
   });
 
   testWidgets('recorded scores remain visible when adviser grading is closed', (
@@ -439,6 +500,12 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
     },
   );
+}
+
+class _GradeExportAuth extends AuthNotifier {
+  @override
+  AuthState build() =>
+      AuthState(user: {'id': 1, 'role': 'faculty', 'is_pit_lead': true});
 }
 
 class _MockAdviserGradingNotifier extends AdviserGradingNotifier {

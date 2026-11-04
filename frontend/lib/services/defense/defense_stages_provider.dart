@@ -19,7 +19,9 @@ class DefenseStagesState {
   final List<Map<String, dynamic>> activeStages;
   final List<Map<String, dynamic>> sequenceStages;
   List<Map<String, dynamic>> get pipelineStages =>
-      sequenceStages.isEmpty ? stages : sequenceStages;
+      sequenceStages.isEmpty
+          ? stages.where((stage) => stage['history_read_only'] != true).toList()
+          : sequenceStages;
   final Map<String, dynamic> counts;
   final List<Map<String, dynamic>> phaseGroups;
   final Map<String, dynamic> capstoneHistory;

@@ -1,5 +1,5 @@
 """Compact report sheets for individual/team assessments and supporting records."""
-from reports.grade_summary import assessment_scope_label, grade_outcome_label, student_assessment_scores, assessment_panel_submissions
+from reports.grade_summary import assessment_scope_label, grade_outcome_label, student_assessment_scores, assessment_panel_submissions, team_assessment_metadata
 
 
 def _name(user):
@@ -44,7 +44,7 @@ def assessment_document_sheets(records, *, student, team_rows, coverage):
             {'label': 'Student Team & Section', 'value': f'{team.name} | {team.section or team.year_level}'},
             {'label': 'Academic Term / Semester', 'value': grade.semester.display_name},
             {'label': 'Defense Stage' if grade.is_capstone else 'PIT Event', 'value': grade.stage_label + (f' (Attempt #{grade.attempt_count})' if grade.attempt_count > 1 else '')},
-            {'label': 'Project Adviser', 'value': _name(team.adviser)},
+            *([{'label': 'Project Adviser', 'value': _name(team.adviser)}] if grade.is_capstone else []),
             {'label': 'Defense Outcome', 'value': grade_outcome_label(grade)},
         ]
         if grade.revision_deadline:
@@ -68,6 +68,7 @@ def assessment_document_sheets(records, *, student, team_rows, coverage):
             section = 'Individual Academic Grade Breakdown'
             title = f'{scope} Individual Grade Audit Report - {_name(student)}'
         else:
+            metadata.extend({'label': label, 'value': value} for label, value in team_assessment_metadata(grade))
             metadata.insert(6, {'label': 'Proponents / Members', 'value': ', '.join(_name(member) + (' (Leader)' if member.pk == team.leader_id else '') for member in members)})
             rows = team_rows(grade)
             panel_keys = sorted({key for row in rows for key in row if key.startswith('panel_') and key[6:].isdigit()}, key=lambda key: int(key[6:]))

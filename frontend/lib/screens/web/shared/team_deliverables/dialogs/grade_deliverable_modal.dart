@@ -10,6 +10,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/models/adviser_workflow.dart';
 import 'package:defensys/widgets/adviser/workflow_reminder.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
 
 int parseAsInt(dynamic value) {
   if (value == null) return 0;
@@ -200,6 +201,7 @@ class GradeDeliverableTab extends ConsumerStatefulWidget {
   final Map<String, dynamic> team;
   final String selectedStage;
   final bool isAdviser;
+  final String? programScope;
   final Map<String, Map<String, TextEditingController>> teamCriteriaScoreCtrls;
   final Map<String, Map<dynamic, Map<String, TextEditingController>>> teamStudentCriteriaScoreCtrls;
   final Map<String, TextEditingController> teamManualScoreCtrls;
@@ -210,6 +212,7 @@ class GradeDeliverableTab extends ConsumerStatefulWidget {
     required this.team,
     required this.selectedStage,
     required this.isAdviser,
+    this.programScope,
     required this.teamCriteriaScoreCtrls,
     required this.teamStudentCriteriaScoreCtrls,
     required this.teamManualScoreCtrls,
@@ -221,8 +224,17 @@ class GradeDeliverableTab extends ConsumerStatefulWidget {
 }
 
 class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
-
   int _selectedStudentIndex = 0;
+  int? _exportStudentId;
+
+  @override
+  void didUpdateWidget(covariant GradeDeliverableTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.team['id'] != widget.team['id'] ||
+        oldWidget.selectedStage != widget.selectedStage) {
+      _exportStudentId = null;
+    }
+  }
 
   Map<String, dynamic>? _assignedRubricFromGrade(Map<String, dynamic> grade) {
     final rubricId = grade['assigned_adviser_rubric_id'];
@@ -776,11 +788,21 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
           gradingState.grades,
         ) ??
         <String, dynamic>{};
-    _initializeGradingControllersForTeam(
-      teamId,
-      widget.selectedStage,
-      gradeRecord,
-    );
+    final scope =
+        (widget.programScope == 'pit' || widget.programScope == 'capstone'
+            ? widget.programScope
+            : null) ??
+        gradeRecord['scope']?.toString() ??
+        widget.team['scope']?.toString() ??
+        'capstone';
+    final isPit = scope == 'pit';
+    final canEnterAdviserGrades = widget.isAdviser && !isPit;
+    if (canEnterAdviserGrades)
+      _initializeGradingControllersForTeam(
+        teamId,
+        widget.selectedStage,
+        gradeRecord,
+      );
     final officiallyComplete =
         gradeRecord['is_officially_complete'] == true ||
         (widget.team['stages'] is List &&
@@ -990,14 +1012,18 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
               gradeRecord: gradeRecord,
             )
           : null,
-      child: Text(
-        gradingState.isSaving
-            ? 'Submitting grade…'
-            : !guidance.canGrade
-            ? 'Grading unavailable'
-            : gradeRecord['adviser_score'] != null
-            ? 'Update Adviser Grade'
-            : 'Submit Adviser Grade',
+      child: Flexible(
+        child: Text(
+          gradingState.isSaving
+              ? 'Submitting grade…'
+              : !guidance.canGrade
+              ? 'Grading unavailable'
+              : gradeRecord['adviser_score'] != null
+              ? 'Update Adviser Grade'
+              : 'Submit Adviser Grade',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
     final remainingMembers = members.length - completedMembers;
@@ -1015,7 +1041,95 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (widget.isAdviser) ...[
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 16,
+              runSpacing: 12,
+              children: [
+                heading(isPit ? 'Event grades' : 'Grades'),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: 240,
+                      child: ShadSelect<int>(
+                        key: ValueKey(
+                          'grade-export-recipient-$teamId-${gradeRecord['id']}',
+                        ),
+                        minWidth: 0,
+                        maxWidth: 240,
+                        initialValue: 0,
+                        placeholder: const Text('Team and all members'),
+                        selectedOptionBuilder: (_, id) => Text(
+                          id == 0
+                              ? 'Team and all members'
+                              : members
+                                        .where(
+                                          (m) =>
+                                              parseAsInt(
+                                                m['id'] ?? m['student_id'],
+                                              ) ==
+                                              id,
+                                        )
+                                        .firstOrNull?['name']
+                                        ?.toString() ??
+                                    'Student',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        options: [
+                          const ShadOption(
+                            value: 0,
+                            child: Text('Team and all members'),
+                          ),
+                          for (final member in members)
+                            if (parseAsInt(
+                                  member['id'] ?? member['student_id'],
+                                ) >
+                                0)
+                              ShadOption(
+                                value: parseAsInt(
+                                  member['id'] ?? member['student_id'],
+                                ),
+                                child: Text(
+                                  member['name']?.toString() ?? 'Student',
+                                ),
+                              ),
+                        ],
+                        onChanged: (id) => setState(
+                          () => _exportStudentId = id == 0 ? null : id,
+                        ),
+                      ),
+                    ),
+                    ReportExportMenu(
+                      reportId: _exportStudentId == null
+                          ? 'team-grade'
+                          : 'individual-grade',
+                      enabled:
+                          parseAsInt(gradeRecord['id']) > 0 &&
+                          !gradingState.isLoading,
+                      configureExport: true,
+                      params: {
+                        'coverage': 'specific',
+                        'grade_id': '${gradeRecord['id'] ?? ''}',
+                        'team_id': '$teamId',
+                        'scope': scope,
+                        if (gradeRecord['semester_id'] ??
+                                widget.team['semester_id']
+                            case final Object semesterId)
+                          'semester_id': '$semesterId',
+                        if (_exportStudentId != null)
+                          'student_id': '$_exportStudentId',
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (canEnterAdviserGrades) ...[
               Text(
                 'Adviser evaluation',
                 style: TextStyle(
@@ -1148,7 +1262,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                 children: [
                   ShadAccordionItem(
                     value: 'stage-grades',
-                    title: heading('Stage grade breakdown'),
+                    title: heading(
+                      isPit ? 'Event grade breakdown' : 'Stage grade breakdown',
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -1157,10 +1273,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                           style: TextStyle(fontSize: 12, color: secondary),
                         ),
                         const SizedBox(height: 12),
-                        for (final entry in const {
+                        for (final entry in {
                           'Panel': 'panel_score',
                           'Peer': 'peer_score',
-                          'Adviser': 'adviser_score',
+                          if (!isPit) 'Adviser': 'adviser_score',
                           'Overall grade': 'final_grade',
                         }.entries)
                           Padding(
@@ -1187,9 +1303,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                   ),
                 ],
               ),
-            ] else if (!widget.isAdviser)
+            ] else if (!canEnterAdviserGrades)
               Text(
-                'No grades are available for this stage yet.',
+                'No grades are available for this ${isPit ? 'event' : 'stage'} yet.',
                 style: TextStyle(fontSize: 12, color: secondary),
               ),
           ],

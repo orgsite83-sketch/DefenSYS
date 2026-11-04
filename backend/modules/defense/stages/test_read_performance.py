@@ -30,10 +30,10 @@ class StageSetupReadPerformanceTests(APITestCase):
         with patch('student_teams.capstone_history.stage_context', side_effect=AssertionError('stage clearance')):
             with patch('student_teams.capstone_history.team_snapshot', side_effect=AssertionError('live dossier')):
                 with patch('student_teams.capstone_history.historical_payload', side_effect=AssertionError('historical dossier')):
-                    response = self.client.get('/api/defense/stages/', {'scope': 'history'})
+                    response = self.client.get('/api/defense/stages/', {'scope': 'active'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual([g['phase'] for g in response.data['phase_groups']], ['capstone_1', 'capstone_2'])
-        self.assertTrue(all(g['read_only'] for g in response.data['phase_groups']))
+        self.assertEqual([g['read_only'] for g in response.data['phase_groups']], [True, False])
         self.assertEqual(list(TeamTermParticipation.objects.values()), before)
 
     def test_setup_payload_matches_full_history_with_fewer_queries(self):
@@ -67,6 +67,11 @@ class StageSetupReadPerformanceTests(APITestCase):
 
     def test_setup_history_stays_scoped_to_the_viewer_and_refreshes(self):
         self.continue_team()
+        from django.utils import timezone
+        row = self.team.term_participations.get(semester=self.normal)
+        row.closed_at = timezone.now()
+        row.outcome = 'completed'
+        row.save(update_fields=['closed_at', 'outcome'])
         self.client.force_authenticate(self.team.leader)
         response = self.client.get('/api/defense/stages/', {'scope': 'history'})
         self.assertEqual(len(response.data['capstone_history']['intakes']), 1)

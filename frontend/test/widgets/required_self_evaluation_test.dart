@@ -1,7 +1,8 @@
 import 'package:defensys/screens/app/student/peer_eval_tab.dart';
 import 'package:defensys/services/defense/capstone_deliverables_provider.dart';
-import 'package:defensys/widgets/buttons/save_button.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:defensys/theme/app_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/pump_app.dart';
@@ -42,9 +43,17 @@ PeerEvalTab _form({
 
 void main() {
   setUpAll(() => loadPreviewFonts());
-  for (final width in [390, 1200]) {
+  for (final scenario in [
+    (320, false),
+    (390, false),
+    (1200, false),
+    (320, true),
+    (390, true),
+    (1200, true),
+  ]) {
+    final (width, dark) = scenario;
     testWidgets(
-      'self-evaluation remains required after teammate submission at $width px',
+      'self-evaluation remains required after teammate submission at $width px (dark: $dark)',
       (tester) async {
         tester.view.physicalSize = Size(width.toDouble(), 1400);
         tester.view.devicePixelRatio = 1;
@@ -52,7 +61,13 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
         await pumpDefensysWidget(
           tester,
-          _form(submissions: [_teammateSubmission]),
+          MediaQuery(
+            data: MediaQueryData(
+              textScaler: TextScaler.linear(width == 320 ? 1.3 : 1),
+            ),
+            child: _form(submissions: [_teammateSubmission]),
+          ),
+          theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
         );
         expect(find.text('Alex (You)'), findsOneWidget);
         expect(find.text('1 / 2 Complete'), findsOneWidget);
@@ -62,12 +77,61 @@ void main() {
           ),
           findsNothing,
         );
-        expect(find.byType(DefensysSaveButton), findsOneWidget);
+        expect(
+          find.widgetWithText(ShadButton, 'Submit Evaluation'),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
-        await capturePreview(tester, find.byType(PeerEvalTab), 'peer-self-evaluation-$width', viewport: true);
+        await capturePreview(
+          tester,
+          find.byType(PeerEvalTab),
+          'peer-self-evaluation-$width-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
       },
     );
   }
+
+  testWidgets('all ten ratings are visible and selectable on a phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpDefensysWidget(
+      tester,
+      const PeerEvalTab(
+        isCapstone: false,
+        peerEvalAllowed: true,
+        members: [
+          {'id': 1, 'name': 'Liam Liwanag'},
+        ],
+        peerCriteria: [
+          {'name': 'Technical contribution', 'maxScore': 10},
+        ],
+        studentId: '1',
+        teamId: '7',
+      ),
+    );
+    for (var score = 1; score <= 10; score++) {
+      expect(
+        find.widgetWithText(ShadButton, '$score').hitTestable(),
+        findsOneWidget,
+      );
+    }
+    await tester.tap(find.widgetWithText(ShadButton, '8'));
+    await tester.pumpAndSettle();
+    expect(find.text('8 / 10'), findsOneWidget);
+    expect(find.text('8.0 / 10'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await capturePreview(
+      tester,
+      find.byType(PeerEvalTab),
+      'peer-ten-point-scale-390',
+      viewport: true,
+    );
+  });
 
   testWidgets(
     'self submission is restored and locked with all other evaluations',
@@ -81,7 +145,10 @@ void main() {
         find.text('Self-evaluation submitted and locked.'),
         findsOneWidget,
       );
-      expect(find.byType(DefensysSaveButton), findsNothing);
+      expect(
+        find.widgetWithText(ShadButton, 'Submit Evaluation'),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -96,7 +163,10 @@ void main() {
     expect(find.text('2 / 2 Complete'), findsOneWidget);
     await pumpDefensysWidget(tester, _form(stage: 'Final'));
     expect(find.text('0 / 2 Complete'), findsOneWidget);
-    expect(find.byType(DefensysSaveButton), findsNWidgets(2));
+    expect(
+      find.widgetWithText(ShadButton, 'Submit Evaluation'),
+      findsNWidgets(2),
+    );
     expect(tester.takeException(), isNull);
   });
 

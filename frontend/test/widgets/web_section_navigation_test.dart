@@ -283,6 +283,34 @@ class _ImportSchedules extends DefenseSchedulerNotifier {
   );
 }
 
+class _RubricNavigationSchedules extends _ImportSchedules {
+  bool configured = false;
+
+  @override
+  Future<Map<String, dynamic>?> fetchPitEventConfig({
+    required String eventName,
+    int? semesterId,
+  }) async => configured ? {'panel_rubric_id': 10, 'peer_rubric_id': 20} : null;
+
+  @override
+  Future<void> fetchSchedules({
+    String? search,
+    String? scope,
+    String? status,
+    String? successMessage,
+  }) async {
+    state = state.copyWith(
+      pitEvents: [...state.pitEvents],
+      rubrics: [
+        if (configured) {'id': 10, 'name': 'PIT panel', 'scope': 'pit'},
+      ],
+      peerRubrics: [
+        if (configured) {'id': 20, 'name': 'PIT peer', 'scope': 'pit'},
+      ],
+    );
+  }
+}
+
 class _Auth extends AuthNotifier {
   _Auth(this.faculty);
   final bool faculty;
@@ -522,6 +550,44 @@ void main() {
     await tester.pumpAndSettle();
     return container;
   }
+
+  testWidgets(
+    'PIT rubric setup returns to the retained scheduler through Defense Operations',
+    (tester) async {
+      final scheduler = _RubricNavigationSchedules();
+      final container = await pumpWorkspace(
+        tester,
+        '/faculty/defense-board',
+        faculty: true,
+        scheduler: scheduler,
+      );
+      final router = container.read(appRouterProvider);
+      await tester.tap(find.text('Generate Schedule'));
+      await tester.pumpAndSettle();
+      for (var visit = 0; visit < 2; visit++) {
+        final configure = find.text('Configure event rubrics');
+        await tester.ensureVisible(configure);
+        await tester.tap(configure);
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '/faculty/pit-events');
+        expect(find.text('PIT Event Operations & Setup'), findsOneWidget);
+        await tester.tap(find.text('Defense Operations').first);
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '/faculty/defense-board');
+        expect(find.text('Schedule details'), findsWidgets);
+        expect(find.text('Configure event rubrics'), findsOneWidget);
+      }
+      await tester.tap(find.text('Configure event rubrics'));
+      await tester.pumpAndSettle();
+      scheduler.configured = true;
+      await tester.tap(find.text('Defense Operations').first);
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, '/faculty/defense-board');
+      expect(find.text('Schedule details'), findsWidgets);
+      expect(find.text('Configure event rubrics'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'PIT Assign instructors opens the managed tab and leaves sidebar navigation usable',

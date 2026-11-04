@@ -2224,6 +2224,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             team: team,
             selectedStage: selectedStage,
             isAdviser: widget.isAdviser,
+            programScope: widget.state.scope,
             teamCriteriaScoreCtrls: _teamCriteriaScoreCtrls,
             teamStudentCriteriaScoreCtrls: _teamStudentCriteriaScoreCtrls,
             teamManualScoreCtrls: _teamManualScoreCtrls,

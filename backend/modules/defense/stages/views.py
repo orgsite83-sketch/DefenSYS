@@ -75,10 +75,26 @@ def stage_list_payload(semester=None, *, request=None):
         from student_teams.capstone_history import history_payload, history_teams_for
         from student_teams.participation import intake_for
         from student_teams.capstone_lifecycle import term_key
+        from student_teams.models import TeamTermParticipation
 
         visible = history_teams_for(request.user)
         params = request.query_params.copy()
         historical = params.get('scope') == 'history'
+        active_term = resolve_semester()
+        current_teams = visible.filter(semester=active_term, level__icontains='Capstone').exclude(
+            pk__in=TeamTermParticipation.objects.filter(semester=active_term,
+                closed_at__isnull=False).values('team_id')).select_related(
+                    'semester__school_year', 'intake_semester__school_year')
+        current_intakes = {intake.pk for team in current_teams
+            if (intake := intake_for(team)) is not None}
+        if historical:
+            # Closing Capstone 1 preserves evidence; it does not archive the
+            # ongoing intake. Setup History starts once that batch is no
+            # longer participating in the active semester.
+            visible = visible.exclude(pk__in=[team.pk for team in visible.filter(
+                level__icontains='Capstone').select_related(
+                    'semester__school_year', 'intake_semester__school_year')
+                if (intake := intake_for(team)) and intake.pk in current_intakes])
         # History should initially open the latest recorded intake, rather
         # than an unrelated new intake with no historical setup yet.
         if historical and not params.get('intake_id'):
@@ -101,22 +117,9 @@ def stage_list_payload(semester=None, *, request=None):
                     'phase': row['phase'], 'phase_label': row['phase_label'],
                     'display_semester': row['display_semester'], 'stage_ids': set(), 'read_only': True})
                 group['stage_ids'].update(r['id'] for r in row['stage_requirements'])
-            for group in grouped.values():
-                term = Semester.objects.select_related('school_year').get(pk=group['semester_id'])
-                # An open current intake may still have a legacy global
-                # requirements snapshot. Only its actual setup belongs here.
-                group['stage_ids'].intersection_update(setup_stage_ids(term))
-                selected = params.get('stage_key', '')
-                group_ids = {i for i in group.pop('stage_ids')
-                    if not selected or f'{term.pk}:{i}' == selected}
-                group_stages = [s for s in ordered if s.pk in group_ids]
-                group['stages'] = [{**s, 'semester_id': term.pk, 'history_read_only': True}
-                    for s in DefenseStageSerializer(group_stages, many=True,
-                        context={'semester': term, 'ordered_stages': group_stages}).data]
-            stages = [stage for group in grouped.values() for stage in group['stages']]
         elif semester:
-            # Current Term is independent of History's selected intake and
-            # never includes a source semester from the continuous timeline.
+            # Keep the ongoing batch's completed source phase beside its
+            # editable continuation, independent of stale History filters.
             teams = visible.filter(semester=semester, level__icontains='Capstone').select_related(
                 'semester__school_year', 'intake_semester__school_year')
             for team in teams:
@@ -126,16 +129,42 @@ def stage_list_payload(semester=None, *, request=None):
                     'display_semester': semester.display_name,
                     'stage_ids': set(), 'read_only': not semester.is_active})
                 group['stage_ids'].update(ids - set(inherited_stage_ids(team)))
-            for group in grouped.values():
-                group_ids = group.pop('stage_ids')
-                group['stages'] = [stage for stage in stages if stage['id'] in group_ids]
-            if grouped:
-                shown = {stage['id'] for group in grouped.values() for stage in group['stages']}
-                stages = [stage for stage in stages if stage['id'] in shown]
-        groups = list(grouped.values())
-    active = [stage for stage in stages if stage['is_active']]
+            for intake_id in {intake.pk for team in teams
+                    if (intake := intake_for(team)) and intake.pk != semester.pk}:
+                timeline = history_payload(teams, {'intake_id': str(intake_id)},
+                    user=request.user, include_details=False)
+                for row in timeline['teams']:
+                    if row['semester_id'] == semester.pk:
+                        continue
+                    group = grouped.setdefault((row['semester_id'], row['phase']), {
+                        'semester_id': row['semester_id'], 'phase': row['phase'],
+                        'phase_label': row['phase_label'], 'display_semester': row['display_semester'],
+                        'stage_ids': set(), 'read_only': True})
+                    group['stage_ids'].update(r['id'] for r in row['stage_requirements'])
+        terms = Semester.objects.select_related('school_year').in_bulk(
+            {g['semester_id'] for g in grouped.values()})
+        groups = sorted(grouped.values(), key=lambda g: term_key(terms[g['semester_id']]))
+        for group in groups:
+            term = terms[group['semester_id']]
+            group['stage_ids'].intersection_update(setup_stage_ids(term))
+            selected = params.get('stage_key', '') if historical else ''
+            group_ids = {i for i in group.pop('stage_ids')
+                if not selected or f'{term.pk}:{i}' == selected}
+            group_stages = [s for s in ordered if s.pk in group_ids]
+            group['stages'] = [{**s, 'semester_id': term.pk,
+                'history_read_only': group['read_only']}
+                for s in DefenseStageSerializer(group_stages, many=True,
+                    context={'semester': term, 'ordered_stages': group_stages}).data]
+        if groups or historical:
+            stages = [stage for group in groups for stage in group['stages']]
+    # Operational consumers (for example Evaluation & Grades) must not offer
+    # the locked source phase merely because it is visible in the timeline.
+    published = [stage for stage in stages if stage['is_active']]
+    active = [stage for stage in published if request is None
+        or request.query_params.get('scope') == 'history'
+        or stage['semester_id'] == (semester.pk if semester else None)]
     return {'stages': stages, 'active_stages': active,
-        'counts': {'total': len(stages), 'active': len(active), 'inactive': len(stages) - len(active)},
+        'counts': {'total': len(stages), 'active': len(published), 'inactive': len(stages) - len(published)},
         'phase_groups': groups, 'capstone_history': history_options,
         'sequence_stages': [s for s in serialized if s['id'] in ids]}
 

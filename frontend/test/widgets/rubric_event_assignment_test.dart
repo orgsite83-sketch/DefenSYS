@@ -685,18 +685,58 @@ void main() {
         tester.widget<EditableText>(name).controller.text,
         endsWith('Peer Rubric'),
       );
+      final picker = find.byKey(const ValueKey('pit-event-1-null'));
+      await tester.ensureVisible(picker);
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prototype Showcase').last);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<EditableText>(name).controller.text,
+        'Prototype Showcase — Peer Rubric',
+      );
+      await tester.ensureVisible(name);
       await tester.enterText(name, 'Prototype presentation rubric');
+      await tester.ensureVisible(find.text('Panel').first);
       await tester.tap(find.text('Panel').first);
       await tester.pumpAndSettle();
       expect(
         tester.widget<EditableText>(name).controller.text,
         'Prototype presentation rubric',
       );
+      await tester.ensureVisible(find.byKey(const ValueKey('reset-rubric-name')));
       await tester.tap(find.byKey(const ValueKey('reset-rubric-name')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<EditableText>(name).controller.text,
+        'Prototype Showcase — Panel Rubric',
+      );
+      await tester.ensureVisible(find.byKey(const ValueKey('pit-event-1-11')));
+      await tester.tap(find.byKey(const ValueKey('pit-event-1-11')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Unassigned template').last);
       await tester.pumpAndSettle();
       expect(tester.widget<EditableText>(name).controller.text, suggested);
     },
   );
+
+  testWidgets('event-based names remain automatic when editing', (
+    tester,
+  ) async {
+    final container = await _pump(
+      tester,
+      eventId: 11,
+      name: 'Prototype Showcase — Panel Rubric',
+    );
+    await tester.tap(find.text('Peer').first);
+    await tester.pumpAndSettle();
+    expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
+    final payload = (container.read(rubricEngineProvider.notifier) as _Rubrics)
+        .savedPayload!;
+    expect(payload['name'], 'Prototype Showcase — Peer Rubric');
+    expect(payload['pit_event_id'], 11);
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+  });
 
   testWidgets(
     'custom scale updates saved criterion maxima and rejects invalid input',

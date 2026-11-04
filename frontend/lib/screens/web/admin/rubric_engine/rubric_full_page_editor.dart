@@ -138,6 +138,18 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     };
 
     if (scope == 'pit') {
+      if (_pitEventId != null) {
+        final event = ref
+            .read(rubricEngineProvider)
+            .pitEvents
+            .where((event) => _asInt(event['id']) == _pitEventId)
+            .firstOrNull;
+        final eventLabel = (event?['event_name']?.toString() ?? _eventName)
+            ?.trim();
+        if (eventLabel != null && eventLabel.isNotEmpty) {
+          return '$eventLabel — $typeLabel Rubric';
+        }
+      }
       return '$pitYear PIT — $typeLabel Rubric';
     }
 
@@ -534,7 +546,11 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     ],
   );
 
-  Widget _pitEventControl(RubricEngineState state, {required bool canEdit}) {
+  Widget _pitEventControl(
+    RubricEngineState state, {
+    required bool canEdit,
+    required VoidCallback syncName,
+  }) {
     final events = state.pitEvents
         .where((event) => _asInt(event['semester_id']) == _semesterId)
         .toList();
@@ -571,7 +587,14 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
           },
           enabled: canEdit,
           onChanged: (value) {
-            setState(() => _pitEventId = value);
+            setState(() {
+              _pitEventId = value;
+              _eventName = events
+                  .where((event) => _asInt(event['id']) == value)
+                  .firstOrNull?['event_name']
+                  ?.toString();
+              syncName();
+            });
             _markDirty();
           },
           note: events.isEmpty
@@ -622,7 +645,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       pitYear: pitYear,
     );
     final assignment = _scope == 'pit'
-        ? _pitEventControl(state, canEdit: canEdit)
+        ? _pitEventControl(state, canEdit: canEdit, syncName: syncName)
         : _assignmentSelect(
             label: 'Defense stage (optional)',
             fieldKey: 'stage-$_defenseStageId',

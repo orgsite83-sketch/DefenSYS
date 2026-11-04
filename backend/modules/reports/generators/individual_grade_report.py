@@ -38,7 +38,7 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
         ("Report Coverage", escape(coverage_label or team_grade.stage_label)),
         ("Academic Term / Semester", f"{semester.school_year.label if semester else ''} — {semester.label if semester else ''}"),
         ("Defense Stage" if team_grade.is_capstone else "PIT Event", escape(stage_text)),
-        ("Project Adviser", adviser_name),
+        *([("Project Adviser", adviser_name)] if team_grade.is_capstone else []),
     ]
 
     verdict_val = getattr(team_grade, 'verdict', '')
@@ -159,8 +159,8 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     builder.add_signatures(
         prepared_by=generated_by_user,
         prepared_role="Academic Documenter / Evaluator",
-        noted_by=adviser_name,
-        noted_role="Project Adviser / Panel Chair",
+        noted_by=adviser_name if team_grade.is_capstone else "Panel Chair",
+        noted_role="Project Adviser / Panel Chair" if team_grade.is_capstone else "Panel Chair",
         approved_by="IT Program Chairperson",
         approved_role="IT Program Chairperson",
         signatories=signatories,

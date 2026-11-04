@@ -134,8 +134,10 @@ void main() {
           width: width,
           dark: dark,
           state: DefenseStagesState(
-            stages: stages,
-            historyScope: 'history',
+            stages: [
+              {...stages.first, 'semester_id': 3, 'history_read_only': true},
+            ],
+            historyScope: 'active',
             phaseGroups: [
               {
                 'phase_label': 'Capstone 1',
@@ -152,7 +154,7 @@ void main() {
               {
                 'phase_label': 'Capstone 2',
                 'display_semester': '1st Semester, A.Y. 2026–2027',
-                'read_only': true,
+                'read_only': false,
                 'stages': <Map<String, dynamic>>[],
               },
             ],
@@ -161,6 +163,8 @@ void main() {
         );
         expect(find.text('Capstone 1'), findsOneWidget);
         expect(find.text('Capstone 2'), findsOneWidget);
+        expect(find.text('Read-only record'), findsOneWidget);
+        expect(find.text('Current phase'), findsOneWidget);
         expect(find.text('Awaiting stage setup'), findsOneWidget);
         await tester.ensureVisible(
           find.byKey(const ValueKey('stage-configure-1')),

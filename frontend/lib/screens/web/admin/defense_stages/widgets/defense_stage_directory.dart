@@ -470,7 +470,8 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
         _stageItemWithSpine(
           stage: stages[i],
           index: widget.state.stages.indexWhere(
-            (s) => s['id'] == stages[i]['id'],
+            (s) => s['id'] == stages[i]['id'] &&
+                s['semester_id'] == stages[i]['semester_id'],
           ),
           isLast: lastGroup && i == stages.length - 1,
           compact: compact,

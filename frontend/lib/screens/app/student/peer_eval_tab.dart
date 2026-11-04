@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/bridge_service.dart';
 import '../../../theme/defensys_tokens.dart';
-import '../../../widgets/buttons/save_button.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../widgets/status_badge.dart';
 import '../../../toasts/feedback_toast.dart';
 
 class PeerEvalTab extends ConsumerStatefulWidget {
@@ -48,12 +48,12 @@ class PeerEvalTab extends ConsumerStatefulWidget {
 }
 
 class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
-
   late Map<String, Map<String, double>> _scores;
   late Map<String, bool> _posted;
   late Map<String, bool> _submitting;
 
-  List<Map<String, dynamic>> get _effectiveCriteria => widget.peerCriteria.isNotEmpty
+  List<Map<String, dynamic>> get _effectiveCriteria =>
+      widget.peerCriteria.isNotEmpty
       ? widget.peerCriteria
       : [
           {'name': 'Contribution', 'maxScore': 5},
@@ -69,10 +69,15 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       teammate['name']?.toString() ?? _teammateId(teammate);
 
   String? _submissionKey(Map<String, dynamic> submission) {
-    final id = submission['evaluateeId']?.toString() ??
+    final id =
+        submission['evaluateeId']?.toString() ??
         submission['evaluatee_id']?.toString();
-    final name = (submission['evaluateeName']?.toString() ??
-        submission['evaluatee_name']?.toString() ?? '').trim().toLowerCase();
+    final name =
+        (submission['evaluateeName']?.toString() ??
+                submission['evaluatee_name']?.toString() ??
+                '')
+            .trim()
+            .toLowerCase();
 
     if (id != null && id.isNotEmpty) {
       for (final teammate in widget.members) {
@@ -103,14 +108,17 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   @override
   void didUpdateWidget(PeerEvalTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final contextChanged = oldWidget.teamId != widget.teamId ||
-        oldWidget.studentId != widget.studentId || oldWidget.stage != widget.stage;
+    final contextChanged =
+        oldWidget.teamId != widget.teamId ||
+        oldWidget.studentId != widget.studentId ||
+        oldWidget.stage != widget.stage;
     if (contextChanged) {
       _scores.clear();
       _posted.clear();
       _submitting.clear();
     }
-    if (contextChanged || oldWidget.members != widget.members ||
+    if (contextChanged ||
+        oldWidget.members != widget.members ||
         oldWidget.peerCriteria != widget.peerCriteria ||
         oldWidget.myPeerSubmissions != widget.myPeerSubmissions ||
         oldWidget.peerEvalAllowed != widget.peerEvalAllowed) {
@@ -125,19 +133,21 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     for (final t in widget.members) {
       final id = _teammateId(t);
       _posted.putIfAbsent(id, () => false);
-      
+
       final teammateScores = _scores[id] ?? <String, double>{};
-      
+
       // Ensure all current effective criteria are present in the teammate's scores
       for (final c in _effectiveCriteria) {
         final name = c['name'] as String;
         teammateScores.putIfAbsent(name, () => 0.0);
       }
-      
+
       // Remove any criteria that are no longer part of the current effective criteria
-      final allowedKeys = _effectiveCriteria.map((c) => c['name'] as String).toSet();
+      final allowedKeys = _effectiveCriteria
+          .map((c) => c['name'] as String)
+          .toSet();
       teammateScores.removeWhere((key, _) => !allowedKeys.contains(key));
-      
+
       _scores[id] = teammateScores;
     }
     _hydrateFromSubmissions();
@@ -151,7 +161,8 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       _posted[key] = true;
       _scores.putIfAbsent(key, () => {});
 
-      final breakdown = (sub['breakdown'] as List? ?? []).cast<Map<String, dynamic>>();
+      final breakdown = (sub['breakdown'] as List? ?? [])
+          .cast<Map<String, dynamic>>();
       if (breakdown.isNotEmpty) {
         for (final item in breakdown) {
           final criteriaName =
@@ -168,7 +179,8 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       final max = (sub['max'] as num?)?.toDouble();
       if (total == null || max == null || max <= 0) continue;
 
-      final ratio = ((sub['percentage'] as num?)?.toDouble() ?? total / max * 100) / 100;
+      final ratio =
+          ((sub['percentage'] as num?)?.toDouble() ?? total / max * 100) / 100;
       for (final c in _effectiveCriteria) {
         final criteriaName = c['name'] as String;
         final cMax = ((c['maxScore'] as num?) ?? 5).toDouble();
@@ -178,7 +190,10 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      DefensysShadcnScope(child: Builder(builder: _buildContent));
+
+  Widget _buildContent(BuildContext context) {
     Widget refreshWrapper(Widget child) {
       if (widget.isEmbedded || widget.onRefresh == null) return child;
       return LayoutBuilder(
@@ -206,11 +221,19 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.history_toggle_off_rounded, size: 56, color: Colors.grey.shade400),
+                Icon(
+                  Icons.history_toggle_off_rounded,
+                  size: 56,
+                  color: Colors.grey.shade400,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   'Peer Evaluation Archived',
-                  style: TextStyle(color: DefensysTokens.textPrimaryOf(context), fontSize: 15, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: DefensysTokens.textPrimaryOf(context),
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -233,16 +256,20 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Card(
             elevation: 0,
-            color: Colors.grey.shade100,
+            color: DefensysTokens.surfaceOf(context),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
-              side: BorderSide(color: Colors.grey.shade300),
+              side: BorderSide(color: DefensysTokens.borderOf(context)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Row(
                 children: [
-                  Icon(Icons.lock_outline, color: Colors.grey.shade600, size: 24),
+                  Icon(
+                    Icons.lock_outline,
+                    color: DefensysTokens.textSecondaryOf(context),
+                    size: 24,
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -263,7 +290,10 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                               (widget.isCapstone
                                   ? 'It opens after your team is endorsed, scheduled, and every assigned panelist finishes grading.'
                                   : 'With peer access enabled, you must grade yourself and every teammate after all assigned panelists finish evaluating your scheduled defense.'),
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
+                          style: TextStyle(
+                            color: DefensysTokens.textSecondaryOf(context),
+                            fontSize: 12.5,
+                          ),
                         ),
                       ],
                     ),
@@ -281,69 +311,59 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 32),
           child: Center(
-            child: Text('No team members found for evaluation.',
-                style: TextStyle(color: Colors.grey, fontSize: 14)),
+            child: Text(
+              'No team members found for evaluation.',
+              style: TextStyle(color: Colors.grey, fontSize: 14),
+            ),
           ),
         ),
       );
     }
 
     final total = widget.members.length;
-    final done = widget.members.where((t) => _posted[_teammateId(t)] == true).length;
-    final hasPending = widget.peerEvalAllowed && done < total;
-
+    final done = widget.members
+        .where((t) => _posted[_teammateId(t)] == true)
+        .length;
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _sectionHeader('Peer & Self-Evaluation'),
+        const SizedBox(height: 8),
+        Text(
+          'Rate yourself and every teammate. Scores lock after submission.',
+          style: DefensysTokens.subtitle.copyWith(
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+        const SizedBox(height: 20),
         _buildPeerProgressBlock(done, total),
-        const SizedBox(height: 16),
-        _sectionHeader('Peer & Self-Evaluation', showRedDot: hasPending),
-        const SizedBox(height: 4),
-        const Text('Rate yourself and every teammate using the same criteria. All evaluations are required. Once submitted, scores are locked.',
-            style: TextStyle(color: Colors.grey, fontSize: 13)),
         const SizedBox(height: 12),
-        if (done == total && total > 0) ...[
-          Container(
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.green.shade300),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'All peer and self-evaluations submitted and locked for this event.',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.green),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: DefensysTokens.gold.withValues(alpha: 0.07),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: DefensysTokens.gold.withValues(alpha: 0.4)),
-          ),
-          child: Row(
+        Text.rich(
+          TextSpan(
             children: [
-              const Icon(Icons.info_outline, color: DefensysTokens.gold, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text('Peer and self-evaluation weight: ${widget.peerWeight}% of final grade. Your self-rating counts equally with each teammate\'s rating.',
-                    style: const TextStyle(fontSize: 12, color: DefensysTokens.gold)),
+              TextSpan(
+                text: '${widget.peerWeight}% of final grade',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const TextSpan(
+                text: '. Self and teammate ratings count equally.',
               ),
             ],
           ),
+          style: DefensysTokens.caption.copyWith(
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
         ),
-        const SizedBox(height: 16),
+        if (done == total && total > 0) ...[
+          const SizedBox(height: 12),
+          Text(
+            'All peer and self-evaluations submitted and locked for this event.',
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+        const SizedBox(height: 24),
         ...widget.members.map((t) {
           final id = _teammateId(t);
           final name = _teammateName(t);
@@ -372,21 +392,22 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
   Widget _buildPeerProgressBlock(int done, int total) {
     final pct = total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0;
-    final isComplete = done == total && total > 0;
-    final color = isComplete ? DefensysTokens.success : DefensysTokens.gold;
+    final color = DefensysTokens.maroonOf(context);
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: DefensysTokens.surfaceHigherOf(context),
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 16,
+            runSpacing: 6,
             children: [
               Text(
                 'Required evaluations',
@@ -401,7 +422,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: color,
+                  color: DefensysTokens.textSecondaryOf(context),
                 ),
               ),
             ],
@@ -412,7 +433,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
             child: LinearProgressIndicator(
               value: pct,
               minHeight: 6,
-              backgroundColor: const Color(0xFFE2E8F0),
+              backgroundColor: DefensysTokens.borderOf(context),
               valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
           ),
@@ -437,7 +458,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     final maxScore = effectiveCriteria.isNotEmpty
         ? (effectiveCriteria.first['maxScore'] as num?)?.toDouble() ?? 5.0
         : 5.0;
-    final avg = scores.isEmpty ? 0.0 : scores.values.fold(0.0, (s, v) => s + v) / scores.length;
+    final avg = scores.isEmpty
+        ? 0.0
+        : scores.values.fold(0.0, (s, v) => s + v) / scores.length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -445,13 +468,6 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
         color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: DefensysTokens.borderOf(context)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -465,11 +481,13 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                   child: Row(
                     children: [
                       CircleAvatar(
-                        backgroundColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                        backgroundColor: DefensysTokens.surfaceHigherOf(
+                          context,
+                        ),
                         child: Text(
                           name.isNotEmpty ? name[0].toUpperCase() : '?',
                           style: TextStyle(
-                            color: DefensysTokens.maroonTextOf(context),
+                            color: DefensysTokens.textSecondaryOf(context),
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -483,7 +501,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                             fontWeight: FontWeight.bold,
                             color: DefensysTokens.textPrimaryOf(context),
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -491,16 +509,22 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (isPosted)
-                  const StatusBadge.success(label: 'Submitted & Locked')
-                else
-                  const StatusBadge.warning(label: 'Pending Evaluation'),
+                Text(
+                  isPosted ? 'Locked' : 'To do',
+                  style: DefensysTokens.caption.copyWith(
+                    color: DefensysTokens.textSecondaryOf(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
             if (isPosted)
               Container(
                 margin: const EdgeInsets.only(top: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(8),
@@ -508,11 +532,17 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.lock_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
+                    Icon(
+                      Icons.lock_rounded,
+                      size: 14,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
                     SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        isSelf ? 'Self-evaluation submitted and locked.' : 'Peer evaluation submitted and locked.',
+                        isSelf
+                            ? 'Self-evaluation submitted and locked.'
+                            : 'Peer evaluation submitted and locked.',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -523,29 +553,53 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                   ],
                 ),
               ),
-            const Divider(height: 20, color: Color(0xFFF1F5F9)),
+            Divider(height: 28, color: DefensysTokens.borderOf(context)),
             ...criteria.map((c) {
-              final cMax = effectiveCriteria.firstWhere(
-                (x) => (x['name'] as String?) == c,
-                orElse: () => <String, Object>{'maxScore': 5},
-              )['maxScore'] as num? ?? 5;
-              return _criterionRatingRow(teammateId, c, scores[c] ?? 0, cMax.toDouble(), isPosted || !widget.peerEvalAllowed);
+              final cMax =
+                  effectiveCriteria.firstWhere(
+                        (x) => (x['name'] as String?) == c,
+                        orElse: () => <String, Object>{'maxScore': 5},
+                      )['maxScore']
+                      as num? ??
+                  5;
+              return _criterionRatingRow(
+                teammateId,
+                c,
+                scores[c] ?? 0,
+                cMax.toDouble(),
+                isPosted || !widget.peerEvalAllowed,
+              );
             }),
-            const Divider(height: 20, color: Color(0xFFF1F5F9)),
+            Divider(height: 28, color: DefensysTokens.borderOf(context)),
             _evaluationSummaryRow(avg, maxScore),
             const SizedBox(height: 14),
             if (!isPosted)
               SizedBox(
                 width: double.infinity,
-                child: DefensysSaveButton(
-                  icon: Icons.save_rounded,
-                  label: 'Submit Evaluation',
-                  savingLabel: 'Submitting…',
-                  isPill: true,
-                  isSaving: _submitting[teammateId] == true,
-                  onPressed: !widget.peerEvalAllowed || _submitting[teammateId] == true
-                      ? null
-                      : () => _confirmPost(teammateId, name, scores),
+                child: ShadButton(
+                  expands: true,
+                  height: DefensysTokens.buttonHeightPrimary,
+                  backgroundColor: DefensysTokens.maroonOf(context),
+                  hoverBackgroundColor: DefensysTokens.maroonDark,
+                  foregroundColor: Colors.white,
+                  enabled:
+                      widget.peerEvalAllowed && _submitting[teammateId] != true,
+                  leading: _submitting[teammateId] == true
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.lock_outline_rounded, size: 16),
+                  onPressed: () => _confirmPost(teammateId, name, scores),
+                  child: Text(
+                    _submitting[teammateId] == true
+                        ? 'Submitting...'
+                        : 'Submit Evaluation',
+                  ),
                 ),
               ),
           ],
@@ -565,7 +619,11 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     return false;
   }
 
-  Future<void> _confirmPost(String teammateId, String name, Map<String, double> scores) async {
+  Future<void> _confirmPost(
+    String teammateId,
+    String name,
+    Map<String, double> scores,
+  ) async {
     if (!widget.peerEvalAllowed) return;
     if (_hasUnratedCriteria(scores)) {
       showValidationToast(
@@ -575,15 +633,22 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       return;
     }
 
-    final preview = rubricPercentage(_effectiveCriteria.map((criterion) => RubricScore(
-      scores[criterion['name']] ?? 0,
-      ((criterion['maxScore'] as num?) ?? 5).toDouble(),
-      rubricWeight(criterion['weight']),
-    )));
+    final preview = rubricPercentage(
+      _effectiveCriteria.map(
+        (criterion) => RubricScore(
+          scores[criterion['name']] ?? 0,
+          ((criterion['maxScore'] as num?) ?? 5).toDouble(),
+          rubricWeight(criterion['weight']),
+        ),
+      ),
+    );
     final confirmed = await confirmLock(
       context,
-      title: teammateId == widget.studentId ? 'Submit Self-Evaluation?' : 'Submit Peer Evaluation?',
-      message: 'Your evaluation for $name will be saved and permanently locked.${preview == null ? '' : ' Evaluation score: ${preview.toStringAsFixed(2)}%.'}',
+      title: teammateId == widget.studentId
+          ? 'Submit Self-Evaluation?'
+          : 'Submit Peer Evaluation?',
+      message:
+          'Your evaluation for $name will be saved and permanently locked.${preview == null ? '' : ' Evaluation score: ${preview.toStringAsFixed(2)}%.'}',
       confirmLabel: 'Submit',
       icon: Icons.save_rounded,
       confirmColor: DefensysTokens.saveActionBg,
@@ -593,15 +658,21 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     setState(() => _submitting[teammateId] = true);
 
     try {
-      final breakdown = scores.entries.map((e) => {
-        'criterion_id': _effectiveCriteria.firstWhere((criterion) => criterion['name'] == e.key)['id'],
-        'criteriaName': e.key,
-        'score': e.value,
-        'max': _effectiveCriteria.firstWhere(
-          (c) => (c['name'] as String?) == e.key,
-          orElse: () => <String, Object>{'maxScore': 5},
-        )['maxScore'],
-      }).toList();
+      final breakdown = scores.entries
+          .map(
+            (e) => {
+              'criterion_id': _effectiveCriteria.firstWhere(
+                (criterion) => criterion['name'] == e.key,
+              )['id'],
+              'criteriaName': e.key,
+              'score': e.value,
+              'max': _effectiveCriteria.firstWhere(
+                (c) => (c['name'] as String?) == e.key,
+                orElse: () => <String, Object>{'maxScore': 5},
+              )['maxScore'],
+            },
+          )
+          .toList();
       final total = scores.values.fold(0.0, (s, v) => s + v);
       final max = _effectiveCriteria.fold(
         0.0,
@@ -670,26 +741,11 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isRated
-                      ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08)
-                      : DefensysTokens.surfaceHigherOf(context),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: isRated
-                        ? DefensysTokens.maroonOf(context).withValues(alpha: 0.25)
-                        : DefensysTokens.borderOf(context),
-                  ),
-                ),
-                child: Text(
-                  isRated ? 'Score: ${value.toInt()} / $intMax' : 'Unrated',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: isRated ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
-                  ),
+              Text(
+                isRated ? '${value.toInt()} / $intMax' : 'Unrated',
+                style: DefensysTokens.caption.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.textSecondaryOf(context),
                 ),
               ),
             ],
@@ -698,53 +754,39 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
           // Row 2: Adaptive Rating Control
           if (isPillScale) ...[
-            // 1-10 Segmented Pills (horizontal scroll to ensure comfortable touch targets)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: List.generate(intMax, (i) {
-                  final scoreVal = i + 1;
-                  final isSelected = value.toInt() == scoreVal;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: InkWell(
-                      onTap: locked
-                          ? null
-                          : () => setState(() => _scores[teammateId]![criterion] = scoreVal.toDouble()),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        width: 32,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? (locked ? const Color(0xFF64748B) : DefensysTokens.maroonOf(context))
-                              : (locked ? const Color(0xFFF8FAFC) : Colors.white),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isSelected
-                                ? (locked ? const Color(0xFF64748B) : DefensysTokens.maroonOf(context))
-                                : (locked ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1)),
-                            width: isSelected ? 1.5 : 1.0,
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            '$scoreVal',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                              color: isSelected
-                                  ? Colors.white
-                                  : (locked ? const Color(0xFF94A3B8) : const Color(0xFF334155)),
-                            ),
-                          ),
-                        ),
-                      ),
+            Wrap(
+              spacing: 6,
+              runSpacing: 8,
+              children: List.generate(intMax, (i) {
+                final scoreVal = i + 1;
+                final isSelected = value.toInt() == scoreVal;
+                return Semantics(
+                  label: '$criterion, $scoreVal of $intMax',
+                  selected: isSelected,
+                  child: ShadButton.outline(
+                    width: 44,
+                    height: 44,
+                    padding: EdgeInsets.zero,
+                    enabled: !locked,
+                    backgroundColor: isSelected
+                        ? (locked
+                              ? DefensysTokens.textSecondaryOf(context)
+                              : DefensysTokens.maroonOf(context))
+                        : DefensysTokens.surfaceOf(context),
+                    hoverBackgroundColor: isSelected
+                        ? DefensysTokens.maroonDark
+                        : DefensysTokens.surfaceHigherOf(context),
+                    foregroundColor: isSelected
+                        ? Colors.white
+                        : DefensysTokens.textPrimaryOf(context),
+                    onPressed: () => setState(
+                      () =>
+                          _scores[teammateId]![criterion] = scoreVal.toDouble(),
                     ),
-                  );
-                }),
-              ),
+                    child: Text('$scoreVal'),
+                  ),
+                );
+              }),
             ),
           ] else ...[
             // Tactile Slider + Steppers for scales > 10
@@ -757,17 +799,24 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                   constraints: const BoxConstraints(),
                   onPressed: (locked || value <= 1)
                       ? null
-                      : () => setState(() => _scores[teammateId]![criterion] = (value - 1).clamp(1.0, maxScore)),
+                      : () => setState(
+                          () => _scores[teammateId]![criterion] = (value - 1)
+                              .clamp(1.0, maxScore),
+                        ),
                 ),
                 Expanded(
                   child: SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       activeTrackColor: DefensysTokens.maroonOf(context),
                       thumbColor: DefensysTokens.maroonOf(context),
-                      overlayColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.15),
-                      inactiveTrackColor: const Color(0xFFE2E8F0),
+                      overlayColor: DefensysTokens.maroonOf(
+                        context,
+                      ).withValues(alpha: 0.15),
+                      inactiveTrackColor: DefensysTokens.borderOf(context),
                       trackHeight: 4,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 8,
+                      ),
                     ),
                     child: Slider(
                       value: value > 0 ? value : 1.0,
@@ -776,7 +825,10 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                       divisions: (intMax - 1) > 0 ? (intMax - 1) : 1,
                       onChanged: locked
                           ? null
-                          : (v) => setState(() => _scores[teammateId]![criterion] = v.roundToDouble()),
+                          : (v) => setState(
+                              () => _scores[teammateId]![criterion] = v
+                                  .roundToDouble(),
+                            ),
                     ),
                   ),
                 ),
@@ -787,7 +839,10 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                   constraints: const BoxConstraints(),
                   onPressed: (locked || value >= maxScore)
                       ? null
-                      : () => setState(() => _scores[teammateId]![criterion] = (value + 1).clamp(1.0, maxScore)),
+                      : () => setState(
+                          () => _scores[teammateId]![criterion] = (value + 1)
+                              .clamp(1.0, maxScore),
+                        ),
                 ),
               ],
             ),
@@ -798,85 +853,32 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   }
 
   Widget _evaluationSummaryRow(double avg, double maxScore) {
-    final pct = maxScore > 0 ? (avg / maxScore).clamp(0.0, 1.0) : 0.0;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Evaluation Average',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: DefensysTokens.textPrimaryOf(context),
-              ),
+        Expanded(
+          child: Text(
+            'Evaluation Average',
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.textSecondaryOf(context),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
-              ),
-              child: Text(
-                'Average: ${avg.toStringAsFixed(1)} / ${maxScore.toStringAsFixed(0)}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                  color: DefensysTokens.maroonTextOf(context),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: LinearProgressIndicator(
-            value: pct,
-            minHeight: 6,
-            backgroundColor: const Color(0xFFE2E8F0),
-            valueColor: AlwaysStoppedAnimation<Color>(DefensysTokens.maroonOf(context)),
+        Text(
+          '${avg.toStringAsFixed(1)} / ${maxScore.toStringAsFixed(0)}',
+          style: DefensysTokens.body.copyWith(
+            color: DefensysTokens.textPrimaryOf(context),
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
     );
   }
 
-  Widget _sectionHeader(String title, {bool showRedDot = false}) {
-    return Row(
-      children: [
-        Container(
-          width: 4,
-          height: 20,
-          decoration: BoxDecoration(
-            color: DefensysTokens.maroonOf(context),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: DefensysTokens.maroonTextOf(context),
-          ),
-        ),
-        if (showRedDot) ...[
-          const SizedBox(width: 6),
-          Container(
-            width: 7,
-            height: 7,
-            decoration: const BoxDecoration(
-              color: Colors.redAccent,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
+  Widget _sectionHeader(String title) => Text(
+    title,
+    style: DefensysTokens.sectionTitle.copyWith(
+      fontSize: 18,
+      color: DefensysTokens.textPrimaryOf(context),
+    ),
+  );
 }

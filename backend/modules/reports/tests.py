@@ -8,6 +8,38 @@ from defense.stages.models import DefenseStage
 User = get_user_model()
 
 class ReportsApiTests(APITestCase):
+    def test_pit_team_export_includes_team_and_individual_results_without_adviser(self):
+        import base64
+        import io
+        import pdfplumber
+        import openpyxl
+        from grading.grades.models import StudentStageGrade
+
+        self.client.force_authenticate(self.pit_lead)
+        StudentStageGrade.objects.update_or_create(
+            team_grade=self.grade_advised, student=self.student,
+            defaults={'panel_score': 70, 'peer_score': 75, 'final_grade': 71},
+        )
+        params = {'scope': 'pit', 'semester_id': self.semester.pk,
+                  'coverage': 'specific', 'grade_id': self.grade_advised.pk}
+        url = f'/api/reports/team-grade/{self.team_advised.pk}/'
+        preview = self.client.get(url, {**params, 'export_format': 'json'})
+        self.assertEqual(preview.status_code, 200, preview.data)
+        with pdfplumber.open(io.BytesIO(base64.b64decode(preview.data['pdf_base64']))) as pdf:
+            text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+        self.assertIn('Team Overall Grade', text)
+        self.assertIn(f'{self.grade_advised.final_grade:.2f}%', text)
+        self.assertIn('71.00', text)
+        self.assertNotIn('Project Adviser', text)
+        excel = self.client.get(url, {**params, 'export_format': 'xlsx'})
+        self.assertEqual(excel.status_code, 200)
+        workbook = openpyxl.load_workbook(io.BytesIO(excel.content))
+        values = [str(cell.value) for sheet in workbook for row in sheet for cell in row if cell.value is not None]
+        self.assertIn('Team Overall Grade', values)
+        self.assertNotIn('Project Adviser', values)
+        self.assertNotIn('Team Adviser Score', values)
+        self.assertTrue(any(value in ('71', '71.0', '0.71') for value in values))
+
     def setUp(self):
         # 1. Users
         self.admin = User.objects.create_user(

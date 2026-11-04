@@ -6,7 +6,7 @@ from xml.sax.saxutils import escape
 
 from reports.pdf_builder import DefensysPdfReportBuilder
 from reports.pdf_styles import defensys_table_style
-from reports.grade_summary import assessment_scope_label, student_assessment_scores, assessment_panel_submissions
+from reports.grade_summary import assessment_scope_label, student_assessment_scores, assessment_panel_submissions, team_assessment_metadata
 
 
 def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, include_signatures=False, builder=None, coverage_label=None):
@@ -55,7 +55,7 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
         ("Academic Term / Semester", f"{semester.school_year.label if semester else ''} — {semester.label if semester else ''}"),
         ("Defense Stage" if team_grade.is_capstone else "PIT Event", escape(stage_text)),
         ("Proponents / Members", proponents_str),
-        ("Project Adviser", adviser_name),
+        *([("Project Adviser", adviser_name)] if team_grade.is_capstone else []),
     ]
 
     verdict_val = getattr(team_grade, 'verdict', '')
@@ -66,6 +66,8 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
         metadata_rows.append(("Panel Verdict", verdict_display))
 
     builder.add_metadata_grid(metadata_rows)
+    builder.add_section_header("Team Grade Summary")
+    builder.add_metadata_grid(team_assessment_metadata(team_grade))
 
     # Panel Verdict Remarks & Instructions Box (if present)
     if getattr(team_grade, 'verdict_remarks', ''):
@@ -334,8 +336,8 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
     builder.add_signatures(
         prepared_by=generated_by_user,
         prepared_role="Academic Documenter / Evaluator",
-        noted_by=adviser_name,
-        noted_role="Project Adviser / Panel Chair",
+        noted_by=adviser_name if team_grade.is_capstone else "Panel Chair",
+        noted_role="Project Adviser / Panel Chair" if team_grade.is_capstone else "Panel Chair",
         approved_by="IT Program Chairperson",
         approved_role="IT Program Chairperson",
         signatories=signatories,

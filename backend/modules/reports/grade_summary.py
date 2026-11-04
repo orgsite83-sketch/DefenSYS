@@ -78,6 +78,21 @@ def assessment_scope_label(grade):
     return 'Capstone' if grade.scope == 'capstone' else 'PIT'
 
 
+def team_assessment_metadata(grade):
+    """Recorded team results, separate from the individual member matrix."""
+    from grading.grades.masterlist import component_values
+    components, final = component_values(grade)
+    rows = []
+    for name, label in (('panel', 'Team Panel Score'), ('peer', 'Team Peer Score'),
+                        ('adviser', 'Team Adviser Score')):
+        if components[name]['enabled']:
+            value = components[name]['score']
+            rows.append((label, f'{value:.2f}%' if value is not None else 'Pending'))
+    rows.append(('Team Overall Grade', f'{final:.2f}%' if final is not None else 'Pending'))
+    rows.append(('Grade Publication', grade.get_status_display()))
+    return rows
+
+
 def student_assessment_scores(grade, student_grade=None):
     """Use the stored final grade; missing required ratings remain pending."""
     from grading.grades.masterlist import component_values

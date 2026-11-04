@@ -36,21 +36,50 @@ class StageSetupTermScopeTests(APITestCase):
         self.extension.save(update_fields=['is_active'])
         return self.make_team('Fresh intake', self.extension)
 
-    def test_current_term_excludes_source_phase_and_ignores_history_filters(self):
+    def test_current_batch_keeps_locked_source_phase_and_ignores_history_filters(self):
         self.continue_team()
         before = list(TeamTermParticipation.objects.values())
         response = self.client.get('/api/defense/stages/', {
             'scope': 'active', 'intake_id': self.intake.pk, 'phase': 'capstone_1'})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['stages'], [])
+        self.assertEqual({s['id'] for s in response.data['stages']}, {self.first.pk, self.second.pk})
+        self.assertEqual(response.data['counts']['total'], 2)
         self.assertEqual(response.data['active_stages'], [])
-        self.assertEqual(response.data['counts']['total'], 0)
-        group, = response.data['phase_groups']
+        source, group = response.data['phase_groups']
+        self.assertEqual(source['phase'], 'capstone_1')
+        self.assertEqual(source['semester_id'], self.intake.pk)
+        self.assertTrue(source['read_only'])
+        self.assertTrue(all(s['history_read_only'] for s in source['stages']))
         self.assertEqual(group['phase'], 'capstone_2')
         self.assertEqual(group['display_semester'], self.normal.display_name)
         self.assertEqual(group['stages'], [])
         self.assertFalse(group['read_only'])
         self.assertEqual(list(TeamTermParticipation.objects.values()), before)
+
+    def test_ongoing_batch_is_not_offered_as_setup_history(self):
+        self.continue_team()
+        for params in ({'scope': 'history'}, {'scope': 'history', 'intake_id': self.intake.pk}):
+            response = self.client.get('/api/defense/stages/', params)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['phase_groups'], [])
+            self.assertEqual(response.data['stages'], [])
+            self.assertEqual(response.data['capstone_history']['intakes'], [])
+
+    def test_continuation_configuration_stays_editable_beside_source_phase(self):
+        self.continue_team()
+        response = self.client.post('/api/defense/stages/', {
+            'label': 'Capstone implementation review', 'is_active': False}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        source, current = response.data['phase_groups']
+        self.assertTrue(source['read_only'])
+        self.assertFalse(current['read_only'])
+        stage_id = response.data['stage']['id']
+        self.assertEqual([s['id'] for s in current['stages']], [stage_id])
+        self.assertFalse(current['stages'][0]['history_read_only'])
+        self.assertEqual([s['id'] for s in response.data['sequence_stages']], [stage_id])
+        updated = self.client.patch(f'/api/defense/stages/{stage_id}/',
+            {'description': 'Continuation setup'}, format='json')
+        self.assertEqual(updated.status_code, 200, updated.data)
 
     def test_fresh_intake_does_not_claim_old_published_stages_or_their_year(self):
         self.start_new_intake()

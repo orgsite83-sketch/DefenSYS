@@ -68,6 +68,21 @@ void main() {
     expect(state.phaseGroups.single['semester_id'], 4);
   });
 
+  test('locked source timeline is excluded from an empty continuation sequence', () {
+    const state = DefenseStagesState(
+      stages: [
+        {'id': 1, 'semester_id': 3, 'history_read_only': true},
+      ],
+      sequenceStages: [],
+      phaseGroups: [
+        {'phase': 'capstone_1', 'semester_id': 3, 'read_only': true},
+        {'phase': 'capstone_2', 'semester_id': 4, 'read_only': false},
+      ],
+    );
+    expect(state.pipelineStages, isEmpty);
+    expect(state.stages, hasLength(1));
+  });
+
   test('history preserves source semester and year across refreshes', () async {
     final requests = <Uri>[];
     setApiHttpClientForTesting(MockClient((request) async {

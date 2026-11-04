@@ -259,15 +259,15 @@ class SemesterStateHistoryTests(APITestCase):
         self.assertFalse(grade_configuration_lock(self.first, self.normal)[0])
         self.assertTrue(grade_configuration_lock(self.first, self.intake)[0])
 
-    def test_setup_history_has_connected_phase_groups_and_read_only_configuration(self):
+    def test_current_setup_has_connected_phases_and_locked_source_configuration(self):
         self.continue_team()
         before = StageGradingConfig.objects.count()
-        response = self.client.get('/api/defense/stages/', {'scope': 'history', 'intake_id': self.intake.pk})
+        response = self.client.get('/api/defense/stages/', {'scope': 'active'})
         self.assertEqual(response.status_code, 200, response.data)
         groups = response.data['phase_groups']
         self.assertEqual([g['phase'] for g in groups], ['capstone_1', 'capstone_2'])
         self.assertEqual(groups[1]['stages'], [])
-        self.assertTrue(all(g['read_only'] for g in groups))
+        self.assertEqual([g['read_only'] for g in groups], [True, False])
         self.client.get(f'/api/defense/stages/{self.first.pk}/', {'semester_id': self.normal.pk})
         self.assertEqual(StageGradingConfig.objects.count(), before)
 

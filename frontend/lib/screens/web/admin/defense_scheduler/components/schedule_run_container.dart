@@ -1409,12 +1409,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           message:
               'Rubrics need to be configured for this event ($rubricSummary). Please configure event rubrics in the PIT Events Setup tab first.',
           actionLabel: 'Configure event rubrics',
-          onAction: () async {
-            await context.push(FacultyRoutes.pitEvents);
-            if (mounted) {
-              ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
-              widget.onPrefillPitEventConfig();
-            }
+          onAction: () {
+            // Switch branches so setup is not retained over the scheduler.
+            context.go(FacultyRoutes.pitEvents);
           },
         ),
       );
