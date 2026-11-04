@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/services/documenter_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
 /// Official minutes have their own signing workflow and no upload/review actions.
 class SystemDefenseRecords extends ConsumerStatefulWidget {
@@ -46,91 +48,222 @@ class _SystemDefenseRecordsState extends ConsumerState<SystemDefenseRecords> {
   @override
   Widget build(BuildContext context) {
     if (widget.items.isEmpty) return const SizedBox.shrink();
-    final theme = Theme.of(context);
     final completed = widget.items
         .where((item) => item['completed'] == true)
         .length;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.description_outlined, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'System-generated Defense Records',
-                style: theme.textTheme.titleSmall,
-              ),
-            ),
-            Text(
-              '$completed/${widget.items.length} completed',
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        for (final item in widget.items)
-          Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: DefensysTokens.borderOf(context)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${item['id']} · ${item['label']}',
-                  style: theme.textTheme.bodyMedium?.copyWith(
+    return DefensysShadcnScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Defense records',
+                  style: DefensysTokens.body.copyWith(
+                    color: DefensysTokens.textPrimaryOf(context),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'PDF · Prepared by the assigned documenter',
-                  style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(width: DefensysTokens.spacingSm),
+              Text(
+                '$completed/${widget.items.length} completed',
+                style: DefensysTokens.caption.copyWith(
+                  color: DefensysTokens.textSecondaryOf(context),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '${item['session_status'] == 'done' ? 'Session finished · ' : ''}${item['status_label']}',
-                  style: theme.textTheme.bodyMedium,
-                ),
-                if (item['completed'] == true)
-                  TextButton.icon(
-                    onPressed: _opening ? null : () => _open(item),
-                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                    label: Text(_opening ? 'Opening…' : 'View signed PDF'),
-                  ),
-                for (final record
-                    in (item['records'] as List? ?? []).whereType<Map>()) ...[
-                  if (record['completed'] == true &&
-                      record['schedule_id'] != item['schedule_id'])
-                    TextButton(
-                      onPressed: _opening
-                          ? null
-                          : () => _open(Map<String, dynamic>.from(record)),
-                      child: Text('View signed minutes · ${record['date']}'),
-                    ),
-                  for (final revision
-                      in (record['retained_versions'] as List? ?? [])
-                          .whereType<Map>())
-                    TextButton(
-                      onPressed: _opening
-                          ? null
-                          : () => _open(
-                              Map<String, dynamic>.from(record),
-                              revisionId: (revision['id'] as num).toInt(),
-                            ),
-                      child: const Text('View retained signed version'),
-                    ),
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
-      ],
+          const SizedBox(height: 10),
+          for (final item in widget.items)
+            Padding(
+              padding: const EdgeInsets.only(bottom: DefensysTokens.spacingMd),
+              child: ShadCard(
+                width: double.infinity,
+                padding: const EdgeInsets.all(DefensysTokens.spacingLg),
+                backgroundColor: DefensysTokens.surfaceOf(context),
+                rowMainAxisSize: MainAxisSize.max,
+                columnCrossAxisAlignment: CrossAxisAlignment.stretch,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: DefensysTokens.surfaceHigherOf(context),
+                            borderRadius: BorderRadius.circular(
+                              DefensysTokens.radiusMd,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.description_outlined,
+                            size: 22,
+                            color: DefensysTokens.maroonTextOf(context),
+                          ),
+                        ),
+                        const SizedBox(width: DefensysTokens.spacingMd),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${item['label']}',
+                                style: DefensysTokens.body.copyWith(
+                                  color: DefensysTokens.textPrimaryOf(context),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: DefensysTokens.spacingSm),
+                              Wrap(
+                                spacing: DefensysTokens.spacingSm,
+                                runSpacing: DefensysTokens.spacingXs,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  ShadBadge.outline(
+                                    child: Text(
+                                      'PDF',
+                                      style: DefensysTokens.caption.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: DefensysTokens.textSecondaryOf(
+                                          context,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    'Prepared by the assigned documenter',
+                                    style: DefensysTokens.caption.copyWith(
+                                      color: DefensysTokens.textSecondaryOf(
+                                        context,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: DefensysTokens.spacingLg),
+                    Divider(height: 1, color: DefensysTokens.borderOf(context)),
+                    const SizedBox(height: DefensysTokens.spacingMd),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: Icon(
+                            item['completed'] == true
+                                ? Icons.verified_outlined
+                                : Icons.schedule_outlined,
+                            size: 16,
+                            color: item['completed'] == true
+                                ? DefensysTokens.maroonTextOf(context)
+                                : DefensysTokens.textSecondaryOf(context),
+                          ),
+                        ),
+                        const SizedBox(width: DefensysTokens.spacingSm),
+                        Expanded(
+                          child: Text(
+                            '${item['session_status'] == 'done' ? 'Session finished · ' : ''}${item['status_label']}',
+                            style: DefensysTokens.caption.copyWith(
+                              color: DefensysTokens.textSecondaryOf(context),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (item['completed'] == true) ...[
+                      const SizedBox(height: DefensysTokens.spacingMd),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ShadButton(
+                          size: ShadButtonSize.sm,
+                          backgroundColor: DefensysTokens.maroonOf(context),
+                          hoverBackgroundColor: DefensysTokens.isDark(context)
+                              ? DefensysTokens.maroonLight
+                              : DefensysTokens.maroonDark,
+                          foregroundColor: Colors.white,
+                          onPressed: _opening ? null : () => _open(item),
+                          leading: const Icon(
+                            Icons.picture_as_pdf_outlined,
+                            size: 16,
+                          ),
+                          child: Text(
+                            _opening ? 'Opening…' : 'View signed PDF',
+                            style: const TextStyle(
+                              fontFamily: DefensysTokens.fontFamilyInter,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    for (final record
+                        in (item['records'] as List? ?? [])
+                            .whereType<Map>()) ...[
+                      if (record['completed'] == true &&
+                          record['schedule_id'] != item['schedule_id'])
+                        _historyAction(
+                          context,
+                          onPressed: _opening
+                              ? null
+                              : () => _open(Map<String, dynamic>.from(record)),
+                          label: 'View signed minutes · ${record['date']}',
+                        ),
+                      for (final revision
+                          in (record['retained_versions'] as List? ?? [])
+                              .whereType<Map>())
+                        _historyAction(
+                          context,
+                          onPressed: _opening
+                              ? null
+                              : () => _open(
+                                  Map<String, dynamic>.from(record),
+                                  revisionId: (revision['id'] as num).toInt(),
+                                ),
+                          label: 'View retained signed version',
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
+
+  Widget _historyAction(
+    BuildContext context, {
+    required VoidCallback? onPressed,
+    required String label,
+  }) => Padding(
+    padding: const EdgeInsets.only(top: DefensysTokens.spacingSm),
+    child: ShadButton.ghost(
+      height: null,
+      padding: const EdgeInsets.symmetric(
+        horizontal: DefensysTokens.spacingSm,
+        vertical: DefensysTokens.spacingSm,
+      ),
+      onPressed: onPressed,
+      leading: Icon(
+        Icons.history,
+        size: 16,
+        color: DefensysTokens.textSecondaryOf(context),
+      ),
+      child: Flexible(
+        child: Text(
+          label,
+          style: DefensysTokens.caption.copyWith(
+            color: DefensysTokens.maroonTextOf(context),
+          ),
+        ),
+      ),
+    ),
+  );
 }

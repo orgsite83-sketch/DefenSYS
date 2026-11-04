@@ -58,6 +58,8 @@ class TeamWorkflowStatus {
       'Team endorsed. Waiting for the required shared documents to be accepted.',
     'shared_acknowledgment_pending' =>
       'Team endorsed. The assigned adviser/instructor needs to review and acknowledge the current shared proposals.',
+    'shared_setup_pending' =>
+      'The Project Manager must complete and open the shared system proposals before module endorsement.',
     'ready_to_schedule_redefense' =>
       'The administrator can schedule the next defense attempt.',
     'failed' || 'project_rejected' =>
@@ -238,7 +240,8 @@ class TeamWorkflowStatus {
 
   static int pendingFileReviewCount(Map item) {
     if (item['source'] == 'weekly_reports') {
-      return ((item['weekly_summary'] as Map?)?['pending'] as num? ?? 0).toInt();
+      return ((item['weekly_summary'] as Map?)?['pending'] as num? ?? 0)
+          .toInt();
     }
     if (item['can_faculty_review'] == false ||
         item['is_waived'] == true ||
@@ -320,6 +323,13 @@ class TeamWorkflowStatus {
         concept['enabled'] == true &&
         concept['can_edit'] == true) {
       final status = concept['status']?.toString();
+      if (status == 'shared_setup_pending') {
+        return const TeamWorkflowStatus(
+          'shared_setup_pending',
+          'Shared proposals needed',
+          WorkflowStatusTone.attention,
+        );
+      }
       if (status == 'module_confirmation_pending') {
         if (items(stage).any(
           (item) =>

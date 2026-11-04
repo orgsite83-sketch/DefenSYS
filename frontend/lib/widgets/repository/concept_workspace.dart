@@ -52,7 +52,8 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
 
 class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
   Widget get _hearingHistory => widget.showHistory
-      ? ConceptHistory(workflow: workflow) : const SizedBox.shrink();
+      ? ConceptHistory(workflow: workflow)
+      : const SizedBox.shrink();
 
   final controllers = <String, TextEditingController>{};
   bool busy = false;
@@ -655,6 +656,63 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
 
   @override
   Widget build(BuildContext context) {
+    final systems = (workflow['system_concepts'] as List? ?? [])
+        .whereType<Map>()
+        .toList();
+    if (workflow['shared_import_pending'] != true || systems.isEmpty) {
+      return _buildContent(context);
+    }
+    final provided = systems
+        .where((row) => '${row['title'] ?? ''}'.trim().isNotEmpty)
+        .length;
+    return DefensysShadcnScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ShadCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Shared system proposals',
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '$provided/${systems.length} shared titles provided',
+                  style: TextStyle(
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                for (var i = 0; i < systems.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      'System ${String.fromCharCode(65 + i)} · '
+                      '${'${systems[i]['title'] ?? ''}'.trim().isEmpty ? 'Pending proposal' : systems[i]['title']}',
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                const Text(
+                  'The Project Manager must complete and open the shared system proposals before module endorsement.',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildContent(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     if (!widget.showTitleCard) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -671,9 +729,11 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
       return DefensysShadcnScope(child: titleFirstReview());
     }
     if (workflow['enabled'] != true) {
-      return widget.showHistory ? ConceptHistory(
-        workflow: {'history': widget.stage['hearing_history']},
-      ) : const SizedBox.shrink();
+      return widget.showHistory
+          ? ConceptHistory(
+              workflow: {'history': widget.stage['hearing_history']},
+            )
+          : const SizedBox.shrink();
     }
     final user = ref.watch(authProvider).user ?? {};
     final admin = user['role'] == 'admin' || user['is_superuser'] == true;

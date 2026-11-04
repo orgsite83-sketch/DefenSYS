@@ -975,9 +975,15 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   }) {
     if (item['source'] == 'weekly_reports') {
       return WeeklyReportCollection(
-        key: ValueKey('weekly-${team['id']}-$stageLabel-${team['semester_id']}-${team['project_version']}'),
-        teamId: parseAsInt(team['id']), stageLabel: stageLabel, item: item,
-        semesterId: int.tryParse('${team['semester_id']}'), projectVersion: int.tryParse('${team['project_version']}'));
+        key: ValueKey(
+          'weekly-${team['id']}-$stageLabel-${team['semester_id']}-${team['project_version']}',
+        ),
+        teamId: parseAsInt(team['id']),
+        stageLabel: stageLabel,
+        item: item,
+        semesterId: int.tryParse('${team['semester_id']}'),
+        projectVersion: int.tryParse('${team['project_version']}'),
+      );
     }
     if (usesGroupedDocumentCard(item)) {
       final linkToReview =
@@ -3809,15 +3815,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final reviews = widget.conceptReview
         ? sharedReviewsForTeams(teams, stageLabel: widget.state.selectedStage)
         : <Map<String, dynamic>>[];
-    final sharedChecklists = widget.conceptReview
-        ? <String, Map<String, dynamic>>{}
-        : {
-            for (final summary in sharedChecklistsForTeams(
-              teams,
-              stageLabel: widget.state.selectedStage,
-            ))
-              's${summary['section_id']}-${summary['context_id']}': summary,
-          };
+    final sharedChecklists = {
+      for (final summary in sharedChecklistsForTeams(
+        teams,
+        stageLabel: widget.state.selectedStage,
+      ))
+        if (!widget.conceptReview || summary['source_project_id'] == null)
+          's${summary['section_id']}-${summary['context_id']}': summary,
+    };
     if (!sharedChecklists.containsKey(_selectedSharedChecklistKey)) {
       _selectedSharedChecklistKey = null;
     }

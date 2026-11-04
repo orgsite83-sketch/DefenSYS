@@ -644,6 +644,8 @@ def payload(team, stage, *, history=True, actor=None):
         title_status, title_label = title_workflow.next_status(concepts)
         if title_status != 'titles_accepted':
             status = title_status
+    if shared_import_pending and not (current and (current.schedule_id or current.verdict)):
+        status = 'shared_setup_pending'
     from .pit_decisions import decision_payload
     data = {'enabled': True, 'config': policy, 'round': current.number if current else 1,
         'selection_mode': 'shared_module' if shared_policy else 'team_concept',
@@ -683,6 +685,7 @@ def payload(team, stage, *, history=True, actor=None):
             'replacement_concepts_needed': 'Submit replacement concepts using the panel feedback.',
             'concept_review_pending': f'Upload missing documents and have the {reviewer_name(stage)} review the current papers.',
             'concept_endorsement_pending': f'The {reviewer_name(stage)} needs to endorse the reviewed concept set.',
+            'shared_setup_pending': 'The Project Manager must complete and open the shared system proposals before module endorsement.',
             'module_confirmation_pending': 'Review and confirm the module names and their shared system connections.',
             'shared_clearance_pending': 'Team endorsed. Waiting for the required shared papers to be accepted.',
             'shared_acknowledgment_pending': 'Team endorsed. The assigned adviser/instructor needs to review and acknowledge the current shared proposals.',
@@ -737,6 +740,8 @@ def summary(team, stage):
         title_status, title_label = title_workflow.next_status(title_rows)
         if title_status != 'titles_accepted':
             status = title_status
+    if systems and not policy.get('section_project_id') and not (current and (current.schedule_id or current.verdict)):
+        status = 'shared_setup_pending'
     return {'enabled': True, 'round': number, 'status': status,
         'title_workflow_version': current.title_workflow_version if current else 2,
         'title_status_label': title_workflow.next_status(title_rows)[1] if title_first else '',
@@ -754,6 +759,7 @@ def summary(team, stage):
             'concepts_needed': 'Students submit the required concepts.',
             'concept_review_pending': f'The {reviewer_name(stage)} reviews the current concept papers.',
             'concept_endorsement_pending': f'The {reviewer_name(stage)} endorses the reviewed concept set.',
+            'shared_setup_pending': 'The Project Manager must complete and open the shared system proposals before module endorsement.',
             'module_confirmation_pending': 'Review and confirm the module names and shared system connections.',
             'shared_clearance_pending': 'Team endorsed. Waiting for shared paper acceptance.',
             'shared_acknowledgment_pending': 'Team endorsed. The assigned faculty must acknowledge the current shared proposals.',

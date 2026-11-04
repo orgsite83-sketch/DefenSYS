@@ -41,6 +41,48 @@ class ImportedSharedProposalTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         return response.data
 
+    def test_single_remaining_pm_team_keeps_shared_setup_visible_and_blocks_endorsement(self):
+        from . import shared_deliverables as shared
+        from repository.deliverables.endorsement import endorsement_review
+        self.other.delete()
+        self.team = StudentTeam.objects.get(pk=self.team.pk)
+        self.assertEqual(StudentTeam.objects.filter(section=self.team.section).count(), 1)
+        state = self.load()
+        self.assertEqual(state['project_manager_id'], self.student.pk)
+        self.assertTrue(state['can_edit_names'])
+        self.assertEqual(len(state['teams']), 1)
+        self.assertEqual([s['title'] for s in state['systems']], ['Imported shared architecture', '', ''])
+        for projection in (concepts.payload(self.team, self.stage, actor=self.adviser),
+                           concepts.summary(self.team, self.stage)):
+            self.assertTrue(projection['shared_import_pending'])
+            self.assertEqual(projection['status'], 'shared_setup_pending')
+            self.assertIn('Project Manager', projection['next_step'])
+        groups = shared.groups_for_team(self.team, self.adviser)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(len(groups[0]['systems']), 3)
+        review = endorsement_review(self.team, self.stage.label)
+        self.assertFalse(review['can_review_and_endorse'])
+        self.assertIn('Project Manager', review['reason'])
+        self.assertFalse(SectionConceptProject.objects.exists())
+        result = self.save(state, concepts=self.titles())
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertEqual(len(result.data['teams']), 1)
+        self.assertIsNotNone(services.project_for(StudentTeam.objects.get(pk=self.team.pk), self.stage))
+        self.client.force_authenticate(self.adviser)
+        listed = self.client.get('/api/repository/section-concepts/', {'team_id': self.team.pk})
+        self.assertEqual(listed.status_code, 200, listed.data)
+        self.assertEqual(len(listed.data['projects']), 1)
+
+    def test_pending_shared_titles_are_visible_even_without_shared_document_requirements(self):
+        self.other.delete()
+        self.stage.shared_deliverables = []
+        self.stage.save(update_fields=['shared_deliverables'])
+        state = concepts.payload(self.team, self.stage, actor=self.adviser)
+        self.assertEqual(state['status'], 'shared_setup_pending')
+        self.assertTrue(state['shared_import_pending'])
+        self.assertEqual([s['title'] for s in state['system_concepts']], ['Imported shared architecture', '', ''])
+        self.assertFalse(SectionConceptProject.objects.exists())
+
     def test_configured_section_form_activates_imported_proposals_only_on_pm_upload(self):
         from . import shared_deliverables as shared
         from defense.shared_deliverables import validate_shared_deliverables

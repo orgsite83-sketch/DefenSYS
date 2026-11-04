@@ -686,6 +686,7 @@ def summary(team, context):
         return None
     return {'team_id': team.pk, 'section_id': profile['section'].pk, 'section': team.section,
         'context_id': context.pk, 'stage_label': context.label,
+        'source_project_id': profile['project'].pk if profile['project'] else None,
         'project_manager_name': profile['manager'].get_full_name() or profile['manager'].username,
         'pre_complete': required_complete(profile), 'post_complete': required_complete(profile, 'post')}
 

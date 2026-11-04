@@ -96,6 +96,58 @@ Map<String, dynamic> _item() => {
 };
 
 void main() {
+  for (final version in [1, 2]) {
+    testWidgets(
+      'pending shared setup stays visible with accepted module titles v$version',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1100, 1200));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final workflow = {
+          ..._workflow(),
+          'title_workflow_version': version,
+          'shared_import_pending': true,
+          'status': 'shared_setup_pending',
+          'system_concepts': [
+            {'key': 'c1', 'title': 'HABI shared platform'},
+            {'key': 'c2', 'title': ''},
+            {'key': 'c3', 'title': ''},
+          ],
+          'concepts': [
+            for (var i = 1; i <= 3; i++)
+              {
+                'key': 'c$i',
+                'title': 'Accepted module $i',
+                'faculty_confirmed': true,
+                if (version == 2) 'title_review': {'state': 'accepted'},
+              },
+          ],
+        };
+        final stage = {'concept_workflow': workflow};
+        expect(
+          TeamWorkflowStatus.fromStage(stage).code,
+          'shared_setup_pending',
+        );
+        await pumpDefensysWidget(
+          tester,
+          SingleChildScrollView(
+            child: ConceptWorkspace(
+              teamId: 8,
+              stageLabel: 'Concept Proposal',
+              stage: stage,
+            ),
+          ),
+          overrides: authTestOverrides(),
+        );
+        expect(find.text('Shared system proposals'), findsOneWidget);
+        expect(find.text('1/3 shared titles provided'), findsOneWidget);
+        expect(find.text('System A · HABI shared platform'), findsOneWidget);
+        expect(find.text('System B · Pending proposal'), findsOneWidget);
+        expect(find.text('System C · Pending proposal'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets(
     'assigned project hides the duplicate review card and endorsement action',
     (tester) async {
@@ -277,7 +329,10 @@ void main() {
       expect(config['required_count'], 5);
       expect(find.text('5 concepts (custom)'), findsOneWidget);
       expect(config['score_carryover'], 'retain');
-      expect(find.text('Not required unless the panel requests it'), findsNothing);
+      expect(
+        find.text('Not required unless the panel requests it'),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
     },
   );
