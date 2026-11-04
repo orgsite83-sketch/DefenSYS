@@ -10,6 +10,7 @@ import 'package:defensys/services/realtime_sync_service.dart';
 import 'package:defensys/services/session_keepalive_service.dart';
 import 'package:defensys/services/theme_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'widgets/updates/app_update_host.dart';
 
 void main() {
   if (redirectToSharedWebAddress()) return;
@@ -33,6 +34,8 @@ class DefenSYSApp extends ConsumerWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.mistDarkTheme,
             themeMode: themeMode,
+            builder: (context, child) =>
+                AppUpdateHost(child: child ?? const SizedBox.shrink()),
             localizationsDelegates: const [
               AppLocalizations.delegate,
               GlobalMaterialLocalizations.delegate,

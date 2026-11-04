@@ -51,6 +51,14 @@ void main() {
     );
   }
 
+  testWidgets('installed Android web app keeps its Android APK download option', (tester) async {
+    await show(tester, _Install(const InstallationState(isWeb: true, installed: true,
+      secure: true, platform: InstallPlatform.android)), download: 'https://defensys.example/DefenSYS.apk');
+    expect(find.text('You’re using the app'), findsOneWidget);
+    expect(find.text('Download Android app'), findsOneWidget);
+    expect(find.text('Install DefenSYS'), findsNothing);
+  });
+
   for (final width in [320.0, 390.0, 1200.0]) {
     testWidgets(
       'iPhone guide fits width $width without a fake install prompt',

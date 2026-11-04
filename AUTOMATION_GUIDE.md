@@ -1,5 +1,8 @@
 # DefenSYS demo automation guide
 
+For web/PWA and signed Android releases, installation links, version checks and
+safe update prompts, use [App release guide](docs/APP_RELEASE_GUIDE.md).
+
 For a full local backup and a fresh database to test the workflow yourself,
 see [Local development setup](LOCAL_DEVELOPMENT.md). Sandbox commands use a
 separate database and uploads folder.

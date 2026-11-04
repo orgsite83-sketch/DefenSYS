@@ -14,7 +14,8 @@ class ESignatureService {
 
   ESignatureService(this._ref);
 
-  AuthenticatedHttpClient get _client => _ref.read(authenticatedHttpClientProvider);
+  AuthenticatedHttpClient get _client =>
+      _ref.read(authenticatedHttpClientProvider);
 
   Future<bool> uploadSignature(Uint8List bytes, String filename) async {
     try {
@@ -22,14 +23,15 @@ class ESignatureService {
         'POST',
         Uri.parse('${ApiConfig.userSignatureUrl}/'),
       );
-      
-      request.files.add(http.MultipartFile.fromBytes(
-        'e_signature',
-        bytes,
-        filename: filename,
-      ));
+
+      request.files.add(
+        http.MultipartFile.fromBytes('e_signature', bytes, filename: filename),
+      );
 
       final response = await _client.sendAuthenticated(request);
+      // Only the status is needed here, but drain the body so the connection
+      // and shared in-flight upload guard are released on success and failure.
+      await response.stream.drain<void>();
       if (response.statusCode == 200) {
         final auth = _ref.read(authProvider);
         if (auth.token != null) {

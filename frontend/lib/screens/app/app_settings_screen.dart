@@ -10,6 +10,10 @@ import '../../services/auth_provider.dart';
 import '../../services/installation/app_installation.dart';
 import '../../services/theme_provider.dart';
 import '../../theme/defensys_tokens.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import '../../widgets/shadcn/defensys_shadcn_scope.dart';
+import '../../widgets/updates/app_update_host.dart';
+import '../../services/updates/update_service.dart';
 
 class AppSettingsScreen extends ConsumerWidget {
   const AppSettingsScreen({
@@ -278,10 +282,24 @@ class _AppSettingsContentState extends ConsumerState<AppSettingsContent> {
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user ?? {};
     final status = _installation.state;
-    final download = AppDistributionConfig.androidDownload(
+    final configuredDownload = AppDistributionConfig.androidDownload(
       value:
           widget.androidDownloadUrl ?? AppDistributionConfig.androidDownloadUrl,
     );
+    final releases = ref.watch(appUpdateProvider).catalog;
+    final publishedApk = releases?.android;
+    final download = releases != null
+        ? publishedApk?.download
+        : widget.androidDownloadUrl != null
+        ? configuredDownload
+        : configuredDownload == null
+        ? null
+        : ref
+              .watch(
+                verifiedAndroidDownloadProvider(configuredDownload.toString()),
+              )
+              .asData
+              ?.value;
     final eligible = WorkspaceAccess.canUsePhone(user);
     final ios = status.platform == InstallPlatform.ios;
     return Column(
@@ -306,10 +324,16 @@ class _AppSettingsContentState extends ConsumerState<AppSettingsContent> {
                 'Download the Android app, open the APK and follow your phone’s installation instructions.',
               ),
               const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: () => _download(download),
-                icon: const Icon(Icons.android),
-                label: const Text('Download Android app'),
+              if (publishedApk != null)
+                Text(
+                  'Version ${publishedApk.version} · ${(publishedApk.sizeBytes! / (1024 * 1024)).toStringAsFixed(1)} MB',
+                ),
+              DefensysShadcnScope(
+                child: ShadButton(
+                  onPressed: () => _download(download),
+                  leading: const Icon(Icons.android),
+                  child: const Text('Download Android app'),
+                ),
               ),
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
@@ -388,7 +412,25 @@ class _AppSettingsContentState extends ConsumerState<AppSettingsContent> {
               title: Text('You’re using the app'),
               subtitle: Text('Your workspace is ready on this device.'),
             ),
+            if (!ios && download != null) ...[
+              if (publishedApk != null)
+                Text(
+                  'Android ${publishedApk.version} · ${(publishedApk.sizeBytes! / (1024 * 1024)).toStringAsFixed(1)} MB',
+                ),
+              DefensysShadcnScope(
+                child: ShadButton.outline(
+                  onPressed: () => _download(download),
+                  leading: const Icon(Icons.android),
+                  child: const Text('Download Android app'),
+                ),
+              ),
+              const Text(
+                'Open the downloaded APK and follow Android’s installation instructions.',
+              ),
+            ],
           ]),
+        const SizedBox(height: 16),
+        const AppVersionSettings(),
       ],
     );
   }

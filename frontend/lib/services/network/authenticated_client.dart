@@ -249,6 +249,9 @@ class AuthenticatedHttpClient {
       return streamed;
     }
 
+    // This response is discarded on retry; release its stream/write guard.
+    await streamed.stream.drain<void>();
+
     final refreshed = await _refreshSingleFlight();
     if (!refreshed) {
       await _onAuthFailure();
@@ -260,6 +263,7 @@ class AuthenticatedHttpClient {
     request.headers['Authorization'] = 'Bearer $token';
     streamed = await apiHttpClient.send(request);
     if (streamed.statusCode == 401) {
+      await streamed.stream.drain<void>();
       await _onAuthFailure();
     }
     return streamed;

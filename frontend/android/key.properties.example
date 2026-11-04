@@ -1,0 +1,6 @@
+# Copy to key.properties (ignored by Git). Paths are relative to android/.
+# Keep the real keystore and this file private; preserve existing app identity.
+storeFile=/absolute/private/path/defensys-release.jks
+storePassword=REPLACE_LOCALLY
+keyAlias=defensys
+keyPassword=REPLACE_LOCALLY
