@@ -1339,7 +1339,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         (conceptConfig['enabled'] == true ? defaultSharedDeliverables() : []),);
     bool minutesRequired = setup?['minutes_required'] is bool
         ? setup!['minutes_required'] as bool : true;
-    var weeklyConfig = initialWeeklySettings(setup?['weekly_reporting'] as Map?, existingStages);
+    var weeklyConfig = initialWeeklySettings(setup?['weekly_reporting'] as Map?);
+    if (!editing) {
+      weeklyConfig.remove('period_id');
+      weeklyConfig.remove('defense_stage_id');
+    }
     final weeklyTemplate = weeklyTemplateDraft(setup);
     final stageRequirementsKey = GlobalKey();
     final minutesNumber = TextEditingController(

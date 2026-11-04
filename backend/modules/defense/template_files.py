@@ -102,12 +102,8 @@ def _assert_editable(context, key, definitions):
     if (hasattr(context, 'weekly_reporting') and context.weekly_reporting.get('enabled')
             and key == ('team', 'WPR')):
         from student_teams.weekly_progress.models import WeeklyReportingPeriod
-        WeeklyReportingPeriod.objects.select_for_update().filter(pk=context.weekly_reporting.get('period_id')).first()
-        # Another stage can reuse accepted weeks while attaching its own initial
-        # template. A shared calendar's history must not block this first save.
-        if not DeliverableTemplate.objects.filter(**owner_filter(context),
-                requirement_scope='team', deliverable_id='WPR').exists():
-            return
+        WeeklyReportingPeriod.objects.select_for_update().filter(
+            pk=context.weekly_reporting.get('period_id'), defense_stage=context).first()
     row = definitions.get(key, {})
     if requirement_has_data(context, key[1], policy=row.get('file_policy'), shared=key[0] == 'shared'):
         raise ValidationError({'template': DATA_REASON})

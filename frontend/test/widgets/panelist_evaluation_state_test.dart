@@ -887,17 +887,18 @@ void main() {
       DefensysTokens.successBg,
     );
   });
-  testWidgets('Submitted PIT scores describe the numeric event result', (
+  testWidgets('Submitted scores keep their status without an extra notice', (
     tester,
   ) async {
-    final team = _team(isCapstone: false)..isPosted = true;
-    await _showSheet(tester, [team], start: false);
-    expect(
-      find.textContaining('PIT event result follows the final numeric grade'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('official stage verdict'), findsNothing);
-    expect(find.text('Panel Chair Official Verdict'), findsNothing);
+    for (final isCapstone in [true, false]) {
+      final team = _team(isCapstone: isCapstone)..isPosted = true;
+      await _showSheet(tester, [team], start: false);
+      expect(find.text('Your grades are submitted'), findsNothing);
+      expect(find.textContaining('official stage verdict'), findsNothing);
+      expect(find.text('Panel Chair Official Verdict'), findsNothing);
+      expect(find.text('View scores'), findsOneWidget);
+      expect(find.textContaining('Submitted'), findsWidgets);
+    }
   });
   testWidgets(
     'Draft hydration restores zero without filling unanswered scores',

@@ -6,7 +6,8 @@ import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
-import 'package:defensys/widgets/widgets.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/models/adviser_workflow.dart';
 import 'package:defensys/widgets/adviser/workflow_reminder.dart';
 
@@ -607,127 +608,6 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     }
   }
 
-  Widget _sectionTitle(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: DefensysTokens.textSecondaryOf(context),
-          fontWeight: FontWeight.w900,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
-
-  Widget _gradeBadge(String label, dynamic score) {
-    final parsedScore = parseAsDouble(score);
-    final hasScore = parsedScore != null;
-    final valueText = hasScore ? parsedScore.toStringAsFixed(2) : 'Pending';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: hasScore ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: hasScore ? DefensysTokens.borderOf(context) : const Color(0xFFFDE68A),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '$label: ',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: DefensysTokens.textSecondaryOf(context),
-            ),
-          ),
-          Text(
-            valueText,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: hasScore ? DefensysTokens.textPrimaryOf(context) : const Color(0xFFB45309),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _overallGradeBadge(dynamic score, String result) {
-    final parsedScore = parseAsDouble(score);
-    final hasScore = parsedScore != null;
-    final valueText = hasScore ? parsedScore.toStringAsFixed(2) : 'Pending';
-
-    Color bg = const Color(0xFFF3F4F6);
-    Color border = const Color(0xFFE5E7EB);
-    Color text = DefensysTokens.textPrimaryOf(context);
-
-    if (hasScore) {
-      if (result == 'passed') {
-        bg = const Color(0xFFECFDF5);
-        border = const Color(0xFFA7F3D0);
-        text = const Color(0xFF047857);
-      } else {
-        bg = const Color(0xFFFEF2F2);
-        border = const Color(0xFFFCA5A5);
-        text = const Color(0xFFB91C1C);
-      }
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Overall Grade: ',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: DefensysTokens.textPrimaryOf(context),
-            ),
-          ),
-          Text(
-            valueText,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              color: text,
-            ),
-          ),
-          if (hasScore) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: result == 'passed' ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                result == 'passed' ? 'PASSED' : 'FAILED',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  color: result == 'passed' ? const Color(0xFF065F46) : const Color(0xFF991B1B),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _buildCriteriaTable({
     required List<Map<String, dynamic>> criteria,
     required bool isTeam,
@@ -741,7 +621,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         padding: EdgeInsets.all(12),
         child: Text(
           'No criteria defined for this section.',
-          style: TextStyle(color: DefensysTokens.textSecondaryOf(context), fontStyle: FontStyle.italic),
+          style: TextStyle(
+            color: DefensysTokens.textSecondaryOf(context),
+            fontStyle: FontStyle.italic,
+          ),
         ),
       );
     }
@@ -770,68 +653,111 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               border: i < criteria.length - 1
-                  ? Border(bottom: BorderSide(color: DefensysTokens.borderOf(context), width: 0.5))
+                  ? Border(
+                      bottom: BorderSide(
+                        color: DefensysTokens.borderOf(context),
+                        width: 0.5,
+                      ),
+                    )
                   : null,
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: DefensysTokens.textPrimaryOf(context)),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final label = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
-                      if (desc.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          desc,
-                          style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
+                    ),
+                    if (desc.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        desc,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: DefensysTokens.textSecondaryOf(context),
                         ),
-                      ],
+                      ),
                     ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text('/ $maxScore', style: TextStyle(color: DefensysTokens.textSecondaryOf(context), fontSize: 12)),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 80,
-                  child: isReadOnly
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: DefensysTokens.surfaceHigherOf(context),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: DefensysTokens.borderOf(context)),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            ctrl.text.isNotEmpty ? ctrl.text : '-',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: DefensysTokens.textPrimaryOf(context),
+                  ],
+                );
+                final score = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '/ $maxScore',
+                      style: TextStyle(
+                        color: DefensysTokens.textSecondaryOf(context),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 80,
+                      child: isReadOnly
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.surfaceHigherOf(context),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: DefensysTokens.borderOf(context),
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                ctrl.text.isNotEmpty ? ctrl.text : '-',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: DefensysTokens.textPrimaryOf(context),
+                                ),
+                              ),
+                            )
+                          : ShadInput(
+                              controller: ctrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              textAlign: TextAlign.center,
+                              placeholder: const Text('Score'),
+                              style: TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                                fontSize: 13,
+                                color: DefensysTokens.textPrimaryOf(context),
+                              ),
+                              onChanged: (_) => setState(() {}),
                             ),
-                          ),
-                        )
-                      : TextField(
-                          controller: ctrl,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          textAlign: TextAlign.center,
-                          decoration: InputDecoration(
-                            hintText: 'Score',
-                            hintStyle: const TextStyle(fontSize: 11),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                            isDense: true,
-                          ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                ),
-              ],
+                    ),
+                  ],
+                );
+                if (constraints.maxWidth < 420) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      label,
+                      const SizedBox(height: 12),
+                      Align(alignment: Alignment.centerRight, child: score),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: label),
+                    const SizedBox(width: 16),
+                    score,
+                  ],
+                );
+              },
             ),
           );
         }).toList(),
@@ -843,483 +769,432 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
   Widget build(BuildContext context) {
     final teamId = parseAsInt(widget.team['id']);
     final gradingState = ref.watch(adviserGradingProvider);
-    
-    final gradeRecord = adviserGradeForTeam(widget.team, widget.selectedStage,
-        gradingState.grades) ?? <String, dynamic>{};
-
-    _initializeGradingControllersForTeam(teamId, widget.selectedStage, gradeRecord);
-
-    final status = gradeRecord['status']?.toString() ?? 'pending';
-    final panelScore = gradeRecord['panel_score'];
-    final peerScore = gradeRecord['peer_score'];
-    final adviserScore = gradeRecord['adviser_score'];
-    final finalGrade = gradeRecord['final_grade'];
-    final result = gradeRecord['result']?.toString() ?? 'pending';
-
-    final isOfficiallyComplete = gradeRecord['is_officially_complete'] == true ||
+    final gradeRecord =
+        adviserGradeForTeam(
+          widget.team,
+          widget.selectedStage,
+          gradingState.grades,
+        ) ??
+        <String, dynamic>{};
+    _initializeGradingControllersForTeam(
+      teamId,
+      widget.selectedStage,
+      gradeRecord,
+    );
+    final officiallyComplete =
+        gradeRecord['is_officially_complete'] == true ||
         (widget.team['stages'] is List &&
-            (widget.team['stages'] as List).any((s) =>
-                s is Map &&
-                s['stage_label']?.toString() == widget.selectedStage &&
-                s['is_officially_complete'] == true));
-    final guidance = AdviserGradingStatus.fromGrade(gradeRecord,
-      enabled: gradingState.adviserGradingEnabled, loading: gradingState.isLoading,
-      error: gradingState.error, officiallyComplete: isOfficiallyComplete);
-    final isGradingLocked = !guidance.canGrade;
-    final hasRecordedScores = panelScore != null || peerScore != null ||
-        adviserScore != null || finalGrade != null;
-    final showAssessment = hasRecordedScores;
-
-    Color statusBg = const Color(0xFFFEF3C7);
-    Color statusText = const Color(0xFFD97706);
-    String statusLabel = 'Awaiting all scores';
-
-    if (status == 'published') {
-      statusBg = const Color(0xFFD1FAE5);
-      statusText = const Color(0xFF047857);
-      statusLabel = 'Published';
-    } else if (status == 'awaiting_peers') {
-      statusBg = const Color(0xFFDBEAFE);
-      statusText = const Color(0xFF2563EB);
-      statusLabel = 'Awaiting Peers';
-    }
-
+            (widget.team['stages'] as List).any(
+              (s) =>
+                  s is Map &&
+                  s['stage_label']?.toString() == widget.selectedStage &&
+                  s['is_officially_complete'] == true,
+            ));
+    final guidance = AdviserGradingStatus.fromGrade(
+      gradeRecord,
+      enabled: gradingState.adviserGradingEnabled,
+      loading: gradingState.isLoading,
+      error: gradingState.error,
+      officiallyComplete: officiallyComplete,
+    );
     final key = '$teamId-${widget.selectedStage}';
-    final assignedRubric = widget.teamSelectedRubrics[key];
-    final isAlreadyGraded = adviserScore != null;
-
-    final targetType = assignedRubric?['target_type']?.toString() ?? 'team';
-    final teamCrits = _getTeamCriteria(assignedRubric);
-    final indCrits = _getIndividualCriteria(assignedRubric);
+    final rubric = widget.teamSelectedRubrics[key];
+    final teamCriteria = _getTeamCriteria(rubric);
+    final individualCriteria = _getIndividualCriteria(rubric);
     final members = _getMembers(gradeRecord);
+    if (_selectedStudentIndex >= members.length) _selectedStudentIndex = 0;
+    final complete = _allCriteriaFilledForTeam(
+      teamId,
+      widget.selectedStage,
+      gradeRecord,
+    );
+    final filled = _filledCountForTeam(
+      teamId,
+      widget.selectedStage,
+      gradeRecord,
+    );
+    final total = _totalCountForTeam(teamId, widget.selectedStage, gradeRecord);
+    final completedMembers = members
+        .where(
+          (m) => _isStudentCriteriaComplete(
+            teamId,
+            widget.selectedStage,
+            m['id'] ?? m['student_id'],
+          ),
+        )
+        .length;
+    final progressLabel = individualCriteria.isNotEmpty
+        ? '$completedMembers of ${members.length} members scored'
+        : '$filled of $total criteria completed';
+    final secondary = DefensysTokens.textSecondaryOf(context);
+    final primary = DefensysTokens.textPrimaryOf(context);
+    final brand = DefensysTokens.maroonTextOf(context);
+    final showAssessment = [
+      'panel_score',
+      'peer_score',
+      'adviser_score',
+      'final_grade',
+    ].any((field) => gradeRecord[field] != null);
 
-    if (_selectedStudentIndex >= members.length && members.isNotEmpty) {
-      _selectedStudentIndex = 0;
-    }
+    Widget heading(String text) => Text(
+      text,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: primary,
+      ),
+    );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    Widget memberList() => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.isAdviser) ...[
-          AdviserWorkflowReminder(
-            key: const Key('adviser-grading-reminder'),
-            onLightSurface: true,
-            title: guidance.title, detail: guidance.detail, tone: guidance.tone,
-            progress: guidance.canGrade && assignedRubric != null
-                ? _filledCountForTeam(teamId, widget.selectedStage, gradeRecord) /
-                  _totalCountForTeam(teamId, widget.selectedStage, gradeRecord).clamp(1, 100000)
-                : null,
-            progressLabel: '${_filledCountForTeam(teamId, widget.selectedStage, gradeRecord)} of '
-                '${_totalCountForTeam(teamId, widget.selectedStage, gradeRecord)} criteria completed',
-          ),
-          if (showAssessment) const SizedBox(height: 18),
-        ],
-        // An empty assessment looks like a pending grade before grading opens.
-        if (showAssessment) ...[
-        Wrap(
-          spacing: 12, runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              'Overall assessment · ${widget.selectedStage}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                color: DefensysTokens.textPrimaryOf(context),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: statusBg,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                statusLabel,
-                style: TextStyle(
-                  color: statusText,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 10,
-          children: [
-            _gradeBadge('Panel', panelScore),
-            _gradeBadge('Peer', peerScore),
-            _gradeBadge('Adviser', adviserScore),
-            _overallGradeBadge(finalGrade, result),
-          ],
-        ),
-        const SizedBox(height: 24),
-        const Divider(color: Color(0xFFF1F5F9), height: 1),
-        const SizedBox(height: 16),
-        ] else if (!widget.isAdviser)
+        heading('Members'),
+        const SizedBox(height: 10),
+        for (var index = 0; index < members.length; index++)
           Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              'No grades are available for this stage yet.',
-              style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
-            ),
-          ),
-
-        // Rubric Grading Form
-        if (widget.isAdviser) ...[
-          if (gradingState.adviserGradingEnabled && assignedRubric != null) ...[
-            Wrap(
-              spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                _sectionTitle('Rubric: ${assignedRubric['name']} (${assignedRubric['scale'] ?? ''})'),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  margin: const EdgeInsets.only(bottom: 6),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    targetType == 'both'
-                        ? 'Both (Team & Individual)'
-                        : targetType == 'individual'
-                            ? 'Individual'
-                            : 'Team',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: DefensysTokens.maroonTextOf(context),
-                    ),
-                  ),
-                ),
-                Builder(builder: (_) {
-                  final total = _totalCountForTeam(teamId, widget.selectedStage, gradeRecord);
-                  final filled = _filledCountForTeam(teamId, widget.selectedStage, gradeRecord);
-                  final allDone = filled == total && total > 0;
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: allDone
-                          ? AppColors.success.withValues(alpha: 0.1)
-                          : AppColors.warning.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '$filled / $total scored',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: allDone ? AppColors.success : AppColors.warning,
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // Team-wide criteria section
-            if (teamCrits.isNotEmpty) ...[
-              Row(
-                children: [
-                  Icon(Icons.groups_outlined, size: 16, color: DefensysTokens.maroonTextOf(context)),
-                  const SizedBox(width: 6),
-                  Text(
-                    targetType == 'both' ? 'Team-Wide Criteria' : 'Criteria',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: DefensysTokens.textPrimaryOf(context)),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _isTeamCriteriaComplete(teamId, widget.selectedStage)
-                          ? AppColors.success.withValues(alpha: 0.1)
-                          : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      _isTeamCriteriaComplete(teamId, widget.selectedStage) ? '✓ Complete' : 'Required',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: _isTeamCriteriaComplete(teamId, widget.selectedStage)
-                            ? AppColors.success
-                            : DefensysTokens.textSecondaryOf(context),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              _buildCriteriaTable(
-                criteria: teamCrits,
-                isTeam: true,
-                teamId: teamId,
-                stageLabel: widget.selectedStage,
-                isReadOnly: isGradingLocked,
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Individual criteria section
-            if (indCrits.isNotEmpty) ...[
-              Row(
-                children: [
-                  Icon(Icons.person_outline_rounded, size: 16, color: DefensysTokens.maroonTextOf(context)),
-                  const SizedBox(width: 6),
-                  Expanded(child: Text(
-                    'Individual Criteria (Score Each Member)',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: DefensysTokens.textPrimaryOf(context)),
-                  )),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              if (members.isNotEmpty) ...[
-                // Horizontal student tabs
-                SizedBox(
-                  height: 40,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: members.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (_, idx) {
-                      final m = members[idx];
-                      final sId = m['id'] ?? m['student_id'];
-                      final isSelected = _selectedStudentIndex == idx;
-                      final isComplete = _isStudentCriteriaComplete(teamId, widget.selectedStage, sId);
-                      final isLeader = m['is_leader'] == true || m['role']?.toString() == 'leader';
-                      final sScore = _computeStudentScore(teamId, widget.selectedStage, sId, gradeRecord);
-
-                      return InkWell(
-                        onTap: () => setState(() => _selectedStudentIndex = idx),
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.surfaceOf(context),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
-                              width: isSelected ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Row(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Builder(
+              builder: (_) {
+                final member = members[index];
+                final id = member['id'] ?? member['student_id'];
+                final selected = _selectedStudentIndex == index;
+                final done = _isStudentCriteriaComplete(
+                  teamId,
+                  widget.selectedStage,
+                  id,
+                );
+                final started =
+                    widget.teamStudentCriteriaScoreCtrls[key]?[id]?.values.any(
+                      (c) => c.text.trim().isNotEmpty,
+                    ) ??
+                    false;
+                return Semantics(
+                  selected: selected,
+                  child: ShadButton.outline(
+                    key: ValueKey('adviser-member-$id'),
+                    height: 0,
+                    expands: true,
+                    padding: const EdgeInsets.all(12),
+                    backgroundColor: selected
+                        ? DefensysTokens.surfaceHigherOf(context)
+                        : null,
+                    onPressed: () =>
+                        setState(() => _selectedStudentIndex = index),
+                    child: Row(
+                      children: [
+                        if (selected) ...[
+                          Icon(Icons.person_outline, size: 16, color: brand),
+                          const SizedBox(width: 8),
+                        ],
+                        Expanded(
+                          child: Column(
                             mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (isLeader) ...[
-                                Icon(Icons.star_rounded,
-                                    size: 14, color: isSelected ? Colors.amberAccent : Colors.amber.shade700),
-                                const SizedBox(width: 4),
-                              ],
                               Text(
-                                m['name']?.toString() ?? 'Student',
+                                member['name']?.toString() ?? 'Student',
                                 style: TextStyle(
+                                  fontFamily: DefensysTokens.fontFamilyInter,
                                   fontSize: 12,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                  color: isSelected ? Colors.white : DefensysTokens.textPrimaryOf(context),
+                                  fontWeight: FontWeight.w600,
+                                  color: selected ? brand : primary,
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? DefensysTokens.surfaceOf(context).withValues(alpha: 0.2)
-                                      : isComplete
-                                          ? AppColors.success.withValues(alpha: 0.1)
-                                          : Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  isComplete ? '${sScore.toStringAsFixed(1)}%' : 'Pending',
-                                  style: TextStyle(
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: isSelected
-                                        ? Colors.white
-                                        : isComplete
-                                            ? AppColors.success
-                                            : DefensysTokens.textSecondaryOf(context),
-                                  ),
+                              const SizedBox(height: 4),
+                              Text(
+                                done
+                                    ? '${_computeStudentScore(teamId, widget.selectedStage, id, gradeRecord).toStringAsFixed(1)} / 100'
+                                    : started
+                                    ? 'In progress'
+                                    : 'Not scored',
+                                style: TextStyle(
+                                  fontFamily: DefensysTokens.fontFamilyInter,
+                                  fontSize: 11,
+                                  color: secondary,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      );
-                    },
+                        if (done)
+                          Icon(Icons.check_rounded, size: 16, color: secondary),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+
+    Widget activeMember() {
+      final member = members[_selectedStudentIndex];
+      final id = member['id'] ?? member['student_id'];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          heading('Scoring: ${member['name']}'),
+          const SizedBox(height: 6),
+          Text(
+            _isStudentCriteriaComplete(teamId, widget.selectedStage, id) &&
+                    _isTeamCriteriaComplete(teamId, widget.selectedStage)
+                ? 'Student score: ${_computeStudentScore(teamId, widget.selectedStage, id, gradeRecord).toStringAsFixed(2)} / 100'
+                : 'Score each criterion for this member.',
+            style: TextStyle(fontSize: 12, color: secondary),
+          ),
+          const SizedBox(height: 14),
+          _buildCriteriaTable(
+            criteria: individualCriteria,
+            isTeam: false,
+            studentId: id,
+            teamId: teamId,
+            stageLabel: widget.selectedStage,
+            isReadOnly: !guidance.canGrade || gradingState.isSaving,
+          ),
+        ],
+      );
+    }
+
+    final scoreSummary = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Adviser score${individualCriteria.isNotEmpty ? ' · Team average' : ''}',
+          style: TextStyle(fontSize: 12, color: secondary),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          complete
+              ? '${_computeOverallTeamScore(teamId, widget.selectedStage, gradeRecord).toStringAsFixed(2)} / 100'
+              : 'Not complete',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: primary,
+          ),
+        ),
+      ],
+    );
+    final submit = ShadButton(
+      enabled: guidance.canGrade && complete && !gradingState.isSaving,
+      backgroundColor: DefensysTokens.maroonOf(context),
+      hoverBackgroundColor: DefensysTokens.maroonOf(
+        context,
+      ).withValues(alpha: 0.9),
+      foregroundColor: Colors.white,
+      onPressed: guidance.canGrade && complete && !gradingState.isSaving
+          ? () => _submitAdviserGrade(
+              teamId: teamId,
+              stageLabel: widget.selectedStage,
+              gradeRecord: gradeRecord,
+            )
+          : null,
+      child: Text(
+        gradingState.isSaving
+            ? 'Submitting grade…'
+            : !guidance.canGrade
+            ? 'Grading unavailable'
+            : gradeRecord['adviser_score'] != null
+            ? 'Update Adviser Grade'
+            : 'Submit Adviser Grade',
+      ),
+    );
+    final remainingMembers = members.length - completedMembers;
+    final incompleteReason = individualCriteria.isNotEmpty && members.isEmpty
+        ? 'No members found in this team.'
+        : !_isTeamCriteriaComplete(teamId, widget.selectedStage)
+        ? 'Complete the team criteria to submit.'
+        : remainingMembers > 0 && individualCriteria.isNotEmpty
+        ? 'Score the remaining $remainingMembers ${remainingMembers == 1 ? 'member' : 'members'} to submit.'
+        : 'Complete all criteria to submit.';
+
+    return DefensysShadcnScope(
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.isAdviser) ...[
+              Text(
+                'Adviser evaluation',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: primary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                [
+                  widget.selectedStage,
+                  if (rubric != null) '${rubric['name']}',
+                  if (rubric?['scale'] != null) '${rubric!['scale']}',
+                ].join(' · '),
+                style: TextStyle(fontSize: 12, color: secondary),
+              ),
+              const SizedBox(height: 16),
+              if (!guidance.canGrade)
+                AdviserWorkflowReminder(
+                  key: const Key('adviser-grading-reminder'),
+                  onLightSurface: true,
+                  title: guidance.title,
+                  detail: guidance.detail,
+                  tone: guidance.tone,
+                )
+              else
+                Text(
+                  gradeRecord['adviser_score'] != null
+                      ? 'Grade submitted · You can update it before finalization.'
+                      : 'You can grade this team now',
+                  style: TextStyle(fontSize: 12, color: secondary),
+                ),
+              const SizedBox(height: 20),
+              if (gradingState.adviserGradingEnabled && rubric != null) ...[
+                Text(
+                  progressLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: primary,
                   ),
                 ),
-                const SizedBox(height: 10),
-
-                // Active student criteria form
-                if (_selectedStudentIndex < members.length) ...[
-                  Builder(builder: (_) {
-                    final activeMember = members[_selectedStudentIndex];
-                    final sId = activeMember['id'] ?? activeMember['student_id'];
-                    final sScore = _computeStudentScore(teamId, widget.selectedStage, sId, gradeRecord);
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: DefensysTokens.surfaceOf(context),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: DefensysTokens.borderOf(context)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.04),
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-                              border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
-                            ),
-                            child: Wrap(
-                              spacing: 12, runSpacing: 6,
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: total == 0 ? 0 : filled / total,
+                  minHeight: 3,
+                  color: DefensysTokens.maroonOf(context),
+                  backgroundColor: DefensysTokens.borderOf(context),
+                ),
+                const SizedBox(height: 24),
+                if (teamCriteria.isNotEmpty) ...[
+                  heading(
+                    individualCriteria.isNotEmpty
+                        ? 'Team criteria'
+                        : 'Criteria',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildCriteriaTable(
+                    criteria: teamCriteria,
+                    isTeam: true,
+                    teamId: teamId,
+                    stageLabel: widget.selectedStage,
+                    isReadOnly: !guidance.canGrade || gradingState.isSaving,
+                  ),
+                  const SizedBox(height: 24),
+                ],
+                if (individualCriteria.isNotEmpty)
+                  if (members.isEmpty)
+                    Text(
+                      'No members found in this team.',
+                      style: TextStyle(color: secondary),
+                    )
+                  else
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < 760) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              memberList(),
+                              const SizedBox(height: 18),
+                              activeMember(),
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(width: 230, child: memberList()),
+                            const SizedBox(width: 24),
+                            Expanded(child: activeMember()),
+                          ],
+                        );
+                      },
+                    ),
+                const SizedBox(height: 24),
+                Divider(color: DefensysTokens.borderOf(context), height: 1),
+                const SizedBox(height: 20),
+                LayoutBuilder(
+                  builder: (context, constraints) => constraints.maxWidth < 540
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            scoreSummary,
+                            const SizedBox(height: 16),
+                            submit,
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            Expanded(child: scoreSummary),
+                            const SizedBox(width: 16),
+                            submit,
+                          ],
+                        ),
+                ),
+                if (guidance.canGrade && !complete) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    incompleteReason,
+                    style: TextStyle(fontSize: 12, color: secondary),
+                  ),
+                ],
+              ],
+            ],
+            if (showAssessment) ...[
+              const SizedBox(height: 24),
+              ShadAccordion<String>(
+                children: [
+                  ShadAccordionItem(
+                    value: 'stage-grades',
+                    title: heading('Stage grade breakdown'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          widget.selectedStage,
+                          style: TextStyle(fontSize: 12, color: secondary),
+                        ),
+                        const SizedBox(height: 12),
+                        for (final entry in const {
+                          'Panel': 'panel_score',
+                          'Peer': 'peer_score',
+                          'Adviser': 'adviser_score',
+                          'Overall grade': 'final_grade',
+                        }.entries)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
                               children: [
+                                Expanded(child: Text(entry.key)),
                                 Text(
-                                  'Scoring: ${activeMember['name']}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12.5,
-                                    color: DefensysTokens.maroonTextOf(context),
-                                  ),
-                                ),
-                                Text(
-                                  'Student Score: ${sScore.toStringAsFixed(2)} / 100',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    color: DefensysTokens.textSecondaryOf(context),
-                                  ),
+                                  parseAsDouble(
+                                        gradeRecord[entry.value],
+                                      )?.toStringAsFixed(2) ??
+                                      'Pending',
                                 ),
                               ],
                             ),
                           ),
-                          _buildCriteriaTable(
-                            criteria: indCrits,
-                            isTeam: false,
-                            studentId: sId,
-                            teamId: teamId,
-                            stageLabel: widget.selectedStage,
-                            isReadOnly: isGradingLocked,
+                        if (gradeRecord['status'] == 'published')
+                          Text(
+                            'Published · ${gradeRecord['result'] ?? 'pending'}',
+                            style: TextStyle(fontSize: 12, color: secondary),
                           ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-              ] else ...[
-                Text('No members found in this team.', style: TextStyle(color: DefensysTokens.textSecondaryOf(context))),
-              ],
-              const SizedBox(height: 16),
-            ],
-
-            // Score Summary Card
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
-              ),
-              child: Column(
-                children: [
-                  if (targetType != 'team' && members.isNotEmpty) ...[
-                    ...members.map((m) {
-                      final sId = m['id'] ?? m['student_id'];
-                      final sScore = _computeStudentScore(teamId, widget.selectedStage, sId, gradeRecord);
-                      final isComplete = _isStudentCriteriaComplete(teamId, widget.selectedStage, sId);
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            Expanded(child: Text(
-                              m['name']?.toString() ?? 'Student',
-                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: DefensysTokens.textPrimaryOf(context)),
-                            )),
-                            Text(
-                              isComplete ? '${sScore.toStringAsFixed(2)} / 100' : 'Incomplete',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: isComplete ? DefensysTokens.maroonTextOf(context) : Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                    const Divider(height: 16, color: Color(0xFFE2E8F0)),
-                  ],
-                  Row(
-                    children: [
-                      Expanded(child: Text(
-                        targetType != 'team' ? 'Overall Team Adviser Score (Avg):' : 'Computed Adviser Score:',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
-                      )),
-                      Text(
-                        _computeOverallTeamScore(teamId, widget.selectedStage, gradeRecord).toStringAsFixed(2),
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: DefensysTokens.maroonTextOf(context)),
-                      ),
-                      Text(' / 100', style: TextStyle(color: DefensysTokens.textSecondaryOf(context), fontSize: 12)),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 16),
-
-            // Submit Button
-            Builder(builder: (_) {
-              if (isGradingLocked) {
-                return SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: null,
-                    icon: const Icon(Icons.lock_rounded, size: 14),
-                    label: Text(
-                      isOfficiallyComplete
-                          ? 'Stage Officially Complete (Grades Locked)'
-                          : 'Grading unavailable',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      disabledForegroundColor: DefensysTokens.textSecondaryOf(context),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      elevation: 0,
-                    ),
-                  ),
-                );
-              }
-              final canSubmit = _allCriteriaFilledForTeam(teamId, widget.selectedStage, gradeRecord);
-              return SizedBox(
-                width: double.infinity,
-                child: DefensysSaveButton(
-                  onPressed: canSubmit
-                      ? () => _submitAdviserGrade(
-                            teamId: teamId,
-                            stageLabel: widget.selectedStage,
-                            gradeRecord: gradeRecord,
-                          )
-                      : null,
-                  isSaving: gradingState.isSaving,
-                  label: isAlreadyGraded ? 'Update Adviser Grade' : 'Submit Adviser Grade',
-                  savingLabel: 'Submitting Grade…',
-                  isPill: false,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              );
-            }),
+            ] else if (!widget.isAdviser)
+              Text(
+                'No grades are available for this stage yet.',
+                style: TextStyle(fontSize: 12, color: secondary),
+              ),
           ],
-        ],
-      ],
+        ),
+      ),
     );
   }
 }

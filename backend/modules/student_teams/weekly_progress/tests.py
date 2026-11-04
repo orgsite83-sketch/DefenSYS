@@ -49,11 +49,13 @@ class WeeklyReportCollectionTests(APITestCase):
             is_pit_lead=True, pit_lead_year='3rd Year')
         self.semester = Semester.objects.create(school_year=SchoolYear.objects.create(label='2098-2099'),
             label=Semester.SECOND, is_active=True, starts_on='2000-01-01', ends_on='2199-12-31')
-        self.period = WeeklyReportingPeriod.objects.create(semester=self.semester, starts_on='2026-01-05',
-            total_weeks=4, due_weekday=6, due_time='23:59')
         DefenseStage.objects.filter(setup_semester__isnull=True).update(is_active=False)
-        self.stage = DefenseStage.objects.create(label='Weekly proposal', setup_semester=self.semester,
-            weekly_reporting={'enabled': True, 'period_id': self.period.pk, 'required_start': 1, 'required_end': 2})
+        self.stage = DefenseStage.objects.create(label='Weekly proposal', setup_semester=self.semester)
+        self.period = WeeklyReportingPeriod.objects.create(semester=self.semester, defense_stage=self.stage,
+            starts_on='2026-01-05', total_weeks=4, due_weekday=6, due_time='23:59')
+        self.stage.weekly_reporting = {'enabled': True, 'period_id': self.period.pk,
+            'required_start': 1, 'required_end': 2}
+        self.stage.save(update_fields=['weekly_reporting'])
         self.team = StudentTeam.objects.create(name='Weekly team', semester=self.semester,
             intake_semester=self.semester, leader=self.student, adviser=self.adviser,
             level=StudentTeam.LEVEL_3_CAPSTONE, year_level='3rd Year')
@@ -63,6 +65,16 @@ class WeeklyReportCollectionTests(APITestCase):
     def upload(self, week=1, **kwargs):
         return upload_report(self.team, self.stage.label, actor=self.student, week=week,
             file=pdf_file(**kwargs))
+
+    def new_policy(self, **changes):
+        return {key: value for key, value in {**policy_payload(self.stage), **changes}.items()
+            if key not in ('period_id', 'defense_stage_id')}
+
+    def independent_stage(self, label='Weekly final', *, active=True, **changes):
+        stage = DefenseStage.objects.create(label=label, setup_semester=self.semester, is_active=active)
+        stage.weekly_reporting = save_configuration(stage, self.new_policy(**{'required_end': 4, **changes}))
+        stage.save(update_fields=['weekly_reporting'])
+        return stage
 
     def review(self, version, decision='accepted', feedback='', actor=None):
         return review_report(self.team, self.stage.label, actor=actor or self.adviser,
@@ -185,16 +197,15 @@ class WeeklyReportCollectionTests(APITestCase):
         with self.assertRaises(PermissionError):
             review_submission(self.team, self.stage.label, 'WPR', 'accepted', '', self.adviser)
 
-    def test_same_calendar_reuses_accepted_reports_with_stage_specific_range(self):
+    def test_stages_have_independent_reports_and_acceptance_for_the_same_week(self):
         self.review(self.upload())
-        later = DefenseStage.objects.create(label='Weekly final', setup_semester=self.semester,
-            weekly_reporting={'enabled': True, 'period_id': self.period.pk, 'required_start': 1, 'required_end': 4})
+        later = self.independent_stage()
         state = collection_state(self.team, definition(later))
-        self.assertEqual(state['weekly_summary']['accepted'], 1)
+        self.assertEqual(state['weekly_summary']['accepted'], 0)
         self.assertEqual(state['weekly_summary']['required'], 4)
         self.assertFalse(state['completed'])
         self.assertEqual(WeeklyProgressReport.objects.count(), 1)
-        third = upload_report(self.team, later.label, actor=self.student, week=3, file=pdf_file())
+        third = upload_report(self.team, later.label, actor=self.student, week=1, file=pdf_file())
         with self.assertRaisesMessage(Exception, 'changed'):
             self.review(third)
         review_report(self.team, later.label, actor=self.adviser,
@@ -208,7 +219,7 @@ class WeeklyReportCollectionTests(APITestCase):
         self.upload()
         with self.assertRaisesMessage(Exception, 'cannot be disabled'):
             validate_configuration({'enabled': False}, stage=self.stage, semester=self.semester)
-        config = policy_payload(self.stage)
+        config = self.new_policy()
         config['required_end'] = 3
         with self.assertRaisesMessage(Exception, 'protected'):
             validate_configuration(config, stage=self.stage, semester=self.semester)
@@ -232,7 +243,7 @@ class WeeklyReportCollectionTests(APITestCase):
 
     def test_published_stage_and_docx_template_save_together(self):
         self.client.force_authenticate(self.admin)
-        config = policy_payload(self.stage)
+        config = self.new_policy()
         body = {'label': 'Weekly configured stage', 'weekly_reporting': config,
             'template_changes': [{'scope': 'team', 'deliverable_id': 'WPR', 'action': 'replace', 'upload_key': 'template'}]}
         response = self.client.post('/api/defense/stages/', {'configuration': json.dumps(body),
@@ -246,7 +257,7 @@ class WeeklyReportCollectionTests(APITestCase):
     def test_published_setup_without_template_rolls_back(self):
         self.client.force_authenticate(self.admin)
         response = self.client.post('/api/defense/stages/', {'label': 'Missing weekly template',
-            'weekly_reporting': policy_payload(self.stage)}, format='json')
+            'weekly_reporting': self.new_policy()}, format='json')
         self.assertEqual(response.status_code, 400)
         self.assertFalse(DefenseStage.objects.filter(label='Missing weekly template').exists())
 
@@ -258,7 +269,7 @@ class WeeklyReportCollectionTests(APITestCase):
                 file = pdf_file(name) if extension == 'PDF' else SimpleUploadedFile(name, b'Original template bytes')
                 original = file.read()
                 file.seek(0)
-                body = {'label': f'Weekly {extension} template', 'weekly_reporting': policy_payload(self.stage),
+                body = {'label': f'Weekly {extension} template', 'weekly_reporting': self.new_policy(),
                     'template_changes': [{'scope': 'team', 'deliverable_id': 'WPR',
                         'action': 'replace', 'upload_key': 'template'}]}
                 response = self.client.post('/api/defense/stages/', {
@@ -347,19 +358,20 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertEqual(response.data['collection']['weekly_summary']['accepted'], 1)
         self.assertFalse(response.data['team']['selected_stage']['required_complete'])
 
-    def test_new_stage_can_attach_its_initial_template_to_an_already_used_period(self):
+    def test_new_stage_gets_its_own_calendar_and_template_after_another_stage_is_used(self):
         self.review(self.upload())
         self.client.force_authenticate(self.admin)
-        config = {**policy_payload(self.stage), 'required_end': 8}
+        config = self.new_policy(required_end=8, starts_on='2026-03-02', due_time='18:00')
         body = {'label': 'Later weekly stage', 'weekly_reporting': config,
             'template_changes': [{'scope': 'team', 'deliverable_id': 'WPR', 'action': 'replace', 'upload_key': 'template'}]}
         response = self.client.post('/api/defense/stages/', {'configuration': json.dumps(body),
             'template': SimpleUploadedFile('weekly.docx', b'editable Word template')}, format='multipart')
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(response.data['stage']['weekly_reporting']['period_id'], self.period.pk)
+        self.assertNotEqual(response.data['stage']['weekly_reporting']['period_id'], self.period.pk)
+        self.assertEqual(response.data['stage']['weekly_reporting']['starts_on'], '2026-03-02')
         self.assertEqual(response.data['stage']['weekly_reporting']['required_end'], 8)
         self.period.refresh_from_db()
-        self.assertEqual(self.period.total_weeks, 8)
+        self.assertEqual(self.period.total_weeks, 4)
         self.assertEqual(str(self.period.starts_on), '2026-01-05')
         self.assertEqual(self.stage.weekly_reporting['required_end'], 2)
         self.assertEqual(WeeklyProgressReport.objects.count(), 1)
@@ -379,7 +391,7 @@ class WeeklyReportCollectionTests(APITestCase):
             scope='capstone', evaluation_type='panel', status='published')
         self.client.force_authenticate(self.admin)
         body = {'label': 'Later draft', 'is_active': False, 'qualifying_score': 75,
-            'weekly_reporting': {**policy_payload(self.stage), 'required_end': 8},
+            'weekly_reporting': self.new_policy(required_end=8),
             'template_changes': [{'scope': 'team', 'deliverable_id': 'WPR',
                 'action': 'replace', 'upload_key': 'template'}]}
         response = self.client.post('/api/defense/stages/', {'configuration': json.dumps(body),
@@ -406,11 +418,23 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertEqual(list(WeeklyProgressReport.objects.values()), original_reports)
         self.assertEqual(list(WeeklyReportVersion.objects.values()), original_versions)
 
-        # Reusing reports does not permit rewriting their calendar or requirement.
+        # The later stage remains editable until it receives its own report.
         later = DefenseStage.objects.get(pk=stage['id'])
         config = policy_payload(later)
+        response = self.client.patch(url, {'weekly_reporting': {**config, 'due_time': '12:00'}}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        response = self.client.patch(url, {'configuration': json.dumps({
+            'template_changes': body['template_changes']}),
+            'template': SimpleUploadedFile('replacement.docx', b'Changed template')}, format='multipart')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.period.refresh_from_db()
+        self.assertEqual(self.period.due_time.strftime('%H:%M'), '23:59')
+        later.refresh_from_db()
+        own = upload_report(self.team, later.label, actor=self.student, week=1, file=pdf_file())
+        self.assertNotEqual(own.report.period_id, self.period.pk)
+        config = policy_payload(later)
         for change in ({'enabled': False}, {**config, 'required_end': 7},
-                       {**config, 'due_time': '12:00'}):
+                       {**config, 'due_time': '13:00'}):
             response = self.client.patch(url, {'weekly_reporting': change}, format='json')
             self.assertEqual(response.status_code, 400, response.data)
         self.assertEqual(self.client.delete(url).status_code, 409)
@@ -419,7 +443,7 @@ class WeeklyReportCollectionTests(APITestCase):
             'template': SimpleUploadedFile('replacement.docx', b'Changed template')}, format='multipart')
         self.assertEqual(response.status_code, 400, response.data)
         self.assertEqual(DeliverableTemplate.objects.get(defense_stage=later,
-            deliverable_id='WPR').original_name, 'later.docx')
+            deliverable_id='WPR').original_name, 'replacement.docx')
 
     def test_stage_deletion_and_old_compilation_cannot_remove_or_replace_weekly_evidence(self):
         self.upload()
@@ -431,7 +455,7 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertEqual(response.status_code, 410, response.data)
         self.assertEqual(WeeklyReportVersion.objects.count(), 1)
 
-    def test_unused_shared_weekly_draft_can_be_deleted_without_changing_existing_evidence(self):
+    def test_unused_weekly_draft_can_be_deleted_without_changing_another_stages_evidence(self):
         from defense.stages.models import StageGradingConfig
 
         version = self.upload()
@@ -440,7 +464,7 @@ class WeeklyReportCollectionTests(APITestCase):
             is_officially_complete=True)
         self.client.force_authenticate(self.admin)
         body = {'label': 'Unused shared draft', 'is_active': False,
-            'weekly_reporting': {**policy_payload(self.stage), 'required_end': 8},
+            'weekly_reporting': self.new_policy(required_end=8),
             'template_changes': [{'scope': 'team', 'deliverable_id': 'WPR',
                 'action': 'replace', 'upload_key': 'template'}]}
         response = self.client.post('/api/defense/stages/', {'configuration': json.dumps(body),
@@ -470,9 +494,7 @@ class WeeklyReportCollectionTests(APITestCase):
 
     def test_reports_outside_an_unused_stages_week_range_do_not_block_deletion(self):
         self.upload()
-        later = DefenseStage.objects.create(label='Unused later weeks', setup_semester=self.semester,
-            weekly_reporting={'enabled': True, 'period_id': self.period.pk,
-                'required_start': 3, 'required_end': 4})
+        later = self.independent_stage('Unused later weeks', required_start=3)
         self.client.force_authenticate(self.admin)
         url = f'/api/defense/stages/{later.pk}/'
         self.assertTrue(self.client.get(url).data['stage']['can_delete'])
@@ -482,9 +504,7 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertEqual(WeeklyReportVersion.objects.count(), 1)
 
     def test_stage_with_recorded_weeks_not_covered_elsewhere_cannot_be_deleted(self):
-        later = DefenseStage.objects.create(label='Used later weeks', setup_semester=self.semester,
-            weekly_reporting={'enabled': True, 'period_id': self.period.pk,
-                'required_start': 1, 'required_end': 4})
+        later = self.independent_stage('Used later weeks')
         version = upload_report(self.team, later.label, actor=self.student, week=3, file=pdf_file())
         self.client.force_authenticate(self.admin)
         url = f'/api/defense/stages/{later.pk}/'
@@ -494,16 +514,102 @@ class WeeklyReportCollectionTests(APITestCase):
         self.assertTrue(DefenseStage.objects.filter(pk=later.pk).exists())
         self.assertTrue(WeeklyReportVersion.objects.filter(pk=version.pk).exists())
 
-    def test_unpublished_sibling_cannot_replace_the_last_live_weekly_requirement(self):
+    def test_another_published_stage_cannot_remove_a_used_stages_history_lock(self):
         self.upload()
-        DefenseStage.objects.create(label='Unpublished weekly copy', setup_semester=self.semester,
-            is_active=False, weekly_reporting=dict(self.stage.weekly_reporting))
+        self.independent_stage('Another published weekly stage')
         self.client.force_authenticate(self.admin)
         url = f'/api/defense/stages/{self.stage.pk}/'
         self.assertFalse(self.client.get(url).data['stage']['can_delete'])
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 409, response.data)
         self.assertTrue(DefenseStage.objects.filter(pk=self.stage.pk).exists())
+        self.assertEqual(WeeklyReportVersion.objects.count(), 1)
+
+    def test_foreign_stage_calendar_and_report_ids_are_rejected(self):
+        original = self.upload()
+        later = self.independent_stage()
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(f'/api/defense/stages/{later.pk}/',
+            {'weekly_reporting': policy_payload(self.stage)}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('another stage', str(response.data))
+        with self.assertRaisesMessage(Exception, 'changed'):
+            review_report(self.team, later.label, actor=self.adviser,
+                version_id=original.pk, decision='accepted')
+        original.refresh_from_db()
+        self.assertEqual(original.status, 'pending')
+        self.assertEqual(WeeklyProgressReport.objects.count(), 1)
+
+    def test_unused_stage_can_change_or_disable_weekly_policy_without_changing_used_stage(self):
+        self.review(self.upload())
+        later = self.independent_stage(active=False)
+        source = WeeklyReportingPeriod.objects.filter(pk=self.period.pk).values().get()
+        self.client.force_authenticate(self.admin)
+        url = f'/api/defense/stages/{later.pk}/'
+        for changes in ({'starts_on': '2026-03-02', 'due_weekday': 2, 'due_time': '18:00'},
+                        {'required_end': 1}):
+            later.refresh_from_db()
+            response = self.client.patch(url, {'weekly_reporting': {
+                **policy_payload(later), **changes}}, format='json')
+            self.assertEqual(response.status_code, 200, response.data)
+        response = self.client.patch(url, {'weekly_reporting': {'enabled': False}}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(WeeklyReportingPeriod.objects.filter(pk=self.period.pk).values().get(), source)
+        self.assertEqual(WeeklyReportVersion.objects.get().status, 'accepted')
+
+    def test_legacy_split_retains_original_evidence_and_gives_later_draft_an_empty_period(self):
+        from django.apps import apps
+        from django.db import connection
+        from importlib import import_module
+        from types import SimpleNamespace
+        from student_teams.models import TeamTermParticipation
+
+        version = self.upload()
+        self.review(version)
+        later = DefenseStage.objects.create(label='Legacy shared draft', setup_semester=self.semester,
+            is_active=False, weekly_reporting=dict(self.stage.weekly_reporting))
+        WeeklyReportingPeriod.objects.filter(pk=self.period.pk).update(defense_stage=None)
+        requirements = [{'id': stage.pk, 'label': stage.label, 'order': stage.display_order,
+            'definitions': [{'source': 'weekly_reports', 'weekly_reporting': dict(stage.weekly_reporting)}]}
+            for stage in (self.stage, later)]
+        captured, _ = TeamTermParticipation.objects.update_or_create(team=self.team, semester=self.semester,
+            defaults={'requirements': requirements})
+        reports = list(WeeklyProgressReport.objects.values())
+        versions = list(WeeklyReportVersion.objects.values())
+        migrate = import_module('student_teams.migrations.0025_separate_stage_weekly_data').separate_stage_calendars
+        migrate(apps, SimpleNamespace(connection=connection))
+        self.period.refresh_from_db()
+        later.refresh_from_db()
+        self.assertEqual(self.period.defense_stage_id, self.stage.pk)
+        self.assertNotEqual(later.weekly_reporting['period_id'], self.period.pk)
+        own = WeeklyReportingPeriod.objects.get(pk=later.weekly_reporting['period_id'])
+        self.assertEqual(own.defense_stage_id, later.pk)
+        self.assertFalse(own.reports.exists())
+        self.assertEqual(list(WeeklyProgressReport.objects.values()), reports)
+        self.assertEqual(list(WeeklyReportVersion.objects.values()), versions)
+        self.assertTrue(version.file.storage.exists(version.file.name))
+        captured.refresh_from_db()
+        self.assertEqual(captured.requirements[1]['definitions'][0]['weekly_reporting']['period_id'], own.pk)
+        self.assertEqual(captured.requirements[1]['definitions'][0]['weekly_reporting']['defense_stage_id'], later.pk)
+        migrate(apps, SimpleNamespace(connection=connection))
+        self.assertEqual(WeeklyReportingPeriod.objects.count(), 2)
+
+    def test_legacy_split_refuses_to_guess_ambiguous_report_ownership(self):
+        from django.apps import apps
+        from django.db import connection, transaction
+        from importlib import import_module
+        from types import SimpleNamespace
+
+        DefenseStage.objects.create(label='Ambiguous old stage', setup_semester=self.semester,
+            weekly_reporting=dict(self.stage.weekly_reporting))
+        self.upload()
+        WeeklyReportingPeriod.objects.filter(pk=self.period.pk).update(defense_stage=None)
+        migrate = import_module('student_teams.migrations.0025_separate_stage_weekly_data').separate_stage_calendars
+        with self.assertRaisesMessage(RuntimeError, 'ambiguous historical stage ownership'):
+            with transaction.atomic():
+                migrate(apps, SimpleNamespace(connection=connection))
+        self.period.refresh_from_db()
+        self.assertIsNone(self.period.defense_stage_id)
         self.assertEqual(WeeklyReportVersion.objects.count(), 1)
 
     def test_context_change_or_unpublished_stage_cannot_receive_a_submission(self):

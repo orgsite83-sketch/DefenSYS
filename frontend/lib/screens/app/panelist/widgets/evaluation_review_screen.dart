@@ -150,7 +150,7 @@ class EvaluationReviewScreen extends StatelessWidget {
             description: Text(
               team.isPosted
                   ? team.isCapstone
-                        ? 'Your scores are saved and locked. The official stage verdict is separate.'
+                        ? 'Your scores are saved and locked.'
                         : 'Your scores are saved and locked. The PIT event result follows the final numeric grade.'
                   : complete
                   ? 'Check the team identity and each score before submitting.'

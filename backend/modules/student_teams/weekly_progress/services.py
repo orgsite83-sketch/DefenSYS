@@ -38,11 +38,16 @@ def report_queryset():
 
 @read_memoize
 def reports_for_collection(team, config):
+    from defense.weekly_reporting import period_for
+    period = period_for(config.get('period_id'))
+    if period is None or not config.get('defense_stage_id') or period.defense_stage_id != config['defense_stage_id']:
+        return []
     prefetched = getattr(team, '_prefetched_objects_cache', {}).get('student_progress_reports')
     if prefetched is not None:
         return [r for r in prefetched if r.period_id == config.get('period_id')
             and r.semester_id == team.semester_id and r.project_version == team.project_version]
     return list(report_queryset().filter(team=team, period_id=config.get('period_id'),
+        period__defense_stage_id=config['defense_stage_id'],
         semester_id=team.semester_id, project_version=team.project_version))
 
 
@@ -91,8 +96,8 @@ def write_blockers(team, config):
         base = 'This term participation is closed.'
     if base:
         return {week: base for week in range(1, config['total_weeks'] + 1)}
-    stages = list(DefenseStage.objects.filter(weekly_reporting__enabled=True,
-        weekly_reporting__period_id=config.get('period_id')))
+    stages = list(DefenseStage.objects.filter(pk=config.get('defense_stage_id'),
+        weekly_reporting__enabled=True, weekly_reporting__period_id=config.get('period_id')))
     closed = set(StageGradingConfig.objects.filter(defense_stage__in=stages,
         semester_id=team.semester_id, is_officially_complete=True).values_list('defense_stage_id', flat=True))
     retained = set(DefenseSchedule.objects.filter(team=team, semester_id=team.semester_id,
@@ -209,8 +214,12 @@ def require_definition(team, stage_label):
     if not team.is_capstone or not definition:
         raise ValidationError('Weekly reporting is not configured for this team and stage.')
     period = period_for_definition(definition)
-    if period is None or period.semester_id != team.semester_id:
+    from defense.stages.context import stage_for_label
+    stage = stage_for_label(stage_label, team=team)
+    if (period is None or period.semester_id != team.semester_id
+            or stage is None or period.defense_stage_id != stage.pk):
         raise ValidationError('This reporting period does not belong to the selected team context.')
+    definition['weekly_reporting'] = {**definition['weekly_reporting'], 'defense_stage_id': stage.pk}
     return definition
 
 
@@ -334,7 +343,7 @@ def review_report(team, stage_label, *, actor, version_id, decision, feedback=''
         from defense.stages.models import DefenseStage
         from student_teams.services import was_stage_endorsed
         from repository.deliverables.services import unendorse_team
-        for stage in DefenseStage.objects.filter(weekly_reporting__period_id=config['period_id']):
+        for stage in DefenseStage.objects.filter(pk=config['defense_stage_id']):
             policy = stage.weekly_reporting
             if (policy['required_start'] <= version.report.week_number <= policy['required_end']
                     and was_stage_endorsed(team, stage)):

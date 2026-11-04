@@ -106,6 +106,57 @@ switch the running backend to another environment.
 
 Safety checks: `backend\venv\Scripts\python.exe -m unittest execution.test_backup_sandbox -v`.
 
+## Permanently remove the local sandbox
+
+To retire the sandbox while preserving the normal database, preview first:
+
+```powershell
+.\backend\venv\Scripts\python.exe execution\remove_sandbox.py
+```
+
+Then remove its database and `.sandbox/defensys_sandbox/` uploads:
+
+```powershell
+.\backend\venv\Scripts\python.exe execution\remove_sandbox.py --apply
+```
+
+Stop sandbox clients first. If intentionally disconnecting remaining sandbox
+connections, add `--disconnect-clients`. The command only accepts a separate
+local sandbox database, saves a verified database dump and file ZIP under
+`.backups/`, and checks the upload directory for links before deletion. It
+does not change the normal database, credentials, or backend settings. Stop
+any sandbox launcher afterwards; it cannot reconnect to the removed database.
+Keep recovery backups private because they contain account data and uploads.
+
+For a fresh remote server, create a new database and run migrations there.
+Do not restore the local dump unless you want its existing records online.
+
+## Clear one explicitly selected local academic term
+
+For an explicitly authorized reset of **all** local application records, use
+`execution/reset_local_database.py --database defensys_db --recovery-archive
+.backups/YOUR_FULL_BACKUP.zip` to preview; apply requires `--apply` and the
+`DEFENSYS_ALLOW_DEV_DB=1` opt-in. This verifies the full archive, saves a fresh
+database dump, and empties actual database tables transactionally. Accounts are
+deleted too. Only migration history and regenerated Django content types and
+permissions remain. Uploads and existing backup files are not deleted. Create
+a new administrator interactively afterwards; none is seeded by the reset.
+
+`execution/reset_academic_term.py` previews a term-scoped cleanup using the
+database's actual foreign keys. This supports a working checkout whose model
+changes have not yet been migrated, without applying unrelated migrations.
+Supply the exact `--semester-id`, `--semester-label`, and `--database`.
+Apply additionally requires `DEFENSYS_ALLOW_DEV_DB=1`, the preview's
+`--revision`, an existing `--recovery-archive` full ZIP, and `--apply`.
+
+This is an intentional destructive cleanup, not a normal semester rollover.
+It includes semester-specific enrollments, faculty assignments, stage setup,
+teams and their dependent workflow records. It refuses cross-term dependencies,
+preserves accounts, periods and transition logs, saves a fresh verified database
+dump, and checks every retained database row before committing. Physical files
+are retained for recovery; removed submission records no longer expose them
+through the academic workflow. Existing audit history is retained.
+
 ## Run the app with the fresh database
 
 `setup_sandbox.py` is a one-time step. You can continue using the usual web

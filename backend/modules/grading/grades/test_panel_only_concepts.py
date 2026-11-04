@@ -20,6 +20,62 @@ from .services import (adviser_capstone_grades_for_user, group_completion_readin
                        team_grading_readiness, update_group_settings)
 
 
+class EmptyStageEvaluationRoleTests(APITestCase):
+    def setUp(self):
+        from academic_period_management.models import SchoolYear, Semester
+        from defense.stages.models import StageGradingConfig
+        self.semester = Semester.objects.create(
+            school_year=SchoolYear.objects.create(label='2042-2043'), label=Semester.FIRST,
+            is_active=True, capstone_adviser_grading_enabled=True,
+            capstone_peer_evaluation_enabled=True)
+        self.concept = DefenseStage.objects.create(label='Concept selection',
+            setup_semester=self.semester, concept_config={'enabled': True})
+        self.standard = DefenseStage.objects.create(label='Standard defense',
+            setup_semester=self.semester, display_order=2, concept_config={'enabled': False})
+        self.config = StageGradingConfig.objects.create(
+            defense_stage=self.standard, semester=self.semester)
+
+    def test_empty_standard_group_keeps_adviser_and_peer_required_after_concept_stage(self):
+        from .services import build_group_settings_map
+        # Admins see configured stages even before the first team is scheduled.
+        from django.contrib.auth import get_user_model
+        admin = get_user_model().objects.create_user(username='empty-stage-admin', role='admin')
+        settings = build_group_settings_map(TeamGrade.objects.none(), self.semester, user=admin)
+        standard = settings['capstone|Standard defense']
+        self.assertTrue(standard['adviser_enabled'])
+        self.assertTrue(standard['peer_enabled'])
+        self.assertEqual(standard['adviser_complete_count'], 0)
+        self.assertEqual(standard['peer_complete_count'], 0)
+        self.assertEqual(standard['grading_total_team_count'], 0)
+        concept = settings['capstone|Concept selection']
+        self.assertFalse(concept['adviser_enabled'])
+        self.assertFalse(concept['peer_enabled'])
+
+    def test_empty_group_respects_term_switches_and_zero_weights(self):
+        from .services import grading_readiness_counts_for_group
+        for config in (self.standard, self.config, None):
+            with self.subTest(config=type(config).__name__):
+                counts = grading_readiness_counts_for_group(self.semester, 'capstone',
+                    self.standard.label, config=config)
+                self.assertTrue(counts['adviser_enabled'])
+                self.assertTrue(counts['peer_enabled'])
+        self.semester.capstone_adviser_grading_enabled = False
+        counts = grading_readiness_counts_for_group(self.semester, 'capstone',
+            self.standard.label, config=self.config)
+        self.assertFalse(counts['adviser_enabled'])
+        self.assertTrue(counts['peer_enabled'])
+        self.semester.capstone_peer_evaluation_enabled = False
+        counts = grading_readiness_counts_for_group(self.semester, 'capstone',
+            self.standard.label, config=self.config)
+        self.assertFalse(counts['peer_enabled'])
+        self.semester.capstone_peer_evaluation_enabled = True
+        self.config.panel_weight, self.config.adviser_weight, self.config.peer_weight = 70, 30, 0
+        self.config.save()
+        counts = grading_readiness_counts_for_group(self.semester, 'capstone',
+            self.standard.label, config=self.config)
+        self.assertFalse(counts['peer_enabled'])
+
+
 class PanelOnlyCalculationTests(SimpleTestCase):
     def grade(self, *, mode=PANEL_ONLY_CONCEPT, scope='capstone'):
         schedule = DefenseSchedule(pk=1, scope=scope, assessment_policy={

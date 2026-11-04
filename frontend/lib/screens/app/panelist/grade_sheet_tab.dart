@@ -640,7 +640,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     : _buildAssessmentMaterials(team),
               ),
               const SizedBox(height: 16),
-              if (unavailable || team.isPosted) ...[
+              if (unavailable && !team.isPosted) ...[
                 _buildAvailabilityNotice(team),
                 const SizedBox(height: 16),
               ],
@@ -1582,17 +1582,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final upcoming = team.isLockedByDate && team.scheduledDate != null;
     final title = upcoming
         ? 'Upcoming defense'
-        : team.isPosted
-        ? 'Your grades are submitted'
         : team.gradingAvailable
         ? (team.isToday ? 'Today · Grading available' : 'Grading available')
         : 'Grading unavailable';
     final message = upcoming
         ? 'Grading opens on ${DateFormat('MMMM d, yyyy').format(team.scheduledDate!)}. Review the materials and rubric below to prepare.'
-        : team.isPosted
-        ? team.isCapstone
-              ? 'Your scores are saved and locked. The official stage verdict is shown separately.'
-              : 'Your scores are saved and locked. The PIT event result follows the final numeric grade.'
         : team.gradingAvailable
         ? 'Evaluate when this team presents. The allotted time does not limit grading.'
         : team.gradingUnavailableReason.isNotEmpty

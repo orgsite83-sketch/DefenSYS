@@ -2388,6 +2388,20 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
     adviser_complete = 0
     adviser_required_any = False
     peer_required_any = False
+    if not grades and scope == TeamGrade.SCOPE_CAPSTONE:
+        # No assessments yet is not an exemption from the stage's configured
+        # roles. Once grades exist, their captured policies remain authoritative.
+        from .evaluation_policy import concept_stage
+        from defense.stages.models import DefenseStage
+        from defense.stages.grading_config import default_capstone_weights
+        stage = config if isinstance(config, DefenseStage) else getattr(config, 'defense_stage', None)
+        stage = stage or stage_for_label(stage_label, semester=semester)
+        grading_config = config if getattr(config, 'defense_stage_id', None) else (
+            stage.grading_configs.filter(semester=semester).first() if stage else None)
+        weights = grading_config.as_weights_dict() if grading_config else default_capstone_weights()
+        if not concept_stage(stage):
+            adviser_required_any = semester.capstone_adviser_grading_enabled and weights['adviser_weight'] > 0
+            peer_required_any = semester.capstone_peer_evaluation_enabled and weights['peer_weight'] > 0
     verdict_complete = 0
     post_deliverables_complete_count = 0
 

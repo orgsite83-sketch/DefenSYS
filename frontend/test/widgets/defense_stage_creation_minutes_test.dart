@@ -232,6 +232,49 @@ Map<String, dynamic> _readyConceptDraft() => {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('unscheduled stage with used files can save all three grading roles', (tester) async {
+    tester.view.physicalSize = const Size(1366, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final stages = _StagesNotifier(requirementSettings: {
+      'identity_locked': true,
+      'deliverables': [
+        {'id': 1, 'deliverable_id': 'PAPER', 'label': 'Submitted Report',
+          'deliverable_type': 'pre', 'required': true, 'has_data': true, 'is_locked': true},
+        {'id': 2, 'deliverable_id': 'SLIDES', 'label': 'Unused Slides',
+          'deliverable_type': 'pre', 'required': true, 'has_data': false, 'is_locked': false},
+      ],
+    });
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...authTestOverrides(), defenseStagesProvider.overrideWith(() => stages),
+      academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+      rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+    ], child: MaterialApp(theme: AppTheme.lightTheme,
+      home: Scaffold(body: DefenseStageEditorScreen(stageId: 9, initialTab: 1, onBack: () {})))));
+    await tester.pumpAndSettle();
+    expect(find.text('Stage Settings Protected'), findsNothing);
+    expect(find.text('Adviser'), findsOneWidget);
+    expect(find.text('Peer'), findsOneWidget);
+    final panelWeight = find.byWidgetPredicate((widget) =>
+        widget is EditableText && widget.controller.text == '50');
+    final peerWeight = find.byWidgetPredicate((widget) =>
+        widget is EditableText && widget.controller.text == '20');
+    await tester.enterText(panelWeight, '55');
+    await tester.enterText(peerWeight, '15');
+    await tester.tap(find.text('Next: Deliverables'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect(stages.gradingSaved?['panel_weight'], 55);
+    expect(stages.gradingSaved?['adviser_weight'], 30);
+    expect(stages.gradingSaved?['peer_weight'], 15);
+    expect(stages.saved?.containsKey('label'), isFalse);
+    expect(stages.saved?.containsKey('code'), isFalse);
+    expect((stages.saved?['deliverables'] as List).first['label'], 'Submitted Report');
+    expect(tester.takeException(), isNull);
+  });
   for (final editing in [false, true]) {
     for (final concept in [false, true]) {
       testWidgets(
@@ -311,7 +354,7 @@ void main() {
             tester.view.devicePixelRatio = 1;
             addTearDown(tester.view.resetPhysicalSize);
             addTearDown(tester.view.resetDevicePixelRatio);
-            await tester.runAsync(() => loadPreviewFonts());
+            await tester.runAsync(() => loadPreviewFonts(force: true));
             final settings = {
               ..._readyConceptDraft(),
               'minutes_required': true,
@@ -434,7 +477,7 @@ void main() {
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
-        await tester.runAsync(() => loadPreviewFonts());
+        await tester.runAsync(() => loadPreviewFonts(force: true));
         await _pumpCreation(tester, _StagesNotifier(), dark: dark);
         await tester.tap(find.text('Add stage'));
         await tester.pumpAndSettle();
@@ -596,6 +639,41 @@ void main() {
     expect((stages.saved?['concept_config'] as Map?)?['enabled'], true);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('restored weekly draft uses this stages current calendar identity', (tester) async {
+    tester.view.physicalSize = const Size(1440, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const policy = {
+      'enabled': true, 'period_id': 3, 'defense_stage_id': 9,
+      'starts_on': '2026-10-25', 'total_weeks': 2, 'due_weekday': 6,
+      'due_time': '23:59', 'required_start': 1, 'required_end': 2,
+    };
+    await StageSetupDraftStore(userId: '1', semesterId: 3, stageId: 9).save(
+      StageSetupDraft(fields: {
+        'weekly_reporting': {...policy, 'period_id': 1, 'defense_stage_id': 1},
+      }, tab: 2),
+    );
+    final stages = _StagesNotifier(requirementSettings: {
+      'weekly_reporting': policy,
+      'weekly_template': {'template': {'id': 12, 'original_name': 'Weekly.pdf'}},
+    });
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...authTestOverrides(), defenseStagesProvider.overrideWith(() => stages),
+      academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+      rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+    ], child: MaterialApp(theme: AppTheme.lightTheme, home: Scaffold(
+      body: DefenseStageEditorScreen(stageId: 9, initialTab: 2, onBack: () {}),
+    ))));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Save changes'));
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect((stages.saved?['weekly_reporting'] as Map?)?['period_id'], 3);
+    expect((stages.saved?['weekly_reporting'] as Map?)?['defense_stage_id'], 9);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final scope in ['team', 'shared']) {
     testWidgets('restored $scope template keeps Add Stage open until reselected or removed', (tester) async {
       tester.view.physicalSize = const Size(1440, 1200);
@@ -702,7 +780,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.runAsync(() => loadPreviewFonts());
+      await tester.runAsync(() => loadPreviewFonts(force: true));
       final stages = _StagesNotifier();
       await tester.pumpWidget(
         ProviderScope(
@@ -751,7 +829,7 @@ void main() {
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
-        await tester.runAsync(() => loadPreviewFonts());
+        await tester.runAsync(() => loadPreviewFonts(force: true));
         if (requiredMinutes) {
           await StageSetupDraftStore(userId: '1', semesterId: 3).save(
             StageSetupDraft(fields: {'label': 'Concept Proposal', 'display_order': 4}, tab: 0),

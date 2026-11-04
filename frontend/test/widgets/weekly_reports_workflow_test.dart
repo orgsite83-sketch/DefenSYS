@@ -486,18 +486,18 @@ void main() {
       await tester.pump();
       expect(policy['required_start'], 5);
       expect(policy['required_end'], 10);
-      expect(policy['total_weeks'], 16);
+      expect(policy['total_weeks'], 10);
       expect(
         find.text('6 reports required \u00b7 Weeks 5\u201310'),
         findsOneWidget,
       );
-      expect(policy['total_weeks'], 16);
+      expect(policy['total_weeks'], 10);
       expect(tester.takeException(), isNull);
     },
   );
 
   testWidgets(
-    'admin report count can append shared weeks without changing their dates',
+    'stage report count updates its own calendar without changing its dates',
     (tester) async {
       var policy = Map<String, dynamic>.from(_policy);
       final template = weeklyTemplateDraft(null)
@@ -537,13 +537,9 @@ void main() {
   );
 
   testWidgets(
-    'new stages reuse saved dates but require their own admin report count',
+    'new stages start without another stages calendar identity or dates',
     (tester) async {
-      var policy = initialWeeklySettings(null, [
-        {
-          'weekly_reporting': {..._policy, 'total_weeks': 1, 'required_end': 1},
-        },
-      ]);
+      var policy = initialWeeklySettings(null);
       await pumpDefensysWidget(
         tester,
         SingleChildScrollView(
@@ -562,7 +558,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('weekly-report-switch')));
       await tester.pump();
       expect(policy['enabled'], isTrue);
-      expect(policy['total_weeks'], 1);
+      expect(policy['total_weeks'], '');
+      expect(policy['period_id'], isNull);
+      expect(policy['starts_on'], isNull);
+      expect(initialWeeklySettings(_policy)['period_id'], _policy['period_id']);
       expect(policy['required_start'], 1);
       expect(policy['required_end'], '');
       final count = find.byKey(const ValueKey('weekly-report_count'));
@@ -585,7 +584,7 @@ void main() {
   testWidgets(
     'fresh weekly reporting has no automatic report or calendar count',
     (tester) async {
-      var policy = initialWeeklySettings(null, []);
+      var policy = initialWeeklySettings(null);
       final template = weeklyTemplateDraft(null)
         ..['template'] = {'original_name': 'Weekly.pdf'};
       expect(policy['total_weeks'], isNull);

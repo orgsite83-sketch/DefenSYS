@@ -6,6 +6,7 @@ import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/defense/team_defense_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/capture_preview.dart';
@@ -250,10 +251,7 @@ void main() {
       );
       expect(find.text('You can grade this team now'), findsOneWidget);
       expect(find.text('Ready to grade'), findsOneWidget);
-      expect(
-        find.textContaining('before or after the defense'),
-        findsOneWidget,
-      );
+      expect(find.text('Adviser evaluation'), findsOneWidget);
       expect(find.text('0 of 2 criteria completed'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('adviser-team-action-7-3')));
       await tester.pumpAndSettle();
@@ -289,10 +287,10 @@ void main() {
       grades.replace([_grade()]);
       await tester.pumpAndSettle();
       expect(find.text('Project contribution'), findsOneWidget);
-      expect(find.byType(TextField), findsNWidgets(2));
+      expect(find.byType(ShadInput), findsNWidgets(2));
       grades.replace([_grade(score: 85)]);
       await tester.pumpAndSettle();
-      expect(find.text('Adviser grade submitted — editable'), findsOneWidget);
+      expect(find.textContaining('Grade submitted'), findsOneWidget);
       expect(find.text('Grade now'), findsNothing);
       grades.replace([_grade(score: 85, status: 'published')]);
       await tester.pumpAndSettle();

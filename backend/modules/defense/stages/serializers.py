@@ -97,17 +97,16 @@ def check_stage_structure_locked(stage, semester=None):
     locked, reason = check_stage_locked(stage, semester)
     if locked:
         return locked, reason
-    # Reused weekly reports protect their policy/calendar and stage deletion.
-    # They must not block a later stage's initial grading setup or publication.
-    if context_history_lock(stage)[0]:
-        return True, 'Stage settings are protected because submissions or linked history exist.'
     from defense.scheduler.models import DefenseSchedule
-    from student_teams.models import TeamStageProgress
     if DefenseSchedule.objects.filter(defense_stage=stage).exists():
         return True, 'Stage settings are protected because this stage has scheduled defenses.'
-    if TeamStageProgress.all_objects.filter(defense_stage=stage).exclude(status=TeamStageProgress.STATUS_LOCKED).exists():
-        return True, 'Stage settings are protected because teams have recorded progress.'
     return False, None
+
+
+def stage_identity_locked(stage):
+    from student_teams.models import TeamStageProgress
+    return context_history_lock(stage)[0] or TeamStageProgress.all_objects.filter(
+        defense_stage=stage).exclude(status=TeamStageProgress.STATUS_LOCKED).exists()
 
 
 class DefenseStageSerializer(serializers.ModelSerializer):
@@ -133,6 +132,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     lock_reason = serializers.SerializerMethodField()
     structure_locked = serializers.SerializerMethodField()
     structure_lock_reason = serializers.SerializerMethodField()
+    identity_locked = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
     endorsed_teams_count = serializers.SerializerMethodField()
     rubric_name = serializers.SerializerMethodField()
@@ -173,6 +173,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'lock_reason',
             'structure_locked',
             'structure_lock_reason',
+            'identity_locked',
             'can_delete',
             'endorsed_teams_count',
             'created_at',
@@ -333,6 +334,11 @@ class DefenseStageSerializer(serializers.ModelSerializer):
 
     def get_structure_lock_reason(self, obj):
         return check_stage_structure_locked(obj, self.context.get('semester'))[1]
+
+    def get_identity_locked(self, obj):
+        # Legacy submissions reference the stage by label. Preserve that link
+        # without preventing its remaining setup before the first schedule.
+        return stage_identity_locked(obj)
 
     def get_can_delete(self, obj):
         from student_teams.models import TeamStageProgress
@@ -548,6 +554,9 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
             locked, reason = check_stage_locked(self.instance)
             if locked:
                 raise serializers.ValidationError(reason)
+            if any(key in attrs and attrs[key] != getattr(self.instance, key) for key in ('label', 'code')):
+                if stage_identity_locked(self.instance):
+                    raise serializers.ValidationError('The stage name and code are retained because submissions or linked history exist.')
             structure_locked, reason = check_stage_structure_locked(self.instance)
             if structure_locked and any(getattr(self.instance, key) != value for key, value in attrs.items()
                     if key not in ('deliverables', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'weekly_reporting')):
@@ -790,7 +799,7 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
         changing_peer_r = 'peer_rubric_id' in attrs and attrs['peer_rubric_id'] != (config.peer_rubric_id)
 
         if changing_panel_w or changing_adviser_w or changing_peer_w or changing_panel_r or changing_adviser_r or changing_peer_r:
-            locked, reason = check_stage_locked(config.defense_stage, config.semester)
+            locked, reason = check_stage_structure_locked(config.defense_stage, config.semester)
             if locked:
                 raise serializers.ValidationError(
                     {'rubric': reason or 'Stage configuration cannot be changed because defenses are already scheduled or officially completed.'}

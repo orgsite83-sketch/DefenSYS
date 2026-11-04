@@ -21,26 +21,8 @@ Map<String, dynamic> weeklyTemplateDraft(Map<String, dynamic>? stage) {
   };
 }
 
-Map<String, dynamic> initialWeeklySettings(
-  Map? saved,
-  Iterable<Map<String, dynamic>> stages,
-) {
-  if (saved?['enabled'] == true) return Map<String, dynamic>.from(saved!);
-  final shared = stages
-      .map((stage) => stage['weekly_reporting'])
-      .whereType<Map>()
-      .where((config) => config['enabled'] == true)
-      .firstOrNull;
+Map<String, dynamic> initialWeeklySettings(Map? saved) {
   return {
-    if (shared != null)
-      for (final key in [
-        'period_id',
-        'starts_on',
-        'total_weeks',
-        'due_weekday',
-        'due_time',
-      ])
-        if (shared.containsKey(key)) key: shared[key],
     'enabled': false,
     'required_start': 1,
     'required_end': '',
@@ -191,15 +173,10 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
       final first = _number('required_start') ?? 1;
       updated['required_end'] = count == null ? '' : first + count - 1;
     }
-    // New calendars follow the count exactly. Shared calendars can append weeks
-    // for a later stage without changing existing week numbers or deadlines.
+    // Each stage's unused calendar follows its own configured report count.
     if (key == 'report_count') {
       final last = int.tryParse('${updated['required_end']}');
-      if (widget.value['period_id'] == null) {
-        updated['total_weeks'] = updated['required_end'];
-      } else if (last != null && last > (_number('total_weeks') ?? 0)) {
-        updated['total_weeks'] = last;
-      }
+      updated['total_weeks'] = last ?? updated['required_end'];
     }
     widget.onChanged(updated);
   }

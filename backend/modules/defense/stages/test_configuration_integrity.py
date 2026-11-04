@@ -131,6 +131,51 @@ class StageConfigurationIntegrityTests(APITestCase):
         self.assertEqual(self.client.delete(self.url).status_code, 409)
         self.assertTrue(DefenseStage.objects.filter(pk=self.stage.pk).exists())
 
+    def test_unscheduled_stage_with_submissions_keeps_setup_and_grading_editable(self):
+        self.submission()
+        self.grade()
+        TeamStageProgress.objects.update_or_create(team=self.team, semester=self.semester,
+            defense_stage=self.stage, defaults={'status': TeamStageProgress.STATUS_READY})
+        response = self.client.get(self.url)
+        self.assertFalse(response.data['stage']['structure_locked'])
+        self.assertFalse(response.data['grading_config']['is_locked'])
+        self.assertTrue(response.data['stage']['identity_locked'])
+        response = self.client.patch(self.url, {
+            'description': 'Updated before scheduling', 'minutes_required': True,
+            'qualifying_score': 80,
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        rubrics = {f'{role}_rubric_id': Rubric.objects.create(name=f'Unscheduled {role}',
+            scope='capstone', evaluation_type=role, status='published', semester=self.semester).pk
+            for role in ('panel', 'adviser', 'peer')}
+        response = self.client.patch(self.url + 'grading-config/', {
+            'panel_weight': 60, 'adviser_weight': 25, 'peer_weight': 15, **rubrics,
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(DeliverableSubmission.all_objects.count(), 1)
+        self.assertTrue(self.row(self.used)['is_locked'])
+
+    def test_scheduled_stage_rejects_grading_setup_changes(self):
+        self.schedule()
+        response = self.client.patch(self.url + 'grading-config/', {
+            'panel_weight': 60, 'adviser_weight': 25, 'peer_weight': 15,
+        }, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_endorsement_without_files_does_not_lock_setup(self):
+        from defense.stages.grading_config import get_or_create_stage_grading_config
+        get_or_create_stage_grading_config(self.stage, self.semester)
+        TeamStageProgress.objects.update_or_create(team=self.team, semester=self.semester,
+            defense_stage=self.stage, defaults={'status': TeamStageProgress.STATUS_READY})
+        response = self.client.get(self.url)
+        self.assertFalse(response.data['stage']['structure_locked'])
+        self.assertFalse(response.data['grading_config']['is_locked'])
+        self.assertTrue(response.data['stage']['identity_locked'])
+        response = self.client.patch(self.url, {'description': 'Endorsed but unscheduled'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        response = self.client.patch(self.url, {'label': 'Would break recorded stage labels'}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+
     def test_empty_pending_grade_scaffold_does_not_lock_configuration(self):
         self.grade()
         response = self.client.get(self.url)

@@ -4,9 +4,11 @@ from django.db import models
 
 
 class WeeklyReportingPeriod(models.Model):
-    """One reusable Capstone reporting calendar for an academic term."""
-    semester = models.OneToOneField('academic_period_management.Semester', on_delete=models.PROTECT,
-        related_name='weekly_reporting_period')
+    """A defense stage's reporting calendar and report identity for one term."""
+    semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT,
+        related_name='weekly_reporting_periods')
+    defense_stage = models.ForeignKey('defense.DefenseStage', null=True, blank=True,
+        on_delete=models.CASCADE, related_name='weekly_reporting_periods')
     starts_on = models.DateField()
     total_weeks = models.PositiveSmallIntegerField()
     due_weekday = models.PositiveSmallIntegerField(default=6)
@@ -14,6 +16,8 @@ class WeeklyReportingPeriod(models.Model):
 
     class Meta:
         app_label = 'student_teams'
+        constraints = [models.UniqueConstraint(fields=['defense_stage', 'semester'],
+            name='unique_weekly_period_per_stage_term')]
 
 
 class WeeklyProgressReport(models.Model):

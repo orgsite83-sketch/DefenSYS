@@ -429,8 +429,20 @@ class _DefenseStageEditorScreenState
   void _restoreDraft(StageSetupDraft draft) {
     final serverStage = _stage;
     final restored = {...?_stage, if (!_structureLocked) ...draft.fields};
+    if (_identityLocked) {
+      restored['label'] = serverStage?['label'];
+      restored['code'] = serverStage?['code'];
+    }
     for (final key in ['deliverables', 'shared_deliverables']) {
       restored[key] = restoreProtectedDeliverables(draft.fields[key] ?? restored[key], serverStage?[key],);
+    }
+    if (restored['weekly_reporting'] is Map) {
+      final current = serverStage?['weekly_reporting'] as Map?;
+      restored['weekly_reporting'] = {
+        ...restored['weekly_reporting'] as Map,
+        'period_id': current?['period_id'],
+        'defense_stage_id': current?['defense_stage_id'],
+      };
     }
     _applyStage(restored);
     // Locks and workflow metadata always come from the server.
@@ -468,7 +480,7 @@ class _DefenseStageEditorScreenState
     _qualifyingScore.text = stage['qualifying_score']?.toString() ?? '';
     _scoreCarryover = stage['score_carryover']?.toString() ?? _conceptConfig['score_carryover']?.toString() ?? 'reassess';
     _minutesRequired = stage['minutes_required'] == true;
-    _weeklyConfig = initialWeeklySettings(stage['weekly_reporting'] as Map?, ref.read(defenseStagesProvider).pipelineStages);
+    _weeklyConfig = initialWeeklySettings(stage['weekly_reporting'] as Map?);
     _weeklyTemplate = weeklyTemplateDraft(stage);
     _minutesNumber.text = stage['minutes_deliverable_id']?.toString() ?? 'MINUTES';
     _minutesName.text = stage['minutes_deliverable_label']?.toString() ?? '';
@@ -638,8 +650,8 @@ class _DefenseStageEditorScreenState
           widget.stageId,
           {
             if (!_structureLocked) ...{
-            'label': _label.text.trim(),
-            'code': _code.text.trim(),
+            if (!_identityLocked) 'label': _label.text.trim(),
+            if (!_identityLocked) 'code': _code.text.trim(),
             'display_order': _orderPosition,
             'description': _description.text.trim(),
             'is_active': _isActive && _wasPublished,
@@ -767,6 +779,7 @@ class _DefenseStageEditorScreenState
   bool get configuredItemsHaveData =>
       deliverableSetupItems(_deliverables, _sharedDeliverables,).any((row) => row['has_data'] == true);
   bool get _structureLocked => _isLocked || _stage?['structure_locked'] == true;
+  bool get _identityLocked => _structureLocked || _stage?['identity_locked'] == true;
   String? get _lockReason =>
       _stage?[_isLocked ? 'lock_reason' : 'structure_lock_reason']?.toString();
 
@@ -962,11 +975,13 @@ class _DefenseStageEditorScreenState
                                     flex: 3,
                                     child: TextField(
                                       controller: _label,
-                                      readOnly: _structureLocked,
+                                      readOnly: _identityLocked,
                                       style: TextStyle(color: _textPrimaryColor,),
                                       decoration: _inputDecoration(
                                         labelText: 'Stage Name',
                                         hintText: 'e.g. Concept Proposal, Colloquium, Final Defense',
+                                        helperText: _identityLocked && !_structureLocked
+                                            ? 'Stage name is retained for recorded team activity.' : null,
                                       ),
                                       onChanged: (_) => setState(() {}),
                                     ),
@@ -976,7 +991,7 @@ class _DefenseStageEditorScreenState
                                     flex: 2,
                                     child: TextField(
                                       controller: _code,
-                                      readOnly: _structureLocked,
+                                      readOnly: _identityLocked,
                                       style: TextStyle(color: _textPrimaryColor,),
                                       decoration: _inputDecoration(
                                         labelText: 'Stage Code',

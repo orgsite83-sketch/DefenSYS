@@ -316,14 +316,14 @@ void main() {
     expect(delete.enabled, isFalse);
   });
 
-  testWidgets('unused draft can be deleted beside a completed stage sharing its calendar', (tester) async {
+  testWidgets('unused weekly draft can be deleted beside a completed stage', (tester) async {
     Map<String, dynamic>? deleted;
     const weekly = {'enabled': true, 'period_id': 1, 'required_start': 1, 'required_end': 2};
     await pumpDirectory(
       tester,
       state: DefenseStagesState(stages: [
         {...stages.first, 'is_officially_complete': true, 'weekly_reporting': weekly},
-        {...stages[1], 'can_delete': true, 'weekly_reporting': {...weekly, 'required_end': 8}},
+        {...stages[1], 'can_delete': true, 'weekly_reporting': {...weekly, 'period_id': 2, 'required_end': 8}},
       ]),
       delete: (stage) async => deleted = stage,
     );
