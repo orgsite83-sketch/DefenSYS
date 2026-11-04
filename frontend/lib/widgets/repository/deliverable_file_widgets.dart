@@ -91,6 +91,7 @@ class DeliverableUploadTile extends StatelessWidget {
     this.status,
     this.enabled = true,
     this.maxFileSizeMb = 50,
+    this.showUpload = true,
   });
 
   final String title;
@@ -99,6 +100,7 @@ class DeliverableUploadTile extends StatelessWidget {
   final String? status;
   final bool enabled;
   final int maxFileSizeMb;
+  final bool showUpload;
 
   @override
   Widget build(BuildContext context) {
@@ -161,6 +163,7 @@ class DeliverableUploadTile extends StatelessWidget {
               ),
             ],
           );
+          if (!showUpload) return description;
           final upload = DefensysShadcnScope(
             child: ShadButton.outline(
               size: ShadButtonSize.sm,

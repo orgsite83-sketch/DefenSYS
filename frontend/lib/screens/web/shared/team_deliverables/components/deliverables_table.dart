@@ -3620,6 +3620,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           if (workflow['enabled'] == true)
             ConceptWorkspace(
               key: ValueKey('concept-names-${team['id']}-$stageLabel'),
+              showPendingSharedSetup: false,
               teamId: parseAsInt(team['id']),
               stageLabel: stageLabel,
               stage: stage,
@@ -3815,15 +3816,24 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final reviews = widget.conceptReview
         ? sharedReviewsForTeams(teams, stageLabel: widget.state.selectedStage)
         : <Map<String, dynamic>>[];
+    final pendingShared = {
+      if (widget.conceptReview)
+        for (final review in pendingSharedReviewsForTeams(
+          teams,
+          stageLabel: widget.state.selectedStage,
+        ))
+          '${review['key']}': review,
+    };
     final sharedChecklists = {
       for (final summary in sharedChecklistsForTeams(
         teams,
         stageLabel: widget.state.selectedStage,
       ))
-        if (!widget.conceptReview || summary['source_project_id'] == null)
+        if (!widget.conceptReview)
           's${summary['section_id']}-${summary['context_id']}': summary,
     };
-    if (!sharedChecklists.containsKey(_selectedSharedChecklistKey)) {
+    if (!sharedChecklists.containsKey(_selectedSharedChecklistKey) &&
+        !pendingShared.containsKey(_selectedSharedChecklistKey)) {
       _selectedSharedChecklistKey = null;
     }
     if (!teams.any((team) => parseAsInt(team['id']) == _selectedTeamId)) {
@@ -3844,6 +3854,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         )
         .firstOrNull;
     final selectedChecklist = sharedChecklists[_selectedSharedChecklistKey];
+    final selectedImport = pendingShared[_selectedSharedChecklistKey];
     void selectTeam(int id) {
       setState(() {
         _selectedTeamId = id;
@@ -3861,7 +3872,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           _selectedSharedProjectId = value.startsWith('p')
               ? int.parse(value.substring(1))
               : null;
-          _selectedSharedChecklistKey = value.startsWith('s') ? value : null;
+          _selectedSharedChecklistKey =
+              value.startsWith('s') || value.startsWith('i') ? value : null;
         });
       }
     }
@@ -3876,6 +3888,15 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             focused: true,
             fileReview: true,
             initialSystemKey: widget.sharedSystemKey,
+            onChanged: () => ref
+                .read(capstoneDeliverablesProvider.notifier)
+                .fetchDeliverables(),
+          )
+        : selectedImport != null
+        ? ImportedSharedConceptWorkspace(
+            key: ValueKey('faculty-imported-shared-${selectedImport['key']}'),
+            teamId: parseAsInt(selectedImport['team_id']),
+            stageLabel: '${selectedImport['stage_label']}',
             onChanged: () => ref
                 .read(capstoneDeliverablesProvider.notifier)
                 .fetchDeliverables(),
@@ -3901,6 +3922,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final selections = <String, String>{
       for (final review in reviews)
         'p${review['project_id']}': 'Shared systems · ${review['section']}',
+      for (final entry in pendingShared.entries)
+        entry.key: 'Shared systems · ${entry.value['section']}',
       for (final entry in sharedChecklists.entries)
         entry.key: 'Shared system · ${entry.value['section']}',
       for (final team in teams) 't${team['id']}': '${team['name']}',
@@ -3909,6 +3932,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         ? 'p${selectedReview['project_id']}'
         : _selectedSharedChecklistKey ?? 't$_selectedTeamId';
     final statuses = <String, TeamWorkflowStatus>{
+      for (final entry in pendingShared.entries)
+        entry.key: TeamWorkflowStatus(
+          'shared_setup_pending',
+          '${entry.value['provided']}/${(entry.value['systems'] as List).length} shared titles provided',
+          WorkflowStatusTone.attention,
+        ),
       for (final review in reviews)
         'p${review['project_id']}': TeamWorkflowStatus(
           review['cleared'] == true &&

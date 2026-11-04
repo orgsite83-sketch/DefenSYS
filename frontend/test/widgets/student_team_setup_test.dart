@@ -24,6 +24,35 @@ class _StudentAuth extends AuthNotifier {
 }
 
 void main() {
+  testWidgets('normal PIT leader can add a missing title from the Team tab', (tester) async {
+    http.Request? saved;
+    setApiHttpClientForTesting(MockClient((request) async {
+      if (request.method == 'PATCH') {
+        saved = request;
+        return http.Response('{"teams":[]}', 200);
+      }
+      return http.Response(jsonEncode({'teams': saved == null ? [{
+        'id': 7, 'name': 'Team CodeSprint', 'section': 'BSIT-1A',
+        'event_name': '', 'needs_name': false, 'needs_project': true,
+        'concept_tasks': [],
+      }] : []}), 200);
+    }));
+    await pumpDefensysWidget(tester, const StudentTeamSetupTasks(showConceptTasks: false),
+      overrides: [authProvider.overrideWith(_StudentAuth.new)]);
+    expect(find.text('Choose team name'), findsNothing);
+    await tester.tap(find.text('Add project title'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save project title'));
+    await tester.pumpAndSettle();
+    expect(saved, isNull);
+    await tester.enterText(find.byType(EditableText), 'Campus Navigation');
+    await tester.tap(find.text('Save project title'));
+    await tester.pumpAndSettle();
+    expect(saved!.url.path, endsWith('/7/setup/'));
+    expect(jsonDecode(saved!.body), {'project_title': 'Campus Navigation'});
+    expect(find.text('Add project title'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('Team card owns title prompts while naming and event confirmation stay visible', (tester) async {
     setApiHttpClientForTesting(MockClient((request) async => http.Response(jsonEncode({
       'teams': [

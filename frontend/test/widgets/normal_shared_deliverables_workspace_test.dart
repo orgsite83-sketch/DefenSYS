@@ -227,7 +227,7 @@ void main() {
         expect(find.text('Agricultural Supply Platform'), findsOneWidget);
         expect(find.text('Project manager: Gabriel Navarro'), findsOneWidget);
         expect(find.text('Shared design specification'), findsOneWidget);
-        expect(find.text('Integration notes'), findsOneWidget);
+        expect(find.text('Integration notes'), findsWidgets);
         expect(find.text('system_2.pdf'), findsOneWidget);
         expect(find.text('system_1.pdf'), findsNothing);
         expect(find.text('Earlier system proposal'), findsNothing);
@@ -238,6 +238,8 @@ void main() {
           find.byType(DeliverableUploadTile),
         );
         expect(upload.enabled, isFalse);
+        expect(upload.showUpload, isFalse);
+        expect(find.text('Upload'), findsNothing);
         await capturePreview(
           tester,
           find.byKey(const ValueKey('shared-deliverables-workspace')),

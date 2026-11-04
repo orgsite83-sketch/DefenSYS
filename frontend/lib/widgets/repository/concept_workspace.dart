@@ -29,6 +29,7 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
     this.showTitleCard = true,
     this.showHistory = true,
     this.showRepeatInstructions = true,
+    this.showPendingSharedSetup = true,
     this.paperBuilder,
     this.initialConceptKey,
     this.onReviewFiles,
@@ -46,6 +47,7 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
   final bool showTitleCard;
   final bool showHistory;
   final bool showRepeatInstructions;
+  final bool showPendingSharedSetup;
   @override
   ConsumerState<ConceptWorkspace> createState() => _ConceptWorkspaceState();
 }
@@ -659,7 +661,9 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     final systems = (workflow['system_concepts'] as List? ?? [])
         .whereType<Map>()
         .toList();
-    if (workflow['shared_import_pending'] != true || systems.isEmpty) {
+    if (!widget.showPendingSharedSetup ||
+        workflow['shared_import_pending'] != true ||
+        systems.isEmpty) {
       return _buildContent(context);
     }
     final provided = systems

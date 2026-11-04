@@ -9,8 +9,16 @@ import '../helpers/capture_preview.dart';
 import '../helpers/pump_app.dart';
 import '../helpers/auth_test_overrides.dart';
 
-Future<void> _pumpSharedWidget(WidgetTester tester, Widget child, {ThemeData? theme}) =>
-    pumpDefensysWidget(tester, child, theme: theme, overrides: authTestOverrides());
+Future<void> _pumpSharedWidget(
+  WidgetTester tester,
+  Widget child, {
+  ThemeData? theme,
+}) => pumpDefensysWidget(
+  tester,
+  child,
+  theme: theme,
+  overrides: authTestOverrides(),
+);
 
 Map<String, dynamic> _document(
   String key,
@@ -75,6 +83,45 @@ Map<String, dynamic> _group() => {
 
 void main() {
   setUpAll(() => loadPreviewFonts(force: true));
+
+  for (final dark in [false, true]) {
+    testWidgets(
+      'missing shared file waits for students without faculty upload controls dark=$dark',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(390, 1000));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final group = _group();
+        group['requirements'] = [
+          {
+            'deliverable_id': 'PAPER',
+            'label': 'Concept Papers',
+            'required': true,
+            'deliverable_type': 'pre',
+            'status': 'missing',
+            'file_policy': {'mode': 'concepts'},
+            'documents': [
+              {
+                ..._document('c1:paper', 'Concept paper', system: 'c1'),
+                'can_upload': false,
+              },
+            ],
+          },
+        ];
+        await _pumpSharedWidget(
+          tester,
+          SingleChildScrollView(child: SharedDeliverablesPanel(group: group)),
+          theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+        );
+        expect(find.text('Awaiting student submission'), findsOneWidget);
+        expect(find.text('Upload'), findsNothing);
+        expect(find.text('Upload Concept paper'), findsNothing);
+        expect(find.text('Action Required'), findsNothing);
+        expect(find.text('Awaiting PM upload'), findsNothing);
+        expect(find.text('Concept paper'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'shared setup is visible, copies requirements, and keeps its settings independent',
@@ -311,8 +358,10 @@ void main() {
           expect(find.text('Smart Agricultural Supply Platform'), findsNothing);
           expect(
             find.text('Upload Approved shared concept paper'),
-            findsOneWidget,
+            findsNothing,
           );
+          expect(find.text('Approved shared concept paper'), findsWidgets);
+          expect(find.text('Awaiting student submission'), findsOneWidget);
           expect(find.text('System 1'), findsNothing);
           expect(find.text('Earlier proposals (1)'), findsOneWidget);
           await capturePreview(
@@ -330,8 +379,9 @@ void main() {
           );
           expect(
             find.text('Upload Approved shared concept paper'),
-            findsOneWidget,
+            findsNothing,
           );
+          expect(find.text('Approved shared concept paper'), findsWidgets);
           expect(find.text('Back to selected system'), findsOneWidget);
           expect(tester.takeException(), isNull);
         },

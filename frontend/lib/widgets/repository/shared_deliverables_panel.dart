@@ -337,6 +337,8 @@ class _SharedDeliverablesPanelState
         ? 'pending'
         : 'missing');
     final post = requirement['deliverable_type'] == 'post';
+    final canSubmit =
+        !widget.readOnly && documents.any((row) => row['can_upload'] == true);
     final label = status == 'accepted'
         ? post
               ? 'Accepted & archived'
@@ -346,7 +348,9 @@ class _SharedDeliverablesPanelState
         : status == 'pending'
         ? 'Pending review'
         : requirement['required'] == true
-        ? 'Action Required'
+        ? canSubmit
+              ? 'Action Required'
+              : 'Awaiting student submission'
         : 'Optional';
     final tone = status == 'accepted'
         ? WorkflowStatusTone.success
@@ -392,15 +396,15 @@ class _SharedDeliverablesPanelState
           if (!details) ...[
             const SizedBox(height: 4),
             Text(
-            requirement['required'] == true
-                ? post
-                      ? 'Required after defense'
-                      : 'Mandatory for oral defense'
-                : 'Optional shared document',
-            style: TextStyle(
-              fontSize: 11.5,
-              color: DefensysTokens.textSecondaryOf(context),
-            ),
+              requirement['required'] == true
+                  ? post
+                        ? 'Required after defense'
+                        : 'Mandatory for oral defense'
+                  : 'Optional shared document',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
             ),
           ],
           const SizedBox(height: 10),
@@ -478,7 +482,10 @@ class _SharedDeliverablesPanelState
                 ),
             ] else
               DeliverableUploadTile(
-                title: 'Upload ${document['label']}',
+                title: !widget.readOnly && document['can_upload'] == true
+                    ? 'Upload ${document['label']}'
+                    : '${document['label']}',
+                showUpload: !widget.readOnly && document['can_upload'] == true,
                 format: DeliverableFormatInfo.fromFormat(
                   '${document['file_format'] ?? requirement['file_format']}',
                 ),
@@ -498,6 +505,7 @@ class _SharedDeliverablesPanelState
             _archiveNameSuggestion('${requirement['suggested_file_name']}'),
           if (mode == 'multiple' &&
               !widget.readOnly &&
+              requirement['can_add_attachment'] == true &&
               !(post && status == 'accepted'))
             Align(
               alignment: Alignment.centerLeft,
@@ -514,7 +522,7 @@ class _SharedDeliverablesPanelState
                 child: const Text('Add attachment'),
               ),
             ),
-          if (relevantFiles.isEmpty)
+          if (relevantFiles.isEmpty && canSubmit)
             Text(
               'Awaiting PM upload',
               style: TextStyle(
@@ -902,7 +910,9 @@ class _SharedDeliverablesPanelState
             const SizedBox(height: 16),
             _studentDocuments(_sharedRows(group['requirements']), active),
           ],
-          if (widget.showStudentHistory && official != null && alternatives.isNotEmpty)
+          if (widget.showStudentHistory &&
+              official != null &&
+              alternatives.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Align(

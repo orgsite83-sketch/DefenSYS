@@ -91,6 +91,16 @@ class PitTeamPolicyView(APIView):
         return Response({'event_id': event.pk, 'team_membership_policy': event.team_membership_policy})
 
 
+def needs_project_title(team):
+    """Only unassigned normal PIT projects use initial title registration."""
+    from .concept_policy import contexts_for
+    profile = next((row for row in team.roster_details.all() if row.event_id is None), None)
+    return (team.is_pit and not team.current_defense_stage
+            and not (profile and profile.details_source_event_id)
+            and not (profile.project_title if profile else team.project_title).strip()
+            and not contexts_for(team).exists())
+
+
 def setup_tasks(user):
     from .concept_policy import contexts_for, resolve_policy, title_progress
     from repository.deliverables.concepts import latest_round
@@ -98,13 +108,14 @@ def setup_tasks(user):
         memberships__student=user).prefetch_related('roster_details').distinct().order_by('name')
     result = []
     for team in teams:
+        needs_project = needs_project_title(team)
         roster_backed = bool(team.roster_details.all())
         if roster_backed:
-            # Current-roster naming is immediate; event project setup keeps
-            # its own opening, confirmation and revision rules.
+            # Current-roster naming and normal PIT title registration are
+            # immediate; event setup retains its confirmation/revision rules.
             from .pit_rosters import resolve
             active_ids = resolve(team.semester_id, team.year_level).get(team.section, {}).get('team_ids', [])
-            if not team.setup_pending or team.current_defense_stage or team.pk not in active_ids:
+            if not (team.setup_pending or needs_project) or team.current_defense_stage or team.pk not in active_ids:
                 continue
         tasks = []
         for stage in contexts_for(team) if not roster_backed else []:
@@ -118,11 +129,12 @@ def setup_tasks(user):
                 tasks.append({'stage_label': stage.label, **progress,
                               'mode': policy['mode'], 'shared_system': shared,
                               'section_project_id': policy.get('section_project_id')})
-        if team.setup_pending or tasks:
+        if team.setup_pending or needs_project or tasks:
             result.append({'id': team.pk, 'name': f'Unnamed team {team.pk}' if team.setup_pending else team.name, 'section': team.section,
                            'scope': 'pit' if team.is_pit else 'capstone', 'year_level': team.year_level,
                            'event_name': team.current_defense_stage or '',
-                           'needs_name': team.setup_pending, 'concept_tasks': tasks})
+                           'needs_name': team.setup_pending, 'needs_project': needs_project,
+                           'concept_tasks': tasks})
     return result
 
 
@@ -149,9 +161,19 @@ class TeamLeaderSetupView(APIView):
             Semester.objects.select_for_update().get(pk=semester.pk)
         team = get_object_or_404(StudentTeam.objects.select_for_update(), pk=team_id,
             leader=request.user, memberships__student=request.user, semester=semester)
-        if not team.setup_pending:
+        if not {'name', 'project_title'}.intersection(request.data):
+            raise ValidationError('Enter a team name or project title to complete setup.')
+        needs_project = needs_project_title(team)
+        if not team.setup_pending and not needs_project:
             raise ValidationError('Team setup is already complete. Ask your team manager for later name changes.')
-        name = serializers.CharField(max_length=120).run_validation(request.data.get('name'))
+        name = serializers.CharField(max_length=120).run_validation(request.data.get('name', team.name))
+        if not team.setup_pending and name != team.name:
+            raise ValidationError({'name': 'The team name is already finalized.'})
+        title = None
+        if 'project_title' in request.data:
+            if not needs_project:
+                raise ValidationError({'project_title': 'Complete project setup through the configured event workflow.'})
+            title = serializers.CharField(max_length=255).run_validation(request.data['project_title'])
         if StudentTeam.objects.filter(name=name, level=team.level).exclude(pk=team.pk).exists():
             raise ValidationError({'name': 'Another team already uses this name. Choose a different name.'})
         from .pit_rosters import resolve
@@ -165,14 +187,25 @@ class TeamLeaderSetupView(APIView):
             events = lock_cohort(team.semester, team.year_level)
             freeze_events(team.semester, team.year_level, team.section, events)
         previous = team.name
-        team.name, team.setup_pending = name, False
+        previous_title = team.project_title
+        team.name = name
+        if 'name' in request.data:
+            team.setup_pending = False
+        if title is not None:
+            team.project_title, team.project_pending = title, False
         try:
             with transaction.atomic():
-                team.save(update_fields=['name', 'setup_pending', 'updated_at'])
-                PITRosterTeamDetails.objects.filter(team=team, event__isnull=True).update(name=name)
+                team.save(update_fields=['name', 'setup_pending', 'project_title', 'project_pending', 'updated_at'])
+                profiles = PITRosterTeamDetails.objects.filter(team=team, event__isnull=True)
+                updates = {'name': name}
+                if title is not None:
+                    from django.db.models import F
+                    updates.update(project_title=title, revision=F('revision') + 1)
+                profiles.update(**updates)
         except (IntegrityError, ModelValidationError) as exc:
             raise ValidationError({'name': 'This team name is no longer available. Choose another name.'}) from exc
         log_high_impact_action(category=SystemAuditLog.CATEGORY_STUDENT_TEAMS,
             action='team.leader_setup', target=team, request=request, strict=True,
-            old_values={'name': previous}, new_values={'name': team.name})
+            old_values={'name': previous, 'project_title': previous_title},
+            new_values={'name': team.name, 'project_title': team.project_title})
         return Response({'id': team.pk, 'name': team.name, 'teams': setup_tasks(request.user)})

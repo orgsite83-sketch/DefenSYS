@@ -121,6 +121,26 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
     }
   }
 
+  Future<void> addProjectTitle(Map<String, dynamic> team) async {
+    final title = await showDialog<String>(
+      context: context,
+      builder: (_) => const _ProjectTitleDialog(),
+    );
+    if (title == null || !mounted) return;
+    ++_requestRevision;
+    setState(() { busy = true; error = null; });
+    try {
+      await ref.read(teamFormationServiceProvider)
+          .completeProjectTitle(team['id'] as int, title);
+      await load(refresh: true);
+      await widget.onRefresh?.call();
+    } catch (e) {
+      if (mounted) setState(() => error = '$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> openConcepts(Map<String, dynamic> team, Map task) async {
     setState(() {
       busy = true;
@@ -180,7 +200,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
         }); }
       });
     });
-    final teams = this.teams.where((t) => widget.showConceptTasks || t['needs_name'] == true).toList();
+    final teams = this.teams.where((t) => widget.showConceptTasks || t['needs_name'] == true || t['needs_project'] == true).toList();
     final eventTeams = this.eventTeams.where((t) => widget.showConceptTasks || t['needs_name'] == true || t['needs_details'] == true).toList();
     final sectionTasks = widget.showSectionTasks ? this.sectionTasks : <Map<String, dynamic>>[];
     if (teams.isEmpty && sectionTasks.isEmpty && eventTeams.isEmpty && error == null) return const SizedBox.shrink();
@@ -466,7 +486,8 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                         (team) {
                           final conceptTasks = (widget.showConceptTasks ? team['concept_tasks'] as List? ?? [] : []).cast<Map>();
                           final needsName = team['needs_name'] == true;
-                          if (!needsName && conceptTasks.isEmpty) return const SizedBox.shrink();
+                          final needsProject = team['needs_project'] == true;
+                          if (!needsName && !needsProject && conceptTasks.isEmpty) return const SizedBox.shrink();
 
                           return Container(
                             margin: const EdgeInsets.only(top: 8),
@@ -495,6 +516,17 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                                     label: const Text('Choose team name', style: TextStyle(fontSize: 11.5)),
                                     style: OutlinedButton.styleFrom(
                                       visualDensity: VisualDensity.compact,
+                                    ),
+                                  ),
+                                ],
+                                if (needsProject) ...[
+                                  const SizedBox(height: 6),
+                                  DefensysShadcnScope(
+                                    child: ShadButton.outline(
+                                      enabled: !busy,
+                                      onPressed: () => addProjectTitle(team),
+                                      leading: const Icon(Icons.edit_outlined, size: 14),
+                                      child: const Text('Add project title'),
                                     ),
                                   ),
                                 ],
@@ -595,6 +627,51 @@ class _TeamNameDialogState extends State<TeamNameDialog> {
         child: const Text('Save team name'),
       ),
     ],
+  );
+}
+
+class _ProjectTitleDialog extends StatefulWidget {
+  const _ProjectTitleDialog();
+
+  @override
+  State<_ProjectTitleDialog> createState() => _ProjectTitleDialogState();
+}
+
+class _ProjectTitleDialogState extends State<_ProjectTitleDialog> {
+  final controller = TextEditingController();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => DefensysShadcnScope(
+    child: ShadDialog(
+      title: const Text('Add project title'),
+      constraints: const BoxConstraints(maxWidth: 480),
+      actions: [
+        ShadButton.outline(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ShadButton(
+          onPressed: () {
+            final title = controller.text.trim();
+            if (title.isNotEmpty) Navigator.pop(context, title);
+          },
+          child: const Text('Save project title'),
+        ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: WorkflowField(
+          label: 'Project title',
+          child: ShadInput(controller: controller, autofocus: true, maxLength: 255),
+        ),
+      ),
+    ),
   );
 }
 

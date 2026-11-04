@@ -41,6 +41,17 @@ class ImportedSharedProposalTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         return response.data
 
+    def test_adviser_of_non_pm_team_reads_pending_shared_titles_without_activation(self):
+        self.client.force_authenticate(self.other_adviser)
+        response = self.client.get(URL, {'team_id': self.other.pk, 'stage_label': self.stage.label})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['project_manager_id'], self.student.pk)
+        self.assertEqual([s['title'] for s in response.data['systems']], ['Imported shared architecture', '', ''])
+        self.assertFalse(response.data['can_edit_names'])
+        self.assertFalse(response.data['can_review'])
+        self.assertFalse(SectionConceptProject.objects.exists())
+        self.assertFalse(ConceptRound.objects.exists())
+
     def test_single_remaining_pm_team_keeps_shared_setup_visible_and_blocks_endorsement(self):
         from . import shared_deliverables as shared
         from repository.deliverables.endorsement import endorsement_review

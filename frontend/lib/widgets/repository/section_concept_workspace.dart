@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,6 +27,198 @@ List<Map<String, dynamic>> _rows(dynamic value) => (value as List? ?? [])
     .map((r) => Map<String, dynamic>.from(r))
     .toList();
 String _error(Object error) => error.toString().replaceFirst('Exception: ', '');
+
+/// Imported shared systems exist before the PM creates a persistent project.
+/// Group them by academic context, never by which team contains the manager.
+List<Map<String, dynamic>> pendingSharedReviewsForTeams(
+  List<Map<String, dynamic>> teams, {
+  String? stageLabel,
+}) {
+  final sections = <String, Map<String, dynamic>>{};
+  for (final team in teams) {
+    final selected = team['selected_stage'];
+    final stages = _rows(team['stages']);
+    final stage = stageLabel != null && stageLabel.isNotEmpty
+        ? stages.where((row) => row['stage_label'] == stageLabel).firstOrNull ??
+              (selected is Map && selected['stage_label'] == stageLabel
+                  ? selected
+                  : null)
+        : selected is Map
+        ? selected
+        : stages.firstOrNull;
+    final workflow = stage?['concept_workflow'] as Map?;
+    if (workflow?['shared_import_pending'] != true ||
+        workflow?['section_project_id'] != null) {
+      continue;
+    }
+    final systems = _rows(workflow?['system_concepts']);
+    if (systems.isEmpty) continue;
+    final key = jsonEncode([
+      team['semester_id'],
+      team['year_level'],
+      team['section'],
+      stage?['stage_label'],
+    ]);
+    sections.putIfAbsent(
+      key,
+      () => {
+        'key': 'i$key',
+        'team_id': team['id'],
+        'section': team['section'],
+        'stage_label': stage?['stage_label'],
+        'systems': systems,
+        'provided': systems
+            .where((row) => '${row['title'] ?? ''}'.trim().isNotEmpty)
+            .length,
+      },
+    );
+  }
+  return sections.values.toList();
+}
+
+/// Read-only faculty entry point; opening it never activates shared proposals.
+class ImportedSharedConceptWorkspace extends ConsumerStatefulWidget {
+  const ImportedSharedConceptWorkspace({
+    super.key,
+    required this.teamId,
+    required this.stageLabel,
+    this.onChanged,
+  });
+  final int teamId;
+  final String stageLabel;
+  final Future<void> Function()? onChanged;
+
+  @override
+  ConsumerState<ImportedSharedConceptWorkspace> createState() =>
+      _ImportedSharedConceptWorkspaceState();
+}
+
+class _ImportedSharedConceptWorkspaceState
+    extends ConsumerState<ImportedSharedConceptWorkspace> {
+  Map<String, dynamic>? project;
+  String? error;
+  int requestVersion = 0;
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(load);
+  }
+
+  @override
+  void didUpdateWidget(covariant ImportedSharedConceptWorkspace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.teamId != widget.teamId ||
+        oldWidget.stageLabel != widget.stageLabel) {
+      project = null;
+      error = null;
+      Future.microtask(load);
+    }
+  }
+
+  Future<void> load() async {
+    final version = ++requestVersion;
+    try {
+      final result = await ref
+          .read(sectionConceptServiceProvider)
+          .imported(widget.teamId, stageLabel: widget.stageLabel);
+      if (mounted && version == requestVersion) {
+        setState(() {
+          project = result;
+          error = null;
+        });
+      }
+    } catch (exception) {
+      if (mounted && version == requestVersion) {
+        setState(() => error = _error(exception));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final id = int.tryParse('${project?['id'] ?? ''}');
+    if (id != null) {
+      return SectionConceptWorkspace(
+        projectId: id,
+        embedded: true,
+        focused: true,
+        fileReview: true,
+        onChanged: widget.onChanged,
+      );
+    }
+    final systems = _rows(project?['systems']);
+    final provided = systems
+        .where((row) => '${row['title'] ?? ''}'.trim().isNotEmpty)
+        .length;
+    return DefensysShadcnScope(
+      child: ShadCard(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Shared system proposals',
+                    style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 17,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
+                  ),
+                ),
+                ShadButton.ghost(
+                  size: ShadButtonSize.sm,
+                  onPressed: load,
+                  leading: const Icon(Icons.refresh, size: 16),
+                  child: const Text('Refresh'),
+                ),
+              ],
+            ),
+            if (project == null && error == null)
+              const LinearProgressIndicator(),
+            if (error != null)
+              Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            if (project != null) ...[
+              Text(
+                '${project!['section']} · ${widget.stageLabel}',
+                style: TextStyle(
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('Project manager: ${project!['project_manager_name']}'),
+              const SizedBox(height: 8),
+              Text('$provided/${systems.length} shared titles provided'),
+              const SizedBox(height: 16),
+              for (var i = 0; i < systems.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'System ${String.fromCharCode(65 + i)} · '
+                    '${'${systems[i]['title'] ?? ''}'.trim().isEmpty ? 'Pending proposal' : systems[i]['title']}',
+                  ),
+                ),
+              Text(
+                '${project!['setup_unavailable_reason'] ?? ''}'.isNotEmpty
+                    ? '${project!['setup_unavailable_reason']}'
+                    : 'The Project Manager completes the shared titles. Faculty review becomes available when the proposals are submitted.',
+                style: TextStyle(
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 Map<String, dynamic>? sharedReviewForTeam(
   Map<String, dynamic> team, {

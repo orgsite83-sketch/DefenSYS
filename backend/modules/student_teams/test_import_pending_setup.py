@@ -67,6 +67,82 @@ class PitImportSetupTests(APITestCase):
             'member_ids': [self.students[i].username], 'leader_id': self.students[i].username}
             for i, title in enumerate(['Retained title', ''])]
 
+    def import_normal_team(self, name='Team CodeSprint'):
+        self.event.concept_config = {'enabled': False}
+        self.event.save(update_fields=['concept_config'])
+        preview = self.preview(operation='import', teams=[{
+            'team_name': name, 'project_title': '',
+            'member_ids': [s.username for s in self.students[:2]],
+            'leader_id': self.students[0].username}])
+        result = self.apply(preview)
+        self.assertEqual(result.status_code, 201, result.data)
+        return StudentTeam.objects.get(pk=result.data['team_ids'][0])
+
+    def test_named_normal_pit_import_has_title_task_and_leader_can_complete_it(self):
+        team = self.import_normal_team()
+        self.client.force_authenticate(self.students[0])
+        task = self.client.get('/api/teams/my-setup/').data['teams'][0]
+        self.assertTrue(task['needs_project'])
+        self.assertFalse(task['needs_name'])
+        self.assertEqual(task['concept_tasks'], [])
+        response = self.client.patch(f'/api/teams/{team.pk}/setup/',
+            {'project_title': 'Campus Navigation'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        team.refresh_from_db()
+        self.assertEqual(team.name, 'Team CodeSprint')
+        self.assertEqual(team.project_title, 'Campus Navigation')
+        self.assertFalse(team.project_pending)
+        self.assertEqual(PITRosterTeamDetails.objects.get(team=team, event=None).project_title,
+            'Campus Navigation')
+        self.assertEqual(self.client.get('/api/teams/my-setup/').data['teams'], [])
+        self.assertEqual(self.client.patch(f'/api/teams/{team.pk}/setup/',
+            {'project_title': 'Overwritten'}, format='json').status_code, 400)
+
+    def test_initial_title_registration_preserves_unnamed_team_task(self):
+        team = self.import_normal_team(name='')
+        self.client.force_authenticate(self.students[0])
+        response = self.client.patch(f'/api/teams/{team.pk}/setup/',
+            {'project_title': 'New project'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        team.refresh_from_db()
+        self.assertTrue(team.setup_pending)
+        self.assertFalse(team.project_pending)
+        self.assertTrue(setup_tasks(self.students[0])[0]['needs_name'])
+
+    def test_title_registration_enforces_leader_validation_and_current_roster(self):
+        team = self.import_normal_team()
+        url = f'/api/teams/{team.pk}/setup/'
+        self.client.force_authenticate(self.students[1])
+        self.assertEqual(self.client.patch(url, {'project_title': 'Stolen'}, format='json').status_code, 404)
+        self.client.force_authenticate(self.students[0])
+        for data in ({'project_title': ' '}, {'project_title': 'x' * 256},
+                     {'project_title': 'Valid', 'name': 'Renamed'}):
+            self.assertEqual(self.client.patch(url, data, format='json').status_code, 400)
+        from .models import PITSectionRoster
+        PITSectionRoster.objects.get(semester=self.term, section=team.section).teams.clear()
+        self.assertEqual(setup_tasks(self.students[0]), [])
+        self.assertEqual(self.client.patch(url, {'project_title': 'Stale'}, format='json').status_code, 400)
+
+    def test_initial_title_registration_does_not_bypass_concept_workflow(self):
+        team = self.import_normal_team()
+        self.event.concept_config = {'enabled': True, 'required_count': 3}
+        self.event.save(update_fields=['concept_config'])
+        self.assertEqual(setup_tasks(self.students[0]), [])
+        self.client.force_authenticate(self.students[0])
+        self.assertEqual(self.client.patch(f'/api/teams/{team.pk}/setup/',
+            {'project_title': 'Bypass'}, format='json').status_code, 400)
+
+    def test_title_registration_freezes_existing_event_history(self):
+        team = self.import_normal_team()
+        from .pit_rosters import pin
+        pin(team, self.event)
+        self.client.force_authenticate(self.students[0])
+        response = self.client.patch(f'/api/teams/{team.pk}/setup/',
+            {'project_title': 'New current title'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(PITRosterTeamDetails.objects.get(team=team, event=self.event).project_title, '')
+
+
     def test_current_unnamed_teams_get_distinct_identities_and_leader_naming_tasks(self):
         preview = self.preview(operation='import', teams=self.rows())
         self.assertEqual([r['display_name'] for r in preview['teams']], ['Unnamed team 1', 'Unnamed team 2'])

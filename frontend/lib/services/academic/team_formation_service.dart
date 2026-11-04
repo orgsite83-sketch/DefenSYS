@@ -120,6 +120,13 @@ class TeamFormationService {
         ),
       );
 
+  Future<void> completeProjectTitle(int teamId, String title) async {
+    _decode(await client.patch(
+      Uri.parse('$_base/$teamId/setup/'),
+      body: jsonEncode({'project_title': title}),
+    ));
+  }
+
   Map<String, dynamic> _decode(http.Response response) {
     dynamic body;
     try {
