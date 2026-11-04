@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from defensys_backend.read_projection import ReadAPIView as APIView, read_projection
 
 from academic_period_management.serializers import SemesterSerializer
+from .batches import batch_options
 from .serializers import (
     DeliverableActionSerializer,
     DeliverableUploadSerializer,
@@ -174,6 +175,7 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
     teams = [team_payload(team, selected_stage=stage, evaluator=request.user) for team in current]
     return {
         'teams': teams,
+        'batch_options': batch_options(base) if scope != 'pit' else [],
         'counts': counts_payload(current, selected_stage=stage, serialized_teams=teams),
         'stage_options': stage_options,
         'selected_stage': stage,

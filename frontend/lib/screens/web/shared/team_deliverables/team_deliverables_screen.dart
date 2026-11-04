@@ -263,6 +263,13 @@ class _TeamDeliverablesScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref
           .read(capstoneDeliverablesProvider.notifier)
+          .configureBatchFilters(
+            enabled: widget.initialScope != 'pit' && !widget.isPitInstructor,
+            participation: widget.initialTeamId == null ? 'ongoing' : 'all',
+          );
+      _activeTeamId = widget.initialTeamId;
+      ref
+          .read(capstoneDeliverablesProvider.notifier)
           .fetchDeliverables(
             workspace: widget.isAdviser
                 ? 'adviser'
@@ -324,6 +331,21 @@ class _TeamDeliverablesScreenState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(capstoneDeliverablesProvider, (previous, next) {
+      if (previous != null &&
+          (previous.batchId != next.batchId ||
+              previous.participation != next.participation)) {
+        setState(() {
+          _activeTeamId = null;
+          _showConceptReview = false;
+          _conceptReviewProjectId = null;
+          _conceptReviewRequirementId = null;
+          _conceptReviewFileKey = null;
+          _sharedSystemKey = null;
+          _triageFilter = TeamTriageFilter.all;
+        });
+      }
+    });
     final state = ref.watch(capstoneDeliverablesProvider);
     final isWide = MediaQuery.of(context).size.width >= 900;
     final isEvaluator = widget.isAdviser || widget.isPitInstructor;
@@ -359,9 +381,7 @@ class _TeamDeliverablesScreenState
                 'Active Semester');
     } else if (widget.isAdviser) {
       pageTitle = 'Capstone Teams';
-      pageSubtitle =
-          state.activeSemester?['display_name']?.toString() ??
-          'Active Semester';
+      pageSubtitle = 'Teams by intake batch';
     } else if (isPit) {
       pageTitle = 'PIT Cohort Deliverables';
       pageSubtitle = widget.pitYearLevel != null

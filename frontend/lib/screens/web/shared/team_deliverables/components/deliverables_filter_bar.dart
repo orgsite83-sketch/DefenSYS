@@ -8,6 +8,7 @@ import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_types.dart';
 import 'deliverables_status_filter.dart';
+import 'capstone_batch_filters.dart';
 
 int _asInt(dynamic value) {
   if (value == null) return 0;
@@ -32,7 +33,13 @@ BoxDecoration _cardDecoration(BuildContext context) {
   );
 }
 
-Widget _compactStatItem(BuildContext context, String label, int count, IconData icon, Color color) {
+Widget _compactStatItem(
+  BuildContext context,
+  String label,
+  int count,
+  IconData icon,
+  Color color,
+) {
   return Row(
     mainAxisSize: MainAxisSize.min,
     children: [
@@ -74,55 +81,93 @@ Widget _compactStatItem(BuildContext context, String label, int count, IconData 
 }
 
 Widget buildDeliverablesStats(CapstoneDeliverablesState state) {
-  return Builder(builder: (context) {
-  final teamLabel = state.scope == 'pit' ? 'PIT Teams' : 'Capstone Teams';
-  final items = [
-    _compactStatItem(context, teamLabel, _count(state, 'teams'), Icons.groups_2_outlined, DefensysTokens.maroonTextOf(context)),
-    _compactStatItem(context, 'Ready', _count(state, 'ready'), Icons.verified_outlined, AppColors.success),
-    _compactStatItem(context, 'Pending', _count(state, 'pending_review'), Icons.rate_review_outlined, WorkflowStatusStyle.of(context, WorkflowStatusTone.active).foreground),
-    _compactStatItem(context, 'Missing', _count(state, 'missing_requirements'), Icons.warning_amber_outlined, AppColors.warning),
-    _compactStatItem(context, 'Files', _count(state, 'submitted_files'), Icons.folder_copy_outlined, Colors.blue),
-    _compactStatItem(context, 'Archive Files', _count(state, 'archive_files'), Icons.inventory_2_outlined, AppColors.gold),
-  ];
+  return Builder(
+    builder: (context) {
+      final teamLabel = state.scope == 'pit' ? 'PIT Teams' : 'Capstone Teams';
+      final items = [
+        _compactStatItem(
+          context,
+          teamLabel,
+          _count(state, 'teams'),
+          Icons.groups_2_outlined,
+          DefensysTokens.maroonTextOf(context),
+        ),
+        _compactStatItem(
+          context,
+          'Ready',
+          _count(state, 'ready'),
+          Icons.verified_outlined,
+          AppColors.success,
+        ),
+        _compactStatItem(
+          context,
+          'Pending',
+          _count(state, 'pending_review'),
+          Icons.rate_review_outlined,
+          WorkflowStatusStyle.of(context, WorkflowStatusTone.active).foreground,
+        ),
+        _compactStatItem(
+          context,
+          'Missing',
+          _count(state, 'missing_requirements'),
+          Icons.warning_amber_outlined,
+          AppColors.warning,
+        ),
+        _compactStatItem(
+          context,
+          'Files',
+          _count(state, 'submitted_files'),
+          Icons.folder_copy_outlined,
+          Colors.blue,
+        ),
+        _compactStatItem(
+          context,
+          'Archive Files',
+          _count(state, 'archive_files'),
+          Icons.inventory_2_outlined,
+          AppColors.gold,
+        ),
+      ];
 
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-    decoration: _cardDecoration(context),
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 900) {
-          return Wrap(
-            spacing: 16,
-            runSpacing: 12,
-            alignment: WrapAlignment.spaceBetween,
-            children: items,
-          );
-        }
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: List.generate(items.length, (index) {
-            final isLast = index == items.length - 1;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: _cardDecoration(context),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 900) {
+              return Wrap(
+                spacing: 16,
+                runSpacing: 12,
+                alignment: WrapAlignment.spaceBetween,
+                children: items,
+              );
+            }
             return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                items[index],
-                if (!isLast) ...[
-                  const SizedBox(width: 12),
-                  Container(
-                    height: 24,
-                    width: 1,
-                    color: const Color(0xFFE2E8F0),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-              ],
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: List.generate(items.length, (index) {
+                final isLast = index == items.length - 1;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    items[index],
+                    if (!isLast) ...[
+                      const SizedBox(width: 12),
+                      Container(
+                        height: 24,
+                        width: 1,
+                        color: const Color(0xFFE2E8F0),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                  ],
+                );
+              }),
             );
-          }),
-        );
-      },
-    ),
+          },
+        ),
+      );
+    },
   );
-  });
 }
 
 class DeliverablesFilterBar extends ConsumerStatefulWidget {
@@ -300,6 +345,12 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
           _debounceTimer!.cancel();
         }
         widget.onTriageFilterChanged?.call(TeamTriageFilter.all);
+        if (widget.state.batchFiltersEnabled &&
+            widget.state.scope == 'capstone') {
+          ref
+              .read(capstoneDeliverablesProvider.notifier)
+              .configureBatchFilters(enabled: true, clearTeams: true);
+        }
         ref
             .read(capstoneDeliverablesProvider.notifier)
             .fetchDeliverables(search: '', status: '');
@@ -370,6 +421,11 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (widget.state.scope == 'capstone' &&
+              widget.state.batchFiltersEnabled) ...[
+            CapstoneBatchFilters(state: widget.state),
+            const SizedBox(height: 12),
+          ],
           filterFields,
           if (widget.showViewToggle) ...[
             const SizedBox(height: 12),
@@ -419,7 +475,9 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: isActive ? DefensysTokens.surfaceOf(context) : Colors.transparent,
+          color: isActive
+              ? DefensysTokens.surfaceOf(context)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           boxShadow: isActive
               ? [
@@ -437,7 +495,9 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
             Icon(
               icon,
               size: 14,
-              color: isActive ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
+              color: isActive
+                  ? DefensysTokens.maroonTextOf(context)
+                  : DefensysTokens.textSecondaryOf(context),
             ),
             const SizedBox(width: 5),
             Text(
@@ -445,7 +505,9 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
-                color: isActive ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
+                color: isActive
+                    ? DefensysTokens.maroonTextOf(context)
+                    : DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
@@ -453,5 +515,4 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
       ),
     );
   }
-
 }

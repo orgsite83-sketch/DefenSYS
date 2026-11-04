@@ -29,6 +29,10 @@ class CapstoneDeliverablesState {
   final String? section;
   final String? error;
   final String? message;
+  final bool batchFiltersEnabled;
+  final String batchId;
+  final String participation;
+  final List<Map<String, dynamic>> batchOptions;
 
   const CapstoneDeliverablesState({
     this.isLoading = false,
@@ -47,6 +51,10 @@ class CapstoneDeliverablesState {
     this.section,
     this.error,
     this.message,
+    this.batchFiltersEnabled = false,
+    this.batchId = '',
+    this.participation = 'ongoing',
+    this.batchOptions = const [],
   });
 
   CapstoneDeliverablesState copyWith({
@@ -69,6 +77,10 @@ class CapstoneDeliverablesState {
     bool clearActiveSemester = false,
     bool clearError = false,
     bool clearMessage = false,
+    bool? batchFiltersEnabled,
+    String? batchId,
+    String? participation,
+    List<Map<String, dynamic>>? batchOptions,
   }) {
     return CapstoneDeliverablesState(
       isLoading: isLoading ?? this.isLoading,
@@ -89,6 +101,10 @@ class CapstoneDeliverablesState {
       section: section ?? this.section,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
+      batchFiltersEnabled: batchFiltersEnabled ?? this.batchFiltersEnabled,
+      batchId: batchId ?? this.batchId,
+      participation: participation ?? this.participation,
+      batchOptions: batchOptions ?? this.batchOptions,
     );
   }
 
@@ -372,7 +388,46 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
   int _requestVersion = 0;
   bool _actionInFlight = false;
 
+  void configureBatchFilters({
+    required bool enabled,
+    String batchId = '',
+    String participation = 'ongoing',
+    bool clearTeams = false,
+  }) {
+    // Invalidate both reads and row-action responses from the previous batch.
+    _requestVersion++;
+    state = state.copyWith(
+      batchFiltersEnabled: enabled,
+      batchId: batchId,
+      participation: participation,
+      teams: clearTeams ? [] : null,
+      counts: clearTeams ? {} : null,
+      stageOptions: clearTeams ? [] : null,
+      selectedStage: clearTeams ? '' : null,
+      isLoading: clearTeams ? true : null,
+    );
+  }
+
+  Future<void> selectBatchFilters(String batchId, String participation) {
+    configureBatchFilters(
+      enabled: true,
+      batchId: batchId,
+      participation: participation,
+      clearTeams: true,
+    );
+    return fetchDeliverables(selectedStage: '');
+  }
+
+  Map<String, String> get _batchParameters =>
+      state.batchFiltersEnabled && state.scope == 'capstone'
+      ? {
+          if (state.batchId.isNotEmpty) 'batch_id': state.batchId,
+          'participation': state.participation,
+        }
+      : {};
+
   Map<String, String> get _viewParameters => {
+    ..._batchParameters,
     if (state.search.trim().isNotEmpty) 'search': state.search.trim(),
     if (state.selectedStage.isNotEmpty) 'stage_label': state.selectedStage,
     if (state.status.isNotEmpty) 'status': state.status,
@@ -419,6 +474,10 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     final nextStatus = status ?? (contextChanged ? '' : state.status);
     if (contextChanged) {
       state = CapstoneDeliverablesState(
+        batchFiltersEnabled: state.batchFiltersEnabled,
+        batchId: workspaceChanged ? '' : state.batchId,
+        participation: state.participation,
+        batchOptions: workspaceChanged ? const [] : state.batchOptions,
         scope: nextScope,
         workspace: nextWorkspace,
         yearLevel: nextYearLevel,
@@ -443,6 +502,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     try {
       final uri = Uri.parse(baseUrl).replace(
         queryParameters: {
+          ..._batchParameters,
           if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
           if (nextStage.isNotEmpty) 'stage_label': nextStage,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
@@ -883,6 +943,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
       isLoading: false,
       isSaving: _actionInFlight,
       teams: _readMapList(payload['teams']),
+      batchOptions: _readMapList(payload['batch_options']),
       stageOptions: _readStringList(payload['stage_options']),
       statuses: _readMapList(payload['statuses']),
       counts: payload['counts'] is Map

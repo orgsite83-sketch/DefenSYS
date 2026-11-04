@@ -328,6 +328,7 @@ def team_queryset_for_user(user, *, include_pit_lead=True):
         StudentTeam.objects.select_related(
             'semester',
             'semester__school_year',
+            'intake_semester__school_year',
             'leader',
             'adviser',
         )
@@ -374,6 +375,8 @@ def team_queryset_for_user(user, *, include_pit_lead=True):
 
 
 def filter_teams(request, queryset):
+    from .batches import filter_batches
+    queryset = filter_batches(request, queryset)
     event_name = request.query_params.get('stage_label') or request.query_params.get('event_name')
     if event_name:
         from student_teams.pit_rosters import filter_teams as roster_teams
@@ -1188,7 +1191,7 @@ def stage_payload(team, stage_label, evaluator=None):
             ensure_submission_editable(team, stage_label, item['type'], submission,
                                        allow_replacement=True, deliverable_id=item['id'], lock=False)
             upload_window_open = True
-        except PermissionError:
+        except (PermissionError, ValidationError):
             upload_window_open = False
 
         can_upload = upload_window_open and actor_can_submit

@@ -78,6 +78,56 @@ class RubricEngineApiTests(APITestCase):
         self.assertEqual(response.data['rubric']['criteria_count'], 2)
         self.assertEqual(Rubric.objects.get().criteria.count(), 2)
 
+    def test_assign_existing_template_uses_all_stage_weights(self):
+        for concept, weights in (
+            (True, (100, 0, 0)),
+            (False, (60, 30, 10)),
+        ):
+            for status in (Rubric.STATUS_DRAFT, Rubric.STATUS_PUBLISHED):
+                with self.subTest(concept=concept, status=status):
+                    self.stage.concept_config = {'enabled': True} if concept else {}
+                    self.stage.save(update_fields=['concept_config'])
+                    config, _ = StageGradingConfig.objects.update_or_create(
+                        defense_stage=self.stage, semester=self.semester,
+                        defaults=dict(zip(
+                            ('panel_weight', 'adviser_weight', 'peer_weight'), weights,
+                        )),
+                    )
+                    created = self.client.post('/api/grading/rubrics/', self.rubric_payload(
+                        defense_stage_id=None,
+                    ), format='json')
+                    self.assertEqual(created.status_code, 201, created.data)
+                    rubric_id = created.data['rubric']['id']
+
+                    response = self.client.patch(
+                        f'/api/grading/rubrics/{rubric_id}/',
+                        self.rubric_payload(status=status), format='json',
+                    )
+                    self.assertEqual(response.status_code, 200, response.data)
+                    rubric = Rubric.objects.get(pk=rubric_id)
+                    self.assertEqual(
+                        (rubric.panel_weight, rubric.adviser_weight, rubric.peer_weight), weights,
+                    )
+                    self.assertEqual(rubric.status, status)
+                    config.refresh_from_db()
+                    self.assertEqual(config.panel_rubric_id, rubric_id)
+                    self.assertEqual(response.data['rubric']['weights'], dict(zip(
+                        ('panel', 'adviser', 'peer'), weights,
+                    )))
+
+                    unassigned = self.client.patch(
+                        f'/api/grading/rubrics/{rubric_id}/',
+                        self.rubric_payload(defense_stage_id=None), format='json',
+                    )
+                    self.assertEqual(unassigned.status_code, 200, unassigned.data)
+                    rubric.refresh_from_db()
+                    self.assertIsNone(rubric.defense_stage_id)
+                    self.assertEqual(
+                        (rubric.panel_weight, rubric.adviser_weight, rubric.peer_weight), (50, 30, 20),
+                    )
+                    config.refresh_from_db()
+                    self.assertIsNone(config.panel_rubric_id)
+
     def test_custom_scale_round_trips_and_sets_each_criterion_maximum(self):
         payload = self.rubric_payload(scale=Rubric.SCALE_CUSTOM, custom_max_score=25)
         for criterion in payload['criteria']:

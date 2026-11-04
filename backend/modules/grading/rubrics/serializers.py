@@ -399,6 +399,7 @@ class RubricWriteSerializer(serializers.Serializer):
         instance.status = validated_data.get('status', instance.status)
         instance.panel_weight = validated_data['panel_weight']
         instance.adviser_weight = validated_data['adviser_weight']
+        instance.peer_weight = validated_data['peer_weight']
         instance.is_locked = False
         instance.save()
         self._sync_criteria(instance, criteria)
