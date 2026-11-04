@@ -821,6 +821,14 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     final hasTeams = row.teamCount > 0;
     final groupGrades = gradesForGroup(state, rowScope, row.label);
     final settings = groupSettingsForKey(state, row.groupKey);
+    // Captured hearing policies take precedence over the current stage setup.
+    final showConceptApproval = !isPitRow &&
+        (groupGrades.isNotEmpty
+            ? groupGrades.every((grade) => grade['panel_only_evaluation'] == true)
+            : row.conceptSelectionEnabled);
+    final approvedConceptCount = groupGrades.where((grade) =>
+        grade['verdict'] == 'approved' ||
+        grade['verdict'] == 'approved_with_revisions').length;
     final readyCount = groupGradingReadyTeamCount(
       settings,
       grades: groupGrades,
@@ -883,7 +891,22 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           isDark: isDark,
         );
 
-        final componentsCard = _snapshotComponentsTile(
+        final componentsCard = showConceptApproval
+            ? _snapshotTile(
+                icon: Icons.task_alt_rounded,
+                iconColor: isDark
+                    ? DefensysTokens.mistTextSecondary
+                    : const Color(0xFF475467),
+                label: 'CONCEPT APPROVAL',
+                value: hasTeams
+                    ? '$approvedConceptCount of ${row.teamCount} approved'
+                    : 'Pending schedules',
+                subtitle: hasTeams
+                    ? 'Panel assessments: $panelCompleteCount of ${row.teamCount} complete'
+                    : 'No active defense slots',
+                isDark: isDark,
+              )
+            : _snapshotComponentsTile(
           panelText: hasTeams
               ? '$panelCompleteCount/${row.teamCount} done'
               : 'Required',

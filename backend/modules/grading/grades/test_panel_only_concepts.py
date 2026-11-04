@@ -100,12 +100,18 @@ class PanelOnlyCalculationTests(SimpleTestCase):
         self.assertEqual(grade.status, 'pending')
         self.assertIsNone(grade.final_grade)
 
-    def test_legacy_and_pit_captures_keep_their_original_completeness_contract(self):
-        for mode, scope in [('standard', 'capstone'), (PANEL_ONLY_CONCEPT, 'pit')]:
+    def test_legacy_captures_keep_their_original_completeness_contract(self):
+        for mode, scope in [('standard', 'capstone'), ('standard', 'pit')]:
             with self.subTest(mode=mode, scope=scope):
                 grade = self.grade(mode=mode, scope=scope)
                 self.assertFalse(grade.panel_only_evaluation)
                 self.assertIn('peer_score', grade.required_score_fields)
+
+    def test_pit_panel_only_capture_completes_without_peer_score(self):
+        grade = self.grade(scope='pit')
+        grade.recalculate()
+        self.assertTrue(grade.is_complete)
+        self.assertEqual(grade.final_grade, Decimal('82.75'))
 
     def test_new_capture_uses_flag_and_preserves_existing_outcome_version(self):
         stage = DefenseStage(pk=1, label='Custom Research Screening',

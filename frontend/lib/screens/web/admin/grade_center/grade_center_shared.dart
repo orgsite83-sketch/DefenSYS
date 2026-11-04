@@ -2634,6 +2634,7 @@ class CapstoneStageRow {
     required this.peerGradingEnabled,
     required this.workflowStatus,
     required this.groupKey,
+    this.conceptSelectionEnabled = false,
   });
 
   final int displayOrder;
@@ -2644,6 +2645,7 @@ class CapstoneStageRow {
   final bool peerGradingEnabled;
   final CapstoneStageWorkflowStatus workflowStatus;
   final String groupKey;
+  final bool conceptSelectionEnabled;
 
   String get title => gradeGroupTitle(groupKey);
 }
@@ -2683,6 +2685,8 @@ List<CapstoneStageRow> buildCapstoneStageRows({
         teamCount: teamCount,
       ),
       groupKey: groupKey,
+      conceptSelectionEnabled:
+          (stage['concept_config'] as Map?)?['enabled'] == true,
     );
   }).toList();
 

@@ -485,7 +485,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Concept selection'));
       await tester.pumpAndSettle();
-      expect(find.text('Peer scores on repeat attempts'), findsOneWidget);
+      expect(find.text('Peer scores on repeat attempts'), findsNothing);
+      await tester.tap(find.text('2. Grading & Rubrics'));
+      await tester.pumpAndSettle();
+      expect(find.text('Allow peer evaluation'), findsNothing);
+      expect(find.text('Peer'), findsNothing);
       await tester.tap(find.text('3. Deliverables'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Concept Papers').last);
@@ -517,6 +521,10 @@ void main() {
       await tester.tap(find.text('Save Changes'));
       await tester.pumpAndSettle();
       expect(scheduler.saved?['year_level'], '1st Year');
+      expect(scheduler.saved?['panel_weight'], 100);
+      expect(scheduler.saved?['peer_weight'], 0);
+      expect(scheduler.saved?['peer_rubric_id'], isNull);
+      expect(scheduler.saved?['peer_grading_enabled'], false);
       expect(scheduler.saved?['concept_config'], {'required_count': 3, 'enabled': true, 'review_policy': 'always',});
       expect(
         (scheduler.saved?['deliverables'] as List).where((d) => d['file_policy']['mode'] == 'concepts',),

@@ -538,7 +538,7 @@ class PitEventGradingConfig(models.Model):
             status=TeamGrade.STATUS_PENDING,
             scope=TeamGrade.SCOPE_PIT,
             team__year_level=self.year_level,
-        ).update(
+        ).filter(Q(schedule__isnull=True) | Q(schedule__assessment_policy={})).update(
             pit_event_config=self,
             panel_weight=self.panel_weight,
             peer_weight=self.peer_weight,

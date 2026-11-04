@@ -53,6 +53,13 @@ def weights_for_pit_event(semester, event_name, *, year_level=None):
     config = get_pit_event_config(semester, event_name, year_level=year_level)
     if config is None:
         return default_pit_weights()
+    return effective_pit_weights(config)
+
+
+def effective_pit_weights(config):
+    from grading.grades.evaluation_policy import concept_stage, PANEL_ONLY_WEIGHTS
+    if concept_stage(config):
+        return dict(PANEL_ONLY_WEIGHTS)
     return {
         'panel_weight': config.panel_weight,
         'peer_weight': config.peer_weight,
@@ -139,8 +146,6 @@ def upsert_pit_event_config(
     year_level = require_pit_year(year_level)
     if not event_name:
         raise ValidationError({'event_name': 'PIT event name is required.'})
-    if panel_weight + peer_weight != 100:
-        raise ValidationError('Panel and peer weights must total 100%.')
     if deliverables is not None:
         from rest_framework.exceptions import ValidationError as ApiValidationError
         if not isinstance(deliverables, list) or any(not isinstance(item, dict) for item in deliverables):
@@ -195,6 +200,12 @@ def upsert_pit_event_config(
     from defense.document_policy import validate_concept_config, validate_file_policy, with_concept_papers
     concept_config = validate_concept_config(
         concept_config if concept_config is not None else getattr(existing_config, 'concept_config', {}))
+    if concept_config.get('enabled'):
+        panel_weight, peer_weight = 100, 0
+        peer_rubric = None
+        peer_grading_enabled = False
+    if panel_weight + peer_weight != 100:
+        raise ValidationError('Panel and peer weights must total 100%.')
     concept_deliverables = deliverables if deliverables is not None else (
         list(existing_config.deliverables.values())
         if existing_config else [])
@@ -523,10 +534,10 @@ def pit_event_config_payload(config):
         'panel_rubric_name': config.panel_rubric.name if config.panel_rubric_id else None,
         'peer_rubric_id': config.peer_rubric_id,
         'peer_rubric_name': config.peer_rubric.name if config.peer_rubric_id else None,
-        'panel_weight': config.panel_weight,
-        'peer_weight': config.peer_weight,
+        'panel_weight': effective_pit_weights(config)['panel_weight'],
+        'peer_weight': effective_pit_weights(config)['peer_weight'],
         'is_officially_complete': config.is_officially_complete,
-        'peer_grading_enabled': config.peer_grading_enabled,
+        'peer_grading_enabled': config.peer_grading_enabled and effective_pit_weights(config)['peer_weight'] > 0,
         'concept_config': config.concept_config,
         'shared_deliverables': shared_definitions_with_locks(config),
         'team_membership_policy': config.team_membership_policy,

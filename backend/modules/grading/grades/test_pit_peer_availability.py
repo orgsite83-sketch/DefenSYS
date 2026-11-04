@@ -51,6 +51,52 @@ class PitPeerAvailabilityTests(APITestCase):
         RubricCriterion.objects.create(rubric=rubric, name='Contribution', max_score=10, weight=100)
         return rubric
 
+    def test_concept_setup_uses_only_panel_and_schedules_without_peer_rubric(self):
+        from defense.scheduler.serializers import DefenseScheduleWriteSerializer
+        from defense.scheduler.pit_config import pit_event_config_payload
+        from .evaluation_policy import PANEL_ONLY_CONCEPT, PANEL_ONLY_WEIGHTS
+        from .models import TeamGrade
+        panel = self.rubric('Concept panel', 'panel')
+        event = upsert_pit_event_config(semester=self.semester,
+            event_name='Concept selection', year_level='2nd Year', panel_rubric=panel,
+            concept_config={'enabled': True, 'required_count': 3}, user=self.lead)
+        self.assertEqual((event.panel_weight, event.peer_weight), (100, 0))
+        self.assertIsNone(event.peer_rubric_id)
+        self.assertFalse(event.peer_grading_enabled)
+        # Existing concept submissions can lock an older 80/20 setup. Its
+        # effective setup for new hearings must still require only panel.
+        PitEventGradingConfig.objects.filter(pk=event.pk).update(panel_weight=80, peer_weight=20)
+        event.refresh_from_db()
+        self.assertEqual(pit_event_config_payload(event)['peer_weight'], 0)
+        attrs = DefenseScheduleWriteSerializer()._validate_pit_event_setup({
+            'semester': self.semester, 'event_name': event.event_name, 'rubric': panel})
+        self.assertIsNone(attrs['peer_rubric'])
+        self.assertEqual(attrs['panel_weight'], 100)
+        schedule = DefenseSchedule.objects.create(scope='pit', team=self.team, semester=self.semester,
+            event_name=event.event_name, rubric=panel, scheduled_date=timezone.localdate(),
+            start_time='10:00', room='Concept Lab')
+        self.assertEqual(schedule.assessment_policy['evaluation_mode'], PANEL_ONLY_CONCEPT)
+        self.assertEqual(schedule.assessment_policy['weights'], PANEL_ONLY_WEIGHTS)
+        grade = TeamGrade(schedule=schedule, scope='pit', panel_score=80, **PANEL_ONLY_WEIGHTS)
+        grade.recalculate()
+        self.assertTrue(grade.is_complete)
+        self.assertEqual(grade.final_grade, 80)
+        self.assertTrue(peer_grading_unavailable_reason(grade))
+        grade.team, grade.semester = self.team, self.semester
+        grade.stage_label, grade.pit_event_config = event.event_name, event
+        grade.save()
+        event.save(update_fields=['peer_grading_enabled'])
+        grade.refresh_from_db()
+        self.assertEqual((grade.panel_weight, grade.peer_weight), (100, 0))
+
+    def test_existing_pit_hearing_does_not_adopt_live_concept_policy(self):
+        PitEventGradingConfig.objects.filter(pk=self.event.pk).update(
+            concept_config={'enabled': True, 'required_count': 3})
+        self.grade.refresh_from_db()
+        self.assertFalse(self.grade.panel_only_evaluation)
+        self.assertIn('peer_score', self.grade.required_score_fields)
+        self.assertEqual(self.grade.peer_weight, 20)
+
     def panel_grade(self, index):
         submit_panelist_grade(self.schedule, self.grade,
             [{'criterion_id': self.panel.criteria.get().pk, 'score': 8}], panelist=self.panelists[index])

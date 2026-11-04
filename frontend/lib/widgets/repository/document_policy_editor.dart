@@ -320,7 +320,7 @@ class ConceptSettings extends StatelessWidget {
                         ],
                       );
                     }),
-                    if (value['enabled'] == true && !isPit) ...[
+                    if (value['enabled'] == true) ...[
                       const SizedBox(height: 14),
                       Text('Panel evaluation: 100%', style: theme.textTheme.bodyMedium?.copyWith(
                         color: DefensysTokens.textPrimaryOf(context), fontWeight: FontWeight.w600)),
@@ -349,7 +349,7 @@ class ConceptSettings extends StatelessWidget {
                       ),
                       sublabel: Text(
                         isPit
-                            ? 'Review proposed or assigned concepts and keep each defense attempt.'
+                            ? 'Review proposed or assigned concepts. Grading requires only panel evaluation (100%).'
                             : 'When enabled, grading requires only the panel (100%). Adviser and peer evaluations are not required.',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: secondaryColor,
@@ -502,29 +502,6 @@ class ConceptSettings extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (isPit)
-                          SizedBox(
-                            width: fieldWidth,
-                            child: policyField(
-                              isPit
-                                  ? 'Peer scores on repeat attempts'
-                                  : 'Adviser and peer scores on repeat attempts',
-                              WorkflowChoice(
-                                value:
-                                    value['score_carryover']?.toString() ??
-                                    'reassess',
-                                enabled: enabled,
-                                options: {
-                                  'reassess': 'Require fresh assessments',
-                                  'retain': isPit
-                                      ? 'Retain peer scores'
-                                      : 'Retain adviser and peer scores',
-                                },
-                                onChanged: (v) =>
-                                    onChanged({...value, 'score_carryover': v}),
-                              ),
-                            ),
-                          ),
                       ],
                     );
                   },

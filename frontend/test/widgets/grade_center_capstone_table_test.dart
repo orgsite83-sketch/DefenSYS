@@ -8,6 +8,74 @@ import 'package:defensys/theme/app_theme.dart';
 import '../helpers/pump_app.dart';
 
 void main() {
+  for (final scenario in [
+    (name: 'awaiting chair choice', panelOnly: true, verdict: '', approved: 0),
+    (name: 'approved concept', panelOnly: true, verdict: 'approved', approved: 1),
+    (name: 'revisions required', panelOnly: true, verdict: 'approved_with_revisions', approved: 1),
+    (name: 'legacy hearing', panelOnly: false, verdict: 'approved', approved: 1),
+  ]) {
+    testWidgets('Concept approval snapshot: ${scenario.name}', (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final searchController = TextEditingController();
+      addTearDown(searchController.dispose);
+      await pumpDefensysWidget(
+        tester,
+        SingleChildScrollView(
+          child: CapstoneStagesUnifiedCard(
+            state: GradeCenterState(
+              grades: [{
+                'id': 1,
+                'scope': 'capstone',
+                'stage_label': 'Research Options',
+                'panel_only_evaluation': scenario.panelOnly,
+                'panel_complete': true,
+                'verdict': scenario.verdict,
+                'grading_ready': false,
+              }],
+              groupSettings: const {
+                'capstone|Research Options': {
+                  'adviser_enabled': false,
+                  'peer_enabled': false,
+                },
+              },
+            ),
+            stages: const [{
+              'label': 'Research Options',
+              'is_active': true,
+              'concept_config': {'enabled': true},
+            }],
+            isAdmin: true,
+            searchController: searchController,
+            scopeFilter: const SizedBox(),
+            yearLevelFilter: const SizedBox(),
+            statusFilter: const SizedBox(),
+            onOpenStage: (_) {},
+            onOfficiallyCompleteChanged: (_, __) {},
+            onSearchChanged: (_) {},
+            onSearchSubmitted: (_) {},
+            onSearchFocusChanged: (_) {},
+          ),
+        ),
+      );
+      if (scenario.panelOnly) {
+        expect(find.text('CONCEPT APPROVAL'), findsOneWidget);
+        expect(find.text('${scenario.approved} of 1 approved'), findsOneWidget);
+        expect(find.text('Panel assessments: 1 of 1 complete'), findsOneWidget);
+        expect(find.text('Adviser'), findsNothing);
+        expect(find.text('Peer'), findsNothing);
+        expect(find.text('EVALUATION COMPONENTS'), findsNothing);
+      } else {
+        expect(find.text('CONCEPT APPROVAL'), findsNothing);
+        expect(find.text('EVALUATION COMPONENTS'), findsOneWidget);
+      }
+      expect(find.text('0 of 1 Ready'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final scope in ['capstone', 'pit']) {
     for (final scenario in [
       (

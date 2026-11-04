@@ -1285,10 +1285,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'event_name': eventName,
       'event_code': _eventCodeController.text.trim(),
       'panel_rubric_id': _panelRubricId,
-      'peer_rubric_id': _peerRubricId,
-      'panel_weight': _panelWeight,
-      'peer_weight': _peerWeight,
-      'peer_grading_enabled': _peerGradingEnabled,
+      'peer_rubric_id': _conceptConfig['enabled'] == true ? null : _peerRubricId,
+      'panel_weight': _conceptConfig['enabled'] == true ? 100 : _panelWeight,
+      'peer_weight': _conceptConfig['enabled'] == true ? 0 : _peerWeight,
+      'peer_grading_enabled': _conceptConfig['enabled'] != true && _peerGradingEnabled,
       'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always',},
       'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': deliverablesPayload,
@@ -2566,6 +2566,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             GradingSetupSection(
+                              panelOnly: _conceptConfig['enabled'] == true,
                               enabled: !isLocked && !state.isSaving,
                               canManageRubrics: !state.isSaving,
                               onManageRubrics: () {
@@ -2593,10 +2594,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   onRubricChanged: (value) { setState(() => _peerRubricId = value,); _markDirty(); },),
                               ],
                             ),
-                            Padding(padding: const EdgeInsets.symmetric(vertical: 24,),
+                            if (_conceptConfig['enabled'] != true) Padding(padding: const EdgeInsets.symmetric(vertical: 24,),
                               child: Divider(height: 1, color: DefensysTokens.borderOf(context),
                                       ),),
-                            _buildPeerGradingAccessCard(isLocked),
+                            if (_conceptConfig['enabled'] != true) _buildPeerGradingAccessCard(isLocked),
                           ],
                         ),
 

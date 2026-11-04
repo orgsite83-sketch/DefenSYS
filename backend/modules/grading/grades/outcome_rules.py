@@ -10,6 +10,17 @@ from defensys_backend.read_projection import read_memoize
 
 
 def capture_policy(schedule):
+    if schedule.scope == 'pit':
+        from defense.scheduler.pit_config import get_pit_event_config, effective_pit_weights
+        from .evaluation_policy import concept_stage, PANEL_ONLY_CONCEPT
+        config = get_pit_event_config(schedule.semester, schedule.event_name,
+                                      year_level=schedule.team.year_level)
+        if concept_stage(config):
+            # PIT retains its existing concept-decision workflow. Only the
+            # evaluation roles and weights are captured here.
+            return {'evaluation_mode': PANEL_ONLY_CONCEPT,
+                    'weights': effective_pit_weights(config)}
+        return {}
     if schedule.scope != 'capstone' or not schedule.defense_stage_id:
         return {}
     from .services import weights_for_schedule

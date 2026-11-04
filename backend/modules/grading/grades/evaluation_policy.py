@@ -9,9 +9,9 @@ def concept_stage(stage):
 
 
 def panel_only_grade(grade):
-    if grade.scope != 'capstone':
-        return False
     if grade.schedule_id:
         # An existing hearing's policy wins over later edits to its stage.
         return (grade.schedule.assessment_policy or {}).get('evaluation_mode') == PANEL_ONLY_CONCEPT
+    if grade.scope == 'pit':
+        return concept_stage(grade.pit_event_config) if grade.pit_event_config_id else False
     return concept_stage(grade.defense_stage) if grade.defense_stage_id else False

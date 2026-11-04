@@ -833,17 +833,22 @@ class ScheduleBaseSerializer(serializers.Serializer):
             require_event_management(actor, config)
         if config.is_officially_complete:
             raise serializers.ValidationError({'event_name': 'This PIT event is officially complete.'})
+        from .pit_config import effective_pit_weights
+        weights = effective_pit_weights(config)
         for key, rubric in (('rubric', config.panel_rubric), ('peer_rubric', config.peer_rubric)):
+            if key == 'peer_rubric' and weights['peer_weight'] == 0:
+                attrs[key] = None
+                continue
             supplied = attrs.get('rubric') if key == 'rubric' else self._resolve_peer_rubric(attrs)
             if rubric is None or rubric.status != Rubric.STATUS_PUBLISHED:
-                raise serializers.ValidationError({key + '_id': 'Assign published panel and peer rubrics in PIT Events Setup.'})
+                raise serializers.ValidationError({key + '_id': 'Assign a published rubric for each required evaluator in PIT Events Setup.'})
             if supplied is not None and supplied.pk != rubric.pk:
                 raise serializers.ValidationError({key + '_id': 'Rubric must match this PIT event configuration.'})
             attrs[key] = rubric
         for key in ('panel_weight', 'peer_weight'):
-            if attrs.get(key) is not None and attrs[key] != getattr(config, key):
+            if attrs.get(key) is not None and attrs[key] != weights[key]:
                 raise serializers.ValidationError({key: 'Change grading weights in PIT Events Setup before scheduling.'})
-            attrs[key] = getattr(config, key)
+            attrs[key] = weights[key]
         attrs['pit_event_config'] = config
         return attrs
 
