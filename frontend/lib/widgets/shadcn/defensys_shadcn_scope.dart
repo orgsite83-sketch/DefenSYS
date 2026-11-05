@@ -8,9 +8,11 @@ class DefensysShadcnScope extends StatelessWidget {
     super.key,
     required this.child,
     this.maroonActions = false,
+    this.neutralActionText = false,
   });
   final Widget child;
   final bool maroonActions;
+  final bool neutralActionText;
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +25,18 @@ class DefensysShadcnScope extends StatelessWidget {
         brightness: dark ? Brightness.dark : Brightness.light,
         radius: BorderRadius.circular(DefensysTokens.radiusMd),
         textTheme: ShadTextTheme(family: DefensysTokens.fontFamilyInter),
+        ghostButtonTheme: neutralActionText
+            ? ShadButtonTheme(
+                foregroundColor: DefensysTokens.textPrimaryOf(context),
+                hoverForegroundColor: DefensysTokens.textPrimaryOf(context),
+              )
+            : null,
+        linkButtonTheme: neutralActionText
+            ? ShadButtonTheme(
+                foregroundColor: DefensysTokens.textPrimaryOf(context),
+                hoverForegroundColor: DefensysTokens.textPrimaryOf(context),
+              )
+            : null,
         outlineButtonTheme: maroonActions
             ? ShadButtonTheme(
                 foregroundColor: DefensysTokens.textPrimaryOf(context),

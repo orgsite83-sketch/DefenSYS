@@ -30,6 +30,22 @@ class ProjectArchiveSearchView(APIView):
         return Response(search_archive_payload(request))
 
 
+class LibraryCatalogView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .catalog import catalog_payload
+        return Response(catalog_payload(request))
+
+
+class LibraryProjectView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .catalog import project_payload
+        return Response(project_payload(request))
+
+
 class RepositoryPreviewView(APIView):
     permission_classes = [IsAuthenticated]
 

@@ -80,7 +80,7 @@ class _LibraryActivityPanelState extends ConsumerState<LibraryActivityPanel> {
             children: [
               Icon(
                 Icons.local_library_outlined,
-                color: DefensysTokens.maroonTextOf(context),
+                color: DefensysTokens.textSecondaryOf(context),
                 size: 21,
               ),
               const SizedBox(width: 9),
@@ -181,7 +181,7 @@ class _LibraryActivityPanelState extends ConsumerState<LibraryActivityPanel> {
                         contentPadding: EdgeInsets.zero,
                         leading: Icon(
                           libraryOutputIcon(entry),
-                          color: DefensysTokens.maroonTextOf(context),
+                          color: DefensysTokens.textSecondaryOf(context),
                         ),
                         title: Text(
                           entry.displayTitle,

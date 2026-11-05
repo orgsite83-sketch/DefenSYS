@@ -166,7 +166,9 @@ class LibraryEntryTile extends StatelessWidget {
     final label = project != null
         ? '$documentCount ${documentCount == 1 ? 'document' : 'documents'}'
         : entry.outputLabel;
-    final metadata = project != null
+    final metadata = project != null && entry.catalogSummary
+        ? '${entry.projectOutputCount} materials · ${entry.availableDeliverables.length} deliverables'
+        : project != null
         ? [
             if (documentCount > 0) label,
             if (project!.entries.any((file) => file.outputKind == 'poster'))
@@ -316,10 +318,7 @@ class LibraryEntryTile extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w700,
-                                  color: ProgramColors.of(
-                                    context,
-                                    scope: entry.type,
-                                  ).text,
+                                  color: DefensysTokens.textPrimaryOf(context),
                                 ),
                               ),
                             ),

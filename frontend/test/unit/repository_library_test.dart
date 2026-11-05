@@ -29,6 +29,63 @@ VaultEntry entry(
 
 void main() {
   test(
+    'deliverables retain real keys across formats and separate repeated labels',
+    () {
+      VaultEntry material(String id, String key, String stage, String name) =>
+          VaultEntry.fromJson({
+            'id': id,
+            'project_key': 'one',
+            'file_name': name,
+            'stage': stage,
+            'deliverable_key': key,
+            'deliverable_group_label': 'Prototype package',
+          });
+      final groups = LibraryDeliverable.group([
+        material('pdf', 'proposal:D1', 'Proposal', 'design.pdf'),
+        material('video', 'proposal:D1', 'Proposal', 'demo.mp4'),
+        material('final', 'final:D1', 'Final', 'prototype.zip'),
+        VaultEntry.fromJson({
+          'id': 'legacy',
+          'file_name': 'manuscript.pdf',
+          'document_kind': 'final',
+        }),
+      ]);
+      expect(groups, hasLength(3));
+      expect(
+        groups.firstWhere((item) => item.key == 'proposal:D1').entries,
+        hasLength(2),
+      );
+      expect(
+        groups
+            .firstWhere((item) => item.key == 'final:D1')
+            .displayLabel(groups),
+        'Prototype package · Final',
+      );
+      expect(groups.last.label, 'Other materials');
+    },
+  );
+
+  test(
+    'catalog summary preserves all available deliverables without loading files',
+    () {
+      final summary = VaultEntry.fromJson({
+        'id': 'one',
+        'catalog_summary': true,
+        'project_output_count': 17,
+        'available_deliverables': [
+          {'key': 'a', 'label': 'Custom demonstration'},
+          {'key': 'b', 'label': 'Research package'},
+        ],
+      }).copyWith(userRating: 4);
+      expect(summary.projectOutputCount, 17);
+      expect(summary.hasDeliverable('b'), isTrue);
+      expect(
+        LibraryDeliverable.group([summary]).map((item) => item.label),
+        containsAll(['Custom demonstration', 'Research package']),
+      );
+    },
+  );
+  test(
     'project title remains the identity while document stage is separate',
     () {
       final paper = entry('one');

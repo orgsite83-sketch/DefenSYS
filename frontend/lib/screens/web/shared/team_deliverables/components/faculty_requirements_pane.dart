@@ -102,7 +102,8 @@ class _FacultyRequirementsPaneState
       final summary = RequirementSummary(item);
       return FacultyRequirementActions(
         key: ValueKey('requirement-actions-${identity(item)}'),
-        enabled: !saving, multipleFiles: true,
+        enabled: !saving,
+        multipleFiles: true,
         onDetails: () => open(item),
         onViewFile: summary.uploaded > 0 ? () => open(item) : null,
         onReview: summary.pending > 0 ? () => open(item) : null,
@@ -168,6 +169,7 @@ class _FacultyRequirementsPaneState
               widget.programScope ??
               ref.read(capstoneDeliverablesProvider).scope,
           file: single,
+          history: submission['file_history'] as List? ?? const [],
           status: summary.status,
           uploader:
               (single['uploaded_by_name'] ?? submission['uploaded_by_name'])

@@ -60,6 +60,14 @@ class LogoutView(TokenBlacklistView):
     permission_classes = [AllowAny]
     throttle_classes = [LogoutRateThrottle]
 
+    def post(self, request, *args, **kwargs):
+        from defensys_backend.media_sessions import revoke_media_grant
+        # Revoke playback even if the submitted refresh token is already invalid.
+        revoke_media_grant(request)
+        response = super().post(request, *args, **kwargs)
+        revoke_media_grant(request, response)
+        return response
+
 
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]

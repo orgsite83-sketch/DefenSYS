@@ -22,6 +22,7 @@ class RepositoryState {
   final String stage;
   final String academicYear;
   final String? error;
+  final bool catalog, hasMore, loadingMore;
 
   const RepositoryState({
     this.isLoading = false,
@@ -34,6 +35,9 @@ class RepositoryState {
     this.stage = '',
     this.academicYear = '',
     this.error,
+    this.catalog = false,
+    this.hasMore = false,
+    this.loadingMore = false,
   });
 
   RepositoryState copyWith({
@@ -48,6 +52,9 @@ class RepositoryState {
     String? academicYear,
     String? error,
     bool clearError = false,
+    bool? catalog,
+    bool? hasMore,
+    bool? loadingMore,
   }) {
     return RepositoryState(
       isLoading: isLoading ?? this.isLoading,
@@ -60,12 +67,16 @@ class RepositoryState {
       stage: stage ?? this.stage,
       academicYear: academicYear ?? this.academicYear,
       error: clearError ? null : error ?? this.error,
+      catalog: catalog ?? this.catalog,
+      hasMore: hasMore ?? this.hasMore,
+      loadingMore: loadingMore ?? this.loadingMore,
     );
   }
 }
 
 class RepositoryNotifier extends Notifier<RepositoryState> {
   int _requestVersion = 0;
+  Map<String, String> _catalogFilters = {};
   static String get baseUrl => ApiConfig.repositoryUrl;
 
   @override
@@ -75,6 +86,7 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
 
   /// Public project library. Private team uploads stay in the team's workspace.
   Future<void> fetchForStudent({String? search}) {
+    if (search == null || search.isEmpty) return fetchCatalog();
     return fetchEntries(
       search: search,
       type: '',
@@ -82,6 +94,73 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
       stage: '',
       academicYear: '',
     );
+  }
+
+  Future<void> fetchCatalog({
+    Map<String, String> filters = const {},
+    bool append = false,
+  }) async {
+    if (append && (!state.catalog || !state.hasMore || state.loadingMore)) {
+      return;
+    }
+    final version = ++_requestVersion;
+    if (!append) _catalogFilters = Map.of(filters);
+    final existing = append ? state.entries : <Map<String, dynamic>>[];
+    state = state.copyWith(
+      isLoading: !append,
+      loadingMore: append,
+      clearError: true,
+    );
+    try {
+      final response = await _client
+          .get(
+            Uri.parse('${baseUrl}catalog/').replace(
+              queryParameters: {
+                ..._catalogFilters,
+                'limit': '24',
+                'offset': '${existing.length}',
+              },
+            ),
+          )
+          .timeout(const Duration(seconds: 45));
+      if (!ref.mounted || version != _requestVersion) return;
+      if (response.statusCode != 200) {
+        throw Exception(_errorFromResponse(response));
+      }
+      final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+      state = state.copyWith(
+        entries: [...existing, ..._readMapList(payload['entries'])],
+        isLoading: false,
+        loadingMore: false,
+        catalog: true,
+        hasMore: payload['pagination']?['has_more'] == true,
+        counts: Map<String, dynamic>.from(payload['counts'] ?? {}),
+        options: Map<String, dynamic>.from(payload['options'] ?? {}),
+        clearError: true,
+      );
+    } catch (error) {
+      if (ref.mounted && version == _requestVersion) {
+        state = state.copyWith(
+          isLoading: false,
+          loadingMore: false,
+          error: 'Could not load projects. Please retry.',
+        );
+      }
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchProject(String key) async {
+    final response = await _client
+        .get(
+          Uri.parse(
+            '${baseUrl}project/',
+          ).replace(queryParameters: {'project_key': key}),
+        )
+        .timeout(const Duration(seconds: 45));
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    return _readMapList((jsonDecode(response.body) as Map)['entries']);
   }
 
   Future<void> fetchEntries({
@@ -101,6 +180,9 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
 
     state = state.copyWith(
       isLoading: state.entries.isEmpty,
+      catalog: false,
+      hasMore: false,
+      loadingMore: false,
       search: nextSearch,
       type: nextType,
       yearLevel: nextYearLevel,

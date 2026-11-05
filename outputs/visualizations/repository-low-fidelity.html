@@ -1,0 +1,231 @@
+<div id="defensys-library-wireframe">
+  <div class="wf-previewbar">
+    <span>LOW-FIDELITY WIREFRAME · SAMPLE CONTENT</span>
+    <div class="wf-steps" aria-label="Preview screens">
+      <button type="button" data-screen="home" aria-pressed="true">Repository home</button>
+      <span aria-hidden="true">→</span>
+      <button type="button" data-screen="topic" aria-pressed="false">Topic collection</button>
+      <span aria-hidden="true">→</span>
+      <button type="button" data-screen="project" aria-pressed="false">Project detail</button>
+    </div>
+  </div>
+  <div class="wf-window">
+    <header class="wf-header">
+      <button class="wf-brand" type="button" data-screen="home"><span class="wf-mark">D</span>DefenSYS <span class="wf-muted">Research Repository</span></button>
+      <nav aria-label="Library navigation"><button type="button" data-screen="home">Explore</button><button type="button" id="wf-saved">My bookshelf <span id="wf-save-count">0</span></button></nav>
+    </header>
+
+    <main class="wf-main">
+      <section id="wf-home" aria-label="Repository home">
+        <div class="wf-intro"><span class="wf-eyebrow">THE RESEARCH LIBRARY</span><h1>Explore student research</h1><p class="wf-muted">Discover projects by topic. Find the papers, demonstrations, and materials behind them.</p></div>
+        <form class="wf-search" id="wf-home-search"><i data-lucide="search" aria-hidden="true"></i><label class="wf-sr" for="wf-search-input">Search sample projects</label><input id="wf-search-input" placeholder="Search projects, topics, or authors"><button class="wf-primary" type="submit">Search</button></form>
+        <div class="wf-sectionhead"><h2>Explore by topic</h2></div>
+        <div class="wf-topics">
+          <button type="button" data-topic="Healthcare"><i data-lucide="heart-pulse" aria-hidden="true"></i><span>Healthcare</span><span class="wf-muted">Patient care & community health</span><span class="wf-arrow">↗</span></button>
+          <button type="button" data-topic="Education"><i data-lucide="book-open" aria-hidden="true"></i><span>Education</span><span class="wf-muted">Learning & school services</span><span class="wf-arrow">↗</span></button>
+          <button type="button" data-topic="Agriculture"><i data-lucide="sprout" aria-hidden="true"></i><span>Agriculture</span><span class="wf-muted">Farming & food systems</span><span class="wf-arrow">↗</span></button>
+          <button type="button" data-topic="Community services"><i data-lucide="users" aria-hidden="true"></i><span>Community services</span><span class="wf-muted">Local services & civic tools</span><span class="wf-arrow">↗</span></button>
+        </div>
+        <div class="wf-sectionhead"><h2>Recently added projects</h2><button type="button" data-screen="topic">Browse projects →</button></div>
+        <div class="wf-projects" id="wf-home-projects"></div>
+      </section>
+
+      <section id="wf-topic" aria-label="Topic collection" hidden>
+        <button class="wf-back" type="button" data-screen="home">← Explore topics</button>
+        <div class="wf-intro"><span class="wf-eyebrow">TOPIC COLLECTION</span><h1 id="wf-topic-heading">Healthcare</h1><p class="wf-muted" id="wf-topic-description">Research for better patient care and community health.</p></div>
+        <div class="wf-filterbar"><div class="wf-chips" aria-label="Filter by research material"><button type="button" data-material="all" aria-pressed="true">All materials</button><button type="button" data-material="paper" aria-pressed="false">Manuscripts</button><button type="button" data-material="video" aria-pressed="false">Prototype demos</button><button type="button" data-material="poster" aria-pressed="false">Posters</button></div><label class="wf-sort">Sort <select id="wf-sort"><option value="recent">Recently added</option><option value="title">Title A–Z</option></select></label></div>
+        <div class="wf-results"><span id="wf-result-count" aria-live="polite">3 projects</span><span class="wf-muted" id="wf-material-context">One card per project</span></div>
+        <div class="wf-projects" id="wf-topic-projects"></div>
+      </section>
+
+      <section id="wf-project" aria-label="Project detail" hidden>
+        <button class="wf-back" type="button" id="wf-project-back">← Healthcare collection</button>
+        <div class="wf-detailhero">
+          <div class="wf-cover wf-detailcover"><i data-lucide="image" aria-hidden="true"></i><span>PROJECT COVER</span></div>
+          <div class="wf-detailinfo"><span class="wf-eyebrow" id="wf-project-topic">HEALTHCARE · CAPSTONE</span><h1 id="wf-project-title">MediLink: Community Health Records</h1><p class="wf-muted">Sample research team · BS Information Technology · 2026</p><div class="wf-topic-tags"><span id="wf-detail-tag">Healthcare</span><span>Information systems</span></div><h2>About this project</h2><p id="wf-project-abstract">A community health records system designed to help local health workers organize patient information and follow-up care.</p><button type="button" class="wf-save" id="wf-bookmark"><i data-lucide="bookmark" aria-hidden="true"></i><span>Save to bookshelf</span></button></div>
+        </div>
+        <div class="wf-sectionhead"><h2>Research materials</h2><span class="wf-muted">Organized by deliverable</span></div>
+        <div class="wf-deliverabletabs" aria-label="Choose a deliverable"><button type="button" data-deliverable="paper" aria-pressed="true">Manuscript</button><button type="button" data-deliverable="video" aria-pressed="false">Prototype demonstration</button><button type="button" data-deliverable="poster" aria-pressed="false">Research poster</button></div>
+        <div class="wf-material-layout">
+          <div class="wf-material-info"><span class="wf-filetype" id="wf-filetype">PDF DOCUMENT</span><h3 id="wf-file-title">Final manuscript</h3><p class="wf-muted" id="wf-file-description">The complete research paper for this project.</p><div class="wf-file-actions"><button class="wf-primary" type="button" id="wf-preview-action">Preview paper</button><button type="button" id="wf-download-action">Download</button></div><p class="wf-small wf-muted" id="wf-file-note">Only published materials available to the reader appear here.</p></div>
+          <div class="wf-media-placeholder" id="wf-preview" aria-live="polite"><i data-lucide="file-text" aria-hidden="true"></i><span id="wf-preview-label">Paper preview area</span><span class="wf-muted wf-small" id="wf-preview-caption">Selected deliverable stays inside the project page</span></div>
+        </div>
+      </section>
+      <p class="wf-local-message" id="wf-message" aria-live="polite"></p>
+    </main>
+    <footer class="wf-footer"><span>DefenSYS · USTP Oroquieta</span><span>Research Repository</span></footer>
+  </div>
+</div>
+
+<style>
+#defensys-library-wireframe{--wf-bg:light-dark(#fff,#1b1c1f);--wf-ink:light-dark(#24262a,#eeeef0);--wf-muted:light-dark(#686d75,#a4a7ae);--wf-line:light-dark(#d9dce0,#414349);--wf-fill:light-dark(#f2f3f5,#27292e);--wf-accent:light-dark(#7a110a,#c0392b);font-family:Inter,Arial,sans-serif;color:var(--wf-ink);font-size:14px;line-height:1.5;width:100%}
+#defensys-library-wireframe *{box-sizing:border-box}
+#defensys-library-wireframe [hidden]{display:none!important}
+#defensys-library-wireframe button,#defensys-library-wireframe input,#defensys-library-wireframe select{font:inherit;color:inherit}
+#defensys-library-wireframe button{background:var(--wf-bg);border:1px solid var(--wf-line);border-radius:6px;padding:9px 13px;text-align:left}
+#defensys-library-wireframe button:hover{background:var(--wf-fill)}
+#defensys-library-wireframe button:focus-visible,#defensys-library-wireframe input:focus-visible,#defensys-library-wireframe select:focus-visible{outline:2px solid var(--wf-accent);outline-offset:3px}
+#defensys-library-wireframe .wf-primary{background:var(--wf-accent);border-color:var(--wf-accent);color:#fff;text-align:center}
+#defensys-library-wireframe .wf-primary:hover{opacity:.9;background:var(--wf-accent)}
+#defensys-library-wireframe h1,#defensys-library-wireframe h2,#defensys-library-wireframe h3,#defensys-library-wireframe p{margin:0}
+#defensys-library-wireframe h1{font-size:30px;line-height:1.2;font-weight:500;letter-spacing:-.7px}
+#defensys-library-wireframe h2{font-size:17px;font-weight:500}
+#defensys-library-wireframe h3{font-size:16px;font-weight:500;line-height:1.4}
+#defensys-library-wireframe .wf-muted{color:var(--wf-muted)}
+#defensys-library-wireframe .wf-small{font-size:12px}
+#defensys-library-wireframe .wf-previewbar{display:flex;flex-direction:column;gap:12px;padding:0 100px 16px 0;font-size:11px;color:var(--wf-muted);letter-spacing:.4px}
+#defensys-library-wireframe .wf-steps{display:flex;align-items:center;gap:8px;flex-wrap:wrap;letter-spacing:0}
+#defensys-library-wireframe .wf-steps button{font-size:12px;padding:6px 10px;background:transparent}
+#defensys-library-wireframe .wf-steps button[aria-pressed=true]{color:var(--wf-ink);border-color:var(--wf-ink);background:var(--wf-fill)}
+#defensys-library-wireframe .wf-window{background:var(--wf-bg);border:1px solid var(--wf-line);border-radius:8px;overflow:hidden}
+#defensys-library-wireframe .wf-header{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:18px 28px;border-bottom:1px solid var(--wf-line);flex-wrap:wrap}
+#defensys-library-wireframe .wf-brand{display:flex;align-items:center;gap:9px;border:0;padding:0;font-weight:500;flex-wrap:wrap}
+#defensys-library-wireframe .wf-brand .wf-muted{font-size:12px;font-weight:400;border-left:1px solid var(--wf-line);padding-left:10px}
+#defensys-library-wireframe .wf-mark{display:grid;place-items:center;width:26px;height:26px;background:var(--wf-accent);color:white;border-radius:4px}
+#defensys-library-wireframe .wf-header nav{display:flex;gap:18px}
+#defensys-library-wireframe .wf-header nav button{border:0;padding:0;font-size:12px}
+#defensys-library-wireframe #wf-save-count{display:inline-block;background:var(--wf-fill);padding:1px 6px;border-radius:4px;margin-left:4px}
+#defensys-library-wireframe .wf-main{padding:32px}
+#defensys-library-wireframe .wf-intro{display:grid;gap:9px;max-width:650px;margin-bottom:24px}
+#defensys-library-wireframe .wf-eyebrow{font-size:11px;letter-spacing:1.2px;color:var(--wf-muted)}
+#defensys-library-wireframe .wf-search{display:flex;align-items:center;gap:12px;border:1px solid var(--wf-line);border-radius:6px;padding:7px 7px 7px 13px;margin-bottom:32px;max-width:730px}
+#defensys-library-wireframe .wf-search input{min-width:0;flex:1;border:0;background:transparent;padding:7px 0;outline-offset:2px}
+#defensys-library-wireframe .wf-search svg{width:18px;height:18px;color:var(--wf-muted)}
+#defensys-library-wireframe .wf-sectionhead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:28px 0 14px;flex-wrap:wrap}
+#defensys-library-wireframe .wf-sectionhead button{font-size:12px;border:0;padding:0;color:var(--wf-accent)}
+#defensys-library-wireframe .wf-sectionhead .wf-muted{font-size:12px}
+#defensys-library-wireframe .wf-topics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+#defensys-library-wireframe .wf-topics>button{display:grid;grid-template-columns:1fr auto;gap:8px;padding:16px;border-radius:6px;align-content:start}
+#defensys-library-wireframe .wf-topics svg{width:22px;height:22px;color:var(--wf-muted);grid-column:1/-1;margin-bottom:9px}
+#defensys-library-wireframe .wf-topics .wf-muted{font-size:12px;grid-column:1/-1;order:3}
+#defensys-library-wireframe .wf-projects{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+#defensys-library-wireframe .wf-project-card{display:flex;flex-direction:column;padding:0;border-radius:6px;overflow:hidden;min-width:0}
+#defensys-library-wireframe .wf-cover{background:var(--wf-fill);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--wf-muted);min-height:132px;font-size:11px;letter-spacing:1px;width:100%;border-bottom:1px solid var(--wf-line)}
+#defensys-library-wireframe .wf-cover svg{width:28px;height:28px;stroke-width:1}
+#defensys-library-wireframe .wf-cardbody{padding:16px;display:flex;flex-direction:column;gap:9px;flex:1;width:100%}
+#defensys-library-wireframe .wf-cardbody .wf-eyebrow{letter-spacing:.6px;font-size:11px}
+#defensys-library-wireframe .wf-cardbody>p{font-size:12px}
+#defensys-library-wireframe .wf-formats{display:flex;gap:7px;flex-wrap:wrap;margin-top:auto;padding-top:6px}
+#defensys-library-wireframe .wf-formats span{border:1px solid var(--wf-line);border-radius:4px;padding:2px 6px;font-size:11px;color:var(--wf-muted);display:flex;align-items:center;gap:4px}
+#defensys-library-wireframe .wf-formats svg{width:12px;height:12px}
+#defensys-library-wireframe .wf-back{border:0;color:var(--wf-muted);padding:0;margin-bottom:23px;font-size:12px}
+#defensys-library-wireframe .wf-filterbar{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;border-top:1px solid var(--wf-line);border-bottom:1px solid var(--wf-line);padding:14px 0;margin-bottom:17px}
+#defensys-library-wireframe .wf-chips{display:flex;gap:7px;flex-wrap:wrap}
+#defensys-library-wireframe .wf-chips button{font-size:12px;padding:7px 10px}
+#defensys-library-wireframe .wf-chips button[aria-pressed=true]{border-color:var(--wf-accent);color:var(--wf-accent)}
+#defensys-library-wireframe .wf-sort{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--wf-muted)}
+#defensys-library-wireframe .wf-sort select{border:1px solid var(--wf-line);border-radius:4px;background:var(--wf-bg);padding:6px;color:var(--wf-ink);max-width:170px}
+#defensys-library-wireframe .wf-results{display:flex;justify-content:space-between;gap:12px;font-size:12px;margin-bottom:17px;flex-wrap:wrap}
+#defensys-library-wireframe .wf-detailhero{display:grid;grid-template-columns:1fr 1.4fr;gap:28px}
+#defensys-library-wireframe .wf-detailcover{min-height:280px;border:1px solid var(--wf-line);border-radius:6px}
+#defensys-library-wireframe .wf-detailinfo{display:flex;flex-direction:column;align-items:start;gap:12px}
+#defensys-library-wireframe .wf-detailinfo h1{font-size:27px}
+#defensys-library-wireframe .wf-detailinfo>p{font-size:13px}
+#defensys-library-wireframe .wf-detailinfo h2{margin-top:6px;font-size:15px}
+#defensys-library-wireframe .wf-topic-tags{display:flex;gap:7px;flex-wrap:wrap}
+#defensys-library-wireframe .wf-topic-tags span{background:var(--wf-fill);color:var(--wf-muted);padding:3px 7px;border-radius:4px;font-size:11px}
+#defensys-library-wireframe .wf-save{display:flex;align-items:center;gap:7px;font-size:12px;margin-top:3px}
+#defensys-library-wireframe .wf-save svg{width:14px;height:14px}
+#defensys-library-wireframe .wf-deliverabletabs{display:flex;border-bottom:1px solid var(--wf-line);gap:22px;flex-wrap:wrap;margin-bottom:20px}
+#defensys-library-wireframe .wf-deliverabletabs button{border:0;border-bottom:2px solid transparent;border-radius:0;padding:10px 0;font-size:13px}
+#defensys-library-wireframe .wf-deliverabletabs button[aria-pressed=true]{border-bottom-color:var(--wf-accent);color:var(--wf-accent)}
+#defensys-library-wireframe .wf-material-layout{display:grid;grid-template-columns:1fr 1.6fr;gap:28px}
+#defensys-library-wireframe .wf-material-info{display:flex;flex-direction:column;align-items:start;gap:10px}
+#defensys-library-wireframe .wf-filetype{font-size:11px;color:var(--wf-muted);letter-spacing:.8px}
+#defensys-library-wireframe .wf-file-actions{display:flex;gap:8px;flex-wrap:wrap;margin:5px 0}
+#defensys-library-wireframe .wf-file-actions button{font-size:12px}
+#defensys-library-wireframe .wf-media-placeholder{background:var(--wf-fill);border:1px dashed var(--wf-line);border-radius:6px;min-height:195px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;padding:18px;text-align:center}
+#defensys-library-wireframe .wf-media-placeholder svg{width:30px;height:30px;stroke-width:1;color:var(--wf-muted)}
+#defensys-library-wireframe .wf-footer{border-top:1px solid var(--wf-line);padding:15px 28px;display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--wf-muted);flex-wrap:wrap}
+#defensys-library-wireframe .wf-local-message{font-size:12px;color:var(--wf-muted)}
+#defensys-library-wireframe .wf-local-message:not(:empty){margin-top:18px}
+#defensys-library-wireframe .wf-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+@media(max-width:720px){#defensys-library-wireframe .wf-main{padding:24px}#defensys-library-wireframe .wf-topics{grid-template-columns:repeat(2,minmax(0,1fr))}#defensys-library-wireframe .wf-header{padding:16px 24px}#defensys-library-wireframe .wf-detailhero{grid-template-columns:1fr}#defensys-library-wireframe .wf-detailcover{min-height:170px}#defensys-library-wireframe .wf-projects{grid-template-columns:repeat(2,minmax(0,1fr))}#defensys-library-wireframe .wf-material-layout{grid-template-columns:1fr}}
+@media(max-width:440px){#defensys-library-wireframe .wf-main{padding:19px}#defensys-library-wireframe .wf-header{padding:16px 19px}#defensys-library-wireframe .wf-brand .wf-muted{display:none}#defensys-library-wireframe h1{font-size:26px}#defensys-library-wireframe .wf-projects{grid-template-columns:1fr}#defensys-library-wireframe .wf-search{flex-wrap:wrap}#defensys-library-wireframe .wf-search input{width:calc(100% - 40px);font-size:16px}#defensys-library-wireframe .wf-search .wf-primary{width:100%}#defensys-library-wireframe .wf-previewbar{padding-right:0}#defensys-library-wireframe .wf-steps{gap:6px}#defensys-library-wireframe .wf-steps>span{display:none}#defensys-library-wireframe .wf-deliverabletabs{gap:14px}#defensys-library-wireframe button{min-height:40px}}
+</style>
+
+<script>
+(() => {
+  const root = document.getElementById('defensys-library-wireframe');
+  const projects = [
+    {id:'medilink',title:'MediLink: Community Health Records',materials:['paper','video','poster'],summary:'Organizing patient information and follow-up care for local health workers.'},
+    {id:'caretrack',title:'CareTrack: Appointment Scheduling',materials:['paper','video'],summary:'Helping community clinics coordinate appointments and patient visits.'},
+    {id:'clinicqueue',title:'ClinicQueue: Patient Flow Management',materials:['paper','poster'],summary:'A patient queuing system for clearer, more organized clinic visits.'}
+  ];
+  const labels = {paper:'Paper',video:'Video',poster:'Poster'};
+  const icons = {paper:'file-text',video:'play',poster:'image'};
+  let screen='home', topic='Healthcare', material='all', selected=projects[0], deliverable='paper', saved=new Set(), query='';
+  function syncIcons(){ root.querySelectorAll('button').forEach(b=>b.classList.add('cursor-interaction'));if(globalThis.lucide) globalThis.lucide.createIcons({attrs:{width:16,height:16}}); }
+  function card(project){
+    const button=document.createElement('button');
+    button.type='button'; button.className='wf-project-card';
+    button.setAttribute('aria-label','Open project: '+project.title);
+    button.innerHTML='<div class="wf-cover"><i data-lucide="image" aria-hidden="true"></i><span>PROJECT COVER</span></div><div class="wf-cardbody"><span class="wf-eyebrow">HEALTHCARE · 2026</span><h3>'+project.title+'</h3><p class="wf-muted">'+project.summary+'</p><div class="wf-formats">'+project.materials.map(m=>'<span><i data-lucide="'+icons[m]+'" aria-hidden="true"></i>'+labels[m]+'</span>').join('')+'</div></div>';
+    button.addEventListener('click',()=>{topic='Healthcare';selected=project;deliverable=project.materials.includes(material)?material:'paper';show('project');});
+    return button;
+  }
+  function renderCards(){
+    const all=(topic==='Healthcare'?projects:[]).filter(p=>!query || (p.title+' '+p.summary+' '+topic).toLowerCase().includes(query));
+    const visible=all.filter(p=>material==='all'||p.materials.includes(material));
+    if(root.querySelector('#wf-sort').value==='title') visible.sort((a,b)=>a.title.localeCompare(b.title));
+    root.querySelector('#wf-home-projects').replaceChildren(...projects.map(card));
+    root.querySelector('#wf-topic-projects').replaceChildren(...visible.map(card));
+    root.querySelector('#wf-result-count').textContent=visible.length+' sample project'+(visible.length===1?'':'s');
+    root.querySelector('#wf-material-context').textContent=topic!=='Healthcare'?'Open Healthcare to explore the populated example':material==='all'?'One card per project':'Projects with '+({paper:'a manuscript',video:'a prototype demo',poster:'a research poster'}[material]);
+    root.querySelectorAll('[data-material]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.material===material)));
+    syncIcons();
+  }
+  function renderMaterial(){
+    const copy={paper:['PDF DOCUMENT','Final manuscript','The complete research paper for this project.','Preview paper','Paper preview area','Selected deliverable stays inside the project page'],video:['VIDEO · MP4','Prototype demonstration','A walkthrough of the working system and its main features.','Play demonstration','Video preview area','Player and buffering controls would appear here'],poster:['POSTER · PDF','Research poster','A visual summary of the project, methods, and findings.','Preview poster','Poster preview area','Large-format poster preview would appear here']}[deliverable];
+    ['#wf-filetype','#wf-file-title','#wf-file-description','#wf-preview-action','#wf-preview-label','#wf-preview-caption'].forEach((id,i)=>root.querySelector(id).textContent=copy[i]);
+    root.querySelector('#wf-preview>i, #wf-preview>svg')?.remove();
+    const icon=document.createElement('i');icon.dataset.lucide=icons[deliverable];icon.setAttribute('aria-hidden','true');root.querySelector('#wf-preview').prepend(icon);
+    root.querySelectorAll('[data-deliverable]').forEach(b=>{b.hidden=!selected.materials.includes(b.dataset.deliverable);b.setAttribute('aria-pressed',String(b.dataset.deliverable===deliverable));});
+    syncIcons();
+  }
+  function show(next){
+    screen=next;
+    ['home','topic','project'].forEach(name=>root.querySelector('#wf-'+name).hidden=name!==screen);
+    root.querySelectorAll('.wf-steps [data-screen]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.screen===screen)));
+    root.querySelector('#wf-message').textContent='';
+    root.querySelector('#wf-topic-heading').textContent=topic;
+    root.querySelector('#wf-topic-description').textContent=topic==='Healthcare'?'Research for better patient care and community health.':'A sample topic collection showing the same proposed browsing structure.';
+    root.querySelector('#wf-project-back').textContent='← '+topic+' collection';
+    root.querySelector('#wf-project-topic').textContent=topic.toUpperCase()+' · CAPSTONE';
+    root.querySelector('#wf-detail-tag').textContent=topic;
+    root.querySelector('#wf-project-title').textContent=selected.title;
+    root.querySelector('#wf-project-abstract').textContent=selected.summary;
+    root.querySelector('#wf-bookmark span').textContent=saved.has(selected.id)?'Saved to bookshelf':'Save to bookshelf';
+    renderCards();renderMaterial();
+  }
+  root.querySelectorAll('[data-screen]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.screen)));
+  root.querySelectorAll('[data-topic]').forEach(b=>b.addEventListener('click',()=>{topic=b.dataset.topic;material='all';query='';show('topic');}));
+  root.querySelectorAll('[data-material]').forEach(b=>b.addEventListener('click',()=>{material=b.dataset.material;renderCards();}));
+  root.querySelectorAll('[data-deliverable]').forEach(b=>b.addEventListener('click',()=>{deliverable=b.dataset.deliverable;renderMaterial();}));
+  root.querySelector('#wf-sort').addEventListener('change',renderCards);
+  root.querySelector('#wf-project-back').addEventListener('click',()=>show('topic'));
+  root.querySelector('#wf-home-search').addEventListener('submit',event=>{event.preventDefault();query=root.querySelector('#wf-search-input').value.trim().toLowerCase();material='all';show('topic');});
+  root.querySelector('#wf-bookmark').addEventListener('click',()=>{saved.has(selected.id)?saved.delete(selected.id):saved.add(selected.id);root.querySelector('#wf-save-count').textContent=saved.size;root.querySelector('#wf-bookmark span').textContent=saved.has(selected.id)?'Saved to bookshelf':'Save to bookshelf';});
+  root.querySelector('#wf-saved').addEventListener('click',()=>{root.querySelector('#wf-message').textContent=saved.size?'Saved sample projects: '+projects.filter(p=>saved.has(p.id)).map(p=>p.title).join(' · '):'No sample projects saved yet. Open a project to save it.';});
+  root.querySelector('#wf-preview-action').addEventListener('click',()=>{root.querySelector('#wf-preview-label').textContent=deliverable==='video'?'Playing prototype demonstration':deliverable==='paper'?'Final manuscript · Page 1':'Research poster · Preview';root.querySelector('#wf-preview-caption').textContent='Wireframe interaction · no real file is downloaded';});
+  root.querySelector('#wf-download-action').addEventListener('click',()=>{root.querySelector('#wf-message').textContent='Download action for the selected '+({paper:'manuscript',video:'demonstration',poster:'poster'}[deliverable])+'. This wireframe uses sample content.';});
+  function restore(snapshot){
+    const state=snapshot?.modelContent;
+    if(!state||typeof state!=='object')return false;
+    topic=['Healthcare','Education','Agriculture','Community services'].includes(state.topic)?state.topic:'Healthcare';
+    selected=projects.find(p=>p.id===state.project)||projects[0];
+    material=['all','paper','video','poster'].includes(state.material)?state.material:'all';
+    deliverable=selected.materials.includes(state.deliverable)?state.deliverable:'paper';
+    query=typeof snapshot.privateContent?.query==='string'?snapshot.privateContent.query:'';
+    show(['home','topic','project'].includes(state.screen)?state.screen:'home');return true;
+  }
+  function persist(){
+    if(typeof window.openai?.setWidgetState==='function')window.openai.setWidgetState({modelContent:{screen,topic,material,project:selected.id,deliverable},privateContent:{query}}).catch(()=>{});
+  }
+  if(!restore(window.openai?.widgetState))show('home');
+  root.addEventListener('click',persist);
+  root.addEventListener('submit',persist);
+  root.addEventListener('change',persist);
+  window.addEventListener('openai:set_globals',event=>{const state=event.detail?.globals?.widgetState;if(state)restore(state);});
+})();
+</script>

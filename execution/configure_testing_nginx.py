@@ -60,10 +60,25 @@ def challenge_config():
 '''
 
 
-def https_config(releases_template):
+def https_config(releases_template, usertest_media_root=None):
     result = challenge_config().replace('location / { return 503; }',
                                         'location / { return 301 https://$host$request_uri; }')
     for name, host, port in (('usertest', HOSTS[0], 8100), ('clienttest', HOSTS[1], 8200)):
+        protected = ''
+        if name == 'usertest' and usertest_media_root is not None:
+            root = str(usertest_media_root).rstrip('/')
+            if not root.startswith('/') or any(char in root for char in ('"', "'", ';', '{', '}', '\n', '\r')):
+                raise ValueError('Invalid protected media root')
+            protected = f'''
+    location ^~ /_protected_usertest_media/ {{
+        internal;
+        alias "{root}/";
+        disable_symlinks on;
+        max_ranges 1;
+        add_header Cache-Control "private, no-store" always;
+        add_header X-Content-Type-Options nosniff always;
+    }}
+'''
         release_root = '/var/www/defensys-' + name + '-releases'
         releases = releases_template.replace('/var/www/defensys-releases', release_root)
         # These locations carry the same cache/worker handling as production,
@@ -77,7 +92,7 @@ server {{
     ssl_protocols TLSv1.2 TLSv1.3;
     root /var/www/defensys-{name};
     index index.html;
-    client_max_body_size 500M;
+    client_max_body_size 500M;{protected}
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
@@ -128,6 +143,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--phase', choices=('challenge', 'https'), required=True)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--usertest-protected-media', action='store_true',
+                        help='Opt in to internal-only Nginx media delivery for usertest; requires narrow read ACLs.')
     args = parser.parse_args()
     if os.name != 'posix' or os.getuid() == 0 or Path.home().name != 'defensys':
         parser.error('Run as the normal defensys SSH user, not root.')
@@ -135,14 +152,17 @@ def main():
     if '/var/www/defensys-releases/' not in releases:
         parser.error('Unexpected release routing template; inspect before continuing.')
     challenge = challenge_config()
-    https = https_config(releases)
+    media_root = Path.home() / 'defensys-environments/usertest/backend/media'
+    original_https = https_config(releases)
+    protected_https = https_config(releases, media_root)
+    https = protected_https if args.usertest_protected_media else original_https
     candidate = challenge if args.phase == 'challenge' else https
     if AVAILABLE.is_symlink():
         parser.error('Testing config must not be a symlink.')
     previous = AVAILABLE.read_text() if AVAILABLE.exists() else None
-    if previous not in (None, challenge, https):
+    if previous not in (None, challenge, original_https, protected_https):
         parser.error('Existing testing config differs; refusing to overwrite it.')
-    if previous == https and args.phase == 'challenge':
+    if previous in (original_https, protected_https) and args.phase == 'challenge':
         parser.error('HTTPS is already configured; refusing to downgrade it.')
     if ENABLED.is_symlink():
         if ENABLED.resolve() != AVAILABLE:
@@ -160,6 +180,13 @@ def main():
             if set(names.split()).intersection(HOSTS):
                 parser.error('A test hostname already has a route elsewhere; inspect first.')
     if args.phase == 'https':
+        if args.usertest_protected_media:
+            if not media_root.is_dir() or media_root.is_symlink():
+                parser.error('Expected the existing isolated usertest media directory.')
+            sudo('runuser', '-u', 'www-data', '--', 'test', '-x', str(media_root))
+            sample = next((path for path in media_root.rglob('*') if path.is_file()), None)
+            if sample is not None:
+                sudo('runuser', '-u', 'www-data', '--', 'test', '-r', str(sample))
         import re
         sans = sudo('openssl', 'x509', '-in', CERT + '/fullchain.pem', '-noout',
                     '-ext', 'subjectAltName', text=True, capture_output=True).stdout

@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 
 from defensys_backend.media_views import AuthenticatedMediaFileView, PublicAvatarFileView
+from defensys_backend.media_sessions import MediaSessionView
 from defensys_backend.views import HealthCheckView
 from authentication_access_control.password_reset import (
     ConfirmPasswordResetAPIView,
@@ -26,6 +27,7 @@ from authentication_access_control.password_reset import (
 )
 
 urlpatterns = [
+    path('api/media/session/', MediaSessionView.as_view(), name='media_session'),
     path('media/avatars/<path:file_path>', PublicAvatarFileView.as_view()),
     path('media/<path:file_path>', AuthenticatedMediaFileView.as_view()),
     path('admin/', admin.site.urls),

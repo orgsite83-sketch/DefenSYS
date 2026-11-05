@@ -855,6 +855,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 data: team,
               ).name,
               file: {...submission, ...fileMap},
+              history: submission['file_history'] as List? ?? const [],
               uploader: submission['uploaded_by_name']?.toString(),
               status: (fileMap['status'] ?? submission['status']) == 'accepted'
                   ? item['type'] == 'post'

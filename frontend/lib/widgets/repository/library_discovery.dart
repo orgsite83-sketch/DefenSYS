@@ -22,6 +22,8 @@ Future<T?> showLibraryPanel<T>(
         ((media.size.height - media.viewInsets.bottom - media.padding.top) * .9)
             .clamp(260.0, 760.0);
     return DefensysShadcnScope(
+      maroonActions: true,
+      neutralActionText: true,
       child: SafeArea(
         top: false,
         child: SizedBox(
@@ -224,7 +226,7 @@ class LibraryShelfDirectory extends StatelessWidget {
             LibraryBrowse.videos => Icons.smart_display_outlined,
             LibraryBrowse.other => Icons.inventory_2_outlined,
             _ => Icons.menu_book_outlined,
-          }, color: DefensysTokens.maroonTextOf(context)),
+          }, color: DefensysTokens.textSecondaryOf(context)),
           title: Text(
             shelf.label,
             style: DefensysTokens.body.copyWith(

@@ -6,6 +6,7 @@ Overviews quote an existing section; they do not generate paper summaries.
 
 import html
 import re
+import json
 from pathlib import PurePosixPath
 
 
@@ -104,6 +105,16 @@ def document_kind(entry):
 
 
 def enrich_library_entry(entry):
+    deliverable_id = str(entry.get('deliverable_id') or '').strip()
+    # IDs are local to a stage/event and academic context. Legacy filenames
+    # and inferred document kinds do not establish a deliverable association.
+    entry['deliverable_key'] = json.dumps([
+        entry.get('type'), entry.get('academic_year'), entry.get('semester'),
+        entry.get('stage'), entry.get('pit_event_config_id'), deliverable_id,
+    ], separators=(',', ':'), ensure_ascii=False) if deliverable_id else ''
+    entry['deliverable_group_label'] = (
+        str(entry.get('deliverable_label') or '').strip() if deliverable_id else ''
+    ) or 'Other materials'
     kind = document_kind(entry)
     document_label = DOCUMENT_LABELS[kind]
     if kind == 'chapters':

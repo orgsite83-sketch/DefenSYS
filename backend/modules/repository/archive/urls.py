@@ -6,10 +6,14 @@ from .views import (
     RepositoryPreviewView,
     RepositoryReviewView,
     UserBookShelfView,
+    LibraryCatalogView,
+    LibraryProjectView,
 )
 
 
 urlpatterns = [
+    path('catalog/', LibraryCatalogView.as_view(), name='library_catalog'),
+    path('project/', LibraryProjectView.as_view(), name='library_project'),
     path('', ProjectArchiveListView.as_view(), name='project_archive'),
     path('search/', ProjectArchiveSearchView.as_view(), name='project_archive_search'),
     path('preview/', RepositoryPreviewView.as_view(), name='repository_preview'),

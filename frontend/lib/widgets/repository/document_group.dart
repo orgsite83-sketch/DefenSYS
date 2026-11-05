@@ -368,6 +368,8 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         file: file,
         status: status,
         uploader: uploader,
+        history:
+            (item['submission'] as Map?)?['file_history'] as List? ?? const [],
         onReplace: !busy && canUpload && !accepted
             ? () => upload(slot, file)
             : null,

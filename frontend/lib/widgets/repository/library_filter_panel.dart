@@ -13,10 +13,12 @@ class LibraryFilterPanel extends StatefulWidget {
     required this.entries,
     required this.selection,
     required this.onApply,
+    this.serverOptions,
   });
   final List<VaultEntry> entries;
   final LibraryFilterSelection selection;
   final ValueChanged<LibraryFilterSelection> onApply;
+  final Map<String, dynamic>? serverOptions;
   @override
   State<LibraryFilterPanel> createState() => _LibraryFilterPanelState();
 }
@@ -39,19 +41,35 @@ class _LibraryFilterPanelState extends State<LibraryFilterPanel> {
     color: DefensysTokens.textSecondaryOf(context),
   );
 
-  List<LibraryFacetOption> _options(LibraryFilterGroup group) => _draft
-      .facets(widget.entries, group)
-      .where(
-        (option) => option.tag.label.toLowerCase().contains(
-          _query.trim().toLowerCase(),
-        ),
-      )
-      .toList();
+  List<LibraryFacetOption> _options(LibraryFilterGroup group) =>
+      (widget.serverOptions?['facets']?[group.name] is List
+              ? (widget.serverOptions!['facets'][group.name] as List)
+                    .whereType<Map>()
+                    .map(
+                      (item) => LibraryFacetOption(
+                        LibraryTag(
+                          id: item['id'].toString(),
+                          label: item['label'].toString(),
+                        ),
+                        (item['projects'] as num?)?.toInt() ?? 0,
+                      ),
+                    )
+                    .toList()
+              : _draft.facets(widget.entries, group))
+          .where(
+            (option) => option.tag.label.toLowerCase().contains(
+              _query.trim().toLowerCase(),
+            ),
+          )
+          .toList();
 
   @override
   Widget build(BuildContext context) {
     final years = {
       if (_draft.year.isNotEmpty) _draft.year,
+      ...((widget.serverOptions?['years'] as List?) ?? []).map(
+        (year) => year.toString(),
+      ),
       ...widget.entries
           .where((entry) => _draft.matches(entry, ignoreYear: true))
           .map((entry) => entry.academicYear)
@@ -111,7 +129,7 @@ class _LibraryFilterPanelState extends State<LibraryFilterPanel> {
                 fontWeight: FontWeight.w600,
                 color: selected == 0
                     ? DefensysTokens.textSecondaryOf(context)
-                    : DefensysTokens.maroonTextOf(context),
+                    : DefensysTokens.textPrimaryOf(context),
               ),
             ),
           ],
@@ -199,7 +217,9 @@ class _LibraryFilterPanelState extends State<LibraryFilterPanel> {
               child: Semantics(
                 liveRegion: true,
                 child: Text(
-                  '$count ${count == 1 ? 'project matches' : 'projects match'}',
+                  widget.serverOptions != null
+                      ? 'Apply to all projects'
+                      : '$count ${count == 1 ? 'project matches' : 'projects match'}',
                   style: DefensysTokens.body.copyWith(
                     color: DefensysTokens.textPrimaryOf(context),
                     fontWeight: FontWeight.w600,

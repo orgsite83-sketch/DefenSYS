@@ -1,8 +1,8 @@
-import 'package:defensys/theme/program_colors.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
@@ -56,6 +56,23 @@ Future<void> openRepositoryEntry(
   final user = ref.read(authProvider).user;
   final service = ref.read(repositoryReviewServiceProvider);
   final client = ref.read(authenticatedHttpClientProvider);
+  if (kIsWeb &&
+      (entry.outputKind == 'video' ||
+          const [
+            'mp3',
+            'wav',
+            'ogg',
+            'm4a',
+            'aac',
+          ].contains(entry.extension))) {
+    unawaited(service.updateShelfProgress(targetId: entry.id, opened: true));
+    await viewFileInDialog(
+      context: context,
+      fileUrl: file,
+      fileName: entry.fileName,
+    );
+    return;
+  }
   if (entry.isPdf) {
     final name = '${user?['first_name'] ?? ''} ${user?['last_name'] ?? ''}'
         .trim();
@@ -297,10 +314,7 @@ class _BookDetailsSheetState extends ConsumerState<_BookDetailsSheet> {
                               entry.outputLabel,
                               style: TextStyle(
                                 fontSize: 9.5,
-                                color: ProgramColors.of(
-                                  context,
-                                  isCapstone: isCapstone,
-                                ).text,
+                                color: DefensysTokens.textPrimaryOf(context),
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.4,
                               ),

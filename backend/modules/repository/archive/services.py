@@ -81,6 +81,7 @@ def pit_visible_deliverables_queryset():
             'team__semester',
             'team__semester__school_year',
             'uploaded_by',
+            'archive_semester__school_year',
         )
         .prefetch_related('files')
         .order_by('-uploaded_at', 'file_name')
@@ -94,6 +95,7 @@ def capstone_visible_queryset():
             'team__semester',
             'team__semester__school_year',
             'uploaded_by',
+            'archive_semester__school_year',
         )
         .prefetch_related('files')
         .order_by('-uploaded_at', 'file_name')
@@ -133,7 +135,7 @@ def restricted_archive_entries_count():
 
 def capstone_entry_payload(submission):
     team = submission.team
-    is_pit = team.is_pit if team else False
+    is_pit = 'PIT' in (submission.archive_team_level or (team.level if team else ''))
     entry_type = ArchiveEntry.TYPE_PIT if is_pit else ArchiveEntry.TYPE_CAPSTONE
     viewer_notice = (
         'Read-only PIT archive preview. Audit actions are handled in the Repository Audit phase.'
@@ -143,6 +145,15 @@ def capstone_entry_payload(submission):
     
     from repository.deliverables.services import definition_for
     definition = definition_for(team, submission.stage_label, submission.deliverable_id) or {}
+    semester = submission.archive_semester or (team.semester if team else None)
+    snapshot = {
+        'team_name': submission.archive_team_name or (team.name if team else ''),
+        'project_title': submission.archive_project_title or (team.project_title if team else ''),
+        'year_level': submission.archive_year_level or (team.year_level if team else ''),
+        'academic_year': semester.school_year.label if semester else '',
+        'semester': semester.label if semester else '',
+        'pit_event_config_id': submission.pit_event_config_id,
+    }
     files = sorted((file for file in submission.files.all() if file.is_current),
                    key=lambda file: file.uploaded_at)
     if definition.get('file_policy'):
@@ -178,6 +189,7 @@ def capstone_entry_payload(submission):
             'summary': submission.summary or '',
             'category': submission.category or '',
             'category_confidence': submission.category_confidence,
+            **snapshot,
         }]
 
     payloads = []
@@ -212,6 +224,7 @@ def capstone_entry_payload(submission):
             'summary': f.summary or '',
             'category': f.category or '',
             'category_confidence': f.category_confidence,
+            **snapshot,
         })
     return payloads
 

@@ -235,6 +235,17 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Opt-in protected delivery. The public media URL always performs authorization.
+MEDIA_X_ACCEL_PREFIX = os.environ.get('DEFENSYS_MEDIA_X_ACCEL_PREFIX', '').rstrip('/')
+MEDIA_SESSION_ENABLED = _env_bool('DEFENSYS_MEDIA_SESSIONS', default=False)
+if MEDIA_SESSION_ENABLED and not DEBUG:
+    CACHES = {**globals().get('CACHES', {'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}), 'media': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.environ.get('DEFENSYS_MEDIA_REDIS_URL', os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')),
+        'KEY_PREFIX': 'defensys-media',
+    }}
+
 # Upload limits (500MB total request size, 50MB maximum kept in memory before streaming to disk)
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get('DATA_UPLOAD_MAX_MEMORY_SIZE', 500 * 1024 * 1024))
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get('FILE_UPLOAD_MAX_MEMORY_SIZE', 50 * 1024 * 1024))

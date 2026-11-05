@@ -250,7 +250,7 @@ class LibraryDiscoveryOutput extends StatelessWidget {
                   child: Text(
                     'View project',
                     style: DefensysTokens.caption.copyWith(
-                      color: DefensysTokens.maroonTextOf(context),
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
                   ),
                 ),

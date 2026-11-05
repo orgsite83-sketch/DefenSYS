@@ -15,11 +15,11 @@ import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/repository_provider.dart';
 import 'package:defensys/services/repository_review_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/models/library_filters.dart';
 import 'package:defensys/widgets/repository/library_activity_panel.dart';
 import 'package:defensys/widgets/repository/library_components.dart';
 import 'package:defensys/widgets/repository/library_discovery.dart';
-import 'package:defensys/widgets/repository/library_topic_discovery.dart';
 import 'package:defensys/widgets/branding/defensys_mobile_brand.dart';
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/capture_preview.dart';
@@ -246,33 +246,70 @@ void main() {
   }
 
   testWidgets(
-    'topic View all includes documents and media, and media links to its full project',
+    'project sections use configured deliverables across file formats',
+    (tester) async {
+      final materials = [
+        for (final item in [
+          ('one', 'design.pdf', 'package', 'Prototype package'),
+          ('two', 'walkthrough.mp4', 'package', 'Prototype package'),
+          ('three', 'research.pdf', 'research', 'Research study'),
+          ('four', 'legacy.pdf', '', ''),
+        ])
+          VaultEntry.fromJson({
+            ..._entries.first,
+            'id': item.$1,
+            'file_name': item.$2,
+            'deliverable_key': item.$3,
+            'deliverable_group_label': item.$4,
+          }),
+      ];
+      await show(
+        tester,
+        width: 390,
+        child: LibraryProjectScreen(
+          project: LibraryProject('wards', materials),
+        ),
+      );
+      expect(find.text('Prototype package (2)'), findsOneWidget);
+      expect(find.text('Research study (1)'), findsOneWidget);
+      expect(find.text('Other materials (1)'), findsOneWidget);
+      expect(find.text('design.pdf'), findsOneWidget);
+      expect(find.text('walkthrough.mp4'), findsOneWidget);
+      expect(find.text('research.pdf'), findsNothing);
+      await tester.ensureVisible(find.text('Research study (1)'));
+      await tester.tap(find.text('Research study (1)'));
+      await tester.pumpAndSettle();
+      expect(find.text('research.pdf'), findsOneWidget);
+      expect(find.text('walkthrough.mp4'), findsNothing);
+      await capturePreview(
+        tester,
+        find.byKey(const ValueKey('preview')),
+        'repository-deliverables-light',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'topic opens one card per project and project retains its materials',
     (tester) async {
       await show(tester);
       final row = find.byKey(const ValueKey('library-topic-health-wellbeing'));
-      final viewAll = find.descendant(of: row, matching: find.text('View all'));
-      await tester.ensureVisible(viewAll);
-      await tester.tap(viewAll);
+      await tester.ensureVisible(row);
+      await tester.tap(row);
       await tester.pumpAndSettle();
       expect(find.text('Health & Wellbeing'), findsNWidgets(2));
-      expect(find.text('4 outputs'), findsOneWidget);
-      expect(find.byType(LibraryEntryTile), findsNWidgets(4));
-      await tester.tap(find.text('Back to library'));
-      await tester.pumpAndSettle();
-      final poster = find.byWidgetPredicate(
+      expect(find.text('2 projects'), findsOneWidget);
+      expect(find.byType(LibraryEntryTile), findsNWidgets(2));
+      final project = find.byWidgetPredicate(
         (widget) =>
-            widget is LibraryDiscoveryOutput &&
-            widget.entry.id == 'records-poster',
+            widget is LibraryEntryTile && widget.entry.groupingKey == 'records',
       );
-      final viewProject = find.descendant(
-        of: poster,
-        matching: find.text('View project'),
-      );
-      await tester.ensureVisible(viewProject);
-      await tester.tap(viewProject);
+      await tester.ensureVisible(project);
+      await tester.tap(project);
       await tester.pumpAndSettle();
       expect(find.byType(LibraryProjectScreen), findsOneWidget);
-      expect(find.text('Available outputs (2)'), findsOneWidget);
+      expect(find.text('Research materials (2)'), findsOneWidget);
       expect(find.text('View poster'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -286,6 +323,18 @@ void main() {
         await show(tester, width: width, dark: dark, mobileShell: true);
         expect(find.byType(DefensysMobileBrand), findsOneWidget);
         expect(find.text('DefenSYS'), findsOneWidget);
+        for (final label in ['Browse all', 'All projects']) {
+          final element = tester.element(find.text(label));
+          expect(
+            DefaultTextStyle.of(element).style.color,
+            DefensysTokens.textPrimaryOf(element),
+          );
+        }
+        final topic = tester.element(find.text('Health & Wellbeing'));
+        expect(
+          tester.widget<Text>(find.text('Health & Wellbeing')).style?.color,
+          DefensysTokens.textPrimaryOf(topic),
+        );
         await capturePreview(
           tester,
           find.byKey(const ValueKey('preview')),
@@ -300,7 +349,10 @@ void main() {
     'users can browse concept papers across projects and search that stage',
     (tester) async {
       await show(tester);
-      expect(find.byType(LibraryTopicRow), findsNWidgets(2));
+      expect(
+        find.byKey(const ValueKey('library-topic-health-wellbeing')),
+        findsOneWidget,
+      );
       await browseConcepts(tester);
       expect(find.text('CONCEPT PAPER'), findsNWidgets(2));
       expect(find.text('CHAPTERS 1–3'), findsNothing);
@@ -342,11 +394,9 @@ void main() {
     'collections use live projects and My shelf opens saved outputs',
     (tester) async {
       await show(tester);
-      await tester.tap(
-        find.byWidgetPredicate(
-          (widget) => widget is LibraryCollectionCard && widget.type == 'pit',
-        ),
-      );
+      await tester.tap(find.text('All projects'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PIT'));
       await tester.pumpAndSettle();
       expect(find.text('PIT collection'), findsOneWidget);
       expect(find.byType(LibraryEntryTile), findsOneWidget);
@@ -400,7 +450,7 @@ void main() {
       await tester.tap(find.byType(LibraryEntryTile));
       await tester.pumpAndSettle();
       expect(find.byType(LibraryProjectScreen), findsOneWidget);
-      expect(find.text('Available outputs (2)'), findsOneWidget);
+      expect(find.text('Research materials (2)'), findsOneWidget);
       expect(find.text('Read document'), findsNWidgets(2));
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
@@ -420,11 +470,9 @@ void main() {
     tester,
   ) async {
     await show(tester);
-    await tester.tap(
-      find.byWidgetPredicate(
-        (widget) => widget is LibraryCollectionCard && widget.type == 'pit',
-      ),
-    );
+    await tester.tap(find.text('All projects'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('PIT'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Filters'));
     await tester.pumpAndSettle();

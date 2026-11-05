@@ -20,7 +20,7 @@ class LibraryHero extends StatelessWidget {
             Text(
               'EXPLORE STUDENT WORK',
               style: DefensysTokens.caption.copyWith(
-                color: DefensysTokens.maroonTextOf(context),
+                color: DefensysTokens.textSecondaryOf(context),
                 fontSize: 10,
                 letterSpacing: .8,
               ),

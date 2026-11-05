@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class LibraryTag {
   const LibraryTag({
     required this.id,
@@ -25,6 +27,11 @@ class VaultEntry {
   final String stage;
   final String type; // 'pit', 'capstone', 'uploader'
   final String? deliverableLabel;
+  final String deliverableKey;
+  final String deliverableGroupLabel;
+  final bool catalogSummary;
+  final Map<String, String> availableDeliverables;
+  final int projectOutputCount;
   final String extractedText;
   final List<String> topics;
   final Map<String, List<LibraryTag>> libraryTags;
@@ -66,6 +73,11 @@ class VaultEntry {
     required this.stage,
     required this.type,
     this.deliverableLabel,
+    this.deliverableKey = '',
+    this.deliverableGroupLabel = '',
+    this.catalogSummary = false,
+    this.availableDeliverables = const {},
+    this.projectOutputCount = 0,
     this.extractedText = '',
     this.topics = const [],
     this.libraryTags = const {},
@@ -111,6 +123,16 @@ class VaultEntry {
       type: j['type']?.toString() ?? 'pit',
       deliverableLabel: (j['deliverable_label'] ?? j['deliverableLabel'])
           ?.toString(),
+      deliverableKey: j['deliverable_key']?.toString() ?? '',
+      deliverableGroupLabel: j['deliverable_group_label']?.toString() ?? '',
+      catalogSummary: j['catalog_summary'] == true,
+      projectOutputCount:
+          int.tryParse(j['project_output_count']?.toString() ?? '') ?? 0,
+      availableDeliverables: {
+        for (final item
+            in (j['available_deliverables'] as List? ?? []).whereType<Map>())
+          '${item['key']}': '${item['label']}',
+      },
       extractedText: j['extracted_text']?.toString() ?? '',
       topics: (j['topics'] as List?)?.map((e) => e.toString()).toList() ?? [],
       libraryTags: {
@@ -197,6 +219,11 @@ class VaultEntry {
       stage: stage,
       type: type,
       deliverableLabel: deliverableLabel,
+      deliverableKey: deliverableKey,
+      deliverableGroupLabel: deliverableGroupLabel,
+      catalogSummary: catalogSummary,
+      availableDeliverables: availableDeliverables,
+      projectOutputCount: projectOutputCount,
       extractedText: extractedText,
       topics: topics,
       libraryTags: libraryTags,
@@ -228,6 +255,9 @@ class VaultEntry {
   }
 
   String get extension => fileName.toLowerCase().split('.').last;
+  bool hasDeliverable(String key) =>
+      availableDeliverables.containsKey(key) ||
+      (deliverableKey.isEmpty ? 'unassigned' : deliverableKey) == key;
   bool get isPdf => extension == 'pdf';
   bool get isImage =>
       const ['jpg', 'jpeg', 'png', 'webp', 'gif'].contains(extension);
@@ -324,6 +354,8 @@ class LibraryProject {
   final List<VaultEntry> entries;
   VaultEntry get representative => entries.first;
   String get title => representative.displayTitle;
+  List<LibraryDeliverable> get deliverables =>
+      LibraryDeliverable.group(entries);
   VaultEntry? get overview {
     final docs = entries
         .where((entry) => entry.isDocument && entry.previewText.isNotEmpty)
@@ -354,5 +386,66 @@ class LibraryProject {
     return groups.entries
         .map((group) => LibraryProject(group.key, group.value))
         .toList();
+  }
+}
+
+/// Academic deliverables are independent of the document's file format.
+class LibraryDeliverable {
+  const LibraryDeliverable(this.key, this.label, this.stage, this.entries);
+  final String key, label, stage;
+  final List<VaultEntry> entries;
+
+  static List<LibraryDeliverable> group(List<VaultEntry> entries) {
+    final groups = <String, List<VaultEntry>>{};
+    for (final entry in entries) {
+      final keys =
+          entry.catalogSummary && entry.availableDeliverables.isNotEmpty
+          ? entry.availableDeliverables.keys
+          : [
+              entry.deliverableKey.isEmpty
+                  ? 'unassigned'
+                  : entry.deliverableKey,
+            ];
+      for (final key in keys) {
+        groups.putIfAbsent(key, () => []).add(entry);
+      }
+    }
+    final result = groups.entries.map((group) {
+      final entry = group.value.first;
+      return LibraryDeliverable(
+        group.key,
+        group.key == 'unassigned'
+            ? 'Other materials'
+            : entry.availableDeliverables[group.key] ??
+                  (entry.deliverableGroupLabel.isNotEmpty
+                      ? entry.deliverableGroupLabel
+                      : (entry.deliverableLabel?.trim().isNotEmpty ?? false)
+                      ? entry.deliverableLabel!
+                      : 'Other materials'),
+        entry.stage,
+        group.value,
+      );
+    }).toList();
+    result.sort((a, b) {
+      if (a.key == 'unassigned') return b.key == 'unassigned' ? 0 : 1;
+      if (b.key == 'unassigned') return -1;
+      final comparison = a.label.toLowerCase().compareTo(b.label.toLowerCase());
+      return comparison != 0 ? comparison : a.key.compareTo(b.key);
+    });
+    return result;
+  }
+
+  String displayLabel(List<LibraryDeliverable> siblings) {
+    final matching = siblings.where((item) => item.label == label).toList();
+    if (matching.length <= 1) return label;
+    if (matching.where((item) => item.stage == stage).length <= 1) {
+      return '$label · $stage';
+    }
+    try {
+      final context = jsonDecode(key) as List;
+      return '$label · ${[...context.take(4), if (context[4] != null) 'Event ${context[4]}', context.last].where((part) => part != null && part.toString().isNotEmpty).join(' · ')}';
+    } on FormatException {
+      return '$label · $stage';
+    }
   }
 }

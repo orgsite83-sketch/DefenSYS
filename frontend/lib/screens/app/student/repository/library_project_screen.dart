@@ -9,6 +9,7 @@ import '../../../../theme/program_colors.dart';
 import '../../../../widgets/repository/library_components.dart';
 import '../../../../widgets/repository/library_discovery.dart';
 import '../../../../services/repository_review_provider.dart';
+import '../../../../services/repository_provider.dart';
 import '../../../../toasts/feedback_toast.dart';
 import 'repository_entry_view.dart';
 
@@ -21,9 +22,51 @@ class LibraryProjectScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
-  String _category = 'All';
+  String? _deliverable;
+  int _fileLimit = 20;
   bool _expanded = false;
   bool _saving = false;
+  LibraryProject? _loaded;
+  bool _loading = false;
+  String? _loadError;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.project.representative.catalogSummary) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadProject());
+      _loading = true;
+    }
+  }
+
+  Future<void> _loadProject() async {
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
+    try {
+      final rows = await ref
+          .read(repositoryProvider.notifier)
+          .fetchProject(widget.project.key);
+      final projects = LibraryProject.group(
+        rows.map(VaultEntry.fromJson).toList(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _loaded = projects.firstWhere((item) => item.key == widget.project.key);
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadError = 'Could not load this project’s materials.';
+        });
+      }
+    }
+  }
+
   Future<void> _save(bool saved) async {
     setState(() => _saving = true);
     final item = await ref
@@ -41,11 +84,13 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
 
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(
+    maroonActions: true,
+    neutralActionText: true,
     child: Builder(builder: (context) => _build(context)),
   );
 
   Widget _build(BuildContext context) {
-    final project = widget.project;
+    final project = _loaded ?? widget.project;
     final entry = project.representative;
     final source = project.overview;
     final colors = Theme.of(context).colorScheme;
@@ -57,15 +102,14 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
             .saved
             .any((item) => item.id == 'project:${project.key}') ??
         false;
-    final shown = project.entries
-        .where(
-          (file) => switch (_category) {
-            'Documents' => file.isDocument,
-            'Posters' => file.outputKind == 'poster',
-            'Videos' => file.outputKind == 'video',
-            _ => true,
-          },
-        )
+    final deliverables = project.deliverables;
+    final selectedKey =
+        _deliverable ?? (deliverables.isEmpty ? '' : deliverables.first.key);
+    final selected = deliverables
+        .where((item) => item.key == selectedKey)
+        .firstOrNull;
+    final shown = (selected?.entries ?? <VaultEntry>[])
+        .take(_fileLimit)
         .toList();
     return Scaffold(
       appBar: AppBar(
@@ -102,10 +146,9 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
                               Text(
                                 '${ProgramColors.of(context, scope: entry.type).label} project',
                                 style: DefensysTokens.caption.copyWith(
-                                  color: ProgramColors.of(
+                                  color: DefensysTokens.textSecondaryOf(
                                     context,
-                                    scope: entry.type,
-                                  ).text,
+                                  ),
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -213,36 +256,44 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
                   const Text('Explore this project’s published outputs below.'),
                 const SizedBox(height: 25),
                 Text(
-                  'Available outputs (${project.entries.length})',
+                  'Research materials (${entry.catalogSummary ? entry.projectOutputCount : project.entries.length})',
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 16,
                   ),
                 ),
                 const SizedBox(height: 10),
-                if (project.entries.length > 4)
+                if (!_loading && _loadError == null)
                   Wrap(
-                    spacing: 7,
-                    runSpacing: 4,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      for (final label in [
-                        'All',
-                        'Documents',
-                        'Posters',
-                        'Videos',
-                      ])
+                      for (final item in deliverables)
                         LibraryChoiceChip(
-                          label: label,
-                          selected: _category == label,
-                          onSelected: () => setState(() => _category = label),
+                          label:
+                              '${item.displayLabel(deliverables)} (${item.entries.length})',
+                          selected: item.key == selectedKey,
+                          onSelected: () => setState(() {
+                            _deliverable = item.key;
+                            _fileLimit = 20;
+                          }),
                         ),
                     ],
                   ),
                 const SizedBox(height: 15),
-                if (shown.isEmpty)
+                if (_loading)
+                  const LibraryShelfLoading()
+                else if (_loadError != null) ...[
+                  Text(_loadError!),
+                  ShadButton.outline(
+                    onPressed: _loadProject,
+                    child: const Text('Retry'),
+                  ),
+                ] else if (shown.isEmpty)
                   const LibraryEmpty(
-                    title: 'No outputs in this category',
-                    message: 'Choose another category to explore this project.',
+                    title: 'No published materials',
+                    message:
+                        'Choose another deliverable to explore this project.',
                   )
                 else
                   ...shown.map(
@@ -258,12 +309,12 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
                               Icon(
                                 libraryOutputIcon(file),
                                 size: 20,
-                                color: DefensysTokens.maroonTextOf(context),
+                                color: DefensysTokens.textSecondaryOf(context),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  file.outputLabel,
+                                  file.fileName,
                                   style: DefensysTokens.body.copyWith(
                                     color: colors.onSurface,
                                   ),
@@ -303,6 +354,11 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
                         ],
                       ),
                     ),
+                  ),
+                if ((selected?.entries.length ?? 0) > shown.length)
+                  ShadButton.outline(
+                    onPressed: () => setState(() => _fileLimit += 20),
+                    child: const Text('Load more files'),
                   ),
               ],
             ),

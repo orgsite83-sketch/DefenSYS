@@ -1,6 +1,7 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 
 import 'dart:html' as html;
+import 'dart:async';
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/network/authenticated_client.dart';
+import '../../config/api_config.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../toasts/feedback_toast.dart';
 import '../../widgets/export/defensys_pdf_viewer.dart';
@@ -49,9 +51,15 @@ Future<void> viewFileInDialog({
   DeliverablePropertiesInfo? propertiesInfo,
 }) async {
   if (DeliverablePopupNavigation.maybeOf(context) != null) {
-    await showDeliverablePopupStep<void>(context: context, builder: (_) => UniversalFileViewerDialog(
-      fileBytes: fileBytes, fileUrl: fileUrl, fileName: fileName, propertiesInfo: propertiesInfo,
-    ));
+    await showDeliverablePopupStep<void>(
+      context: context,
+      builder: (_) => UniversalFileViewerDialog(
+        fileBytes: fileBytes,
+        fileUrl: fileUrl,
+        fileName: fileName,
+        propertiesInfo: propertiesInfo,
+      ),
+    );
     return;
   }
   await showDialog(
@@ -111,6 +119,11 @@ class _UniversalFileViewerDialogState
   Uint8List? _fileBytes;
   bool _isLoading = false;
   String? _loadError;
+  html.MediaElement? _media;
+  Timer? _mediaRenewal;
+  final List<StreamSubscription<dynamic>> _mediaSubscriptions = [];
+  String? _streamUrl;
+  bool _mediaViewRegistered = false;
 
   // Image manipulation controller
   final TransformationController _imageTransformCtrl =
@@ -168,6 +181,67 @@ class _UniversalFileViewerDialogState
     }
   }
 
+  void _registerStream(String url) {
+    for (final subscription in _mediaSubscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _mediaSubscriptions.clear();
+    _media?.pause();
+    _media?.removeAttribute('src');
+    _media?.load();
+    _streamUrl = url;
+    final html.MediaElement media = _category == FileCategory.video
+        ? html.VideoElement()
+        : html.AudioElement();
+    _media = media;
+    media
+      ..src = url
+      ..controls = true
+      ..preload = 'metadata'
+      ..style.width = '100%'
+      ..style.height = _category == FileCategory.video ? '100%' : '50px'
+      ..style.border = 'none';
+    _mediaSubscriptions.add(
+      media.onError.listen((_) {
+        if (mounted) {
+          setState(
+            () => _loadError =
+                'Playback failed. Retry or download the file; its encoding may not be supported.',
+          );
+        }
+      }),
+    );
+    if (!_mediaViewRegistered) {
+      ui_web.platformViewRegistry.registerViewFactory(
+        _viewType,
+        (int _) => _media!,
+      );
+      _mediaViewRegistered = true;
+    }
+  }
+
+  void _renewMediaAfter(int seconds) {
+    _mediaRenewal?.cancel();
+    _mediaRenewal = Timer(
+      Duration(seconds: (seconds ~/ 2).clamp(1, 240)),
+      () async {
+        try {
+          final ttl = await ref
+              .read(authenticatedHttpClientProvider)
+              .prepareMediaSession();
+          if (mounted && ttl != null) _renewMediaAfter(ttl);
+        } catch (_) {
+          if (mounted) {
+            setState(
+              () => _loadError =
+                  'Playback session expired. Close this preview and sign in again.',
+            );
+          }
+        }
+      },
+    );
+  }
+
   Future<void> _loadFile() async {
     setState(() {
       _isLoading = true;
@@ -175,7 +249,25 @@ class _UniversalFileViewerDialogState
     });
     try {
       final client = ref.read(authenticatedHttpClientProvider);
-      final bytes = await client.fetchAuthenticatedFile(widget.fileUrl!);
+      if (_category == FileCategory.video || _category == FileCategory.audio) {
+        final ttl = await client.prepareMediaSession();
+        if (!mounted) return;
+        if (ttl != null) {
+          final url = ApiConfig.authenticatedMediaUrl(widget.fileUrl!);
+          if (Uri.parse(url).origin != Uri.base.origin) {
+            throw Exception(
+              'Progressive playback requires the same browser origin.',
+            );
+          }
+          _registerStream(url);
+          _renewMediaAfter(ttl);
+          setState(() => _isLoading = false);
+          return;
+        }
+      }
+      final bytes = await client
+          .fetchAuthenticatedFile(widget.fileUrl!)
+          .timeout(const Duration(minutes: 2));
       if (!mounted) return;
       _initBytes(Uint8List.fromList(bytes));
       setState(() {
@@ -192,6 +284,13 @@ class _UniversalFileViewerDialogState
 
   @override
   void dispose() {
+    _mediaRenewal?.cancel();
+    for (final subscription in _mediaSubscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _media?.pause();
+    _media?.removeAttribute('src');
+    _media?.load();
     _focusNode.dispose();
     _imageTransformCtrl.dispose();
     if (_blobUrl != null) {
@@ -201,6 +300,14 @@ class _UniversalFileViewerDialogState
   }
 
   void _downloadFile() {
+    if (_streamUrl != null) {
+      final anchor = html.AnchorElement(href: _streamUrl!)
+        ..download = widget.fileName;
+      html.document.body?.append(anchor);
+      anchor.click();
+      anchor.remove();
+      return;
+    }
     if (_fileBytes == null) return;
     if (_blobUrl == null) {
       final blob = html.Blob([_fileBytes!], _mimeType);
@@ -221,8 +328,8 @@ class _UniversalFileViewerDialogState
   }
 
   void _openInNewTab() {
-    if (_blobUrl != null) {
-      html.window.open(_blobUrl!, '_blank');
+    if (_streamUrl != null || _blobUrl != null) {
+      html.window.open(_streamUrl ?? _blobUrl!, '_blank');
     }
   }
 
@@ -439,7 +546,8 @@ class _UniversalFileViewerDialogState
                       ),
                     ),
 
-                    if (!_isLoading && _fileBytes != null) ...[
+                    if (!_isLoading &&
+                        (_fileBytes != null || _streamUrl != null)) ...[
                       // Open in New Tab
                       IconButton(
                         icon: Icon(
@@ -564,7 +672,7 @@ class _UniversalFileViewerDialogState
       );
     }
 
-    if (_loadError != null || _fileBytes == null) {
+    if (_loadError != null || (_fileBytes == null && _streamUrl == null)) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -618,6 +726,9 @@ class _UniversalFileViewerDialogState
         return HtmlElementView(viewType: _viewType);
 
       case FileCategory.audio:
+        if (_streamUrl != null) {
+          return HtmlElementView(viewType: _viewType);
+        }
         return UniversalAudioPlayerCard(
           fileName: widget.fileName,
           fileSizeBytes: _fileBytes!.length,

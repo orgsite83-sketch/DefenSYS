@@ -18,7 +18,9 @@ import '../session/guest_session.dart';
 import 'jwt_utils.dart';
 import 'terms_acceptance.dart';
 
-final authProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
+final authProvider = NotifierProvider<AuthNotifier, AuthState>(
+  AuthNotifier.new,
+);
 
 class AuthState {
   final bool isLoading;
@@ -90,11 +92,19 @@ class AuthNotifier extends Notifier<AuthState> {
         final guest = jsonDecode(guestJson) as Map;
         final token = guest['access'] as String;
         final user = Map<String, dynamic>.from(guest['user'] as Map);
-        if (user['role'] == 'guest_panelist' && !shouldRefreshAccess(token, withinSeconds: 0)) {
-          state = AuthState(token: token, user: user, isRestoring: false, sessionRestored: true);
+        if (user['role'] == 'guest_panelist' &&
+            !shouldRefreshAccess(token, withinSeconds: 0)) {
+          state = AuthState(
+            token: token,
+            user: user,
+            isRestoring: false,
+            sessionRestored: true,
+          );
           return;
         }
-      } catch (_) { /* Return to code entry when stored access is invalid. */ }
+      } catch (_) {
+        /* Return to code entry when stored access is invalid. */
+      }
       clearGuestSession();
     }
     if (isGuestPortalLocation() || isGuestPortalSession()) {
@@ -119,7 +129,9 @@ class AuthNotifier extends Notifier<AuthState> {
         savedUserJson != null &&
         savedUserJson.isNotEmpty) {
       try {
-        final user = Map<String, dynamic>.from(jsonDecode(savedUserJson) as Map);
+        final user = Map<String, dynamic>.from(
+          jsonDecode(savedUserJson) as Map,
+        );
         final requiresTerms = !await TermsAcceptance.hasAcceptedCurrentTerms();
         state = state.copyWith(
           isRestoring: false,
@@ -136,7 +148,8 @@ class AuthNotifier extends Notifier<AuthState> {
     }
 
     final ok = await refreshTokens(silent: true);
-    final requiresTerms = ok && !await TermsAcceptance.hasAcceptedCurrentTerms();
+    final requiresTerms =
+        ok && !await TermsAcceptance.hasAcceptedCurrentTerms();
     state = state.copyWith(
       isRestoring: false,
       sessionRestored: ok && state.user != null && state.token != null,
@@ -146,7 +159,11 @@ class AuthNotifier extends Notifier<AuthState> {
 
   /// Guest access is isolated in this browser tab and has no refresh token.
   Future<bool> loginGuest(String code) async {
-    state = state.copyWith(isLoading: true, error: null, clearSessionMessage: true);
+    state = state.copyWith(
+      isLoading: true,
+      error: null,
+      clearSessionMessage: true,
+    );
 
     try {
       final response = await apiHttpClient.post(
@@ -169,14 +186,20 @@ class AuthNotifier extends Notifier<AuthState> {
 
       final data = _decodeJsonMap(response.body);
       if (data == null) {
-        state = state.copyWith(isLoading: false, error: 'Invalid guest login response.');
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Invalid guest login response.',
+        );
         return false;
       }
 
       final access = data['access'] as String?;
       final userRaw = data['user'];
       if (access == null || userRaw is! Map) {
-        state = state.copyWith(isLoading: false, error: 'Guest login response missing token.');
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Guest login response missing token.',
+        );
         return false;
       }
 
@@ -208,7 +231,11 @@ class AuthNotifier extends Notifier<AuthState> {
     String password, {
     bool rememberMe = false,
   }) async {
-    state = state.copyWith(isLoading: true, error: null, clearSessionMessage: true);
+    state = state.copyWith(
+      isLoading: true,
+      error: null,
+      clearSessionMessage: true,
+    );
 
     try {
       final response = await apiHttpClient.post(
@@ -222,7 +249,10 @@ class AuthNotifier extends Notifier<AuthState> {
       );
 
       if (response.statusCode != 200) {
-        state = state.copyWith(isLoading: false, error: _loginErrorMessage(response));
+        state = state.copyWith(
+          isLoading: false,
+          error: _loginErrorMessage(response),
+        );
         return false;
       }
 
@@ -355,7 +385,9 @@ class AuthNotifier extends Notifier<AuthState> {
         final fallbackJson = await storage.readUserJson();
         if (fallbackJson != null) {
           try {
-            final user = Map<String, dynamic>.from(jsonDecode(fallbackJson) as Map);
+            final user = Map<String, dynamic>.from(
+              jsonDecode(fallbackJson) as Map,
+            );
             state = state.copyWith(user: user);
           } catch (_) {}
         }
@@ -364,9 +396,7 @@ class AuthNotifier extends Notifier<AuthState> {
       return true;
     } catch (_) {
       if (!silent) {
-        await handleSessionExpired(
-          reason: SessionExpiredReason.refreshFailed,
-        );
+        await handleSessionExpired(reason: SessionExpiredReason.refreshFailed);
       }
       return false;
     }
@@ -402,10 +432,7 @@ class AuthNotifier extends Notifier<AuthState> {
         : sessionExpiredMessageFor(reason);
     await _clearLocalAuth();
     invalidateSessionProviders(ref);
-    state = AuthState(
-      isRestoring: false,
-      sessionExpiredMessage: message,
-    );
+    state = AuthState(isRestoring: false, sessionExpiredMessage: message);
     _scheduleNavigateToLogin(sessionMessage: message);
   }
 
@@ -413,6 +440,18 @@ class AuthNotifier extends Notifier<AuthState> {
     if (_isLoggingOut) return;
     _isLoggingOut = true;
     try {
+      // The media-only cookie is scoped to /api/media/, so revoke it there.
+      try {
+        final access = await _sessionStorage?.readAccess();
+        await apiHttpClient
+            .delete(
+              Uri.parse('$baseUrl/media/session/'),
+              headers: {if (access != null) 'Authorization': 'Bearer $access'},
+            )
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // The short-lived grant also expires independently of this request.
+      }
       final refresh = await _sessionStorage?.readRefresh();
       if (refresh != null && refresh.isNotEmpty) {
         try {

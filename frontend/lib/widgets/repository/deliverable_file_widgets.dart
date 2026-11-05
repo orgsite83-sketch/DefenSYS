@@ -489,29 +489,44 @@ class DeliverableDetailsActions extends StatelessWidget {
           ),
           if (onReplace != null || onRemove != null) ...[
             const SizedBox(height: 10),
-            Row(
-              children: [
-                if (onReplace != null)
-                  Expanded(
-                    child: ShadButton.outline(
-                      height: 42,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      onPressed: onReplace,
-                      child: Text(replacementLabel),
-                    ),
-                  ),
-                if (onReplace != null && onRemove != null)
-                  const SizedBox(width: 10),
-                if (onRemove != null)
-                  Expanded(
-                    child: ShadButton.outline(
-                      height: 42,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      onPressed: onRemove,
-                      child: const Text('Remove'),
-                    ),
-                  ),
-              ],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < 380;
+                Widget fit(Widget child) =>
+                    stacked ? child : Expanded(child: child);
+                return Flex(
+                  direction: stacked ? Axis.vertical : Axis.horizontal,
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: stacked
+                      ? CrossAxisAlignment.stretch
+                      : CrossAxisAlignment.center,
+                  children: [
+                    if (onReplace != null)
+                      fit(
+                        ShadButton.outline(
+                          height: 42,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          onPressed: onReplace,
+                          child: Text(replacementLabel),
+                        ),
+                      ),
+                    if (onReplace != null && onRemove != null)
+                      SizedBox(
+                        width: stacked ? 0 : 10,
+                        height: stacked ? 10 : 0,
+                      ),
+                    if (onRemove != null)
+                      fit(
+                        ShadButton.outline(
+                          height: 42,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          onPressed: onRemove,
+                          child: const Text('Remove'),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ],
         ],
@@ -526,6 +541,7 @@ Future<void> showDeliverableFileDetails({
   required String stageLabel,
   required Map<String, dynamic> file,
   required String status,
+  List<dynamic> history = const [],
   String? uploader,
   Future<void> Function()? onReplace,
   Future<void> Function()? onRemove,
@@ -534,6 +550,24 @@ Future<void> showDeliverableFileDetails({
   final name = '${file['file_name'] ?? 'Document'}';
   final format = DeliverableFormatInfo.fromFileName(name);
   final submitted = DateTime.tryParse('${file['uploaded_at'] ?? ''}');
+  // A requirement can contain several document slots. Never mix their histories.
+  final previous =
+      history
+          .whereType<Map>()
+          .where(
+            (entry) =>
+                entry['is_current'] != true &&
+                entry['id'] != file['id'] &&
+                (entry['slot_key'] ?? 'primary') ==
+                    (file['slot_key'] ?? 'primary'),
+          )
+          .map((entry) => Map<String, dynamic>.from(entry))
+          .toList()
+        ..sort(
+          (a, b) => ((b['revision'] as num?) ?? 0).compareTo(
+            (a['revision'] as num?) ?? 0,
+          ),
+        );
   final properties = <String, String>{
     'Type': format.label,
     programTrack(scope: programScope) == ProgramTrack.pit ? 'Event' : 'Stage':
@@ -621,6 +655,48 @@ Future<void> showDeliverableFileDetails({
             style: TextStyle(
               fontSize: 12,
               color: DefensysTokens.textPrimaryOf(sheetContext),
+            ),
+          ),
+        ],
+        if (previous.isNotEmpty) ...[
+          const Divider(height: 24),
+          DefensysShadcnScope(
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: Text(
+                'Previous versions (${previous.length})',
+                style: DefensysTokens.tableCell,
+              ),
+              children: [
+                for (final version in previous)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${version['file_name'] ?? 'Document'}',
+                            style: DefensysTokens.caption,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ShadButton.outline(
+                          size: ShadButtonSize.sm,
+                          onPressed: () => showDeliverableFileDetails(
+                            context: sheetContext,
+                            label: label,
+                            stageLabel: stageLabel,
+                            programScope: programScope,
+                            file: version,
+                            status: 'Previous version',
+                            uploader: version['uploaded_by_name']?.toString(),
+                          ),
+                          child: Text('Revision ${version['revision'] ?? 1}'),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
         ],

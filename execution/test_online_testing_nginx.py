@@ -8,6 +8,16 @@ from execution.configure_testing_nginx import challenge_config, https_config, ve
 
 
 class NginxIsolationTests(unittest.TestCase):
+    def test_protected_delivery_is_internal_and_only_enabled_for_usertest(self):
+        template = (Path(__file__).resolve().parents[1] / 'deployment/nginx/releases.conf').read_text()
+        text = https_config(template, '/home/defensys/defensys-environments/usertest/backend/media')
+        self.assertEqual(text.count('location ^~ /_protected_usertest_media/'), 1)
+        self.assertIn('internal;', text)
+        self.assertIn('disable_symlinks on;', text)
+        self.assertIn('max_ranges 1;', text)
+        self.assertNotIn('/_protected_usertest_media/', text.split('server_name client-test.defensys.site;')[1])
+        with self.assertRaises(ValueError):
+            https_config(template, '/tmp/root; injected')
     def test_probe_retries_a_reload_404_and_checks_the_exact_response(self):
         opener = MagicMock()
         response = MagicMock()

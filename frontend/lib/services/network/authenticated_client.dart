@@ -219,11 +219,26 @@ class AuthenticatedHttpClient {
   /// Fetches file bytes from [fileRef] via the authenticated media proxy.
   Future<Uint8List> fetchAuthenticatedFile(String fileRef) async {
     final url = ApiConfig.authenticatedMediaUrl(fileRef);
-    final response = await get(Uri.parse(url));
+    final response = await get(
+      Uri.parse(url),
+    ).timeout(const Duration(minutes: 2));
     if (response.statusCode != 200) {
       throw Exception('Failed to load file (${response.statusCode})');
     }
     return response.bodyBytes;
+  }
+
+  /// Same-origin HTML media uses a short-lived HttpOnly grant, never a URL JWT.
+  /// Null means the server has not enabled progressive playback yet.
+  Future<int?> prepareMediaSession() async {
+    final response = await post(
+      Uri.parse('${ApiConfig.baseUrl}/media/session/'),
+    ).timeout(const Duration(seconds: 20));
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) {
+      throw Exception('Could not authorize playback (${response.statusCode}).');
+    }
+    return (jsonDecode(response.body) as Map)['expires_in'] as int;
   }
 
   Future<http.StreamedResponse> sendAuthenticated(
