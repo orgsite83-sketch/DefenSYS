@@ -7,6 +7,7 @@ import '../../../../models/repository_library.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../theme/program_colors.dart';
 import '../../../../widgets/repository/library_components.dart';
+import '../../../../widgets/repository/library_media_preview.dart';
 import '../../../../widgets/repository/library_discovery.dart';
 import '../../../../services/repository_review_provider.dart';
 import '../../../../services/repository_provider.dart';
@@ -114,8 +115,14 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Project details'),
-        backgroundColor: DefensysTokens.maroon,
-        foregroundColor: Colors.white,
+        backgroundColor: DefensysTokens.surfaceOf(context),
+        foregroundColor: DefensysTokens.textPrimaryOf(context),
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        elevation: 0,
+        shape: Border(
+          bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -223,7 +230,7 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
                       const SizedBox(height: 10),
                       Text(
                         source.previewText,
-                        maxLines: _expanded ? null : 6,
+                        maxLines: _expanded ? null : 3,
                         overflow: _expanded ? null : TextOverflow.ellipsis,
                         style: const TextStyle(height: 1.6),
                       ),
@@ -264,21 +271,25 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
                 ),
                 const SizedBox(height: 10),
                 if (!_loading && _loadError == null)
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final item in deliverables)
-                        LibraryChoiceChip(
-                          label:
-                              '${item.displayLabel(deliverables)} (${item.entries.length})',
-                          selected: item.key == selectedKey,
-                          onSelected: () => setState(() {
-                            _deliverable = item.key;
-                            _fileLimit = 20;
-                          }),
-                        ),
-                    ],
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final item in deliverables)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: LibraryChoiceChip(
+                              label:
+                                  '${item.displayLabel(deliverables)} (${item.entries.length})',
+                              selected: item.key == selectedKey,
+                              onSelected: () => setState(() {
+                                _deliverable = item.key;
+                                _fileLimit = 20;
+                              }),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 const SizedBox(height: 15),
                 if (_loading)
@@ -295,66 +306,33 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
                     message:
                         'Choose another deliverable to explore this project.',
                   )
-                else
-                  ...shown.map(
-                    (file) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Divider(color: DefensysTokens.borderOf(context)),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Icon(
-                                libraryOutputIcon(file),
-                                size: 20,
-                                color: DefensysTokens.textSecondaryOf(context),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  file.fileName,
-                                  style: DefensysTokens.body.copyWith(
-                                    color: colors.onSurface,
-                                  ),
-                                ),
-                              ),
-                              Tooltip(
-                                message: 'Output details',
-                                child: ShadButton.ghost(
-                                  width: 44,
-                                  height: 44,
-                                  padding: EdgeInsets.zero,
-                                  onPressed: () => showRepositoryEntryDetails(
-                                    context,
-                                    ref,
-                                    file,
-                                  ),
-                                  child: const Icon(Icons.more_horiz, size: 18),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Text(
-                            '${file.stage} · Published',
-                            style: DefensysTokens.caption.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          ShadButton.outline(
-                            width: double.infinity,
-                            leading: Icon(libraryOutputIcon(file), size: 17),
-                            onPressed: () =>
-                                openRepositoryEntry(context, ref, file),
-                            child: Text(file.openLabel),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ),
+                else ...[
+                  Text(
+                    selected?.displayLabel(deliverables) ?? 'Materials',
+                    style: DefensysTokens.body.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth >= 600 ? 2 : 1;
+                      final width =
+                          (constraints.maxWidth - (columns - 1) * 16) / columns;
+                      return Wrap(
+                        spacing: 16,
+                        runSpacing: 20,
+                        children: [
+                          for (final file in shown)
+                            SizedBox(
+                              width: width,
+                              child: _materialCard(context, file),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
                 if ((selected?.entries.length ?? 0) > shown.length)
                   ShadButton.outline(
                     onPressed: () => setState(() => _fileLimit += 20),
@@ -365,6 +343,67 @@ class _LibraryProjectScreenState extends ConsumerState<LibraryProjectScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _materialCard(BuildContext context, VaultEntry file) {
+    final colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          button: true,
+          label: '${file.openLabel}: ${file.fileName}',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(7),
+            onTap: () => openRepositoryEntry(context, ref, file),
+            child: SizedBox(
+              height: file.isImage || file.isPdf ? 260 : 190,
+              width: double.infinity,
+              child: LibraryMediaPreview(entry: file),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                file.fileName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: DefensysTokens.body.copyWith(
+                  color: colors.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ShadButton.ghost(
+              width: 44,
+              height: 44,
+              padding: EdgeInsets.zero,
+              onPressed: () => showRepositoryEntryDetails(context, ref, file),
+              child: const Tooltip(
+                message: 'Output details',
+                child: Icon(Icons.more_horiz, size: 18),
+              ),
+            ),
+          ],
+        ),
+        Text(
+          '${file.extension.toUpperCase()} · ${file.stage}',
+          style: DefensysTokens.caption.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ShadButton.outline(
+          width: double.infinity,
+          leading: Icon(libraryOutputIcon(file), size: 17),
+          onPressed: () => openRepositoryEntry(context, ref, file),
+          child: Text(file.openLabel),
+        ),
+      ],
     );
   }
 }

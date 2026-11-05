@@ -97,20 +97,7 @@ class LibraryHero extends StatelessWidget {
                 ],
               );
             }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                copy,
-                const SizedBox(height: 8),
-                const Center(
-                  child: SizedBox(
-                    width: 255,
-                    height: 125,
-                    child: LibraryFormatArtwork(),
-                  ),
-                ),
-              ],
-            );
+            return copy;
           },
         ),
       ],

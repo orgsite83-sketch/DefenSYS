@@ -19,13 +19,35 @@ import 'repository_entry_view.dart';
 
 enum _LibraryView { home, directory, collection }
 
-class RepositoryTab extends ConsumerStatefulWidget {
+// Keep library routes inside the workspace so its header and bottom navigation
+// remain available while reading project details or searching.
+class RepositoryTab extends StatefulWidget {
   const RepositoryTab({super.key});
   @override
-  ConsumerState<RepositoryTab> createState() => _RepositoryTabState();
+  State<RepositoryTab> createState() => _RepositoryNavigatorState();
 }
 
-class _RepositoryTabState extends ConsumerState<RepositoryTab> {
+class _RepositoryNavigatorState extends State<RepositoryTab> {
+  final _navigator = GlobalKey<NavigatorState>();
+
+  @override
+  Widget build(BuildContext context) => NavigatorPopHandler<Object?>(
+    onPopWithResult: (result) => _navigator.currentState!.pop(result),
+    child: Navigator(
+      key: _navigator,
+      onGenerateRoute: (_) =>
+          MaterialPageRoute<void>(builder: (_) => const _RepositoryHome()),
+    ),
+  );
+}
+
+class _RepositoryHome extends ConsumerStatefulWidget {
+  const _RepositoryHome();
+  @override
+  ConsumerState<_RepositoryHome> createState() => _RepositoryTabState();
+}
+
+class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
   final _scroll = ScrollController();
   _LibraryView _view = _LibraryView.home;
   LibraryBrowse _browse = LibraryBrowse.projects;
@@ -119,8 +141,10 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
         builder: (_) => Scaffold(
           appBar: AppBar(
             title: const Text('My reading shelf'),
-            backgroundColor: DefensysTokens.maroon,
-            foregroundColor: Colors.white,
+            backgroundColor: DefensysTokens.surfaceOf(context),
+            foregroundColor: DefensysTokens.textPrimaryOf(context),
+            surfaceTintColor: Colors.transparent,
+            scrolledUnderElevation: 0,
           ),
           body: const SingleChildScrollView(
             padding: EdgeInsets.all(18),
@@ -173,7 +197,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
       context,
       MaterialPageRoute(
         builder: (_) => LibrarySearchScreen(
-          browse: home ? LibraryBrowse.outputs : _browse,
+          browse: home ? LibraryBrowse.projects : _browse,
           type: home ? '' : _type,
           selection: home ? const LibraryFilterSelection() : _selection,
           years: years,
@@ -418,14 +442,44 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     return [
       Row(
         children: [
-          Expanded(child: Text('Explore by topic', style: _sectionStyle)),
+          Expanded(child: Text('Published projects', style: _sectionStyle)),
           ShadButton.ghost(
             onPressed: () => _navigate(_LibraryView.directory),
             child: const Text('Browse all'),
           ),
         ],
       ),
-      const SizedBox(height: 14),
+      const SizedBox(height: 8),
+      LibraryCategoryPicker(
+        value: _type,
+        onChanged: (type) => _collection(type: type),
+      ),
+      const SizedBox(height: 12),
+      if (topics.isNotEmpty)
+        SizedBox(
+          height: 48,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: topics.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 6),
+            itemBuilder: (context, index) {
+              final topic = topics[index];
+              return ShadButton.outline(
+                key: ValueKey('library-topic-${topic.key.id}'),
+                leading: const Icon(Icons.topic_outlined, size: 16),
+                trailing: const Icon(Icons.chevron_right, size: 16),
+                onPressed: () => _collection(subject: topic.key),
+                child: Text(
+                  topic.key.label,
+                  style: DefensysTokens.body.copyWith(
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      const SizedBox(height: 18),
       if (loading && all.isEmpty)
         const LibraryShelfLoading()
       else if (all.isEmpty)
@@ -435,80 +489,19 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
               'Published research will appear here when it becomes available.',
         )
       else
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = constraints.maxWidth < 500
-                ? 1
-                : constraints.maxWidth < 850
-                ? 2
-                : 4;
-            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
-            return Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final topic in topics)
-                  SizedBox(
-                    width: width,
-                    child: ShadButton.outline(
-                      key: ValueKey('library-topic-${topic.key.id}'),
-                      height: 100,
-                      width: width,
-                      expands: true,
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      onPressed: () => _collection(subject: topic.key),
-                      child: SizedBox(
-                        width: width - 32,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              topic.key.label,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: DefensysTokens.body.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: DefensysTokens.textPrimaryOf(context),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              '${topic.value} ${topic.value == 1 ? 'project' : 'projects'}',
-                              style: DefensysTokens.caption.copyWith(
-                                color: DefensysTokens.textSecondaryOf(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-      const SizedBox(height: 28),
-      Row(
-        children: [
-          Expanded(
-            child: Text('Recently added projects', style: _sectionStyle),
-          ),
-          ShadButton.ghost(
-            onPressed: () => _collection(),
-            child: const Text('All projects'),
-          ),
-        ],
-      ),
-      const SizedBox(height: 14),
-      if (projects.isNotEmpty)
         LibraryResults(
           entries: all,
-          projects: projects.take(6).toList(),
+          projects: projects.take(12).toList(),
           grid: true,
           onOpen: _open,
           onProject: _project,
           onDetails: (entry) => showRepositoryEntryDetails(context, ref, entry),
+        ),
+      if (projects.isNotEmpty)
+        ShadButton.outline(
+          width: double.infinity,
+          onPressed: () => _collection(),
+          child: const Text('Browse all projects'),
         ),
     ];
   }

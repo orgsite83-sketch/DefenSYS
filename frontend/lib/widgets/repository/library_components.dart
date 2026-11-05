@@ -59,13 +59,27 @@ class LibraryChoiceChip extends StatelessWidget {
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             onPressed: onSelected,
-            child: Text(label, style: const TextStyle(fontSize: 12)),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontFamily: DefensysTokens.fontFamilyInter,
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
           )
         : ShadButton.ghost(
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             onPressed: onSelected,
-            child: Text(label, style: const TextStyle(fontSize: 12)),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontFamily: DefensysTokens.fontFamilyInter,
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
           ),
   );
 }

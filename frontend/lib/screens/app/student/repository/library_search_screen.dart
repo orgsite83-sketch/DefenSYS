@@ -150,8 +150,10 @@ class _LibrarySearchScreenState extends ConsumerState<LibrarySearchScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Search library'),
-        backgroundColor: DefensysTokens.maroon,
-        foregroundColor: Colors.white,
+        backgroundColor: DefensysTokens.surfaceOf(context),
+        foregroundColor: DefensysTokens.textPrimaryOf(context),
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(18),

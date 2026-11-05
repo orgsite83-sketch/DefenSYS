@@ -215,21 +215,36 @@ void main() {
             child: Scaffold(
               appBar: mobileShell
                   ? AppBar(
-                      backgroundColor: const Color(0xFF7A110A),
-                      leading: const Icon(Icons.menu, color: Colors.white),
+                      backgroundColor: dark
+                          ? DefensysTokens.mistSurface
+                          : DefensysTokens.surface,
+                      leading: const Icon(Icons.menu),
                       title: const DefensysMobileBrand(),
                       actions: const [
                         Padding(
                           padding: EdgeInsets.all(12),
                           child: Icon(
                             Icons.notifications_none,
-                            color: Colors.white,
                           ),
                         ),
                       ],
                     )
                   : null,
               body: child,
+              bottomNavigationBar: mobileShell
+                  ? NavigationBar(
+                      destinations: const [
+                        NavigationDestination(
+                          icon: Icon(Icons.folder),
+                          label: 'Repository',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.person),
+                          label: 'Profile',
+                        ),
+                      ],
+                    )
+                  : null,
             ),
           ),
         ),
@@ -244,6 +259,35 @@ void main() {
     await tester.tap(find.text('Concept Papers'));
     await tester.pumpAndSettle();
   }
+
+  testWidgets(
+    'project navigation keeps workspace bars and returns to the library',
+    (tester) async {
+      await show(tester, mobileShell: true);
+      expect(find.text('Capstone'), findsOneWidget);
+      expect(find.text('PIT Projects'), findsOneWidget);
+      final card = find.byType(LibraryEntryTile).first;
+      await tester.ensureVisible(card);
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.byType(LibraryProjectScreen), findsOneWidget);
+      expect(find.byType(DefensysMobileBrand), findsOneWidget);
+      expect(find.byType(NavigationBar), findsOneWidget);
+      final header = tester.widget<AppBar>(
+        find.descendant(
+          of: find.byType(LibraryProjectScreen),
+          matching: find.byType(AppBar),
+        ),
+      );
+      final context = tester.element(find.byType(LibraryProjectScreen));
+      expect(header.backgroundColor, DefensysTokens.surfaceOf(context));
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LibraryProjectScreen), findsNothing);
+      expect(find.byType(LibraryEntryTile), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'project sections use configured deliverables across file formats',
@@ -326,7 +370,8 @@ void main() {
         for (final label in ['Browse all', 'All projects']) {
           final element = tester.element(find.text(label));
           expect(
-            DefaultTextStyle.of(element).style.color,
+            tester.widget<Text>(find.text(label)).style?.color ??
+                DefaultTextStyle.of(element).style.color,
             DefensysTokens.textPrimaryOf(element),
           );
         }

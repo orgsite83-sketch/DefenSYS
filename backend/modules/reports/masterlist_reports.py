@@ -48,7 +48,7 @@ def report_dataset(payload):
                 columns += [column(f'evaluator_{index}', f'Panel {index + 1} Evaluator', 26),
                             column(f'panel_{index}', f'Panel {index + 1} Score', 18, type='percentage')]
         columns += [column('final', 'Individual Final' if students else 'Team Final', 18, type='percentage'),
-                    column('status', 'Grading Status', 24), column('publication', 'Publication', 18), column('outcome', 'Defense Outcome', 25)]
+                    column('status', 'Grade Status', 24), column('outcome', 'Defense Outcome', 25)]
     rows = []
     for source in payload['rows']:
         result = {'name': source['name'], 'student_number': source['student_number'],
@@ -60,7 +60,7 @@ def report_dataset(payload):
             team = cell['team'] or {}
             result.update(project=team.get('project_title', ''), adviser=team.get('adviser_name') or 'Unassigned',
                           final=_percentage(cell['final_grade']), status=cell['status_label'],
-                          publication=cell['publication_status'].replace('_', ' ').title(), outcome=cell['outcome'])
+                          outcome=cell['outcome'])
             for component, values in cell['components'].items():
                 result[component] = _percentage(values['score'], values['enabled'])
                 result[component + '_weight'] = values['weight']

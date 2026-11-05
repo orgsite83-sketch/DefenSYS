@@ -296,38 +296,39 @@ class LibraryProjectTags extends StatelessWidget {
   const LibraryProjectTags({super.key, required this.entry});
   final VaultEntry entry;
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => Wrap(
+    spacing: 20,
+    runSpacing: 12,
     children: [
       for (final group in LibraryFilterGroup.values)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                group.label,
-                style: DefensysTokens.caption.copyWith(
-                  color: DefensysTokens.textSecondaryOf(context),
+        if ((entry.libraryTags[group.name] ?? []).isNotEmpty)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 280),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  group.label,
+                  style: DefensysTokens.caption.copyWith(
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                (entry.libraryTags[group.name] ?? []).isEmpty
-                    ? 'Not specified'
-                    : entry.libraryTags[group.name]!
-                          .map(
-                            (tag) =>
-                                '${tag.label}${tag.status == 'proposed' ? ' (proposed)' : ''}',
-                          )
-                          .join(' · '),
-                style: DefensysTokens.body.copyWith(
-                  color: DefensysTokens.textPrimaryOf(context),
+                const SizedBox(height: 3),
+                Text(
+                  entry.libraryTags[group.name]!
+                      .map(
+                        (tag) =>
+                            '${tag.label}${tag.status == 'proposed' ? ' (proposed)' : ''}',
+                      )
+                      .join(' · '),
+                  style: DefensysTokens.body.copyWith(
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
     ],
   );
 }

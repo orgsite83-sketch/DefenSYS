@@ -87,7 +87,7 @@ class LibraryMediaPreview extends ConsumerWidget {
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: colors.surfaceContainerLow,
+          color: DefensysTokens.surfaceHigherOf(context),
           borderRadius: BorderRadius.circular(7),
           border: Border.all(color: DefensysTokens.borderOf(context)),
         ),
