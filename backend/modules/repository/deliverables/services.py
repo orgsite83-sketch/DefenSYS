@@ -339,7 +339,7 @@ def team_queryset_for_user(user, *, include_pit_lead=True):
             'memberships__student',
             Prefetch('deliverable_submissions', queryset=DeliverableSubmission.objects.select_related(
                 'uploaded_by', 'reviewed_by',
-            ).defer('extracted_text', 'topics', 'summary', 'classification').prefetch_related('files')),
+            ).defer('extracted_text', 'topics', 'summary', 'classification').prefetch_related('files__uploaded_by')),
         )
     )
 
@@ -1716,7 +1716,7 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
     from .concepts import enabled, get_round
     if enabled(stage):
         get_round(team, stage)
-    store_revision(submission, definition, file=file, file_name=file_name, file_size=file_size,
+    store_revision(submission, definition, file=file, file_name=file_name, file_size=file_size, uploader=user,
         slot_key=slot_key, file_id=file_id, preserve_approval=is_approved_replacement, stage=stage)
     sync_submission(submission, definition, stage)
     from .concepts import invalidate_clearance

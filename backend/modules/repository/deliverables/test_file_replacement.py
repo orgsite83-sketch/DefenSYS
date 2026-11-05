@@ -19,16 +19,56 @@ from student_teams.models import StudentTeam, TeamMembership, TeamStageProgress
 
 
 class ApprovedFileReplacementTests(APITestCase):
+    def test_uploader_migration_only_recovers_unambiguous_single_revision(self):
+        migration = import_module('repository.migrations.0035_deliverable_file_uploader')
+        self.other_submission.uploaded_by = self.admin
+        self.other_submission.save(update_fields=['uploaded_by'])
+        for key in ('one', 'two'):
+            DeliverableSubmissionFile.objects.create(
+                submission=self.other_submission, slot_key=key, file_name=f'{key}.txt')
+        with connection.schema_editor() as editor:
+            migration.recover_single_file_uploaders(apps, editor)
+        self.sub_file.refresh_from_db()
+        self.assertEqual(self.sub_file.uploaded_by_id, self.student.pk)
+        self.assertFalse(self.other_submission.files.exclude(uploaded_by=None).exists())
+
+    def test_each_attachment_and_revision_retains_its_uploader(self):
+        from .documents import store_revision, file_payload
+        from .services import submission_payload
+        definition = {'label': 'Attachments', 'file_format': 'any',
+                      'file_policy': {'mode': 'multiple', 'max_files': 10}}
+        first = store_revision(self.other_submission, definition,
+            file=SimpleUploadedFile('first.txt', b'first'), file_name='first.txt',
+            file_size='5 B', uploader=self.student, slot_key='one')
+        second = store_revision(self.other_submission, definition,
+            file=SimpleUploadedFile('second.txt', b'second'), file_name='second.txt',
+            file_size='6 B', uploader=self.admin, slot_key='two')
+        replacement = store_revision(self.other_submission, definition,
+            file=SimpleUploadedFile('revision.txt', b'revision'), file_name='revision.txt',
+            file_size='8 B', uploader=self.admin, file_id=first.pk)
+        first.refresh_from_db()
+        self.assertFalse(first.is_current)
+        self.assertEqual(file_payload(first)['uploaded_by_name'], self.student.username)
+        self.assertEqual(file_payload(second)['uploaded_by_name'], self.admin.username)
+        self.assertEqual(file_payload(replacement)['uploaded_by_name'], self.admin.username)
+        payload = submission_payload(self.other_submission)
+        self.assertEqual(len(payload['files']), 2)
+        self.assertTrue(all(f['uploaded_by_name'] == self.admin.username for f in payload['files']))
+        self.assertEqual(payload['file_history'][0]['uploaded_by_name'], self.student.username)
+
     def test_preserved_file_history_keeps_its_original_upload_time(self):
         from datetime import timedelta
         from django.utils import timezone
         original_time = timezone.now() - timedelta(days=7)
-        DeliverableSubmissionFile.objects.filter(pk=self.sub_file.pk).update(uploaded_at=original_time)
+        DeliverableSubmissionFile.objects.filter(pk=self.sub_file.pk).update(
+            uploaded_at=original_time, uploaded_by=self.admin)
         self.assertEqual(self.unlock().status_code, 200)
         self.client.force_authenticate(self.student)
         self.assertEqual(self.upload().status_code, 200)
         historical = self.submission.files.get(is_current=False)
         self.assertEqual(historical.uploaded_at, original_time)
+        self.assertEqual(historical.uploaded_by_id, self.admin.pk)
+        self.assertEqual(self.submission.files.get(is_current=True).uploaded_by_id, self.student.pk)
 
     def setUp(self):
         from defense.testing import seed_stage_fixtures

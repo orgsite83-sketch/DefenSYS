@@ -822,13 +822,16 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     final groupGrades = gradesForGroup(state, rowScope, row.label);
     final settings = groupSettingsForKey(state, row.groupKey);
     // Captured hearing policies take precedence over the current stage setup.
-    final showConceptApproval = !isPitRow &&
-        (groupGrades.isNotEmpty
-            ? groupGrades.every((grade) => grade['panel_only_evaluation'] == true)
-            : row.conceptSelectionEnabled);
-    final approvedConceptCount = groupGrades.where((grade) =>
-        grade['verdict'] == 'approved' ||
-        grade['verdict'] == 'approved_with_revisions').length;
+    final showConceptApproval = groupGrades.isNotEmpty
+        ? groupGrades.every((grade) => grade['panel_only_evaluation'] == true)
+        : row.conceptSelectionEnabled;
+    final approvedConceptCount = groupGrades
+        .where(
+          (grade) =>
+              grade['verdict'] == 'approved' ||
+              grade['verdict'] == 'approved_with_revisions',
+        )
+        .length;
     final readyCount = groupGradingReadyTeamCount(
       settings,
       grades: groupGrades,
@@ -845,12 +848,14 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         .length;
     // PIT's switch controls new submissions; closing it preserves progress.
     final peerEnabled =
-        (settings['peer_enabled'] as bool?) ?? (isPitRow ||
-        row.peerGradingEnabled ||
-        capstoneTermPeerEvalEnabled(state));
+        (settings['peer_enabled'] as bool?) ??
+        (isPitRow ||
+            row.peerGradingEnabled ||
+            capstoneTermPeerEvalEnabled(state));
     final adviserEnabled = isPitRow
         ? false
-        : (settings['adviser_enabled'] as bool?) ?? capstoneTermAdviserGradingEnabled(state);
+        : (settings['adviser_enabled'] as bool?) ??
+              capstoneTermAdviserGradingEnabled(state);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -907,29 +912,31 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                 isDark: isDark,
               )
             : _snapshotComponentsTile(
-          panelText: hasTeams
-              ? '$panelCompleteCount/${row.teamCount} done'
-              : 'Required',
-          panelComplete: hasTeams && panelCompleteCount == row.teamCount,
-          adviserText: adviserEnabled
-              ? (hasTeams
-                    ? '$adviserCompleteCount/${row.teamCount} done'
-                    : 'Required')
-              : 'Not required',
-          adviserComplete:
-              adviserEnabled &&
-              hasTeams &&
-              adviserCompleteCount == row.teamCount,
-          peerText: peerEnabled
-              ? (hasTeams
-                    ? '$peerCompleteCount/${row.teamCount} done'
-                    : 'Active')
-              : 'Not required',
-          peerComplete:
-              peerEnabled && hasTeams && peerCompleteCount == row.teamCount,
-          showAdviser: !isPitRow,
-          isDark: isDark,
-        );
+                panelText: hasTeams
+                    ? '$panelCompleteCount/${row.teamCount} done'
+                    : 'Required',
+                panelComplete: hasTeams && panelCompleteCount == row.teamCount,
+                adviserText: adviserEnabled
+                    ? (hasTeams
+                          ? '$adviserCompleteCount/${row.teamCount} done'
+                          : 'Required')
+                    : 'Not required',
+                adviserComplete:
+                    adviserEnabled &&
+                    hasTeams &&
+                    adviserCompleteCount == row.teamCount,
+                peerText: peerEnabled
+                    ? (hasTeams
+                          ? '$peerCompleteCount/${row.teamCount} done'
+                          : 'Active')
+                    : 'Not required',
+                peerComplete:
+                    peerEnabled &&
+                    hasTeams &&
+                    peerCompleteCount == row.teamCount,
+                showAdviser: !isPitRow,
+                isDark: isDark,
+              );
 
         if (isNarrow) {
           return Column(

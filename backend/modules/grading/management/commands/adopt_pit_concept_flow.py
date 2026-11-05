@@ -1,6 +1,8 @@
-"""Preview or explicitly adopt untouched PIT concept hearings; never rewrite scores."""
+"""Adopt reviewed PIT concept hearings; optionally archive/replace private drafts."""
 import json
+import os
 from hashlib import sha256
+from pathlib import Path
 
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
@@ -24,9 +26,20 @@ class Command(BaseCommand):
         parser.add_argument('--apply', action='store_true')
         parser.add_argument('--review-token')
         parser.add_argument('--reason', default='')
+        parser.add_argument('--replace-drafts', action='store_true',
+            help='Explicitly replace unsubmitted drafts after saving a private archive. Submitted scores still block adoption.')
+        parser.add_argument('--draft-archive', type=Path,
+            help='New private JSON archive path; required when applying --replace-drafts.')
 
     def handle(self, *args, **options):
         apply, ids = options['apply'], options['schedule_id']
+        replace_drafts = options['replace_drafts']
+        if replace_drafts and not ids:
+            raise CommandError('Replacing drafts requires explicitly named schedules.')
+        if apply and replace_drafts and not options['draft_archive']:
+            raise CommandError('Replacing drafts requires --draft-archive pointing to a new private file.')
+        if options['draft_archive'] and not replace_drafts:
+            raise CommandError('--draft-archive requires --replace-drafts.')
         if apply and (not options['review_token'] or not options['reason'].strip()):
             raise CommandError('Apply requires the preview review token and an adoption reason.')
         if len(options['reason']) > 5000:
@@ -60,8 +73,22 @@ class Command(BaseCommand):
                 grades = grades.select_for_update(of=('self',))
             grades = list(grades.select_related('team', 'semester', 'schedule'))
             rows = []
+            archived_drafts = []
             for grade in grades:
                 row = adoption_row(grade)
+                drafts = grade.schedule.evaluation_drafts.order_by('pk')
+                if apply:
+                    drafts = drafts.select_for_update()
+                draft_rows = list(drafts.values('id', 'schedule_id', 'panelist_id',
+                    'guest_code_id', 'context_signature', 'submissions', 'updated_at'))
+                row['drafts_to_replace'] = len(draft_rows) if replace_drafts else 0
+                # A legacy team score cannot be reinterpreted as three concept
+                # scores. Only explicitly authorized, unsubmitted drafts can go.
+                if replace_drafts:
+                    row['blockers'] = [b for b in row['blockers']
+                        if b != 'A private evaluation draft already exists']
+                    row['review_context'].append(draft_rows)
+                    archived_drafts.extend(draft_rows)
                 hearing = getattr(grade.schedule, 'concept_round', None)
                 if not hearing:
                     row['blockers'].append('The hearing has no captured concept set')
@@ -93,6 +120,22 @@ class Command(BaseCommand):
                     raise CommandError('Name exactly the schedules included in this preview.')
                 if token != options['review_token'] or any(not row['eligible'] for row in rows):
                     raise CommandError('The review changed or includes existing assessment evidence. Preview again.')
+                if replace_drafts:
+                    archive = options['draft_archive'].expanduser().resolve()
+                    archive.parent.mkdir(parents=True, exist_ok=True)
+                    # Exclusive creation prevents overwriting a recovery file.
+                    # Save before deleting anything; a failed archive aborts DB writes.
+                    try:
+                        descriptor = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+                            json.dump({'event_id': event.pk, 'schedule_ids': ids,
+                                'review_token': token, 'reason': options['reason'],
+                                'created_at': timezone.now().isoformat(), 'drafts': archived_drafts},
+                                stream, indent=2, default=str)
+                            stream.flush()
+                            os.fsync(stream.fileno())
+                    except OSError as exc:
+                        raise CommandError(f'Could not save draft archive; no database changes applied: {exc}') from exc
                 from authentication_access_control.audit import log_high_impact_action
                 from authentication_access_control.models import SystemAuditLog
                 from grading.grades.defense_workflow import audit
@@ -115,8 +158,14 @@ class Command(BaseCommand):
                         revision=F('revision') + 1, updated_at=timezone.now())
                     TeamGrade.objects.filter(pk=grade.pk).update(panel_weight=100, peer_weight=0,
                         adviser_weight=0, updated_at=timezone.now())
+                    if replace_drafts:
+                        grade.schedule.evaluation_drafts.filter(
+                            pk__in=[draft['id'] for draft in archived_drafts]).delete()
                     audit(grade, None, 'defense.pit_concept_policy_adopted', reason=options['reason'],
-                        prior_policy=prior, adopted_policy=policy)
+                        prior_policy=prior, adopted_policy=policy,
+                        replaced_draft_count=next(row['drafts_to_replace'] for row in rows
+                            if row['schedule_id'] == grade.schedule_id),
+                        draft_archive=str(archive) if replace_drafts else None)
             for row in rows:
                 row.pop('review_context')
         self.stdout.write(json.dumps({'read_only': not apply, 'event_id': event.pk,

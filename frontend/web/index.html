@@ -32,6 +32,16 @@
 
   </head>
   <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Old Flutter workers cache the bare bootstrap URL. Use a fresh startup
+    // URL so their fetch handler lets this request reach the server instead.
+    // Keep this key different from "v", which legacy workers strip off.
+    const bootstrap = document.createElement('script');
+    const startupUrl = new URL('flutter_bootstrap.js', document.baseURI);
+    startupUrl.searchParams.set('startup', Date.now().toString());
+    bootstrap.src = startupUrl.href;
+    bootstrap.async = true;
+    document.body.appendChild(bootstrap);
+  </script>
 </body>
 </html>

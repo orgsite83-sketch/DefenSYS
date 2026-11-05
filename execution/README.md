@@ -8,6 +8,8 @@ For copy-and-paste workflow commands, see the [demo automation guide](../AUTOMAT
 
 ## Available Tools
 
+- `prepare_app_release.py`, `publish_app_release.py`, `verify_web_release.py`: Prepare a versioned web release locally, activate its archive on the server, then check the public metadata, cache headers, retirement worker and release routing. See the tracked [phone web-app deployment guide](../deployment/web/README.md) for PowerShell and server commands. Use this flow for production UI updates instead of copying a raw Flutter build.
+
 - `profile_curriculum_reads.py`: Profiles overview, linked-year and project-range explorer responses using an existing admin in a PostgreSQL READ ONLY transaction. Reports cold/warm milliseconds, query counts and response bytes without document text. Run `backend/venv/Scripts/python.exe execution/profile_curriculum_reads.py --output .tmp/curriculum-profile.json`; optional `--scope pit --year-level 2 --academic-year 2026-2027` narrows the workflow. It creates no accounts or academic records and does not refresh stored classifications.
 
 - `setup_sandbox.py`: Create a fresh local `defensys_sandbox` database, apply migrations, and use separate uploads without copying accounts or teams. Existing databases are refused. See [local development setup](../LOCAL_DEVELOPMENT.md). Full recovery backups use the existing `deployment/backup/backup_db.py --full` tool.

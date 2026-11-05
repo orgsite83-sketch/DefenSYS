@@ -58,7 +58,9 @@ def completeness(submission, definition, *, accepted=False, stage=None):
 
 
 def file_payload(f):
+    from .services import display_name
     return {'id': f.pk, 'slot_key': f.slot_key, 'revision': f.revision,
+            'uploaded_by_name': display_name(f.uploaded_by),
             'is_current': f.is_current, 'file_name': f.file_name, 'file_size': f.file_size,
             'file_url': f.file.url if f.file else None, 'uploaded_at': f.uploaded_at.isoformat(),
             'status': f.status, 'feedback': f.feedback, 'title_review_context': f.title_review_context,
@@ -93,7 +95,7 @@ def sync_submission(submission, definition, stage=None):
     submission.save()
 
 
-def store_revision(submission, definition, *, file, file_name, file_size, slot_key='', file_id=None,
+def store_revision(submission, definition, *, file, file_name, file_size, uploader=None, slot_key='', file_id=None,
                    preserve_approval=False, stage=None):
     from .timing import validate_material_file
     from django.core.files.base import ContentFile
@@ -131,6 +133,7 @@ def store_revision(submission, definition, *, file, file_name, file_size, slot_k
         # Preserve the original stored bytes in a separate historical revision.
         row = old[0]
         archive = DeliverableSubmissionFile(submission=submission, slot_key=key, is_current=False,
+            uploaded_by=row.uploaded_by,
             title_review_context=row.title_review_context,
             concept_round_id=row.concept_round_id, selected_concept_key=row.selected_concept_key,
             revision=row.revision, file=row.file, file_name=row.file_name, file_size=row.file_size,
@@ -149,6 +152,7 @@ def store_revision(submission, definition, *, file, file_name, file_size, slot_k
         row = DeliverableSubmissionFile(submission=submission, slot_key=key, revision=revision,
             file_name=file_name.strip(), file_size=(file_size or '').strip(),
             status='accepted' if preserve_approval else 'pending')
+    row.uploaded_by = uploader
     if file is not None:
         row.file = ContentFile(file.read(), name=replacement_file_name(file_name.strip()))
     from defense.document_policy import is_approved_concept

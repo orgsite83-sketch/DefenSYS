@@ -354,17 +354,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         ),
       );
     }
-    final submission = item['submission'] as Map? ?? const {};
-    final latestFile =
-        file != null &&
-        ((submission['files'] as List? ?? const []).length == 1 ||
-            (file['file_url'] != null &&
-                submission['file_url'] == file['file_url'] &&
-                submission['file_name'] == file['file_name']));
-    final uploader =
-        (file?['uploaded_by_name'] ??
-                (latestFile ? submission['uploaded_by_name'] : null))
-            ?.toString();
+    final uploader = file?['uploaded_by_name']?.toString();
     void showDetails() {
       if (file == null) return;
       showDeliverableFileDetails(

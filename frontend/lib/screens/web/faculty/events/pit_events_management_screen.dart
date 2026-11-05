@@ -2560,23 +2560,43 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               ),
                             ),
                             const SizedBox(height: 16),
-                            ConceptSettings(
-                              value: _conceptConfig,
-                              enabled: !isLocked && pitYear.isNotEmpty,
-                              isPit: true,
-                              onChanged: (value) {
-                                setState(() {
-                                  if (_conceptConfig['enabled'] != true && value['enabled'] == true && _sharedDeliverables.isEmpty) {
-                                    _sharedDeliverables = defaultSharedDeliverables();
-                                    ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables,);
-                                    linkNewSharedConceptDefaults(_deliverables, _sharedDeliverables,);
-                                  }
-                                  _conceptConfig = value;
-                                  ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables,);
-                                  if (!_deliverables.contains(_selectedDeliverable,)) _selectedDeliverable = null;
-                                });
-                                _markDirty();
-                              },
+                            DefensysShadcnScope(
+                              child: ShadAccordion<String>(
+                                initialValue: _conceptConfig['enabled'] == true
+                                    ? 'advanced'
+                                    : null,
+                                children: [
+                                  ShadAccordionItem<String>(
+                                    value: 'advanced',
+                                    title: const Text(
+                                      'Advanced options',
+                                      style: TextStyle(
+                                        fontFamily: DefensysTokens.fontFamilyInter,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    child: ConceptSettings(
+                                      value: _conceptConfig,
+                                      enabled: !isLocked && pitYear.isNotEmpty,
+                                      isPit: true,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          if (_conceptConfig['enabled'] != true && value['enabled'] == true && _sharedDeliverables.isEmpty) {
+                                            _sharedDeliverables = defaultSharedDeliverables();
+                                            ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables,);
+                                            linkNewSharedConceptDefaults(_deliverables, _sharedDeliverables,);
+                                          }
+                                          _conceptConfig = value;
+                                          ensureConceptPapers(_deliverables, value, sharedItems: _sharedDeliverables,);
+                                          if (!_deliverables.contains(_selectedDeliverable,)) _selectedDeliverable = null;
+                                        });
+                                        _markDirty();
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),

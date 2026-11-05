@@ -237,6 +237,10 @@ class DeliverableSubmission(models.Model):
 
 
 class DeliverableSubmissionFile(models.Model):
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='uploaded_deliverable_files',
+    )
     title_review_context = models.JSONField(default=dict, blank=True)
     concept_round = models.ForeignKey('repository.ConceptRound', null=True, blank=True,
         on_delete=models.PROTECT, related_name='final_papers')

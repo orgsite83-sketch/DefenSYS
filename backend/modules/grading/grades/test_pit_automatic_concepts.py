@@ -198,6 +198,122 @@ class PitAutomaticConceptTests(APITestCase):
         with self.assertRaises(CommandError):
             self.adoption(apply=True, review_token=report['review_token'], reason='Must refuse evidence')
 
+    def test_inspection_explains_legacy_hearing_without_modifying_it(self):
+        import json
+        from io import StringIO
+        from django.core.management import call_command
+        self.hearing.assessment_policy = {}
+        self.hearing.save(update_fields=['assessment_policy'])
+        output = StringIO()
+        call_command('inspect_pit_concept_flow', schedule_id=[self.hearing.pk], stdout=output)
+        report = json.loads(output.getvalue())
+        row = report['hearings'][0]
+        self.assertTrue(report['read_only'])
+        self.assertEqual(row['grading_mode'], 'single_team_score')
+        self.assertEqual(row['captured_concept_keys'], ['c1', 'c2', 'c3'])
+        self.assertTrue(row['untouched_adoption_candidate'])
+        self.hearing.refresh_from_db()
+        self.assertEqual(self.hearing.assessment_policy, {})
+
+    def legacy_draft(self):
+        from defense.scheduler.models import PanelistEvaluationDraft
+        self.hearing.assessment_policy = {}
+        self.hearing.save(update_fields=['assessment_policy'])
+        return PanelistEvaluationDraft.objects.create(schedule=self.hearing,
+            panelist=self.panelist, context_signature='a' * 64,
+            submissions=[{'concept_key': '', 'criteria_scores': [
+                {'criterion_id': self.panel.criteria.first().pk, 'score': '8'}]}])
+
+    def test_explicit_draft_replacement_archives_original_and_enables_all_concepts(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        draft = self.legacy_draft()
+        self.assertFalse(self.adoption()['hearings'][0]['eligible'])
+        report = self.adoption(replace_drafts=True)
+        self.assertTrue(report['hearings'][0]['eligible'], report)
+        self.assertEqual(report['hearings'][0]['drafts_to_replace'], 1)
+        self.assertTrue(self.hearing.evaluation_drafts.filter(pk=draft.pk).exists())
+        with TemporaryDirectory() as folder:
+            archive = Path(folder) / 'drafts.json'
+            self.adoption(replace_drafts=True, apply=True, draft_archive=archive,
+                review_token=report['review_token'], reason='Replace my test draft')
+            saved = json.loads(archive.read_text())
+            self.assertEqual(saved['drafts'][0]['submissions'], draft.submissions)
+            self.assertEqual(saved['drafts'][0]['panelist_id'], self.panelist.pk)
+        self.assertFalse(self.hearing.evaluation_drafts.exists())
+        self.hearing.refresh_from_db()
+        self.assertTrue(self.hearing.assessment_policy['per_concept'])
+        self.assertEqual(self.hearing.assessment_policy['qualifying_score'], '75')
+        self.assertEqual(self.hearing.concept_round.concepts[0]['key'], 'c1')
+        self.assertEqual(self.grade.panelist_submissions.count(), 0)
+
+    def test_draft_replacement_rejects_a_changed_draft_since_preview(self):
+        from django.core.management.base import CommandError
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        draft = self.legacy_draft()
+        report = self.adoption(replace_drafts=True)
+        draft.submissions[0]['criteria_scores'][0]['score'] = '9'
+        draft.save()
+        with TemporaryDirectory() as folder:
+            archive = Path(folder) / 'drafts.json'
+            with self.assertRaises(CommandError):
+                self.adoption(replace_drafts=True, apply=True, draft_archive=archive,
+                    review_token=report['review_token'], reason='Stale preview must fail')
+            self.assertFalse(archive.exists())
+        self.assertTrue(self.hearing.evaluation_drafts.filter(pk=draft.pk).exists())
+        self.hearing.refresh_from_db()
+        self.assertEqual(self.hearing.assessment_policy, {})
+
+    def test_draft_replacement_does_not_allow_submitted_scores(self):
+        from django.core.management.base import CommandError
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        self.legacy_draft()
+        submit_panelist_grade(self.hearing, self.grade,
+            [{'criterion_id': self.panel.criteria.first().pk, 'score': 8}],
+            panelist=self.panelist)
+        report = self.adoption(replace_drafts=True)
+        self.assertFalse(report['hearings'][0]['eligible'])
+        with TemporaryDirectory() as folder:
+            with self.assertRaises(CommandError):
+                self.adoption(replace_drafts=True, apply=True,
+                    draft_archive=Path(folder) / 'drafts.json',
+                    review_token=report['review_token'], reason='Submitted scores must block')
+        self.assertEqual(self.grade.panelist_submissions.count(), 1)
+
+    def test_draft_replacement_refuses_to_overwrite_archive(self):
+        from django.core.management.base import CommandError
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        draft = self.legacy_draft()
+        report = self.adoption(replace_drafts=True)
+        with TemporaryDirectory() as folder:
+            archive = Path(folder) / 'drafts.json'
+            archive.write_text('existing recovery file')
+            with self.assertRaises(CommandError):
+                self.adoption(replace_drafts=True, apply=True, draft_archive=archive,
+                    review_token=report['review_token'], reason='Must preserve archive')
+            self.assertEqual(archive.read_text(), 'existing recovery file')
+        self.assertTrue(self.hearing.evaluation_drafts.filter(pk=draft.pk).exists())
+        self.hearing.refresh_from_db()
+        self.assertEqual(self.hearing.assessment_policy, {})
+
+    def test_inspection_flags_existing_assessment_instead_of_reinterpreting_it(self):
+        import json
+        from io import StringIO
+        from django.core.management import call_command
+        submit_panelist_grade(self.hearing, self.grade,
+            [{'criterion_id': self.panel.criteria.first().pk, 'score': 8}],
+            panelist=self.panelist, concept_key='c1')
+        output = StringIO()
+        call_command('inspect_pit_concept_flow', schedule_id=[self.hearing.pk], stdout=output)
+        row = json.loads(output.getvalue())['hearings'][0]
+        self.assertEqual(row['submitted_count'], 1)
+        self.assertFalse(row['untouched_adoption_candidate'])
+        self.assertIn('Assessment evidence or a recorded result already exists', row['adoption_blockers'])
+
     def test_full_assignment_payload_preserves_pit_scope_and_per_concept_work(self):
         from defense.scheduler.views import _team_assignment_payload
         self.assertTrue(self.grade.uses_defense_verdict)

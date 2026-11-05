@@ -11,6 +11,7 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/widgets/repository/deliverable_file_widgets.dart';
 import 'package:defensys/widgets/repository/document_group.dart';
+import 'package:defensys/widgets/repository/deliverable_requirement_card.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -245,6 +246,35 @@ Map<String, dynamic> _conceptFiles(List<String?> statuses) => {
 
 void main() {
   setUp(() => FilePicker.platform = _RevisionPicker());
+  testWidgets('second concept file shows its own uploader in details', (
+    tester,
+  ) async {
+    await _surface(tester, const Size(390, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await loadPreviewFonts(force: true);
+    final item = _conceptFiles(['pending', 'pending', null]);
+    final submission = Map<String, dynamic>.from(item['submission'] as Map);
+    item['submission'] = submission;
+    submission['uploaded_by_name'] = 'Latest container uploader';
+    (submission['files'] as List)[1]['uploaded_by_name'] = 'Mara Santos';
+    await pumpDefensysWidget(
+      tester,
+      SingleChildScrollView(
+        child: DocumentGroup(
+          teamId: 7,
+          stageLabel: 'System Concept Pitching',
+          item: item,
+        ),
+      ),
+      overrides: [authProvider.overrideWith(_StudentAuth.new)],
+    );
+    await tester.tap(find.text('AgriPulse_Concept_2.pdf'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mara Santos'), findsOneWidget);
+    expect(find.text('Latest container uploader'), findsNothing);
+    expect(find.text('Not available'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   for (final dark in [false, true]) {
     testWidgets(
       'single-file summary opens the original upload tile in ${dark ? 'dark' : 'light'} mode',
@@ -272,7 +302,7 @@ void main() {
         );
         expect(find.byType(DocumentGroup), findsNothing);
         expect(find.byType(DeliverableUploadTile), findsNothing);
-        await tester.tap(find.text('Manage files'));
+        await tester.tap(find.byType(DeliverableRequirementCard).first);
         await tester.pumpAndSettle();
         expect(find.text('Upload Project poster'), findsOneWidget);
         expect(find.text('PDF'), findsOneWidget);
@@ -316,7 +346,7 @@ void main() {
           ),
         ],
       );
-      await tester.tap(find.text('Manage files'));
+      await tester.tap(find.byType(DeliverableRequirementCard).first);
       await tester.pumpAndSettle();
       expect(find.text('poster.pdf'), findsOneWidget);
       expect(find.textContaining('Add the validation method.'), findsOneWidget);
@@ -452,6 +482,7 @@ void main() {
               'id': 11,
               'slot_key': 'paper',
               'file_name': 'concept.docx',
+              'uploaded_by_name': 'Kyle Pineda',
               'file_size': '121 KB',
               'file_url': '/media/concept.docx',
               'uploaded_at': '2026-10-19T03:17:00Z',
@@ -921,7 +952,7 @@ void main() {
           authProvider.overrideWith(_StudentAuth.new),
         ],
       );
-      await tester.tap(find.text('Manage files'));
+      await tester.tap(find.byType(DeliverableRequirementCard).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('poster.pdf'));
       await tester.pumpAndSettle();

@@ -135,7 +135,7 @@ class DeliverableRequirementCard extends StatelessWidget {
     }
     return DefensysShadcnScope(
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.only(bottom: 8),
         child: Material(
           color: DefensysTokens.surfaceOf(context),
           shape: RoundedRectangleBorder(
@@ -147,163 +147,64 @@ class DeliverableRequirementCard extends StatelessWidget {
             onTap: enabled ? onOpen : null,
             hoverColor: DefensysTokens.surfaceHigherOf(context),
             focusColor: DefensysTokens.surfaceHigherOf(context),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final icon = Container(
-                        padding: const EdgeInsets.all(9),
-                        decoration: BoxDecoration(
-                          color: DefensysTokens.surfaceHigherOf(context),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: DefensysTokens.borderOf(context),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(
+                    weekly
+                        ? Icons.assignment_outlined
+                        : Icons.description_outlined,
+                    size: 20,
+                    color: DefensysTokens.maroonTextOf(context),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${item['label'] ?? item['name'] ?? 'Deliverable'}',
+                          style: DefensysTokens.body.copyWith(
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
-                        child: Icon(
-                          weekly
-                              ? Icons.assignment_outlined
-                              : summary.required > 1
-                              ? Icons.file_copy_outlined
-                              : Icons.description_outlined,
-                          size: 20,
-                          color: DefensysTokens.maroonTextOf(context),
-                        ),
-                      );
-                      final description = Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${item['label'] ?? item['name'] ?? 'Deliverable'}',
-                            style: DefensysTokens.body.copyWith(
-                              fontFamily: DefensysTokens.fontFamilyInter,
-                              fontWeight: FontWeight.w600,
-                              color: DefensysTokens.textPrimaryOf(context),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(metadata, style: style),
-                        ],
-                      );
-                      final status = DeliverableStatusBadge(
-                        label: details,
-                        tone: tone,
-                        maxLines: 3,
-                      );
-                      if (constraints.maxWidth < 360 ||
-                          MediaQuery.textScalerOf(context).scale(1) > 1.15) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                icon,
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Align(
-                                    alignment: Alignment.topRight,
-                                    child: status,
-                                  ),
-                                ),
-                              ],
+                            DeliverableStatusBadge(
+                              label: details,
+                              tone: tone,
+                              maxLines: 3,
                             ),
-                            const SizedBox(height: 12),
-                            description,
-                          ],
-                        );
-                      }
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          icon,
-                          const SizedBox(width: 12),
-                          Expanded(child: description),
-                          const SizedBox(width: 12),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 180),
-                            child: status,
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.surfaceOf(context),
-                    border: Border(
-                      top: BorderSide(color: DefensysTokens.borderOf(context)),
-                    ),
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final progress = Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          DeliverableStatusBadge(
-                            label:
-                                summary.required == 0 ||
-                                    summary.uploaded > summary.required
-                                ? summary.progress
-                                : '${summary.progress} Uploaded',
-                            tone: WorkflowStatusTone.neutral,
-                          ),
-                          if (summary.acceptedFiles > 0) ...[
-                            const SizedBox(height: 6),
                             Text(
-                              '${summary.acceptedFiles} accepted',
+                              summary.required == 0 ||
+                                      summary.uploaded > summary.required
+                                  ? summary.progress
+                                  : '${summary.progress} Uploaded',
                               style: style,
                             ),
+                            if (optional || waived || template)
+                              Text(metadata, style: style),
                           ],
-                        ],
-                      );
-                      final action = ShadButton.outline(
-                        size: ShadButtonSize.sm,
-                        height: 40,
-                        enabled: enabled,
-                        onPressed: enabled ? onOpen : null,
-                        trailing: const Icon(Icons.chevron_right, size: 16),
-                        child: const Text('Manage files'),
-                      );
-                      if (constraints.maxWidth < 320 ||
-                          MediaQuery.textScalerOf(context).scale(1) > 1.15) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            progress,
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: action,
-                            ),
-                          ],
-                        );
-                      }
-                      return Row(
-                        children: [
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: progress,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          action,
-                        ],
-                      );
-                    },
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

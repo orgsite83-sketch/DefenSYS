@@ -36,6 +36,35 @@ policy adoption without manufacturing scores or modifying uploaded files.
 An event with no scheduled grades can also be configured through this preview/apply
 flow without schedule IDs. Do not delete assessments to force eligibility.
 
+  If an existing PIT concept hearing still shows one team rubric instead of
+  separate concept assessments, inspect its saved policy first. From the server's
+  `backend/` directory, run:
+
+  ```bash
+  python manage.py inspect_pit_concept_flow --team-name CodeSprint
+  ```
+
+  This report is read-only (PostgreSQL enforces a read-only transaction). It shows
+  the event/schedule IDs, live cutoff, captured policy, concept keys, submission
+  and draft counts, and initial adoption blockers without exposing draft contents.
+  `single_team_score` with three captured concept keys explains why three files
+  can appear beside only one rubric. A source deployment does not convert that
+  saved hearing. `untouched_adoption_candidate` is a preliminary check; always
+  use the adoption command's full preview and review token before applying.
+  Existing scores/drafts cannot be copied across every concept: one team score
+  does not identify which concept was assessed. Keep that evidence and review
+  the transition rather than clearing it or guessing concept grades. A saved
+  draft is not a submitted panel assessment and cannot unlock an outcome.
+
+  For explicitly authorized test-draft replacement only, add `--replace-drafts`
+  to BOTH preview and apply. The preview binds the exact draft contents and
+  timestamps into its review token. Apply additionally requires `--draft-archive
+  /private/new-file.json`; the command creates this file exclusively with private
+  permissions before removing any drafts. Keep it outside publicly served paths.
+  It still refuses submitted scores, prior attempts and recorded outcomes. A
+  changed draft invalidates the preview. Panelists must close old editors before
+  conversion and reload afterwards to enter fresh per-concept scores.
+
 Run every command in this guide from the **DefenSYS project root**:
 
 ```powershell

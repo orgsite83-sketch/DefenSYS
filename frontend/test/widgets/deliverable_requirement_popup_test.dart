@@ -289,8 +289,8 @@ void main() {
           matching: find.text('0/3 Uploaded'),
         );
         expect(
-          tester.getTopLeft(status).dy,
-          lessThan(tester.getTopLeft(progress).dy),
+          tester.getCenter(status).dy,
+          closeTo(tester.getCenter(progress).dy, 1),
         );
         expect(tester.takeException(), isNull);
         await capturePreview(
@@ -359,21 +359,13 @@ void main() {
       findsOneWidget,
     );
     final card = find.byKey(const ValueKey('student-requirement-FORM'));
-    expect(
-      tester
-          .getTopLeft(
-            find.descendant(of: card, matching: find.text('Accepted')),
-          )
-          .dy,
-      lessThan(
-        tester
-            .getTopLeft(
-              find.descendant(of: card, matching: find.text('1/1 Uploaded')),
-            )
-            .dy,
-      ),
+    expect(tester.getSize(card).height, lessThan(120));
+    await capturePreview(
+      tester,
+      card,
+      'deliverable-accepted-status-top',
+      viewport: true,
     );
-    await capturePreview(tester, card, 'deliverable-accepted-status-top', viewport: true);
     expect(tester.takeException(), isNull);
   });
 
@@ -462,13 +454,18 @@ void main() {
     );
     expect(find.byType(DeliverableUploadTile), findsNothing);
     expect(find.text('0/2 Uploaded'), findsOneWidget);
-    await tester.tap(find.text('Manage files'));
+    await tester.tap(find.text('Shared documents'));
     await tester.pumpAndSettle();
     expect(find.byType(DeliverableUploadTile), findsNWidgets(2));
     final uploadButtons = tester
         .widgetList<ShadButton>(find.widgetWithText(ShadButton, 'Upload'))
         .toList();
-    expect(uploadButtons.map((button) => button.enabled), [false, true]);
+    expect(uploadButtons.map((button) => button.enabled), [true]);
+    expect(
+      tester.widgetList<DeliverableUploadTile>(find.byType(DeliverableUploadTile))
+          .map((tile) => tile.showUpload),
+      [false, true],
+    );
     expect(tester.takeException(), isNull);
   });
 

@@ -412,6 +412,10 @@ void main() {
     expect(find.text('Project requirement'), findsNothing);
     expect(find.text('Existing projects allowed'), findsNothing);
     expect(find.text('New projects required'), findsNothing);
+    expect(find.byType(ConceptSettings), findsNothing);
+    await tester.ensureVisible(find.text('Advanced options'));
+    await tester.tap(find.text('Advanced options'));
+    await tester.pumpAndSettle();
     expect(find.byType(ConceptSettings), findsOneWidget);
     await tester.tap(find.text('Save Changes'));
     await tester.pumpAndSettle();
@@ -481,6 +485,10 @@ void main() {
         of: find.byType(ConceptSettings),
         matching: find.byType(ShadCheckbox),
       );
+      expect(conceptToggle.hitTestable(), findsNothing);
+      await tester.ensureVisible(find.text('Advanced options'));
+      await tester.tap(find.text('Advanced options'));
+      await tester.pumpAndSettle();
       await Scrollable.ensureVisible(tester.element(conceptToggle), alignment: 0.5,);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Concept selection'));

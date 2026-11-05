@@ -31,6 +31,7 @@ class ReleaseTests(unittest.TestCase):
             path.write_text('{}')
         (self.artifact / 'flutter_service_worker.js').write_bytes((ROOT / 'deployment/web/retire_flutter_service_worker.js').read_bytes())
         (self.artifact / 'flutter_bootstrap.js').write_text(f'entrypointBaseUrl assetBase /releases/web/{release_id}/')
+        (self.artifact / 'index.html').write_text("searchParams.set('startup', Date.now())")
         return {'schema_version': 1, 'platform': 'web', 'release': {
             'release_id': release_id, 'version': '1.0.1', 'build': build}}
 
@@ -43,6 +44,12 @@ class ReleaseTests(unittest.TestCase):
         self.web_record()
         (self.artifact / 'flutter_service_worker.js').write_text('old cache-first worker')
         with self.assertRaises(ValueError):
+            verify_web(self.artifact)
+
+    def test_release_rejects_startup_that_can_be_served_from_legacy_cache(self):
+        self.web_record()
+        (self.artifact / 'index.html').write_text('<script src="flutter_bootstrap.js"></script>')
+        with self.assertRaisesRegex(ValueError, 'cached legacy bootstrap'):
             verify_web(self.artifact)
 
     def test_traversal_and_links_are_rejected_before_extraction(self):

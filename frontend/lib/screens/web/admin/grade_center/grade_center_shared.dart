@@ -2774,6 +2774,8 @@ List<CapstoneStageRow> buildPitStageRows({
         teamCount: teamCount,
         isOfficiallyComplete: isComplete,
         peerGradingEnabled: peerEnabled,
+        conceptSelectionEnabled:
+            (ev['concept_config'] as Map?)?['enabled'] == true,
         workflowStatus: capstoneStageWorkflowStatus(
           isOfficiallyComplete: isComplete,
           teamCount: teamCount,
@@ -2840,6 +2842,7 @@ List<CapstoneStageRow> buildAllStageRows({
         peerGradingEnabled: row.peerGradingEnabled,
         workflowStatus: row.workflowStatus,
         groupKey: row.groupKey,
+        conceptSelectionEnabled: row.conceptSelectionEnabled,
       ),
     );
   }
@@ -2854,6 +2857,7 @@ List<CapstoneStageRow> buildAllStageRows({
         peerGradingEnabled: row.peerGradingEnabled,
         workflowStatus: row.workflowStatus,
         groupKey: row.groupKey,
+        conceptSelectionEnabled: row.conceptSelectionEnabled,
       ),
     );
   }

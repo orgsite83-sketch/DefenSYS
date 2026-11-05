@@ -48,6 +48,9 @@ def verify_web(directory):
     bootstrap = (directory / 'flutter_bootstrap.js').read_text(encoding='utf-8')
     if '{{flutter_js}}' in bootstrap or 'entrypointBaseUrl' not in bootstrap or 'assetBase' not in bootstrap:
         raise ValueError('The compiled versioned bootstrap is invalid.')
+    index = (directory / 'index.html').read_text(encoding='utf-8')
+    if "searchParams.set('startup'," not in index:
+        raise ValueError('The startup document cannot bypass a cached legacy bootstrap.')
     worker = (directory / 'flutter_service_worker.js').read_text(encoding='utf-8')
     if worker != (ROOT / 'deployment/web/retire_flutter_service_worker.js').read_text(encoding='utf-8'):
         raise ValueError('The legacy worker retirement script was not packaged.')
@@ -80,7 +83,7 @@ def main():
         f'--dart-define=DEFENSYS_RELEASE_BUILD={args.build}']
     command += [f'--dart-define=DEFENSYS_RELEASE_ORIGIN={args.origin.rstrip("/")}']
     if args.platform == 'web':
-        command += ['--no-wasm-dry-run']
+        command += ['--no-wasm-dry-run', '--pwa-strategy=none']
     else:
         command += [f'--dart-define=DEFENSYS_API_HOST={origin.netloc}', f'--dart-define=GUEST_PORTAL_URL={args.origin}']
     subprocess.run(command, cwd=ROOT / 'frontend', check=True)
@@ -89,6 +92,10 @@ def main():
     files = output / 'artifact'
     files.mkdir()
     if args.platform == 'web':
+        # Also retire the worker in the build directory. Copying build/web by
+        # mistake must never put Flutter's cache-first worker back online.
+        shutil.copyfile(ROOT / 'deployment/web/retire_flutter_service_worker.js',
+                        ROOT / 'frontend/build/web/flutter_service_worker.js')
         shutil.copytree(ROOT / 'frontend/build/web', files, dirs_exist_ok=True)
         shutil.copyfile(ROOT / 'deployment/web/retire_flutter_service_worker.js', files / 'flutter_service_worker.js')
         bootstrap = files / 'flutter_bootstrap.js'
@@ -143,7 +150,9 @@ def main():
     with tarfile.open(archive, 'w:gz') as bundle:
         for name in ('artifact', 'release.json', 'checksums.json'):
             bundle.add(output / name, arcname=name)
-    print(json.dumps({'release_id': release_id, 'archive': str(archive), 'sha256': sha256(archive)}, indent=2))
+    report = {'release_id': release_id, 'archive': str(archive), 'sha256': sha256(archive)}
+    (output / 'deployment.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == '__main__':

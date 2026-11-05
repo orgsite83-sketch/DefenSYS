@@ -4,6 +4,48 @@ import 'package:defensys/screens/web/admin/grade_center_shared.dart';
 import 'package:defensys/services/grade_center_provider.dart';
 
 void main() {
+  test('concept selection policy survives PIT and all-scope row building', () {
+    const events = [
+      {
+        'event_name': 'Research Options',
+        'concept_config': {'enabled': true},
+      },
+      {'event_name': 'Project Expo'},
+    ];
+    final pitRows = buildPitStageRows(
+      state: const GradeCenterState(),
+      pitEvents: events,
+    );
+    expect(
+      pitRows
+          .singleWhere((row) => row.label == 'Research Options')
+          .conceptSelectionEnabled,
+      isTrue,
+    );
+    expect(
+      pitRows
+          .singleWhere((row) => row.label == 'Project Expo')
+          .conceptSelectionEnabled,
+      isFalse,
+    );
+    final allRows = buildAllStageRows(
+      state: const GradeCenterState(),
+      defenseStages: const [
+        {
+          'label': 'Concept Proposal',
+          'concept_config': {'enabled': true},
+        },
+      ],
+      pitEvents: events,
+    );
+    expect(
+      allRows
+          .where((row) => row.conceptSelectionEnabled)
+          .map((row) => row.label),
+      ['Concept Proposal', 'Research Options'],
+    );
+  });
+
   test('buildCapstoneStageRows merges defense stages with grade counts', () {
     const state = GradeCenterState(
       grades: [
@@ -85,11 +127,7 @@ void main() {
     final rows = buildCapstoneStageRows(
       state: state,
       defenseStages: [
-        {
-          'label': 'Concept Proposal',
-          'display_order': 1,
-          'is_active': true,
-        },
+        {'label': 'Concept Proposal', 'display_order': 1, 'is_active': true},
       ],
     );
 
