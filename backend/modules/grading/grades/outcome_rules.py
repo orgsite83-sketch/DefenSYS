@@ -16,10 +16,22 @@ def capture_policy(schedule):
         config = get_pit_event_config(schedule.semester, schedule.event_name,
                                       year_level=schedule.team.year_level)
         if concept_stage(config):
-            # PIT retains its existing concept-decision workflow. Only the
-            # evaluation roles and weights are captured here.
-            return {'evaluation_mode': PANEL_ONLY_CONCEPT,
-                    'weights': effective_pit_weights(config)}
+            # Only configured concept events opt in. Normal PIT events retain
+            # their existing independent numeric grading policy.
+            policy = {'evaluation_mode': PANEL_ONLY_CONCEPT,
+                      'weights': effective_pit_weights(config)}
+            cutoff = config.concept_config.get('qualifying_score')
+            if cutoff is not None:
+                rubric = schedule.rubric
+                policy.update(version=1, automatic_outcomes=True, per_concept=True,
+                    qualifying_score=str(cutoff), repeat_files_version=1,
+                    shared_module_scope_version=1, score_carryover='reassess',
+                    rubric_id=rubric.pk if rubric else None,
+                    target_type=rubric.target_type if rubric else 'team',
+                    criteria=[{'id': c.pk, 'name': c.name, 'max_score': str(c.max_score),
+                        'weight': str(c.weight) if c.weight is not None else None,
+                        'target_type': c.target_type} for c in rubric.criteria.all()] if rubric else [])
+            return policy
         return {}
     if schedule.scope != 'capstone' or not schedule.defense_stage_id:
         return {}

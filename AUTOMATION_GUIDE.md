@@ -13,6 +13,29 @@ The first-year examples use **System Concept Pitching** and the existing sample 
 
 ## 1. Start here
 
+### PIT Concept Selection rollout
+
+Normal PIT events keep their existing grading flow. Concept Selection events now
+configure **Panel qualifying score** under **Grading & Rubrics**. The selected
+concept supplies the team grade; a nonqualifying concept set requires another
+hearing within that event. This does not create a prerequisite between PIT events.
+
+Deploy the backend and rebuild/deploy the frontend together. No database schema
+migration is needed: the cutoff is stored in the existing event concept settings.
+Existing hearings retain their captured policy. To adopt an untouched hearing,
+run `backend/manage.py adopt_pit_concept_flow --help` using the backend Python.
+The command requires `--event-id` and `--qualifying-score`; its default is a
+read-only preview. Get the event ID from the PIT event-config API response.
+
+For existing hearings, preview the selected `--schedule-id` values, then repeat
+the exact event, cutoff and schedule arguments with `--apply`, the returned
+`--review-token`, and `--reason`. Re-run the preview whenever the selection changes.
+The command refuses existing grades, submissions, drafts, recorded decisions,
+historical/completed contexts and stale reviews. It audits configuration and
+policy adoption without manufacturing scores or modifying uploaded files.
+An event with no scheduled grades can also be configured through this preview/apply
+flow without schedule IDs. Do not delete assessments to force eligibility.
+
 Run every command in this guide from the **DefenSYS project root**:
 
 ```powershell

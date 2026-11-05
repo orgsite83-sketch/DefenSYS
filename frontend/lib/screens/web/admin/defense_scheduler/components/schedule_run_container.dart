@@ -757,7 +757,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     }
 
     if (widget.scope == 'pit') {
-      if (_validRubricId() == null || _validPeerRubricId() == null) {
+      if (_validRubricId() == null ||
+          (pitScheduleRequiresPeer(widget.state, widget.eventController.text) &&
+              _validPeerRubricId() == null)) {
         showValidationToast(
           context,
           'Please configure event rubrics in the PIT Events Setup tab first.',
@@ -1394,7 +1396,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     }
     final missingPitRubrics = <String>[];
     if (_validRubricId() == null) missingPitRubrics.add('Panel');
-    if (_validPeerRubricId() == null) missingPitRubrics.add('Peer');
+    if (pitScheduleRequiresPeer(state, widget.eventController.text) &&
+        _validPeerRubricId() == null) missingPitRubrics.add('Peer');
 
     final warnings = <Widget>[];
 

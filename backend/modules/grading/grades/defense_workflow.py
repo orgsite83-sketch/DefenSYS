@@ -153,8 +153,8 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
     audit(grade, actor, 'defense.outcome_resolved' if automatic else 'defense.verdict_submitted', verdict=verdict, verdict_remarks=remarks,
           verification_required=grade.redefense_verification_required)
     if automatic:
-        from realtime.broadcast import notify_capstone_evaluation_flags
-        transaction.on_commit(lambda: notify_capstone_evaluation_flags(grade.semester))
+        from .automatic_outcomes import notify_assessment
+        transaction.on_commit(lambda: notify_assessment(grade))
     return grade
 
 

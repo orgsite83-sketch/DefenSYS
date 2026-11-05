@@ -233,7 +233,8 @@ class TeamGrade(models.Model):
 
     @property
     def uses_defense_verdict(self):
-        return self.is_capstone
+        from .outcome_rules import automatic_outcomes
+        return self.is_capstone or automatic_outcomes(self.schedule)
 
     @property
     def result(self):

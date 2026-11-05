@@ -208,7 +208,7 @@ class PitConceptTests(APITestCase):
         self.assertIsNone(grade.panel_score)
         self.assertEqual(len(ConceptRound.objects.get(schedule=first).documents_snapshot[0]['files']), 3)
 
-    def test_peer_retention_policy_preserves_scores_on_repeat_hearing(self):
+    def test_panel_only_repeat_does_not_carry_obsolete_peer_scores(self):
         self.configure(score_carryover='retain')
         self.prepare()
         first = self.schedule()
@@ -219,7 +219,7 @@ class PitConceptTests(APITestCase):
         self.prepare()
         self.schedule(day=1)
         grade.refresh_from_db()
-        self.assertEqual(grade.peer_score, Decimal('86'))
+        self.assertIsNone(grade.peer_score)
 
     def test_acceptance_selects_official_title_and_prevents_another_hearing(self):
         self.prepare()

@@ -8,6 +8,15 @@ from .models import TeamGrade
 from .outcome_rules import automatic_outcomes, hearing_concepts, outcome_payload
 
 
+def notify_assessment(grade):
+    if grade.scope == 'pit':
+        from realtime.broadcast import notify_pit_peer_grading
+        notify_pit_peer_grading(grade.semester, grade.stage_label, peer_eval_enabled=False)
+    else:
+        from realtime.broadcast import notify_capstone_evaluation_flags
+        notify_capstone_evaluation_flags(grade.semester)
+
+
 def recommendations_unavailable_reason(grade, actor):
     from .defense_workflow import is_chair
     from django.utils import timezone
@@ -20,7 +29,8 @@ def recommendations_unavailable_reason(grade, actor):
     from repository.deliverables.models import ConceptRound
     hearing = ConceptRound.objects.filter(schedule_id=grade.schedule_id).first()
     if hearing and ConceptRound.objects.filter(team_id=grade.team_id, project_version=grade.project_version,
-        defense_stage_id=grade.defense_stage_id, number=hearing.number + 1, schedule__isnull=False).exists():
+        defense_stage_id=grade.defense_stage_id, pit_event_config_id=grade.pit_event_config_id,
+        number=hearing.number + 1, schedule__isnull=False).exists():
         return 'The next hearing has started; earlier recommendations are read-only.'
     return ''
 
@@ -109,7 +119,7 @@ def save_recommendations(grade, *, actor, notes, review_token=None):
     from repository.deliverables.models import ConceptRound
     hearing = ConceptRound.objects.filter(schedule_id=grade.schedule_id).first()
     following = ConceptRound.objects.filter(team_id=grade.team_id, project_version=grade.project_version,
-        **({'defense_stage_id': grade.defense_stage_id} if grade.defense_stage_id else {}),
+        defense_stage_id=grade.defense_stage_id, pit_event_config_id=grade.pit_event_config_id,
         number=hearing.number + 1).first() if hearing else None
     notes = notes.strip()
     grade.verdict_remarks = notes
@@ -125,6 +135,5 @@ def save_recommendations(grade, *, actor, notes, review_token=None):
         following.concepts = concepts
         following.save(update_fields=['concepts'])
     audit(grade, actor, 'defense.recommendations_saved', recommendations=notes)
-    from realtime.broadcast import notify_capstone_evaluation_flags
-    transaction.on_commit(lambda: notify_capstone_evaluation_flags(grade.semester))
+    transaction.on_commit(lambda: notify_assessment(grade))
     return grade

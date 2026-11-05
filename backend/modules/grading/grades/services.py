@@ -787,8 +787,8 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
         # Recorded outcomes notify through the shared write path. A complete
         # assessment awaiting a chair/section selection must also refresh staff.
         if not team_grade.verdict and outcome_payload(team_grade)['panel_complete']:
-            from realtime.broadcast import notify_capstone_evaluation_flags
-            transaction.on_commit(lambda: notify_capstone_evaluation_flags(team_grade.semester))
+            from .automatic_outcomes import notify_assessment
+            transaction.on_commit(lambda: notify_assessment(team_grade))
     elif peer_grading_allowed_for_grade(team_grade):
         from realtime.broadcast import notify_team_peer_open
         student_ids = list(team_grade.team.memberships.values_list('student_id', flat=True))

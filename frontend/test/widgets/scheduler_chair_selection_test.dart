@@ -370,6 +370,33 @@ ScheduleSessionDraft _draft(WidgetTester tester, [int index = 0]) => tester
     .draft;
 
 void main() {
+  for (final conceptSelection in [false, true]) {
+    testWidgets('PIT missing peer warning follows concept selection=$conceptSelection', (tester) async {
+      final fixture = _Fixture(initialState: DefenseSchedulerState(
+        faculty: _faculty,
+        panelists: _faculty,
+        pitEvents: [
+          {'event_name': 'Design Expo', 'year_level': '1st Year',
+            'peer_weight': 20, 'concept_config': {'enabled': conceptSelection}},
+        ],
+        rubrics: const [{'id': 10, 'scope': 'pit'}],
+      ))..panelists = {101};
+      await _pump(tester, fixture, scope: 'pit');
+      expect(find.textContaining('missing Peer rubric'),
+          conceptSelection ? findsNothing : findsOneWidget);
+      await _open(tester, find.text('Generate plan'));
+      expect(find.text('Please configure event rubrics in the PIT Events Setup tab first.'),
+          conceptSelection ? findsNothing : findsOneWidget);
+      if (conceptSelection) {
+        expect(find.text('Choose at least one team for your sessions.'), findsOneWidget);
+      }
+      dismissFeedbackToasts();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   setUp(dismissFeedbackToasts);
   tearDown(dismissFeedbackToasts);
   setUpAll(() async {

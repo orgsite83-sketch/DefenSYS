@@ -745,6 +745,15 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
   return ImportNameMatch(message: 'Documenter "$rawName" was not found.');
 }
 
+bool pitScheduleRequiresPeer(DefenseSchedulerState state, String eventName) {
+  final event = state.pitEvents.where((event) =>
+      normalizeName(event['event_name']?.toString() ?? '') ==
+      normalizeName(eventName)).firstOrNull;
+  final concepts = event?['concept_config'];
+  if (concepts is Map && concepts['enabled'] == true) return false;
+  return (asInt(event?['peer_weight']) ?? 20) > 0;
+}
+
 bool capstoneImportRubricsConfigured(
   Map<String, dynamic> stage, {
   required int? panelRubricId,
@@ -908,7 +917,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       if (panelRubricId == null) {
         stageIssues.add('Panel rubric is missing.');
       }
-      if (peerRubricId == null) {
+      if (pitScheduleRequiresPeer(state, eventName) && peerRubricId == null) {
         stageIssues.add('Peer rubric is missing.');
       }
     } else {

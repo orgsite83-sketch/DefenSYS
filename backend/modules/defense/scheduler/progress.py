@@ -21,12 +21,12 @@ def schedule_progress(schedule, *, reconcile_status=True):
         grade = TeamGrade.all_objects.filter(schedule=schedule).select_related('team', 'semester', 'schedule').first()
     history = None if grade else GradeAttemptHistory.objects.filter(schedule=schedule).order_by('-id').first()
     verdict = ''
-    uses_verdict = schedule.scope == 'capstone'
+    from grading.grades.outcome_rules import automatic_outcomes
+    uses_verdict = schedule.scope == 'capstone' or automatic_outcomes(schedule)
     if uses_verdict:
         verdict = grade.verdict if grade else history.verdict if history else ''
     evidence = grade or history
     metadata = evidence.outcome_metadata if evidence else {}
-    from grading.grades.outcome_rules import automatic_outcomes
     concept_retry = False
     if schedule.scope == 'pit':
         from repository.deliverables.models import ConceptRound

@@ -1027,7 +1027,8 @@ def decide(project, actor, decisions, verdict, remarks, *, team_outcomes=None):
             module_verdict, notes = item['verdict'], item.get('remarks', '').strip()
             module_decisions = [{'key': key, 'decision': module_verdict if key == round.selected_key else 'not_selected',
                 'remarks': notes if key == round.selected_key else ''} for key in round_keys(round)]
-            if project.pit_event_config_id:
+            from grading.grades.outcome_rules import automatic_outcomes
+            if project.pit_event_config_id and not automatic_outcomes(grade.schedule):
                 from repository.deliverables.pit_decisions import record_decision
                 current = team_latest_round(schedule.team, project.context)
                 record_decision(schedule.team, project.context, actor, module_decisions,
@@ -1044,7 +1045,11 @@ def decide(project, actor, decisions, verdict, remarks, *, team_outcomes=None):
         for schedule in schedules:
             grade = schedule.grade_records.first()
             decisions = [{'key': key, 'decision': 'rejected', 'remarks': remarks, 'next_action': 'replace'} for key in round_keys(round)]
-            if project.pit_event_config_id:
+            from grading.grades.outcome_rules import automatic_outcomes
+            if automatic_outcomes(grade.schedule):
+                from grading.grades.automatic_outcomes import resolve_outcome
+                resolve_outcome(grade)
+            elif project.pit_event_config_id:
                 from repository.deliverables.pit_decisions import record_decision, review_token
                 current = schedule.concept_round
                 record_decision(schedule.team, project.context, actor, decisions,

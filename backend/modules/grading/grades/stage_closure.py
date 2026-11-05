@@ -34,6 +34,8 @@ def unassessed_teams(semester, config, assessed_team_ids):
 
 
 def eligible_failure(grade):
+    if grade.scope != TeamGrade.SCOPE_CAPSTONE:
+        return False  # PIT concept retries stay within their independent event.
     if not automatic_outcomes(grade.schedule) or grade.verdict != 'for_redefense' or grade.closed_as_failed:
         return False
     if grade.status in TeamGrade.LOCKED_STATUSES or grade.project_version != grade.team.project_version:

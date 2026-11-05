@@ -28,6 +28,7 @@ import '../../admin/defense_stages/widgets/stage_deliverable_overview.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_presets_bar.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_presets.dart';
 import '../../admin/defense_stages/widgets/stage_setup_actions.dart';
+import '../../admin/defense_stages/widgets/stage_outcome_settings.dart';
 
 String? _pitRubricName(
   Map<String, dynamic>? config,
@@ -970,6 +971,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   int _peerWeight = 20;
   bool _peerGradingEnabled = true;
   Map<String, dynamic> _conceptConfig = {};
+  late final TextEditingController _qualifyingScoreController;
 
   List<Map<String, dynamic>> _deliverables = [];
   List<Map<String, dynamic>> _sharedDeliverables = [];
@@ -999,6 +1001,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     if (_panelWeight != initialPanelWeight) return true;
     if (_peerWeight != initialPeerWeight) return true;
     if (_peerGradingEnabled != normInitialPeerGrading) return true;
+    if (_conceptConfig['enabled'] == true && _qualifyingScoreController.text !=
+        ((widget.config?['concept_config'] as Map?)?['qualifying_score']?.toString() ?? '75')) {
+      return true;
+    }
     if (jsonEncode(_conceptConfig) != jsonEncode(widget.config?['concept_config'] ?? {})) return true;
     final initialShared = widget.config?['shared_deliverables'] ??
         ((widget.config?['concept_config'] as Map?)?['enabled'] == true ? defaultSharedDeliverables() : []);
@@ -1092,6 +1098,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     }
     _panelWeightController = TextEditingController(text: _panelWeight.toString(),);
     _peerWeightController = TextEditingController(text: _peerWeight.toString());
+    _qualifyingScoreController = TextEditingController(
+      text: _conceptConfig['qualifying_score']?.toString() ?? '75');
+    _qualifyingScoreController.addListener(_markDirty);
 
     _eventNameController.addListener(_markDirty);
     _eventCodeController.addListener(_markDirty);
@@ -1102,6 +1111,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
   @override
   void dispose() {
+    _qualifyingScoreController.removeListener(_markDirty);
+    _qualifyingScoreController.dispose();
     _eventNameController.removeListener(_markDirty);
     _eventCodeController.removeListener(_markDirty);
     _archiveFileTemplateController.removeListener(_markDirty);
@@ -1217,6 +1228,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   Future<void> _save() async {
     if (ref.read(defenseSchedulerProvider).isSaving || widget.config?['is_locked'] == true) return;
     final eventName = _eventNameController.text.trim();
+    if (_conceptConfig['enabled'] == true &&
+        StageOutcomeSettings.validateScore(_qualifyingScoreController.text) != null) {
+      setState(() => _activeTab = 1);
+      showValidationToast(context, 'Enter a panel qualifying score from 0 to 100%.');
+      return;
+    }
     if (eventName.isEmpty) {
       setState(() => _activeTab = 0);
       showValidationToast(context, 'Please enter an event name.');
@@ -1289,7 +1306,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'panel_weight': _conceptConfig['enabled'] == true ? 100 : _panelWeight,
       'peer_weight': _conceptConfig['enabled'] == true ? 0 : _peerWeight,
       'peer_grading_enabled': _conceptConfig['enabled'] != true && _peerGradingEnabled,
-      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) 'review_policy': 'always',},
+      'concept_config': {..._conceptConfig, if (_conceptConfig['enabled'] == true) ...{
+        'review_policy': 'always',
+        'qualifying_score': double.parse(_qualifyingScoreController.text.trim()),
+      }},
       'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': deliverablesPayload,
       'shared_deliverables': configuredSharedDeliverables(_deliverables, _sharedDeliverables,),
@@ -2594,6 +2614,21 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   onRubricChanged: (value) { setState(() => _peerRubricId = value,); _markDirty(); },),
                               ],
                             ),
+                            if (_conceptConfig['enabled'] == true) ...[
+                              const SizedBox(height: 24),
+                              if (isLocked && _conceptConfig['qualifying_score'] == null)
+                                Text('Existing hearings use the earlier concept assessment rules.',
+                                  style: DefensysTokens.caption.copyWith(
+                                    color: DefensysTokens.textSecondaryOf(context)),)
+                              else StageOutcomeSettings(
+                                scoreController: _qualifyingScoreController,
+                                scoreCarryover: 'reassess',
+                                conceptSelection: true,
+                                enabled: !isLocked && !state.isSaving,
+                                onCarryoverChanged: (_) {},
+                                onChanged: _markDirty,
+                              ),
+                            ],
                             if (_conceptConfig['enabled'] != true) Padding(padding: const EdgeInsets.symmetric(vertical: 24,),
                               child: Divider(height: 1, color: DefensysTokens.borderOf(context),
                                       ),),

@@ -84,6 +84,38 @@ Future<void> _openOutcome(WidgetTester tester) async {
 void main() {
   setUpAll(loadPreviewFonts);
   group('Panelist Chair Verdict & Assignments Tests', () {
+    testWidgets('automatic PIT concepts reuse the qualifying outcome panel within PIT scope', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final team = _chairAssignment(pitConcepts: true, posted: true);
+      team.workflowGrade = {
+        'id': 10, 'scope': 'pit', 'status': 'pending', 'verdict': '',
+        'workflow': {
+          'outcome_rule': {
+            'automatic': true, 'per_concept': true, 'panel_complete': true,
+            'qualifying_score': 75, 'outcome': 'approved', 'review_token': 'pit-reviewed',
+            'assessments': [
+              {'key': 'c1', 'title': 'PIT idea 1', 'score': 80, 'qualifies': true},
+              {'key': 'c2', 'title': 'PIT idea 2', 'score': 90, 'qualifies': true},
+              {'key': 'c3', 'title': 'PIT idea 3', 'score': 60, 'qualifies': false},
+            ],
+          },
+          'concept_workflow': {'enabled': true},
+        },
+      };
+      expect(team.isCapstone, isFalse);
+      expect(team.usesAutomaticOutcomes, isTrue);
+      await pumpDefensysWidget(tester, GradeSheetTab(
+        teams: [team], selectedTeamIndex: 0, onTeamChanged: (_) {}));
+      await _openOutcome(tester);
+      expect(find.byKey(const ValueKey('automatic-assessment-panel')), findsOneWidget);
+      expect(find.text('Panel Chair Concept Selection'), findsNothing);
+      expect(find.text('Confirm concept selection'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     test('chair identity and server verdict permission are separate', () {
       expect(_chairAssignment().isChair, isTrue);
       expect(_chairAssignment().canIssueVerdict, isFalse);

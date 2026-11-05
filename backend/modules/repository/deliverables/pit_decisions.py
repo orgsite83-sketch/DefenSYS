@@ -49,6 +49,9 @@ def review_token(current):
 
 
 def unavailable_reason(team, stage, current):
+    from grading.grades.outcome_rules import automatic_outcomes
+    if current and current.schedule_id and automatic_outcomes(current.schedule):
+        return 'This hearing uses automatic panel outcomes. The assigned chair selects a qualifying concept in the panel workspace.'
     if not team.semester.is_active:
         return 'Historical concept rounds are read-only.'
     if stage.is_officially_complete:
@@ -66,6 +69,9 @@ def unavailable_reason(team, stage, current):
 
 
 def completion_blocker(grade):
+    from grading.grades.outcome_rules import automatic_outcomes
+    if automatic_outcomes(grade.schedule):
+        return ''  # The shared verdict/readiness checks own this hearing.
     if grade.scope != 'pit' or not concepts.enabled(grade.pit_event_config):
         return ''
     current = concepts.latest_round(grade.team, grade.pit_event_config)

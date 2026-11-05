@@ -490,6 +490,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Allow peer evaluation'), findsNothing);
       expect(find.text('Peer'), findsNothing);
+      final qualifyingScore = find.descendant(
+        of: find.byKey(const ValueKey('minimum-qualifying-score')),
+        matching: find.byType(EditableText),
+      );
+      await tester.enterText(qualifyingScore, '80');
       await tester.tap(find.text('3. Deliverables'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Concept Papers').last);
@@ -525,7 +530,7 @@ void main() {
       expect(scheduler.saved?['peer_weight'], 0);
       expect(scheduler.saved?['peer_rubric_id'], isNull);
       expect(scheduler.saved?['peer_grading_enabled'], false);
-      expect(scheduler.saved?['concept_config'], {'required_count': 3, 'enabled': true, 'review_policy': 'always',});
+      expect(scheduler.saved?['concept_config'], {'required_count': 3, 'enabled': true, 'review_policy': 'always', 'qualifying_score': 80.0,});
       expect(
         (scheduler.saved?['deliverables'] as List).where((d) => d['file_policy']['mode'] == 'concepts',),
         hasLength(1),

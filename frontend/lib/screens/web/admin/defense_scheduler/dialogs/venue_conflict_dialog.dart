@@ -1717,7 +1717,9 @@ class ScheduleImportDialog {
     final missingPitRubrics = <String>[];
     if (isPit && eventName.isNotEmpty) {
       if (panelRubricId == null) missingPitRubrics.add('Panel');
-      if (peerRubricId == null) missingPitRubrics.add('Peer');
+      if (pitScheduleRequiresPeer(state, eventName) && peerRubricId == null) {
+        missingPitRubrics.add('Peer');
+      }
     }
     final isPitRubricMissing = missingPitRubrics.isNotEmpty;
 
@@ -1927,7 +1929,7 @@ class ScheduleImportDialog {
                   danger: (peerRubricId == null || peRubricName.isEmpty) && !rubricLoading,
                   success: peerRubricId != null && peRubricName.isNotEmpty && !rubricLoading,
                 ),
-              ] else if (isPit) ...[
+              ] else if (isPit && pitScheduleRequiresPeer(state, eventName)) ...[
                 _importMetric(
                   'Peer rubric',
                   rubricLoading

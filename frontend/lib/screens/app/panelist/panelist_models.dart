@@ -141,7 +141,7 @@ class TeamData {
 
   String get defenseStage => stageName.isNotEmpty ? stageName : eventName;
   bool get isToday => scheduledDate == manilaToday;
-  bool get usesDefenseVerdict => isCapstone;
+  bool get usesDefenseVerdict => isCapstone || usesAutomaticOutcomes;
   bool get usesAutomaticOutcomes => outcomeRule?['automatic'] == true;
   bool get usesConceptWorkspace =>
       assessmentConcepts.isNotEmpty || conceptWorkflow?['enabled'] == true;

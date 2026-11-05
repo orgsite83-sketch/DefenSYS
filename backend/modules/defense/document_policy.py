@@ -131,4 +131,13 @@ def validate_concept_config(value):
         raise ValidationError('Choose a valid re-defense review policy.')
     if value.get('score_carryover', 'reassess') not in ('reassess', 'retain'):
         raise ValidationError('Choose whether repeat attempts require fresh adviser and peer assessments.')
+    if value.get('qualifying_score') is not None:
+        from decimal import Decimal, InvalidOperation
+        try:
+            score = Decimal(str(value['qualifying_score']))
+            if not score.is_finite() or not 0 <= score <= 100 or score.as_tuple().exponent < -2:
+                raise ValueError
+        except (InvalidOperation, ValueError):
+            raise ValidationError('Panel qualifying score must be between 0 and 100 with up to two decimal places.')
+        value = {**value, 'qualifying_score': str(score)}
     return {'required_count': 3, **value, 'review_policy': 'always'} if value.get('enabled') else value

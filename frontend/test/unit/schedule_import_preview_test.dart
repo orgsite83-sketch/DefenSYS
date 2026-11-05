@@ -4,6 +4,26 @@ import 'package:defensys/utils/defense_schedule_import_parser.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/models/schedule_import_models.dart';
 
 void main() {
+  for (final conceptSelection in [false, true]) {
+    test('PIT import peer requirement follows concept selection=$conceptSelection', () {
+      final parsed = parseScheduleImportMatrix([
+        ['Time', 'Team Name', 'Chair Panel'],
+        ['09:00-09:30', 'Team Alpha', 'Jonathan Beltran'],
+      ]);
+      final rows = buildScheduleImportPreviewRows(parsed, DefenseSchedulerState(
+        pitEvents: [
+          {'event_name': 'Concept Selection', 'peer_weight': 20,
+            'concept_config': {'enabled': conceptSelection}},
+        ],
+      ), scope: 'pit', stageId: null, eventName: 'Concept Selection',
+        date: '2026-06-18', room: 'Room 301', fallbackDuration: 30,
+        panelRubricId: 1, adviserRubricId: null, peerRubricId: null,
+        panelWeight: 100, peerWeight: 0);
+      expect(rows.single.stageIssues.contains('Peer rubric is missing.'), !conceptSelection);
+      expect(rows.single.stageIssues.contains('Panel rubric is missing.'), false);
+    });
+  }
+
   group('buildScheduleImportPreviewRows', () {
     const stageId = 10;
     const stageLabel = 'Project Proposal';

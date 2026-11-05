@@ -1130,7 +1130,7 @@ def stage_payload(team, stage_label, evaluator=None):
             'compliance_review_date': stage_grade.compliance_review_date.isoformat() if stage_grade.compliance_review_date else None,
             'attempt_count': stage_grade.attempt_count or 1,
             'is_officially_complete': is_stage_officially_complete,
-            'workflow': workflow_payload(stage_grade) if is_capstone else {},
+            'workflow': workflow_payload(stage_grade) if stage_grade.uses_defense_verdict else {},
         }
 
     actor_can_submit = evaluator is None or can_submit_files(evaluator, team)
