@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../config/api_config.dart';
+import '../../notifications/notifications_provider.dart';
 import '../auth/auth_provider.dart';
 import '../app/dashboard_provider.dart';
 import '../auth/jwt_utils.dart';
@@ -106,6 +107,8 @@ class RealtimeSyncNotifier extends Notifier<RealtimeConnectionState> {
       final data = jsonDecode(text);
       if (data is! Map) return;
       if (data['event'] != 'grading.flags_changed') return;
+
+      ref.read(notificationsProvider('student').notifier).fetchNotifications();
 
       ref.read(dashboardProvider('student').notifier).fetchDashboardData(
             silent: true,

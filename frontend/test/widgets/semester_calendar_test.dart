@@ -1,4 +1,6 @@
 import 'package:defensys/screens/web/admin/academic_periods/widgets/add_semester_dialog.dart';
+import 'package:defensys/screens/web/admin/academic_periods/widgets/semester_calendar_fields.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/shadcn/defensys_workflow_widgets.dart';
@@ -45,6 +47,56 @@ class _Periods extends AcademicPeriodNotifier {
 }
 
 void main() {
+  testWidgets(
+    'Calendar year heading opens shadcn year choices in both themes',
+    (tester) async {
+      await loadPreviewFonts(force: true);
+      for (final dark in [false, true]) {
+        await pumpDefensysWidget(
+          tester,
+          Center(
+            child: SizedBox(
+              width: 520,
+              child: SemesterCalendarFields(
+                start: DateTime(2026, 1, 10),
+                onChanged: (_, _) {},
+              ),
+            ),
+          ),
+          theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+        );
+        await tester.tap(find.byKey(const ValueKey('semester-start-date')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(ShadSelect<int>));
+        await tester.pumpAndSettle();
+        expect(find.text('2027'), findsOneWidget);
+        final yearSelect = tester.element(find.byType(ShadSelect<int>));
+        expect(
+          ShadTheme.of(yearSelect).colorScheme.primary,
+          DefensysTokens.maroon,
+        );
+        await tester.ensureVisible(find.text('2027'));
+        await tester.tap(find.text('2027'));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<ShadSelect<int>>(find.byType(ShadSelect<int>))
+              .initialValue,
+          2027,
+        );
+        await capturePreview(
+          tester,
+          find.byType(ShadCalendar),
+          'semester-year-picker-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpAndSettle();
+      }
+    },
+  );
+
   testWidgets(
     'Shadcn term form validates dates and creates an active term with its calendar',
     (tester) async {

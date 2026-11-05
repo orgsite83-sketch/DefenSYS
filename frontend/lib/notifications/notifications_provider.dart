@@ -85,11 +85,14 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
               !state.isLoading &&
               !state.isLoadingMore &&
               !state.isSaving &&
-              state.notifications.length <= 20 &&
               (WidgetsBinding.instance.lifecycleState == null ||
                   WidgetsBinding.instance.lifecycleState ==
                       AppLifecycleState.resumed)) {
-            fetchNotifications();
+            if (state.notifications.length > 20) {
+              refreshUnreadCount();
+            } else {
+              fetchNotifications();
+            }
           }
         });
       }
@@ -112,6 +115,23 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
 
   bool _current(int epoch, int request) =>
       ref.mounted && epoch == _epoch && request == _request;
+
+  /// Keep the bell live while the user browses older pages without replacing them.
+  Future<void> refreshUnreadCount() async {
+    final epoch = _epoch;
+    final request = _request;
+    try {
+      final response = await _client.get(_uri('', {'page_size': '1'}));
+      if (!_current(epoch, request) || response.statusCode != 200) return;
+      final data = Map<String, dynamic>.from(jsonDecode(response.body));
+      state = state.copyWith(
+        unreadCount: data['unread_count'] as int?,
+        totalCount: data['total_count'] as int?,
+      );
+    } catch (_) {
+      // A background count check leaves the current inbox available for retry.
+    }
+  }
 
   Future<void> fetchNotifications({
     bool? unreadOnly,

@@ -152,6 +152,14 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
     maybe_auto_finalize_passed_grade(grade, user=actor)
     audit(grade, actor, 'defense.outcome_resolved' if automatic else 'defense.verdict_submitted', verdict=verdict, verdict_remarks=remarks,
           verification_required=grade.redefense_verification_required)
+    from notifications.services import notify_team_students
+    notify_team_students(
+        grade.team, title='Defense outcome recorded', category='DEFENSE', sender=actor,
+        message=f'{grade.team.name} ({grade.stage_label}): {grade.get_verdict_display()}.'
+                + (f'\n{remarks}' if remarks else ''),
+        stage_label=grade.stage_label, action_payload={'schedule_id': grade.schedule_id},
+        event_key=f'defense.outcome:{grade.pk}:{grade.schedule_id}',
+    )
     if automatic:
         from .automatic_outcomes import notify_assessment
         transaction.on_commit(lambda: notify_assessment(grade))

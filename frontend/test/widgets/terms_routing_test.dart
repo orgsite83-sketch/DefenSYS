@@ -53,6 +53,18 @@ void main() {
     expect(await TermsAcceptance.hasAcceptedCurrentTerms(), isTrue);
     expect(router.routerDelegate.currentConfiguration.uri.path, AppRoutes.student);
     expect(requests.any((path) => path.contains('/dashboards/student')), isTrue);
+    // Revisit the old agreement entry as browser Back/Forward would.
+    await router.routeInformationProvider.didPushRouteInformation(
+      RouteInformation(uri: Uri.parse(AppRoutes.terms)),
+    );
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, AppRoutes.student);
+    expect(find.text('Agree & Continue'), findsNothing);
+    expect(container.read(authProvider).requiresTerms, isFalse);
+    // A direct visit or reload of the old URL must also skip the agreement.
+    router.go(AppRoutes.terms);
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, AppRoutes.student);
     await tester.pumpWidget(const SizedBox());
   });
 }

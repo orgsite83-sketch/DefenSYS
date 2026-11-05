@@ -588,4 +588,6 @@ def confirm_plan(actor, payload):
         create_invitations(externals, schedules, actor)
     for writer, schedule in initialized:
         writer._sync_grade_row(schedule)
+        from notifications.services import notify_student_defense_schedule
+        notify_student_defense_schedule(schedule)
     return batch

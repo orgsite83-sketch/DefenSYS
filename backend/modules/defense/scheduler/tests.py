@@ -1228,6 +1228,9 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         schedule = DefenseSchedule.objects.get(pk=response.data['schedule']['id'])
         self.assertEqual(schedule.documenter_id, documenter.id)
+        student_alert = Notification.objects.get(recipient=self.student, workspace='student')
+        self.assertEqual(student_alert.title, 'Defense scheduled')
+        self.assertEqual(student_alert.action_payload['schedule_id'], schedule.pk)
         
         notifications = Notification.objects.filter(recipient=documenter)
         self.assertEqual(notifications.count(), 1)

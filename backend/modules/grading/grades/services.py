@@ -790,6 +790,8 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
             from .automatic_outcomes import notify_assessment
             transaction.on_commit(lambda: notify_assessment(team_grade))
     elif peer_grading_allowed_for_grade(team_grade):
+        from notifications.services import notify_student_peer_open
+        notify_student_peer_open(team_grade)
         from realtime.broadcast import notify_team_peer_open
         student_ids = list(team_grade.team.memberships.values_list('student_id', flat=True))
         transaction.on_commit(lambda: notify_team_peer_open(

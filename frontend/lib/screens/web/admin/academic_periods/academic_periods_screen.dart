@@ -12,6 +12,7 @@ import 'semester_detail_screen.dart';
 import 'widgets/academic_cycle_card.dart';
 import 'widgets/semester_transition_dialog.dart';
 import 'widgets/add_semester_dialog.dart';
+import 'widgets/add_school_year_dialog.dart';
 
 class AcademicPeriodsScreen extends ConsumerStatefulWidget {
   const AcademicPeriodsScreen({super.key});
@@ -1102,7 +1103,11 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   Future<void> _showAddYearDialog() async {
     final label = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => const _AddSchoolYearDialog(),
+      builder: (dialogContext) => AddSchoolYearDialog(
+        existingLabels: ref.read(academicPeriodProvider).schoolYears.map(
+          (year) => year['label']?.toString() ?? '',
+        ),
+      ),
     );
 
     if (label == null || label.trim().isEmpty) {
@@ -1390,147 +1395,6 @@ class _ColumnSpec {
   final double flex;
 
   const _ColumnSpec(this.label, this.flex);
-}
-
-class _AddSchoolYearDialog extends StatefulWidget {
-  const _AddSchoolYearDialog();
-
-  @override
-  State<_AddSchoolYearDialog> createState() => _AddSchoolYearDialogState();
-}
-
-class _AddSchoolYearDialogState extends State<_AddSchoolYearDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    Navigator.pop(context, _controller.text.trim());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surfaceColor = isDark ? DefensysTokens.mistSurface : Colors.white;
-    final borderColor = isDark ? DefensysTokens.mistBorder : DefensysTokens.border;
-    final inkColor = isDark ? const Color(0xFFF4F4F5) : DefensysUi.textDark;
-    final mutedColor = isDark ? const Color(0xFFA1A1AA) : DefensysUi.steelGrey;
-    final panelBg = isDark ? const Color(0xFF28272D) : const Color(0xFFF8FAFC);
-
-    return AlertDialog(
-      backgroundColor: surfaceColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: borderColor),
-      ),
-      titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 12),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 22),
-      actionsPadding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF27272A) : const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: borderColor),
-            ),
-            child: Icon(
-              Icons.calendar_month_outlined,
-              size: 18,
-              color: isDark ? DefensysTokens.mistMaroon : DefensysUi.primaryMaroon,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'Add School Year',
-            style: TextStyle(
-              color: inkColor,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Enter the academic year in YYYY-YYYY format (e.g. 2026-2027).',
-              style: TextStyle(
-                color: mutedColor,
-                fontSize: 12.5,
-                height: 1.35,
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              style: TextStyle(color: inkColor, fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'School Year',
-                hintText: '2026-2027',
-                filled: true,
-                fillColor: panelBg,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: borderColor),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: borderColor),
-                ),
-                focusedBorder: const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(8)),
-                  borderSide: BorderSide(color: DefensysUi.primaryMaroon, width: 1.5),
-                ),
-              ),
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _submit(),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        OutlinedButton(
-          onPressed: () => Navigator.pop(context),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: inkColor,
-            side: BorderSide(color: borderColor),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          ),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _submit,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: DefensysUi.primaryMaroon,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-            textStyle: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          child: const Text('Add Year'),
-        ),
-      ],
-    );
-  }
 }
 
 class _EditSchoolYearDialog extends StatefulWidget {

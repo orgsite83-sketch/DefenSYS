@@ -49,6 +49,21 @@ cleans and replaces the database selected in the normal `.env`.
 The older no-argument `backup_db.py` command still makes database-only dumps
 with its existing retention policy. Use `--full` to include files and source.
 
+To use a full backup locally without replacing the current database, preview:
+
+```powershell
+.\backend\venv\Scripts\python.exe execution\restore_local_backup.py .backups\YOUR_BACKUP.zip
+```
+
+Add `--apply` to restore into a new timestamped local database, verify every
+restored table count, apply current migrations, and switch `backend/.env`.
+The previous `.env` and media are preserved under `.backups/before_restore_*`;
+the previous database remains intact. Current source and credentials are not
+replaced by archived configuration. Restart the backend after switching.
+If the matching media already exists locally, use `--reuse-media --apply`:
+every archived media file must pass a SHA-256 check before the existing media
+directory is retained. Additional local media files remain in place.
+
 ## Create a fresh sandbox once
 
 ```powershell

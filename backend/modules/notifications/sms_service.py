@@ -70,7 +70,8 @@ def _send_via_android_gateway(recipient_phone: str, message: str) -> bool:
         gateway_url = f'http://{gateway_url}'
 
     # If base url given (e.g. http://192.168.1.150:8080), append /message
-    if not (gateway_url.endswith('/message') or gateway_url.endswith('/api/v1/sms') or gateway_url.endswith('/send')):
+    gateway_url = gateway_url.rstrip('/')
+    if not (gateway_url.endswith('/message') or gateway_url.endswith('/messages') or gateway_url.endswith('/api/v1/sms') or gateway_url.endswith('/send')):
         gateway_url = f'{gateway_url.rstrip("/")}/message'
 
     username = getattr(settings, 'SMS_GATEWAY_USERNAME', '').strip()
@@ -84,6 +85,14 @@ def _send_via_android_gateway(recipient_phone: str, message: str) -> bool:
 
     auth = (username, password) if (username and password) else None
 
+    # Philippine mobile numbers are stored locally as 09..., but SMS Gate
+    # validates recipients in international (E.164) format.
+    recipient_phone = clean_phone_number(recipient_phone)
+    if re.fullmatch(r'09[0-9]{9}', recipient_phone):
+        recipient_phone = '+63' + recipient_phone[1:]
+    elif re.fullmatch(r'639[0-9]{9}', recipient_phone):
+        recipient_phone = '+' + recipient_phone
+
     # Payload structured to support Capcom6 Android SMS Gateway & Textbee
     payload = {
         'message': message,
@@ -93,6 +102,11 @@ def _send_via_android_gateway(recipient_phone: str, message: str) -> bool:
         'phoneNumber': recipient_phone,
         'text': message,
     }
+    if gateway_url.endswith('/messages'):
+        payload = {
+            'textMessage': {'text': message},
+            'phoneNumbers': [recipient_phone],
+        }
 
     try:
         response = requests.post(gateway_url, json=payload, headers=headers, auth=auth, timeout=10)

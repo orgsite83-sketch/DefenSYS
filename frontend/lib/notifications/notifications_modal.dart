@@ -147,6 +147,7 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
     }
     if (n['category'] == 'SECURITY') return 'View account';
     if (n['category'] == 'MINUTES') return 'Open minutes';
+    if (n['category'] == 'PEER_EVAL') return 'View peer evaluation';
     if (payload is Map && payload['stage_label'] != null) {
       return 'View deliverables';
     }

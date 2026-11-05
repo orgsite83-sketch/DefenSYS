@@ -1151,6 +1151,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         from .operations import join_matching_session
         join_matching_session(schedule)
         self._sync_grade_row(schedule)
+        from notifications.services import notify_student_defense_schedule
+        notify_student_defense_schedule(schedule)
         if schedule.documenter:
             send_documenter_assignment_notification(schedule)
         return schedule
@@ -1671,6 +1673,8 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                     grade=grade,
                     user=actor,
                 )
+            from notifications.services import notify_student_defense_schedule
+            notify_student_defense_schedule(schedule)
             if schedule.documenter:
                 send_documenter_assignment_notification(schedule)
         return schedules

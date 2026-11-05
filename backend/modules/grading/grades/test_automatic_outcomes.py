@@ -32,6 +32,12 @@ class AutomaticConceptOutcomeTests(APITestCase):
         self.assertIsNone(self.grade.verdict_by)
         self.assertEqual(self.grade.outcome_metadata['source'], 'automatic')
         self.assertEqual(ConceptRound.objects.get(schedule=self.capstone_schedule).concepts[1]['decision'], 'approved')
+        from notifications.models import Notification
+        alerts = Notification.objects.filter(workspace='student', title='Defense outcome recorded')
+        self.assertEqual(set(alerts.values_list('recipient_id', flat=True)),
+                         set(self.capstone_team.memberships.values_list('student_id', flat=True)))
+        self.assertTrue(all('Approved' in alert.message for alert in alerts))
+        self.assertFalse(Notification.objects.filter(category='PEER_EVAL').exists())
 
     def test_multiple_qualifying_concepts_require_current_chair_selection(self):
         self.submit([8, 9, 6])

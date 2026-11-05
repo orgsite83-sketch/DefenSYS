@@ -78,6 +78,46 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   }
 
+  testWidgets(
+    'polling updates the student badge after older pages are loaded',
+    (tester) async {
+      client.onGet = (uri) async => _response(
+        items: uri.queryParameters['page'] == '2'
+            ? [
+                {'id': 21, 'is_read': false},
+              ]
+            : List.generate(20, (i) => {'id': i + 1, 'is_read': false}),
+        next: uri.queryParameters['page'] == '2'
+            ? null
+            : 'https://example.com/api/notifications/?page=2',
+      );
+      container.listen(notificationsProvider('student'), (_, _) {});
+      await tester.pump();
+      await container
+          .read(notificationsProvider('student').notifier)
+          .fetchNotifications(loadMore: true);
+      expect(
+        container.read(notificationsProvider('student')).notifications.length,
+        21,
+      );
+      final requests = <Uri>[];
+      client.onGet = (uri) async {
+        requests.add(uri);
+        return _response(unread: 26, total: 31);
+      };
+      await tester.pump(const Duration(seconds: 60));
+      expect(requests.single.queryParameters, {
+        'workspace': 'student',
+        'page_size': '1',
+      });
+      final state = container.read(notificationsProvider('student'));
+      expect(state.unreadCount, 26);
+      expect(state.totalCount, 31);
+      expect(state.notifications.length, 21);
+      container.dispose();
+    },
+  );
+
   test(
     'read response merges authoritative workflow state without mixing inboxes',
     () async {

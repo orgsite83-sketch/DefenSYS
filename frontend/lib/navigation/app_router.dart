@@ -72,6 +72,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         !onGuestEntry) {
       return AppRoutes.terms;
     }
+    // Browser history can revisit the agreement after acceptance. Route through
+    // the normal landing flow so saved workspace preferences still apply.
+    if (location == AppRoutes.terms && !auth.requiresTerms) {
+      return '/';
+    }
     // An invitation link must open its own code even when this browser already
     // has a guest session for another stage/event. Other guest routes remain
     // confined to the evaluation workspace.

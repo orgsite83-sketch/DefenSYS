@@ -66,6 +66,11 @@ class ConceptDocumentTests(APITestCase):
         second = next(f for f in current_files(submission) if f.slot_key == 'c2:paper')
         old_path = second.file.path
         review_submission(self.team, self.stage.label, 'PAPER', 'rejected', 'Clarify the problem statement.', self.adviser, file_id=second.pk)
+        from notifications.models import Notification
+        alert = Notification.objects.get(recipient=self.student, title='Deliverable needs revision')
+        self.assertEqual(alert.workspace, 'student')
+        self.assertIn('Clarify the problem statement.', alert.message)
+        self.assertEqual(alert.action_payload['deliverable_id'], 'PAPER')
         self.upload('c2:paper', 'revised.pdf')
         submission.refresh_from_db()
         self.assertEqual(len(current_files(submission)), 3)

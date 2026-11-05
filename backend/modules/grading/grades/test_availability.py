@@ -120,15 +120,27 @@ class EvaluationAvailabilityTests(APITestCase):
         self.assertEqual(payload['peer_eval_unavailable_reason'], '')
 
     def test_peer_open_refresh_is_sent_only_after_commit_and_last_panel(self):
+        from notifications.models import Notification
         SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=self.second_panelist)
         with patch('realtime.broadcast.notify_team_peer_open') as notify:
             with self.captureOnCommitCallbacks(execute=True):
                 self.panel()
             notify.assert_not_called()
+            self.assertFalse(Notification.objects.filter(category='PEER_EVAL').exists())
             with self.captureOnCommitCallbacks(execute=True):
                 self.panel(self.second_panelist)
             notify.assert_called_once()
             self.assertEqual(set(notify.call_args.kwargs['student_ids']), {self.student.pk, self.second_student.pk})
+            alerts = Notification.objects.filter(category='PEER_EVAL', workspace='student')
+            self.assertEqual(set(alerts.values_list('recipient_id', flat=True)), {self.student.pk, self.second_student.pk})
+            from notifications.services import notify_student_peer_open
+            notify_student_peer_open(self.grade)
+            self.assertEqual(alerts.count(), 2)
+            self.client.force_authenticate(self.student)
+            inbox = self.client.get('/api/notifications/?workspace=student')
+            self.assertEqual(inbox.status_code, 200)
+            self.assertEqual(inbox.data['unread_count'], 1)
+            self.assertIn('stage=', inbox.data['notifications'][0]['action_route'])
 
     def test_done_schedule_still_accepts_remaining_grades(self):
         self.panel()

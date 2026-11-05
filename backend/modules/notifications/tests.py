@@ -131,6 +131,56 @@ class NotificationAPITests(APITestCase):
         self.assertEqual(response.data['count'], 2)
 
 
+class StudentNotificationDeliveryTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from academic_period_management.models import SchoolYear, Semester
+        from student_teams.models import StudentTeam, TeamMembership
+
+        semester = Semester.objects.create(
+            school_year=SchoolYear.objects.create(label='2026-2027'), label=Semester.FIRST)
+        cls.leader = User.objects.create_user(username='alert-leader', role='student')
+        cls.member = User.objects.create_user(username='alert-member', role='student')
+        cls.outsider = User.objects.create_user(username='alert-outsider', role='student')
+        cls.adviser = User.objects.create_user(username='alert-adviser', role='faculty')
+        cls.team = StudentTeam.objects.create(
+            name='Alert team', semester=semester, leader=cls.leader, adviser=cls.adviser,
+            level=StudentTeam.LEVEL_3_CAPSTONE, year_level='3rd Year')
+        # Include the leader in both places, as real teams do.
+        TeamMembership.objects.create(team=cls.team, student=cls.leader, is_leader=True)
+        TeamMembership.objects.create(team=cls.team, student=cls.member)
+
+    def test_team_alert_is_visible_once_per_student_and_retry_preserves_read_state(self):
+        from notifications.services import notify_team_students
+
+        def send():
+            notify_team_students(self.team, title='Defense scheduled', message='New hearing',
+                                 stage_label='Project Proposal', event_key='schedule:test')
+        send()
+        self.assertEqual(set(Notification.objects.values_list('recipient_id', flat=True)),
+                         {self.leader.pk, self.member.pk})
+        self.client.force_authenticate(self.leader)
+        inbox = self.client.get('/api/notifications/?workspace=student')
+        self.assertEqual(inbox.data['unread_count'], 1)
+        alert = inbox.data['notifications'][0]
+        self.assertEqual(alert['action_route'], '/student?stage=Project+Proposal')
+        self.client.post(f'/api/notifications/{alert["id"]}/read/?workspace=student')
+        send()
+        self.assertEqual(Notification.objects.count(), 2)
+        self.assertEqual(self.client.get('/api/notifications/?workspace=student').data['unread_count'], 0)
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.get('/api/notifications/?workspace=student').data['notifications'], [])
+
+    def test_rolled_back_workflow_leaves_no_student_alerts(self):
+        from django.db import transaction
+        from notifications.services import notify_team_students
+
+        with self.assertRaises(RuntimeError), transaction.atomic():
+            notify_team_students(self.team, title='Rolled back', message='Not committed')
+            raise RuntimeError('Workflow failed')
+        self.assertFalse(Notification.objects.exists())
+
+
 class NotificationWorkspaceTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(

@@ -2039,6 +2039,10 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     if definition and definition.get('file_policy'):
         from .documents import sync_submission
         sync_submission(submission, definition, stage)
+    from notifications.services import notify_student_deliverable_review
+    notify_student_deliverable_review(
+        submission, reviewer=reviewer_user, status=status_val, feedback=feedback_val or '',
+    )
     if status_val == DeliverableSubmission.STATUS_REJECTED:
         from .concepts import invalidate_clearance
         invalidate_clearance(team, stage_label, deliverable_id)

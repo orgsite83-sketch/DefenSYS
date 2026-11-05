@@ -4,8 +4,13 @@ import 'package:defensys/theme/defensys_tokens.dart';
 
 /// Neutral shadcn controls that follow the portal's light and dark surfaces.
 class DefensysShadcnScope extends StatelessWidget {
-  const DefensysShadcnScope({super.key, required this.child});
+  const DefensysShadcnScope({
+    super.key,
+    required this.child,
+    this.maroonActions = false,
+  });
   final Widget child;
+  final bool maroonActions;
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +23,18 @@ class DefensysShadcnScope extends StatelessWidget {
         brightness: dark ? Brightness.dark : Brightness.light,
         radius: BorderRadius.circular(DefensysTokens.radiusMd),
         textTheme: ShadTextTheme(family: DefensysTokens.fontFamilyInter),
+        outlineButtonTheme: maroonActions
+            ? ShadButtonTheme(
+                foregroundColor: DefensysTokens.textPrimaryOf(context),
+                hoverForegroundColor: DefensysTokens.textPrimaryOf(context),
+              )
+            : null,
         colorScheme: scheme.copyWith(
+          primary: maroonActions ? DefensysTokens.maroon : scheme.primary,
+          primaryForeground: maroonActions
+              ? Colors.white
+              : scheme.primaryForeground,
+          ring: maroonActions ? DefensysTokens.maroon : scheme.ring,
           background: DefensysTokens.surfaceOf(context),
           foreground: DefensysTokens.textPrimaryOf(context),
           popover: DefensysTokens.surfaceOf(context),

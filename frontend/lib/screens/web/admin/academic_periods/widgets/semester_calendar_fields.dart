@@ -44,6 +44,7 @@ class SemesterCalendarFields extends StatelessWidget {
             enabled: enabled,
             closeOnSelection: true,
             allowDeselection: false,
+            captionLayout: ShadCalendarCaptionLayout.dropdownYears,
             placeholder: const Text('Select date'),
             formatDate: (date) => DateFormat.yMMMd().format(date),
             onChanged: (date) {
@@ -66,20 +67,23 @@ class SemesterCalendarFields extends StatelessWidget {
         ],
       ),
     );
-    return LayoutBuilder(
-      builder: (context, constraints) => constraints.maxWidth < 400
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [field(true), field(false)],
-            )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: field(true)),
-                const SizedBox(width: 16),
-                Expanded(child: field(false)),
-              ],
-            ),
+    return DefensysShadcnScope(
+      maroonActions: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) => constraints.maxWidth < 400
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [field(true), field(false)],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: field(true)),
+                  const SizedBox(width: 16),
+                  Expanded(child: field(false)),
+                ],
+              ),
+      ),
     );
   }
 }

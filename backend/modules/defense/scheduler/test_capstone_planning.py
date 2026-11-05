@@ -161,6 +161,8 @@ class CapstoneWorkspaceTests(APITestCase):
         self.assertEqual(DefenseSchedule.objects.count(), 1)
         self.assertEqual(SchedulePanelist.objects.count(), 4)
         self.assertTrue(DefenseSchedule.objects.get().planning_block_key)
+        from notifications.models import Notification
+        self.assertEqual(Notification.objects.filter(workspace='student', title='Defense scheduled').count(), 1)
 
     def test_stale_preview_and_tampered_token_cannot_write(self):
         self.save_people()

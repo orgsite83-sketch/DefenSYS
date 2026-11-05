@@ -54,6 +54,7 @@ class SchedulePlanSavingTests(APITestCase):
         self.assertEqual(response.data['created_count'], 16)
         self.assertEqual(set(response.data), {'created_count', 'schedule_ids', 'created_invitations'})
         self.assertEqual(len(set(response.data['schedule_ids'])), 16)
+        self.assertEqual(Notification.objects.filter(workspace='student', title='Defense scheduled').count(), 16)
         saved = DefenseSchedule.objects.all()
         self.assertEqual(saved.count(), 16)
         self.assertEqual(saved.values('batch_id').distinct().count(), 1)
@@ -114,6 +115,7 @@ class SchedulePlanSavingTests(APITestCase):
         self.assertEqual(calls, 2)
         self.assertFalse(DefenseSchedule.objects.exists())
         self.assertFalse(SchedulePanelist.objects.exists())
+        self.assertFalse(Notification.objects.filter(workspace='student').exists())
         self.assertFalse(GuestPanelistCode.objects.exists())
         self.assertFalse(TeamGrade.objects.filter(defense_stage=self.stage).exists())
         self.assertFalse(Notification.objects.filter(recipient=documenter,

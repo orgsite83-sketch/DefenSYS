@@ -254,12 +254,16 @@ class PitPeerAvailabilityTests(APITestCase):
         self.assert_closed()
 
     def test_last_panel_refreshes_only_the_team_after_commit(self):
+        from notifications.models import Notification
         with patch('realtime.broadcast.notify_team_peer_open') as notify:
             with self.captureOnCommitCallbacks(execute=True):
                 self.panel_grade(0)
             notify.assert_not_called()
+            self.assertFalse(Notification.objects.filter(category='PEER_EVAL').exists())
             with self.captureOnCommitCallbacks(execute=True):
                 self.panel_grade(1)
             notify.assert_called_once()
             self.assertEqual(notify.call_args.kwargs['scope'], 'pit')
             self.assertEqual(set(notify.call_args.kwargs['student_ids']), {self.student.pk, self.teammate.pk})
+            self.assertEqual(set(Notification.objects.filter(category='PEER_EVAL', workspace='student')
+                .values_list('recipient_id', flat=True)), {self.student.pk, self.teammate.pk})
