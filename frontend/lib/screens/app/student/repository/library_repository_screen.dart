@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../models/repository_library.dart';
+import '../../../../navigation/library_navigation.dart';
 import '../../../../models/library_filters.dart';
 import '../../../../models/library_topics.dart';
 import '../../../../widgets/repository/library_hero.dart';
@@ -12,7 +14,6 @@ import '../../../../widgets/repository/library_activity_panel.dart';
 import '../../../../widgets/repository/library_components.dart';
 import '../../../../widgets/repository/library_discovery.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
-import '../../../../widgets/shadcn/defensys_workflow_widgets.dart';
 import 'library_project_screen.dart';
 import 'library_search_screen.dart';
 import 'repository_entry_view.dart';
@@ -22,7 +23,9 @@ enum _LibraryView { home, directory, collection }
 // Keep library routes inside the workspace so its header and bottom navigation
 // remain available while reading project details or searching.
 class RepositoryTab extends StatefulWidget {
-  const RepositoryTab({super.key});
+  const RepositoryTab({super.key, this.routed = false, this.isActive = true});
+  final bool routed;
+  final bool isActive;
   @override
   State<RepositoryTab> createState() => _RepositoryNavigatorState();
 }
@@ -31,18 +34,32 @@ class _RepositoryNavigatorState extends State<RepositoryTab> {
   final _navigator = GlobalKey<NavigatorState>();
 
   @override
-  Widget build(BuildContext context) => NavigatorPopHandler<Object?>(
-    onPopWithResult: (result) => _navigator.currentState!.pop(result),
-    child: Navigator(
-      key: _navigator,
-      onGenerateRoute: (_) =>
-          MaterialPageRoute<void>(builder: (_) => const _RepositoryHome()),
-    ),
-  );
+  Widget build(BuildContext context) => widget.routed
+      ? const _RepositoryHome()
+      : NavigatorPopHandler<Object?>(
+          enabled: widget.isActive,
+          onPopWithResult: (result) =>
+              _navigator.currentState!.maybePop(result),
+          child: Navigator(
+            key: _navigator,
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (_) => const _RepositoryHome(),
+            ),
+          ),
+        );
 }
 
 class _RepositoryHome extends ConsumerStatefulWidget {
-  const _RepositoryHome();
+  const _RepositoryHome({
+    this.view = _LibraryView.home,
+    this.browse = LibraryBrowse.projects,
+    this.type = '',
+    this.selection = const LibraryFilterSelection(),
+  });
+  final _LibraryView view;
+  final LibraryBrowse browse;
+  final String type;
+  final LibraryFilterSelection selection;
   @override
   ConsumerState<_RepositoryHome> createState() => _RepositoryTabState();
 }
@@ -60,6 +77,10 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
   @override
   void initState() {
     super.initState();
+    _view = widget.view;
+    _browse = widget.browse;
+    _type = widget.type;
+    _selection = widget.selection;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _refresh();
     });
@@ -98,11 +119,37 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
     );
   }
 
-  void _navigate(_LibraryView view) {
+  bool _navigate(_LibraryView view) {
+    final router = GoRouter.maybeOf(context);
+    if (router != null &&
+        router.routeInformationProvider.value.uri.path.startsWith(
+          studentLibraryPath,
+        )) {
+      if (view == _LibraryView.home) {
+        // Pop just this screen. This also restores the previous collection's
+        // filters and scroll position instead of adding another history entry.
+        context.pop();
+      } else {
+        pushLibraryPage<void>(
+          context,
+          page: view.name,
+          builder: (_) => _RepositoryHome(
+            view: view,
+            browse: _browse,
+            type: _type,
+            selection: _selection,
+          ),
+        ).then((_) {
+          if (mounted) _refresh();
+        });
+      }
+      return true;
+    }
     final wasCollection = _view == _LibraryView.collection;
     setState(() => _view = view);
     if (_scroll.hasClients) _scroll.jumpTo(0);
     if (wasCollection && view != _LibraryView.collection) _refresh();
+    return false;
   }
 
   void _collection({
@@ -119,8 +166,8 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
             LibraryFilterGroup.subject,
             subject,
           );
-    _navigate(_LibraryView.collection);
-    if (ref.read(repositoryProvider).catalog) _refresh();
+    final routed = _navigate(_LibraryView.collection);
+    if (!routed && ref.read(repositoryProvider).catalog) _refresh();
   }
 
   Future<void> _open(VaultEntry entry) async {
@@ -128,28 +175,28 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
   }
 
   Future<void> _project(LibraryProject project) async {
-    await Navigator.push(
+    await pushLibraryPage<void>(
       context,
-      MaterialPageRoute(builder: (_) => LibraryProjectScreen(project: project)),
+      page: 'project',
+      builder: (_) => LibraryProjectScreen(project: project),
     );
   }
 
   Future<void> _myShelf() async {
-    await Navigator.push<void>(
+    await pushLibraryPage<void>(
       context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: const Text('My reading shelf'),
-            backgroundColor: DefensysTokens.surfaceOf(context),
-            foregroundColor: DefensysTokens.textPrimaryOf(context),
-            surfaceTintColor: Colors.transparent,
-            scrolledUnderElevation: 0,
-          ),
-          body: const SingleChildScrollView(
-            padding: EdgeInsets.all(18),
-            child: LibraryActivityPanel(initialTab: 'Saved'),
-          ),
+      page: 'saved',
+      builder: (_) => Scaffold(
+        appBar: AppBar(
+          title: const Text('My reading shelf'),
+          backgroundColor: DefensysTokens.surfaceOf(context),
+          foregroundColor: DefensysTokens.textPrimaryOf(context),
+          surfaceTintColor: Colors.transparent,
+          scrolledUnderElevation: 0,
+        ),
+        body: const SingleChildScrollView(
+          padding: EdgeInsets.all(18),
+          child: LibraryActivityPanel(initialTab: 'Saved'),
         ),
       ),
     );
@@ -157,28 +204,44 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
   }
 
   Future<void> _filters(List<VaultEntry> all) async {
-    final selection = await showLibraryPanel<LibraryFilterSelection>(
+    final state = ref.read(repositoryProvider);
+    final deliverables = LibraryDeliverable.group(all);
+    final selection = await showLibraryPanel<LibraryCollectionFilters>(
       context,
-      title: 'Refine this collection',
+      title: 'Filter and sort',
       desktopDialog: true,
       builder: (context) => LibraryFilterPanel(
         serverOptions: ref.read(repositoryProvider).catalog
             ? ref.read(repositoryProvider).options
             : null,
-        entries: all
-            .where(
-              (entry) =>
-                  (_type.isEmpty || entry.type == _type) &&
-                  _browse.matches(entry),
-            )
-            .toList(),
+        entries: all.where((entry) => _browse.matches(entry)).toList(),
         selection: _selection,
-        onApply: (value) => Navigator.pop(context, value),
+        collection: LibraryCollectionFilters(
+          selection: _selection,
+          type: _type,
+          deliverable: _deliverable,
+          sortByTitle: _sortByTitle,
+        ),
+        deliverables: {
+          if (state.catalog && state.options['deliverables'] is List)
+            for (final item
+                in (state.options['deliverables'] as List).whereType<Map>())
+              item['key'].toString(): (item['display_label'] ?? item['label'])
+                  .toString()
+          else
+            for (final item in deliverables)
+              item.key: item.displayLabel(deliverables),
+        },
+        onApply: (_) {},
+        onApplyCollection: (value) => Navigator.pop(context, value),
       ),
     );
     if (mounted && selection != null) {
       setState(() {
-        _selection = selection;
+        _selection = selection.selection;
+        _type = selection.type;
+        _deliverable = selection.deliverable;
+        _sortByTitle = selection.sortByTitle;
       });
       if (ref.read(repositoryProvider).catalog) _refresh();
     }
@@ -193,15 +256,14 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
             .toSet()
             .toList()
           ..sort((a, b) => b.compareTo(a));
-    Navigator.push(
+    pushLibraryPage<void>(
       context,
-      MaterialPageRoute(
-        builder: (_) => LibrarySearchScreen(
-          browse: home ? LibraryBrowse.projects : _browse,
-          type: home ? '' : _type,
-          selection: home ? const LibraryFilterSelection() : _selection,
-          years: years,
-        ),
+      page: 'search',
+      builder: (_) => LibrarySearchScreen(
+        browse: home ? LibraryBrowse.projects : _browse,
+        type: home ? '' : _type,
+        selection: home ? const LibraryFilterSelection() : _selection,
+        years: years,
       ),
     );
   }
@@ -232,7 +294,7 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
       color: DefensysTokens.textSecondaryOf(context),
     );
     return PopScope(
-      canPop: home,
+      canPop: home || GoRouter.maybeOf(context) != null,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _navigate(_LibraryView.home);
       },
@@ -262,7 +324,7 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
                               leading: const Icon(Icons.arrow_back, size: 16),
                               onPressed: () => _navigate(_LibraryView.home),
                               child: const Text(
-                                'Back to library',
+                                'Back',
                                 style: TextStyle(fontSize: 12),
                               ),
                             ),
@@ -281,13 +343,13 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
                         color: DefensysTokens.textPrimaryOf(context),
                       ),
                     ),
-                    const SizedBox(height: 7),
-                    Text(
-                      _view == _LibraryView.directory
-                          ? 'Explore a topic or choose a kind of output.'
-                          : 'Explore published research in this collection.',
-                      style: caption,
-                    ),
+                    if (_view == _LibraryView.directory) ...[
+                      const SizedBox(height: 7),
+                      Text(
+                        'Explore a topic or choose a kind of output.',
+                        style: caption,
+                      ),
+                    ],
                   ],
                   if (_view != _LibraryView.directory) ...[
                     const SizedBox(height: 18),
@@ -319,7 +381,7 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
                       ],
                     ),
                   ],
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                   if (state.error != null) ...[
                     Text(
                       'Could not refresh the library. Check your connection and try again.',
@@ -524,7 +586,6 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
         (topicProjects == null || topicProjects.contains(entry.groupingKey)) &&
         _browse.matches(entry);
     final matched = state.catalog ? all : all.where(matches).toList();
-    final deliverables = LibraryDeliverable.group(matched);
     final entries = matched
         .where(
           (entry) => _deliverable.isEmpty || entry.hasDeliverable(_deliverable),
@@ -551,118 +612,66 @@ class _RepositoryTabState extends ConsumerState<_RepositoryHome> {
         ),
       );
     }
+    final filterCount = LibraryCollectionFilters(
+      selection: _selection,
+      type: _type,
+      deliverable: _deliverable,
+      sortByTitle: _sortByTitle,
+    ).count;
     final filtered = !_selection.isEmpty;
     return [
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      Row(
         children: [
-          for (final item in const {
-            '': 'All tracks',
-            'capstone': 'Capstone',
-            'pit': 'PIT',
-          }.entries)
-            LibraryChoiceChip(
-              label: item.value,
-              selected: _type == item.key,
-              onSelected: () {
-                setState(() => _type = item.key);
-                if (state.catalog) _refresh();
-              },
-            ),
-        ],
-      ),
-      const SizedBox(height: 14),
-      Wrap(
-        spacing: 16,
-        runSpacing: 8,
-        children: [
-          SizedBox(
-            width: MediaQuery.sizeOf(context).width < 400 ? 270 : 300,
-            child: WorkflowSelect(
-              label: 'Deliverable',
-              value: _deliverable,
-              options: {
-                '': 'All deliverables',
-                if (state.catalog && state.options['deliverables'] is List)
-                  for (final item
-                      in (state.options['deliverables'] as List)
-                          .whereType<Map>())
-                    item['key'].toString():
-                        (item['display_label'] ?? item['label']).toString()
-                else
-                  for (final item in deliverables)
-                    item.key: item.displayLabel(deliverables),
-              },
-              onChanged: (value) {
-                setState(() => _deliverable = value);
-                if (state.catalog) _refresh();
-              },
-            ),
-          ),
-          SizedBox(
-            width: 180,
-            child: WorkflowSelect(
-              label: 'Sort',
-              searchable: false,
-              value: _sortByTitle ? 'title' : 'recent',
-              options: const {'recent': 'Recently added', 'title': 'Title A–Z'},
-              onChanged: (value) {
-                setState(() => _sortByTitle = value == 'title');
-                if (state.catalog) _refresh();
-              },
-            ),
-          ),
-        ],
-      ),
-      Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Text(
-            '${state.catalog ? state.counts['total'] ?? 0 : projects?.length ?? entries.length} ${projects != null ? 'projects' : 'outputs'}',
-            style: DefensysTokens.caption.copyWith(
-              color: DefensysTokens.textSecondaryOf(context),
-            ),
-          ),
-          Tooltip(
-            message: 'Project covers',
-            child: ShadButton.ghost(
-              width: 44,
-              height: 44,
-              padding: EdgeInsets.zero,
-              onPressed: () => setState(() => _grid = true),
-              child: Semantics(
-                selected: _grid,
-                child: const Icon(Icons.grid_view_rounded, size: 17),
+          Expanded(
+            child: Text(
+              '${state.catalog ? state.counts['total'] ?? 0 : projects?.length ?? entries.length} ${projects != null ? 'projects' : 'outputs'}',
+              style: DefensysTokens.caption.copyWith(
+                color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ),
           Tooltip(
-            message: 'Compact list',
+            message: _grid ? 'Compact list' : 'Project covers',
             child: ShadButton.ghost(
               width: 44,
               height: 44,
               padding: EdgeInsets.zero,
-              onPressed: () => setState(() => _grid = false),
-              child: Semantics(
-                selected: !_grid,
-                child: const Icon(Icons.view_list_rounded, size: 18),
+              onPressed: () => setState(() => _grid = !_grid),
+              child: Icon(
+                _grid ? Icons.view_list_rounded : Icons.grid_view_rounded,
+                size: 18,
               ),
             ),
           ),
+          const SizedBox(width: 8),
           ShadButton.outline(
             height: 44,
             leading: const Icon(Icons.tune_rounded, size: 17),
             onPressed: () => _filters(all),
             child: Text(
-              filtered ? 'Filters (active)' : 'Filters',
+              filterCount == 0 ? 'Filters' : 'Filters ($filterCount)',
               style: const TextStyle(fontSize: 12),
             ),
           ),
         ],
       ),
+      if (_deliverable.isNotEmpty || _sortByTitle) ...[
+        const SizedBox(height: 6),
+        Text(
+          [
+            if (_deliverable.isNotEmpty)
+              LibraryDeliverable.group(all)
+                      .where((item) => item.key == _deliverable)
+                      .firstOrNull
+                      ?.displayLabel(LibraryDeliverable.group(all)) ??
+                  'Selected deliverable',
+            if (_sortByTitle) 'Title A?Z',
+          ].join(' ? '),
+          style: DefensysTokens.caption.copyWith(
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+      ],
       if (filtered) ...[
         const SizedBox(height: 10),
         LibraryActiveFilters(

@@ -11,11 +11,34 @@ import '../auth/auth_provider.dart';
 import '../auth/jwt_utils.dart';
 import '../app/data_refresh_provider.dart';
 import '../session/session_expired.dart';
+import 'protected_file_cache.dart';
 
 final authenticatedHttpClientProvider = Provider<AuthenticatedHttpClient>((
   ref,
 ) {
-  return AuthenticatedHttpClient(ref);
+  final client = AuthenticatedHttpClient(ref);
+  ref.listen(authProvider, (previous, next) {
+    if (previous?.user?['id'] != next.user?['id'] ||
+        previous?.user?['role'] != next.user?['role'] ||
+        (previous?.token == null) != (next.token == null)) {
+      client.clearFileCache();
+    }
+  });
+  ref.listen(dataRefreshProvider, (previous, next) {
+    if (const [
+      DataArea.repository,
+      DataArea.deliverables,
+      DataArea.weeklyReports,
+      DataArea.documenter,
+      DataArea.teams,
+      DataArea.users,
+      DataArea.academicPeriods,
+    ].any((area) => previous?[area] != next[area])) {
+      client.clearFileCache();
+    }
+  });
+  ref.onDispose(client.clearFileCache);
+  return client;
 });
 
 /// Central HTTP client: Bearer access, proactive + reactive refresh, session redirect.
@@ -25,6 +48,15 @@ class AuthenticatedHttpClient {
   final Ref _ref;
   Completer<bool>? _refreshCompleter;
   final Map<String, Future<http.Response>> _pendingReads = {};
+  final _fileCache = ProtectedFileCache();
+  int _fileGeneration = 0;
+
+  /// Also detach pending reads so an old download cannot satisfy a new version.
+  void clearFileCache() {
+    _fileGeneration++;
+    _fileCache.clear();
+    _pendingReads.clear();
+  }
 
   /// Let a retry start a new read after its caller stopped waiting.
   void discardPendingReads() => _pendingReads.clear();
@@ -218,14 +250,25 @@ class AuthenticatedHttpClient {
 
   /// Fetches file bytes from [fileRef] via the authenticated media proxy.
   Future<Uint8List> fetchAuthenticatedFile(String fileRef) async {
+    // Cached documents still require a live local session. Refreshing an access
+    // token does not invalidate bytes; logout/account and file changes do.
+    await _accessToken();
     final url = ApiConfig.authenticatedMediaUrl(fileRef);
+    // Guest invitations have short-lived, server-scoped access; keep their
+    // existing authorization check on every opening.
+    final cacheAllowed = !_isGuestPanelist;
+    final cached = cacheAllowed ? _fileCache.get(url) : null;
+    if (cached != null) return cached;
+    final generation = _fileGeneration;
     final response = await get(
       Uri.parse(url),
     ).timeout(const Duration(minutes: 2));
     if (response.statusCode != 200) {
       throw Exception('Failed to load file (${response.statusCode})');
     }
-    return response.bodyBytes;
+    final bytes = response.bodyBytes;
+    if (cacheAllowed && generation == _fileGeneration) _fileCache.put(url, bytes);
+    return bytes;
   }
 
   /// Same-origin HTML media uses a short-lived HttpOnly grant, never a URL JWT.

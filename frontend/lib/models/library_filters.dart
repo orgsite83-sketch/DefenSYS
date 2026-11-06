@@ -1,5 +1,27 @@
 import 'repository_library.dart';
 
+class LibraryCollectionFilters {
+  const LibraryCollectionFilters({
+    this.selection = const LibraryFilterSelection(),
+    this.type = '',
+    this.deliverable = '',
+    this.sortByTitle = false,
+  });
+  final LibraryFilterSelection selection;
+  final String type;
+  final String deliverable;
+  final bool sortByTitle;
+  int get count =>
+      (type.isEmpty ? 0 : 1) +
+      (deliverable.isEmpty ? 0 : 1) +
+      (sortByTitle ? 1 : 0) +
+      (selection.year.isEmpty ? 0 : 1) +
+      LibraryFilterGroup.values.fold(
+        0,
+        (sum, group) => sum + selection.values(group).length,
+      );
+}
+
 enum LibraryFilterGroup {
   subject('Subject area', 'Any subject'),
   technology('Technology area', 'Any technology'),

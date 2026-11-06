@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../../navigation/library_navigation.dart';
 import '../about_screen.dart';
 import '../privacy_screen.dart';
 import '../terms_screen.dart';
@@ -30,11 +32,15 @@ class StudentDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
   final String? initialStage;
   final bool openDeliverables;
+  final Widget? routedLibrary;
+  final String? initialTab;
   const StudentDashboard({
     super.key,
     this.userData,
     this.initialStage,
     this.openDeliverables = false,
+    this.routedLibrary,
+    this.initialTab,
   });
 
   @override
@@ -56,6 +62,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     if (widget.initialStage != null || widget.openDeliverables) {
       _selectedTab = 'events';
     }
+    _selectedTab = widget.initialTab ?? _selectedTab;
     if (widget.openDeliverables) _eventsSubTabNotifier.value = 1;
     final u = widget.userData;
     _profile = StudentProfile(
@@ -67,6 +74,21 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dashboardProvider('student').notifier).fetchDashboardData();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant StudentDashboard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.routedLibrary != null) {
+      _selectedTab =
+          widget.initialTab ??
+          (widget.initialStage != null || widget.openDeliverables
+              ? 'events'
+              : 'team');
+    }
+    if (widget.openDeliverables && !oldWidget.openDeliverables) {
+      _eventsSubTabNotifier.value = 1;
+    }
   }
 
   @override
@@ -127,6 +149,16 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   void _selectTab(int index) {
     final key = _tabKeysFor(ref.read(dashboardProvider('student')).data)[index];
     if (key == _selectedTab) return;
+    if (widget.routedLibrary != null) {
+      context.go(
+        key == 'library'
+            ? studentLibraryPath
+            : Uri(
+                path: '/student',
+                queryParameters: {if (key != 'team') 'tab': key},
+              ).toString(),
+      );
+    }
     final revisiting = _visitedTabs.contains(key);
     final integrationTask = key == 'integration' ? StudentTaskBadgeHelper.pendingIntegrationTasks(
       ref.read(studentTeamTasksProvider).asData?.value).firstOrNull : null;
@@ -285,12 +317,15 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       TeamTab(
         studentData: dataToPass,
         onRefresh: _refreshDashboardAndNotifications,
-        onOpenIntegration: (projectId, stageLabel) => setState(() {
-          _integrationProjectId = projectId;
-          _integrationStage = stageLabel;
-          _integrationOpenDeliverables = true;
-          _selectedTab = 'integration';
-        }),
+        onOpenIntegration: (projectId, stageLabel) {
+          setState(() {
+            _integrationProjectId = projectId;
+            _integrationStage = stageLabel;
+            _integrationOpenDeliverables = true;
+            _selectedTab = 'integration';
+          });
+          if (widget.routedLibrary != null) context.go('/student?tab=integration');
+        },
         onSelectTab: (int index, {int? subTabIndex}) {
           if (subTabIndex != null) {
             _eventsSubTabNotifier.value = subTabIndex;
@@ -305,14 +340,16 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         subTabNotifier: _eventsSubTabNotifier,
         isActive: _selectedTab == 'events',
       ),
-      const RepositoryTab(),
-      if (showIntegrationTab) SectionIntegrationTab(
-        studentData: dataToPass,
-        projectId: _integrationProjectId,
-        initialStage: _integrationStage,
-        isActive: _selectedTab == 'integration',
-        openDeliverables: _integrationOpenDeliverables,
-      ),
+      widget.routedLibrary ??
+          RepositoryTab(isActive: _selectedTab == 'library'),
+      if (showIntegrationTab)
+        SectionIntegrationTab(
+          studentData: dataToPass,
+          projectId: _integrationProjectId,
+          initialStage: _integrationStage,
+          isActive: _selectedTab == 'integration',
+          openDeliverables: _integrationOpenDeliverables,
+        ),
       const ProfileScreen(showAppBar: false, includeAppSettings: true),
     ];
 
@@ -400,6 +437,9 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       maxScaleFactor: 1.3,
       child: PopScope(
         canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _selectedTab != 'team') _selectTab(0);
+        },
         child: Scaffold(
           drawer: _buildStudentDrawer(
             context,

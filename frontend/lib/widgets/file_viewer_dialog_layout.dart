@@ -15,7 +15,10 @@ class FileViewerDialogLayout {
   final Size size;
   final EdgeInsets insetPadding;
 
-  factory FileViewerDialogLayout.of(BuildContext context) {
+  factory FileViewerDialogLayout.of(
+    BuildContext context, {
+    bool fullscreen = false,
+  }) {
     final media = MediaQuery.of(context);
     final availableWidth = math.max(
       0.0,
@@ -25,6 +28,12 @@ class FileViewerDialogLayout {
       0.0,
       media.size.height - media.padding.vertical - media.viewInsets.vertical,
     );
+    if (fullscreen) {
+      return FileViewerDialogLayout._(
+        size: Size(availableWidth, availableHeight),
+        insetPadding: EdgeInsets.zero,
+      );
+    }
     final insetPadding = EdgeInsets.all(availableWidth < 600 ? 8 : 24);
 
     return FileViewerDialogLayout._(

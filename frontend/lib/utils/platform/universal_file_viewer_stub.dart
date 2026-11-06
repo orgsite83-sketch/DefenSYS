@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../services/network/authenticated_client.dart';
+import '../../navigation/library_navigation.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../widgets/export/defensys_pdf_viewer.dart';
 import '../../widgets/file_viewer_dialog_layout.dart';
@@ -66,6 +67,25 @@ Future<void> viewFileInDialog({
   required String fileName,
   DeliverablePropertiesInfo? propertiesInfo,
 }) async {
+  if (MediaQuery.sizeOf(context).width < 760 || isStudentLibraryRoute(context)) {
+    await pushLibraryPage<void>(
+      context,
+      page: 'file',
+      fullscreen: true,
+      builder: (_) => Scaffold(
+        body: SafeArea(
+          child: UniversalMobileFileViewerDialog(
+            fileBytes: fileBytes,
+            fileUrl: fileUrl,
+            fileName: fileName,
+            propertiesInfo: propertiesInfo,
+            fullscreen: true,
+          ),
+        ),
+      ),
+    );
+    return;
+  }
   if (DeliverablePopupNavigation.maybeOf(context) != null) {
     await showDeliverablePopupStep<void>(context: context, builder: (_) => UniversalMobileFileViewerDialog(
       fileBytes: fileBytes, fileUrl: fileUrl, fileName: fileName, propertiesInfo: propertiesInfo,
@@ -104,6 +124,7 @@ class UniversalMobileFileViewerDialog extends ConsumerStatefulWidget {
   final String? fileUrl;
   final String fileName;
   final DeliverablePropertiesInfo? propertiesInfo;
+  final bool fullscreen;
 
   const UniversalMobileFileViewerDialog({
     super.key,
@@ -111,6 +132,7 @@ class UniversalMobileFileViewerDialog extends ConsumerStatefulWidget {
     this.fileUrl,
     required this.fileName,
     this.propertiesInfo,
+    this.fullscreen = false,
   });
 
   @override
@@ -171,7 +193,10 @@ class _UniversalMobileFileViewerDialogState
 
   @override
   Widget build(BuildContext context) {
-    final layout = FileViewerDialogLayout.of(context);
+    final layout = FileViewerDialogLayout.of(
+      context,
+      fullscreen: widget.fullscreen,
+    );
     final compact = layout.size.width < 600;
     final catColor = FileViewerMetadata.getCategoryColor(_category);
     final catIcon = FileViewerMetadata.getCategoryIcon(_category);
@@ -191,7 +216,7 @@ class _UniversalMobileFileViewerDialogState
         height: layout.size.height,
         decoration: BoxDecoration(
           color: DefensysTokens.surfaceOf(context),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(widget.fullscreen ? 0 : 14),
           border: Border.all(
             color: DefensysTokens.borderOf(context),
             width: 1.5,
@@ -224,6 +249,7 @@ class _UniversalMobileFileViewerDialogState
               ),
               child: Row(
                 children: [
+                  if (widget.fullscreen) const BackButton(),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 7,
@@ -351,16 +377,17 @@ class _UniversalMobileFileViewerDialogState
                     const SizedBox(width: 4),
                   ],
                   const SizedBox(width: 4),
-                  IconButton(
-                    icon: Icon(
-                      Icons.close,
-                      color: DefensysTokens.textPrimaryOf(context),
-                      size: 20,
+                  if (!widget.fullscreen)
+                    IconButton(
+                      icon: Icon(
+                        Icons.close,
+                        color: DefensysTokens.textPrimaryOf(context),
+                        size: 20,
+                      ),
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.of(context).pop(),
+                      visualDensity: VisualDensity.compact,
                     ),
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.of(context).pop(),
-                    visualDensity: VisualDensity.compact,
-                  ),
                 ],
               ),
             ),

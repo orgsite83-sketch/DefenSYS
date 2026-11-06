@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/network/authenticated_client.dart';
+import '../../navigation/library_navigation.dart';
 import '../../config/api_config.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../toasts/feedback_toast.dart';
@@ -50,6 +51,25 @@ Future<void> viewFileInDialog({
   required String fileName,
   DeliverablePropertiesInfo? propertiesInfo,
 }) async {
+  if (MediaQuery.sizeOf(context).width < 760 || isStudentLibraryRoute(context)) {
+    await pushLibraryPage<void>(
+      context,
+      page: 'file',
+      fullscreen: true,
+      builder: (_) => Scaffold(
+        body: SafeArea(
+          child: UniversalFileViewerDialog(
+            fileBytes: fileBytes,
+            fileUrl: fileUrl,
+            fileName: fileName,
+            propertiesInfo: propertiesInfo,
+            fullscreen: true,
+          ),
+        ),
+      ),
+    );
+    return;
+  }
   if (DeliverablePopupNavigation.maybeOf(context) != null) {
     await showDeliverablePopupStep<void>(
       context: context,
@@ -96,6 +116,7 @@ class UniversalFileViewerDialog extends ConsumerStatefulWidget {
   final String? fileUrl;
   final String fileName;
   final DeliverablePropertiesInfo? propertiesInfo;
+  final bool fullscreen;
 
   const UniversalFileViewerDialog({
     super.key,
@@ -103,6 +124,7 @@ class UniversalFileViewerDialog extends ConsumerStatefulWidget {
     this.fileUrl,
     required this.fileName,
     this.propertiesInfo,
+    this.fullscreen = false,
   });
 
   @override
@@ -385,7 +407,10 @@ class _UniversalFileViewerDialogState
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
-    final layout = FileViewerDialogLayout.of(context);
+    final layout = FileViewerDialogLayout.of(
+      context,
+      fullscreen: widget.fullscreen,
+    );
     final compact = screenSize.width < 600;
     final toolbarColor = DefensysTokens.surfaceOf(context);
     final toolbarForeground = DefensysTokens.textPrimaryOf(context);
@@ -431,7 +456,7 @@ class _UniversalFileViewerDialogState
           height: layout.size.height,
           decoration: BoxDecoration(
             color: DefensysTokens.surfaceOf(context),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(widget.fullscreen ? 0 : 12),
             border: Border.all(
               color: DefensysTokens.borderOf(context),
               width: 1.5,
@@ -467,6 +492,7 @@ class _UniversalFileViewerDialogState
                 ),
                 child: Row(
                   children: [
+                    if (widget.fullscreen) const BackButton(),
                     // Category Badge Pill
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -618,16 +644,17 @@ class _UniversalFileViewerDialogState
                     ],
 
                     // Close button
-                    IconButton(
-                      icon: Icon(
-                        Icons.close,
-                        color: toolbarForeground,
-                        size: 20,
+                    if (!widget.fullscreen)
+                      IconButton(
+                        icon: Icon(
+                          Icons.close,
+                          color: toolbarForeground,
+                          size: 20,
+                        ),
+                        tooltip: 'Close (Esc)',
+                        onPressed: () => Navigator.of(context).pop(),
+                        visualDensity: VisualDensity.compact,
                       ),
-                      tooltip: 'Close (Esc)',
-                      onPressed: () => Navigator.of(context).pop(),
-                      visualDensity: VisualDensity.compact,
-                    ),
                   ],
                 ),
               ),

@@ -23,6 +23,7 @@ import 'package:defensys/widgets/repository/library_discovery.dart';
 import 'package:defensys/widgets/branding/defensys_mobile_brand.dart';
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/capture_preview.dart';
+import 'package:defensys/widgets/shadcn/defensys_workflow_widgets.dart';
 
 final _entries = [
   for (final item in [
@@ -253,12 +254,102 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> chooseTrack(WidgetTester tester, String track) async {
+    await tester.tap(find.textContaining('Filters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All tracks'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(track).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show collection'));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> browseConcepts(WidgetTester tester) async {
     await tester.tap(find.text('Browse all'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Concept Papers'));
     await tester.pumpAndSettle();
   }
+
+  for (final width in [320.0, 390.0, 1280.0]) {
+    for (final dark in [false, true]) {
+      testWidgets(
+        'collection puts projects before filters at $width dark=$dark',
+        (tester) async {
+          await show(tester, width: width, dark: dark, mobileShell: true);
+          await tester.tap(find.text('All projects'));
+          await tester.pumpAndSettle();
+          expect(find.byType(WorkflowSelect), findsNothing);
+          expect(
+            tester.getTopLeft(find.byType(LibraryEntryTile).first).dy,
+            lessThan(420),
+          );
+          expect(find.textContaining('Filters'), findsOneWidget);
+          await capturePreview(
+            tester,
+            find.byKey(const ValueKey('preview')),
+            'repository-collection-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          );
+          await tester.tap(find.textContaining('Filters'));
+          await tester.pumpAndSettle();
+          expect(find.byType(WorkflowSelect), findsNWidgets(3));
+          expect(find.text('Track'), findsOneWidget);
+          expect(find.text('Deliverable'), findsOneWidget);
+          expect(find.text('Sort'), findsOneWidget);
+          await capturePreview(
+            tester,
+            find.byKey(const ValueKey('preview')),
+            'repository-filter-panel-${width.toInt()}-${dark ? 'dark' : 'light'}',
+            viewport: true,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets('collection filters apply and reset track deliverable and sort together', (tester) async {
+    await show(tester);
+    await tester.tap(find.text('All projects'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Filters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All tracks'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Capstone').last);
+    await tester.pumpAndSettle();
+    final deliverable = tester.widgetList<WorkflowSelect>(find.byType(WorkflowSelect))
+        .firstWhere((select) => select.label == 'Deliverable');
+    final key = deliverable.options.keys.firstWhere((key) => key.isNotEmpty);
+    await tester.tap(find.text('All deliverables'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(deliverable.options[key]!).last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Recently added'));
+    await tester.tap(find.text('Recently added'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Title A–Z').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show collection'));
+    await tester.pumpAndSettle();
+    expect(find.text('Capstone collection'), findsOneWidget);
+    expect(find.text('Filters (3)'), findsOneWidget);
+    await tester.tap(find.text('Filters (3)'));
+    await tester.pumpAndSettle();
+    final selects = tester.widgetList<WorkflowSelect>(find.byType(WorkflowSelect));
+    expect(selects.firstWhere((select) => select.label == 'Track').value, 'capstone');
+    expect(selects.firstWhere((select) => select.label == 'Deliverable').value, key);
+    expect(selects.firstWhere((select) => select.label == 'Sort').value, 'title');
+    await tester.tap(find.text('Reset'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show collection'));
+    await tester.pumpAndSettle();
+    expect(find.text('All projects'), findsOneWidget);
+    expect(find.text('Filters'), findsOneWidget);
+    expect(find.byType(LibraryEntryTile), findsNWidgets(3));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'project navigation keeps workspace bars and returns to the library',
@@ -441,12 +532,12 @@ void main() {
       await show(tester);
       await tester.tap(find.text('All projects'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('PIT'));
+      await chooseTrack(tester, 'PIT');
       await tester.pumpAndSettle();
       expect(find.text('PIT collection'), findsOneWidget);
       expect(find.byType(LibraryEntryTile), findsOneWidget);
       expect(find.text('Campus Attendance'), findsOneWidget);
-      await tester.tap(find.text('Back to library'));
+      await tester.tap(find.text('Back'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('My reading shelf'));
       await tester.pumpAndSettle();
@@ -469,7 +560,7 @@ void main() {
       await tester.tap(find.text('Projects'));
       await tester.pumpAndSettle();
       expect(find.byType(LibraryEntryTile), findsNWidgets(3));
-      await tester.tap(find.text('Filters'));
+      await tester.tap(find.textContaining('Filters'));
       await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(
@@ -480,12 +571,18 @@ void main() {
       await tester.tap(find.byTooltip('Close panel'));
       await tester.pumpAndSettle();
       expect(find.byType(LibraryEntryTile), findsNWidgets(3));
-      await tester.tap(find.text('Filters'));
+      await tester.tap(find.textContaining('Filters'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('library-filter-subject-health-wellbeing')),
+      );
       await tester.tap(
         find.byKey(const ValueKey('library-filter-subject-health-wellbeing')),
       );
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('library-filter-technology-web')),
+      );
       await tester.tap(
         find.byKey(const ValueKey('library-filter-technology-web')),
       );
@@ -517,15 +614,18 @@ void main() {
     await show(tester);
     await tester.tap(find.text('All projects'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('PIT'));
+    await chooseTrack(tester, 'PIT');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Filters'));
+    await tester.tap(find.textContaining('Filters'));
     await tester.pumpAndSettle();
     await tester.tap(
       find.descendant(
         of: find.byType(LibraryFilterPanel),
         matching: find.text('SY 2025–2026'),
       ),
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('library-filter-subject-education')),
     );
     await tester.tap(
       find.byKey(const ValueKey('library-filter-subject-education')),
@@ -560,13 +660,19 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Projects'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Filters'));
+      await tester.tap(find.textContaining('Filters'));
       await tester.pumpAndSettle();
       expect(find.text('healthcare · 1'), findsNothing);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('library-filter-subject-health-wellbeing')),
+      );
       await tester.tap(
         find.byKey(const ValueKey('library-filter-subject-health-wellbeing')),
       );
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('library-filter-technology-web')),
+      );
       await tester.tap(
         find.byKey(const ValueKey('library-filter-technology-web')),
       );
@@ -574,6 +680,9 @@ void main() {
       expect(
         find.byKey(const ValueKey('library-filter-language-dart')),
         findsNothing,
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('library-filter-language-python')),
       );
       await tester.ensureVisible(
         find.byKey(const ValueKey('library-filter-language-python')),
@@ -609,8 +718,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Projects'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Filters'));
+      await tester.tap(find.textContaining('Filters'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('library-filter-subject-health-wellbeing')),
+      );
       await tester.tap(
         find.byKey(const ValueKey('library-filter-subject-health-wellbeing')),
       );
@@ -624,6 +736,9 @@ void main() {
       expect(
         find.byKey(const ValueKey('library-filter-technology-web')),
         findsNothing,
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('library-filter-language-python')),
       );
       await tester.ensureVisible(
         find.byKey(const ValueKey('library-filter-language-python')),
@@ -651,7 +766,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Projects'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Filters'));
+    await tester.tap(find.textContaining('Filters'));
     await tester.pumpAndSettle();
     tester.view.viewInsets = const FakeViewPadding(bottom: 300);
     addTearDown(tester.view.resetViewInsets);
@@ -696,7 +811,7 @@ void main() {
             find.byKey(const ValueKey('preview')),
             '$name-list',
           );
-          await tester.tap(find.text('Filters'));
+          await tester.tap(find.textContaining('Filters'));
           await tester.pumpAndSettle();
           await capturePreview(
             tester,
@@ -711,6 +826,9 @@ void main() {
               ),
             );
             await tester.pumpAndSettle();
+            await tester.ensureVisible(
+              find.byKey(const ValueKey('library-filter-technology-web')),
+            );
             await tester.tap(
               find.byKey(const ValueKey('library-filter-technology-web')),
             );

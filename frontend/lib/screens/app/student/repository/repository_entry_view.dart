@@ -14,6 +14,7 @@ import '../../../../toasts/feedback_toast.dart';
 import '../../../../utils/universal_file_viewer.dart';
 
 import '../../../../models/repository_library.dart';
+import '../../../../navigation/library_navigation.dart';
 import '../../../../widgets/repository/library_components.dart';
 import '../../../../widgets/repository/library_discovery.dart';
 import '../../../../widgets/repository/repository_video_viewer.dart';
@@ -56,15 +57,16 @@ Future<void> openRepositoryEntry(
   final user = ref.read(authProvider).user;
   final service = ref.read(repositoryReviewServiceProvider);
   final client = ref.read(authenticatedHttpClientProvider);
-  if (kIsWeb &&
-      (entry.outputKind == 'video' ||
-          const [
-            'mp3',
-            'wav',
-            'ogg',
-            'm4a',
-            'aac',
-          ].contains(entry.extension))) {
+  if ((!entry.isPdf && !entry.isImage && entry.outputKind != 'video') ||
+      (kIsWeb &&
+          (entry.outputKind == 'video' ||
+              const [
+                'mp3',
+                'wav',
+                'ogg',
+                'm4a',
+                'aac',
+              ].contains(entry.extension)))) {
     unawaited(service.updateShelfProgress(targetId: entry.id, opened: true));
     await viewFileInDialog(
       context: context,
@@ -76,33 +78,48 @@ Future<void> openRepositoryEntry(
   if (entry.isPdf) {
     final name = '${user?['first_name'] ?? ''} ${user?['last_name'] ?? ''}'
         .trim();
-    await Navigator.push(
+    await pushLibraryPage<void>(
       context,
-      MaterialPageRoute(
-        builder: (_) => _PDFViewerScreen(
-          entry: entry,
-          fileName: entry.displayTitle,
-          fileRef: file,
-          teamName: entry.teamName,
-          stage: entry.outputLabel,
-          studentId: user?['username']?.toString() ?? '',
-          studentName: name,
-        ),
+      page: 'reader',
+      fullscreen: true,
+      builder: (_) => _PDFViewerScreen(
+        entry: entry,
+        fileName: entry.displayTitle,
+        fileRef: file,
+        teamName: entry.teamName,
+        stage: entry.outputLabel,
+        studentId: user?['username']?.toString() ?? '',
+        studentName: name,
       ),
     );
     return;
   }
-  final navigator = Navigator.of(context, rootNavigator: true);
+  if (entry.isImage) {
+    await pushLibraryPage<void>(
+      context,
+      page: 'image',
+      fullscreen: true,
+      builder: (_) => _RepositoryImageScreen(entry: entry),
+    );
+    return;
+  }
+  // Attach loading to the reader's navigator. Leaving its page via browser
+  // history then dismisses the pending dialog along with that page.
+  final navigator = Navigator.of(context);
   final loading = DialogRoute<void>(
     context: context,
     barrierDismissible: false,
     builder: (_) => const Center(child: CircularProgressIndicator()),
   );
   unawaited(navigator.push(loading));
+  var loadingFinished = false;
   try {
     final bytes = await client.fetchAuthenticatedFile(file);
-    if (loading.isActive) navigator.removeRoute(loading);
-    if (!context.mounted) return;
+    // Back cancels this opening attempt. Never reopen a viewer after its
+    // loading route has been dismissed, or remove a different route.
+    if (!loading.isActive || !context.mounted) return;
+    loadingFinished = true;
+    navigator.removeRoute(loading);
     if (entry.outputKind == 'video') {
       await openRepositoryVideo(
         context: context,
@@ -111,27 +128,6 @@ Future<void> openRepositoryEntry(
         onReady: () {
           service.updateShelfProgress(targetId: entry.id, opened: true);
         },
-      );
-    } else if (entry.isImage) {
-      unawaited(service.updateShelfProgress(targetId: entry.id, opened: true));
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => Scaffold(
-            appBar: AppBar(title: Text(entry.displayTitle)),
-            body: Center(
-              child: InteractiveViewer(
-                minScale: .5,
-                maxScale: 5,
-                child: Image.memory(
-                  bytes,
-                  fit: BoxFit.contain,
-                  semanticLabel: '${entry.displayTitle} ${entry.outputLabel}',
-                ),
-              ),
-            ),
-          ),
-        ),
       );
     } else {
       unawaited(service.updateShelfProgress(targetId: entry.id, opened: true));
@@ -142,11 +138,86 @@ Future<void> openRepositoryEntry(
       );
     }
   } catch (_) {
+    if (!loading.isActive && !loadingFinished) return;
     if (loading.isActive) navigator.removeRoute(loading);
     if (context.mounted) {
       showErrorToast(context, 'Could not open this output. Please try again.');
     }
   }
+}
+
+/// A loading image is already a reader page, so Back returns to its project
+/// immediately. A late response cannot push another page over that project.
+class _RepositoryImageScreen extends ConsumerStatefulWidget {
+  const _RepositoryImageScreen({required this.entry});
+  final VaultEntry entry;
+
+  @override
+  ConsumerState<_RepositoryImageScreen> createState() =>
+      _RepositoryImageScreenState();
+}
+
+class _RepositoryImageScreenState
+    extends ConsumerState<_RepositoryImageScreen> {
+  Uint8List? _bytes;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _failed = false);
+    try {
+      final bytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(widget.entry.fileUrl!);
+      if (!mounted) return;
+      setState(() => _bytes = bytes);
+      unawaited(
+        ref
+            .read(repositoryReviewServiceProvider)
+            .updateShelfProgress(targetId: widget.entry.id, opened: true),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => DefensysShadcnScope(
+    child: Scaffold(
+      appBar: AppBar(title: Text(widget.entry.displayTitle)),
+      body: Center(
+        child: _failed
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Could not open this output.'),
+                  const SizedBox(height: 12),
+                  ShadButton.outline(
+                    onPressed: _load,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              )
+            : _bytes == null
+            ? const CircularProgressIndicator()
+            : InteractiveViewer(
+                minScale: .5,
+                maxScale: 5,
+                child: Image.memory(
+                  _bytes!,
+                  fit: BoxFit.contain,
+                  semanticLabel:
+                      '${widget.entry.displayTitle} ${widget.entry.outputLabel}',
+                ),
+              ),
+      ),
+    ),
+  );
 }
 
 // ── Book Details Bottom Sheet / Review Panel ─────────────────────────────────

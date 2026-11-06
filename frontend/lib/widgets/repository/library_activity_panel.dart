@@ -4,6 +4,7 @@ import '../shadcn/defensys_shadcn_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../models/repository_library.dart';
+import '../../navigation/library_navigation.dart';
 import '../../screens/app/student/repository/repository_entry_view.dart';
 import '../../screens/app/student/repository/library_project_screen.dart';
 import '../../services/repository_review_provider.dart';
@@ -48,12 +49,11 @@ class _LibraryActivityPanelState extends ConsumerState<LibraryActivityPanel> {
 
   void _open(VaultEntry entry) {
     if (entry.documentKind == 'project' && entry.projectEntries.isNotEmpty) {
-      Navigator.push(
+      pushLibraryPage<void>(
         context,
-        MaterialPageRoute(
-          builder: (_) => LibraryProjectScreen(
-            project: LibraryProject(entry.groupingKey, entry.projectEntries),
-          ),
+        page: 'project',
+        builder: (_) => LibraryProjectScreen(
+          project: LibraryProject(entry.groupingKey, entry.projectEntries),
         ),
       );
     } else {

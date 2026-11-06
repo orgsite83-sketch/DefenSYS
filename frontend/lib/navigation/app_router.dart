@@ -29,6 +29,8 @@ import 'panelist_routes.dart';
 import 'route_pages.dart';
 import 'workspace_access.dart';
 import 'workspace_preference.dart';
+import 'library_navigation.dart';
+import '../screens/app/student/repository_tab.dart';
 
 class RouterRefreshNotifier extends ChangeNotifier {
   RouterRefreshNotifier(this._ref) {
@@ -102,6 +104,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   }
 
   final router = GoRouter(
+    extraCodec: LibraryPageCodec(),
     navigatorKey: rootNavigatorKey,
     refreshListenable: refresh,
     redirect: redirect,
@@ -169,11 +172,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return TermsAgreementScreen(role: role, userData: userData);
         },
       ),
-      GoRoute(
-        path: AppRoutes.student,
-        builder: (context, state) {
+      ShellRoute(
+        builder: (context, state, child) {
           return Consumer(
-            builder: (context, ref, child) {
+            builder: (context, ref, _) {
               final auth = ref.watch(authProvider);
               if (auth.isRestoring) {
                 return const Scaffold(
@@ -184,14 +186,49 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 return const SizedBox.shrink();
               }
               return StudentDashboard(
-                key: ValueKey(state.uri.toString()),
+                key: const ValueKey('student-workspace'),
                 userData: auth.user,
+                routedLibrary: child,
+                initialTab: state.uri.path.startsWith(studentLibraryPath)
+                    ? 'library'
+                    : state.uri.queryParameters['tab'],
                 initialStage: state.uri.queryParameters['stage'],
                 openDeliverables: state.uri.queryParameters['subtab'] == 'deliverables',
               );
             },
           );
         },
+        routes: [
+          GoRoute(
+            path: AppRoutes.student,
+            builder: (_, __) => const SizedBox.shrink(),
+            routes: [
+              GoRoute(
+                path: 'library',
+                builder: (_, __) => const RepositoryTab(routed: true),
+                routes: [
+                  for (final page in ['reader', 'image', 'file'])
+                    GoRoute(
+                      path: page,
+                      parentNavigatorKey: rootNavigatorKey,
+                      redirect: (_, state) => state.extra is LibraryPage
+                          ? null
+                          : studentLibraryPath,
+                      builder: (context, state) =>
+                          (state.extra as LibraryPage).builder(context),
+                    ),
+                  GoRoute(
+                    path: ':page',
+                    redirect: (_, state) =>
+                        state.extra is LibraryPage ? null : studentLibraryPath,
+                    builder: (context, state) =>
+                        (state.extra as LibraryPage).builder(context),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
       GoRoute(
         path: AppRoutes.panelist,

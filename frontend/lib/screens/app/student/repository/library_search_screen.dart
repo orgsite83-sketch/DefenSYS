@@ -13,6 +13,7 @@ import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/repository/library_components.dart';
 import '../../../../widgets/repository/library_discovery.dart';
 import 'library_project_screen.dart';
+import '../../../../navigation/library_navigation.dart';
 import 'repository_entry_view.dart';
 
 class LibrarySearchScreen extends ConsumerStatefulWidget {
@@ -254,12 +255,11 @@ class _LibrarySearchScreenState extends ConsumerState<LibrarySearchScreen> {
                               openRepositoryEntry(context, ref, entry),
                           onDetails: (entry) =>
                               showRepositoryEntryDetails(context, ref, entry),
-                          onProject: (project) => Navigator.push(
+                          onProject: (project) => pushLibraryPage<void>(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  LibraryProjectScreen(project: project),
-                            ),
+                            page: 'project',
+                            builder: (_) =>
+                                LibraryProjectScreen(project: project),
                           ),
                         ),
                   error: (_, _) => Column(

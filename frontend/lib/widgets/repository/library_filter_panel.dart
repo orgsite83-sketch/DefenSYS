@@ -5,6 +5,7 @@ import '../../models/library_filters.dart';
 import '../../models/repository_library.dart';
 import '../../theme/defensys_tokens.dart';
 import 'library_components.dart';
+import '../shadcn/defensys_workflow_widgets.dart';
 
 /// A searchable facet directory with draft state and a fixed results action.
 class LibraryFilterPanel extends StatefulWidget {
@@ -14,11 +15,17 @@ class LibraryFilterPanel extends StatefulWidget {
     required this.selection,
     required this.onApply,
     this.serverOptions,
+    this.collection,
+    this.deliverables = const {},
+    this.onApplyCollection,
   });
   final List<VaultEntry> entries;
   final LibraryFilterSelection selection;
   final ValueChanged<LibraryFilterSelection> onApply;
   final Map<String, dynamic>? serverOptions;
+  final LibraryCollectionFilters? collection;
+  final Map<String, String> deliverables;
+  final ValueChanged<LibraryCollectionFilters>? onApplyCollection;
   @override
   State<LibraryFilterPanel> createState() => _LibraryFilterPanelState();
 }
@@ -29,6 +36,17 @@ class _LibraryFilterPanelState extends State<LibraryFilterPanel> {
   final _expanded = <LibraryFilterGroup>{};
   late LibraryFilterSelection _draft = widget.selection;
   String _query = '';
+  late String _type = widget.collection?.type ?? '';
+  late String _deliverable = widget.collection?.deliverable ?? '';
+  late bool _sortByTitle = widget.collection?.sortByTitle ?? false;
+
+  List<VaultEntry> get _entries => widget.entries
+      .where(
+        (entry) =>
+            (_type.isEmpty || entry.type == _type) &&
+            (_deliverable.isEmpty || entry.hasDeliverable(_deliverable)),
+      )
+      .toList();
 
   @override
   void dispose() {
@@ -55,7 +73,7 @@ class _LibraryFilterPanelState extends State<LibraryFilterPanel> {
                       ),
                     )
                     .toList()
-              : _draft.facets(widget.entries, group))
+              : _draft.facets(_entries, group))
           .where(
             (option) => option.tag.label.toLowerCase().contains(
               _query.trim().toLowerCase(),
@@ -70,18 +88,21 @@ class _LibraryFilterPanelState extends State<LibraryFilterPanel> {
       ...((widget.serverOptions?['years'] as List?) ?? []).map(
         (year) => year.toString(),
       ),
-      ...widget.entries
+      ..._entries
           .where((entry) => _draft.matches(entry, ignoreYear: true))
           .map((entry) => entry.academicYear)
           .where((year) => year.isNotEmpty && year != '—'),
     }.toList()..sort((a, b) => b.compareTo(a));
     final selected =
         (_draft.year.isEmpty ? 0 : 1) +
+        (_type.isEmpty ? 0 : 1) +
+        (_deliverable.isEmpty ? 0 : 1) +
+        (_sortByTitle ? 1 : 0) +
         LibraryFilterGroup.values.fold(
           0,
           (total, group) => total + _draft.values(group).length,
         );
-    final count = widget.entries
+    final count = _entries
         .where(_draft.matches)
         .map((entry) => entry.groupingKey)
         .toSet()
@@ -146,6 +167,40 @@ class _LibraryFilterPanelState extends State<LibraryFilterPanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (widget.collection != null && _query.isEmpty) ...[
+                    WorkflowSelect(
+                      label: 'Track',
+                      value: _type,
+                      searchable: false,
+                      options: const {
+                        '': 'All tracks',
+                        'capstone': 'Capstone',
+                        'pit': 'PIT',
+                      },
+                      onChanged: (value) => setState(() => _type = value),
+                    ),
+                    const SizedBox(height: 16),
+                    WorkflowSelect(
+                      label: 'Deliverable',
+                      value: _deliverable,
+                      options: {'': 'All deliverables', ...widget.deliverables},
+                      onChanged: (value) =>
+                          setState(() => _deliverable = value),
+                    ),
+                    const SizedBox(height: 16),
+                    WorkflowSelect(
+                      label: 'Sort',
+                      searchable: false,
+                      value: _sortByTitle ? 'title' : 'recent',
+                      options: const {
+                        'recent': 'Recently added',
+                        'title': 'Title A–Z',
+                      },
+                      onChanged: (value) =>
+                          setState(() => _sortByTitle = value == 'title'),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   const SizedBox(height: 12),
                   _heading(
                     'School year',
@@ -234,6 +289,9 @@ class _LibraryFilterPanelState extends State<LibraryFilterPanel> {
                 _search.clear();
                 _query = '';
                 _expanded.clear();
+                _type = '';
+                _deliverable = '';
+                _sortByTitle = false;
               }),
               child: const Text('Reset', style: TextStyle(fontSize: 12)),
             ),
@@ -244,7 +302,20 @@ class _LibraryFilterPanelState extends State<LibraryFilterPanel> {
           width: double.infinity,
           height: 44,
           trailing: const Icon(Icons.arrow_forward_rounded, size: 16),
-          onPressed: () => widget.onApply(_draft),
+          onPressed: () {
+            if (widget.onApplyCollection != null) {
+              widget.onApplyCollection!(
+                LibraryCollectionFilters(
+                  selection: _draft,
+                  type: _type,
+                  deliverable: _deliverable,
+                  sortByTitle: _sortByTitle,
+                ),
+              );
+            } else {
+              widget.onApply(_draft);
+            }
+          },
           child: const Text('Show collection'),
         ),
       ],

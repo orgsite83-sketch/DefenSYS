@@ -114,6 +114,8 @@ abstract final class WorkspaceAccess {
         user['is_pit_lead'] == true || user['is_superuser'] == true;
     final allowed = switch (location) {
       AppRoutes.student => user['role'] == 'student',
+      _ when location.startsWith('${AppRoutes.student}/') =>
+        user['role'] == 'student',
       AppRoutes.panelist => canEvaluate(user),
       AppRoutes.documenter => canDocument(user),
       _ when RegExp(r'^/documenter/minutes/\d+$').hasMatch(location) =>

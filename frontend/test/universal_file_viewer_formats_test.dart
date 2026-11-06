@@ -7,6 +7,8 @@ import 'package:defensys/utils/platform/universal_file_viewer_models.dart';
 import 'package:defensys/utils/platform/universal_file_viewer_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:defensys/utils/universal_file_viewer.dart' show viewFileInDialog;
 
 Uint8List _createSamplePptxBytes() {
   final archive = Archive();
@@ -77,6 +79,51 @@ Uint8List _createSampleZipBytes() {
 }
 
 void main() {
+  testWidgets('phone file previews cover workspace bars and return with Back', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            appBar: AppBar(title: const Text('Workspace header')),
+            bottomNavigationBar: const SizedBox(
+              height: 80,
+              child: Text('Workspace navigation'),
+            ),
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => viewFileInDialog(
+                  context: context,
+                  fileBytes: utf8.encode('Document preview'),
+                  fileName: 'notes.txt',
+                ),
+                child: const Text('Open file'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open file'));
+    await tester.pumpAndSettle();
+    expect(find.text('Workspace header').hitTestable(), findsNothing);
+    expect(find.text('Workspace navigation').hitTestable(), findsNothing);
+    expect(tester.getSize(find.byType(Scaffold).last), const Size(390, 844));
+    expect(find.byTooltip('Back'), findsOneWidget);
+    expect(find.byTooltip('Close'), findsNothing);
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Workspace header').hitTestable(), findsOneWidget);
+    expect(find.text('Workspace navigation').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   group('File Viewer Category & Metadata Detection', () {
     test('detects all standard academic deliverable extensions', () {
       expect(
