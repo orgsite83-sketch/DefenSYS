@@ -335,6 +335,10 @@ def _team_import_preview(user, data):
         if repeated:
             row['ready'] = False
             row['issues'].append('Repeated team name or student across rows. Resolve the overlapping rows before importing.')
+    from .adviser_capacity import annotate_import_capacity
+    if 'Capstone' in level:
+        annotate_import_capacity([(row, (saved['payload'] or {}).get('adviser_id'), saved['existing_id'])
+                                  for row, saved in zip(results, state)])
     # Replacement sections and shared projects are indivisible. Independent
     # current-roster imports can retain the existing ready-row import behavior.
     blocked_sections = {r['section'] for r in results if not r['ready'] and

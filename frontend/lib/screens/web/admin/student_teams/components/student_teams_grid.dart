@@ -561,19 +561,15 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
     final isPit = widget.isPit;
     final isDark = _isDark;
 
-    final Map<String, int> adviserLoadCounts = {};
-    final countedAssignments = <String>{};
-    if (!isPit) {
-      for (final t in state.teams) {
-        final adviser = t['adviser_name']?.toString().trim() ?? '';
-        if (adviser.isNotEmpty &&
-            countedAssignments.add(
-              '$adviser:${t['id'] ?? identityHashCode(t)}',
-            )) {
-          adviserLoadCounts[adviser] = (adviserLoadCounts[adviser] ?? 0) + 1;
-        }
-      }
-    }
+    final adviserCapacities = {
+      for (final adviser in state.advisers)
+        '${adviser['id']}': adviser['capacity'] as Map? ?? {},
+    };
+    final adviserNames = {
+      for (final team in state.teams)
+        '${team['adviser_id'] ?? team['adviser_name']}':
+            '${team['adviser_name'] ?? ''}',
+    };
 
     final Map<String, List<Map<String, dynamic>>> sectionsMap = {};
     for (final team in state.teams) {
@@ -630,7 +626,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
             (selectedAdviser == null || selectedAdviser == 'all')
             ? sectionTeams
             : sectionTeams.where((t) {
-                final adviser = t['adviser_name']?.toString().trim() ?? '';
+                final adviser = '${t['adviser_id'] ?? t['adviser_name']}';
                 return adviser == selectedAdviser;
               }).toList();
 
@@ -772,7 +768,13 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                           sectionTeams
                               .map(
                                 (t) =>
-                                    t['adviser_name']?.toString().trim() ?? '',
+                                    t['adviser_name']
+                                            ?.toString()
+                                            .trim()
+                                            .isNotEmpty ==
+                                        true
+                                    ? '${t['adviser_id'] ?? t['adviser_name']}'
+                                    : '',
                               )
                               .where((adv) => adv.isNotEmpty)
                               .toSet()
@@ -879,8 +881,14 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                   ),
                                   ...sectionAdvisers.map((adv) {
                                     final isSelected = selectedAdviser == adv;
-                                    final load = adviserLoadCounts[adv] ?? 0;
-                                    final isOverloaded = load > 4;
+                                    final capacity = adviserCapacities[adv];
+                                    final load = capacity?['active_count'];
+                                    final limit = capacity?['effective_limit'];
+                                    final approved =
+                                        capacity?['has_exception'] == true;
+                                    final isOverloaded =
+                                        capacity?['is_overloaded'] == true;
+                                    final name = adviserNames[adv] ?? adv;
 
                                     Color bgColor;
                                     Color borderColor;
@@ -955,9 +963,11 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                             children: [
                                               Flexible(
                                                 child: Tooltip(
-                                                  message: adv,
+                                                  message: load == null
+                                                      ? name
+                                                      : '$name\n$load active teams · ${approved ? 'Approved limit' : 'Limit'}: $limit${isOverloaded ? '\nExisting overload' : ''}',
                                                   child: Text(
-                                                    adv,
+                                                    name,
                                                     maxLines: 2,
                                                     overflow:
                                                         TextOverflow.ellipsis,
@@ -974,7 +984,9 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                               ),
                                               const SizedBox(width: 4),
                                               Text(
-                                                '($load/4)',
+                                                load == null
+                                                    ? ''
+                                                    : '($load/$limit${approved ? ' approved' : ''})',
                                                 style: TextStyle(
                                                   fontSize: 10.5,
                                                   fontWeight: FontWeight.bold,

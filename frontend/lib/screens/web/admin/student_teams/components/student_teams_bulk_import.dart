@@ -223,6 +223,7 @@ class _StudentTeamsBulkImportViewState
     previewRows: _previewRows,
     filter: widget.showIssuesOnly ? 'issues' : _reviewFilter,
     checking: widget.isPreviewLoading,
+    showRetainedValidation: true,
     error: widget.fileImportError ?? widget.state.error,
     onRetry: widget.isPreviewLoading ? null : widget.onRetryPreview,
     onFilter: (value) {
@@ -1171,6 +1172,7 @@ class _StudentTeamsBulkImportViewState
                               .toList(),
                     statusFilter: _reviewFilter,
                     isValidating: widget.isPreviewLoading,
+                    showRetainedValidation: true,
                     onOpenExistingTeam: widget.onOpenExistingTeam,
                     rows: widget.parsedBulkRows,
                     previewRows: previewRows,

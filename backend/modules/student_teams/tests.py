@@ -889,6 +889,16 @@ class StudentTeamApiTests(APITestCase):
             ('Team 7', 'Prof. Maricel Suarez'),
         ]
 
+        # Six spellings resolve to one adviser. Keep this identity-matching
+        # fixture within an explicitly approved capacity rather than bypassing
+        # the shared workload policy during preview.
+        from .adviser_capacity import save_exception
+        save_exception(self.admin, {
+            'adviser_id': jonathan.pk, 'semester_id': self.second_semester.pk,
+            'approved_limit': 6, 'authorization': 'Department test authorization',
+            'reason': 'Honorific matching fixture includes six teams',
+        })
+
         response = self.client.post(
             '/api/teams/bulk-import/preview/',
             {

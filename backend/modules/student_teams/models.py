@@ -202,9 +202,9 @@ class StudentTeam(models.Model):
             self.project_title = self.name
         from django.db import transaction
         with transaction.atomic():
-            previous = StudentTeam.objects.filter(pk=self.pk).values('adviser_id', 'project_version', 'intake_semester_id', 'level').first() if self.pk else None
+            previous = StudentTeam.objects.filter(pk=self.pk).values('adviser_id', 'project_version', 'intake_semester_id', 'level', 'status', 'semester_id').first() if self.pk else None
             changed = not previous or any(previous[field] != getattr(self, field) for field in
-                ('adviser_id', 'project_version', 'intake_semester_id', 'level'))
+                ('adviser_id', 'project_version', 'intake_semester_id', 'level', 'status', 'semester_id'))
             if self.is_capstone and self.adviser_id and changed:
                 from defense.scheduler.capstone_planning import lock_calendar_resources
                 from django.contrib.auth import get_user_model
@@ -217,6 +217,33 @@ class StudentTeam(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.level})'
+
+
+class AdviserCapacityException(models.Model):
+    adviser = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='capacity_exceptions')
+    semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT,
+        related_name='adviser_capacity_exceptions')
+    approved_limit = models.PositiveSmallIntegerField()
+    authorization = models.CharField(max_length=500)
+    reason = models.CharField(max_length=1000)
+    reference = models.CharField(max_length=255, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='+')
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    ended_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+')
+    end_reason = models.CharField(max_length=1000, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['adviser', 'semester'], name='unique_adviser_capacity_term'),
+            models.CheckConstraint(condition=models.Q(approved_limit__gt=4), name='adviser_exception_above_default'),
+        ]
 
 
 class TeamMembership(models.Model):
@@ -481,6 +508,24 @@ class TeamTermParticipation(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=['team', 'semester'], name='unique_team_term_participation')]
         ordering = ['-semester_id', 'team_id']
+
+    def save(self, *args, **kwargs):
+        from django.db import transaction
+        with transaction.atomic():
+            previous = TeamTermParticipation.objects.filter(pk=self.pk).values(
+                'closed_at', 'project_version').first() if self.pk else None
+            reopening = previous and not self.closed_at and (
+                previous['closed_at'] is not None or previous['project_version'] != self.project_version)
+            if reopening:
+                from defense.scheduler.capstone_planning import lock_calendar_resources
+                from django.contrib.auth import get_user_model
+                from .adviser_assignments import validate_adviser_capacity
+                lock_calendar_resources()
+                team = StudentTeam.objects.get(pk=self.team_id)
+                if team.adviser_id:
+                    get_user_model().objects.select_for_update().get(pk=team.adviser_id)
+                    validate_adviser_capacity(team, team.adviser_id)
+            super().save(*args, **kwargs)
 
 
 class TeamAdviserAssignment(models.Model):

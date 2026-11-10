@@ -223,8 +223,12 @@ Future<void> showManualCreateTeamModal({
                           ...state.advisers.map(
                             (adviser) => DropdownMenuItem<int?>(
                               value: _asInt(adviser['id']),
+                              enabled:
+                                  adviser['capacity'] is! Map ||
+                                  adviser['capacity']['can_assign'] != false,
                               child: Text(
-                                '${adviser['name']} (${adviser['username']})',
+                                '${adviser['name']} (${adviser['username']})'
+                                '${adviser['capacity'] is Map ? ' · ${adviser['capacity']['active_count']}/${adviser['capacity']['effective_limit']}' : ''}',
                               ),
                             ),
                           ),

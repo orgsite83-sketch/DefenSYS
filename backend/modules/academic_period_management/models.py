@@ -127,6 +127,14 @@ class Semester(models.Model):
             # A settings/calendar save may still hold the old active flag after
             # activation finished. Only an actual is_active write can switch it.
             update_fields = kwargs.get('update_fields')
+            if update_fields is None or 'is_active' in update_fields:
+                list(Semester.objects.select_for_update().order_by('pk'))
+                from student_teams.adviser_capacity import retire_exceptions
+                leaving = Semester.objects.filter(is_active=True)
+                leaving = leaving.exclude(pk=self.pk) if self.is_active else leaving.filter(pk=self.pk)
+                leaving_ids = list(leaving.values_list('pk', flat=True))
+                if leaving_ids:
+                    retire_exceptions(leaving_ids)
             if self.is_active and (update_fields is None or 'is_active' in update_fields):
                 Semester.objects.exclude(pk=self.pk).filter(is_active=True).update(is_active=False)
             super().save(*args, **kwargs)

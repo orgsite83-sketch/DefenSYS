@@ -76,7 +76,9 @@ class ParticipationMappingTests(TestCase):
 
     def test_consumed_old_grant_is_archived_and_requires_review(self):
         from defense.stages.models import DefenseStage
-        stage = DefenseStage.objects.first()
+        # The isolated database has no implicit stage seeds. This historical
+        # grant needs an actual stage before its cutover mapping is exercised.
+        stage = DefenseStage.objects.create(label='Historical grant review', display_order=1)
         team = self.team(self.old, 'Previously recovered')
         HistoricalCapstoneRecovery.objects.bulk_create([HistoricalCapstoneRecovery(team=team,
             defense_stage=stage, semester=self.old, project_version=1,

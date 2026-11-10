@@ -587,6 +587,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
 
   void _markDependentDataChanged() {
     ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.teams,
       DataArea.dashboard,
       DataArea.grades,
       DataArea.defenseBoard,
@@ -598,6 +599,28 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
 
   AuthenticatedHttpClient get _client =>
       ref.read(authenticatedHttpClientProvider);
+
+  Future<Map<String, dynamic>> fetchAdviserLimits() async {
+    final response = await _client.get(Uri.parse('$baseUrl/adviser-capacity/'));
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    return Map<String, dynamic>.from(jsonDecode(response.body));
+  }
+
+  Future<void> saveAdviserLimit(Map<String, dynamic> data, bool revoke) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/adviser-capacity/${revoke ? 'revoke/' : ''}'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(data),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    _previewRequestRevision++;
+    _markDependentDataChanged();
+    await fetchTeams();
+  }
 
   Future<void> refreshAfterGeneration(int count) async {
     _markDependentDataChanged();

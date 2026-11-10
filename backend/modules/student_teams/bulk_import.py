@@ -506,6 +506,7 @@ def preview_bulk_teams(
         section_metadata = collect_bulk_section_metadata(rows, import_section=import_section)
     preview_rows = []
     checked_rows = []
+    capacity_entries = []
     summary = {
         'total': 0,
         'ready': 0,
@@ -586,6 +587,12 @@ def preview_bulk_teams(
             import_section=import_section,
         )
         row_data = result['data']
+        if result['adviser'] and 'Capstone' in row_data.get('level', ''):
+            from .participation import existing_roster
+            from .term_scope import get_active_semester
+            existing = existing_roster(set(result['member_ref_map'].values()), get_active_semester(),
+                                      row_data.get('team_name', ''), row_data.get('level', ''))
+            capacity_entries.append((len(preview_rows), result['adviser'].pk, existing.pk if existing else None))
         checked_rows.append((len(preview_rows), row_data, set(result['member_ref_map'].values())))
         preview_rows.append({
             'row': index,
@@ -678,6 +685,9 @@ def preview_bulk_teams(
             # A manager may be joining this section in a later uploaded team.
             # Commit that team first so subsequent rows see its real membership.
             meta.setdefault('manager_member_rows', set()).add(row_index + 1)
+    from .adviser_capacity import annotate_import_capacity
+    annotate_import_capacity([(preview_rows[index], adviser_id, team_id)
+                              for index, adviser_id, team_id in capacity_entries])
     summary['ready'] = sum(row['ready'] for row in preview_rows)
     sections = {}
     for row in preview_rows:

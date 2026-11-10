@@ -247,6 +247,7 @@ class TeamImportValidationToolbar extends StatelessWidget {
     required this.onFirstIssue,
     required this.action,
     this.checking = false,
+    this.showRetainedValidation = false,
     this.error,
     this.onRetry,
   });
@@ -256,6 +257,8 @@ class TeamImportValidationToolbar extends StatelessWidget {
   final VoidCallback onFirstIssue;
   final Widget action;
   final bool checking;
+  /// The caller must exclude results affected by edits from [previewRows].
+  final bool showRetainedValidation;
   final String? error;
   final VoidCallback? onRetry;
 
@@ -265,7 +268,7 @@ class TeamImportValidationToolbar extends StatelessWidget {
     var ready = 0, warnings = 0, issues = 0, pending = 0;
     for (var index = 0; index < rows.length; index++) {
       final result = teamImportPreviewFor(rows, previewRows, index);
-      if (checking || result == null) {
+      if ((checking && !showRetainedValidation) || result == null) {
         pending++;
       } else if (result['ready'] != true) {
         issues++;

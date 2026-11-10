@@ -11,18 +11,17 @@ import 'package:go_router/go_router.dart';
 
 import 'package:defensys/l10n/l10n_ext.dart';
 import 'package:defensys/navigation/admin_route_paths.dart';
-import 'package:defensys/screens/web/admin/admin_shell.dart';
 import 'package:defensys/services/academic_period_provider.dart';
-import 'package:defensys/services/academic/student_academic_records_provider.dart';
+import 'package:defensys/services/app/data_refresh_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/services/unsaved_changes_provider.dart';
-import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/export/team_roster_excel_generator.dart';
 import 'package:defensys/utils/team_bulk_import_csv.dart';
 import 'package:defensys/utils/import/team_bulk_import_file.dart';
+import 'package:defensys/utils/import/team_import_validation_cache.dart';
 import 'package:defensys/utils/team_bulk_import_draft.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
@@ -33,6 +32,9 @@ import 'components/student_teams_stage_summary.dart';
 import '../../../../widgets/academic/capstone_history_filters.dart';
 import 'components/student_teams_toolbar.dart';
 import 'dialogs/advisor_assignment_modal.dart';
+import 'dialogs/adviser_limits_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/services/auth/auth_provider.dart';
 import 'dialogs/create_team_modal.dart';
 import 'dialogs/manage_sections_dialog.dart';
 import '../../shared/team_deliverables/team_deliverables_screen.dart';
@@ -72,6 +74,13 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   Map<String, dynamic>? _bulkPreview;
   int _bulkPreviewRevision = 0;
   bool _isBulkPreviewLoading = false;
+  String? _observedPreviewInput;
+  String? _requestedPreviewInput;
+  String? _checkedPreviewInput;
+  String? _checkedPreviewContext;
+  Map<String, dynamic>? _checkedBulkPreview;
+  List<Map<String, dynamic>> _checkedBulkRows = [];
+  bool _isImportingBulkTeams = false;
   String? _fileImportError;
   List<Map<String, dynamic>> _parsedBulkRows = [];
   bool _showIssuesOnly = false;
@@ -464,6 +473,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     if (!mounted) return;
     setState(() {
       _bulkPreviewRevision++;
+      _checkedBulkPreview = null;
+      _checkedPreviewInput = null;
+      _observedPreviewInput = null;
+      _requestedPreviewInput = null;
       _isBulkPreviewLoading = false;
       _fileImportError = null;
       _savedDraft = null;
@@ -517,7 +530,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         ).split(',');
       });
       _captureBulkImportBaseline(persisted: true);
-      _refreshBulkPreview();
+      _refreshBulkPreview(force: true);
       return;
     }
 
@@ -555,7 +568,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       );
     });
     _scheduleDraftSave();
-    _refreshBulkPreview();
+    _refreshBulkPreview(force: true);
   }
 
   Future<void> _pickBulkCsvFile() async {
@@ -690,13 +703,35 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     _applyParsedRows(result);
   }
 
-  Future<void> _refreshBulkPreview() async {
-    if (!mounted) return;
-    final revision = ++_bulkPreviewRevision;
-    setState(() {
-      _bulkPreview = null;
-      _isBulkPreviewLoading = true;
+  String _bulkPreviewInput({bool includeRows = true}) {
+    final state = ref.read(studentTeamsProvider);
+    final revisions = ref.read(dataRefreshProvider);
+    return jsonEncode({
+      if (includeRows) 'rows': _parsedBulkRows,
+      'filter': _selectedBulkAdviserFilter,
+      'columns': _csvColumns,
+      'section': _section,
+      'system': _systemName,
+      'manager': _projectManager,
+      'event': state.eventName,
+      'level': state.level,
+      'term': ref.read(academicPeriodProvider).activeSemester?['id'],
+      'revisions': [
+        for (final area in const [
+          DataArea.users,
+          DataArea.academicRecords,
+          DataArea.teams,
+          DataArea.academicPeriods,
+          DataArea.defenseStages,
+        ])
+          revisions[area] ?? 0,
+      ],
     });
+  }
+
+  Future<void> _refreshBulkPreview({bool force = false}) async {
+    if (!mounted) return;
+    _rowPreviewTimer?.cancel();
     if (_parsedBulkRows.isEmpty) {
       final result = parseTeamBulkCsvWithContext(
         _csvDraft,
@@ -704,7 +739,11 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         pitLeadYear: _pitLeadYear ?? widget.pitYearLevel,
       );
       if (result.rows.isEmpty) {
-        setState(() => _isBulkPreviewLoading = false);
+        setState(() {
+          _bulkPreviewRevision++;
+          _bulkPreview = null;
+          _isBulkPreviewLoading = false;
+        });
         return;
       }
       final normalized = result.rows
@@ -727,10 +766,40 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return;
     }
 
+    final input = _bulkPreviewInput();
+    if (!force && _isBulkPreviewLoading && _requestedPreviewInput == input) {
+      return;
+    }
+    if (!force &&
+        _checkedPreviewInput == input &&
+        _checkedBulkPreview != null) {
+      setState(() {
+        _bulkPreviewRevision++;
+        _observedPreviewInput = input;
+        _bulkPreview = _checkedBulkPreview;
+        _isBulkPreviewLoading = false;
+      });
+      return;
+    }
+    final revision = ++_bulkPreviewRevision;
+    final requestContext = _bulkPreviewInput(includeRows: false);
+    final requestRows = (jsonDecode(jsonEncode(_parsedBulkRows)) as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+    setState(() {
+      if (force || _observedPreviewInput != input) _bulkPreview = null;
+      if (force) _checkedBulkPreview = null;
+      _observedPreviewInput = input;
+      _requestedPreviewInput = input;
+      _isBulkPreviewLoading = true;
+      // A retry must not resurrect an older successful result after failure.
+      _checkedPreviewInput = null;
+    });
+
     final preview = await ref
         .read(studentTeamsProvider.notifier)
         .bulkImportPreview(
-          _parsedBulkRows,
+          requestRows,
           adviserFilter: _selectedBulkAdviserFilter,
           csvColumns: _csvColumns.isNotEmpty ? _csvColumns : null,
           section: _section,
@@ -741,6 +810,11 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     setState(() {
       _bulkPreview = preview;
       _isBulkPreviewLoading = false;
+      _requestedPreviewInput = null;
+      _checkedPreviewInput = preview == null ? null : input;
+      _checkedBulkPreview = preview;
+      _checkedBulkRows = requestRows;
+      _checkedPreviewContext = requestContext;
     });
     _scheduleDraftSave();
   }
@@ -790,16 +864,22 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return;
     }
 
-    final result = await ref
-        .read(studentTeamsProvider.notifier)
-        .bulkImport(
-          rows,
-          adviserFilter: _selectedBulkAdviserFilter,
-          csvColumns: _csvColumns.isNotEmpty ? _csvColumns : null,
-          section: _section,
-          systemName: _systemName,
-          projectManager: _projectManager,
-        );
+    _isImportingBulkTeams = true;
+    Map<String, dynamic>? result;
+    try {
+      result = await ref
+          .read(studentTeamsProvider.notifier)
+          .bulkImport(
+            rows,
+            adviserFilter: _selectedBulkAdviserFilter,
+            csvColumns: _csvColumns.isNotEmpty ? _csvColumns : null,
+            section: _section,
+            systemName: _systemName,
+            projectManager: _projectManager,
+          );
+    } finally {
+      _isImportingBulkTeams = false;
+    }
 
     if (!mounted || result == null) return;
 
@@ -849,7 +929,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         isCapstoneAdmin: _isCapstoneAdmin,
       );
     });
-    await _refreshBulkPreview();
+    await _refreshBulkPreview(force: true);
     _snack(
       'Imported $created team${created == 1 ? '' : 's'}. '
       '${remaining.length} row${remaining.length == 1 ? '' : 's'} still need fixes — draft saved.',
@@ -857,14 +937,46 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   void _scheduleRowPreview(int index) {
+    _deriveLevelsOnRows(_parsedBulkRows);
+    final input = _bulkPreviewInput();
+    if (_observedPreviewInput == input) return;
     _scheduleDraftSave();
     _rowPreviewTimer?.cancel();
     // Invalidate immediately, including during the debounce interval.
     setState(() {
       _bulkPreviewRevision++;
-      _bulkPreview = null;
-      _isBulkPreviewLoading = _parsedBulkRows.isNotEmpty;
+      _observedPreviewInput = input;
+      _requestedPreviewInput = null;
+      _bulkPreview = _checkedPreviewInput == input
+          ? _checkedBulkPreview
+          : _checkedPreviewContext == _bulkPreviewInput(includeRows: false)
+          ? retainTeamImportValidation(
+              checkedRows: _checkedBulkRows,
+              rows: _parsedBulkRows,
+              preview: _checkedBulkPreview,
+            )
+          : null;
+      _isBulkPreviewLoading = _checkedPreviewInput != input;
     });
+    if (!_isBulkPreviewLoading) return;
+    _rowPreviewTimer = Timer(const Duration(milliseconds: 500), () {
+      _refreshBulkPreview();
+    });
+  }
+
+  void _scheduleContextPreview() {
+    if (_isImportingBulkTeams ||
+        !_isBulkImportVisible ||
+        _parsedBulkRows.isEmpty) {
+      return;
+    }
+    setState(() {
+      _bulkPreviewRevision++;
+      _bulkPreview = null;
+      _isBulkPreviewLoading = true;
+      _requestedPreviewInput = null;
+    });
+    _rowPreviewTimer?.cancel();
     _rowPreviewTimer = Timer(const Duration(milliseconds: 500), () {
       _refreshBulkPreview();
     });
@@ -984,32 +1096,23 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       }).toList(),
     );
 
-    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (
+    ref.listen(dataRefreshProvider, (previous, next) {
+      if (const [
+        DataArea.users,
+        DataArea.academicRecords,
+        DataArea.teams,
+        DataArea.academicPeriods,
+        DataArea.defenseStages,
+      ].any((area) => previous?[area] != next[area])) {
+        // Successful writes can publish several signals; batch them together.
+        _scheduleContextPreview();
+      }
+    });
+    ref.listen(academicPeriodProvider.select((s) => s.activeSemester?['id']), (
       previous,
       next,
     ) {
-      if (next == DefensysAdminSection.studentTeams &&
-          previous != DefensysAdminSection.studentTeams) {
-        if (_isBulkImportVisible && _parsedBulkRows.isNotEmpty) {
-          _refreshBulkPreview();
-        }
-      }
-    });
-
-    ref.listen(userManagementProvider, (previous, next) {
-      if (previous != next &&
-          _isBulkImportVisible &&
-          _parsedBulkRows.isNotEmpty) {
-        _refreshBulkPreview();
-      }
-    });
-
-    ref.listen(studentAcademicRecordsProvider, (previous, next) {
-      if (previous != next &&
-          _isBulkImportVisible &&
-          _parsedBulkRows.isNotEmpty) {
-        _refreshBulkPreview();
-      }
+      if (previous != next) _scheduleContextPreview();
     });
 
     if (_isBulkImportVisible) {
@@ -1037,7 +1140,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         bulkPreview: _bulkPreview,
         isPreviewLoading: _isBulkPreviewLoading,
         fileImportError: _fileImportError,
-        onRetryPreview: _refreshBulkPreview,
+        onRetryPreview: () => _refreshBulkPreview(force: true),
         onOpenExistingTeam: (teamId) async {
           await _persistBulkDraft();
           if (mounted) _openTeamDetailRoute(teamId);
@@ -1075,6 +1178,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         onClearStaged: () {
           setState(() {
             _bulkPreviewRevision++;
+            _checkedBulkPreview = null;
+            _checkedPreviewInput = null;
+            _observedPreviewInput = null;
+            _requestedPreviewInput = null;
             _isBulkPreviewLoading = false;
             _fileImportError = null;
             _parsedBulkRows = [];
@@ -1120,6 +1227,27 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                if (_isCapstoneAdmin &&
+                    !_isPitContext(displayState) &&
+                    (ref.watch(authProvider).user?['role'] == 'admin' ||
+                        ref.watch(authProvider).user?['is_superuser'] == true))
+                  DefensysShadcnScope(
+                    maroonActions: true,
+                    child: ShadButton.outline(
+                      onPressed: displayState.isSaving
+                          ? null
+                          : () => showAdviserLimitsDialog(
+                              context: context,
+                              load: ref
+                                  .read(studentTeamsProvider.notifier)
+                                  .fetchAdviserLimits,
+                              save: ref
+                                  .read(studentTeamsProvider.notifier)
+                                  .saveAdviserLimit,
+                            ),
+                      child: const Text('Adviser limits'),
+                    ),
+                  ),
                 ReportExportMenu(
                   reportId: 'team-roster',
                   params: {

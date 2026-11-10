@@ -12,8 +12,14 @@ class _AdviserCandidate {
   final String name;
   final String? id;
   final String subtitle;
+  final bool canAssign;
 
-  const _AdviserCandidate({required this.name, this.id, this.subtitle = ''});
+  const _AdviserCandidate({
+    required this.name,
+    this.id,
+    this.subtitle = '',
+    this.canAssign = true,
+  });
 }
 
 class _StudentCandidate {
@@ -51,6 +57,7 @@ class TeamBulkImportReviewTable extends StatefulWidget {
     this.sectionSummaries = const [],
     this.statusFilter = 'all',
     this.isValidating = false,
+    this.showRetainedValidation = false,
   });
 
   final List<Map<String, dynamic>> rows;
@@ -74,6 +81,9 @@ class TeamBulkImportReviewTable extends StatefulWidget {
   final List<Map<String, dynamic>> sectionSummaries;
   final String statusFilter;
   final bool isValidating;
+
+  /// The caller must exclude results affected by edits from [previewRows].
+  final bool showRetainedValidation;
 
   @override
   TeamBulkImportReviewTableState createState() =>
@@ -634,7 +644,7 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
   }
 
   Map<String, dynamic>? _previewForRow(int rowNumber) {
-    if (widget.isValidating) return null;
+    if (widget.isValidating && !widget.showRetainedValidation) return null;
     return teamImportPreviewFor(widget.rows, widget.previewRows, rowNumber - 1);
   }
 
@@ -1857,6 +1867,9 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     }
     final hasAdviser = adviserValue.isNotEmpty;
     final role = isInstructor ? 'Instructor' : 'Adviser';
+    final capacity = isInstructor
+        ? null
+        : _previewForRow(rowNumber)?['adviser_capacity'] as Map?;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1924,6 +1937,18 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             ),
           ),
         ),
+        if (capacity != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              '${capacity['active_count']} active teams · ${capacity['has_exception'] == true ? 'Approved limit' : 'Limit'}: ${capacity['effective_limit']}',
+              style: TextStyle(
+                fontSize: 11,
+                color: _muted,
+                fontFamily: DefensysTokens.fontFamilyInter,
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -1953,11 +1978,19 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               .trim();
           final username = (adv['username'] ?? '').toString().trim();
           final id = username.isNotEmpty ? username : null;
+          final capacity = !isInstructor && adv['capacity'] is Map
+              ? adv['capacity'] as Map
+              : null;
           if (name.isNotEmpty) {
             candidatesMap[id ?? name.toLowerCase()] = _AdviserCandidate(
               name: name,
               id: id,
-              subtitle: username.isNotEmpty ? '@$username' : '',
+              subtitle: [
+                if (username.isNotEmpty) '@$username',
+                if (capacity != null)
+                  '${capacity['active_count']}/${capacity['effective_limit']} active teams${capacity['has_exception'] == true ? ' · Approved exception' : ''}',
+              ].join(' · '),
+              canAssign: capacity?['can_assign'] != false,
             );
           }
         } else if (adv is String && adv.trim().isNotEmpty) {
@@ -2146,6 +2179,7 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                           '${adv.name} (${adv.id})';
 
                                   return ListTile(
+                                    enabled: isSelected || adv.canAssign,
                                     dense: true,
                                     leading: CircleAvatar(
                                       radius: 14,
@@ -2187,6 +2221,7 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                           )
                                         : null,
                                     onTap: () {
+                                      if (!isSelected && !adv.canAssign) return;
                                       if (!mounted ||
                                           index >= widget.rows.length ||
                                           !identical(

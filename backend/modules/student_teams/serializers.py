@@ -49,12 +49,27 @@ def level_year(level):
     return ''
 
 
+class AdviserOptionListSerializer(serializers.ListSerializer):
+    def to_representation(self, data):
+        from .adviser_capacity import capacity_projections
+        items = list(data.all() if hasattr(data, 'all') else data)
+        self.context['adviser_capacities'] = capacity_projections([item.pk for item in items])
+        return super().to_representation(items)
+
+
 class AdviserOptionSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
+    capacity = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'name', 'email']
+        fields = ['id', 'username', 'name', 'email', 'capacity']
+        list_serializer_class = AdviserOptionListSerializer
+
+    def get_capacity(self, obj):
+        from .adviser_capacity import capacity_projections
+        capacities = self.context.get('adviser_capacities')
+        return capacities.get(obj.pk) if capacities is not None else capacity_projections([obj.pk])[obj.pk]
 
     def get_name(self, obj):
         return display_name(obj)

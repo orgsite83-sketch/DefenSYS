@@ -146,6 +146,9 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
             return preview, None
 
         from .capstone_mode import normalize_capstone_flags
+        from student_teams.adviser_capacity import retire_exceptions
+        if current:
+            retire_exceptions([current.pk], actor=user)
         target.is_active = True
         capstone_fields = normalize_capstone_flags(target)
         target.save(update_fields=['is_active'] + capstone_fields)
