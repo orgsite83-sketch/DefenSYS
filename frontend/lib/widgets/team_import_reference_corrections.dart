@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../theme/defensys_tokens.dart';
+import '../utils/person_name.dart';
 import 'shadcn/defensys_shadcn_scope.dart';
 
 /// Pickers submit usernames, never database primary keys or display labels.
@@ -24,20 +25,12 @@ List<Map<String, dynamic>> teamImportAccounts(List<dynamic>? options) {
   );
 }
 
-/// Suggestions only affect ordering in an already authorized account picker.
-bool teamImportPossibleName(String reference, String name) {
-  List<String> tokens(String value) {
-    final parts = value.split(',');
-    if (parts.length == 2) value = '${parts[1]} ${parts[0]}';
-    return value.toLowerCase().trim().split(RegExp(r'\s+')).map((word) {
-      return RegExp(r'^[a-z]\.$').hasMatch(word) ? word.substring(0, 1) : word;
-    }).toList();
-  }
-
-  final uploaded = tokens(reference), stored = tokens(name);
-  if (uploaded.join(' ') == stored.join(' ')) return true;
-  if (uploaded.length < 2 || stored.length < 2) return false;
-  // Removing an interior one-letter token must reproduce the complete other name.
+/// A spelling suggestion is never an automatic identity match.
+String? teamImportNameDifference(String reference, String name) {
+  final uploaded = personNameTokens(reference);
+  final stored = personNameTokens(name, surnameFirst: false);
+  if (uploaded.join(' ') == stored.join(' ')) return 'Formatting match';
+  if (uploaded.length < 2 || stored.length < 2) return null;
   bool omittedInitial(List<String> longer, List<String> shorter) {
     if (longer.length != shorter.length + 1) return false;
     for (var i = 1; i < longer.length - 1; i++) {
@@ -49,58 +42,151 @@ bool teamImportPossibleName(String reference, String name) {
     return false;
   }
 
-  return omittedInitial(uploaded, stored) || omittedInitial(stored, uploaded);
+  if (omittedInitial(uploaded, stored) || omittedInitial(stored, uploaded)) {
+    return 'Middle initial omitted in one name';
+  }
+  // Keep the complete uploaded surname (when provided) and suffix compatible.
+  final family = reference.contains(',')
+      ? personNameTokens(reference.split(',').first, surnameFirst: false)
+      : [uploaded.last];
+  if (family.length > stored.length ||
+      stored.skip(stored.length - family.length).join(' ') !=
+          family.join(' ') ||
+      uploaded.length != stored.length) {
+    return null;
+  }
+  final differences = [
+    for (var i = 0; i < uploaded.length; i++)
+      if (uploaded[i] != stored[i]) i,
+  ];
+  if (differences.length != 1) return null;
+  final i = differences.single;
+  final a = uploaded[i], b = stored[i];
+  if (a.length < 2 ||
+      b.length < 2 ||
+      const ['jr', 'sr', 'ii', 'iii', 'iv', 'v'].contains(a) ||
+      const ['jr', 'sr', 'ii', 'iii', 'iv', 'v'].contains(b)) {
+    return null;
+  }
+  if (!_oneEditApart(a, b)) return null;
+  return 'Spelling differs: ${a.toUpperCase()} versus ${b.toUpperCase()}';
 }
 
-/// An explicit replacement updates leader/member identity together. The server
-/// still rechecks identity, role, activity, enrollment and membership afterward.
+bool _oneEditApart(String a, String b) {
+  if ((a.length - b.length).abs() > 1) return false;
+  var i = 0, j = 0, edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] == b[j]) {
+      i++;
+      j++;
+      continue;
+    }
+    if (++edits > 1) return false;
+    if (a.length >= b.length) i++;
+    if (b.length >= a.length) j++;
+  }
+  return edits + (a.length - i) + (b.length - j) == 1;
+}
+
+bool teamImportPossibleName(String reference, String name) =>
+    teamImportNameDifference(reference, name) != null;
+
+/// Apply a deliberate selection to equivalent references in this staged batch.
+/// Role and section/event boundaries are retained; every changed row revalidates.
 List<int> applyTeamImportAccount({
   required List<Map<String, dynamic>> rows,
   required int index,
   required Map<String, dynamic> resolution,
   required String username,
   List<Map<String, dynamic>> resolutions = const [],
+  List<List<Map<String, dynamic>>>? allResolutions,
 }) {
   final field = '${resolution['field']}';
+  if (!const [
+    'member_ids',
+    'leader_id',
+    'adviser_name',
+    'instructor_name',
+    'project_manager',
+  ].contains(field)) {
+    return [];
+  }
   final original = '${resolution['reference']}';
-  final row = rows[index];
+  final source = rows[index];
   if (username.trim().isEmpty) return [];
   final id = username.trim();
-  final identities = <String, String>{
-    for (final r in resolutions)
-      if (r['status'] == 'matched' && r['username'] != null)
-        '${r['reference']}': '${r['username']}',
-  };
-  if (field == 'member_ids' || field == 'leader_id') {
-    final oldMembers = (row['member_ids'] as List? ?? []).map((v) => '$v');
-    final members = <String>[];
-    for (final member in oldMembers) {
-      final value = member == original || identities[member] == id
-          ? id
-          : member;
-      if (!members.contains(value)) members.add(value);
+  final sourceKey = '${resolution['reference_key'] ?? personNameKey(original)}';
+  final changed = <int>[];
+  bool sameScope(Map row) {
+    final sourcePit = '${source['level'] ?? ''}'.toUpperCase().contains('PIT');
+    final targetPit = '${row['level'] ?? ''}'.toUpperCase().contains('PIT');
+    if (sourcePit != targetPit) return false;
+    if (field == 'adviser_name') return !targetPit;
+    if ('${source['section'] ?? ''}'.trim().isEmpty) return false;
+    if (row['section'] != source['section'] ||
+        row['year_level'] != source['year_level']) {
+      return false;
     }
-    row['member_ids'] = members;
-    final leader = '${row['leader_id'] ?? ''}';
-    if (leader == original || identities[leader] == id) row['leader_id'] = id;
-    // A separately unresolved leader must still be a selected team member.
-    if (field == 'leader_id') row['leader_id'] = id;
-    return [index];
+    return field != 'member_ids' && field != 'leader_id' ||
+        row['current_defense_stage'] == source['current_defense_stage'];
   }
-  if (field == 'project_manager') {
-    final changed = <int>[];
-    for (var i = 0; i < rows.length; i++) {
-      if (rows[i]['section'] == row['section'] &&
-          '${rows[i][field] ?? ''}' == original) {
-        rows[i][field] = id;
-        changed.add(i);
+
+  for (var offset = 0; offset < rows.length; offset++) {
+    final row = rows[offset];
+    if (offset != index && !sameScope(row)) continue;
+    final projected = allResolutions != null && offset < allResolutions.length
+        ? allResolutions[offset]
+        : offset == index
+        ? resolutions
+        : <Map<String, dynamic>>[];
+    bool equivalent(String reference, String targetField) {
+      final projection = projected
+          .where(
+            (r) => r['field'] == targetField && r['reference'] == reference,
+          )
+          .firstOrNull;
+      // An unvalidated row cannot inherit a selection made in another role/scope.
+      if (offset != index && allResolutions != null && projection == null) {
+        return false;
       }
+      return '${projection?['reference_key'] ?? personNameKey(reference)}' ==
+          sourceKey;
     }
-    return changed;
+
+    if (field == 'member_ids' || field == 'leader_id') {
+      final oldMembers = (row['member_ids'] as List? ?? [])
+          .map((v) => '$v')
+          .toList();
+      final leader = '${row['leader_id'] ?? ''}';
+      final memberMatch = oldMembers.any((m) => equivalent(m, 'member_ids'));
+      final leaderMatch = equivalent(leader, 'leader_id');
+      if (!memberMatch && !leaderMatch) continue;
+      final identities = <String, String>{
+        for (final r in projected)
+          if (r['status'] == 'matched' && r['username'] != null)
+            '${r['reference']}': '${r['username']}',
+      };
+      final members = <String>[];
+      for (final member in oldMembers) {
+        final value =
+            equivalent(member, 'member_ids') || identities[member] == id
+            ? id
+            : member;
+        if (!members.contains(value)) members.add(value);
+      }
+      row['member_ids'] = members;
+      if (leaderMatch || identities[leader] == id) row['leader_id'] = id;
+    } else {
+      final reference = '${row[field] ?? ''}'.isEmpty && field == 'adviser_name'
+          ? '${row['adviser_id'] ?? ''}'
+          : '${row[field] ?? ''}';
+      if (!equivalent(reference, field)) continue;
+      row[field] = id;
+      if (field == 'adviser_name') row['adviser_id'] = id;
+    }
+    changed.add(offset);
   }
-  row[field] = id;
-  if (field == 'adviser_name') row['adviser_id'] = id;
-  return [index];
+  return changed;
 }
 
 class TeamImportReferenceCorrections extends StatelessWidget {
@@ -165,12 +251,58 @@ class TeamImportReferenceCorrections extends StatelessWidget {
                   onPressed: () => _select(context, resolution),
                   child: const Text('Select account'),
                 ),
+                for (final account in _spellingSuggestions(resolution))
+                  Text(
+                    'Possible match: ${teamImportAccountName(account)} (${teamImportAccountId(account)}). '
+                    '${teamImportNameDifference('${resolution['reference']}', teamImportAccountName(account))}',
+                    style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      fontSize: 12,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
               ],
+            ),
+          ),
+        for (final match in resolutions.where(
+          (r) =>
+              r['status'] == 'matched' &&
+              r['match_kind'] == 'omitted_initial' &&
+              r['field'] != 'leader_id',
+        ))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'Matched: ${match['reference']} → ${match['name']} (${match['username']}). Middle initial omitted in one name.',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 12,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
             ),
           ),
       ],
     );
   }
+
+  Iterable<Map<String, dynamic>> _spellingSuggestions(Map resolution) =>
+      teamImportAccounts(
+            const [
+                  'adviser_name',
+                  'instructor_name',
+                ].contains(resolution['field'])
+                ? faculty
+                : students,
+          )
+          .where(
+            (account) =>
+                teamImportNameDifference(
+                  '${resolution['reference']}',
+                  teamImportAccountName(account),
+                )?.startsWith('Spelling differs:') ==
+                true,
+          )
+          .take(2);
 
   String _label(String field) => switch (field) {
     'member_ids' => 'Member',
@@ -204,19 +336,22 @@ class TeamImportReferenceCorrections extends StatelessWidget {
               )
               .toList();
           visible.sort((a, b) {
-            final aMatch = teamImportPossibleName(
+            final aMatch = teamImportNameDifference(
               original,
               teamImportAccountName(a),
             );
-            final bMatch = teamImportPossibleName(
+            final bMatch = teamImportNameDifference(
               original,
               teamImportAccountName(b),
             );
-            return aMatch == bMatch
+            int rank(String? reason) => reason == null
+                ? 2
+                : reason.startsWith('Spelling')
+                ? 1
+                : 0;
+            return rank(aMatch) == rank(bMatch)
                 ? teamImportAccountName(a).compareTo(teamImportAccountName(b))
-                : aMatch
-                ? -1
-                : 1;
+                : rank(aMatch).compareTo(rank(bMatch));
           });
           return DefensysShadcnScope(
             maroonActions: true,
@@ -225,7 +360,10 @@ class TeamImportReferenceCorrections extends StatelessWidget {
               title: Text(
                 'Select ${_label('${resolution['field']}').toLowerCase()} account',
               ),
-              description: Text('Uploaded reference: $original'),
+              description: Text(
+                'Uploaded reference: $original\n'
+                '${resolution['field'] == 'adviser_name' ? 'Equivalent adviser references in this upload' : 'Equivalent references in this section'} will use the selected ID.',
+              ),
               actions: [
                 ShadButton.outline(
                   onPressed: () => Navigator.pop(dialogContext),
@@ -258,15 +396,37 @@ class TeamImportReferenceCorrections extends StatelessWidget {
                                   key: ValueKey(
                                     'select-account-${teamImportAccountId(account)}',
                                   ),
-                                  height: null,
+                                  height: 0,
                                   onPressed: () => Navigator.pop(
                                     dialogContext,
                                     teamImportAccountId(account),
                                   ),
                                   child: Flexible(
-                                    child: Text(
-                                      '${teamImportAccountName(account)} (${teamImportAccountId(account)})',
-                                      maxLines: 3,
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '${teamImportAccountName(account)} (${teamImportAccountId(account)})',
+                                          maxLines: 3,
+                                        ),
+                                        if (teamImportNameDifference(
+                                              original,
+                                              teamImportAccountName(account),
+                                            )
+                                            case final String reason)
+                                          Text(
+                                            reason,
+                                            style: TextStyle(
+                                              fontFamily: DefensysTokens
+                                                  .fontFamilyInter,
+                                              fontSize: 11,
+                                              color:
+                                                  DefensysTokens.textSecondaryOf(
+                                                    context,
+                                                  ),
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
                                 ),

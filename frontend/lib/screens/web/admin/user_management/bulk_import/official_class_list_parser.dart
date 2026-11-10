@@ -1,5 +1,6 @@
 import 'package:excel/excel.dart' as xl;
 import 'package:defensys/utils/excel_safe_decode.dart';
+import 'package:defensys/utils/person_name.dart';
 import 'package:flutter/material.dart';
 
 class AdminOfficialClassListParseResult {
@@ -546,21 +547,8 @@ String normalizeYearLevel(String value) {
 }
 
 OfficialNameParts splitOfficialFullName(String value) {
-  final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
-  if (clean.contains(',')) {
-    final parts = clean.split(',');
-    final lastName = parts.first.trim();
-    final firstName = parts.skip(1).join(',').trim();
-    return OfficialNameParts(firstName: firstName, lastName: lastName);
-  }
-  final parts = clean.split(' ');
-  if (parts.length == 1) {
-    return OfficialNameParts(firstName: clean, lastName: '');
-  }
-  return OfficialNameParts(
-    firstName: parts.first,
-    lastName: parts.skip(1).join(' '),
-  );
+  final parts = splitOfficialPersonName(value);
+  return OfficialNameParts(firstName: parts.firstName, lastName: parts.lastName);
 }
 
 class DashedBorder extends StatelessWidget {

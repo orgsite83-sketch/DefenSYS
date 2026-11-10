@@ -36,19 +36,20 @@ class PersonNameComparisonTests(SimpleTestCase):
                 result = self.resolve(uploaded, user)
                 self.assertIs(result.user, user)
 
-    def test_middle_initial_addition_or_omission_requires_selection(self):
+    def test_unique_middle_initial_addition_or_omission_matches(self):
         for first, reference in (
             ('Ginbert', 'GINBERT A. FERNANDEZ'),
             ('Ginbert A.', 'Ginbert Fernandez'),
         ):
             user = account('207', first, 'Fernandez', 'faculty')
             result = self.resolve(reference, user, role=['faculty', 'admin'])
-            self.assertEqual(result.status, 'selection_required')
-            self.assertIsNone(result.user)
+            self.assertIs(result.user, user)
+            self.assertEqual(result.kind, 'omitted_initial')
 
     def test_conflicting_initials_and_substantive_names_do_not_match(self):
         user = account('207', 'Ginbert B', 'Fernandez')
-        for reference in ('Ginbert A. Fernandez', 'Ginbert Allan Fernandez', 'Gilbert B Fernandez'):
+        self.assertEqual(self.resolve('Ginbert A. Fernandez', user).status, 'selection_required')
+        for reference in ('Ginbert Allan Fernandez', 'Gilbert B Fernandez'):
             self.assertEqual(self.resolve(reference, user).status, 'not_found')
         self.assertEqual(self.resolve('Ginbert 1 Fernandez',
             account('207', 'Ginbert', 'Fernandez')).status, 'not_found')
@@ -58,6 +59,36 @@ class PersonNameComparisonTests(SimpleTestCase):
                  account('b', 'JOHNLEY L.', 'MATABALAN', active=False)]
         self.assertEqual(self.resolve('Matabalan, Johnley L.', *users).status, 'ambiguous')
         self.assertIs(self.resolve('a', *users).user, users[0])
+
+    def test_omitted_initial_never_chooses_among_same_name_identities(self):
+        for active in (True, False):
+            users = [account('207', 'Ginbert', 'Fernandez', 'faculty'),
+                     account('208', 'Ginbert B.', 'Fernandez', 'faculty', active=active)]
+            self.assertEqual(self.resolve('Ginbert A. Fernandez', *users,
+                role=['faculty', 'admin']).status, 'ambiguous')
+            self.assertEqual(self.resolve('Ginbert Fernandez', *users,
+                role=['faculty', 'admin']).status, 'ambiguous')
+        users = [account('a', 'Ginbert A', 'Fernandez'), account('b', 'Ginbert B', 'Fernandez')]
+        self.assertEqual(self.resolve('Ginbert Fernandez', *users).status, 'ambiguous')
+
+    def test_client_edgar_suffix_and_legacy_embedded_commas_resolve(self):
+        for first in ('EDGAR, JR C', 'EDGAR JR C', 'Edgar C Jr.'):
+            user = account('client-edgar', first, 'TAC-AN')
+            for reference in ('TAC-AN, Edgar Jr. C.', 'TAC-AN, EDGAR, JR C',
+                              'Edgar C. Tac-an Jr.'):
+                with self.subTest(first=first, reference=reference):
+                    self.assertIs(self.resolve(reference, user).user, user)
+
+    def test_client_spelling_difference_stays_blocked(self):
+        self.assertIsNone(self.resolve('BONGCAC, Ryza Mae G.',
+            account('client-ryza', 'RYZA MAY G.', 'BONGCAC')).user)
+
+    def test_omitted_initial_preserves_given_names_and_suffix_identity(self):
+        junior = account('a', 'Ginbert', 'Fernandez Jr.')
+        senior = account('b', 'Ginbert A.', 'Fernandez Sr.')
+        self.assertIs(self.resolve('Ginbert A. Fernandez Jr.', junior, senior).user, junior)
+        self.assertIsNone(self.resolve('Ginbert A. Fernandez', junior).user)
+        self.assertIsNone(self.resolve('Jo Maria C Santos', account('m', 'Jo', 'Santos')).user)
 
     def test_accents_compound_names_apostrophes_and_hyphens_are_preserved(self):
         user = account('a', 'Jose\u0301 Luis M.', "Dela Cruz-O'Neill")
@@ -113,7 +144,7 @@ class ImportLookupTests(TestCase):
                             'Matabalan, Johnley L.', role='student'), uncached)
                         self.assertEqual(resolve_adviser('207')[1], 'valid')
                         self.assertEqual(reference_resolution('Ginbert A. Fernandez',
-                            role=['faculty', 'admin'])['status'], 'selection_required')
+                            role=['faculty', 'admin'])['status'], 'matched')
 
     def test_inactive_id_does_not_resolve_as_eligible_and_wrong_role_stays_blocked(self):
         self.student.is_active = False
@@ -155,15 +186,28 @@ class ImportNameApiTests(APITestCase):
         self.assertEqual(set(team.memberships.values_list('student_id', flat=True)),
                          {self.student_1.pk, self.student_2.pk})
 
-    def test_missing_middle_initial_requires_selection_then_registered_id_commits(self):
+    def test_unique_missing_middle_initial_previews_and_commits(self):
         row = self.row()
         self.adviser.first_name, self.adviser.last_name = 'GINBERT', 'FERNANDEZ'
         self.adviser.save(update_fields=['first_name', 'last_name'])
         row['adviser_name'] = 'GINBERT A. FERNANDEZ'
         response = self.client.post('/api/teams/bulk-import/preview/', {'teams': [row]}, format='json')
         preview = response.data['rows'][0]
+        self.assertTrue(preview['ready'], preview)
+        self.assertEqual(preview['reference_resolutions'][-1]['match_kind'], 'omitted_initial')
+        response = self.client.post('/api/teams/bulk-import/', {'teams': [row]}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(StudentTeam.objects.get().adviser_id, self.adviser.pk)
+
+    def test_conflicting_middle_initial_requires_selection_then_registered_id_commits(self):
+        row = self.row()
+        self.adviser.first_name, self.adviser.last_name = 'GINBERT B', 'FERNANDEZ'
+        self.adviser.save(update_fields=['first_name', 'last_name'])
+        row['adviser_name'] = 'GINBERT A. FERNANDEZ'
+        response = self.client.post('/api/teams/bulk-import/preview/', {'teams': [row]}, format='json')
+        preview = response.data['rows'][0]
         self.assertFalse(preview['ready'])
-        self.assertIn('Select the registered account', ' '.join(preview['issues']))
+        self.assertIn('middle initials conflict', ' '.join(preview['issues']))
         self.assertEqual(preview['reference_resolutions'][-1]['status'], 'selection_required')
         self.client.post('/api/teams/bulk-import/', {'teams': [row]}, format='json')
         self.assertFalse(StudentTeam.objects.exists())
@@ -171,6 +215,19 @@ class ImportNameApiTests(APITestCase):
         response = self.client.post('/api/teams/bulk-import/', {'teams': [row]}, format='json')
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(StudentTeam.objects.get().adviser_id, self.adviser.pk)
+
+    def test_legacy_client_edgar_account_previews_and_commits_without_name_writes(self):
+        row = self.row()
+        self.student_1.first_name, self.student_1.last_name = 'EDGAR, JR C', 'TAC-AN'
+        self.student_1.save(update_fields=['first_name', 'last_name'])
+        row['member_ids'][0] = row['leader_id'] = 'TAC-AN, Edgar Jr. C.'
+        response = self.client.post('/api/teams/bulk-import/preview/', {'teams': [row]}, format='json')
+        self.assertTrue(response.data['rows'][0]['ready'], response.data)
+        response = self.client.post('/api/teams/bulk-import/', {'teams': [row]}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(StudentTeam.objects.get().leader_id, self.student_1.pk)
+        self.student_1.refresh_from_db()
+        self.assertEqual(self.student_1.first_name, 'EDGAR, JR C')
 
     def test_wrong_section_reports_scope_error_after_name_resolves(self):
         row = self.row()

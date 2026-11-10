@@ -34,6 +34,150 @@ void main() {
   });
 
   test(
+    'client spelling and suffix differences are explained as review suggestions',
+    () {
+      expect(
+        teamImportNameDifference('BONGCAC, Ryza Mae G.', 'RYZA MAY G. BONGCAC'),
+      'Spelling differs: MAE versus MAY',
+      );
+      expect(
+        teamImportNameDifference('TAC-AN, Edgar Jr. C.', 'EDGAR, JR C TAC-AN'),
+        'Formatting match',
+      );
+      expect(
+        teamImportNameDifference('Ginbert A Fernandez', 'Ginbert B Fernandez'),
+        isNull,
+      );
+      expect(
+        teamImportNameDifference('Dela Cruz, Juan', 'Juan Dela Crux'),
+        isNull,
+      );
+      expect(
+        teamImportNameDifference('Juan Cruz Jr.', 'Juan Cruz Sr.'),
+        isNull,
+      );
+    },
+  );
+
+  test(
+    'one adviser selection updates equivalent references across Capstone sections',
+    () {
+      final rows = <Map<String, dynamic>>[
+        {'section': 'BSIT-3A', 'adviser_name': 'GINBERT A. FERNANDEZ'},
+        {'section': 'BSIT-4D', 'adviser_name': 'FERNANDEZ, Ginbert A'},
+        {'section': 'BSIT-3B', 'adviser_name': 'GINBERT B FERNANDEZ'},
+        {'level': '1st Year PIT', 'adviser_name': 'GINBERT A. FERNANDEZ'},
+        {'instructor_name': 'GINBERT A. FERNANDEZ'},
+        {'adviser_name': 'previously-selected-id'},
+      ];
+      expect(
+        applyTeamImportAccount(
+          rows: rows,
+          index: 0,
+          username: '207',
+          resolution: {
+            'field': 'adviser_name',
+            'reference': 'GINBERT A. FERNANDEZ',
+          },
+        ),
+        [0, 1],
+      );
+      expect(rows[1]['adviser_name'], '207');
+      expect(rows[1]['adviser_id'], '207');
+      expect(rows[2]['adviser_name'], 'GINBERT B FERNANDEZ');
+      expect(rows[3]['adviser_name'], 'GINBERT A. FERNANDEZ');
+      expect(rows[4]['instructor_name'], 'GINBERT A. FERNANDEZ');
+      expect(rows[5]['adviser_name'], 'previously-selected-id');
+    },
+  );
+
+  test(
+    'batch correction uses server keys and never fills an unvalidated row',
+    () {
+      final rows = <Map<String, dynamic>>[
+        {'adviser_name': 'Dr. Ginbert A. Fernandez'},
+        {'adviser_name': 'FERNANDEZ, Ginbert A'},
+        {'adviser_name': 'GINBERT A. FERNANDEZ'},
+      ];
+      const source = {
+        'field': 'adviser_name',
+        'reference': 'Dr. Ginbert A. Fernandez',
+        'reference_key': 'ginbert a fernandez',
+      };
+      final changed = applyTeamImportAccount(
+        rows: rows,
+        index: 0,
+        username: '207',
+        resolution: source,
+        allResolutions: [
+          [source],
+          [
+            {
+              'field': 'adviser_name',
+              'reference': 'FERNANDEZ, Ginbert A',
+              'reference_key': 'ginbert a fernandez',
+            },
+          ],
+          [],
+        ],
+      );
+      expect(changed, [0, 1]);
+      expect(rows[2]['adviser_name'], 'GINBERT A. FERNANDEZ');
+    },
+  );
+
+  test(
+    'repeated student references stay within the same section year and event',
+    () {
+      final rows = <Map<String, dynamic>>[
+        for (final scope in [
+          {
+            'section': 'BSIT-2A',
+            'year_level': '2nd Year',
+            'current_defense_stage': 'Design',
+          },
+          {
+            'section': 'BSIT-2A',
+            'year_level': '2nd Year',
+            'current_defense_stage': 'Design',
+          },
+          {
+            'section': 'BSIT-2A',
+            'year_level': '2nd Year',
+            'current_defense_stage': 'Final',
+          },
+          {
+            'section': 'BSIT-2B',
+            'year_level': '2nd Year',
+            'current_defense_stage': 'Design',
+          },
+        ])
+          {
+            ...scope,
+            'level': '2nd Year PIT',
+            'member_ids': ['BONGCAC, Ryza Mae G.'],
+            'leader_id': 'BONGCAC, Ryza Mae G.',
+          },
+      ];
+      expect(
+        applyTeamImportAccount(
+          rows: rows,
+          index: 0,
+          username: 'ryza-id',
+          resolution: {
+            'field': 'member_ids',
+            'reference': 'BONGCAC, Ryza Mae G.',
+          },
+        ),
+        [0, 1],
+      );
+      expect(rows[1]['leader_id'], 'ryza-id');
+      expect(rows[2]['member_ids'], ['BONGCAC, Ryza Mae G.']);
+      expect(rows[3]['leader_id'], 'BONGCAC, Ryza Mae G.');
+    },
+  );
+
+  test(
     'replacing a member updates the leader and deduplicates resolved identity',
     () {
       final rows = <Map<String, dynamic>>[

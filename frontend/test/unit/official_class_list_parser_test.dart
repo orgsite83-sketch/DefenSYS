@@ -2,6 +2,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/web/admin/user_management/bulk_import/official_class_list_parser.dart';
 
 void main() {
+  test('official name parsing preserves client initials and suffixes without embedded commas', () {
+    for (final item in [
+      ('TAC-AN, EDGAR, JR C', 'EDGAR JR C', 'TAC-AN'),
+      ('BONGCAC, RYZA MAY G.', 'RYZA MAY G.', 'BONGCAC'),
+      ('Dela Cruz, Juan A. III', 'Juan A. III', 'Dela Cruz'),
+      ('MATABALAN, JOHNLEY L', 'JOHNLEY L', 'MATABALAN'),
+      ('Juan Dela Cruz', 'Juan', 'Dela Cruz'),
+    ]) {
+      final parts = splitOfficialFullName(item.$1);
+      expect(parts.firstName, item.$2);
+      expect(parts.lastName, item.$3);
+    }
+  });
   group('parseOfficialClassListCsv', () {
     test('does not misparse standard faculty CSV columns as metadata', () {
       const facultyCsv = '''id_number,first_name,last_name,email,role,year_level,section,faculty

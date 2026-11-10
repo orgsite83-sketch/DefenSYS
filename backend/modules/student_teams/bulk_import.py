@@ -150,7 +150,8 @@ def reference_resolution(value, *, role=None, field='member_ids'):
     """Review metadata exposes no suggested accounts outside existing pickers."""
     result = _person_index().resolve(value, role)
     status = 'inactive' if result.user is not None and not result.user.is_active else result.status
-    projection = {'field': field, 'reference': value, 'status': status}
+    projection = {'field': field, 'reference': value, 'status': status,
+                  'reference_key': _person_names.key(value), 'match_kind': result.kind}
     if result.user is not None:
         projection.update(username=result.user.username, name=display_name(result.user))
     return projection
@@ -180,8 +181,10 @@ def _resolution_error(raw, result, field_label):
         return (f'{field_label} "{raw}": multiple users {kind}. '
                 'Select the correct account or use its registered ID.')
     if result.status == 'selection_required':
-        return (f'{field_label} "{raw}": a similar name exists with different middle initials. '
-                'Select the registered account or use its ID to confirm the match.')
+        reason = ('the supplied middle initials conflict with registered name details'
+                  if result.kind == 'middle_initial_conflict' else 'middle-name details need review')
+        return (f'{field_label} "{raw}": {reason}. '
+                'Review the account or use its registered ID.')
     return (f'{field_label} "{raw}": no user found with that name. '
             'Select an account or use its registered ID.')
 

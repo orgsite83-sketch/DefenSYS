@@ -298,20 +298,8 @@ def _clean_spaces(value):
 
 
 def _split_official_full_name(full_name):
-    full_name = _clean_spaces(full_name)
-    if not full_name:
-        return '', ''
-
-    if ',' in full_name:
-        last, rest = full_name.split(',', 1)
-        parts = [part for part in _clean_spaces(rest).split(' ') if part]
-        first = ' '.join(part for part in parts if len(part.rstrip('.')) > 1)
-        return first or _clean_spaces(rest), _clean_spaces(last)
-
-    parts = full_name.split(' ')
-    if len(parts) == 1:
-        return parts[0], ''
-    return ' '.join(parts[:-1]), parts[-1]
+    from defensys_backend.person_names import split_official_person_name
+    return split_official_person_name(full_name)
 
 
 def _normalize_person_name(value):

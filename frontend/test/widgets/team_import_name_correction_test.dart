@@ -221,6 +221,88 @@ void main() {
     },
   );
 
+  for (final useFieldPicker in [false, true]) {
+    testWidgets(
+      'one adviser selection updates the batch using field picker=$useFieldPicker',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 1200);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final rows = <Map<String, dynamic>>[
+          {
+            'team_name': 'First team',
+            'section': 'BSIT-3A',
+            'member_ids': ['a'],
+            'leader_id': 'a',
+            'adviser_name': 'GINBERT A. FERNANDEZ',
+          },
+          {
+            'team_name': 'Second team',
+            'section': 'BSIT-4D',
+            'member_ids': ['b'],
+            'leader_id': 'b',
+            'adviser_name': 'FERNANDEZ, Ginbert A',
+          },
+        ];
+        final changed = <int>[];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: TeamBulkImportReviewTable(
+                  rows: rows,
+                  previewRows: [
+                    for (var i = 0; i < rows.length; i++)
+                      {
+                        'row': i + 1,
+                        'reference_resolutions': [
+                          {
+                            'field': 'adviser_name',
+                            'reference': rows[i]['adviser_name'],
+                            'status': 'ambiguous',
+                            'reference_key': 'ginbert a fernandez',
+                          },
+                        ],
+                      },
+                  ],
+                  isCapstoneAdmin: true,
+                  pitLeadYear: null,
+                  showIssuesOnly: false,
+                  adviserOptions: const [
+                    {'username': '207', 'name': 'GINBERT A FERNANDEZ'},
+                    {'username': '208', 'name': 'GINBERT A FERNANDEZ'},
+                  ],
+                  onRowChanged: changed.add,
+                  onDeleteRow: (_) {},
+                  onAddRow: () {},
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          useFieldPicker
+              ? find.byKey(const ValueKey('adviser_selector_1'))
+              : find.byKey(
+                  const ValueKey('resolve-adviser_name-GINBERT A. FERNANDEZ'),
+                ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          useFieldPicker
+              ? find.text('@207')
+              : find.byKey(const ValueKey('select-account-207')),
+        );
+        await tester.pumpAndSettle();
+        expect(rows.map((r) => r['adviser_name']), ['207', '207']);
+        expect(changed, [0, 1]);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final width in [390.0, 1200.0]) {
     for (final brightness in Brightness.values) {
       testWidgets('correction picker fits $width ${brightness.name}', (
@@ -231,6 +313,7 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         final boundaryKey = GlobalKey();
+        String? selected;
         await tester.pumpWidget(
           RepaintBoundary(
             key: boundaryKey,
@@ -239,14 +322,31 @@ void main() {
               home: Scaffold(
                 body: DefensysShadcnScope(
                   child: TeamImportReferenceCorrections(
-                    resolutions: unresolved,
+                    resolutions: const [
+                      {
+                        'field': 'member_ids',
+                        'reference': 'BONGCAC, Ryza Mae G.',
+                        'status': 'not_found',
+                      },
+                      {
+                        'field': 'adviser_name',
+                        'reference': 'GINBERT A. FERNANDEZ',
+                        'status': 'matched',
+                        'match_kind': 'omitted_initial',
+                        'name': 'GINBERT FERNANDEZ',
+                        'username': '207',
+                      },
+                    ],
                     students: const [
-                      {'username': '2023304712', 'name': 'JOHNLEY L MATABALAN'},
+                      {
+                        'username': 'client-ryza',
+                        'name': 'RYZA MAY G. BONGCAC',
+                      },
                     ],
                     faculty: const [
                       {'username': '207', 'name': 'GINBERT FERNANDEZ'},
                     ],
-                    onSelected: (_, _) {},
+                    onSelected: (_, username) => selected = username,
                   ),
                 ),
               ),
@@ -255,16 +355,16 @@ void main() {
         );
         await tester.pumpAndSettle();
         await tester.tap(
-          find.byKey(
-            const ValueKey('resolve-adviser_name-GINBERT A. FERNANDEZ'),
-          ),
+          find.byKey(const ValueKey('resolve-member_ids-BONGCAC, Ryza Mae G.')),
         );
         await tester.pumpAndSettle();
         expect(
-          find.text('Uploaded reference: GINBERT A. FERNANDEZ'),
+          find.textContaining('Uploaded reference: BONGCAC, Ryza Mae G.'),
           findsOneWidget,
         );
         expect(tester.takeException(), isNull);
+        expect(find.text('Spelling differs: MAE versus MAY'), findsOneWidget);
+        expect(selected, isNull);
         if (Platform.environment['DEFENSYS_REVIEW_CAPTURE'] == '1') {
           await tester.runAsync(() async {
             final boundary =
@@ -275,11 +375,16 @@ void main() {
               format: ui.ImageByteFormat.png,
             );
             await File(
-              '../.tmp/name-correction-${width.toInt()}-${brightness.name}.png',
+              '../.tmp/client-name-correction-${width.toInt()}-${brightness.name}.png',
             ).writeAsBytes(bytes!.buffer.asUint8List());
             image.dispose();
           });
         }
+        await tester.tap(
+          find.byKey(const ValueKey('select-account-client-ryza')),
+        );
+        await tester.pumpAndSettle();
+        expect(selected, 'client-ryza');
       });
     }
   }

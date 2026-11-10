@@ -202,6 +202,61 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         : reference;
   }
 
+  void _applyAccountSelection(
+    int index,
+    Map<String, dynamic> row,
+    Map<String, dynamic> resolution,
+    String username,
+  ) {
+    if (!mounted ||
+        index >= widget.rows.length ||
+        !identical(widget.rows[index], row)) {
+      return;
+    }
+    final preview = _previewForRow(index + 1);
+    final original = '${resolution['reference']}';
+    final field = '${resolution['field']}';
+    final storedReference =
+        field == 'adviser_name' && '${row[field] ?? ''}'.isEmpty
+        ? row['adviser_id']
+        : row[field];
+    final current = field == 'member_ids'
+        ? (row[field] as List? ?? const []).contains(original)
+        : '${storedReference ?? ''}' == original;
+    if (!current) return;
+    late List<int> changed;
+    setState(() {
+      changed = applyTeamImportAccount(
+        rows: widget.rows,
+        index: index,
+        resolution: resolution,
+        username: username,
+        resolutions: (preview?['reference_resolutions'] as List? ?? const [])
+            .whereType<Map>()
+            .map((r) => Map<String, dynamic>.from(r))
+            .toList(),
+        allResolutions: [
+          for (var offset = 0; offset < widget.rows.length; offset++)
+            (_previewForRow(offset + 1)?['reference_resolutions'] as List? ??
+                    const [])
+                .whereType<Map>()
+                .map((r) => Map<String, dynamic>.from(r))
+                .toList(),
+        ],
+      );
+      for (final offset in changed) {
+        _selectedReferences
+            .putIfAbsent(widget.rows[offset], () => [])
+            .add(
+              '${resolution['reference']} → ${_accountLabel(username, faculty: const ['adviser_name', 'instructor_name'].contains(resolution['field']))}',
+            );
+      }
+    });
+    for (final changedIndex in changed) {
+      widget.onRowChanged(changedIndex);
+    }
+  }
+
   @override
   Widget build(BuildContext context) =>
       DefensysShadcnScope(child: Builder(builder: _buildReview));
@@ -760,44 +815,8 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               students: widget.studentOptions,
               faculty: widget.adviserOptions,
               enabled: !widget.isValidating,
-              onSelected: (resolution, username) {
-                if (index >= widget.rows.length ||
-                    !identical(widget.rows[index], row)) {
-                  return;
-                }
-                final original = '${resolution['reference']}';
-                final field = '${resolution['field']}';
-                final storedReference =
-                    field == 'adviser_name' && '${row[field] ?? ''}'.isEmpty
-                    ? row['adviser_id']
-                    : row[field];
-                final current = field == 'member_ids'
-                    ? (row[field] as List? ?? const []).contains(original)
-                    : '${storedReference ?? ''}' == original;
-                if (!current) return;
-                late List<int> changed;
-                setState(() {
-                  changed = applyTeamImportAccount(
-                    rows: widget.rows,
-                    index: index,
-                    resolution: resolution,
-                    username: username,
-                    resolutions:
-                        (preview?['reference_resolutions'] as List? ?? const [])
-                            .whereType<Map>()
-                            .map((r) => Map<String, dynamic>.from(r))
-                            .toList(),
-                  );
-                  _selectedReferences
-                      .putIfAbsent(row, () => [])
-                      .add(
-                        '${resolution['reference']} → ${_accountLabel(username, faculty: const ['adviser_name', 'instructor_name'].contains(resolution['field']))}',
-                      );
-                });
-                for (final changedIndex in changed) {
-                  widget.onRowChanged(changedIndex);
-                }
-              },
+              onSelected: (resolution, username) =>
+                  _applyAccountSelection(index, row, resolution, username),
             ),
             for (final reference
                 in _selectedReferences[row] ?? const <String>[])
@@ -1918,6 +1937,12 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
   }) async {
     final role = isInstructor ? 'Instructor' : 'Adviser';
     final field = isInstructor ? 'instructor_name' : 'adviser_name';
+    final originalRow = widget.rows[index];
+    final originalReference = '${originalRow[field] ?? ''}'.isNotEmpty
+        ? '${originalRow[field]}'
+        : isInstructor
+        ? ''
+        : '${originalRow['adviser_id'] ?? ''}';
     final Map<String, _AdviserCandidate> candidatesMap = {};
 
     if (widget.adviserOptions != null) {
@@ -2162,15 +2187,59 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                           )
                                         : null,
                                     onTap: () {
-                                      setState(() {
-                                        widget.rows[index][field] =
-                                            adv.id ?? adv.name;
-                                        if (!isInstructor) {
-                                          widget.rows[index]['adviser_id'] =
-                                              adv.id ?? adv.name;
-                                        }
-                                      });
-                                      widget.onRowChanged(index);
+                                      if (!mounted ||
+                                          index >= widget.rows.length ||
+                                          !identical(
+                                            widget.rows[index],
+                                            originalRow,
+                                          )) {
+                                        Navigator.of(dialogCtx).pop();
+                                        return;
+                                      }
+                                      if (adv.id != null) {
+                                        final projections =
+                                            _previewForRow(
+                                                  index + 1,
+                                                )?['reference_resolutions']
+                                                as List? ??
+                                            const [];
+                                        final projected = projections
+                                            .whereType<Map>()
+                                            .where(
+                                              (r) =>
+                                                  r['field'] == field &&
+                                                  r['reference'] ==
+                                                      originalReference,
+                                            )
+                                            .firstOrNull;
+                                        _applyAccountSelection(
+                                          index,
+                                          originalRow,
+                                          projected == null
+                                              ? {
+                                                  'field': field,
+                                                  'reference':
+                                                      originalReference,
+                                                }
+                                              : Map<String, dynamic>.from(
+                                                  projected,
+                                                ),
+                                          adv.id!,
+                                        );
+                                      } else if (index < widget.rows.length &&
+                                          identical(
+                                            widget.rows[index],
+                                            originalRow,
+                                          )) {
+                                        setState(() {
+                                          widget.rows[index][field] = adv.name;
+                                          if (!isInstructor) {
+                                            widget.rows[index]['adviser_id'] =
+                                                adv.name;
+                                          }
+                                        });
+                                        widget.onRowChanged(index);
+                                      }
                                       Navigator.of(dialogCtx).pop();
                                     },
                                   );

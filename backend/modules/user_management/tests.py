@@ -780,10 +780,10 @@ class UserManagementApiTests(APITestCase):
 
         first = User.objects.get(username='2030-0001')
         self.assertTrue(first.check_password('2030-0001'))
-        self.assertEqual(first.first_name, 'Mae Ann')
+        self.assertEqual(first.first_name, 'Mae Ann P')
         self.assertEqual(first.last_name, 'ABAJAR')
         existing.refresh_from_db()
-        self.assertEqual(existing.first_name, 'Mary Vhel')
+        self.assertEqual(existing.first_name, 'Mary Vhel Y')
         self.assertEqual(existing.last_name, 'ABAO')
         self.assertEqual(existing.email, 'mary@example.com')
 

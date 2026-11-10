@@ -5,9 +5,6 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 
-IDENTITY_SUFFIX = re.compile(r'(?:^|[\s,])(?P<suffix>jr\.?|sr\.?|ii|iii|iv|v)$', re.I)
-
-
 def comparison_text(value):
     return ' '.join(unicodedata.normalize('NFC', value or '').split()).casefold()
 
@@ -23,43 +20,54 @@ class PersonNames:
         self.suffix = re.compile(r'(?:[\s,.]+)(?:' + '|'.join(suffixes) + r')\.?$', re.I)
         self.credential = re.compile(r'^(?:' + '|'.join(suffixes) + r')\.?$', re.I)
 
-    def clean(self, value):
+    def _components(self, value, *, surname_first=True, surname=False):
         text = unicodedata.normalize('NFC', value or '').strip()
-        identity = ''
-
-        def strip_titles(part):
-            nonlocal identity
+        parts, identities = [], []
+        for index, part in enumerate(text.split(',')):
+            part = part.strip()
             previous = None
             while part and previous != part:
                 previous = part
-                match = IDENTITY_SUFFIX.search(part)
-                if match:
-                    identity = match['suffix'].rstrip('.').casefold()
-                    part = part[:match.start()].strip()
                 part = self.suffix.sub('', part).strip()
                 part = self.prefix.sub('', part).strip()
-            return part
-
-        # Strip credentials around the whole name, then handle Last, First.
-        text = strip_titles(text)
-        parts = []
-        for part in text.split(','):
-            part = part.strip()
             if not part or self.credential.fullmatch(part):
                 continue
-            part = strip_titles(part)
-            if part:
-                parts.append(part)
-        if len(parts) == 2:
-            text = f'{parts[1]} {parts[0]}'
-        else:
-            text = ' '.join(parts)
-        return f'{text} {identity}'.strip()
+            words = part.split()
+            kept = []
+            for position, word in enumerate(words):
+                token = comparison_text(word).rstrip('.')
+                roman = token in ('ii', 'iii', 'iv', 'v') and position == len(words) - 1
+                # A single V may be a middle initial; a surname field or a
+                # complete name supplies the boundary needed to treat it as V.
+                roman = roman and (token != 'v' or surname or len(words) >= 3
+                                   or surname_first and ',' in text and index == 0)
+                if token in ('jr', 'sr') or roman:
+                    identities.append(token)
+                else:
+                    kept.append(word)
+            if kept:
+                parts.append(' '.join(kept))
+        if surname_first and len(parts) > 1:
+            parts = parts[1:] + parts[:1]
+        words = comparison_text(' '.join(parts)).split()
+        words = tuple(w[:-1] if len(w) == 2 and w[0].isalpha() and w[1] == '.' else w
+                      for w in words)
+        return words, tuple(dict.fromkeys(identities))
+
+    def clean(self, value):
+        words, suffix = self._components(value)
+        return ' '.join((*words, *suffix))
 
     def key(self, value):
-        words = comparison_text(self.clean(value)).split()
-        return ' '.join(w[:-1] if len(w) == 2 and w[0].isalpha() and w[1] == '.' else w
-                        for w in words)
+        return self.clean(value)
+
+    def account_parts(self, first_name, last_name):
+        # Stored first/last fields already identify the surname boundary. Never
+        # interpret an old embedded comma in first_name as Last, First again.
+        given, first_suffix = self._components(first_name, surname_first=False)
+        last, last_suffix = self._components(last_name, surname_first=False, surname=True)
+        suffix = tuple(dict.fromkeys((*first_suffix, *last_suffix)))
+        return given, last, suffix
 
 
 @dataclass(frozen=True)
@@ -82,18 +90,17 @@ class PersonNameIndex:
         self.middle_keys = defaultdict(list)
         self.results = {}
         for user in self.users:
-            full = names.key(f'{user.first_name} {user.last_name}')
-            last = names.key(user.last_name)
-            first = names.key(user.first_name)
+            given, family, suffix = names.account_parts(user.first_name, user.last_name)
+            full = ' '.join((*given, *family, *suffix))
+            last = ' '.join((*family, *suffix))
+            first = ' '.join(given)
             self.full_names[full].append(user)
             self.surnames[last].append(user)
             if first:
                 self.initials[(last, first[0])].append(user)
             if first and last:
-                given = first.split()
-                # Only standalone middle initials may be omitted for suggestions.
                 base = ' '.join([given[0]] + [w for w in given[1:] if not is_initial(w)])
-                self.middle_keys[(base, last)].append(user)
+                self.middle_keys[(base, ' '.join(family), suffix)].append(user)
 
     @staticmethod
     def roles(role):
@@ -123,6 +130,14 @@ class PersonNameIndex:
             return NameResolution('matched', user, kind='id')
         matches = self.full_matches(raw, role)
         if matches:
+            # A reference with no middle initials also cannot distinguish a
+            # blank-initial account from another account in the same name group.
+            if len(matches) == 1:
+                given, family, suffix = self.names.account_parts(matches[0].first_name, matches[0].last_name)
+                if given and not any(is_initial(w) for w in given[1:]):
+                    group = self.scoped(self.middle_keys.get((' '.join(given), ' '.join(family), suffix), ()), role)
+                    if len(group) > 1:
+                        return NameResolution('ambiguous', matches=group, kind='omitted_initial')
             return self.result(matches, 'full_name')
 
         key = self.names.key(raw)
@@ -140,17 +155,32 @@ class PersonNameIndex:
         if matches:
             return self.result(matches, 'surname')
 
-        # Suggestions are a separate outcome, never an automatic identity match.
-        # Enumerate token boundaries rather than guessing the last word is a surname.
-        for boundary in range(1, len(words)):
-            given, last = words[:boundary], ' '.join(words[boundary:])
+        # Omitted initials are compatible only when the entire given-name and
+        # surname group contains one identity, including inactive duplicates.
+        body, suffix = self.names._components(raw)
+        groups, compatible, conflicts = {}, {}, []
+        for boundary in range(1, len(body)):
+            given, last = body[:boundary], ' '.join(body[boundary:])
+            if is_initial(given[0]):
+                continue
             base = ' '.join([given[0]] + [w for w in given[1:] if not is_initial(w)])
-            for candidate in self.scoped(self.middle_keys.get((base, last), ()), role):
-                stored_given = self.names.key(candidate.first_name).split()
-                uploaded_initials = [w for w in given[1:] if is_initial(w)]
-                stored_initials = [w for w in stored_given[1:] if is_initial(w)]
+            candidates = self.scoped(self.middle_keys.get((base, last, suffix), ()), role)
+            for candidate in candidates:
+                groups[candidate.username] = candidate
+                stored_given, _, _ = self.names.account_parts(candidate.first_name, candidate.last_name)
+                uploaded_initials = tuple(w for w in given[1:] if is_initial(w))
+                stored_initials = tuple(w for w in stored_given[1:] if is_initial(w))
+                conflicts.append(bool(uploaded_initials and stored_initials and
+                    len(uploaded_initials) == len(stored_initials) and uploaded_initials != stored_initials))
                 if bool(uploaded_initials) != bool(stored_initials):
-                    return NameResolution('selection_required')
+                    compatible[candidate.username] = candidate
+        if compatible:
+            if len(groups) == 1:
+                return NameResolution('matched', next(iter(compatible.values())), kind='omitted_initial')
+            return NameResolution('ambiguous', matches=tuple(groups.values()), kind='omitted_initial')
+        if groups:
+            kind = 'middle_initial_conflict' if conflicts and all(conflicts) else 'middle_initial_details'
+            return NameResolution('selection_required', kind=kind)
         return NameResolution('not_found')
 
     @staticmethod
