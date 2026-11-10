@@ -1,3 +1,5 @@
+import 'team_import_headers.dart';
+
 const teamBulkImportHeader =
     'Team Name,Capstone Project,Section,Adviser,Team Members';
 
@@ -296,15 +298,7 @@ ParsedBulkCsvResult _parseMultiColumnTeamMatrix(
 
     final blockHeaders = <String>[];
     for (var c = colStart; c < colEnd && c < headerRow.length; c++) {
-      blockHeaders.add(
-        headerRow[c]
-            .trim()
-            .toLowerCase()
-            .replaceAll('*', '')
-            .replaceAll(':', '')
-            .trim()
-            .replaceFirst('\ufeff', ''),
-      );
+      blockHeaders.add(normalizeTeamImportHeader(headerRow[c]));
     }
 
     int findInBlock(bool Function(String) test) {
@@ -472,14 +466,10 @@ ParsedBulkCsvResult parseTeamBulkCsv(
   if (!isSubBlock) {
     final multiColIndices = <int>[];
     for (var r = 0; r < matrix.length && r < 10; r++) {
+      // Common labels such as "Team" can also be actual roster values.
+      if (!matrix[r].any(isTeamImportMemberHeader)) continue;
       for (var c = 0; c < matrix[r].length; c++) {
-        final h = matrix[r][c]
-            .trim()
-            .toLowerCase()
-            .replaceAll('*', '')
-            .replaceAll(':', '')
-            .trim()
-            .replaceFirst('\ufeff', '');
+        final h = normalizeTeamImportHeader(matrix[r][c]);
         if (h == 'team name' || h == 'team_name') {
           if (!multiColIndices.contains(c)) {
             multiColIndices.add(c);
@@ -573,30 +563,8 @@ ParsedBulkCsvResult parseTeamBulkCsv(
 
   for (var i = 0; i < matrix.length; i++) {
     final row = matrix[i];
-    final headers = row
-        .map(
-          (cell) => cell
-              .trim()
-              .toLowerCase()
-              .replaceAll('*', '')
-              .replaceAll(':', '')
-              .trim()
-              .replaceFirst('\ufeff', ''),
-        )
-        .toSet();
-    final hasTeamName =
-        headers.contains('team name') || headers.contains('team_name');
-    final hasMembers =
-        headers.contains('team members') ||
-        headers.contains('team_members') ||
-        headers.contains('members') ||
-        headers.contains('names') ||
-        headers.contains('student name') ||
-        headers.contains('student_name') ||
-        headers.contains('student names') ||
-        headers.contains('student') ||
-        headers.contains('students') ||
-        headers.contains('member_ids');
+    final hasTeamName = row.any(isTeamImportNameHeader);
+    final hasMembers = row.any(isTeamImportMemberHeader);
     if (hasTeamName && hasMembers) {
       lineIndex = i;
       break;
@@ -610,13 +578,7 @@ ParsedBulkCsvResult parseTeamBulkCsv(
   // Check for multi-column section matrix (e.g. 2A, 2B, 2C side-by-side)
   final teamNameIndices = <int>[];
   for (var c = 0; c < matrix[lineIndex].length; c++) {
-    final h = matrix[lineIndex][c]
-        .trim()
-        .toLowerCase()
-        .replaceAll('*', '')
-        .replaceAll(':', '')
-        .trim()
-        .replaceFirst('\ufeff', '');
+    final h = normalizeTeamImportHeader(matrix[lineIndex][c]);
     if (h == 'team name' || h == 'team_name') {
       teamNameIndices.add(c);
     }
@@ -761,17 +723,9 @@ ParsedBulkCsvResult parseTeamBulkCsv(
     );
   }
 
-  final headers = _parseCsvLine(lines.first)
-      .map(
-        (header) => header
-            .trim()
-            .toLowerCase()
-            .replaceAll('*', '')
-            .replaceAll(':', '')
-            .trim()
-            .replaceFirst('\ufeff', ''),
-      )
-      .toList();
+  final headers = _parseCsvLine(
+    lines.first,
+  ).map(normalizeTeamImportHeader).toList();
 
   final isClientFormat =
       (headers.contains('team name') || headers.contains('team_name')) &&
@@ -967,11 +921,9 @@ ParsedBulkCsvResult parseTeamBulkCsv(
       }
 
       // Check if this line is a repeated table header (e.g. "Team Name,Names,Modules")
-      final lineNormalized = columns
-          .map((c) => c.trim().toLowerCase())
-          .toList();
-      if (lineNormalized.contains('team name') ||
-          lineNormalized.contains('team_name')) {
+      final lineNormalized = columns.map(normalizeTeamImportHeader).toList();
+      if (lineNormalized.any(isTeamImportNameHeader) &&
+          lineNormalized.any(isTeamImportMemberHeader)) {
         moduleLayout = lineNormalized.any(
           (h) => h == 'module' || h == 'modules',
         );
@@ -1094,7 +1046,8 @@ ParsedBulkCsvResult parseTeamBulkCsv(
             (currentTeam['member_ids'] as List<String>).add(member);
           }
           if ((currentTeam['leader_id'] ?? '').toString().isEmpty) {
-            currentTeam['leader_id'] = (currentTeam['member_ids'] as List).first;
+            currentTeam['leader_id'] =
+                (currentTeam['member_ids'] as List).first;
           }
         }
       }

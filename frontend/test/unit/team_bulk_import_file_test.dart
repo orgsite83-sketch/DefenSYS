@@ -58,6 +58,98 @@ List<int> workbookBytes({String prefix = '', bool singleQuotes = false}) {
 
 void main() {
   test(
+    'school roster headers retain merged team, adviser and section data',
+    () {
+      final workbook = xl.Excel.createExcel();
+      final sheet = workbook['Sheet1'];
+      void write(String cell, String value) => sheet.updateCell(
+        xl.CellIndex.indexByString(cell),
+        xl.TextCellValue(value),
+      );
+      void merge(String start, String end) => sheet.merge(
+        xl.CellIndex.indexByString(start),
+        xl.CellIndex.indexByString(end),
+      );
+      for (final entry in {
+        'A4': 'No.',
+        'B4': 'Team',
+        'C4': 'Adviser',
+        'D4': 'Names',
+        'E4': 'Capstone Project Title',
+        'F4': 'Section',
+        'A6': '1',
+        'B6': 'CodeCrafters',
+        'C6': 'Prof. Reyes',
+        'D6': 'REYES, Ana',
+        'D7': 'CRUZ, Ben',
+        'E6': 'Campus Records',
+        'F6': 'BSIT-4D',
+        'A8': '2',
+        'B8': 'CodeCrafters',
+        'D8': 'SANTOS, Carla',
+        'D9': 'RAMOS, Dan',
+        'E8': 'Document Tracking',
+        'A10': '3',
+        'B10': 'Third Team',
+        'C10': 'Prof. Santos',
+        'D10': 'LIM, Eva',
+        'D11': 'TAN, Finn',
+        'E10': 'Library Portal',
+        'F10': 'BSIT-3C',
+      }.entries) {
+        write(entry.key, entry.value);
+      }
+      for (final col in ['A', 'B', 'C', 'D', 'E', 'F']) {
+        merge('${col}4', '${col}5');
+      }
+      for (final row in [6, 8, 10]) {
+        for (final col in ['A', 'B', 'E']) {
+          merge('$col$row', '$col${row + 1}');
+        }
+      }
+      merge('C6', 'C9');
+      merge('F6', 'F9');
+      merge('C10', 'C11');
+      merge('F10', 'F11');
+      final rows = parseTeamBulkCsv(
+        readTeamImportFiles([
+          PickedTabularFile(
+            name: 'school-roster.xlsx',
+            extension: 'xlsx',
+            bytes: workbook.encode()!,
+          ),
+        ]),
+      ).rows;
+      expect(rows, hasLength(3));
+      expect(rows.map((row) => row['team_name']), [
+        'CodeCrafters',
+        'CodeCrafters',
+        'Third Team',
+      ]);
+      expect(rows.map((row) => row['group_key']).toSet(), hasLength(3));
+      expect(rows.map((row) => row['project_title']), [
+        'Campus Records',
+        'Document Tracking',
+        'Library Portal',
+      ]);
+      expect(rows.map((row) => row['adviser_name']), [
+        'Prof. Reyes',
+        'Prof. Reyes',
+        'Prof. Santos',
+      ]);
+      expect(rows.map((row) => row['section']), [
+        'BSIT-4D',
+        'BSIT-4D',
+        'BSIT-3C',
+      ]);
+      expect(rows[0]['member_ids'], ['REYES, Ana', 'CRUZ, Ben']);
+      expect(rows[1]['member_ids'], ['SANTOS, Carla', 'RAMOS, Dan']);
+      expect(rows[2]['member_ids'], ['LIM, Eva', 'TAN, Finn']);
+      expect(rows[0]['leader_id'], 'REYES, Ana');
+    },
+  );
+
+  test(
     'instructor template reuses the official format with assigned section and instructor',
     () {
       final bytes = generateOfficialTeamRosterExcelBytes(

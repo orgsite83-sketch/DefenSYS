@@ -5,6 +5,7 @@ import 'package:excel/excel.dart' as xl;
 import '../csv_file_io.dart';
 import '../excel_safe_decode.dart';
 import 'team_bulk_import_csv.dart';
+import 'team_import_headers.dart';
 
 /// Read a batch atomically so a failed file is never silently omitted.
 String readTeamImportFiles(
@@ -28,7 +29,8 @@ String readTeamImportFiles(
       final parsed = parseTeamBulkCsv(csv, sourceKey: 'file$fileIndex');
       if (parsed.rows.isEmpty) {
         throw const FormatException(
-          'No team rows were found. Use the DefenSYS team roster template.',
+          'No team rows were found. Include a Team or Team Name column and '
+          'a Names or Team Members column with student rows below.',
         );
       }
       rows.addAll([
@@ -103,17 +105,12 @@ String teamXlsxToCsv(List<int> bytes, {bool preserveTeamGroups = true}) {
     for (var r = 0; r < sheet.maxRows && r < 10; r++) {
       final row = sheet.rows[r];
       for (var col = 0; col < row.length; col++) {
-        final label = _cellText(
-          row[col]?.value,
-        ).toLowerCase().replaceAll('*', '').trim();
-        if (label != 'team name' && label != 'team_name') continue;
+        if (!isTeamImportNameHeader(_cellText(row[col]?.value))) continue;
         var memberCol = -1;
         for (var c = col + 1; c < row.length; c++) {
-          final header = _cellText(
-            row[c]?.value,
-          ).toLowerCase().replaceAll('*', '').trim();
-          if (header == 'team name' || header == 'team_name') break;
-          if (header == 'team members' || header == 'team_members') {
+          final header = _cellText(row[c]?.value);
+          if (isTeamImportNameHeader(header)) break;
+          if (isTeamImportMemberHeader(header)) {
             memberCol = c;
             break;
           }
