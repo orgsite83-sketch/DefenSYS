@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/tabular_encoding_review.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -322,7 +323,7 @@ class _StudentBatchEnrollmentHubViewState
     for (final file in files) {
       final official = file.isXlsx
           ? parseOfficialClassListXlsx(file.bytes)
-          : parseOfficialClassListCsv(file.text ?? utf8.decode(file.bytes, allowMalformed: true));
+          : parseOfficialClassListCsv(file.decodedText);
       if (_validateParsedFileTerm(official.metadata, activeSem) != null) {
         continue;
       }
@@ -2660,6 +2661,9 @@ class _StudentBatchEnrollmentHubViewState
   Future<void> _processFreshFiles(List<PickedTabularFile> files) async {
     if (!mounted || files.isEmpty) return;
     try {
+      final prepared = await prepareTabularFiles(context, files);
+      if (prepared == null || !mounted) return;
+      files = prepared;
       final activeSem =
           ref.read(academicPeriodProvider).activeSemester ??
           widget.academicState.activeSemester ??
@@ -2674,7 +2678,7 @@ class _StudentBatchEnrollmentHubViewState
         final official = file.isXlsx
             ? parseOfficialClassListXlsx(file.bytes)
             : parseOfficialClassListCsv(
-                file.text ?? utf8.decode(file.bytes, allowMalformed: true),
+                file.decodedText,
               );
 
         final termError = _validateParsedFileTerm(official.metadata, activeSem);
@@ -4147,6 +4151,9 @@ class _StudentBatchEnrollmentHubViewState
   Future<void> _processRolloverFiles(List<PickedTabularFile> files) async {
     if (!mounted || files.isEmpty) return;
     try {
+      final prepared = await prepareTabularFiles(context, files);
+      if (prepared == null || !mounted) return;
+      files = prepared;
       final activeSem = ref.read(academicPeriodProvider).activeSemester ??
           widget.academicState.activeSemester ??
           ref.read(studentAcademicRecordsProvider).activeSemester;
@@ -4159,7 +4166,7 @@ class _StudentBatchEnrollmentHubViewState
       for (final file in files) {
         final official = file.isXlsx
             ? parseOfficialClassListXlsx(file.bytes)
-            : parseOfficialClassListCsv(file.text ?? utf8.decode(file.bytes, allowMalformed: true));
+            : parseOfficialClassListCsv(file.decodedText);
 
         final termError = _validateParsedFileTerm(official.metadata, activeSem);
         if (termError != null) {

@@ -1,35 +1,23 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
+import '../import/picked_tabular_file.dart';
+export '../import/picked_tabular_file.dart';
 
 import 'dart:async';
 import 'dart:convert';
+import '../import/tabular_text_decode.dart';
 import 'dart:html' as html;
 import 'dart:typed_data';
 import 'download_metadata.dart';
-
-class PickedTabularFile {
-  final String name;
-  final String extension;
-  final String? text;
-  final List<int> bytes;
-
-  const PickedTabularFile({
-    required this.name,
-    required this.extension,
-    required this.bytes,
-    this.text,
-  });
-
-  bool get isCsv => extension == 'csv';
-  bool get isXlsx => extension == 'xlsx';
-}
 
 Future<void> downloadTextFile({
   required String filename,
   required String content,
   String mimeType = 'text/csv;charset=utf-8',
 }) async {
-  final bytes = utf8.encode(content);
-  final blob = html.Blob([bytes], mimeType);
+  final bytes = filename.toLowerCase().endsWith('.csv')
+      ? encodeExcelCsv(content)
+      : utf8.encode(content);
+  final blob = html.Blob([Uint8List.fromList(bytes)], mimeType);
   final url = html.Url.createObjectUrlFromBlob(blob);
   final anchor = html.AnchorElement(href: url)
     ..download = filename
@@ -46,7 +34,9 @@ Future<void> downloadBinaryFile({
   required List<int> bytes,
   String? mimeType,
 }) async {
-  final blob = html.Blob([Uint8List.fromList(bytes)], mimeType ?? downloadMimeType(filename));
+  final blob = html.Blob([
+    Uint8List.fromList(bytes),
+  ], mimeType ?? downloadMimeType(filename));
   final url = html.Url.createObjectUrlFromBlob(blob);
   final anchor = html.AnchorElement(href: url)
     ..download = filename
@@ -62,7 +52,7 @@ Future<String?> pickCsvTextFile() async {
   final files = await pickMultipleTabularDataFiles();
   if (files.isEmpty) return null;
   final texts = files
-      .map((f) => f.text ?? utf8.decode(f.bytes, allowMalformed: true))
+      .map((f) => f.decodedText)
       .where((t) => t.trim().isNotEmpty)
       .toList();
   if (texts.isEmpty) return null;
@@ -82,7 +72,9 @@ Future<List<PickedTabularFile>> pickMultipleTabularDataFiles() {
   return _pickTabularFilesInternal(multiple: true);
 }
 
-Future<List<PickedTabularFile>> _pickTabularFilesInternal({required bool multiple}) {
+Future<List<PickedTabularFile>> _pickTabularFilesInternal({
+  required bool multiple,
+}) {
   final completer = Completer<List<PickedTabularFile>>();
   final input = html.FileUploadInputElement()
     ..accept =
@@ -150,15 +142,21 @@ Future<List<PickedTabularFile>> _parseHtmlFiles(List<html.File> files) async {
         : '';
 
     final fileCompleter = Completer<PickedTabularFile?>();
+    PickedTabularFile failed() => PickedTabularFile(
+      name: file.name,
+      extension: extension,
+      bytes: const [],
+      readError: 'Could not read this file. Select it again.',
+    );
     final reader = html.FileReader();
     reader.onError.first.then((_) {
-      if (!fileCompleter.isCompleted) fileCompleter.complete(null);
+      if (!fileCompleter.isCompleted) fileCompleter.complete(failed());
     });
     reader.onLoadEnd.first.then((_) {
       if (fileCompleter.isCompleted) return;
       final result = reader.result;
       if (result == null) {
-        fileCompleter.complete(null);
+        fileCompleter.complete(failed());
         return;
       }
       try {
@@ -177,19 +175,16 @@ Future<List<PickedTabularFile>> _parseHtmlFiles(List<html.File> files) async {
             name: file.name,
             extension: extension,
             bytes: bytes,
-            text: extension == 'csv' || extension == 'txt' || extension == 'tsv'
-                ? utf8.decode(bytes, allowMalformed: true)
-                : null,
           ),
         );
       } catch (e) {
-        fileCompleter.complete(null);
+        fileCompleter.complete(failed());
       }
     });
     try {
       reader.readAsArrayBuffer(file);
     } catch (_) {
-      if (!fileCompleter.isCompleted) fileCompleter.complete(null);
+      if (!fileCompleter.isCompleted) fileCompleter.complete(failed());
     }
     return await fileCompleter.future;
   });
@@ -303,7 +298,9 @@ class _DropzoneManager {
     _winDropSub = html.window.onDrop.listen(handleDrop);
 
     // Also attach to document.body to ensure events bubbling within body are handled
-    _bodyDragOverSub = html.document.body?.onDragOver.listen((e) => e.preventDefault());
+    _bodyDragOverSub = html.document.body?.onDragOver.listen(
+      (e) => e.preventDefault(),
+    );
     _bodyDropSub = html.document.body?.onDrop.listen((e) => e.preventDefault());
   }
 
@@ -375,4 +372,3 @@ StreamSubscription? setupDropzoneListener(
     onRejectedFiles: onRejectedFiles,
   );
 }
-

@@ -227,6 +227,31 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     );
   }
 
+  Future<Map<String, dynamic>> previewNameRepair(
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/name-repair/preview/'),
+      body: jsonEncode(payload),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    return Map<String, dynamic>.from(jsonDecode(utf8.decode(response.bodyBytes)));
+  }
+
+  Future<void> applyNameRepair(String token) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/name-repair/apply/'),
+      body: jsonEncode({'preview_token': token}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    await fetchUsers(successMessage: 'Account name repaired.');
+    _markDependentDataChanged();
+  }
+
   Future<List<Map<String, dynamic>>> fetchRoleAssignmentHistory(
     int userId,
   ) async {

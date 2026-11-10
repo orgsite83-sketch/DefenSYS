@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/tabular_encoding_review.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -325,6 +326,9 @@ class _PitStudentImportScreenState
     if (!mounted || files.isEmpty) return;
 
     try {
+      final prepared = await prepareTabularFiles(context, files);
+      if (prepared == null || !mounted) return;
+      files = prepared;
       final allRows = <Map<String, dynamic>>[];
       final sectionsSet = <String>{};
       var officialCount = 0;

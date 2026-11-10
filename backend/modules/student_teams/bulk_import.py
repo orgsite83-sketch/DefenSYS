@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from defensys_backend.person_names import name_encoding_issue
 from contextvars import ContextVar
 from django.contrib.auth import get_user_model
 
@@ -154,6 +155,10 @@ def reference_resolution(value, *, role=None, field='member_ids'):
                   'reference_key': _person_names.key(value), 'match_kind': result.kind}
     if result.user is not None:
         projection.update(username=result.user.username, name=display_name(result.user))
+        if name_encoding_issue(result.user.first_name) or name_encoding_issue(result.user.last_name):
+            projection['name_warning'] = 'Account name needs repair. Identity was selected by registered ID.'
+    projection['review_state'] = ('eligibility_issue' if status == 'inactive' else 'matched' if status == 'matched' else 'encoding_problem'
+        if status == 'encoding_problem' else 'needs_account' if status == 'not_found' else 'needs_confirmation')
     return projection
 
 
@@ -176,13 +181,16 @@ def team_reference_resolutions(data, *, pit=False):
 
 
 def _resolution_error(raw, result, field_label):
+    if result.status == 'encoding_problem':
+        return f'{field_label} "{raw}": name encoding problem. Use an intact source or select the registered ID and review the damaged account name.'
     if result.status == 'ambiguous':
         kind = 'share the surname' if result.kind == 'surname' else 'match that name'
         return (f'{field_label} "{raw}": multiple users {kind}. '
                 'Select the correct account or use its registered ID.')
     if result.status == 'selection_required':
-        reason = ('the supplied middle initials conflict with registered name details'
-                  if result.kind == 'middle_initial_conflict' else 'middle-name details need review')
+        reason = {'middle_initial_conflict': 'the supplied middle initials conflict with registered name details',
+                  'suffix_difference': 'generational suffix differs or is omitted',
+                  'surname_variant': 'surname variant needs confirmation'}.get(result.kind, 'middle-name details need review')
         return (f'{field_label} "{raw}": {reason}. '
                 'Review the account or use its registered ID.')
     return (f'{field_label} "{raw}": no user found with that name. '
@@ -312,7 +320,7 @@ def validate_bulk_team_row(
 
     if not pit_row and adviser_ref and adviser_status not in (ADVISER_STATUS_VALID,):
         resolution = _person_index().resolve(adviser_ref, ['faculty', 'admin'])
-        if resolution.status in ('ambiguous', 'selection_required'):
+        if resolution.status in ('ambiguous', 'selection_required', 'encoding_problem'):
             issues.append(_resolution_error(adviser_ref, resolution, 'Adviser'))
         elif adviser_status == ADVISER_STATUS_USER_NOT_FOUND:
             issues.append(f'Adviser "{adviser_ref}" was not found.')
@@ -342,7 +350,8 @@ def validate_bulk_team_row(
         field_label='Leader',
     )
     if leader_error:
-        issues.append(leader_error)
+        if leader_ref not in data['member_ids']:
+            issues.append(leader_error)
     elif leader is None and leader_ref:
         issues.append(f'Leader "{leader_ref}" must be a valid student user.')
 
@@ -450,6 +459,8 @@ def validate_bulk_team_row(
                     'existing concepts, files and approvals stay with their original teams.')
 
     concept_assignment, concept_requirement = imported_concept_requirement(data)
+    resolutions = team_reference_resolutions(data, pit=pit_row)
+    warnings.extend(dict.fromkeys(r['name_warning'] for r in resolutions if r.get('name_warning')))
     adviser_filter_ok = True if pit_row else row_passes_adviser_filter(adviser_status, adviser_filter)
     ready = (
         not issues
@@ -476,7 +487,7 @@ def validate_bulk_team_row(
         'concept_assignment': concept_assignment,
         'concept_requirement': concept_requirement,
         'participation_preview': participation_preview(member_user_ids) if not pit_row and not issues else [],
-        'reference_resolutions': team_reference_resolutions(data, pit=pit_row),
+        'reference_resolutions': resolutions,
     }
 
 

@@ -1,5 +1,5 @@
+import 'package:defensys/widgets/tabular_encoding_review.dart';
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:excel/excel.dart' as xl;
 import 'package:defensys/utils/excel_safe_decode.dart';
@@ -77,6 +77,9 @@ Future<StagedImportResult?> showFileImportStagingModal(
   bool hasActiveSemester = true,
   Map<String, dynamic>? activeSemester,
 }) async {
+  final prepared = await prepareTabularFiles(context, initialFiles);
+  if (prepared == null || !context.mounted) return null;
+  initialFiles = prepared;
   return showDialog<StagedImportResult>(
     context: context,
     barrierDismissible: false,
@@ -142,7 +145,19 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     super.dispose();
   }
 
-  void _handleDroppedFiles(List<PickedTabularFile> files) {
+  Future<void> _handleDroppedFiles(List<PickedTabularFile> files) async {
+    try {
+      final prepared = await prepareTabularFiles(context, files);
+      if (prepared == null || !mounted) return;
+      files = prepared;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
+      }
+      return;
+    }
     if (!mounted || files.isEmpty) return;
     int addedCount = 0;
     setState(() {
@@ -255,7 +270,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   }
 
   StagedFileInfo _inspectCsvFile(PickedTabularFile file, String importMode) {
-    final csvText = file.text ?? utf8.decode(file.bytes, allowMalformed: true);
+    final csvText = file.decodedText;
     final rows = csvText
         .split(RegExp(r'\r?\n'))
         .map(_splitCsvLine)
@@ -795,11 +810,11 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   Future<void> _handleReplaceFile(int index) async {
     setState(() => _isProcessing = true);
     try {
-      final newFile = await pickSingleTabularDataFile();
-      if (!mounted || newFile == null) {
-        return;
-      }
-
+      final pickedFile = await pickSingleTabularDataFile();
+      if (pickedFile == null || !mounted) return;
+      final prepared = await prepareTabularFiles(context, [pickedFile]);
+      if (prepared == null || !mounted) return;
+      final newFile = prepared.single;
       setState(() {
         _stagedFiles[index] = newFile;
         _reinspectAllFiles();
@@ -820,7 +835,11 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   Future<void> _handleAddMoreFiles() async {
     setState(() => _isProcessing = true);
     try {
-      final newFiles = await pickMultipleTabularDataFiles();
+      final pickedFiles = await pickMultipleTabularDataFiles();
+      if (!mounted || pickedFiles.isEmpty) return;
+      final prepared = await prepareTabularFiles(context, pickedFiles);
+      if (prepared == null || !mounted) return;
+      final newFiles = prepared;
       if (!mounted || newFiles.isEmpty) {
         return;
       }
@@ -1237,6 +1256,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       child: const Text('Cancel'),
     );
     final preview = ShadButton(
+      height: 0,
       enabled: enabled,
       backgroundColor: enabled
           ? DefensysTokens.maroonOf(context)
@@ -1255,7 +1275,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
               ),
             )
           : null,
-      child: Text(previewLabel),
+      child: Flexible(child: Text(previewLabel, textAlign: TextAlign.center)),
     );
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
@@ -1270,7 +1290,11 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
           }
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [cancel, preview],
+            children: [
+              Flexible(child: cancel),
+              const SizedBox(width: 8),
+              Flexible(flex: 2, child: preview),
+            ],
           );
         },
       ),

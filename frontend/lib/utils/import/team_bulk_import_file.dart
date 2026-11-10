@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 import 'package:excel/excel.dart' as xl;
 
@@ -22,7 +21,7 @@ String readTeamImportFiles(
       }
       final csv = file.isXlsx
           ? teamXlsxToCsv(file.bytes)
-          : file.text ?? utf8.decode(file.bytes);
+          : file.decodedText;
       if (csv.trim().isEmpty) {
         throw const FormatException('The file contains no team data.');
       }

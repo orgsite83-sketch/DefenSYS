@@ -6,6 +6,7 @@ import 'package:defensys/services/academic/student_academic_records_provider.dar
 import 'package:defensys/services/admin/user_management_provider.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/widgets.dart';
+import 'name_repair_dialog.dart';
 
 /// Unified Dialog for viewing and editing a student's personal details,
 /// current academic enrollment, and historical semester records in place.
@@ -440,7 +441,32 @@ class _StudentProfileDetailsDialogState
     }
   }
 
+  Future<void> _repairName() async {
+    final applied = await showNameRepairDialog(context, _studentUser);
+    if (applied != true || !mounted) return;
+    final id = _asInt(_studentUser['id'] ?? _currentRecord['student_id']);
+    if (id == null) return;
+    try {
+      final updated = await ref
+          .read(userManagementProvider.notifier)
+          .fetchManagedUser(id);
+      if (mounted) {
+        setState(() {
+          _studentUser = updated;
+          _isEditing = false;
+          _resetEditControllers();
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _errorMessage = '$e');
+    }
+  }
+
   Future<void> _handleSave() async {
+    if (accountNameNeedsRepair(_studentUser)) {
+      await _repairName();
+      return;
+    }
     setState(() {
       _errorMessage = null;
       _isSaving = true;
@@ -1675,7 +1701,11 @@ class _StudentProfileDetailsDialogState
             style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       FilledButton.icon(
-        onPressed: () {
+        onPressed: () async {
+          if (accountNameNeedsRepair(_studentUser)) {
+            await _repairName();
+            return;
+          }
           setState(() {
             _resetEditControllers();
             _isEditing = true;

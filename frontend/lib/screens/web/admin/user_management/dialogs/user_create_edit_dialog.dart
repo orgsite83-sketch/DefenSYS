@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/dialogs/confirm_dialog.dart';
+import 'name_repair_dialog.dart';
 
 /// Modal dialog for creating a single user or editing an existing user's details.
 /// Returns a [Map<String, dynamic>] payload if saved, or `null` if cancelled.
@@ -21,7 +22,11 @@ class UserCreateEditDialog extends StatefulWidget {
     Map<String, dynamic>? user,
     String defaultRole = 'faculty',
     List<String> pitLeadYearOptions = const ['1st Year', '2nd Year', '3rd Year'],
-  }) {
+  }) async {
+    if (user != null && accountNameNeedsRepair(user)) {
+      await showNameRepairDialog(context, user);
+      return null;
+    }
     return showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (dialogContext) => UserCreateEditDialog(

@@ -50,9 +50,9 @@ class PersonNameComparisonTests(SimpleTestCase):
         user = account('207', 'Ginbert B', 'Fernandez')
         self.assertEqual(self.resolve('Ginbert A. Fernandez', user).status, 'selection_required')
         for reference in ('Ginbert Allan Fernandez', 'Gilbert B Fernandez'):
-            self.assertEqual(self.resolve(reference, user).status, 'not_found')
-        self.assertEqual(self.resolve('Ginbert 1 Fernandez',
-            account('207', 'Ginbert', 'Fernandez')).status, 'not_found')
+            self.assertIsNone(self.resolve(reference, user).user)
+        self.assertIsNone(self.resolve('Ginbert 1 Fernandez',
+            account('207', 'Ginbert', 'Fernandez')).user)
 
     def test_formatting_collision_including_inactive_account_is_ambiguous(self):
         users = [account('a', 'Johnley L', 'Matabalan'),
@@ -168,6 +168,46 @@ class ImportNameApiTests(APITestCase):
                 'group_key': 'source/0', 'level': '3rd Year Capstone', 'year_level': '3rd Year',
                 'section': 'BSIT-3D', 'member_ids': ['MATABALAN, Johnley L.', self.student_2.username],
                 'leader_id': 'MATABALAN, Johnley L.', 'adviser_name': self.adviser.username}
+
+    def test_expanded_middle_and_known_surname_separator_preview_and_commit(self):
+        row = self.row()
+        self.student_1.first_name, self.student_1.last_name = 'MERNEL ANTIO', 'CATADA'
+        self.student_2.first_name, self.student_2.last_name = 'LENYVIE T', 'PAUYON'
+        for student in (self.student_1, self.student_2):
+            student.save(update_fields=['first_name', 'last_name'])
+        row['member_ids'] = ['CATADA, Mernel A.', 'PAUYON. Lenyvie T.']
+        row['leader_id'] = row['member_ids'][0]
+        response = self.client.post('/api/teams/bulk-import/preview/', {'teams': [row]}, format='json')
+        preview = response.data['rows'][0]
+        self.assertTrue(preview['ready'], preview)
+        self.assertEqual([r['match_kind'] for r in preview['reference_resolutions'][:2]],
+                         ['middle_initial_expanded', 'surname_separator'])
+        self.assertFalse(StudentTeam.objects.exists())
+        response = self.client.post('/api/teams/bulk-import/', {'teams': [row]}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(StudentTeam.objects.get().leader_id, self.student_1.pk)
+        self.student_1.refresh_from_db()
+        self.assertEqual(self.student_1.first_name, 'MERNEL ANTIO')
+
+    def test_damaged_registered_name_blocks_name_match_but_selected_id_warns(self):
+        row = self.row()
+        self.student_1.last_name = 'QUI\ufffdON'
+        self.student_1.save(update_fields=['last_name'])
+        row['member_ids'][0] = row['leader_id'] = 'QUI\u00d1ON, Johnley L.'
+        response = self.client.post('/api/teams/bulk-import/preview/', {'teams': [row]}, format='json')
+        preview = response.data['rows'][0]
+        self.assertFalse(preview['ready'])
+        self.assertEqual(preview['reference_resolutions'][0]['status'], 'encoding_problem')
+        self.assertEqual(sum('encoding problem' in error for error in preview['issues']), 1)
+        row['member_ids'][0] = row['leader_id'] = self.student_1.username
+        response = self.client.post('/api/teams/bulk-import/preview/', {'teams': [row]}, format='json')
+        preview = response.data['rows'][0]
+        self.assertTrue(preview['ready'], preview)
+        self.assertIn('Account name needs repair', ' '.join(preview['warnings']))
+        response = self.client.post('/api/teams/bulk-import/', {'teams': [row]}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.student_1.refresh_from_db()
+        self.assertEqual(self.student_1.last_name, 'QUI\ufffdON')
 
     def test_reported_student_preview_and_commit_use_same_identity_without_preview_writes(self):
         row = self.row()

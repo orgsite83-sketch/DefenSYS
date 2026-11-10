@@ -404,7 +404,7 @@ class _BulkImportViewState extends State<BulkImportView> {
       final matrix = file.isXlsx
           ? _extractXlsxMatrix(file.bytes)
           : const LineSplitter()
-              .convert(file.text ?? utf8.decode(file.bytes, allowMalformed: true))
+              .convert(file.decodedText)
               .map((l) => l.trim())
               .where((l) => l.isNotEmpty)
               .map(_splitCsvLine)
@@ -418,7 +418,7 @@ class _BulkImportViewState extends State<BulkImportView> {
       final rows = file.isXlsx
           ? _parseXlsxBytes(file.bytes, file.name)
           : _parseRawCsvContent(
-              file.text ?? utf8.decode(file.bytes, allowMalformed: true),
+              file.decodedText,
               fileName: file.name,
             );
 
@@ -903,7 +903,7 @@ class _BulkImportViewState extends State<BulkImportView> {
                   onPressed: () async {
                     _draftDebounce?.cancel();
                     await clearUserBulkImportDraft();
-                    if (mounted) {
+                    if (mounted && context.mounted) {
                       setState(() {
                         _savedDraft = null;
                         _parsedFacultyRows.clear();

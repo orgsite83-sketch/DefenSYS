@@ -1,3 +1,4 @@
+from defensys_backend.name_validation import NameQualityMixin
 from django.contrib.auth import get_user_model
 from django.db.models.manager import BaseManager
 from rest_framework import serializers
@@ -151,7 +152,7 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
         return self._instructor_assignment_cache[scope]
 
 
-class StudentAcademicRecordWriteSerializer(serializers.Serializer):
+class StudentAcademicRecordWriteSerializer(NameQualityMixin, serializers.Serializer):
     student_id = serializers.IntegerField(required=False, allow_null=True)
     student_username = serializers.CharField(required=False, allow_blank=True)
     first_name = serializers.CharField(required=False, allow_blank=True)
@@ -240,7 +241,7 @@ class EnrollmentSectionPreviewRowSerializer(serializers.Serializer):
     section = serializers.CharField(required=False, allow_blank=True, default='', max_length=80)
 
 
-class RolloverActionSerializer(serializers.Serializer):
+class RolloverActionSerializer(NameQualityMixin, serializers.Serializer):
     record_id = serializers.IntegerField(required=False, allow_null=True)
     username = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=150)
     first_name = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=150)

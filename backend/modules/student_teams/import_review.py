@@ -152,6 +152,7 @@ def review_roster_import(user, term, year, section, raw, event, *, workspace=Non
                 result['metadata_issues'] = issues
                 result['section_metadata_invalid'] = True
         for result in results:
+            result['warnings'].extend(dict.fromkeys(r['name_warning'] for r in result.get('reference_resolutions', []) if r.get('name_warning')))
             result['issues'] = list(dict.fromkeys(result['issues']))
             result['warnings'] = list(dict.fromkeys(result['warnings']))
             result['ready'] = not result['issues']

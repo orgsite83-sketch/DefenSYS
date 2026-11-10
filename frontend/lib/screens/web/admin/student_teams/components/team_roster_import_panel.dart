@@ -1,5 +1,5 @@
+import 'package:defensys/widgets/tabular_encoding_review.dart';
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -143,11 +143,14 @@ class _TeamRosterImportPanelState extends ConsumerState<TeamRosterImportPanel> {
 
   Future<void> _processPickedFiles(List<PickedTabularFile> files) async {
     await run(() async {
+      final prepared = await prepareTabularFiles(context, files);
+      if (prepared == null || !mounted) return;
+      files = prepared;
       final parsed = <Map<String, dynamic>>[];
       for (final file in files) {
         final result = file.isXlsx
             ? parseOfficialClassListXlsx(file.bytes)
-            : parseOfficialClassListCsv(file.text ?? utf8.decode(file.bytes));
+            : parseOfficialClassListCsv(file.decodedText);
         if (result.students.isEmpty) {
           throw FormatException(
             'No students found in ${file.name}. Please ensure you are using the official By Section class-list format.',

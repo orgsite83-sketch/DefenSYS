@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/tabular_encoding_review.dart';
 import 'dart:async';
 import 'package:excel/excel.dart' as xl;
 import 'package:defensys/widgets/team_import_format_guide.dart';
@@ -275,6 +276,9 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
   Future<void> processFiles(List<PickedTabularFile> files) async {
     if (!mounted || busy || files.isEmpty) return;
     await run(() async {
+      final prepared = await prepareTabularFiles(context, files);
+      if (prepared == null || !mounted) return;
+      files = prepared;
       final parsed = parseTeamBulkCsv(
         readTeamImportFiles(files, includeFileSources: true),
       );

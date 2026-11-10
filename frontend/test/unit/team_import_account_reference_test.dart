@@ -14,7 +14,7 @@ void main() {
     expect(teamImportAccountId({'student_id': 'student-1'}), 'student-1');
   });
 
-  test('middle-initial suggestions do not equate conflicting initials', () {
+  test('middle-initial review suggestions explain conflicts', () {
     expect(
       teamImportPossibleName('GINBERT A. FERNANDEZ', 'GINBERT FERNANDEZ'),
       isTrue,
@@ -25,7 +25,7 @@ void main() {
     );
     expect(
       teamImportPossibleName('GINBERT A. FERNANDEZ', 'GINBERT B FERNANDEZ'),
-      isFalse,
+      isTrue,
     );
     expect(
       teamImportPossibleName('GINBERT ALLAN FERNANDEZ', 'GINBERT FERNANDEZ'),
@@ -38,7 +38,7 @@ void main() {
     () {
       expect(
         teamImportNameDifference('BONGCAC, Ryza Mae G.', 'RYZA MAY G. BONGCAC'),
-      'Spelling differs: MAE versus MAY',
+        'Spelling differs: MAE versus MAY',
       );
       expect(
         teamImportNameDifference('TAC-AN, Edgar Jr. C.', 'EDGAR, JR C TAC-AN'),
@@ -46,7 +46,7 @@ void main() {
       );
       expect(
         teamImportNameDifference('Ginbert A Fernandez', 'Ginbert B Fernandez'),
-        isNull,
+        'Middle initial differs: A versus B',
       );
       expect(
         teamImportNameDifference('Dela Cruz, Juan', 'Juan Dela Crux'),
@@ -54,7 +54,7 @@ void main() {
       );
       expect(
         teamImportNameDifference('Juan Cruz Jr.', 'Juan Cruz Sr.'),
-        isNull,
+        'Suffix differs: jr versus sr',
       );
     },
   );
@@ -251,6 +251,24 @@ void main() {
     expect(rows[1]['project_manager'], 'pm-id');
     expect(rows[2]['project_manager'], 'First M. Last');
   });
+
+  test(
+    'expanded middle names and encoding problems have specific explanations',
+    () {
+      expect(
+        teamImportNameDifference('CATADA, Mernel A.', 'MERNEL ANTIO CATADA'),
+        'Middle initial expanded',
+      );
+      expect(
+        teamImportNameDifference('QUI\u00d1ON, Ray An', 'RAY AN QUI\ufffdON'),
+        'Account name needs encoding repair',
+      );
+      expect(
+        teamImportNameDifference('DOMINGUEZ, Noel R.', 'NOEL R DOMINGUEZ JR.'),
+        contains('Suffix differs'),
+      );
+    },
+  );
 
   test(
     'selected IDs and a non-first leader survive draft and CSV round trips',

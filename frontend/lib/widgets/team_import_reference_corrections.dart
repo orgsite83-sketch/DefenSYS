@@ -27,10 +27,52 @@ List<Map<String, dynamic>> teamImportAccounts(List<dynamic>? options) {
 
 /// A spelling suggestion is never an automatic identity match.
 String? teamImportNameDifference(String reference, String name) {
+  if (reference.contains('\ufffd') || name.contains('\ufffd')) {
+    return 'Account name needs encoding repair';
+  }
   final uploaded = personNameTokens(reference);
   final stored = personNameTokens(name, surnameFirst: false);
   if (uploaded.join(' ') == stored.join(' ')) return 'Formatting match';
   if (uploaded.length < 2 || stored.length < 2) return null;
+  bool initial(String word) => RegExp(r'^[a-z]$').hasMatch(word);
+  const suffixes = ['jr', 'sr', 'ii', 'iii', 'iv', 'v'];
+  final uploadSuffix = suffixes.contains(uploaded.last) ? uploaded.last : '';
+  final storedSuffix = suffixes.contains(stored.last) ? stored.last : '';
+  final aBody = [...uploaded]..removeWhere((w) => suffixes.contains(w));
+  final bBody = [...stored]..removeWhere((w) => suffixes.contains(w));
+  if (aBody.join(' ') == bBody.join(' ') && uploadSuffix != storedSuffix) {
+    return 'Suffix differs: ${uploadSuffix.isEmpty ? 'not supplied' : uploadSuffix} versus ${storedSuffix.isEmpty ? 'not supplied' : storedSuffix}';
+  }
+  if (uploadSuffix == storedSuffix &&
+      uploaded.length == stored.length &&
+      uploaded.first == stored.first &&
+      uploaded.last == stored.last) {
+    var expanded = false, compatible = true;
+    final conflicts = <String>[];
+    for (var i = 1; i < uploaded.length - 1; i++) {
+      final a = uploaded[i], b = stored[i];
+      if (a == b) continue;
+      if (initial(a) && !initial(b) && b.startsWith(a) ||
+          initial(b) && !initial(a) && a.startsWith(b)) {
+        expanded = true;
+      } else {
+        compatible = false;
+        if (initial(a) && initial(b)) {
+          conflicts.add('${a.toUpperCase()} versus ${b.toUpperCase()}');
+        }
+      }
+    }
+    if (compatible && expanded) return 'Middle initial expanded';
+    if (conflicts.isNotEmpty) {
+      return 'Middle initial differs: ${conflicts.join(', ')}';
+    }
+  }
+  if (uploaded.length == stored.length &&
+      uploaded.first == stored.first &&
+      (uploaded.last.endsWith('-${stored.last}') ||
+          stored.last.endsWith('-${uploaded.last}'))) {
+    return 'Surname variant: ${uploaded.last} versus ${stored.last}';
+  }
   bool omittedInitial(List<String> longer, List<String> shorter) {
     if (longer.length != shorter.length + 1) return false;
     for (var i = 1; i < longer.length - 1; i++) {
@@ -214,6 +256,7 @@ class TeamImportReferenceCorrections extends StatelessWidget {
             'ambiguous',
             'selection_required',
             'inactive',
+            'encoding_problem',
           ].contains(r['status']),
         )
         .where(
@@ -243,6 +286,16 @@ class TeamImportReferenceCorrections extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
+                ShadBadge.outline(
+                  child: Text(
+                    resolution['status'] == 'encoding_problem'
+                        ? 'Encoding problem'
+                        : resolution['status'] == 'not_found' &&
+                              _spellingSuggestions(resolution).isEmpty
+                        ? 'Needs account'
+                        : 'Needs confirmation',
+                  ),
+                ),
                 ShadButton.outline(
                   key: ValueKey(
                     'resolve-${resolution['field']}-${resolution['reference']}',
@@ -267,13 +320,22 @@ class TeamImportReferenceCorrections extends StatelessWidget {
         for (final match in resolutions.where(
           (r) =>
               r['status'] == 'matched' &&
-              r['match_kind'] == 'omitted_initial' &&
+              const [
+                'omitted_initial',
+                'middle_initial_expanded',
+                'surname_separator',
+              ].contains(r['match_kind']) &&
               r['field'] != 'leader_id',
         ))
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
-              'Matched: ${match['reference']} → ${match['name']} (${match['username']}). Middle initial omitted in one name.',
+              'Matched: ${match['reference']} → ${match['name']} (${match['username']}). '
+              '${match['match_kind'] == 'middle_initial_expanded'
+                  ? 'Middle initial expanded.'
+                  : match['match_kind'] == 'surname_separator'
+                  ? 'Surname separator normalized.'
+                  : 'Middle initial omitted in one name.'}',
               style: TextStyle(
                 fontFamily: DefensysTokens.fontFamilyInter,
                 fontSize: 12,
@@ -344,7 +406,8 @@ class TeamImportReferenceCorrections extends StatelessWidget {
               original,
               teamImportAccountName(b),
             );
-            int rank(String? reason) => reason == null
+            int rank(String? reason) =>
+                reason == null || reason.contains('encoding repair')
                 ? 2
                 : reason.startsWith('Spelling')
                 ? 1

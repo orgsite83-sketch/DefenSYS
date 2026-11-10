@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/tabular_encoding_review.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -921,8 +922,12 @@ class _StudentAcademicRecordsScreenState
               hasValidationErrors: hasValidationErrors,
               onUploadCsv: () async {
                 try {
-                  final csv = await pickCsvTextFile();
-                  if (csv == null) return;
+                  final picked = await pickMultipleTabularDataFiles();
+                  if (!mounted || !context.mounted || picked.isEmpty) return;
+                  final prepared = await prepareTabularFiles(context, picked);
+                  if (prepared == null || !mounted || !context.mounted) return;
+                  final csv = prepared.map((file) => file.decodedText).join('\n\n');
+                  if (csv.isEmpty) return;
                   if (!context.mounted) return;
 
                   final parsed = _parseOfficialClassListCsv(csv);

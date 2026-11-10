@@ -476,11 +476,13 @@ Student Number,Full Name,Email,Year Level
       await tester.pumpAndSettle();
 
       expect(find.text('Staged Import Files'), findsOneWidget);
+      await tester.tap(find.text('View details'));
+      await tester.pumpAndSettle();
       expect(
         find.textContaining('This file is a Student Class List'),
         findsOneWidget,
       );
-      expect(find.textContaining('Incompatible Format'), findsOneWidget);
+      expect(find.text('Cannot import this file'), findsOneWidget);
 
       // Verify Generate Preview Table is disabled / shows 0 rows
       expect(find.text('Generate Preview Table'), findsOneWidget);

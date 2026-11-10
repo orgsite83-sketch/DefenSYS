@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/tabular_encoding_review.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
@@ -570,6 +571,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   Future<void> _handleFilesDropped(List<PickedTabularFile> files) async {
     if (!mounted || files.isEmpty) return;
     try {
+      final prepared = await prepareTabularFiles(context, files);
+      if (prepared == null || !mounted) return;
+      files = prepared;
       final csv = readTeamImportFiles(files);
       setState(() => _fileImportError = null);
       _processCsvContent(csv);

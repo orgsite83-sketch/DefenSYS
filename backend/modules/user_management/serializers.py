@@ -1,3 +1,4 @@
+from defensys_backend.name_validation import NameQualityMixin
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.db.models.manager import BaseManager
@@ -122,7 +123,7 @@ class ManagedUserListSerializer(serializers.ListSerializer):
         return super().to_representation(users)
 
 
-class ManagedUserSerializer(serializers.ModelSerializer):
+class ManagedUserSerializer(NameQualityMixin, serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     team_id = serializers.SerializerMethodField()
     facultyRoles = serializers.SerializerMethodField()
@@ -419,7 +420,7 @@ def parse_faculty_roles_dict(raw_str):
     }
 
 
-class BulkUserRowSerializer(serializers.Serializer):
+class BulkUserRowSerializer(NameQualityMixin, serializers.Serializer):
     id_number = serializers.CharField(required=False, allow_blank=True, max_length=150)
     username = serializers.CharField(required=False, allow_blank=True, max_length=150)
     first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
@@ -487,7 +488,7 @@ class BulkUserRowSerializer(serializers.Serializer):
         return value
 
 
-class OfficialClassListStudentSerializer(serializers.Serializer):
+class OfficialClassListStudentSerializer(NameQualityMixin, serializers.Serializer):
     id_number = serializers.CharField(max_length=150)
     full_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
     first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)

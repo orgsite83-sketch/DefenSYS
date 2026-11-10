@@ -1,19 +1,5 @@
-class PickedTabularFile {
-  final String name;
-  final String extension;
-  final String? text;
-  final List<int> bytes;
-
-  const PickedTabularFile({
-    required this.name,
-    required this.extension,
-    required this.bytes,
-    this.text,
-  });
-
-  bool get isCsv => extension == 'csv';
-  bool get isXlsx => extension == 'xlsx';
-}
+import '../import/picked_tabular_file.dart';
+export '../import/picked_tabular_file.dart';
 
 Future<void> downloadTextFile({
   required String filename,
@@ -44,7 +30,6 @@ dynamic setupDropzoneListener(
 }) {
   return null;
 }
-
 
 Future<void> downloadBinaryFile({
   required String filename,

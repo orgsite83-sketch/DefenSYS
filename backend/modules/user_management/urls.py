@@ -1,4 +1,5 @@
 from django.urls import include, path
+from .name_repairs import NameRepairPreviewView, NameRepairApplyView
 from .external_evaluator_views import ExternalEvaluatorsView, ExternalEvaluatorDetailView, ExternalInvitationsView, ExternalInvitationDetailView
 from .panelist_eligibility_views import PanelistPoolView, PanelistEligibilityRequestsView, PanelistEligibilityRequestReviewView
 
@@ -22,6 +23,8 @@ from .views import (
 
 
 urlpatterns = [
+    path('name-repair/preview/', NameRepairPreviewView.as_view(), name='name_repair_preview'),
+    path('name-repair/apply/', NameRepairApplyView.as_view(), name='name_repair_apply'),
     path('panelist-pool/', PanelistPoolView.as_view(), name='panelist_pool'),
     path('external-evaluators/', ExternalEvaluatorsView.as_view(), name='external_evaluators'),
     path('external-evaluators/<int:evaluator_id>/', ExternalEvaluatorDetailView.as_view(), name='external_evaluator_detail'),
