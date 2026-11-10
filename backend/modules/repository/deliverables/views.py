@@ -96,6 +96,9 @@ def check_deliverable_write_permission(user, team):
 
 
 def workspace_deliverable_teams(request):
+    from student_teams.capstone_workspace import enabled, projection
+    if request.method == 'GET' and enabled(request):
+        return projection(request)['teams']
     base = team_queryset_for_user(request.user)
     workspace = request.query_params.get('workspace', '').strip()
     if workspace:
@@ -126,6 +129,10 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         current = current.filter(id=team_id)
 
     semester = active_semester()
+    from student_teams.capstone_workspace import enabled, projection
+    phase_view = projection(request) if enabled(request) else None
+    if phase_view:
+        semester = phase_view['semester']
     if scope == 'pit':
         from defense.scheduler.models import PitEventGradingConfig
         from authentication_access_control.scopes import is_pit_lead_only, _pit_year
@@ -155,9 +162,11 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         from student_teams.capstone_lifecycle import requirements_for
         visible_requirements = requirements_for if request.user.role == 'student' else phase_requirements
         stage_options = list(dict.fromkeys(r['label'] for team in current
-            for r in visible_requirements(team)))
+            for r in visible_requirements(phase_view['contexts'][team.pk] if phase_view else team)))
 
     requested_stage = selected_stage or request.query_params.get('stage_label') or ''
+    if phase_view and request.query_params.get('stage_sequence') == 'all':
+        requested_stage = phase_view['metadata']['selected_stage_label']
     if not requested_stage and current.exists():
         from .services import current_stage_for_team
         default_team_stage = current_stage_for_team(current.first())
@@ -172,8 +181,10 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
     if scope == 'pit' and stage:
         from student_teams.pit_rosters import filter_teams as roster_teams
         current = roster_teams(current, stage)
-    teams = [team_payload(team, selected_stage=stage, evaluator=request.user) for team in current]
+    teams = [team_payload(phase_view['contexts'][team.pk] if phase_view else team,
+        selected_stage=stage, evaluator=request.user) for team in current]
     return {
+        **({'capstone_workspace': phase_view['metadata']} if phase_view else {}),
         'teams': teams,
         'batch_options': batch_options(base) if scope != 'pit' else [],
         'counts': counts_payload(current, selected_stage=stage, serialized_teams=teams),
@@ -191,6 +202,12 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
 
 
 def get_allowed_team(request, team_id):
+    from student_teams.capstone_workspace import enabled, projection
+    if request.method != 'GET' and enabled(request):
+        from rest_framework.exceptions import PermissionDenied
+        context = projection(request)['contexts'].get(team_id)
+        if context is None or getattr(context, '_recorded_term', None) or not context.semester.is_active:
+            raise PermissionDenied('Past phase records are read-only.')
     qs = workspace_deliverable_teams(request)
     team = qs.filter(pk=team_id).first()
     if not team:

@@ -77,6 +77,7 @@ def build_rubric_spec(rubrics, *, individual=False):
             for part_number, part in enumerate(list(text_parts(description)) or [''], 1):
                 criteria_rows.append({
                     'rubric_no': number, 'rubric': rubric.name, 'criterion_no': index,
+                    'section': criterion.section or '',
                     'criterion': criterion.name, 'description': part, 'part': part_number,
                     'order': criterion.display_order, 'scale': criterion.get_scale_display(),
                     'max_score': criterion.max_score, 'weight': str(criterion.weight),
@@ -91,6 +92,7 @@ def build_rubric_spec(rubrics, *, individual=False):
     ]
     criteria_columns = [
         column('rubric_no', 'Rubric No.', 12, type='integer'), column('rubric', 'Rubric', 32),
+        column('section', 'Section', 24),
         column('criterion_no', 'Criterion No.', 14, type='integer'), column('criterion', 'Criterion', 32),
         column('description', 'Description', 66), column('part', 'Text Part', 12, type='integer'),
         column('order', 'Order', 12, type='integer'), column('scale', 'Scoring Scale', 22),
@@ -162,10 +164,10 @@ def render_rubric_sections(builder, spec):
         builder.add_section_header('Evaluation Criteria')
         builder.add_paragraph('Criterion weights below are the configured numeric values; grade distribution is shown separately above.', 'BodyMuted')
         criteria = detail['criteria']
-        builder.add_table(['No.', 'Criterion', 'Scoring Scale', 'Maximum Score', 'Configured Weight', 'Target'],
-            [[str(index), escape(criterion.name), criterion.get_scale_display(), str(criterion.max_score),
+        builder.add_table(['No.', 'Section', 'Criterion', 'Scoring Scale', 'Maximum Score', 'Configured Weight', 'Target'],
+            [[str(index), escape(criterion.section or '—'), escape(criterion.name), criterion.get_scale_display(), str(criterion.max_score),
               f'{criterion.weight:.2f}', criterion.get_target_type_display()] for index, criterion in enumerate(criteria, 1)],
-            col_widths=[builder.usable_width * ratio for ratio in (.05, .33, .20, .12, .14, .16)], repeat_headers=True)
+            col_widths=[builder.usable_width * ratio for ratio in (.05, .15, .25, .18, .11, .13, .13)], repeat_headers=True)
         if not criteria:
             builder.add_paragraph('No evaluation criteria have been configured.')
         for index, criterion in enumerate(criteria, 1):

@@ -1,8 +1,8 @@
 /// Board sections follow assessment progress, not an elapsed defense slot.
 enum SessionActivity {
-  active('Active sessions'),
+  active('Open sessions'),
   upcoming('Upcoming sessions'),
-  past('Past sessions');
+  past('History');
 
   const SessionActivity(this.label);
   final String label;

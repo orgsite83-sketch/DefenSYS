@@ -376,6 +376,8 @@ def team_queryset_for_user(user, *, include_pit_lead=True):
 
 def filter_teams(request, queryset):
     from .batches import filter_batches
+    from student_teams.capstone_workspace import enabled, projection
+    phase_view = projection(request) if enabled(request) else None
     queryset = filter_batches(request, queryset)
     event_name = request.query_params.get('stage_label') or request.query_params.get('event_name')
     if event_name:
@@ -391,12 +393,19 @@ def filter_teams(request, queryset):
         queryset = queryset.filter(pk=team_id)
 
     if year_level:
-        queryset = queryset.filter(year_level=year_level)
+        queryset = queryset.filter(pk__in=[t.pk for t in phase_view['contexts'].values()
+            if t.year_level == year_level]) if phase_view else queryset.filter(year_level=year_level)
 
     if section:
-        queryset = queryset.filter(section=section)
+        queryset = queryset.filter(pk__in=[t.pk for t in phase_view['contexts'].values()
+            if t.section == section]) if phase_view else queryset.filter(section=section)
 
-    if search:
+    if search and phase_view:
+        from student_teams.capstone_workspace import identity_text
+        matching = [team.pk for team in phase_view['contexts'].values()
+            if search.casefold() in identity_text(team)]
+        queryset = queryset.filter(pk__in=matching)
+    elif search:
         queryset = queryset.filter(
             Q(name__icontains=search)
             | Q(project_title__icontains=search)
@@ -1133,8 +1142,9 @@ def stage_payload(team, stage_label, evaluator=None):
             'workflow': workflow_payload(stage_grade) if stage_grade.uses_defense_verdict else {},
         }
 
+    read_only = historical or bool(getattr(team, '_recorded_term', None)) or not team.semester.is_active
     actor_can_submit = evaluator is None or can_submit_files(evaluator, team)
-    if historical:
+    if read_only:
         actor_can_submit = False
         can_faculty_review_pre = can_faculty_review_post = False
         can_cancel_endorsement = False
@@ -1164,7 +1174,7 @@ def stage_payload(team, stage_label, evaluator=None):
                 can_review_item = any(f.status != 'accepted' for f in current_files(submission))
         else:
             can_review_item = can_faculty_review_pre or bool(submission and submission.revision_review_unlocked)
-        if historical:
+        if read_only:
             can_review_item = False
         
         suggested = ''
@@ -1333,7 +1343,7 @@ def stage_payload(team, stage_label, evaluator=None):
         'semester_id': team.semester_id,
         'display_semester': team.semester.display_name,
         'project_version': team.project_version,
-        'read_only': historical,
+        'read_only': read_only,
         'concept_workflow': concept_workflow,
         'shared_deliverables_summary': shared_checklist,
         'hearing_history': student_assessment_payload((hearing_history(team, concept_context)
@@ -1484,6 +1494,12 @@ def team_payload(team, selected_stage=None, evaluator=None):
         }
         for membership in team.memberships.all()
     ]
+    recorded = getattr(team, '_recorded_term', None)
+    snapshot = recorded.snapshot if recorded else {}
+    if recorded and 'members' in snapshot:
+        members = [{'id': member['student_id'], 'username': member.get('username', ''),
+            'name': member.get('name', ''), 'role': 'leader' if member.get('is_leader') else 'member'}
+            for member in snapshot['members']]
 
     # Fetch grading details if TeamGrade exists for the selected stage
     from grading.grades.models import TeamGrade, StudentStageGrade
@@ -1557,10 +1573,10 @@ def team_payload(team, selected_stage=None, evaluator=None):
         'current_stage': current_stage_for_team(team),
         'selected_stage': selected_payload,
         'stages': stages,
-        'adviser_name': effective_adviser_name,
+        'adviser_name': snapshot.get('adviser_name', effective_adviser_name),
         'instructor_name': effective_adviser_name,
-        'leader_name': display_name(team.leader),
-        'member_count': team.memberships.count(),
+        'leader_name': snapshot.get('leader_name', display_name(team.leader)),
+        'member_count': len(members),
         'submitted_count': team.deliverable_submissions.count(),
         'counts': team_counts_payload(team, selected_payload),
         'members': members,

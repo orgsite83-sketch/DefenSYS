@@ -2,7 +2,10 @@ import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../widgets/academic/capstone_history_filters.dart';
+import '../../../../widgets/academic/capstone_workspace_navigation.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -46,9 +49,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(authProvider).user;
       final isAdmin = _isGradeCenterAdmin(user);
-      ref.read(gradeCenterProvider.notifier).fetchGrades(
-            scope: _defaultScopeForUser(user)
-          );
+      ref
+          .read(gradeCenterProvider.notifier)
+          .fetchGrades(scope: _defaultScopeForUser(user));
       if (isAdmin) {
         _ensureDefenseStagesLoaded();
       }
@@ -110,10 +113,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
         if (!mounted) {
           return;
         }
-        showIncompleteGradingTeamsDialog(
-          context,
-          teams: next.incompleteTeams
-        );
+        showIncompleteGradingTeamsDialog(context, teams: next.incompleteTeams);
         ref.read(gradeCenterProvider.notifier).clearIncompleteTeams();
       });
     });
@@ -155,7 +155,22 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     required String scope,
     required String stageLabel,
     required String title,
+    GradeCenterState? phaseState,
   }) {
+    final state = phaseState ?? ref.read<GradeCenterState>(gradeCenterProvider);
+    final settings = groupSettingsForKey(state, groupKey);
+    final phase = state.capstoneWorkspace;
+    final contextParameters = <String, String>{
+      if (state.activeSemester?['id'] != null)
+        'semester_id': '${state.activeSemester!['id']}',
+      if (scope == 'capstone' && phase.isNotEmpty) ...{
+        'capstone_view': '${phase['view']}',
+        'batch_id': '${phase['batch_id']}',
+        'phase_semester_id': '${phase['phase_semester_id']}',
+        if (settings['defense_stage_id'] != null)
+          'defense_stage_id': '${settings['defense_stage_id']}',
+      },
+    };
     if (GoRouterState.of(context).uri.path.startsWith('/faculty/')) {
       context.push(
         FacultyRoutes.gradeEventTeams(
@@ -163,6 +178,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
           scope: scope,
           stageLabel: stageLabel,
           title: title,
+          contextParameters: contextParameters,
         ),
       );
       return;
@@ -174,6 +190,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
           scope: scope,
           stageLabel: stageLabel,
           title: title,
+          contextParameters: contextParameters,
         ),
       );
       return;
@@ -197,7 +214,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       _teamDetailGradeId = null;
     });
     final gcState = ref.read(gradeCenterProvider);
-    ref.read(gradeCenterProvider.notifier).fetchGrades(
+    ref
+        .read(gradeCenterProvider.notifier)
+        .fetchGrades(
           scope: gcState.scope.isNotEmpty ? gcState.scope : (scope ?? ''),
         );
   }
@@ -245,20 +264,48 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
             actions: const ReportExportMenu(reportId: 'semester-grades'),
           ),
           const SizedBox(height: 26),
-          AcademicHistoryDropdown(
-            label: 'Academic period',
-            value: state.historySemester,
-            items: [
-              const MapEntry('', 'Current Term'),
-              ...state.historySemesters.map(
-                (t) => MapEntry('${t['id']}', '${t['label']}'),
-              ),
-            ],
-            onChanged: (value) => ref
-                .read(gradeCenterProvider.notifier)
-                .fetchGrades(historySemester: value),
-          ),
+          if (isAdmin && _effectiveScope(state) == 'capstone')
+            CapstoneWorkspaceNavigation(
+              data: state.capstoneWorkspace,
+              enabled: !state.isLoading && !state.isSaving,
+              onChanged: (view, batch, semester) {
+                _searchDebounce?.cancel();
+                setState(() {
+                  _eventGroupKey = null;
+                  _teamDetailGradeId = null;
+                });
+                ref
+                    .read(gradeCenterProvider.notifier)
+                    .selectCapstoneWorkspace(view, batch, semester);
+              },
+            )
+          else
+            AcademicHistoryDropdown(
+              label: 'Academic period',
+              value: state.historySemester,
+              items: [
+                const MapEntry('', 'Current Term'),
+                ...state.historySemesters.map(
+                  (t) => MapEntry('${t['id']}', '${t['label']}'),
+                ),
+              ],
+              onChanged: (value) => ref
+                  .read(gradeCenterProvider.notifier)
+                  .fetchGrades(historySemester: value),
+            ),
           const SizedBox(height: 16),
+          if (_effectiveScope(state) == 'capstone' &&
+              state.capstoneWorkspace.isNotEmpty) ...[
+            Text(
+              '${state.capstoneWorkspace['view'] == 'history' ? 'Latest recorded phase' : 'Current phase'} · ${state.activeSemester?['display_name'] ?? ''}',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                color: DefensysTokens.textSecondaryOf(context),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           _buildStats(state),
 
           if (isAdmin) ...[
@@ -277,18 +324,26 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
 
   Widget _buildScopeTabs(GradeCenterState state) {
     final currentScope = _effectiveScope(state);
-    return DefensysSegmentedControl<String>(
-      value: currentScope,
-      enabled: !state.isSaving,
-      items: const [
-        DefensysSegmentItem(
-          value: 'capstone', label: 'Capstone Stages', icon: Icons.rocket_launch_rounded,),
-        DefensysSegmentItem(
-          value: 'pit', label: 'PIT Expos & Events', icon: Icons.lightbulb_rounded,),
-      ],
-      onChanged: (scope) => ref
-          .read(gradeCenterProvider.notifier)
-          .fetchGrades(scope: scope),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DefensysSegmentedControl<String>(
+        value: currentScope,
+        enabled: !state.isSaving,
+        items: const [
+          DefensysSegmentItem(
+            value: 'capstone',
+            label: 'Capstone Stages',
+            icon: Icons.rocket_launch_rounded,
+          ),
+          DefensysSegmentItem(
+            value: 'pit',
+            label: 'PIT Expos & Events',
+            icon: Icons.lightbulb_rounded,
+          ),
+        ],
+        onChanged: (scope) =>
+            ref.read(gradeCenterProvider.notifier).fetchGrades(scope: scope),
+      ),
     );
   }
 
@@ -305,9 +360,18 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   Widget _buildStats(GradeCenterState state) {
     final filtersActive = _filtersActive(state);
     final scope = _effectiveScope(state);
-    final total = _kpiTotal(state);
-    final publishedPct = total == 0 ? 0.0 : _count(state, 'published') / total;
-    final pendingPct = total == 0 ? 0.0 : _count(state, 'pending') / total;
+    final stats = scope == 'capstone'
+        ? state.phaseStatistics
+        : const <String, dynamic>{};
+    final total = (stats['total_teams'] as num?)?.toInt() ?? _kpiTotal(state);
+    final published =
+        (stats['fully_graded_teams'] as num?)?.toInt() ??
+        _count(state, 'published');
+    final pending =
+        (stats['awaiting_panelists'] as num?)?.toInt() ??
+        _count(state, 'pending');
+    final publishedPct = total == 0 ? 0.0 : published / total;
+    final pendingPct = total == 0 ? 0.0 : pending / total;
 
     final String teamsTitle;
     if (filtersActive) {
@@ -328,45 +392,56 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       }
     }
 
-    return Row(
-      children: [
-        Expanded(
-          child: gradeCenterKpiStatCard(
-            context: context,
-            title: teamsTitle,
-            value: total.toString(),
-            icon: Icons.groups_rounded,
-            accent: DefensysTokens.maroonTextOf(context),
-            iconBg: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
-            progress: total == 0 ? 0 : 1,
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: gradeCenterKpiStatCard(
-            context: context,
-            title: 'Fully graded (100%)',
-            value:
-                '${_count(state, 'published')} (${_percent(state, 'published')}%)',
-            icon: Icons.check_circle_outline_rounded,
-            accent: const Color(0xFF10B981),
-            iconBg: const Color(0xFFE7F6EC),
-            progress: publishedPct,
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: gradeCenterKpiStatCard(
-            context: context,
-            title: 'Awaiting panelists',
-            value: _count(state, 'pending').toString(),
-            icon: Icons.schedule_rounded,
-            accent: const Color(0xFFF59E0B),
-            iconBg: const Color(0xFFFFFBEB),
-            progress: pendingPct,
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 650;
+        Widget slot(Widget child) => narrow ? child : Expanded(child: child);
+        return Flex(
+          direction: narrow ? Axis.vertical : Axis.horizontal,
+          crossAxisAlignment: narrow
+              ? CrossAxisAlignment.stretch
+              : CrossAxisAlignment.center,
+          children: [
+            slot(
+              gradeCenterKpiStatCard(
+                context: context,
+                title: teamsTitle,
+                value: total.toString(),
+                icon: Icons.groups_rounded,
+                accent: DefensysTokens.maroonTextOf(context),
+                iconBg: DefensysTokens.maroonOf(
+                  context,
+                ).withValues(alpha: 0.08),
+                progress: total == 0 ? 0 : 1,
+              ),
+            ),
+            SizedBox(width: 14, height: narrow ? 12 : 0),
+            slot(
+              gradeCenterKpiStatCard(
+                context: context,
+                title: 'Fully graded (100%)',
+                value: '$published (${(publishedPct * 100).round()}%)',
+                icon: Icons.check_circle_outline_rounded,
+                accent: const Color(0xFF10B981),
+                iconBg: const Color(0xFFE7F6EC),
+                progress: publishedPct,
+              ),
+            ),
+            SizedBox(width: 14, height: narrow ? 12 : 0),
+            slot(
+              gradeCenterKpiStatCard(
+                context: context,
+                title: 'Awaiting panelists',
+                value: pending.toString(),
+                icon: Icons.schedule_rounded,
+                accent: const Color(0xFFF59E0B),
+                iconBg: const Color(0xFFFFFBEB),
+                progress: pendingPct,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -390,15 +465,24 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     return 'capstone';
   }
 
-  Widget _buildMainCard(GradeCenterState state) {
+  Widget _buildMainCard(
+    GradeCenterState state, {
+    String? title,
+    String? subtitle,
+    bool showFilters = true,
+    int stageOrderOffset = 0,
+  }) {
     final isAdmin = _isGradeCenterAdmin(ref.watch(authProvider).user);
     final scope = _effectiveScope(state);
+    if (scope == 'capstone' && state.capstonePhases.isNotEmpty) {
+      return _buildPhaseSequence(state);
+    }
     final stagesState = ref.watch(defenseStagesProvider);
-    final stages = state.capstoneStages.isNotEmpty
+    final stages =
+        state.capstoneWorkspace.isNotEmpty || state.capstoneStages.isNotEmpty
         ? state.capstoneStages
         : stagesState.activeStages;
-    final stagesLoading =
-        state.capstoneStages.isEmpty && stagesState.isLoading;
+    final stagesLoading = state.capstoneStages.isEmpty && stagesState.isLoading;
 
     final isPit = scope == 'pit';
     final activeStages = isPit ? state.pitEvents : stages;
@@ -406,10 +490,20 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
 
     return CapstoneStagesUnifiedCard(
       scope: scope,
+      title: title,
+      subtitle: subtitle,
+      showFilters: showFilters,
+      stageOrderOffset: stageOrderOffset,
+      canManageStages:
+          (isAdmin ||
+          scope == 'pit' && _isPitLeadOnly(ref.read(authProvider).user)),
       state: state,
       stages: activeStages,
       stagesLoading: activeLoading,
-      isAdmin: isAdmin,
+      isAdmin:
+          isAdmin &&
+          state.capstoneWorkspace['read_only'] != true &&
+          state.activeSemester?['is_active'] != false,
       searchController: _searchController,
       scopeFilter: _scopeFilter(state),
       yearLevelFilter: _yearLevelFilter(state),
@@ -421,11 +515,14 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
           scope: rowScope,
           stageLabel: row.label,
           title: row.title,
+          phaseState: state,
         );
       },
       onOfficiallyCompleteChanged: (row, value) {
         final rowScope = row.groupKey.split('|').first;
-        ref.read(gradeCenterProvider.notifier).updateGroupSettings(
+        ref
+            .read(gradeCenterProvider.notifier)
+            .updateGroupSettings(
               scope: rowScope,
               stageLabel: row.label,
               isOfficiallyComplete: value,
@@ -434,7 +531,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       },
       onPeerGradingChanged: (row, value) {
         final rowScope = row.groupKey.split('|').first;
-        ref.read(gradeCenterProvider.notifier).updateGroupSettings(
+        ref
+            .read(gradeCenterProvider.notifier)
+            .updateGroupSettings(
               scope: rowScope,
               stageLabel: row.label,
               peerGradingEnabled: value,
@@ -443,6 +542,120 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       onSearchChanged: _onSearchChanged,
       onSearchSubmitted: _onSearchSubmitted,
       onSearchFocusChanged: (focused) => _searchFieldFocused = focused,
+    );
+  }
+
+  Widget _buildPhaseSequence(GradeCenterState state) {
+    var offset = 0;
+    final sections = <Widget>[
+      _sequenceFilters(state),
+      const SizedBox(height: 16),
+    ];
+    for (final phase in state.capstonePhases) {
+      final phaseState = state.forPhase(phase);
+      if (offset > 0 || sections.length > 2) {
+        sections.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 32),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                width: 1,
+                height: 20,
+                color: DefensysTokens.borderOf(context),
+              ),
+            ),
+          ),
+        );
+      }
+      sections.add(
+        KeyedSubtree(
+          key: ValueKey('grade-phase-${phase['semester_id']}'),
+          child: _buildMainCard(
+            phaseState,
+            title: '${phase['phase_label']}',
+            subtitle: phase['read_only'] == true
+                ? 'Read-only record'
+                : 'Current phase',
+            showFilters: false,
+            stageOrderOffset: offset,
+          ),
+        ),
+      );
+      offset +=
+          (phase['stage_count'] as num?)?.toInt() ??
+          phaseState.capstoneStages.length;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: sections,
+    );
+  }
+
+  Widget _sequenceFilters(GradeCenterState state) {
+    Widget field(String label, IconData icon, Widget child) =>
+        gradeCenterFilterField(
+          label: label,
+          icon: icon,
+          context: context,
+          dropdown: gradeCenterFilterDropdownShell(
+            context: context,
+            child: child,
+          ),
+        );
+    final controls = [
+      field('Year level', Icons.school_outlined, _yearLevelFilter(state)),
+      field('Status', Icons.flag_outlined, _statusFilter(state)),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Search',
+            style: TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontSize: 12,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Focus(
+            onFocusChange: (focused) => _searchFieldFocused = focused,
+            child: ShadInput(
+              controller: _searchController,
+              enabled: !state.isSaving,
+              placeholder: const Text('Search teams...'),
+              onChanged: _onSearchChanged,
+              onSubmitted: _onSearchSubmitted,
+            ),
+          ),
+        ],
+      ),
+    ];
+    return DefensysShadcnScope(
+      child: DefensysCard(
+        padding: const EdgeInsets.all(16),
+        child: LayoutBuilder(
+          builder: (context, constraints) => constraints.maxWidth < 650
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final control in controls) ...[
+                      control,
+                      const SizedBox(height: 12),
+                    ],
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (var i = 0; i < controls.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 12),
+                      Expanded(flex: i == 2 ? 3 : 2, child: controls[i]),
+                    ],
+                  ],
+                ),
+        ),
+      ),
     );
   }
 
@@ -545,15 +758,6 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
               },
       ),
     );
-  }
-
-
-  int _percent(GradeCenterState state, String key) {
-    final total = _kpiTotal(state);
-    if (total == 0) {
-      return 0;
-    }
-    return ((_count(state, key) / total) * 100).round();
   }
 
   int _count(GradeCenterState state, String key) {

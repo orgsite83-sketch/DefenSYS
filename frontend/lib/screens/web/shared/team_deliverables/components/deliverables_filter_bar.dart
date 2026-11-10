@@ -9,6 +9,8 @@ import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_types.dart';
 import 'deliverables_status_filter.dart';
 import 'capstone_batch_filters.dart';
+import 'package:defensys/widgets/academic/capstone_workspace_navigation.dart';
+import 'package:defensys/widgets/academic/capstone_stage_sequence_select.dart';
 
 int _asInt(dynamic value) {
   if (value == null) return 0;
@@ -289,42 +291,60 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
       },
     );
 
-    final stageDropdown = DropdownButtonFormField<String>(
-      initialValue: selectedStage,
-      isExpanded: true,
-      decoration: _toolbarInputDec(
-        label: widget.state.scope == 'pit' ? 'PIT Event' : 'Stage View',
-      ),
-      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-        fontSize: 13,
-        color: DefensysTokens.textPrimaryOf(context),
-      ),
-      hint: Text(
-        stageOptions.isEmpty
-            ? (widget.state.scope == 'pit'
-                  ? 'No events configured'
-                  : 'No stages configured')
-            : 'Select stage',
-        style: const TextStyle(fontSize: 13),
-      ),
-      items: stageOptions
-          .map(
-            (stage) => DropdownMenuItem(
-              value: stage,
-              child: Text(
-                stage,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-          )
-          .toList(),
-      onChanged: stageOptions.isEmpty
-          ? null
-          : (value) => ref
+    final stageDropdown =
+        widget.state.workspace == 'adviser' &&
+            widget.state.capstoneWorkspace.isNotEmpty
+        ? CapstoneStageSequenceSelect(
+            options:
+                (widget.state.capstoneWorkspace['stage_options'] as List? ?? [])
+                    .whereType<Map>()
+                    .map((row) => Map<String, dynamic>.from(row))
+                    .toList(),
+            value:
+                '${widget.state.capstoneWorkspace['selected_stage_key'] ?? ''}',
+            enabled: !widget.state.isLoading && !widget.state.isSaving,
+            onChanged: ref
                 .read(capstoneDeliverablesProvider.notifier)
-                .fetchDeliverables(selectedStage: value ?? selectedStage ?? ''),
-    );
+                .selectSequenceStage,
+          )
+        : DropdownButtonFormField<String>(
+            initialValue: selectedStage,
+            isExpanded: true,
+            decoration: _toolbarInputDec(
+              label: widget.state.scope == 'pit' ? 'PIT Event' : 'Stage View',
+            ),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontSize: 13,
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
+            hint: Text(
+              stageOptions.isEmpty
+                  ? (widget.state.scope == 'pit'
+                        ? 'No events configured'
+                        : 'No stages configured')
+                  : 'Select stage',
+              style: const TextStyle(fontSize: 13),
+            ),
+            items: stageOptions
+                .map(
+                  (stage) => DropdownMenuItem(
+                    value: stage,
+                    child: Text(
+                      stage,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: stageOptions.isEmpty
+                ? null
+                : (value) => ref
+                      .read(capstoneDeliverablesProvider.notifier)
+                      .fetchDeliverables(
+                        selectedStage: value ?? selectedStage ?? '',
+                      ),
+          );
 
     final statusFilter = DeliverablesStatusFilter(
       value: widget.activeTriageFilter,
@@ -423,7 +443,16 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
         children: [
           if (widget.state.scope == 'capstone' &&
               widget.state.batchFiltersEnabled) ...[
-            CapstoneBatchFilters(state: widget.state),
+            if (widget.state.workspace == 'adviser')
+              CapstoneWorkspaceNavigation(
+                data: widget.state.capstoneWorkspace,
+                enabled: !widget.state.isLoading && !widget.state.isSaving,
+                onChanged: ref
+                    .read(capstoneDeliverablesProvider.notifier)
+                    .selectCapstoneWorkspace,
+              )
+            else
+              CapstoneBatchFilters(state: widget.state),
             const SizedBox(height: 12),
           ],
           filterFields,

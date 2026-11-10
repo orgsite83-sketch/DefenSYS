@@ -88,7 +88,7 @@ def evaluation_context(schedule, grade=None, *, include_scope=True):
         'rubric': schedule.rubric_id,
         'target': rubric.target_type if rubric else None,
         'criteria': [{name: getattr(criterion, name) for name in
-                      ('id', 'name', 'max_score', 'weight', 'target_type', 'scale')}
+                      ('id', 'name', 'max_score', 'weight', 'target_type', 'scale', 'section')}
                      for criterion in sorted(rubric.criteria.all(), key=lambda item: item.pk)] if rubric else [],
         'members': sorted(member.student_id for member in schedule.team.memberships.all()),
         'attempt': grade.attempt_count if grade else 1,

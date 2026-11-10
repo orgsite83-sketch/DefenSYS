@@ -34,12 +34,22 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     this.title,
     this.subtitle,
     this.icon,
+    this.showFilters = true,
+    this.stageOrderOffset = 0,
+    this.canManageStages,
   });
 
   final GradeCenterState state;
   final List<Map<String, dynamic>> stages;
   final bool stagesLoading;
   final bool isAdmin;
+  final bool showFilters;
+  final int stageOrderOffset;
+  final bool? canManageStages;
+  bool get _canManage =>
+      (canManageStages ?? isAdmin) &&
+      state.capstoneWorkspace['read_only'] != true &&
+      state.activeSemester?['is_active'] != false;
   final TextEditingController searchController;
   final Widget scopeFilter;
   final Widget yearLevelFilter;
@@ -91,9 +101,12 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             ? 'Manage panel and peer grading across PIT year-level expos and event tracks.'
             : (isAll
                   ? 'Overview of all Capstone and PIT grade groups for the active term.'
-                  : 'Manage grading by defense stage for the active term.'));
+                  : state.capstoneWorkspace['read_only'] == true
+                  ? 'View recorded grades for this phase.'
+                  : 'Manage grading by defense stage for the selected phase.'));
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final compactHeader = MediaQuery.sizeOf(context).width < 700;
 
     return DefensysCard(
       padding: EdgeInsets.zero,
@@ -132,6 +145,21 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                           height: 1.35,
                         ),
                       ),
+                      if (compactHeader) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            if (termLabel.isNotEmpty)
+                              _headerPill(termLabel, context: context),
+                            _headerPill(
+                              '${rows.length} stages',
+                              context: context,
+                            ),
+                          ],
+                        ),
+                      ],
                       if (isAdmin) ...[
                         const SizedBox(height: 8),
                         if (isPit) ...[
@@ -217,17 +245,18 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                     ],
                   ),
                 ),
-                if (termLabel.isNotEmpty) ...[
+                if (!compactHeader && termLabel.isNotEmpty) ...[
                   const SizedBox(width: 10),
                   _headerPill(termLabel, context: context),
                 ],
-                const SizedBox(width: 8),
-                _headerPill(
-                  rows.isEmpty
-                      ? '0 stages'
-                      : '1–${rows.length} of ${rows.length} ${isAll ? 'groups' : 'stages'}',
-                  context: context,
-                ),
+                if (!compactHeader) const SizedBox(width: 8),
+                if (!compactHeader)
+                  _headerPill(
+                    rows.isEmpty
+                        ? '0 stages'
+                        : '1–${rows.length} of ${rows.length} ${isAll ? 'groups' : 'stages'}',
+                    context: context,
+                  ),
               ],
             ),
           ),
@@ -235,24 +264,28 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             height: 1,
             color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-            child: _filterToolbar(context),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
-            child: Text(
-              'Open a stage to view teams, edit scores, and mark officially complete.',
-              style: TextStyle(
-                color: isDark
-                    ? DefensysTokens.mistTextSecondary
-                    : const Color(0xFF98A2B3),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                height: 1.35,
+          if (showFilters)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+              child: _filterToolbar(context),
+            ),
+          if (showFilters)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
+              child: Text(
+                isAdmin
+                    ? 'Open a stage to view teams, edit scores, and mark officially complete.'
+                    : 'Open a stage to view its recorded grades.',
+                style: TextStyle(
+                  color: isDark
+                      ? DefensysTokens.mistTextSecondary
+                      : const Color(0xFF98A2B3),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  height: 1.35,
+                ),
               ),
             ),
-          ),
           Divider(
             height: 1,
             color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
@@ -430,9 +463,17 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     if (!isAll && stages.isEmpty && (!isPit || state.pitEvents.isEmpty)) {
       return DefensysEmptyState.table(
         icon: isPit ? Icons.lightbulb_outline_rounded : Icons.layers_outlined,
-        title: isPit ? 'No PIT Events Setup' : 'No Defense Stages Setup',
+        title: isPit
+            ? 'No PIT Events Setup'
+            : state.capstoneWorkspace.isNotEmpty
+            ? 'No stages for this phase'
+            : 'No Defense Stages Setup',
         description: isPit
             ? 'Configure PIT events under Defense Operations or Academic Periods to enable evaluation tracking.'
+            : state.capstoneWorkspace.isNotEmpty
+            ? (state.capstoneWorkspace['read_only'] == true
+                  ? 'No stage records in this phase.'
+                  : 'Awaiting stage setup. Earlier phases remain available above.')
             : 'Configure defense stages under Defense Stages Setup to enable evaluation tracking.',
         size: DefensysEmptyStateSize.compact,
       );
@@ -468,7 +509,12 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         children: [
           for (int i = 0; i < rows.length; i++) ...[
             if (i > 0) const SizedBox(height: 14),
-            _stageMilestoneCard(rows[i], context, ref),
+            _stageMilestoneCard(
+              rows[i],
+              context,
+              ref,
+              sequenceOrder: !showFilters ? stageOrderOffset + i + 1 : null,
+            ),
           ],
         ],
       ),
@@ -478,10 +524,13 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   Widget _stageMilestoneCard(
     CapstoneStageRow row,
     BuildContext context,
-    WidgetRef ref,
-  ) {
+    WidgetRef ref, {
+    int? sequenceOrder,
+  }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final order = row.displayOrder > 0 ? row.displayOrder : 1;
+    final order =
+        sequenceOrder ?? (row.displayOrder > 0 ? row.displayOrder : 1);
+    final compact = MediaQuery.sizeOf(context).width < 700;
     final isComplete = row.isOfficiallyComplete;
     final rowScope = row.groupKey.split('|').first;
     final isPitRow = rowScope == 'pit';
@@ -563,11 +612,15 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                           ),
                         ),
                       ],
+                      if (compact) ...[
+                        const SizedBox(height: 8),
+                        capstoneStageWorkflowPill(row.workflowStatus),
+                      ],
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                capstoneStageWorkflowPill(row.workflowStatus),
+                if (!compact) const SizedBox(width: 12),
+                if (!compact) capstoneStageWorkflowPill(row.workflowStatus),
               ],
             ),
           ),
@@ -638,7 +691,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                   const SizedBox(width: 12),
 
                   // Peer Grading Toggle (PIT Scope)
-                  if (isPitRow && onPeerGradingChanged != null) ...[
+                  if (_canManage &&
+                      isPitRow &&
+                      onPeerGradingChanged != null) ...[
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -689,7 +744,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                   const SizedBox(width: 8),
 
                   // Main Action Button (Reopen Stage or Mark Complete)
-                  if (isComplete)
+                  if (_canManage && isComplete)
                     OutlinedButton.icon(
                       onPressed: !state.isSaving
                           ? () async {
@@ -736,7 +791,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                         ),
                       ),
                     )
-                  else
+                  else if (_canManage)
                     Tooltip(
                       message: closeBlocked
                           ? blockedReason

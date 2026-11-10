@@ -879,3 +879,182 @@ class RubricEngineApiTests(APITestCase):
 
         del_res = self.client.delete(f'/api/grading/rubrics/{rubric_id}/')
         self.assertEqual(del_res.status_code, 400)
+
+    def test_points_based_sectioned_rubric_with_variable_criteria(self):
+        payload = self.rubric_payload(
+            name='Sectioned Final Defense Rubric',
+            scale=Rubric.SCALE_POINTS,
+            target_type=Rubric.TARGET_BOTH,
+            criteria=[
+                {
+                    'section': 'ORAL EXAMINATION',
+                    'name': 'Mastery of subject matters',
+                    'max_score': 40,
+                    'weight': 8,
+                    'target_type': Rubric.TARGET_INDIVIDUAL,
+                    'display_order': 0,
+                },
+                {
+                    'section': 'ORAL EXAMINATION',
+                    'name': 'Delivery and presentation',
+                    'max_score': 40,
+                    'weight': 8,
+                    'target_type': Rubric.TARGET_INDIVIDUAL,
+                    'display_order': 1,
+                },
+                {
+                    'section': 'ORAL EXAMINATION',
+                    'name': 'Q&A and receptiveness',
+                    'max_score': 20,
+                    'weight': 4,
+                    'target_type': Rubric.TARGET_INDIVIDUAL,
+                    'display_order': 2,
+                },
+                {
+                    'section': 'PROJECT FULL BLOWN MANUSCRIPT',
+                    'name': 'Initial Pages',
+                    'max_score': 5,
+                    'weight': 2,
+                    'target_type': Rubric.TARGET_TEAM,
+                    'display_order': 3,
+                },
+                {
+                    'section': 'PROJECT FULL BLOWN MANUSCRIPT',
+                    'name': 'Chapter 1',
+                    'max_score': 15,
+                    'weight': 6,
+                    'target_type': Rubric.TARGET_TEAM,
+                    'display_order': 4,
+                },
+                {
+                    'section': 'PROJECT FULL BLOWN MANUSCRIPT',
+                    'name': 'Chapter 4',
+                    'max_score': 25,
+                    'weight': 10,
+                    'target_type': Rubric.TARGET_TEAM,
+                    'display_order': 5,
+                },
+                {
+                    'section': 'PROJECT OUTPUT',
+                    'name': 'Delivered Features',
+                    'max_score': 40,
+                    'weight': 40,
+                    'target_type': Rubric.TARGET_TEAM,
+                    'display_order': 6,
+                },
+                {
+                    'section': 'PROJECT OUTPUT',
+                    'name': 'Coding Style',
+                    'max_score': 20,
+                    'weight': 22,
+                    'target_type': Rubric.TARGET_TEAM,
+                    'display_order': 7,
+                },
+            ],
+        )
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        saved = response.data['rubric']
+        self.assertEqual(saved['scale'], Rubric.SCALE_POINTS)
+        self.assertEqual(len(saved['criteria']), 8)
+        self.assertEqual(saved['criteria'][0]['section'], 'ORAL EXAMINATION')
+        self.assertEqual(saved['criteria'][0]['max_score'], 40)
+        self.assertEqual(saved['criteria'][3]['section'], 'PROJECT FULL BLOWN MANUSCRIPT')
+        self.assertEqual(saved['criteria'][3]['max_score'], 5)
+        self.assertEqual(saved['criteria'][5]['max_score'], 25)
+
+    def test_points_based_rubric_allows_same_criterion_name_in_different_sections(self):
+        payload = self.rubric_payload(
+            name='Multi-Section Same Criterion Name Rubric',
+            scale=Rubric.SCALE_POINTS,
+            criteria=[
+                {
+                    'section': 'Manuscript',
+                    'name': 'Clarity',
+                    'max_score': 20,
+                    'weight': 50,
+                    'display_order': 0,
+                },
+                {
+                    'section': 'Oral Presentation',
+                    'name': 'Clarity',
+                    'max_score': 20,
+                    'weight': 50,
+                    'display_order': 1,
+                },
+            ],
+        )
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+
+        # But duplicate within the SAME section should be rejected
+        dup_payload = self.rubric_payload(
+            name='Duplicate In Same Section Rubric',
+            scale=Rubric.SCALE_POINTS,
+            criteria=[
+                {
+                    'section': 'Manuscript',
+                    'name': 'Clarity',
+                    'max_score': 20,
+                    'weight': 50,
+                    'display_order': 0,
+                },
+                {
+                    'section': 'Manuscript',
+                    'name': 'Clarity',
+                    'max_score': 20,
+                    'weight': 50,
+                    'display_order': 1,
+                },
+            ],
+        )
+        dup_response = self.client.post('/api/grading/rubrics/', dup_payload, format='json')
+        self.assertEqual(dup_response.status_code, 400, dup_response.data)
+        self.assertIn('Duplicate criterion name', str(dup_response.data))
+
+    def test_points_based_rubric_requires_section_and_consistent_section_target_type(self):
+        # 1. Missing section should fail
+        missing_sec_payload = self.rubric_payload(
+            name='Missing Section Rubric',
+            scale=Rubric.SCALE_POINTS,
+            criteria=[
+                {
+                    'section': '',
+                    'name': 'Criterion 1',
+                    'max_score': 10,
+                    'weight': 100,
+                    'display_order': 0,
+                },
+            ],
+        )
+        res1 = self.client.post('/api/grading/rubrics/', missing_sec_payload, format='json')
+        self.assertEqual(res1.status_code, 400, res1.data)
+        self.assertIn('must belong to a section in a points-based rubric', str(res1.data))
+
+        # 2. Inconsistent target_type within same section in 'both' rubric should fail
+        inconsistent_payload = self.rubric_payload(
+            name='Inconsistent Section Target Rubric',
+            scale=Rubric.SCALE_POINTS,
+            target_type=Rubric.TARGET_BOTH,
+            criteria=[
+                {
+                    'section': 'Section A',
+                    'name': 'Team Criterion',
+                    'max_score': 10,
+                    'weight': 50,
+                    'target_type': Rubric.TARGET_TEAM,
+                    'display_order': 0,
+                },
+                {
+                    'section': 'Section A',
+                    'name': 'Individual Criterion',
+                    'max_score': 10,
+                    'weight': 50,
+                    'target_type': Rubric.TARGET_INDIVIDUAL,
+                    'display_order': 1,
+                },
+            ],
+        )
+        res2 = self.client.post('/api/grading/rubrics/', inconsistent_payload, format='json')
+        self.assertEqual(res2.status_code, 400, res2.data)
+        self.assertIn('must share the same target_type', str(res2.data))

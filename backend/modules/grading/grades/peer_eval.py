@@ -289,6 +289,7 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
     weighted_score = rubric_rows_percentage(rows)
     recorded_breakdown = [
         {'criterion_id': row['criterion'].pk, 'criteriaName': row['criterion'].name,
+         'section': getattr(row['criterion'], 'section', '') or '',
          'score': float(row['score']), 'max': float(row['max_score']),
          'weight_snapshot': str(row['weight'])}
         for row in rows
@@ -338,6 +339,7 @@ def peer_criteria_payload(team, stage_label=None):
         return [
             {
                 'id': criterion.pk,
+                'section': criterion.section or '',
                 'name': criterion.name,
                 'maxScore': float(criterion.max_score),
                 'weight': str(criterion.weight),

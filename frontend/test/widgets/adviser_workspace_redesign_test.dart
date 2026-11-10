@@ -52,6 +52,7 @@ class _PublishedGradeNotifier extends AdviserGradingNotifier {
         'team_id': 7,
         'stage_label': 'Concept Proposal',
         'status': 'published',
+        'verdict': 'approved',
         'result': 'passed',
       },
     ],
@@ -451,7 +452,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Room 301'), findsOneWidget);
     expect(find.text('Awaiting adviser signature'), findsOneWidget);
-    expect(find.text('Published result: Passed'), findsOneWidget);
+    expect(find.text('Defense outcome'), findsOneWidget);
+    expect(find.text('Approved'), findsOneWidget);
     expect(find.text('Room 302'), findsNothing);
   });
 

@@ -262,3 +262,164 @@ class StudentAcademicRecordApiTests(APITestCase):
         self.assertEqual(response.data['academic_record']['school_year'], '2026-2027')
         self.assertEqual(response.data['academic_record']['semester'], Semester.FIRST)
         self.assertEqual(response.data['academic_record']['year_level'], StudentAcademicRecord.FIRST_YEAR)
+
+    def test_bulk_import_rejects_mismatched_academic_term_metadata(self):
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': self.first_semester.id,
+                    'school_year': '2025-2026',
+                    'semester': '2nd Semester',
+                },
+                'users': [
+                    {
+                        'id_number': '2026-9999',
+                        'first_name': 'Test',
+                        'last_name': 'Student',
+                        'email': 'test9999@ustp.edu.ph',
+                        'role': 'student',
+                        'year_level': '1st Year',
+                    }
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Academic term mismatch', str(response.data))
+
+    def test_section_preview_flags_faculty_conflict_year_regression_and_unadvanced_year(self):
+        User.objects.create_user(
+            username='fac-100',
+            password='pass12345',
+            role='faculty',
+            first_name='Prof',
+            last_name='X',
+        )
+        StudentAcademicRecord.objects.create(
+            student=self.student,
+            semester=self.second_semester,
+            year_level=StudentAcademicRecord.THIRD_YEAR,
+        )
+        student2 = User.objects.create_user(
+            username='2024-0002',
+            password='pass12345',
+            role='student',
+            first_name='Maria',
+            last_name='Santos',
+        )
+        StudentAcademicRecord.objects.create(
+            student=student2,
+            semester=self.second_semester,
+            year_level=StudentAcademicRecord.THIRD_YEAR,
+        )
+        next_sy = SchoolYear.objects.create(label='2027-2028')
+        next_first = Semester.objects.create(
+            school_year=next_sy,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+
+        response = self.client.post(
+            '/api/users/academic-records/section-preview/',
+            {
+                'semester_id': next_first.id,
+                'students': [
+                    {'id_number': 'fac-100', 'year_level': '3rd Year'},
+                    {'id_number': '2024-0001', 'year_level': '3rd Year'},
+                    {'id_number': '2024-0002', 'year_level': '2nd Year'},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        sections = response.data.get('sections', [])
+        self.assertEqual(len(sections), 3)
+
+        # 1. Faculty conflict
+        self.assertTrue(sections[0]['blocking'])
+        self.assertEqual(sections[0]['status_code'], 'role_conflict')
+
+        # 2. Progression mismatch (3rd Year in 2nd Sem -> must advance to 4th Year in 1st Sem)
+        self.assertTrue(sections[1]['blocking'])
+        self.assertEqual(sections[1]['status_code'], 'progression_mismatch')
+
+        # 3. Year regression (was 3rd Year -> now 2nd Year)
+        self.assertTrue(sections[2]['blocking'])
+        self.assertEqual(sections[2]['status_code'], 'year_regression')
+
+    def test_bulk_import_excludes_both_rows_on_conflicting_duplicate_and_checks_all_row_metadata(self):
+        # 1. Conflicting duplicate rows in single batch: neither row should be imported
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': self.first_semester.id,
+                },
+                'users': [
+                    {
+                        'id_number': '2026-8888',
+                        'first_name': 'Conflicted',
+                        'last_name': 'Student',
+                        'email': 'conflicted8888@ustp.edu.ph',
+                        'role': 'student',
+                        'year_level': '1st Year',
+                        'section': 'BSIT-1A',
+                    },
+                    {
+                        'id_number': '2026-8888',
+                        'first_name': 'Conflicted',
+                        'last_name': 'Student',
+                        'email': 'conflicted8888@ustp.edu.ph',
+                        'role': 'student',
+                        'year_level': '2nd Year',
+                        'section': 'BSIT-2A',
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data.get('created_count'), 0)
+        self.assertEqual(response.data.get('error_count'), 1)
+        self.assertFalse(User.objects.filter(username='2026-8888').exists())
+
+        # 2. Multi-file row metadata: row 1 is valid, row 2 is mismatched -> entire import rejected
+        response2 = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': self.first_semester.id,
+                },
+                'users': [
+                    {
+                        'id_number': '2026-8889',
+                        'first_name': 'Valid',
+                        'last_name': 'Student',
+                        'email': 'valid8889@ustp.edu.ph',
+                        'role': 'student',
+                        'year_level': '1st Year',
+                        '_fileMetadata': {
+                            'school_year': '2026-2027',
+                            'semester': '1st Semester',
+                        },
+                    },
+                    {
+                        'id_number': '2026-8890',
+                        'first_name': 'Mismatched',
+                        'last_name': 'Student',
+                        'email': 'mismatched8890@ustp.edu.ph',
+                        'role': 'student',
+                        'year_level': '1st Year',
+                        '_fileMetadata': {
+                            'school_year': '2025-2026',
+                            'semester': '2nd Semester',
+                        },
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response2.status_code, 400)
+        self.assertIn('Academic term mismatch', str(response2.data))
+

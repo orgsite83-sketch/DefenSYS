@@ -176,6 +176,62 @@ class RubricPublishReview extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             for (final (index, criterion) in criteria.indexed) ...[
+              if (criteria.any((c) => (c['section'] ?? '').toString().trim().isNotEmpty) &&
+                  (index == 0 ||
+                      (criterion['section'] ?? '').toString().trim() !=
+                          (criteria[index - 1]['section'] ?? '').toString().trim())) ...[
+                Builder(
+                  builder: (context) {
+                    final secName = (criterion['section'] ?? '').toString().trim();
+                    final sectionCriteria = criteria.where(
+                      (c) => (c['section'] ?? '').toString().trim() == secName,
+                    );
+                    final secWeight = sectionCriteria.fold<num>(
+                      0,
+                      (sum, c) => sum + ((c['weight'] as num?) ?? 0),
+                    );
+                    final secPoints = sectionCriteria.fold<num>(
+                      0,
+                      (sum, c) => sum + ((c['max_score'] as num?) ?? 0),
+                    );
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 16, bottom: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 3,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  color: DefensysTokens.maroon,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                secName.isEmpty ? 'General' : secName,
+                                style: DefensysTokens.sectionTitle.copyWith(
+                                  color: primary,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            '$secPoints pts · ${_percentage(secWeight)}%',
+                            style: DefensysTokens.caption.copyWith(
+                              color: secondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
               Padding(
                 key: ValueKey('rubric-review-criterion-$index'),
                 padding: const EdgeInsets.symmetric(vertical: 16),

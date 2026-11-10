@@ -26,12 +26,14 @@ class Rubric(models.Model):
     SCALE_10 = '10-Point Scale'
     SCALE_100 = '100-Point Scale'
     SCALE_CUSTOM = 'Custom Scale'
+    SCALE_POINTS = 'Points-Based (Sections)'
 
     SCALE_CHOICES = (
         (SCALE_5, SCALE_5),
         (SCALE_10, SCALE_10),
         (SCALE_100, SCALE_100),
         (SCALE_CUSTOM, SCALE_CUSTOM),
+        (SCALE_POINTS, SCALE_POINTS),
     )
 
     STATUS_DRAFT = 'draft'
@@ -146,6 +148,7 @@ class Rubric(models.Model):
 
 class RubricCriterion(models.Model):
     rubric = models.ForeignKey(Rubric, related_name='criteria', on_delete=models.CASCADE)
+    section = models.CharField(max_length=160, blank=True, default='')
     name = models.CharField(max_length=160)
     description = models.TextField(blank=True)
     scale = models.CharField(max_length=30, choices=Rubric.SCALE_CHOICES, default=Rubric.SCALE_10)

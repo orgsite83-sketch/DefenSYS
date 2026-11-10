@@ -22,9 +22,14 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
     required this.title,
     required this.onBack,
     required this.onOpenTeamDetail,
+    this.initialSemesterId,
+    this.initialAssessmentId,
+    this.workspaceParameters = const {},
   });
 
   final String groupKey, scope, stageLabel, title;
+  final int? initialSemesterId, initialAssessmentId;
+  final Map<String, String> workspaceParameters;
   final VoidCallback onBack;
   // Kept for existing embedded callers; the masterlist carries full row context.
   final void Function(int gradeId, bool isLocked) onOpenTeamDetail;
@@ -48,18 +53,26 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
                   .firstOrNull?['year_level']
                   ?.toString() ??
               '';
-    final termId = (state.activeSemester?['id'] as num?)?.toInt();
-    final assessmentId = asInt(
-      settings[scope == 'pit' ? 'pit_event_config_id' : 'defense_stage_id'],
-    );
+    final termId =
+        initialSemesterId ?? (state.activeSemester?['id'] as num?)?.toInt();
+    final assessmentId =
+        initialAssessmentId ??
+        asInt(
+          settings[scope == 'pit' ? 'pit_event_config_id' : 'defense_stage_id'],
+        );
     final user = ref.watch(authProvider).user;
     final canManage =
-        user?['role'] == 'admin' ||
-        user?['is_superuser'] == true ||
-        (scope == 'pit' &&
-            user?['is_pit_lead'] == true &&
-            initialYear.isNotEmpty &&
-            user?['pit_lead_year'] == initialYear);
+        (initialSemesterId == null ||
+            initialSemesterId ==
+                (state.activeSemester?['id'] as num?)?.toInt()) &&
+        state.capstoneWorkspace['read_only'] != true &&
+        state.activeSemester?['is_active'] != false &&
+        (user?['role'] == 'admin' ||
+            user?['is_superuser'] == true ||
+            (scope == 'pit' &&
+                user?['is_pit_lead'] == true &&
+                initialYear.isNotEmpty &&
+                user?['pit_lead_year'] == initialYear));
     final busy =
         state.isSaving || state.isLoading || state.isCheckingCompletion;
     Future<void> saveSettings({
@@ -116,6 +129,16 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
                 initialYear: initialYear,
                 initialSemesterId: termId,
                 initialAssessmentId: assessmentId,
+                workspaceParameters: workspaceParameters.isNotEmpty
+                    ? workspaceParameters
+                    : scope == 'capstone' && state.capstoneWorkspace.isNotEmpty
+                    ? {
+                        'capstone_view': '${state.capstoneWorkspace['view']}',
+                        'batch_id': '${state.capstoneWorkspace['batch_id']}',
+                        'phase_semester_id':
+                            '${state.capstoneWorkspace['phase_semester_id']}',
+                      }
+                    : const {},
                 onBack: onBack,
                 headerActions: [
                   if (canManage && scope == 'pit')
@@ -144,10 +167,13 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
                     ),
                   if (canManage && scope == 'capstone')
                     Tooltip(
-                      message:
-                          settings['peer_enabled'] == false ? 'Peer evaluation is not required for this stage.' : 'Peer evaluation follows this semester’s grading settings.',
+                      message: settings['peer_enabled'] == false
+                          ? 'Peer evaluation is not required for this stage.'
+                          : 'Peer evaluation follows this semester’s grading settings.',
                       child: Text(
-                        settings['peer_enabled'] == false ? 'Peer evaluation · Not required' : 'Peer evaluation · ${capstoneTermPeerEvalEnabled(state) ? 'Enabled' : 'Disabled'}',
+                        settings['peer_enabled'] == false
+                            ? 'Peer evaluation · Not required'
+                            : 'Peer evaluation · ${capstoneTermPeerEvalEnabled(state) ? 'Enabled' : 'Disabled'}',
                         style: TextStyle(
                           fontSize: 12,
                           color: DefensysTokens.textSecondaryOf(context),

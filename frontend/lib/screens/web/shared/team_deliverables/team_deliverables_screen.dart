@@ -334,7 +334,13 @@ class _TeamDeliverablesScreenState
     ref.listen(capstoneDeliverablesProvider, (previous, next) {
       if (previous != null &&
           (previous.batchId != next.batchId ||
-              previous.participation != next.participation)) {
+              previous.participation != next.participation ||
+              previous.capstoneWorkspace['view'] !=
+                  next.capstoneWorkspace['view'] ||
+              previous.capstoneWorkspace['batch_id'] !=
+                  next.capstoneWorkspace['batch_id'] ||
+              previous.capstoneWorkspace['phase_semester_id'] !=
+                  next.capstoneWorkspace['phase_semester_id'])) {
         setState(() {
           _activeTeamId = null;
           _showConceptReview = false;
@@ -347,6 +353,7 @@ class _TeamDeliverablesScreenState
       }
     });
     final state = ref.watch(capstoneDeliverablesProvider);
+    final currentPhase = state.capstoneWorkspace['current_phase'] as Map?;
     final isWide = MediaQuery.of(context).size.width >= 900;
     final isEvaluator = widget.isAdviser || widget.isPitInstructor;
     final isPit =
@@ -489,11 +496,23 @@ class _TeamDeliverablesScreenState
                         : 'No deliverables configured for ${state.selectedStage}. Add them in PIT Events Setup.')
                   : widget.isAdviser
                   ? (state.stageOptions.isEmpty
-                        ? 'No defense stages configured.'
+                        ? (state.teams.isNotEmpty
+                              ? 'Awaiting stage setup for this phase.'
+                              : 'No stages available for this selection.')
                         : 'No deliverables configured for ${state.selectedStage}.')
                   : (state.stageOptions.isEmpty
                         ? 'No defense stages configured. Add them in Defense Stages Setup.'
                         : 'No deliverables configured for ${state.selectedStage}. Add them in Defense Stages Setup so Required progress can be tracked.'),
+              AppColors.gold,
+            ),
+          ],
+          if (widget.isAdviser &&
+              currentPhase?['stage_count'] == 0 &&
+              state.stageOptions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _notice(
+              Icons.info_outline,
+              '${currentPhase!['phase_label']} — awaiting stage setup.',
               AppColors.gold,
             ),
           ],
@@ -702,7 +721,9 @@ class _TeamDeliverablesScreenState
                         isAdviser: widget.isAdviser,
                         isPitInstructor: widget.isPitInstructor,
                         key: isEvaluator
-                            ? const ValueKey('faculty-workspace')
+                            ? ValueKey(
+                                'faculty-workspace-${state.workspace}-${state.capstoneWorkspace['batch_id']}-${state.capstoneWorkspace['phase_semester_id']}',
+                              )
                             : ValueKey(_activeTeamId),
                         initialTeamId: _activeTeamId ?? widget.initialTeamId,
                         initialTab: widget.initialTab,

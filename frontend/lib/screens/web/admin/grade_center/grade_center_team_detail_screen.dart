@@ -23,6 +23,7 @@ class GradeCenterTeamDetailScreen extends ConsumerStatefulWidget {
     required this.isLocked,
     required this.onBack,
     this.returnToTeam = false,
+    this.returnToBoard = false,
     this.initialStudentId,
     this.initialFullBreakdown = false,
   });
@@ -31,6 +32,7 @@ class GradeCenterTeamDetailScreen extends ConsumerStatefulWidget {
   final bool isLocked;
   final VoidCallback onBack;
   final bool returnToTeam;
+  final bool returnToBoard;
   final int? initialStudentId;
   final bool initialFullBreakdown;
 
@@ -158,9 +160,10 @@ class _GradeCenterTeamDetailScreenState
     final breakdowns = parseBreakdowns(grade);
     final peers = parsePeerPerStudent(grade);
     final gradeIdValue = asInt(grade['id']);
+    final isReadOnly = widget.isLocked || grade['read_only'] == true;
     final canPublish =
         !isPit &&
-        !widget.isLocked &&
+        !isReadOnly &&
         gradeIdValue != null &&
         grade['status'] != 'published' &&
         grade['grading_ready'] == true &&
@@ -169,7 +172,7 @@ class _GradeCenterTeamDetailScreenState
     final canCorrect =
         gradeIdValue != null &&
         (user?['role'] == 'admin' || user?['is_superuser'] == true);
-    final canEdit = !widget.isLocked && gradeIdValue != null;
+    final canEdit = !isReadOnly && gradeIdValue != null;
     final usesVerdict = !isPit;
 
     final panelWeight =
@@ -321,7 +324,11 @@ class _GradeCenterTeamDetailScreenState
             DefensysShadcnScope(
               child: ShadButton.outline(
                 onPressed: widget.onBack,
-                child: const Text('Back to grades'),
+                child: Text(
+                  widget.returnToBoard
+                      ? 'Back to Defense Operations'
+                      : 'Back to grades',
+                ),
               ),
             ),
           ],
@@ -349,7 +356,7 @@ class _GradeCenterTeamDetailScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.returnToTeam) ...[
+          if (widget.returnToTeam || widget.returnToBoard) ...[
             _teamReturnLink(grade),
             const SizedBox(height: 8),
           ],
@@ -357,7 +364,7 @@ class _GradeCenterTeamDetailScreenState
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              if (!widget.returnToTeam) ...[
+              if (!widget.returnToTeam && !widget.returnToBoard) ...[
                 IconButton(
                   onPressed: widget.onBack,
                   icon: const Icon(Icons.arrow_back_rounded),
@@ -526,7 +533,7 @@ class _GradeCenterTeamDetailScreenState
           const SizedBox(height: 16),
 
           // Locked event notification banner
-          gradeCenterLockedBanner(isLocked: widget.isLocked),
+          gradeCenterLockedBanner(isLocked: isReadOnly),
 
           // Executive Hero Summary Header
           gradeCenterHeroSummaryCard(grade: grade),
@@ -730,7 +737,10 @@ class _GradeCenterTeamDetailScreenState
           LayoutBuilder(
             builder: (context, constraints) {
               final totalCols =
-                  4 + panelists.length + (!isPit && adviserWeight > 0 ? 2 : 0) + (peerWeight > 0 ? 2 : 0);
+                  4 +
+                  panelists.length +
+                  (!isPit && adviserWeight > 0 ? 2 : 0) +
+                  (peerWeight > 0 ? 2 : 0);
               final dynamicSpacing = ((constraints.maxWidth - 550) / totalCols)
                   .clamp(16.0, 42.0);
 
@@ -907,48 +917,48 @@ class _GradeCenterTeamDetailScreenState
                         ],
                         // 7. Peer Rating & 20% (Sky Blue)
                         if (peerWeight > 0) ...[
-                        DataColumn(
-                          label: Text(
-                            'Peer Rating',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: isDark
-                                  ? DefensysTokens.textPrimaryDark
-                                  : const Color(0xFF1E293B),
-                            ),
-                          ),
-                        ),
-                        DataColumn(
-                          label: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF075985)
-                                  : const Color(0xFFF0F9FF),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: const Color(
-                                  0xFF0284C7,
-                                ).withValues(alpha: isDark ? 0.5 : 0.25),
-                              ),
-                            ),
-                            child: Text(
-                              '${peerWeight.toStringAsFixed(0)}%',
+                          DataColumn(
+                            label: Text(
+                              'Peer Rating',
                               style: TextStyle(
-                                fontSize: 10.5,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w800,
                                 color: isDark
-                                    ? const Color(0xFF7DD3FC)
-                                    : const Color(0xFF0284C7),
+                                    ? DefensysTokens.textPrimaryDark
+                                    : const Color(0xFF1E293B),
                               ),
                             ),
                           ),
-                        ),
-                        // 8. TOTAL
+                          DataColumn(
+                            label: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF075985)
+                                    : const Color(0xFFF0F9FF),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFF0284C7,
+                                  ).withValues(alpha: isDark ? 0.5 : 0.25),
+                                ),
+                              ),
+                              child: Text(
+                                '${peerWeight.toStringAsFixed(0)}%',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark
+                                      ? const Color(0xFF7DD3FC)
+                                      : const Color(0xFF0284C7),
+                                ),
+                              ),
+                            ),
+                          ),
+                          // 8. TOTAL
                         ],
                         DataColumn(
                           label: Container(
@@ -1227,67 +1237,69 @@ class _GradeCenterTeamDetailScreenState
                             ],
                             // 7. Peer Rating & 20% (Sky Blue Pill)
                             if (peerWeight > 0) ...[
-                            DataCell(
-                              s.peerScore != null
-                                  ? Text(
-                                      '${s.peerScore!.toStringAsFixed(2)}%',
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark
-                                            ? DefensysTokens.textPrimaryDark
-                                            : const Color(0xFF334155),
-                                      ),
-                                    )
-                                  : Text(
-                                      '—',
-                                      style: TextStyle(
-                                        color: isDark
-                                            ? DefensysTokens.textSecondaryDark
-                                            : const Color(0xFF94A3B8),
-                                      ),
-                                    ),
-                            ),
-                            DataCell(
-                              s.peerContrib != null
-                                  ? Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 7,
-                                        vertical: 2.5,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: isDark
-                                            ? const Color(0xFF075985)
-                                            : const Color(0xFFF0F9FF),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(
-                                          color: const Color(0xFF0284C7)
-                                              .withValues(
-                                                alpha: isDark ? 0.5 : 0.25,
-                                              ),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        s.peerContrib!.toStringAsFixed(2),
+                              DataCell(
+                                s.peerScore != null
+                                    ? Text(
+                                        '${s.peerScore!.toStringAsFixed(2)}%',
                                         style: TextStyle(
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600,
                                           color: isDark
-                                              ? const Color(0xFF7DD3FC)
-                                              : const Color(0xFF0284C7),
+                                              ? DefensysTokens.textPrimaryDark
+                                              : const Color(0xFF334155),
+                                        ),
+                                      )
+                                    : Text(
+                                        '—',
+                                        style: TextStyle(
+                                          color: isDark
+                                              ? DefensysTokens.textSecondaryDark
+                                              : const Color(0xFF94A3B8),
                                         ),
                                       ),
-                                    )
-                                  : Text(
-                                      '—',
-                                      style: TextStyle(
-                                        color: isDark
-                                            ? DefensysTokens.textSecondaryDark
-                                            : const Color(0xFF94A3B8),
+                              ),
+                              DataCell(
+                                s.peerContrib != null
+                                    ? Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 7,
+                                          vertical: 2.5,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: isDark
+                                              ? const Color(0xFF075985)
+                                              : const Color(0xFFF0F9FF),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFF0284C7)
+                                                .withValues(
+                                                  alpha: isDark ? 0.5 : 0.25,
+                                                ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          s.peerContrib!.toStringAsFixed(2),
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: isDark
+                                                ? const Color(0xFF7DD3FC)
+                                                : const Color(0xFF0284C7),
+                                          ),
+                                        ),
+                                      )
+                                    : Text(
+                                        '—',
+                                        style: TextStyle(
+                                          color: isDark
+                                              ? DefensysTokens.textSecondaryDark
+                                              : const Color(0xFF94A3B8),
+                                        ),
                                       ),
-                                    ),
-                            ),
-                            // 8. TOTAL
+                              ),
+                              // 8. TOTAL
                             ],
                             DataCell(
                               s.finalGrade != null
@@ -1757,13 +1769,13 @@ class _GradeCenterTeamDetailScreenState
                               ),
                             ],
                             if (peerApplicable) ...[
-                            const SizedBox(width: 6),
-                            _miniFormulaTag(
-                              'Peer',
-                              s.peerScore,
-                              const Color(0xFF0284C7),
-                              isDark: isDark,
-                            ),
+                              const SizedBox(width: 6),
+                              _miniFormulaTag(
+                                'Peer',
+                                s.peerScore,
+                                const Color(0xFF0284C7),
+                                isDark: isDark,
+                              ),
                             ],
                             const Spacer(),
                             Icon(
@@ -2064,31 +2076,31 @@ class _GradeCenterTeamDetailScreenState
 
                 // 3. PEER EVALUATION SECTION (Full Criteria + All Teammate Ratings)
                 if (peerWeight > 0) ...[
-                const SizedBox(height: 20),
-                _buildEvaluatorSectionCard(
-                  title: 'Peer Evaluation',
-                  weightText: '${peerWeight.toStringAsFixed(0)}% Weight',
-                  scoreText: selectedStudent.peerScore != null
-                      ? '${selectedStudent.peerScore!.toStringAsFixed(2)}%'
-                      : 'Pending',
-                  contribText: selectedStudent.peerContrib != null
-                      ? '+${selectedStudent.peerContrib!.toStringAsFixed(2)} pts'
-                      : null,
-                  icon: Icons.groups_rounded,
-                  themeColor: isDark
-                      ? const Color(0xFF38BDF8)
-                      : const Color(0xFF0284C7),
-                  isDark: isDark,
-                  child: _buildPeerStudentDetail(
-                    peers: peers,
-                    breakdowns: breakdowns,
-                    selectedStudentId: selectedStudent.studentId,
-                    studentName: selectedStudent.name,
-                    students: students,
-                    grade: grade,
+                  const SizedBox(height: 20),
+                  _buildEvaluatorSectionCard(
+                    title: 'Peer Evaluation',
+                    weightText: '${peerWeight.toStringAsFixed(0)}% Weight',
+                    scoreText: selectedStudent.peerScore != null
+                        ? '${selectedStudent.peerScore!.toStringAsFixed(2)}%'
+                        : 'Pending',
+                    contribText: selectedStudent.peerContrib != null
+                        ? '+${selectedStudent.peerContrib!.toStringAsFixed(2)} pts'
+                        : null,
+                    icon: Icons.groups_rounded,
+                    themeColor: isDark
+                        ? const Color(0xFF38BDF8)
+                        : const Color(0xFF0284C7),
                     isDark: isDark,
+                    child: _buildPeerStudentDetail(
+                      peers: peers,
+                      breakdowns: breakdowns,
+                      selectedStudentId: selectedStudent.studentId,
+                      studentName: selectedStudent.name,
+                      students: students,
+                      grade: grade,
+                      isDark: isDark,
+                    ),
                   ),
-                ),
                 ],
               ],
             ),
@@ -2953,6 +2965,17 @@ class _GradeCenterTeamDetailScreenState
   }
 
   Widget _teamReturnLink(Map<String, dynamic>? grade) {
+    if (widget.returnToBoard) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: ShadButton.ghost(
+          key: const ValueKey('back-to-defense-operations'),
+          onPressed: widget.onBack,
+          leading: const Icon(Icons.arrow_back_rounded, size: 18),
+          child: const Text('Back to Defense Operations'),
+        ),
+      );
+    }
     final teamName = grade?['team_name']?.toString().trim() ?? '';
     return Align(
       alignment: Alignment.centerLeft,
@@ -2974,13 +2997,13 @@ class _GradeCenterTeamDetailScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.returnToTeam) ...[
+        if (widget.returnToTeam || widget.returnToBoard) ...[
           _teamReturnLink(null),
           const SizedBox(height: 8),
         ],
         Row(
           children: [
-            if (!widget.returnToTeam) ...[
+            if (!widget.returnToTeam && !widget.returnToBoard) ...[
               IconButton(
                 onPressed: onBack,
                 icon: const Icon(Icons.arrow_back_rounded),

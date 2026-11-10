@@ -155,6 +155,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             (c['name'] ?? 'Criterion').toString(),
             ((c['max_score'] as num?) ?? 10).toDouble(),
             id: int.tryParse(c['id']?.toString() ?? ''),
+            section: (c['section'] ?? '').toString(),
             weight: rubricWeight(c['weight']),
             description: (c['description'] ?? '').toString(),
           );
@@ -1661,6 +1662,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         ? _studentCriteria[member.id] ?? <Criterion>[]
         : _criteria;
     final entered = visible.where((criterion) => criterion.isScored).length;
+    final hasSections = visible.any((c) => c.section.trim().isNotEmpty);
+    final sectionGroups = _groupCriteriaBySection(visible);
     return ShadCard(
       key: _evaluationKey,
       backgroundColor: DefensysTokens.surfaceOf(context),
@@ -1778,23 +1781,67 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             ),
             const SizedBox(height: 16),
           ],
-          Text(
-            showStudents && member != null ? member.name : 'Team criteria',
-            style: TextStyle(
-              fontSize: showStudents ? 16 : 14,
-              fontWeight: FontWeight.w600,
+          if (!hasSections) ...[
+            Text(
+              showStudents && member != null ? member.name : 'Team criteria',
+              style: TextStyle(
+                fontSize: showStudents ? 16 : 14,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            showStudents && member != null
-                ? '${member.isLeader ? 'Team leader' : 'Team member'} · $entered of ${visible.length} criteria scored'
-                : '$entered/${visible.length} scored${visible.isNotEmpty && entered == visible.length ? ' · Scores complete' : ''}',
-            style: TextStyle(
-              fontSize: 12,
-              color: DefensysTokens.textSecondaryOf(context),
+            const SizedBox(height: 4),
+            Text(
+              showStudents && member != null
+                  ? '${member.isLeader ? 'Team leader' : 'Team member'} · $entered of ${visible.length} criteria scored'
+                  : '$entered/${visible.length} scored${visible.isNotEmpty && entered == visible.length ? ' · Scores complete' : ''}',
+              style: TextStyle(
+                fontSize: 12,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
             ),
-          ),
+          ] else ...[
+            if (showStudents && member != null) ...[
+              Text(
+                member.name,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${member.isLeader ? 'Team leader' : 'Team member'} · $entered of ${visible.length} criteria scored · ${sectionGroups.length} ${sectionGroups.length == 1 ? 'section' : 'sections'}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ] else ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Team Evaluation',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
+                  ),
+                  Text(
+                    '${sectionGroups.length} ${sectionGroups.length == 1 ? 'section' : 'sections'} · $entered/${visible.length} scored${visible.isNotEmpty && entered == visible.length ? ' · Complete' : ''}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: entered == visible.length && visible.isNotEmpty
+                          ? const Color(0xFF16A34A)
+                          : DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
           if (visible.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
@@ -1802,12 +1849,38 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 'No panel rubric criteria are configured. Ask the PIT lead or admin to configure this schedule.',
               ),
             ),
-          for (var index = 0; index < visible.length; index++)
-            _criterionRow(
-              visible[index],
-              locked,
-              next: index + 1 < visible.length ? visible[index + 1] : null,
-            ),
+          if (hasSections)
+            for (var groupIndex = 0; groupIndex < sectionGroups.length; groupIndex++) ...[
+              if (sectionGroups[groupIndex].sectionTitle.isNotEmpty)
+                _buildSectionBlock(
+                  sectionIndex: groupIndex,
+                  sectionTitle: sectionGroups[groupIndex].sectionTitle,
+                  sectionWeight: _sectionWeight(visible, sectionGroups[groupIndex].sectionTitle),
+                  sectionCriteria: sectionGroups[groupIndex].criteria,
+                  locked: locked,
+                  allVisibleCriteria: visible,
+                )
+              else
+                for (var index = 0; index < sectionGroups[groupIndex].criteria.length; index++)
+                  _criterionRow(
+                    sectionGroups[groupIndex].criteria[index],
+                    locked,
+                    next: () {
+                      final globalIdx = visible.indexOf(sectionGroups[groupIndex].criteria[index]);
+                      if (globalIdx >= 0 && globalIdx + 1 < visible.length) {
+                        return visible[globalIdx + 1];
+                      }
+                      return null;
+                    }(),
+                  ),
+            ]
+          else
+            for (var index = 0; index < visible.length; index++)
+              _criterionRow(
+                visible[index],
+                locked,
+                next: index + 1 < visible.length ? visible[index + 1] : null,
+              ),
           if (visible.isNotEmpty)
             ExpansionTile(
               key: ValueKey(
@@ -1980,7 +2053,283 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     }
   }
 
-  Widget _criterionRow(Criterion criterion, bool locked, {Criterion? next}) {
+  List<_CriteriaSectionGroup> _groupCriteriaBySection(List<Criterion> list) {
+    final map = <String, _CriteriaSectionGroup>{};
+    final groups = <_CriteriaSectionGroup>[];
+    for (final criterion in list) {
+      final s = criterion.section.trim();
+      if (!map.containsKey(s)) {
+        final group = _CriteriaSectionGroup(s, [criterion]);
+        map[s] = group;
+        groups.add(group);
+      } else {
+        map[s]!.criteria.add(criterion);
+      }
+    }
+    return groups;
+  }
+
+  double _sectionWeight(List<Criterion> list, String section) {
+    return list
+        .where((c) => c.section.trim() == section)
+        .fold<double>(0, (sum, c) => sum + (c.weight ?? 0));
+  }
+
+  Widget _buildSectionBlock({
+    required int sectionIndex,
+    required String sectionTitle,
+    required double sectionWeight,
+    required List<Criterion> sectionCriteria,
+    required bool locked,
+    required List<Criterion> allVisibleCriteria,
+  }) {
+    final totalCount = sectionCriteria.length;
+    final scoredCount = sectionCriteria.where((c) => c.isScored).length;
+    final totalMax =
+        sectionCriteria.fold<double>(0, (sum, c) => sum + c.maxScore);
+    final totalEarned =
+        sectionCriteria.fold<double>(0, (sum, c) => sum + (c.score ?? 0));
+    final isAllScored = sectionCriteria.every((c) => c.isScored);
+
+    final totalWeight = allVisibleCriteria.fold<double>(
+      0,
+      (sum, c) => sum + (c.weight ?? 0),
+    );
+    final effectiveTotalWeight = totalWeight > 0 ? totalWeight : 100.0;
+    final weightedEarned = sectionCriteria.fold<double>(
+      0.0,
+      (sum, c) =>
+          sum +
+          (c.maxScore > 0 ? ((c.score ?? 0) / c.maxScore) * (c.weight ?? 0) : 0.0),
+    );
+    final contribution = (weightedEarned / effectiveTotalWeight) * 100.0;
+    final rawPercentage = totalMax > 0 ? (totalEarned / totalMax * 100) : 0.0;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 14, bottom: 8),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: DefensysTokens.surfaceHigherOf(context),
+              border: Border(
+                left: BorderSide(
+                  color: DefensysTokens.maroonOf(context),
+                  width: 3.5,
+                ),
+                bottom: BorderSide(
+                  color: DefensysTokens.borderOf(context),
+                ),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: DefensysTokens.maroonOf(context)
+                              .withValues(alpha: 0.1),
+                          borderRadius:
+                              BorderRadius.circular(DefensysTokens.radiusSm),
+                          border: Border.all(
+                            color: DefensysTokens.maroonOf(context)
+                                .withValues(alpha: 0.25),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          (sectionIndex + 1).toString().padLeft(2, '0'),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.maroonOf(context),
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          sectionTitle,
+                          style: DefensysTokens.tableCell.copyWith(
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.2,
+                            color: DefensysTokens.textPrimaryOf(context),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (sectionWeight > 0) ...[
+                      ShadBadge.secondary(
+                        child: Text(
+                          '${sectionWeight.toStringAsFixed(sectionWeight % 1 == 0 ? 0 : 1)}% weight',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isAllScored
+                            ? const Color(0xFF16A34A).withValues(alpha: 0.12)
+                            : DefensysTokens.surfaceHigherOf(context),
+                        borderRadius: BorderRadius.circular(
+                          DefensysTokens.radiusSm,
+                        ),
+                        border: Border.all(
+                          color: isAllScored
+                              ? const Color(0xFF16A34A).withValues(alpha: 0.3)
+                              : DefensysTokens.borderOf(context),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isAllScored) ...[
+                            const Icon(
+                              LucideIcons.check,
+                              size: 11,
+                              color: Color(0xFF16A34A),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Text(
+                            '$scoredCount/$totalCount',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isAllScored
+                                  ? const Color(0xFF16A34A)
+                                  : DefensysTokens.textSecondaryOf(context),
+                              fontFamily: DefensysTokens.fontFamilyInter,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Column(
+              children: [
+                for (var i = 0; i < sectionCriteria.length; i++)
+                  _criterionRow(
+                    sectionCriteria[i],
+                    locked,
+                    showDivider: i < sectionCriteria.length - 1,
+                    next: () {
+                      final globalIdx =
+                          allVisibleCriteria.indexOf(sectionCriteria[i]);
+                      if (globalIdx >= 0 &&
+                          globalIdx + 1 < allVisibleCriteria.length) {
+                        return allVisibleCriteria[globalIdx + 1];
+                      }
+                      return null;
+                    }(),
+                  ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: DefensysTokens.surfaceHigherOf(context).withValues(alpha: 0.4),
+              border: Border(
+                top: BorderSide(
+                  color: DefensysTokens.borderOf(context),
+                ),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isAllScored
+                          ? LucideIcons.checkCircle2
+                          : LucideIcons.circleDashed,
+                      size: 14,
+                      color: isAllScored
+                          ? const Color(0xFF16A34A)
+                          : DefensysTokens.textSecondaryOf(context),
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      'Subtotal: ',
+                      style: DefensysTokens.caption.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                    Text(
+                      '${formatEvaluationScore(totalEarned)} / ${formatEvaluationScore(totalMax)} pts (${rawPercentage.toStringAsFixed(1)}%)',
+                      style: DefensysTokens.body.copyWith(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+                if (sectionWeight > 0)
+                  Text(
+                    'Contribution: ${contribution.toStringAsFixed(2)}% / ${sectionWeight.toStringAsFixed(1)}%',
+                    style: DefensysTokens.caption.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                      color: DefensysTokens.maroonTextOf(context),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _criterionRow(
+    Criterion criterion,
+    bool locked, {
+    Criterion? next,
+    bool showDivider = true,
+  }) {
     return Padding(
       key: _criterionKeys.putIfAbsent(criterion, GlobalKey.new),
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -2054,7 +2403,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 });
               },
             ),
-          const Divider(height: 20),
+          if (showDivider) const Divider(height: 20),
         ],
       ),
     );
@@ -3499,4 +3848,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       }
     }
   }
+}
+
+class _CriteriaSectionGroup {
+  final String sectionTitle;
+  final List<Criterion> criteria;
+
+  _CriteriaSectionGroup(this.sectionTitle, this.criteria);
 }

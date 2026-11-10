@@ -24,7 +24,13 @@ class _Board extends DefenseBoardNotifier {
   _Board(this.schedules);
   final List<Map<String, dynamic>> schedules;
   @override
-  DefenseBoardState build() => DefenseBoardState(schedules: schedules);
+  DefenseBoardState build() => DefenseBoardState(
+    schedules: schedules,
+    statuses: schedules
+        .map((row) => row['display_status'].toString())
+        .toSet()
+        .toList(),
+  );
   @override
   Future<void> fetchBoard({
     String? search,
@@ -34,7 +40,41 @@ class _Board extends DefenseBoardNotifier {
     String? adviser,
     String? section,
     String? successMessage,
-  }) async {}
+  }) async {
+    final selectedScope = scope ?? state.scope;
+    final selectedSearch = search ?? state.search;
+    final selectedStage = stage ?? state.stage;
+    final selectedStatus = status ?? state.status;
+    final scoped = schedules
+        .where((row) => selectedScope.isEmpty || row['scope'] == selectedScope)
+        .toList();
+    state = state.copyWith(
+      scope: selectedScope,
+      search: selectedSearch,
+      stage: selectedStage,
+      status: selectedStatus,
+      adviser: adviser,
+      section: section,
+      counts: {'scope_total': scoped.length},
+      stageOptions: scoped
+          .map((row) => row['stage_label'].toString())
+          .toSet()
+          .toList(),
+      schedules: scoped
+          .where(
+            (row) =>
+                (selectedStage.isEmpty ||
+                    row['stage_label'] == selectedStage) &&
+                (selectedStatus.isEmpty ||
+                    row['display_status'] == selectedStatus) &&
+                (selectedSearch.isEmpty ||
+                    row['team_name'].toString().toLowerCase().contains(
+                      selectedSearch.toLowerCase(),
+                    )),
+          )
+          .toList(),
+    );
+  }
 }
 
 class _Scheduler extends DefenseSchedulerNotifier {
@@ -49,6 +89,33 @@ class _Scheduler extends DefenseSchedulerNotifier {
     String? status,
     String? successMessage,
   }) async {}
+}
+
+class _RetryBoard extends _Board {
+  _RetryBoard() : super([_defense(1, display: 'awaiting_evaluation')]);
+  int attempts = 0;
+
+  @override
+  Future<void> fetchBoard({
+    String? search,
+    String? stage,
+    String? status,
+    String? scope,
+    String? adviser,
+    String? section,
+    String? successMessage,
+  }) async {
+    attempts++;
+    if (attempts == 1) {
+      state = state.copyWith(
+        scope: scope,
+        schedules: [],
+        error: 'Connection failed. Try again.',
+      );
+    } else {
+      state = state.copyWith(schedules: schedules, clearError: true);
+    }
+  }
 }
 
 class _CapstoneWorkspace extends CapstoneSchedulingApi {
@@ -207,13 +274,16 @@ Future<void> _pump(
   WidgetTester tester, {
   required _External external,
   List<Map<String, dynamic>>? schedules,
+  _Board? board,
   Map<String, dynamic> user = _admin,
   DefenseSchedulerState schedulerState = const DefenseSchedulerState(),
   double width = 1400,
+  double? height,
+  double textScale = 1,
   bool dark = false,
 }) async {
   SharedPreferences.setMockInitialValues({});
-  tester.view.physicalSize = Size(width, width < 600 ? 844 : 1100);
+  tester.view.physicalSize = Size(width, height ?? (width < 600 ? 844 : 1100));
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -222,7 +292,9 @@ Future<void> _pump(
     ProviderScope(
       overrides: [
         authProvider.overrideWith(() => _Auth(user)),
-        defenseBoardProvider.overrideWith(() => _Board(schedules ?? [])),
+        defenseBoardProvider.overrideWith(
+          () => board ?? _Board(schedules ?? []),
+        ),
         defenseSchedulerProvider.overrideWith(() => _Scheduler(schedulerState)),
         capstoneSchedulingApiProvider.overrideWith(
           (ref) =>
@@ -233,6 +305,13 @@ Future<void> _pump(
       child: RepaintBoundary(
         key: const ValueKey('board-session-preview'),
         child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
+            child: child!,
+          ),
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.mistDarkTheme,
           themeMode: dark ? ThemeMode.dark : ThemeMode.light,
@@ -267,7 +346,330 @@ Future<void> _menu(
   await tester.pumpAndSettle();
 }
 
+DefenseSchedulerState readinessState({String capstoneStatus = 'ready'}) =>
+    DefenseSchedulerState(
+      canScheduleCapstone: true,
+      canSchedulePit: true,
+      defenseStages: const [
+        {'id': 1, 'label': 'Final Defense'},
+      ],
+      pitEvents: const [
+        {
+          'event_name': 'PIT Presentation',
+          'year_level': '1st Year',
+          'deliverables': [],
+        },
+      ],
+      teams: [
+        {
+          'id': 1,
+          'name': 'Capstone Team',
+          'level': '4th Year Capstone',
+          'section': 'Capstone Section',
+          if (capstoneStatus == 'ready') 'ready_for_stage': 'Final Defense',
+          if (capstoneStatus == 'completed')
+            'completed_stages': ['Final Defense'],
+          'stage_progress': {'Final Defense': capstoneStatus},
+        },
+        for (final id in [2, 3])
+          {
+            'id': id,
+            'name': 'PIT Team $id',
+            'level': '1st Year PIT',
+            'year_level': '1st Year',
+            'section': 'PIT Section',
+            'ready_for_stage': 'PIT Presentation',
+          },
+        {
+          'id': 4,
+          'name': 'Completed PIT Team',
+          'level': '1st Year PIT',
+          'year_level': '1st Year',
+          'section': 'PIT Section',
+          'completed_stages': ['PIT Presentation'],
+        },
+      ],
+    );
+
 void main() {
+  testWidgets(
+    'sessions workspace explains follow-up and keeps evaluation in More actions',
+    (tester) async {
+      await _pump(
+        tester,
+        external: _External(),
+        schedules: [
+          {
+            ..._defense(1, days: -4, display: 'pending_post_defense'),
+            'assessment': {'post_defense_complete': false},
+          },
+          {
+            ..._defense(2, days: -4, display: 'evaluating'),
+            'assessment': {
+              'panel_evaluators_submitted': 1,
+              'panel_evaluators_required': 3,
+            },
+          },
+        ],
+      );
+      expect(
+        find.byKey(const ValueKey('board-sessions-workspace')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('board-sessions-body')), findsOneWidget);
+      expect(
+        find.textContaining('2 sessions · 2 defenses shown'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          '1 defense has post-defense requirements remaining',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Required post-defense files incomplete'),
+        findsOneWidget,
+      );
+      expect(find.text('1/3 panel evaluations submitted'), findsOneWidget);
+      expect(find.text('View evaluation'), findsNothing);
+      await capturePreview(
+        tester,
+        find.byKey(const ValueKey('board-session-preview')),
+        'defense-board-follow-up',
+      );
+      await tester.tap(find.byKey(const ValueKey('board-open-sessions-info')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Includes defenses with unfinished evaluation or follow-up requirements, even when their scheduled date has passed.',
+        ),
+        findsOneWidget,
+      );
+      final menu = find.byKey(const ValueKey('defense-actions-1'));
+      await tester.ensureVisible(menu);
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      expect(find.text('Evaluation & grades'), findsOneWidget);
+      await tester.tap(find.text('Evaluation & grades'));
+      await tester.pumpAndSettle();
+      expect(find.text('Evaluation unavailable'), findsOneWidget);
+      expect(find.text('Refresh schedules'), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.text('Team 1'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('load failures offer retry without claiming the board is empty', (
+    tester,
+  ) async {
+    final board = _RetryBoard();
+    await _pump(
+      tester,
+      external: _External(),
+      schedules: [],
+      board: board,
+      dark: true,
+    );
+    expect(find.text('Connection failed. Try again.'), findsOneWidget);
+    expect(find.text('No defenses scheduled'), findsNothing);
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team 1'), findsOneWidget);
+    expect(find.text('Connection failed. Try again.'), findsNothing);
+    expect(board.attempts, 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('empty search explains recovery and retains selected program', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      external: _External(),
+      schedules: [
+        _defense(1),
+        _defense(2, scope: 'pit'),
+      ],
+    );
+    await tester.enterText(find.byType(EditableText), 'Missing team');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Showing 0 of 1 defense'), findsOneWidget);
+    expect(find.text('No matching defenses'), findsOneWidget);
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team 1'), findsOneWidget);
+    expect(find.text('Team 2'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'program context follows the admin into readiness without granting PIT scheduling',
+    (tester) async {
+      await _pump(
+        tester,
+        external: _External(),
+        schedules: [
+          _defense(1, display: 'awaiting_evaluation'),
+          _defense(2, scope: 'pit'),
+        ],
+        schedulerState: readinessState(),
+        width: 1440,
+      );
+      expect(
+        find.textContaining('1 defense needs panel evaluation'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('1 defense shown'), findsOneWidget);
+      await tester.tap(find.text('PIT'));
+      await tester.pumpAndSettle();
+      expect(find.text('Team 1'), findsNothing);
+      expect(find.text('Team 2'), findsOneWidget);
+      expect(find.text('2 teams ready to schedule'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('board-generate-schedule')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('board-view-readiness')));
+      await tester.pumpAndSettle();
+      final tracker = tester.widget<TeamReadinessTracker>(
+        find.byType(TeamReadinessTracker),
+      );
+      expect(tracker.scope, 'pit');
+      expect(tracker.activeStageOrEventName, 'PIT Presentation');
+      expect(find.text('PIT Section'), findsOneWidget);
+      expect(find.text('Capstone Section'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('board-generate-schedule')),
+        findsNothing,
+      );
+      await tester.tap(find.text('Capstone'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TeamReadinessTracker>(find.byType(TeamReadinessTracker))
+            .scope,
+        'capstone',
+      );
+      expect(find.text('Capstone Section'), findsOneWidget);
+      expect(find.text('Schedule 1 ready team'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'status filtering explains the subset and clearing restores program rows',
+    (tester) async {
+      await _pump(
+        tester,
+        external: _External(),
+        schedules: [
+          _defense(1, display: 'awaiting_evaluation'),
+          _defense(2, display: 'completed'),
+          _defense(3, scope: 'pit'),
+        ],
+      );
+      expect(find.textContaining('2 defenses shown'), findsOneWidget);
+      await tester.tap(find.text('All statuses'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ShadOption<String>),
+          matching: find.text('Awaiting evaluation'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Showing 1 of 2 defenses'), findsOneWidget);
+      expect(find.text('Team 1'), findsOneWidget);
+      expect(find.text('Team 2'), findsNothing);
+      await tester.tap(find.text('Clear filters'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('2 defenses shown'), findsOneWidget);
+      expect(find.text('Team 2'), findsOneWidget);
+      expect(find.text('Team 3'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final (width, height, dark, scale) in [
+    (1440.0, 900.0, false, 1.0),
+    (1440.0, 900.0, true, 1.0),
+    (1100.0, 768.0, false, 1.0),
+    (390.0, 844.0, true, 1.0),
+    (320.0, 844.0, false, 1.3),
+  ]) {
+    testWidgets(
+      'connected board fits $width with scale $scale in ${dark ? 'dark' : 'light'} mode',
+      (tester) async {
+        await _pump(
+          tester,
+          external: _External(),
+          width: width,
+          height: height,
+          dark: dark,
+          textScale: scale,
+          schedules: [
+            {
+              ..._defense(
+                1,
+                days: -4,
+                display: dark ? 'pending_post_defense' : 'awaiting_evaluation',
+              ),
+              if (dark) 'assessment': {'post_defense_complete': false},
+              'team_name': 'Team EcoSort',
+              'project_title':
+                  'AI-Powered Waste Sorting & Recyclable Material Identification System',
+              'adviser_name': 'Renato Villanueva',
+              'panelists': [
+                {'id': 1, 'name': 'Maricel Suarez', 'is_chair': true},
+                {'id': 2, 'name': 'Jonathan Beltran'},
+              ],
+            },
+          ],
+        );
+        expect(
+          find.textContaining(
+            dark
+                ? '1 defense has post-defense requirements remaining'
+                : '1 defense needs panel evaluation',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Open sessions'), findsOneWidget);
+        expect(find.text('Total Schedules'), findsNothing);
+        expect(tester.takeException(), isNull);
+        if (width >= 600) {
+          expect(
+            tester
+                .getRect(find.byKey(const ValueKey('defense-actions-1')))
+                .bottom,
+            lessThan(height),
+          );
+        }
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('board-session-preview')),
+          'defense-board-${width.toInt()}-${dark ? 'dark' : 'light'}',
+        );
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('defense-actions-1')),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        if (width < 600) {
+          await capturePreview(
+            tester,
+            find.byKey(const ValueKey('board-session-preview')),
+            'defense-board-${width.toInt()}-session',
+          );
+        }
+      },
+    );
+  }
+
   testWidgets(
     'new import sessions appear above older hearings in their section',
     (tester) async {
@@ -385,57 +787,14 @@ void main() {
     );
     expect(find.text('Re-defense'), findsOneWidget);
     expect(find.text('Re-defense · Attempt 3'), findsOneWidget);
-    await tester.tap(find.text('Concept Proposal').last);
+    await tester.tap(
+      find.byKey(const ValueKey('session-toggle-repeat|capstone|1')),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Re-defense'), findsOneWidget);
     expect(find.text('Re-defense · Attempt 3'), findsNothing);
     expect(tester.takeException(), isNull);
   });
-
-  DefenseSchedulerState readinessState({String capstoneStatus = 'ready'}) =>
-      DefenseSchedulerState(
-        canScheduleCapstone: true,
-        canSchedulePit: true,
-        defenseStages: const [
-          {'id': 1, 'label': 'Final Defense'},
-        ],
-        pitEvents: const [
-          {
-            'event_name': 'PIT Presentation',
-            'year_level': '1st Year',
-            'deliverables': [],
-          },
-        ],
-        teams: [
-          {
-            'id': 1,
-            'name': 'Capstone Team',
-            'level': '4th Year Capstone',
-            'section': 'Capstone Section',
-            if (capstoneStatus == 'ready') 'ready_for_stage': 'Final Defense',
-            if (capstoneStatus == 'completed')
-              'completed_stages': ['Final Defense'],
-            'stage_progress': {'Final Defense': capstoneStatus},
-          },
-          for (final id in [2, 3])
-            {
-              'id': id,
-              'name': 'PIT Team $id',
-              'level': '1st Year PIT',
-              'year_level': '1st Year',
-              'section': 'PIT Section',
-              'ready_for_stage': 'PIT Presentation',
-            },
-          {
-            'id': 4,
-            'name': 'Completed PIT Team',
-            'level': '1st Year PIT',
-            'year_level': '1st Year',
-            'section': 'PIT Section',
-            'completed_stages': ['PIT Presentation'],
-          },
-        ],
-      );
 
   for (final user in [
     _admin,
@@ -456,22 +815,16 @@ void main() {
         findsOneWidget,
       ); // Schedule scope remains available.
       expect(find.byType(DefensysSegmentedControl<String>), findsOneWidget);
-      expect(find.text('1 Ready'), findsOneWidget);
-      expect(
-        find.textContaining('1 team has met all deliverable requirements'),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Pre-Defense Readiness Queue'));
+      expect(find.text('Readiness · 1 ready'), findsOneWidget);
+      expect(find.text('1 team ready to schedule'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('board-view-readiness')));
       await tester.pumpAndSettle();
-      expect(find.text('PIT'), findsNothing);
+      expect(find.text('PIT'), findsOneWidget);
       expect(find.text('PIT Presentation'), findsNothing);
       expect(find.text('PIT Section'), findsNothing);
       expect(find.text('Capstone Section'), findsOneWidget);
-      expect(
-        find.text('Capstone Deliverables & Readiness Queue'),
-        findsOneWidget,
-      );
-      expect(find.text('Schedule 1 Ready Team'), findsNWidgets(2));
+      expect(find.text('Deliverables & readiness'), findsOneWidget);
+      expect(find.text('Schedule 1 ready team'), findsOneWidget);
       final tracker = tester.widget<TeamReadinessTracker>(
         find.byType(TeamReadinessTracker),
       );
@@ -488,7 +841,7 @@ void main() {
         'admin-capstone-readiness',
       );
       expect(tester.takeException(), isNull);
-      await tester.tap(find.text('Schedule 1 Ready Team').first);
+      await tester.tap(find.text('Schedule 1 ready team').first);
       await tester.pumpAndSettle();
       final scheduler = tester.widget<DefenseSchedulerScreen>(
         find.byType(DefenseSchedulerScreen),
@@ -510,15 +863,9 @@ void main() {
         schedules: [],
         schedulerState: readinessState(capstoneStatus: status),
       );
-      expect(
-        find.text(status == 'completed' ? 'Complete' : '1 Pending'),
-        findsOneWidget,
-      );
-      expect(
-        find.textContaining('teams have met all deliverable requirements'),
-        findsNothing,
-      );
-      expect(find.text('Open Readiness Queue'), findsNothing);
+      expect(find.text('Readiness'), findsOneWidget);
+      expect(find.textContaining('teams ready to schedule'), findsNothing);
+      expect(find.text('Review readiness'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }
@@ -556,7 +903,7 @@ void main() {
         ],
       ),
     );
-    await tester.tap(find.text('Pre-Defense Readiness Queue'));
+    await tester.tap(find.byKey(const ValueKey('board-view-readiness')));
     await tester.pumpAndSettle();
     final queue = find.byType(TeamReadinessTracker);
     expect(
@@ -570,6 +917,7 @@ void main() {
 
     await tester.tap(find.text('Project Proposal'));
     await tester.pumpAndSettle();
+    expect(find.text('16 completed this stage'), findsOneWidget);
     expect(find.text('Completed'), findsNWidgets(2));
     expect(find.text('Needs Endorsement'), findsNothing);
     final tracker = tester.widget<TeamReadinessTracker>(
@@ -593,12 +941,9 @@ void main() {
       width: 1920,
       schedulerState: readinessState(),
     );
-    expect(find.text('2 Ready'), findsOneWidget);
-    expect(
-      find.textContaining('2 teams have met all deliverable requirements'),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Pre-Defense Readiness Queue'));
+    expect(find.text('Readiness · 2 ready'), findsOneWidget);
+    expect(find.text('2 teams ready to schedule'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('board-view-readiness')));
     await tester.pumpAndSettle();
     final tracker = tester.widget<TeamReadinessTracker>(
       find.byType(TeamReadinessTracker),
@@ -607,7 +952,7 @@ void main() {
     expect(tracker.activeStageOrEventName, 'PIT Presentation');
     expect(find.text('PIT Section'), findsOneWidget);
     expect(find.text('Capstone Section'), findsNothing);
-    expect(find.text('Schedule 2 Ready Teams'), findsNWidgets(2));
+    expect(find.text('Schedule 2 ready teams'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -678,15 +1023,16 @@ void main() {
   ) async {
     await _pump(tester, external: _External(), schedules: [], width: 1400);
 
-    final action = find.ancestor(
-      of: find.text('Generate Schedule'),
-      matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
-    );
+    final action = find.byKey(const ValueKey('board-generate-schedule'));
     expect(action, findsOneWidget);
     expect(tester.getRect(action).right, greaterThan(1300));
     expect(
       tester.getTopLeft(action).dy,
-      lessThan(tester.getTopLeft(find.text('Total Schedules')).dy),
+      lessThan(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('board-defense-summary')))
+            .dy,
+      ),
     );
     expect(tester.takeException(), isNull);
   });
@@ -712,8 +1058,8 @@ void main() {
       ],
     );
     double y(String text) => tester.getTopLeft(find.text(text).first).dy;
-    expect(y('Active sessions'), lessThan(y('Upcoming sessions')));
-    expect(y('Upcoming sessions'), lessThan(y('Past sessions')));
+    expect(y('Open sessions'), lessThan(y('Upcoming sessions')));
+    expect(y('Upcoming sessions'), lessThan(y('History')));
     expect(y('Team 4'), lessThan(y('Team 3')));
     expect(y('Team 3'), lessThan(y('Team 2')));
     expect(y('Team 2'), lessThan(y('Team 5')));

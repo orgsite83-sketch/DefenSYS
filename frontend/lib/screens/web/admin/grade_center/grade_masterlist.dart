@@ -30,6 +30,7 @@ class GradeMasterlist extends ConsumerStatefulWidget {
     this.onRefresh,
     this.onBack,
     this.headerActions = const [],
+    this.workspaceParameters = const {},
   });
 
   final String groupKey, scope, stageLabel, initialYear;
@@ -38,6 +39,7 @@ class GradeMasterlist extends ConsumerStatefulWidget {
   final VoidCallback? onRefresh;
   final VoidCallback? onBack;
   final List<Widget> headerActions;
+  final Map<String, String> workspaceParameters;
 
   @override
   ConsumerState<GradeMasterlist> createState() => _GradeMasterlistState();
@@ -53,7 +55,7 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
   String? _lastActor;
 
   String get _session =>
-      '${ref.read(authProvider).user?['id']}|${widget.scope}|${widget.groupKey}|${widget.initialSemesterId}|${widget.initialAssessmentId}';
+      '${ref.read(authProvider).user?['id']}|${widget.scope}|${widget.groupKey}|${widget.initialSemesterId}|${widget.initialAssessmentId}${widget.workspaceParameters.isEmpty ? '' : '|${widget.workspaceParameters['batch_id']}'}';
   bool get _students => (_params['entity'] ?? 'students') == 'students';
   bool get _full => _params['detail_level'] == 'full';
 
@@ -97,6 +99,7 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
             '${widget.initialAssessmentId}'
       else
         'stage_label': widget.stageLabel,
+      ...widget.workspaceParameters,
     };
     _search.text = _params['search'] ?? '';
     final offset = double.tryParse(_params.remove('_scroll') ?? '');

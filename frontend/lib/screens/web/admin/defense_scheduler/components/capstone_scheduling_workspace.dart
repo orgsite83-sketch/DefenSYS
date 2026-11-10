@@ -109,6 +109,22 @@ class _CapstoneSchedulingWorkspaceState
       _rosters[id]!.applying(_temporaryChanges[id] ?? {});
   CapstoneRosterDraft _displayRoster(int id) =>
       _editingRosters[id] ?? _actualRoster(id);
+  CapstoneRosterDraft _defaultRosterFor(Map<String, dynamic> team) {
+    if (team['assignment'] is Map) {
+      return CapstoneRosterDraft.fromJson(
+        Map<String, dynamic>.from(team['assignment']),
+      );
+    }
+    if (team['adoption_candidate'] is Map) {
+      final candidate = Map<String, dynamic>.from(team['adoption_candidate']);
+      if (candidate['requires_review'] == false && candidate['roster'] is Map) {
+        return CapstoneRosterDraft.fromJson(
+          Map<String, dynamic>.from(candidate['roster']),
+        );
+      }
+    }
+    return CapstoneRosterDraft();
+  }
 
   @override
   void initState() {
@@ -210,11 +226,7 @@ class _CapstoneSchedulingWorkspaceState
     _groups = capstoneGroups(applicable);
     for (final team in applicable) {
       final id = capstoneId(team['id'])!;
-      _rosters[id] = CapstoneRosterDraft.fromJson(
-        team['assignment'] == null
-            ? null
-            : Map<String, dynamic>.from(team['assignment']),
-      );
+      _rosters[id] = _defaultRosterFor(team);
       if ((team['ready_stage_ids'] as List).contains(_stage)) _selected.add(id);
     }
     _minutes.text =
@@ -526,11 +538,7 @@ class _CapstoneSchedulingWorkspaceState
     final ids = group.teams.map((t) => t['id']).toSet();
     for (final team in group.teams) {
       final id = capstoneId(team['id'])!;
-      _rosters[id] = CapstoneRosterDraft.fromJson(
-        team['assignment'] == null
-            ? null
-            : Map<String, dynamic>.from(team['assignment']),
-      );
+      _rosters[id] = _defaultRosterFor(team);
       _temporaryChanges.remove(id);
       _editingRosters.remove(id);
     }
@@ -1238,7 +1246,7 @@ class _CapstoneSchedulingWorkspaceState
           const SizedBox(height: 8),
           _button(
             'Use reviewed adviser roster',
-            group.teams.every((t) => t['initial_stage_id'] == _stage)
+            rosters.isNotEmpty
                 ? () {
                     for (final team in group.teams) {
                       _rosters[team['id']] = rosters.first.copy();

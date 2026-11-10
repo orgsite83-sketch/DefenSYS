@@ -236,7 +236,7 @@ class DefensysEmptyState extends StatelessWidget {
       textAlign: TextAlign.center,
       style: TextStyle(
         fontFamily: DefensysTokens.fontFamily,
-        color: DefensysTokens.textPrimary,
+        color: DefensysTokens.textPrimaryOf(context),
         fontSize: fontSize,
         fontWeight: fontWeight,
         height: 1.25,
@@ -252,7 +252,7 @@ class DefensysEmptyState extends StatelessWidget {
       textAlign: TextAlign.center,
       style: TextStyle(
         fontFamily: DefensysTokens.fontFamilyInter,
-        color: DefensysTokens.textSecondary,
+        color: DefensysTokens.textSecondaryOf(context),
         fontSize: fontSize,
         height: 1.45,
         fontWeight: FontWeight.w400,

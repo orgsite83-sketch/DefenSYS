@@ -653,6 +653,7 @@ class TeamData {
 
 class Criterion {
   final int? id;
+  final String section;
   final String name;
   final double maxScore;
   final double? weight;
@@ -662,6 +663,7 @@ class Criterion {
     this.name,
     this.maxScore, {
     this.id,
+    this.section = '',
     this.score,
     this.description = '',
     this.weight,

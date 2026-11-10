@@ -129,6 +129,12 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     }
   }
 
+  String _criterionKey(Map<String, dynamic> c) {
+    final name = c['name']?.toString() ?? '';
+    final sec = (c['section'] ?? '').toString().trim();
+    return sec.isNotEmpty ? '$sec::$name' : name;
+  }
+
   void _buildScores() {
     for (final t in widget.members) {
       final id = _teammateId(t);
@@ -138,14 +144,13 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
       // Ensure all current effective criteria are present in the teammate's scores
       for (final c in _effectiveCriteria) {
-        final name = c['name'] as String;
-        teammateScores.putIfAbsent(name, () => 0.0);
+        final key = _criterionKey(c);
+        final name = c['name']?.toString() ?? '';
+        teammateScores.putIfAbsent(key, () => teammateScores[name] ?? 0.0);
       }
 
       // Remove any criteria that are no longer part of the current effective criteria
-      final allowedKeys = _effectiveCriteria
-          .map((c) => c['name'] as String)
-          .toSet();
+      final allowedKeys = _effectiveCriteria.map(_criterionKey).toSet();
       teammateScores.removeWhere((key, _) => !allowedKeys.contains(key));
 
       _scores[id] = teammateScores;
@@ -165,11 +170,32 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           .cast<Map<String, dynamic>>();
       if (breakdown.isNotEmpty) {
         for (final item in breakdown) {
+          final itemId = item['criterion_id'];
           final criteriaName =
               item['criteriaName'] as String? ?? item['name'] as String?;
+          final itemSec = (item['section'] ?? '').toString().trim();
           final score = (item['score'] as num?)?.toDouble();
-          if (criteriaName != null && score != null) {
-            _scores[key]![criteriaName] = score;
+          if (score == null) continue;
+          Map<String, dynamic>? matchedCrit;
+          if (itemId != null) {
+            matchedCrit = _effectiveCriteria
+                .where((c) => c['id']?.toString() == itemId.toString())
+                .firstOrNull;
+          }
+          matchedCrit ??= _effectiveCriteria.where((c) {
+            final cName = c['name']?.toString() ?? '';
+            final cSec = (c['section'] ?? '').toString().trim();
+            if (itemSec.isNotEmpty) {
+              return cSec == itemSec && cName == criteriaName;
+            }
+            return cName == criteriaName;
+          }).firstOrNull;
+          if (matchedCrit != null) {
+            _scores[key]![_criterionKey(matchedCrit)] = score;
+          } else if (criteriaName != null) {
+            final secKey =
+                itemSec.isNotEmpty ? '$itemSec::$criteriaName' : criteriaName;
+            _scores[key]![secKey] = score;
           }
         }
         continue;
@@ -182,9 +208,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       final ratio =
           ((sub['percentage'] as num?)?.toDouble() ?? total / max * 100) / 100;
       for (final c in _effectiveCriteria) {
-        final criteriaName = c['name'] as String;
+        final cKey = _criterionKey(c);
         final cMax = ((c['maxScore'] as num?) ?? 5).toDouble();
-        _scores[key]![criteriaName] = (ratio * cMax).clamp(0, cMax);
+        _scores[key]![cKey] = (ratio * cMax).clamp(0, cMax);
       }
     }
   }
@@ -454,13 +480,38 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
             {'name': 'Communication', 'maxScore': 5},
             {'name': 'Reliability', 'maxScore': 5},
           ];
-    final criteria = scores.keys.toList();
+    final hasVariableMax = effectiveCriteria
+            .map((c) => (c['maxScore'] as num?)?.toDouble() ?? 5.0)
+            .toSet()
+            .length >
+        1;
+    final hasSections = effectiveCriteria
+        .any((c) => (c['section']?.toString().trim() ?? '').isNotEmpty);
+    final totalEarned = effectiveCriteria.fold(
+      0.0,
+      (s, c) => s + (scores[_criterionKey(c)] ?? scores[c['name']] ?? 0.0),
+    );
+    final totalMax = effectiveCriteria.fold(
+      0.0,
+      (s, c) => s + ((c['maxScore'] as num?)?.toDouble() ?? 5.0),
+    );
+    final weightedPct =
+        rubricPercentage(
+          effectiveCriteria.map(
+            (c) => RubricScore(
+              scores[_criterionKey(c)] ?? scores[c['name']] ?? 0.0,
+              ((c['maxScore'] as num?) ?? 5).toDouble(),
+              rubricWeight(c['weight']),
+            ),
+          ),
+        ) ??
+        (totalMax > 0 ? (totalEarned / totalMax) * 100.0 : 0.0);
     final maxScore = effectiveCriteria.isNotEmpty
         ? (effectiveCriteria.first['maxScore'] as num?)?.toDouble() ?? 5.0
         : 5.0;
-    final avg = scores.isEmpty
+    final avg = effectiveCriteria.isEmpty
         ? 0.0
-        : scores.values.fold(0.0, (s, v) => s + v) / scores.length;
+        : totalEarned / effectiveCriteria.length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -554,24 +605,31 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 ),
               ),
             Divider(height: 28, color: DefensysTokens.borderOf(context)),
-            ...criteria.map((c) {
-              final cMax =
-                  effectiveCriteria.firstWhere(
-                        (x) => (x['name'] as String?) == c,
-                        orElse: () => <String, Object>{'maxScore': 5},
-                      )['maxScore']
-                      as num? ??
-                  5;
+            ...effectiveCriteria.map((critDef) {
+              final cKey = _criterionKey(critDef);
+              final cName = critDef['name']?.toString() ?? '';
+              final cMax = (critDef['maxScore'] as num?) ?? 5;
+              final cSec = (critDef['section'] ?? '').toString().trim();
               return _criterionRatingRow(
                 teammateId,
-                c,
-                scores[c] ?? 0,
+                cKey,
+                scores[cKey] ?? scores[cName] ?? 0,
                 cMax.toDouble(),
                 isPosted || !widget.peerEvalAllowed,
+                displayLabel: cName,
+                section: cSec.isNotEmpty ? cSec : null,
               );
             }),
             Divider(height: 28, color: DefensysTokens.borderOf(context)),
-            _evaluationSummaryRow(avg, maxScore),
+            _evaluationSummaryRow(
+              avg,
+              maxScore,
+              customLabel:
+                  (hasVariableMax || hasSections) ? 'Evaluation Total' : null,
+              customValue: (hasVariableMax || hasSections)
+                  ? '${totalEarned.toStringAsFixed(0)} / ${totalMax.toStringAsFixed(0)} pts (${weightedPct.toStringAsFixed(1)}%)'
+                  : null,
+            ),
             const SizedBox(height: 14),
             if (!isPosted)
               SizedBox(
@@ -610,8 +668,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
   bool _hasUnratedCriteria(Map<String, double> scores) {
     for (final c in _effectiveCriteria) {
-      final criteriaName = c['name'] as String;
-      final score = scores[criteriaName] ?? 0;
+      final cKey = _criterionKey(c);
+      final cName = c['name']?.toString() ?? '';
+      final score = scores[cKey] ?? scores[cName] ?? 0;
       if (score <= 0) {
         return true;
       }
@@ -636,7 +695,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     final preview = rubricPercentage(
       _effectiveCriteria.map(
         (criterion) => RubricScore(
-          scores[criterion['name']] ?? 0,
+          scores[_criterionKey(criterion)] ?? scores[criterion['name']] ?? 0,
           ((criterion['maxScore'] as num?) ?? 5).toDouble(),
           rubricWeight(criterion['weight']),
         ),
@@ -658,22 +717,25 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     setState(() => _submitting[teammateId] = true);
 
     try {
-      final breakdown = scores.entries
-          .map(
-            (e) => {
-              'criterion_id': _effectiveCriteria.firstWhere(
-                (criterion) => criterion['name'] == e.key,
-              )['id'],
-              'criteriaName': e.key,
-              'score': e.value,
-              'max': _effectiveCriteria.firstWhere(
-                (c) => (c['name'] as String?) == e.key,
-                orElse: () => <String, Object>{'maxScore': 5},
-              )['maxScore'],
-            },
-          )
+      final breakdown = _effectiveCriteria
+          .map((criterion) {
+            final cKey = _criterionKey(criterion);
+            final cName = criterion['name']?.toString() ?? '';
+            final cSec = (criterion['section'] ?? '').toString().trim();
+            final cScore = scores[cKey] ?? scores[cName] ?? 0.0;
+            return {
+              'criterion_id': criterion['id'],
+              'criteriaName': cName,
+              if (cSec.isNotEmpty) 'section': cSec,
+              'score': cScore,
+              'max': criterion['maxScore'] ?? 5,
+            };
+          })
           .toList();
-      final total = scores.values.fold(0.0, (s, v) => s + v);
+      final total = _effectiveCriteria.fold(
+        0.0,
+        (s, c) => s + (scores[_criterionKey(c)] ?? scores[c['name']] ?? 0.0),
+      );
       final max = _effectiveCriteria.fold(
         0.0,
         (s, c) => s + ((c['maxScore'] as num?)?.toDouble() ?? 5.0),
@@ -715,24 +777,45 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     String criterion,
     double value,
     double maxScore,
-    bool locked,
-  ) {
+    bool locked, {
+    String? displayLabel,
+    String? section,
+  }) {
     final isRated = value > 0;
     final intMax = maxScore.toInt();
     final isPillScale = intMax <= 10;
+    final labelText = displayLabel ?? criterion;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (section != null && section.isNotEmpty) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                section,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.maroonTextOf(context),
+                ),
+              ),
+            ),
+          ],
           // Row 1: Criterion Title & Score Badge
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Text(
-                  criterion,
+                  labelText,
                   style: TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w700,
@@ -852,19 +935,25 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     );
   }
 
-  Widget _evaluationSummaryRow(double avg, double maxScore) {
+  Widget _evaluationSummaryRow(
+    double avg,
+    double maxScore, {
+    String? customLabel,
+    String? customValue,
+  }) {
     return Row(
       children: [
         Expanded(
           child: Text(
-            'Evaluation Average',
+            customLabel ?? 'Evaluation Average',
             style: DefensysTokens.caption.copyWith(
               color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
         ),
         Text(
-          '${avg.toStringAsFixed(1)} / ${maxScore.toStringAsFixed(0)}',
+          customValue ??
+              '${avg.toStringAsFixed(1)} / ${maxScore.toStringAsFixed(0)}',
           style: DefensysTokens.body.copyWith(
             color: DefensysTokens.textPrimaryOf(context),
             fontWeight: FontWeight.w600,

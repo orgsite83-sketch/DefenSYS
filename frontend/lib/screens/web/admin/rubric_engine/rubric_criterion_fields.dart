@@ -8,13 +8,18 @@ class RubricCriterionFields extends StatelessWidget {
   const RubricCriterionFields({
     super.key,
     required this.index,
+    this.section,
     required this.name,
-    required this.weight,
+    this.maxScore,
+    this.weight,
     required this.description,
     required this.maximum,
     required this.enabled,
     required this.showTarget,
     required this.target,
+    this.isPointsScale = false,
+    this.hideWeight = false,
+    this.badge,
     required this.onTargetChanged,
     required this.onChanged,
     this.onMoveUp,
@@ -23,8 +28,10 @@ class RubricCriterionFields extends StatelessWidget {
   });
 
   final int index, maximum;
-  final TextEditingController name, weight, description;
-  final bool enabled, showTarget;
+  final TextEditingController? section, maxScore, weight;
+  final TextEditingController name, description;
+  final bool enabled, showTarget, isPointsScale, hideWeight;
+  final Widget? badge;
   final String target;
   final ValueChanged<String> onTargetChanged;
   final VoidCallback onChanged;
@@ -89,12 +96,20 @@ class RubricCriterionFields extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  'Criterion ${index + 1}',
-                  style: DefensysTokens.tableCell.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: DefensysTokens.textSecondaryOf(context),
-                  ),
+                child: Row(
+                  children: [
+                    Text(
+                      'Criterion ${index + 1}',
+                      style: DefensysTokens.tableCell.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                    if (badge != null) ...[
+                      const SizedBox(width: 12),
+                      badge!,
+                    ],
+                  ],
                 ),
               ),
               _action('Move up', LucideIcons.arrowUp, onMoveUp),
@@ -109,6 +124,22 @@ class RubricCriterionFields extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
+          if (section != null) ...[
+            _field(
+              context,
+              'Section / Category',
+              ShadInput(
+                key: ValueKey('criterion-section-$index'),
+                controller: section!,
+                enabled: enabled,
+                style: _body(context),
+                padding: const EdgeInsets.all(12),
+                placeholder: const Text('e.g. ORAL EXAMINATION, MANUSCRIPT, OUTPUT'),
+                onChanged: (_) => onChanged(),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           LayoutBuilder(
             builder: (context, constraints) {
               final title = _field(
@@ -124,34 +155,68 @@ class RubricCriterionFields extends StatelessWidget {
                   onChanged: (_) => onChanged(),
                 ),
               );
-              final allocation = _field(
-                context,
-                'Weight',
-                ShadInput(
-                  key: ValueKey('criterion-weight-$index'),
-                  controller: weight,
-                  enabled: enabled,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  style: _body(context),
-                  padding: const EdgeInsets.all(12),
-                  trailing: Text('%', style: _body(context)),
-                  onChanged: (_) => onChanged(),
-                ),
-              );
-              if (constraints.maxWidth < 480) {
+              final pointsField = isPointsScale && maxScore != null
+                  ? _field(
+                      context,
+                      'Points',
+                      ShadInput(
+                        key: ValueKey('criterion-max-score-$index'),
+                        controller: maxScore!,
+                        enabled: enabled,
+                        keyboardType: TextInputType.number,
+                        style: _body(context),
+                        padding: const EdgeInsets.all(12),
+                        trailing: Text('pts', style: _body(context)),
+                        onChanged: (_) => onChanged(),
+                      ),
+                    )
+                  : null;
+              final allocation = (!hideWeight && weight != null)
+                  ? _field(
+                      context,
+                      'Weight',
+                      ShadInput(
+                        key: ValueKey('criterion-weight-$index'),
+                        controller: weight!,
+                        enabled: enabled,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        style: _body(context),
+                        padding: const EdgeInsets.all(12),
+                        trailing: Text('%', style: _body(context)),
+                        onChanged: (_) => onChanged(),
+                      ),
+                    )
+                  : null;
+              if (constraints.maxWidth < 600) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [title, const SizedBox(height: 16), allocation],
+                  children: [
+                    title,
+                    if (pointsField != null) ...[
+                      const SizedBox(height: 16),
+                      pointsField,
+                    ],
+                    if (allocation != null) ...[
+                      const SizedBox(height: 16),
+                      allocation,
+                    ],
+                  ],
                 );
               }
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(child: title),
-                  const SizedBox(width: 16),
-                  SizedBox(width: 120, child: allocation),
+                  if (pointsField != null) ...[
+                    const SizedBox(width: 16),
+                    SizedBox(width: 110, child: pointsField),
+                  ],
+                  if (allocation != null) ...[
+                    const SizedBox(width: 16),
+                    SizedBox(width: 110, child: allocation),
+                  ],
                 ],
               );
             },
@@ -180,7 +245,12 @@ class RubricCriterionFields extends StatelessWidget {
             runSpacing: 12,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              ShadBadge.secondary(child: Text('$maximum points maximum')),
+              if (!hideWeight)
+                ShadBadge.secondary(
+                  child: Text(
+                    '${(isPointsScale && maxScore != null && maxScore!.text.trim().isNotEmpty) ? maxScore!.text.trim() : maximum} points maximum',
+                  ),
+                ),
               if (showTarget)
                 ShadRadioGroup<String>(
                   initialValue: target,

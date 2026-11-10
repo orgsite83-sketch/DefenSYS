@@ -298,8 +298,8 @@ def save_assignments(actor, payload):
                 raise ValidationError({'changes': 'Provide a reason and explicit changes to the continuing roster.'})
             candidate = apply_roster_delta(before, data['changes'])
         else:
-            if not requirements or requirements[0]['id'] != data['defense_stage_id']:
-                raise ValidationError({'defense_stage_id': 'Set up people at this project’s first configured stage.'})
+            if not requirements:
+                raise ValidationError({'defense_stage_id': 'Stage does not apply to this project.'})
             candidate = data.get('roster', {})
         roster, people, externals, doc = validate_roster(team, candidate, actor)
         if doc is None and DefenseStage.objects.filter(pk=data['defense_stage_id'], minutes_required=True).exists():
@@ -312,7 +312,8 @@ def save_assignments(actor, payload):
             assignment.members.all().delete()
         else:
             assignment = CapstonePeopleAssignment(team=team, project_version=team.project_version,
-                intake_semester_id=team.intake_semester_id, source_semester=term, initial_stage_id=requirements[0]['id'])
+                intake_semester_id=team.intake_semester_id, source_semester=term,
+                initial_stage_id=requirements[0]['id'] if requirements else data['defense_stage_id'])
         assignment.adviser_id = team.adviser_id
         assignment.documenter = doc
         assignment.updated_by = actor
@@ -324,6 +325,12 @@ def save_assignments(actor, payload):
             for index, person in enumerate(externals)])
         CapstoneAssignmentRevision.objects.create(assignment=assignment, revision=assignment.revision,
             before=before or {}, after=roster, reason=data.get('reason', 'Initial assignment'), actor=actor)
+        DefenseSchedule.objects.filter(
+            team=team,
+            project_version=team.project_version,
+            scope='capstone',
+            continuing_assignment__isnull=True,
+        ).update(continuing_assignment=assignment)
     return workspace(actor, term.pk)
 
 

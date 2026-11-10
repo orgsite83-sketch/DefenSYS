@@ -59,7 +59,7 @@ void main() {
       addTearDown(container.dispose);
       final notifier = container.read(capstoneDeliverablesProvider.notifier);
       notifier.configureBatchFilters(enabled: true);
-      await notifier.fetchDeliverables(workspace: 'adviser');
+      await notifier.fetchDeliverables(workspace: 'operations');
       expect(requests.last.queryParameters['participation'], 'ongoing');
       await notifier.selectBatchFilters('12', 'completed');
       await notifier.fetchDeliverables(search: 'Eco');

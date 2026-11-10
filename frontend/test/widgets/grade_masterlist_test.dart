@@ -348,6 +348,47 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets(
+    'a phase detail link retains its original term and batch after reload',
+    (tester) async {
+      final queries = <String>[];
+      await pumpDefensysWidget(
+        tester,
+        GradeCenterEventTeamsScreen(
+          groupKey: 'capstone|Project',
+          scope: 'capstone',
+          stageLabel: 'Project',
+          title: 'Capstone 1',
+          initialSemesterId: 12,
+          initialAssessmentId: 34,
+          workspaceParameters: const {
+            'capstone_view': 'ongoing',
+            'batch_id': '12',
+            'phase_semester_id': '12',
+          },
+          onBack: () {},
+          onOpenTeamDetail: (_, _) {},
+        ),
+        overrides: [
+          authProvider.overrideWith(_Admin.new),
+          gradeCenterProvider.overrideWith(_Grades.new),
+          gradeMasterlistDataProvider.overrideWith((ref, query) async {
+            queries.add(query);
+            return _payload(query);
+          }),
+        ],
+      );
+      final query = Uri.splitQueryString(queries.last);
+      expect(query['semester_id'], '12');
+      expect(query['defense_stage_id'], '34');
+      expect(query['batch_id'], '12');
+      expect(query['phase_semester_id'], '12');
+      expect(query['scope'], 'capstone');
+      expect(find.text('Mark Complete'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final selectedYear in ['', '3rd Year']) {
     testWidgets(
       'Capstone event uses the selected cohort rather than the first team year: $selectedYear',

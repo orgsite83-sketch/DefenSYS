@@ -79,7 +79,13 @@ class AdminGradeTeamDetailRoute extends StatelessWidget {
       initialFullBreakdown: uri.queryParameters['detail'] == 'full',
       isLocked: locked,
       returnToTeam: returnTeamId != null,
+      returnToBoard:
+          returnTeamId == null && uri.queryParameters['fromBoard'] == '1',
       onBack: () {
+        if (returnTeamId == null && uri.queryParameters['fromBoard'] == '1') {
+          context.go(BoardEvaluationRoutes.board(uri));
+          return;
+        }
         if (returnTeamId != null) {
           final teamPath = isFaculty
               ? FacultyRoutes.teamDetail(returnTeamId)
@@ -121,26 +127,43 @@ class GradeMasterlistPendingRoute extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final params = Map<String, String>.from(GoRouterState.of(context).uri.queryParameters,);
-    final data = ref.watch(gradeMasterlistDataProvider(masterlistQueryKey(params)),);
+    final params = Map<String, String>.from(
+      GoRouterState.of(context).uri.queryParameters,
+    );
+    final data = ref.watch(
+      gradeMasterlistDataProvider(masterlistQueryKey(params)),
+    );
     return data.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => Padding(padding: const EdgeInsets.all(24), child: Text(error.toString()),),
+      error: (error, _) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(error.toString()),
+      ),
       data: (payload) {
         final rows = gradeMaps(payload['rows']);
-        if (rows.isEmpty) { return const Padding(padding: EdgeInsets.all(24), child: Text('This academic record is unavailable.'),);
+        if (rows.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('This academic record is unavailable.'),
+          );
         }
         final row = rows.first;
-        final cell = gradeMaps(row['assessments']).firstOrNull ?? <String, dynamic>{};
+        final cell =
+            gradeMaps(row['assessments']).firstOrNull ?? <String, dynamic>{};
         final gradeId = gradeNumber(cell['grade_id'])?.toInt();
         if (gradeId != null) {
           return GradeCenterTeamDetailScreen(
-          gradeId: gradeId, isLocked: cell['is_locked'] == true,
-          initialStudentId: gradeNumber(row['student_id'])?.toInt(),
-          onBack: () => context.pop(),
-        );
+            gradeId: gradeId,
+            isLocked: cell['is_locked'] == true,
+            initialStudentId: gradeNumber(row['student_id'])?.toInt(),
+            onBack: () => context.pop(),
+          );
         }
-        return GradePendingDetails(row: row, cell: cell, contextData: gradeMap(payload['context']),);
+        return GradePendingDetails(
+          row: row,
+          cell: cell,
+          contextData: gradeMap(payload['context']),
+        );
       },
     );
   }
@@ -188,6 +211,19 @@ class AdminGradeEventTeamsRoute extends StatelessWidget {
       scope: scope,
       stageLabel: stageLabel,
       title: title,
+      initialSemesterId: int.tryParse(params['semester_id'] ?? ''),
+      initialAssessmentId: int.tryParse(
+        params[scope == 'pit' ? 'pit_event_config_id' : 'defense_stage_id'] ??
+            '',
+      ),
+      workspaceParameters: {
+        for (final key in const [
+          'capstone_view',
+          'batch_id',
+          'phase_semester_id',
+        ])
+          if (params[key]?.isNotEmpty == true) key: params[key]!,
+      },
       onBack: () => context.canPop() ? context.pop() : context.go(rootPath),
       onOpenTeamDetail: (gradeId, isLocked) {
         final locked = isLocked ? '1' : '0';
@@ -284,10 +320,12 @@ class AdminRubricEditorRoute extends ConsumerStatefulWidget {
   final String rubricIdParam;
 
   @override
-  ConsumerState<AdminRubricEditorRoute> createState() => _AdminRubricEditorRouteState();
+  ConsumerState<AdminRubricEditorRoute> createState() =>
+      _AdminRubricEditorRouteState();
 }
 
-class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute> {
+class _AdminRubricEditorRouteState
+    extends ConsumerState<AdminRubricEditorRoute> {
   bool _isFetching = false;
   bool _fetchAttempted = false;
 
@@ -314,7 +352,9 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final rubrics = ref.read(rubricEngineProvider).rubrics;
-      final exists = rubrics.any((item) => int.tryParse(item['id']?.toString() ?? '') == id,);
+      final exists = rubrics.any(
+        (item) => int.tryParse(item['id']?.toString() ?? '') == id,
+      );
       if (!exists && !_isFetching) {
         setState(() => _isFetching = true);
         await ref.read(rubricEngineProvider.notifier).fetchSingleRubric(id);
@@ -354,7 +394,11 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Color(0xFFEF4444),),
+              const Icon(
+                Icons.error_outline,
+                size: 48,
+                color: Color(0xFFEF4444),
+              ),
               const SizedBox(height: 16),
               const Text('Invalid Rubric ID'),
               const SizedBox(height: 16),
@@ -387,9 +431,7 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
       if (_isFetching || !_fetchAttempted) {
         return const Scaffold(
           backgroundColor: Colors.white,
-          body: Center(
-            child: CircularProgressIndicator()
-          ),
+          body: Center(child: CircularProgressIndicator()),
         );
       }
 
@@ -399,11 +441,18 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.search_off_rounded, size: 48, color: Color(0xFF94A3B8),),
+              const Icon(
+                Icons.search_off_rounded,
+                size: 48,
+                color: Color(0xFF94A3B8),
+              ),
               const SizedBox(height: 16),
               Text(
                 'Rubric #$id not found',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700,),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
@@ -434,12 +483,14 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
       if (!canDelete) {
         showErrorToast(
           context,
-          lockReason ?? 'This rubric is assigned to active defenses or evaluations and cannot be deleted.',
+          lockReason ??
+              'This rubric is assigned to active defenses or evaluations and cannot be deleted.',
         );
         return;
       }
 
-      String dialogMessage = 'Delete $rubricName? This removes its criteria too.';
+      String dialogMessage =
+          'Delete $rubricName? This removes its criteria too.';
       if (isAssigned && assignedContext != null && assignedContext.isNotEmpty) {
         dialogMessage =
             'This rubric is currently assigned to Defense Stage "$assignedContext". '
@@ -457,7 +508,9 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444),),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+              ),
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Delete'),
             ),
@@ -469,7 +522,9 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
         return;
       }
 
-      final success = await ref.read(rubricEngineProvider.notifier).deleteRubric(rubricId);
+      final success = await ref
+          .read(rubricEngineProvider.notifier)
+          .deleteRubric(rubricId);
       if (!context.mounted) return;
       if (success) {
         showSuccessToast(context, 'Rubric deleted.');
@@ -479,7 +534,8 @@ class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute>
           context.go(AdminRoutes.rubrics);
         }
       } else {
-        final error = ref.read(rubricEngineProvider).error ?? 'Could not delete rubric.';
+        final error =
+            ref.read(rubricEngineProvider).error ?? 'Could not delete rubric.';
         showErrorToast(context, error);
       }
     }

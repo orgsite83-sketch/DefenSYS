@@ -561,47 +561,23 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
 
 
     def get_grade_id(self, obj):
-        try:
-            grades = list(obj.grade_records.all())
-            if grades:
-                grades.sort(key=lambda g: (g.updated_at or g.created_at, g.id), reverse=True)
-                return grades[0].id
-        except Exception:
-            pass
+        # An evaluation link belongs to this exact hearing. The stage's current
+        # grade may already have moved to a later attempt; its historical
+        # snapshot remains in assessment, but is not the old hearing's editor.
+        grades = [grade for grade in obj.grade_records.all()
+                  if grade.team_id == obj.team_id
+                  and grade.semester_id == obj.semester_id
+                  and grade.scope == obj.scope
+                  and grade.project_version == obj.project_version]
+        if grades:
+            return max(grades, key=lambda grade: (grade.updated_at or grade.created_at, grade.id)).id
 
         from grading.grades.models import TeamGrade
-        try:
-            if obj.scope == DefenseSchedule.SCOPE_CAPSTONE and obj.defense_stage_id:
-                grade = TeamGrade.all_objects.filter(
-                    team_id=obj.team_id,
-                    project_version=obj.project_version,
-                    semester_id=obj.semester_id,
-                    defense_stage_id=obj.defense_stage_id,
-                ).order_by('-updated_at', '-id').first()
-                if grade:
-                    return grade.id
-            elif obj.scope == DefenseSchedule.SCOPE_PIT and obj.event_name:
-                grade = TeamGrade.all_objects.filter(
-                    team_id=obj.team_id,
-                    project_version=obj.project_version,
-                    semester_id=obj.semester_id,
-                    stage_label=obj.event_name,
-                ).order_by('-updated_at', '-id').first()
-                if grade:
-                    return grade.id
-            elif obj.stage_label:
-                grade = TeamGrade.all_objects.filter(
-                    team_id=obj.team_id,
-                    project_version=obj.project_version,
-                    semester_id=obj.semester_id,
-                    stage_label=obj.stage_label,
-                ).order_by('-updated_at', '-id').first()
-                if grade:
-                    return grade.id
-        except Exception:
-            pass
-
-        return None
+        return TeamGrade.all_objects.filter(
+            schedule_id=obj.pk, team_id=obj.team_id,
+            semester_id=obj.semester_id, scope=obj.scope,
+            project_version=obj.project_version,
+        ).order_by('-updated_at', '-id').values_list('id', flat=True).first()
 
     def get_deletion_blockers(self, obj):
         from .services import deletion_blockers
@@ -1151,6 +1127,60 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         from .operations import join_matching_session
         join_matching_session(schedule)
         self._sync_grade_row(schedule)
+        if (
+            schedule.scope == DefenseSchedule.SCOPE_CAPSTONE
+            and schedule.team
+            and schedule.team.is_capstone
+            and schedule.team.intake_semester_id
+        ):
+            from .capstone_planning import current_assignment
+            from student_teams.capstone_lifecycle import requirements_for
+            from .models import CapstonePeopleAssignment, CapstoneAssignmentMember, CapstoneAssignmentRevision
+            assignment = current_assignment(schedule.team)
+            chair_id = chair_panelist_id or (panelists[0].id if panelists else None)
+            if not assignment and chair_id and panelists:
+                requirements = requirements_for(schedule.team)
+                initial_stage_id = requirements[0]['id'] if requirements else schedule.defense_stage_id
+                assignment = CapstonePeopleAssignment.objects.create(
+                    team=schedule.team,
+                    project_version=schedule.team.project_version,
+                    intake_semester_id=schedule.team.intake_semester_id,
+                    source_semester=schedule.semester,
+                    initial_stage_id=initial_stage_id,
+                    adviser_id=schedule.team.adviser_id,
+                    documenter=schedule.documenter,
+                    updated_by=actor,
+                )
+                CapstoneAssignmentMember.objects.bulk_create([
+                    CapstoneAssignmentMember(
+                        assignment=assignment,
+                        user=person,
+                        order=index,
+                        is_chair=(person.pk == chair_id),
+                    ) for index, person in enumerate(panelists)
+                ] + [
+                    CapstoneAssignmentMember(
+                        assignment=assignment,
+                        external=person,
+                        order=len(panelists) + index,
+                    ) for index, person in enumerate(externals)
+                ])
+                CapstoneAssignmentRevision.objects.create(
+                    assignment=assignment,
+                    revision=0,
+                    before={},
+                    after={
+                        'chair_panelist_id': chair_id,
+                        'panelist_ids': [p.pk for p in panelists],
+                        'external_evaluator_ids': [e.pk for e in externals],
+                        'documenter_id': schedule.documenter_id,
+                    },
+                    reason='Created from schedule import',
+                    actor=actor,
+                )
+            if assignment and schedule.continuing_assignment_id != assignment.pk:
+                schedule.continuing_assignment = assignment
+                schedule.save(update_fields=['continuing_assignment'])
         from notifications.services import notify_student_defense_schedule
         notify_student_defense_schedule(schedule)
         if schedule.documenter:

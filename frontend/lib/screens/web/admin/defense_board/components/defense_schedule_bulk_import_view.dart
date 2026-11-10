@@ -570,6 +570,7 @@ class _DefenseScheduleBulkImportViewState
             ? schedState.defenseStages.first
             : <String, dynamic>{},
       );
+      final resolvedActiveStageId = asInt(activeStageObj['id']);
       final activeStageLabel = activeStageObj['label']?.toString() ?? '';
 
       if (rawStage.isNotEmpty) {
@@ -580,7 +581,11 @@ class _DefenseScheduleBulkImportViewState
         );
         if (resolvedMatch.isMatched) {
           final matchedStageId = asInt(resolvedMatch.item?['id']);
-          if (activeStageId != null && matchedStageId != activeStageId) {
+          final labelsMatch = resolvedMatch.label.trim().toLowerCase() ==
+              activeStageLabel.trim().toLowerCase();
+          if (!labelsMatch &&
+              activeStageId != null &&
+              matchedStageId != resolvedActiveStageId) {
             warning =
                 'File header specifies "$rawStage" (matched to "${resolvedMatch.label}"), while active defense stage is "$activeStageLabel".';
           }
@@ -588,10 +593,10 @@ class _DefenseScheduleBulkImportViewState
         } else {
           warning =
               'File header specifies stage "$rawStage", which does not match active stage "$activeStageLabel" (or any stage in your Academic Stage Chain).';
-          _importStageId ??= activeStageId ?? asInt(activeStageObj['id']);
+          _importStageId ??= activeStageId ?? resolvedActiveStageId;
         }
       } else {
-        _importStageId ??= activeStageId ?? asInt(activeStageObj['id']);
+        _importStageId ??= activeStageId ?? resolvedActiveStageId;
       }
     }
 
@@ -785,7 +790,11 @@ class _DefenseScheduleBulkImportViewState
       await _refreshConflictSchedules();
       _scheduleDraftSave();
     } catch (error) {
-      if (mounted) showErrorToast(context, 'Unable to add timetable: $error');
+      if (mounted) {
+        final message =
+            error is FormatException ? error.message : error.toString();
+        showErrorToast(context, 'Unable to add timetable: $message');
+      }
     } finally {
       if (mounted) setState(() => _fileBusy = false);
     }

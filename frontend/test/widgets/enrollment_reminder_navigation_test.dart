@@ -59,6 +59,24 @@ class _Draft extends StudentBatchDraftNotifier {
   );
 }
 
+class _Users extends UserManagementNotifier {
+  @override
+  UserManagementState build() => const UserManagementState();
+
+  @override
+  Future<List<Map<String, dynamic>>> previewEnrollmentSections(
+    List<Map<String, dynamic>> students,
+    int semesterId,
+  ) async => [
+    for (final student in students)
+      {
+        'id_number': student['id_number'],
+        'section': '',
+        'source': 'unassigned',
+      },
+  ];
+}
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -110,6 +128,7 @@ void main() {
           academicPeriodProvider.overrideWith(_Periods.new),
           studentAcademicRecordsProvider.overrideWith(_Records.new),
           studentBatchDraftProvider.overrideWith(_Draft.new),
+          userManagementProvider.overrideWith(_Users.new),
         ],
         child: MaterialApp.router(theme: AppTheme.theme, routerConfig: router),
       ),
@@ -152,10 +171,7 @@ void main() {
           'S001',
         );
         if (mode == StudentHubMode.freshIntake) {
-          expect(
-            find.text('Confirm Student Intake (1 students)'),
-            findsOneWidget,
-          );
+          expect(find.text('Confirm enrollment (1)'), findsOneWidget);
         }
         expect(tester.takeException(), isNull);
       },

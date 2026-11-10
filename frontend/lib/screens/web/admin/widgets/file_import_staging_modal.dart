@@ -4,10 +4,12 @@ import 'dart:convert';
 import 'package:excel/excel.dart' as xl;
 import 'package:defensys/utils/excel_safe_decode.dart';
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/csv_file_io.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../user_management/bulk_import/official_class_list_parser.dart';
 
 /// Result containing staged files and user-confirmed import mode.
@@ -15,10 +17,7 @@ class StagedImportResult {
   final List<PickedTabularFile> files;
   final String importMode; // 'student' or 'general'
 
-  const StagedImportResult({
-    required this.files,
-    required this.importMode,
-  });
+  const StagedImportResult({required this.files, required this.importMode});
 }
 
 /// Represents parsed inspection metadata for a staged tabular file.
@@ -35,7 +34,9 @@ class StagedFileInfo {
   final String? subjectTitle;
   final String? yearLevel;
   final String? instructor;
+  final String? academicTerm;
   final String? warning;
+  final String? warningTitle;
 
   const StagedFileInfo({
     required this.file,
@@ -50,7 +51,9 @@ class StagedFileInfo {
     this.subjectTitle,
     this.yearLevel,
     this.instructor,
+    this.academicTerm,
     this.warning,
+    this.warningTitle,
   });
 
   String get fileName => file.name;
@@ -72,6 +75,7 @@ Future<StagedImportResult?> showFileImportStagingModal(
   required List<PickedTabularFile> initialFiles,
   String importMode = 'student',
   bool hasActiveSemester = true,
+  Map<String, dynamic>? activeSemester,
 }) async {
   return showDialog<StagedImportResult>(
     context: context,
@@ -80,6 +84,7 @@ Future<StagedImportResult?> showFileImportStagingModal(
       initialFiles: initialFiles,
       importMode: importMode,
       hasActiveSemester: hasActiveSemester,
+      activeSemester: activeSemester,
     ),
   );
 }
@@ -92,11 +97,13 @@ class FileImportStagingModal extends StatefulWidget {
     required this.initialFiles,
     this.importMode = 'student',
     this.hasActiveSemester = true,
+    this.activeSemester,
   });
 
   final List<PickedTabularFile> initialFiles;
   final String importMode;
   final bool hasActiveSemester;
+  final Map<String, dynamic>? activeSemester;
 
   @override
   State<FileImportStagingModal> createState() => _FileImportStagingModalState();
@@ -141,7 +148,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     setState(() {
       for (final f in files) {
         final exists = _stagedFiles.any(
-          (existing) => existing.name == f.name && existing.bytes.length == f.bytes.length,
+          (existing) =>
+              existing.name == f.name &&
+              existing.bytes.length == f.bytes.length,
         );
         if (!exists) {
           _stagedFiles.add(f);
@@ -185,7 +194,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       } else if (file.isCsv) {
         return _inspectCsvFile(file, importMode);
       } else {
-        final extLabel = file.extension.isNotEmpty ? file.extension.toUpperCase() : 'Unsupported';
+        final extLabel = file.extension.isNotEmpty
+            ? file.extension.toUpperCase()
+            : 'Unsupported';
         final isStudent = importMode == 'student';
         return StagedFileInfo(
           file: file,
@@ -254,6 +265,42 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     return _inspectExtractedRows(file, rows, importMode, isXlsx: false);
   }
 
+  String? _checkAcademicTermMismatch(Map<String, dynamic> fileMeta) {
+    final active = widget.activeSemester;
+    if (active == null || _activeImportMode != 'student') return null;
+
+    final targetSy = (active['school_year'] ?? '').toString().trim();
+    final targetSem = (active['label'] ?? '').toString().trim();
+    if (targetSy.isEmpty && targetSem.isEmpty) return null;
+
+    final fileSy = (fileMeta['school_year'] ?? '').toString().trim();
+    final fileSem = (fileMeta['semester'] ?? '').toString().trim();
+    // Plain CSV without preamble is allowed.
+    if (fileSy.isEmpty && fileSem.isEmpty) {
+      return null;
+    }
+
+    final syMismatch =
+        fileSy.isNotEmpty && targetSy.isNotEmpty && fileSy != targetSy;
+    final semMismatch =
+        fileSem.isNotEmpty &&
+        targetSem.isNotEmpty &&
+        fileSem.toLowerCase() != targetSem.toLowerCase();
+
+    if (syMismatch || semMismatch) {
+      final fileTerm = [
+        if (fileSem.isNotEmpty) fileSem,
+        if (fileSy.isNotEmpty) 'A.Y. $fileSy',
+      ].join(', ');
+      final targetTerm = [
+        if (targetSem.isNotEmpty) targetSem,
+        if (targetSy.isNotEmpty) 'A.Y. $targetSy',
+      ].join(', ');
+      return 'File term: $fileTerm\nActive term: $targetTerm\nUpload a class list for the active term, or change the active semester in Academic Periods.';
+    }
+    return null;
+  }
+
   StagedFileInfo _inspectExtractedRows(
     PickedTabularFile file,
     List<List<String>> rows,
@@ -292,7 +339,8 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         if (lower == 'subject code' && j + 1 < rows[i].length) {
           subjectCode = rows[i][j + 1].trim();
           isOfficialClassList = true;
-        } else if (lower.startsWith('subject code,') || lower.startsWith('subject code:')) {
+        } else if (lower.startsWith('subject code,') ||
+            lower.startsWith('subject code:')) {
           final parts = cell.split(RegExp(r'[,:]'));
           if (parts.length > 1) subjectCode = parts[1].trim();
           isOfficialClassList = true;
@@ -314,22 +362,27 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     }
 
     if (isOfficialClassList) {
-      int studentCount = 0;
-      bool inStudentTable = false;
-      for (final row in rows) {
-        final line = row.join(' ').toLowerCase();
-        if (line.contains('student number') ||
-            line.contains('student no') ||
-            line.contains('student id') ||
-            line.contains('id number') ||
-            (line.contains('student') && line.contains('name'))) {
-          inStudentTable = true;
-          continue;
-        }
-        if (inStudentTable && row.isNotEmpty) {
-          final nonEmpty = row.where((c) => c.trim().isNotEmpty).toList();
-          if (nonEmpty.length >= 2) {
-            studentCount++;
+      final parsed = parseOfficialClassListRows(rows);
+      int studentCount = parsed.students.isNotEmpty
+          ? parsed.students.length
+          : 0;
+      if (studentCount == 0) {
+        bool inStudentTable = false;
+        for (final row in rows) {
+          final line = row.join(' ').toLowerCase();
+          if (line.contains('student number') ||
+              line.contains('student no') ||
+              line.contains('student id') ||
+              line.contains('id number') ||
+              (line.contains('student') && line.contains('name'))) {
+            inStudentTable = true;
+            continue;
+          }
+          if (inStudentTable && row.isNotEmpty) {
+            final nonEmpty = row.where((c) => c.trim().isNotEmpty).toList();
+            if (nonEmpty.length >= 2) {
+              studentCount++;
+            }
           }
         }
       }
@@ -337,6 +390,16 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       if (studentCount == 0) {
         studentCount = rows.length > 12 ? rows.length - 12 : 0;
       }
+
+      final termMismatch = _checkAcademicTermMismatch(parsed.metadata);
+      final detectedTerm = [
+        if (parsed.metadata['semester'] != null &&
+            parsed.metadata['semester'].toString().trim().isNotEmpty)
+          parsed.metadata['semester'].toString().trim(),
+        if (parsed.metadata['school_year'] != null &&
+            parsed.metadata['school_year'].toString().trim().isNotEmpty)
+          parsed.metadata['school_year'].toString().trim(),
+      ].join(' • ');
 
       final isGeneralMode = importMode == 'general';
       if (isGeneralMode) {
@@ -348,12 +411,38 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
           detectedImportMode: 'student',
           recordEntityLabel: 'students',
           primaryRole: 'Student',
-          section: section?.isNotEmpty == true ? section : 'Auto-detected Section',
+          section: section?.isNotEmpty == true
+              ? section
+              : 'Auto-detected Section',
           subjectCode: subjectCode,
           subjectTitle: subjectTitle,
           yearLevel: yearLevel,
           instructor: instructor,
-          warning: 'This file is a Student Class List. It cannot be imported into Faculty & Staff. Please use the Batch Student Enrollment Hub instead.',
+          academicTerm: detectedTerm.isNotEmpty ? detectedTerm : null,
+          warning:
+              'This file is a Student Class List. It cannot be imported into Faculty & Staff. Please use the Batch Student Enrollment Hub instead.',
+        );
+      }
+
+      if (termMismatch != null) {
+        return StagedFileInfo(
+          file: file,
+          formatLabel: 'Official Class List',
+          isValid: false,
+          rowCount: 0,
+          detectedImportMode: 'student',
+          recordEntityLabel: 'students',
+          primaryRole: 'Student',
+          section: section?.isNotEmpty == true
+              ? section
+              : 'Auto-detected Section',
+          subjectCode: subjectCode,
+          subjectTitle: subjectTitle,
+          yearLevel: yearLevel,
+          instructor: instructor,
+          academicTerm: detectedTerm.isNotEmpty ? detectedTerm : null,
+          warning: termMismatch,
+          warningTitle: 'Academic term mismatch',
         );
       }
 
@@ -365,12 +454,17 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         detectedImportMode: 'student',
         recordEntityLabel: 'students',
         primaryRole: 'Student',
-        section: section?.isNotEmpty == true ? section : 'Auto-detected Section',
+        section: section?.isNotEmpty == true
+            ? section
+            : 'Auto-detected Section',
         subjectCode: subjectCode,
         subjectTitle: subjectTitle,
         yearLevel: yearLevel,
         instructor: instructor,
-        warning: studentCount == 0 ? 'No enrolled student records found in template.' : null,
+        academicTerm: detectedTerm.isNotEmpty ? detectedTerm : null,
+        warning: studentCount == 0
+            ? 'No enrolled student records found in template.'
+            : null,
       );
     }
 
@@ -379,7 +473,8 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     for (var i = 0; i < headerScanLimit; i++) {
       final line = rows[i].join(' ').toLowerCase();
       if (line.contains('list of enrollment') ||
-          (line.contains('officially enrolled') && line.contains('registered'))) {
+          (line.contains('officially enrolled') &&
+              line.contains('registered'))) {
         isByYearEnrollmentList = true;
         break;
       }
@@ -389,6 +484,16 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       final parsed = parseOfficialClassListRows(rows);
       final studentCount = parsed.students.length;
       final detectedYear = parsed.metadata['year_level']?.toString();
+
+      final termMismatch = _checkAcademicTermMismatch(parsed.metadata);
+      final detectedTerm = [
+        if (parsed.metadata['semester'] != null &&
+            parsed.metadata['semester'].toString().trim().isNotEmpty)
+          parsed.metadata['semester'].toString().trim(),
+        if (parsed.metadata['school_year'] != null &&
+            parsed.metadata['school_year'].toString().trim().isNotEmpty)
+          parsed.metadata['school_year'].toString().trim(),
+      ].join(' • ');
 
       final isGeneralMode = importMode == 'general';
       if (isGeneralMode) {
@@ -401,8 +506,26 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
           recordEntityLabel: 'students',
           primaryRole: 'Student',
           yearLevel: detectedYear,
+          academicTerm: detectedTerm.isNotEmpty ? detectedTerm : null,
           warning:
               'This file is a Student Class List (By Year Level). It cannot be imported into Faculty & Staff. Please use the Batch Student Enrollment Hub instead.',
+        );
+      }
+
+      if (termMismatch != null) {
+        return StagedFileInfo(
+          file: file,
+          formatLabel: 'Official Class List (By Year Level)',
+          isValid: false,
+          rowCount: 0,
+          detectedImportMode: 'student',
+          recordEntityLabel: 'students',
+          primaryRole: 'Student',
+          section: null,
+          yearLevel: detectedYear,
+          academicTerm: detectedTerm.isNotEmpty ? detectedTerm : null,
+          warning: termMismatch,
+          warningTitle: 'Academic term mismatch',
         );
       }
 
@@ -416,20 +539,40 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         primaryRole: 'Student',
         section: null,
         yearLevel: detectedYear,
-        warning: studentCount == 0 ? 'No enrolled student records found in template.' : null,
+        academicTerm: detectedTerm.isNotEmpty ? detectedTerm : null,
+        warning: studentCount == 0
+            ? 'No enrolled student records found in template.'
+            : null,
       );
     }
 
     // 2. Standard CSV / Header-based format check
     final headers = rows.first
-        .map((h) => h.trim().toLowerCase().replaceAll('"', '').replaceFirst('\ufeff', ''))
+        .map(
+          (h) => h
+              .trim()
+              .toLowerCase()
+              .replaceAll('"', '')
+              .replaceFirst('\ufeff', ''),
+        )
         .toList();
 
-    final hasId = headers.contains('id_number') || headers.contains('student_number') || headers.contains('id');
+    final hasId =
+        headers.contains('id_number') ||
+        headers.contains('student_number') ||
+        headers.contains('id');
     final hasEmail = headers.contains('email');
-    final hasName = headers.contains('first_name') || headers.contains('name') || headers.contains('full_name');
-    final roleIndex = headers.indexWhere((h) => h == 'role' || h == 'roles' || h == 'user_role' || h == 'type');
-    final hasStudentHeaders = headers.contains('student_number') || headers.contains('year_level') || headers.contains('section');
+    final hasName =
+        headers.contains('first_name') ||
+        headers.contains('name') ||
+        headers.contains('full_name');
+    final roleIndex = headers.indexWhere(
+      (h) => h == 'role' || h == 'roles' || h == 'user_role' || h == 'type',
+    );
+    final hasStudentHeaders =
+        headers.contains('student_number') ||
+        headers.contains('year_level') ||
+        headers.contains('section');
 
     if (hasId || hasEmail || hasName) {
       final rowCount = (rows.length - 1).clamp(0, 999999);
@@ -446,7 +589,8 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         }
       }
 
-      final facultyCount = (roleCounts['faculty'] ?? 0) +
+      final facultyCount =
+          (roleCounts['faculty'] ?? 0) +
           (roleCounts['instructor'] ?? 0) +
           (roleCounts['teacher'] ?? 0) +
           (roleCounts['professor'] ?? 0) +
@@ -454,21 +598,36 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
           (roleCounts['panelist'] ?? 0) +
           (roleCounts['coordinator'] ?? 0) +
           (roleCounts['dean'] ?? 0);
-      final adminCount = (roleCounts['admin'] ?? 0) + (roleCounts['staff'] ?? 0) + (roleCounts['user'] ?? 0);
+      final adminCount =
+          (roleCounts['admin'] ?? 0) +
+          (roleCounts['staff'] ?? 0) +
+          (roleCounts['user'] ?? 0);
       final studentCount = roleCounts['student'] ?? 0;
 
       final lowerName = file.name.toLowerCase();
-      final hasFacultyInName = lowerName.contains('faculty') || lowerName.contains('instructor') || lowerName.contains('teacher') || lowerName.contains('prof');
-      final hasAdminInName = lowerName.contains('admin') || lowerName.contains('staff') || lowerName.contains('user');
-      final hasStudentInName = lowerName.contains('student') || lowerName.contains('section') || lowerName.contains('class');
+      final hasFacultyInName =
+          lowerName.contains('faculty') ||
+          lowerName.contains('instructor') ||
+          lowerName.contains('teacher') ||
+          lowerName.contains('prof');
+      final hasAdminInName =
+          lowerName.contains('admin') ||
+          lowerName.contains('staff') ||
+          lowerName.contains('user');
+      final hasStudentInName =
+          lowerName.contains('student') ||
+          lowerName.contains('section') ||
+          lowerName.contains('class');
 
       final isFacultyTarget = importMode == 'general';
       final isStudentTarget = importMode == 'student';
 
-      final isPurelyStudent = (studentCount > 0 && facultyCount == 0 && adminCount == 0) ||
+      final isPurelyStudent =
+          (studentCount > 0 && facultyCount == 0 && adminCount == 0) ||
           (hasStudentHeaders && facultyCount == 0 && adminCount == 0) ||
           (hasStudentInName && studentCount > 0);
-      final isPurelyFacultyOrAdmin = ((facultyCount + adminCount) > 0 && studentCount == 0) ||
+      final isPurelyFacultyOrAdmin =
+          ((facultyCount + adminCount) > 0 && studentCount == 0) ||
           (hasFacultyInName && studentCount == 0);
 
       if (isFacultyTarget && isPurelyStudent) {
@@ -480,7 +639,8 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
           detectedImportMode: 'student',
           recordEntityLabel: 'students',
           primaryRole: 'Student',
-          warning: 'This file contains student records. It cannot be imported into Faculty & Staff. Please use the Batch Student Enrollment Hub instead.',
+          warning:
+              'This file contains student records. It cannot be imported into Faculty & Staff. Please use the Batch Student Enrollment Hub instead.',
         );
       }
 
@@ -493,7 +653,8 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
           detectedImportMode: 'general',
           recordEntityLabel: 'faculty',
           primaryRole: 'Faculty',
-          warning: 'This file is a Faculty & Staff template. It cannot be imported into Student Intake.',
+          warning:
+              'This file is a Faculty & Staff template. It cannot be imported into Student Intake.',
         );
       }
 
@@ -502,12 +663,14 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       String entityLabel;
       String primaryRole;
 
-      if ((facultyCount > 0 && studentCount == 0 && adminCount == 0) || (hasFacultyInName && studentCount == 0)) {
+      if ((facultyCount > 0 && studentCount == 0 && adminCount == 0) ||
+          (hasFacultyInName && studentCount == 0)) {
         detectedMode = 'general';
         formatLabel = 'Faculty Accounts CSV';
         entityLabel = 'faculty';
         primaryRole = 'Faculty';
-      } else if (((facultyCount + adminCount) > 0 && studentCount == 0) || (hasAdminInName && studentCount == 0)) {
+      } else if (((facultyCount + adminCount) > 0 && studentCount == 0) ||
+          (hasAdminInName && studentCount == 0)) {
         detectedMode = 'general';
         formatLabel = 'User Accounts CSV';
         entityLabel = 'users';
@@ -526,7 +689,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         // Fallback according to active modal mode
         final isModeStudent = importMode == 'student';
         detectedMode = isModeStudent ? 'student' : 'general';
-        formatLabel = isModeStudent ? 'Standard Student CSV' : 'User Account CSV';
+        formatLabel = isModeStudent
+            ? 'Standard Student CSV'
+            : 'User Account CSV';
         entityLabel = isModeStudent ? 'students' : 'users';
         primaryRole = isModeStudent ? 'Student' : 'General User';
       }
@@ -539,17 +704,22 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         detectedImportMode: detectedMode,
         recordEntityLabel: entityLabel,
         primaryRole: primaryRole,
-        warning: rowCount == 0 ? 'File has header columns but no data rows.' : null,
+        warning: rowCount == 0
+            ? 'File has header columns but no data rows.'
+            : null,
       );
     }
 
     final lowerFileName = file.name.toLowerCase();
     String detectedHint = '';
-    if (lowerFileName.contains('defense') || lowerFileName.contains('schedule')) {
+    if (lowerFileName.contains('defense') ||
+        lowerFileName.contains('schedule')) {
       detectedHint = ' (appears to be a defense schedule file)';
-    } else if (lowerFileName.contains('team') || lowerFileName.contains('group')) {
+    } else if (lowerFileName.contains('team') ||
+        lowerFileName.contains('group')) {
       detectedHint = ' (appears to be a student team file)';
-    } else if (lowerFileName.contains('grade') || lowerFileName.contains('score')) {
+    } else if (lowerFileName.contains('grade') ||
+        lowerFileName.contains('score')) {
       detectedHint = ' (appears to be a grading/score file)';
     }
 
@@ -636,9 +806,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not replace file: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not replace file: $e')));
       }
     } finally {
       if (mounted) {
@@ -658,7 +828,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       setState(() {
         for (final f in newFiles) {
           final exists = _stagedFiles.any(
-            (existing) => existing.name == f.name && existing.bytes.length == f.bytes.length,
+            (existing) =>
+                existing.name == f.name &&
+                existing.bytes.length == f.bytes.length,
           );
           if (!exists) {
             _stagedFiles.add(f);
@@ -668,9 +840,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add file(s): $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not add file(s): $e')));
       }
     } finally {
       if (mounted) {
@@ -695,235 +867,140 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
   @override
   Widget build(BuildContext context) {
-    final hasValidFiles = _stagedFiles.isNotEmpty && _inspectedFiles.any((f) => f.isValid);
-    final isStudent = _activeImportMode == 'student';
-
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: Center(
-        child: Container(
-          width: 680,
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.90,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-            border: Border.all(color: DefensysTokens.border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 1. Header
-              _buildHeader(context),
-
-              if (_isDraggingFile)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                  color: const Color(0xFFFEF2F2),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.file_download_rounded, color: DefensysTokens.maroon, size: 16),
-                      SizedBox(width: 8),
-                      Text(
-                        'Drop file(s) anywhere to add to staging',
-                        style: TextStyle(
-                          color: DefensysTokens.maroon,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+    final hasValidFiles = _inspectedFiles.any((f) => f.isValid);
+    return DefensysShadcnScope(
+      maroonActions: true,
+      neutralActionText: true,
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Center(
+          child: Container(
+            width: 680,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height - 48,
+            ),
+            decoration: BoxDecoration(
+              color: DefensysTokens.surfaceOf(context),
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+              border: Border.all(color: DefensysTokens.borderOf(context)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(context),
+                if (_isDraggingFile)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: Text(
+                      'Drop files to add to staging',
+                      style: _textStyle(),
+                    ),
                   ),
+                Divider(height: 1, color: DefensysTokens.borderOf(context)),
+                if (_stagedFiles.isNotEmpty) _buildSummaryBar(),
+                Flexible(
+                  child: _stagedFiles.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                          shrinkWrap: true,
+                          itemCount: _inspectedFiles.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) => _buildFileCard(
+                            context,
+                            index,
+                            _inspectedFiles[index],
+                          ),
+                        ),
                 ),
-
-              const Divider(height: 1, color: DefensysTokens.border),
-
-              // 2. Summary Info Bar
-              if (_stagedFiles.isNotEmpty) _buildSummaryBar(),
-
-              // 3. Staged Files List
-              Flexible(
-                child: _stagedFiles.isEmpty
-                    ? _buildEmptyState()
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-                        shrinkWrap: true,
-                        itemCount: _inspectedFiles.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          return _buildFileCard(context, index, _inspectedFiles[index]);
-                        },
-                      ),
-              ),
-
-              // 4. Add more file area
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _buildAddMoreButton(),
-              ),
-
-              const SizedBox(height: 16),
-              const Divider(height: 1, color: DefensysTokens.border),
-
-              // 5. Footer Actions
-              _buildFooter(context, hasValidFiles, isStudent),
-            ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                  child: _buildAddMoreButton(),
+                ),
+                Divider(height: 1, color: DefensysTokens.borderOf(context)),
+                _buildFooter(context, hasValidFiles),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 16, 16),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: DefensysTokens.maroon.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-              border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.15)),
-            ),
-            child: const Icon(
-              Icons.inventory_2_rounded,
-              color: DefensysTokens.maroon,
-              size: 20,
-            ),
+  TextStyle _textStyle({bool secondary = false, bool bold = false}) =>
+      TextStyle(
+        fontFamily: DefensysTokens.fontFamilyInter,
+        fontSize: 12,
+        height: 1.45,
+        fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+        color: secondary
+            ? DefensysTokens.textSecondaryOf(context)
+            : DefensysTokens.textPrimaryOf(context),
+      );
+
+  Widget _buildHeader(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 16, 12, 14),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Staged Import Files',
+                style: _textStyle(bold: true).copyWith(fontSize: 16),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Review files before generating the preview.',
+                style: _textStyle(secondary: true),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Staged Import Files',
-                  style: TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: DefensysTokens.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Review or replace your source files before generating the preview table.',
-                  style: DefensysTokens.caption.copyWith(
-                    color: DefensysTokens.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
+        ),
+        Tooltip(
+          message: 'Cancel & Close',
+          child: ShadButton.ghost(
+            width: 36,
+            height: 36,
+            padding: EdgeInsets.zero,
             onPressed: () => Navigator.of(context).pop(null),
-            icon: const Icon(Icons.close_rounded, size: 20),
-            color: DefensysTokens.steelGrey,
-            splashRadius: 18,
-            tooltip: 'Cancel & Close',
+            child: const Icon(Icons.close_rounded, size: 18),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
 
   Widget _buildSummaryBar() {
-    final validFilesCount = _inspectedFiles.where((f) => f.isValid).length;
-    final invalidFilesCount = _inspectedFiles.where((f) => !f.isValid).length;
-    final totalCount = _stagedFiles.length;
-    final isStudentMode = _activeImportMode == 'student';
-    final isBlockedBySemester = isStudentMode && !widget.hasActiveSemester;
-    final modeLabel = isStudentMode ? 'Student Batch' : 'Faculty / General Users';
-
-    final Color barBg;
-    final Color iconColor;
-    final IconData barIcon;
-    final String summaryText;
-
-    if (isBlockedBySemester) {
-      barBg = const Color(0xFFFEF2F2);
-      iconColor = const Color(0xFFDC2626);
-      barIcon = Icons.error_outline_rounded;
-      summaryText = 'Active Semester Required  •  Cannot import students without an active semester in Academic Periods';
-    } else if (invalidFilesCount == 0 && validFilesCount > 0) {
-      barBg = DefensysTokens.background;
-      iconColor = DefensysTokens.success;
-      barIcon = Icons.check_circle_outline_rounded;
-      final fileWord = validFilesCount == 1 ? 'file' : 'files';
-      final rowWord = _totalValidRows == 1 ? 'record' : 'records';
-      summaryText = '$validFilesCount $fileWord staged  •  $_totalValidRows total $rowWord ready ($modeLabel)';
-    } else if (validFilesCount > 0 && invalidFilesCount > 0) {
-      barBg = const Color(0xFFFFFBEB);
-      iconColor = const Color(0xFFD97706);
-      barIcon = Icons.warning_amber_rounded;
-      final fileWord = validFilesCount == 1 ? 'file' : 'files';
-      final rowWord = _totalValidRows == 1 ? 'record' : 'records';
-      final invWord = invalidFilesCount == 1 ? 'file' : 'files';
-      summaryText = '$validFilesCount valid $fileWord staged  •  $_totalValidRows $rowWord ready ($invalidFilesCount incompatible $invWord will be skipped)';
-    } else {
-      barBg = const Color(0xFFFEF2F2);
-      iconColor = const Color(0xFFDC2626);
-      barIcon = Icons.error_outline_rounded;
-      summaryText = isStudentMode
-          ? 'No valid class list files detected  •  Please replace or remove incompatible files'
-          : 'No valid faculty & staff files detected  •  Please replace or remove incompatible files';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      color: barBg,
+    final validCount = _inspectedFiles.where((f) => f.isValid).length;
+    final invalidCount = _inspectedFiles.length - validCount;
+    final semesterBlocked =
+        _activeImportMode == 'student' && !widget.hasActiveSemester;
+    final modeLabel = _activeImportMode == 'student'
+        ? 'Student Batch'
+        : 'Faculty / General Users';
+    final summary = semesterBlocked
+        ? 'Set an active semester in Academic Periods to continue.'
+        : invalidCount > 0
+        ? '$validCount ready · $invalidCount ${invalidCount == 1 ? 'file needs' : 'files need'} attention${validCount > 0 ? ' · Only ready files will be imported' : ''}'
+        : '$validCount ${validCount == 1 ? 'file' : 'files'} staged · $_totalValidRows ${_totalValidRows == 1 ? 'record' : 'records'} ready ($modeLabel)';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
       child: Row(
         children: [
-          Icon(barIcon, size: 16, color: iconColor),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              summaryText,
-              style: TextStyle(
-                fontFamily: DefensysTokens.fontFamily,
-                color: invalidFilesCount > 0 && validFilesCount == 0
-                    ? const Color(0xFF991B1B)
-                    : DefensysTokens.textPrimary,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          if (totalCount > 1)
-            InkWell(
-              onTap: _handleClearAll,
-              borderRadius: BorderRadius.circular(4),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                child: Text(
-                  'Clear All',
-                  style: TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: DefensysTokens.danger,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+          Expanded(child: Text(summary, style: _textStyle(secondary: true))),
+          if (_stagedFiles.length > 1)
+            ShadButton.ghost(
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              enabled: !_isProcessing,
+              onPressed: _handleClearAll,
+              child: const Text('Clear All'),
             ),
         ],
       ),
@@ -931,269 +1008,185 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   }
 
   Widget _buildFileCard(BuildContext context, int index, StagedFileInfo info) {
-    final isInvalid = !info.isValid;
-    final isCsv = info.file.isCsv;
-
-    // Determine badge theme based on entity type
-    final isFaculty = info.recordEntityLabel == 'faculty';
-    final isUsers = info.recordEntityLabel == 'users';
-    final isStudents = info.recordEntityLabel == 'students';
-
-    final Color entityBg;
-    final Color entityFg;
-    final Color entityBorder;
-    final IconData entityIcon;
-
-    if (isInvalid) {
-      entityBg = const Color(0xFFFEF2F2);
-      entityFg = const Color(0xFFDC2626);
-      entityBorder = const Color(0xFFFECACA);
-      entityIcon = Icons.error_outline_rounded;
-    } else if (isFaculty) {
-      entityBg = const Color(0xFFFDF2F4);
-      entityFg = DefensysTokens.maroon;
-      entityBorder = const Color(0xFFFECDD3);
-      entityIcon = Icons.badge_outlined;
-    } else if (isUsers) {
-      entityBg = DefensysTokens.infoBg;
-      entityFg = DefensysTokens.infoText;
-      entityBorder = DefensysTokens.infoBorder;
-      entityIcon = Icons.manage_accounts_outlined;
-    } else {
-      entityBg = DefensysTokens.successBg;
-      entityFg = DefensysTokens.successText;
-      entityBorder = DefensysTokens.successBorder;
-      entityIcon = Icons.school_outlined;
-    }
-
-    String entityCountText;
-    if (isInvalid) {
-      final isNonTabular = !info.file.isCsv && !info.file.isXlsx;
-      entityCountText = isNonTabular
-          ? 'Unsupported File Format (0 records)'
-          : 'Incompatible Format (0 ${_activeImportMode == 'student' ? 'student' : 'faculty'} records)';
-    } else if (isFaculty) {
-      entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'faculty' : 'faculty'}';
-    } else if (isUsers) {
-      entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'user' : 'users'}';
-    } else if (isStudents) {
-      entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'student' : 'students'}';
-    } else {
-      entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'record' : 'records'}';
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isInvalid ? const Color(0xFFFFFDFD) : Colors.white,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(
-          color: isInvalid
-              ? const Color(0xFFFCA5A5)
-              : (info.warning != null
-                  ? DefensysTokens.warningBorder
-                  : DefensysTokens.border),
-          width: isInvalid ? 1.2 : 1.0,
+    final hasWarning = info.warning != null;
+    final warningTitle =
+        info.warningTitle ??
+        (!info.isValid
+            ? (!info.file.isCsv && !info.file.isXlsx
+                  ? 'Unsupported file format'
+                  : 'Cannot import this file')
+            : 'Review before importing');
+    final metadata = <String>[
+      if (info.academicTerm?.isNotEmpty == true) info.academicTerm!,
+      if (info.section?.isNotEmpty == true) 'Section: ${info.section}',
+      if (info.yearLevel?.isNotEmpty == true) info.yearLevel!,
+      if (info.subjectCode?.isNotEmpty == true) info.subjectCode!,
+      if (info.isValid)
+        '${info.rowCount} ${info.recordEntityLabel == 'faculty'
+            ? 'faculty'
+            : info.rowCount == 1
+            ? info.recordEntityLabel.replaceFirst(RegExp(r's$'), '')
+            : info.recordEntityLabel}',
+      if (info.isValid &&
+          info.primaryRole != null &&
+          !info.formatLabel.startsWith('Official Class List'))
+        'Role: ${info.primaryRole}',
+    ];
+    final actions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ShadButton.outline(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          enabled: !_isProcessing,
+          onPressed: () => _handleReplaceFile(index),
+          leading: const Icon(Icons.sync_rounded, size: 14),
+          child: const Text('Replace'),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
+        const SizedBox(width: 4),
+        Tooltip(
+          message: 'Remove File',
+          child: ShadButton.ghost(
+            width: 32,
+            height: 32,
+            padding: EdgeInsets.zero,
+            enabled: !_isProcessing,
+            onPressed: () => _handleRemoveFile(index),
+            child: const Icon(Icons.delete_outline_rounded, size: 17),
           ),
-        ],
+        ),
+      ],
+    );
+    return Container(
+      key: ObjectKey(info.file),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
-      padding: const EdgeInsets.all(14),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Row 1: File icon badge, name, size, replace/remove buttons
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Extension Badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isInvalid
-                      ? const Color(0xFFFEF2F2)
-                      : (isCsv ? DefensysTokens.successBg : DefensysTokens.infoBg),
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                  border: Border.all(
-                    color: isInvalid
-                        ? const Color(0xFFFECACA)
-                        : (isCsv ? DefensysTokens.successBorder : DefensysTokens.infoBorder),
-                  ),
-                ),
-                child: Text(
-                  info.extension,
-                  style: TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: isInvalid
-                        ? const Color(0xFFDC2626)
-                        : (isCsv ? DefensysTokens.successText : DefensysTokens.infoText),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-
-              // File Name & Size
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      info.fileName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: DefensysTokens.fontFamily,
-                        color: isInvalid ? const Color(0xFF991B1B) : DefensysTokens.textPrimary,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${info.formattedFileSize}  •  ${info.formatLabel}',
-                      style: TextStyle(
-                        fontFamily: DefensysTokens.fontFamily,
-                        color: isInvalid ? const Color(0xFFB91C1C) : DefensysTokens.steelGrey,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              // Replace Action Button
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: DefensysTokens.textPrimary,
-                  side: const BorderSide(color: DefensysTokens.border),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                  ),
-                ),
-                onPressed: _isProcessing ? null : () => _handleReplaceFile(index),
-                icon: const Icon(Icons.sync_rounded, size: 14, color: DefensysTokens.textSecondary),
-                label: const Text(
-                  'Replace',
-                  style: TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-
-              // Remove Action Button
-              IconButton(
-                style: IconButton.styleFrom(
-                  foregroundColor: DefensysTokens.danger,
-                  hoverColor: DefensysTokens.dangerBg,
-                  padding: const EdgeInsets.all(6),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                  ),
-                ),
-                onPressed: () => _handleRemoveFile(index),
-                icon: const Icon(Icons.delete_outline_rounded, size: 17),
-                tooltip: 'Remove File',
-              ),
-            ],
-          ),
-
-          // Row 2: Detected Metadata Chips / Pills
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              if (info.section != null && info.section!.isNotEmpty)
-                _buildMetadataChip(
-                  icon: Icons.groups_rounded,
-                  label: 'Section: ${info.section}',
-                  bgColor: const Color(0xFFF1F5F9),
-                  fgColor: DefensysTokens.textPrimary,
-                ),
-              if (info.yearLevel != null && info.yearLevel!.isNotEmpty)
-                _buildMetadataChip(
-                  icon: Icons.school_rounded,
-                  label: info.yearLevel!,
-                  bgColor: const Color(0xFFF1F5F9),
-                  fgColor: DefensysTokens.textSecondary,
-                ),
-              if (info.subjectCode != null && info.subjectCode!.isNotEmpty)
-                _buildMetadataChip(
-                  icon: Icons.menu_book_rounded,
-                  label: info.subjectCode!,
-                  bgColor: const Color(0xFFF1F5F9),
-                  fgColor: DefensysTokens.textSecondary,
-                ),
-              _buildMetadataChip(
-                icon: entityIcon,
-                label: entityCountText,
-                bgColor: entityBg,
-                fgColor: entityFg,
-                borderColor: entityBorder,
-              ),
-              if (info.primaryRole != null && !info.formatLabel.startsWith('Official Class List') && !isInvalid)
-                _buildMetadataChip(
-                  icon: Icons.person_pin_circle_outlined,
-                  label: 'Role: ${info.primaryRole}',
-                  bgColor: const Color(0xFFF8FAFC),
-                  fgColor: DefensysTokens.textSecondary,
-                  borderColor: const Color(0xFFE2E8F0),
-                ),
-            ],
-          ),
-
-          // Warning Notice (if any)
-          if (info.warning != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                color: isInvalid ? const Color(0xFFFEF2F2) : DefensysTokens.warningBg,
-                borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                border: Border.all(
-                  color: isInvalid ? const Color(0xFFFECACA) : DefensysTokens.warningBorder,
-                ),
-              ),
-              child: Row(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact =
+                  constraints.maxWidth < 460 ||
+                  MediaQuery.textScalerOf(context).scale(12) > 15;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    isInvalid ? Icons.error_outline_rounded : Icons.info_outline_rounded,
-                    size: 14,
-                    color: isInvalid ? const Color(0xFFDC2626) : DefensysTokens.warningText,
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: DefensysTokens.surfaceHigherOf(context),
+                          borderRadius: BorderRadius.circular(
+                            DefensysTokens.radiusSm,
+                          ),
+                        ),
+                        child: Text(
+                          info.extension,
+                          style: _textStyle(secondary: true, bold: true),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Tooltip(
+                              message: info.fileName,
+                              child: Text(
+                                info.fileName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: _textStyle(
+                                  bold: true,
+                                ).copyWith(fontSize: 13),
+                              ),
+                            ),
+                            Text(
+                              '${info.formattedFileSize} · ${info.formatLabel}',
+                              style: _textStyle(
+                                secondary: true,
+                              ).copyWith(fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (!compact) ...[const SizedBox(width: 12), actions],
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
+                  if (compact) ...[
+                    const SizedBox(height: 8),
+                    Align(alignment: Alignment.centerRight, child: actions),
+                  ],
+                ],
+              );
+            },
+          ),
+          if (metadata.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                for (final label in metadata)
+                  Text(label, style: _textStyle(secondary: true)),
+              ],
+            ),
+          ],
+          if (hasWarning) ...[
+            const SizedBox(height: 6),
+            ShadAccordion<String>(
+              key: ObjectKey(info.file),
+              children: [
+                ShadAccordionItem<String>(
+                  value: 'warning',
+                  separator: const SizedBox.shrink(),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  title: LayoutBuilder(
+                    builder: (context, constraints) => Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline_rounded,
+                          size: 16,
+                          color: DefensysTokens.maroonTextOf(context),
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: Text(
+                            warningTitle,
+                            style: _textStyle(bold: true).copyWith(
+                              color: DefensysTokens.maroonTextOf(context),
+                            ),
+                          ),
+                        ),
+                        if (constraints.maxWidth >= 340) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            'View details',
+                            style: _textStyle(
+                              secondary: true,
+                            ).copyWith(fontSize: 11),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
                     child: Text(
                       info.warning!,
-                      style: TextStyle(
-                        fontFamily: DefensysTokens.fontFamily,
-                        color: isInvalid ? const Color(0xFF991B1B) : DefensysTokens.warningText,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: _textStyle(secondary: true),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ],
@@ -1201,179 +1194,85 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     );
   }
 
-  Widget _buildMetadataChip({
-    required IconData icon,
-    required String label,
-    required Color bgColor,
-    required Color fgColor,
-    Color? borderColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-        border: Border.all(color: borderColor ?? DefensysTokens.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: fgColor),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: DefensysTokens.fontFamily,
-              color: fgColor,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildEmptyState() => DefensysEmptyState(
+    icon: Icons.folder_open_rounded,
+    title: 'No Files Currently Staged',
+    description: _activeImportMode == 'student'
+        ? 'Add a student class list (.csv / .xlsx).'
+        : 'Add a faculty & staff spreadsheet (.csv / .xlsx).',
+    size: DefensysEmptyStateSize.compact,
+  );
 
-  Widget _buildEmptyState() {
-    return DefensysEmptyState(
-      icon: Icons.folder_open_rounded,
-      title: 'No Files Currently Staged',
-      description: _activeImportMode == 'student'
-          ? 'Click below to add a student class list (.csv / .xlsx) to stage for import.'
-          : 'Click below to add a faculty & staff spreadsheet (.csv / .xlsx) to stage for import.',
-      size: DefensysEmptyStateSize.compact,
-    );
-  }
-
-  Widget _buildAddMoreButton() {
-    final addLabel = _isDraggingFile
-        ? 'Drop file(s) here to add to staging'
-        : (_stagedFiles.isEmpty
+  Widget _buildAddMoreButton() => ShadButton.outline(
+    enabled: !_isProcessing,
+    onPressed: _handleAddMoreFiles,
+    height: null,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    leading: const Icon(Icons.add_rounded, size: 16),
+    child: Flexible(
+      child: Text(
+        _isDraggingFile
+            ? 'Drop files to add to staging'
+            : _stagedFiles.isEmpty
             ? 'Select file(s) to import'
-            : (_activeImportMode == 'student'
-                ? 'Add another class section or file'
-                : 'Add another faculty/staff file'));
-
-    return InkWell(
-      onTap: _isProcessing ? null : _handleAddMoreFiles,
-      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 16),
-        decoration: BoxDecoration(
-          color: _isDraggingFile ? const Color(0xFFFEF2F2) : DefensysTokens.background,
-          borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-          border: Border.all(
-            color: _isDraggingFile ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
-            width: _isDraggingFile ? 1.8 : 1.0,
-            style: BorderStyle.solid,
-          ),
-          boxShadow: _isDraggingFile
-              ? [
-                  BoxShadow(
-                    color: DefensysTokens.maroon.withValues(alpha: 0.12),
-                    blurRadius: 10,
-                    spreadRadius: 1,
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _isDraggingFile
-                  ? Icons.file_download_rounded
-                  : Icons.add_circle_outline_rounded,
-              size: 16,
-              color: DefensysTokens.maroon,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              addLabel,
-              style: TextStyle(
-                fontFamily: DefensysTokens.fontFamily,
-                color: DefensysTokens.maroon,
-                fontSize: 13,
-                fontWeight: _isDraggingFile ? FontWeight.w800 : FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
+            : _activeImportMode == 'student'
+            ? 'Add another class section or file'
+            : 'Add another faculty/staff file',
+        textAlign: TextAlign.center,
       ),
-    );
-  }
+    ),
+  );
 
-  Widget _buildFooter(BuildContext context, bool hasValidFiles, bool isStudent) {
-    final isStudentMode = _activeImportMode == 'student';
-    final isBlockedBySemester = isStudentMode && !widget.hasActiveSemester;
-
-    final previewLabel = isBlockedBySemester
+  Widget _buildFooter(BuildContext context, bool hasValidFiles) {
+    final semesterBlocked =
+        _activeImportMode == 'student' && !widget.hasActiveSemester;
+    final enabled = hasValidFiles && !_isProcessing && !semesterBlocked;
+    final previewLabel = semesterBlocked
         ? 'Active Semester Required'
-        : (_totalValidRows > 0
-            ? 'Generate Preview Table ($_totalValidRows rows)'
-            : 'Generate Preview Table');
-
+        : _totalValidRows > 0
+        ? 'Generate Preview Table ($_totalValidRows rows)'
+        : 'Generate Preview Table';
+    final cancel = ShadButton.ghost(
+      onPressed: () => Navigator.of(context).pop(null),
+      child: const Text('Cancel'),
+    );
+    final preview = ShadButton(
+      enabled: enabled,
+      backgroundColor: enabled
+          ? DefensysTokens.maroonOf(context)
+          : DefensysTokens.surfaceHigherOf(context),
+      foregroundColor: enabled
+          ? Colors.white
+          : DefensysTokens.textSecondaryOf(context),
+      onPressed: enabled
+          ? () => Navigator.of(context).pop(
+              StagedImportResult(
+                files: _inspectedFiles
+                    .where((f) => f.isValid)
+                    .map((f) => f.file)
+                    .toList(),
+                importMode: _activeImportMode,
+              ),
+            )
+          : null,
+      child: Text(previewLabel),
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: DefensysTokens.textSecondary,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            ),
-            onPressed: () => Navigator.of(context).pop(null),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(
-                fontFamily: DefensysTokens.fontFamily,
-                fontWeight: FontWeight.w600,
-                fontSize: 13.5,
-              ),
-            ),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isBlockedBySemester ? Colors.grey : DefensysTokens.maroon,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: DefensysTokens.maroon.withValues(alpha: 0.4),
-              disabledForegroundColor: Colors.white70,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-              ),
-            ),
-            onPressed: hasValidFiles && !_isProcessing && !isBlockedBySemester
-                ? () {
-                    final validFiles = _inspectedFiles
-                        .where((f) => f.isValid)
-                        .map((f) => f.file)
-                        .toList();
-                    Navigator.of(context).pop(
-                      StagedImportResult(
-                        files: validFiles,
-                        importMode: _activeImportMode,
-                      ),
-                    );
-                  }
-                : null,
-            icon: Icon(
-              isBlockedBySemester ? Icons.block_rounded : Icons.arrow_forward_rounded,
-              size: 16,
-            ),
-            label: Text(
-              previewLabel,
-              style: const TextStyle(
-                fontFamily: DefensysTokens.fontFamily,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 420 ||
+              MediaQuery.textScalerOf(context).scale(12) > 15) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [preview, const SizedBox(height: 4), cancel],
+            );
+          }
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [cancel, preview],
+          );
+        },
       ),
     );
   }

@@ -33,6 +33,7 @@ class RubricCriterionSerializer(serializers.ModelSerializer):
         model = RubricCriterion
         fields = [
             'id',
+            'section',
             'name',
             'description',
             'scale',
@@ -346,7 +347,13 @@ class RubricWriteSerializer(serializers.Serializer):
                 if attrs['panel_weight'] + attrs['adviser_weight'] + attrs['peer_weight'] != 100:
                     raise serializers.ValidationError({'weights': 'Panel, adviser, and peer weights must total 100%.'})
         custom_max = attrs.get('custom_max_score')
-        if attrs['scale'] == Rubric.SCALE_CUSTOM:
+        if attrs['scale'] == Rubric.SCALE_POINTS:
+            custom_max = None
+            for criterion in attrs['criteria']:
+                criterion['scale'] = Rubric.SCALE_POINTS
+                if not criterion.get('max_score'):
+                    criterion['max_score'] = 10
+        elif attrs['scale'] == Rubric.SCALE_CUSTOM:
             if custom_max is None:
                 raise serializers.ValidationError({'custom_max_score': 'Enter the maximum points per criterion.'})
             for criterion in attrs['criteria']:
@@ -357,7 +364,11 @@ class RubricWriteSerializer(serializers.Serializer):
         else:
             custom_max = None
         attrs['custom_max_score'] = custom_max
-        attrs['criteria'] = self._normalized_criteria(attrs['criteria'], attrs.get('target_type', Rubric.TARGET_TEAM))
+        attrs['criteria'] = self._normalized_criteria(
+            attrs['criteria'],
+            attrs.get('target_type', Rubric.TARGET_TEAM),
+            scale=attrs['scale'],
+        )
         return attrs
 
     @transaction.atomic
@@ -504,18 +515,27 @@ class RubricWriteSerializer(serializers.Serializer):
         if total != 100:
             raise serializers.ValidationError({'weights': 'Panel and peer weights must total 100%.'})
 
-    def _normalized_criteria(self, criteria, rubric_target_type):
+    def _normalized_criteria(self, criteria, rubric_target_type, scale=None):
         normalized = []
-        seen_names = set()
+        seen_section_names = set()
+        section_target_types = {}
         for index, item in enumerate(criteria):
             name = item['name'].strip()
             if not name:
                 continue
-            key = name.lower()
-            if key in seen_names:
-                raise serializers.ValidationError({'criteria': f'Duplicate criterion name: {name}.'})
-            seen_names.add(key)
-            scale = item.get('scale') or Rubric.SCALE_10
+            section_val = (item.get('section') or '').strip()
+            if scale == Rubric.SCALE_POINTS and not section_val:
+                raise serializers.ValidationError({
+                    'criteria': f'Criterion "{name}" must belong to a section in a points-based rubric.'
+                })
+            lowered_key = (section_val.lower(), name.lower())
+            if lowered_key in seen_section_names:
+                scope_msg = f' in section "{section_val}"' if section_val else ''
+                raise serializers.ValidationError({
+                    'criteria': f'Duplicate criterion name: {name}{scope_msg}.'
+                })
+            seen_section_names.add(lowered_key)
+            criterion_scale = item.get('scale') or scale or Rubric.SCALE_10
             
             # Resolve target type based on rubric constraints
             criterion_target_type = item.get('target_type') or Rubric.TARGET_TEAM
@@ -523,12 +543,25 @@ class RubricWriteSerializer(serializers.Serializer):
                 criterion_target_type = Rubric.TARGET_TEAM
             elif rubric_target_type == Rubric.TARGET_INDIVIDUAL:
                 criterion_target_type = Rubric.TARGET_INDIVIDUAL
-                
+            elif rubric_target_type == Rubric.TARGET_BOTH:
+                if section_val:
+                    sec_key = section_val.lower()
+                    prev_target = section_target_types.get(sec_key)
+                    if prev_target is not None and prev_target != criterion_target_type:
+                        raise serializers.ValidationError({
+                            'criteria': (
+                                f'All criteria in section "{section_val}" must share the same target_type '
+                                f'("{prev_target}" vs "{criterion_target_type}").'
+                            )
+                        })
+                    section_target_types[sec_key] = criterion_target_type
+
             normalized.append({
+                'section': section_val,
                 'name': name,
                 'description': (item.get('description') or '').strip(),
-                'scale': scale,
-                'max_score': item.get('max_score') or default_max_score(scale),
+                'scale': criterion_scale,
+                'max_score': item.get('max_score') or default_max_score(criterion_scale),
                 'weight': item['weight'],
                 'display_order': item.get('display_order', index),
                 'target_type': criterion_target_type,

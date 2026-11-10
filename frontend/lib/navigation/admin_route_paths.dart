@@ -1,5 +1,54 @@
 import '../screens/web/admin/widgets/defensys_admin_shell.dart';
 
+/// Explicit cross-section evaluation links retain only known board context.
+abstract final class BoardEvaluationRoutes {
+  static String detail({
+    required bool faculty,
+    required int gradeId,
+    required bool locked,
+    required Uri boardUri,
+    required String program,
+  }) => Uri(
+    path: faculty
+        ? FacultyRoutes.gradeDetail(gradeId)
+        : AdminRoutes.gradeDetail(gradeId),
+    queryParameters: {
+      'locked': locked ? '1' : '0',
+      'fromBoard': '1',
+      if (program == 'capstone' || program == 'pit') 'boardScope': program,
+      if (DateTime.tryParse(boardUri.queryParameters['date'] ?? '') != null)
+        'boardDate': boardUri.queryParameters['date']!,
+      if (boardUri.queryParameters['session']?.isNotEmpty == true)
+        'boardSession': boardUri.queryParameters['session']!,
+      // A mixed-program planner link must remain mixed on return.
+      if (boardUri.queryParameters['date'] != null &&
+          boardUri.queryParameters['scope'] == null)
+        'boardMixed': '1',
+    },
+  ).toString();
+
+  static String board(Uri evaluationUri) {
+    final query = evaluationUri.queryParameters;
+    final date = DateTime.tryParse(query['boardDate'] ?? '') != null
+        ? query['boardDate']
+        : null;
+    final scope = query['boardScope'];
+    return Uri(
+      path: evaluationUri.path.startsWith('/faculty/')
+          ? FacultyRoutes.defenseBoard
+          : AdminRoutes.defenseBoard,
+      queryParameters: {
+        if (date != null) 'date': date,
+        if (date != null && query['boardSession']?.isNotEmpty == true)
+          'session': query['boardSession']!,
+        if ((scope == 'capstone' || scope == 'pit') &&
+            !(date != null && query['boardMixed'] == '1'))
+          'scope': scope!,
+      },
+    ).toString();
+  }
+}
+
 /// Admin web URL paths (go_router).
 abstract final class AdminRoutes {
   static const overview = '/admin/overview';
@@ -33,12 +82,14 @@ abstract final class AdminRoutes {
     required String scope,
     required String stageLabel,
     required String title,
+    Map<String, String> contextParameters = const {},
   }) {
     final params = Uri(
       queryParameters: {
         'scope': scope,
         'stageLabel': stageLabel,
         'title': title,
+        ...contextParameters,
       },
     );
     return '/admin/grade-center/events/$groupKey?${params.query}';
@@ -152,12 +203,14 @@ abstract final class FacultyRoutes {
     required String scope,
     required String stageLabel,
     required String title,
+    Map<String, String> contextParameters = const {},
   }) {
     final params = Uri(
       queryParameters: {
         'scope': scope,
         'stageLabel': stageLabel,
         'title': title,
+        ...contextParameters,
       },
     );
     return '/faculty/grade-center/events/$groupKey?${params.query}';

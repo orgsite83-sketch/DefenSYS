@@ -2100,6 +2100,39 @@ void main() {
   );
 
   testWidgets(
+    'adoption candidate pre-populates dropdowns and enables adoption button on later stages',
+    (tester) async {
+      final data = fixture();
+      final team = (data['teams'] as List).first as Map<String, dynamic>;
+      team['assignment'] = null;
+      team['initial_stage_id'] = 70; // Earlier stage
+      team['applicable_stage_ids'] = [70, 71];
+      team['ready_stage_ids'] = [71];
+      team['adoption_candidate'] = {
+        'requires_review': false,
+        'roster': {
+          'chair_panelist_id': 2,
+          'panelist_ids': [2, 3, 4],
+          'external_evaluator_ids': [],
+          'documenter_id': 6,
+        },
+      };
+      await mount(tester, workspaceData: data);
+      expect(find.text('Existing first-stage people'), findsOneWidget);
+      expect(find.text('Use reviewed adviser roster'), findsOneWidget);
+      final button = tester.widget<ShadButton>(
+        find.widgetWithText(ShadButton, 'Use reviewed adviser roster'),
+      );
+      expect(button.enabled, isTrue);
+      // The chair dropdown defaults to Faculty 2 from adoption candidate
+      expect(find.text('Faculty 2'), findsWidgets);
+      // Documenter defaults to Faculty 6
+      expect(find.text('Faculty 6'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'narrow dark workspace keeps inputs and actions usable without overflow',
     (tester) async {
       await mount(tester, size: const Size(390, 900), dark: true);

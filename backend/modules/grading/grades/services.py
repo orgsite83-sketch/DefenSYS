@@ -205,6 +205,7 @@ def panelist_result_payload(team_grade, panelist_key):
         'criteria': [
             {
                 'criteriaName': row.criterion_name,
+                'section': getattr(row, 'section_snapshot', '') or '',
                 'score': float(row.score),
                 'max': float(row.max_score),
                 'weight_snapshot': float(row.weight_snapshot) if row.weight_snapshot is not None else None,
@@ -286,7 +287,9 @@ def previous_panel_attempt_results(submissions):
             'defense_stage_id': schedule.defense_stage_id, 'event_name': schedule.event_name,
             'display_status': 'assessed', 'is_completed': False,
             'criteria': [{
-                'criteriaName': score.criterion_name_snapshot, 'score': float(score.score),
+                'criteriaName': score.criterion_name_snapshot,
+                'section': score.section_snapshot or '',
+                'score': float(score.score),
                 'max': float(score.max_score_snapshot), 'student_id': row.student_id,
                 'weight_snapshot': float(score.weight_snapshot) if score.weight_snapshot is not None else None,
                 'student_name': display_name(row.student) if row.student_id else None,
@@ -744,6 +747,7 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
             submission=submission,
             criterion=row['criterion'],
             criterion_name_snapshot=row['criterion'].name,
+            section_snapshot=getattr(row['criterion'], 'section', '') or '',
             score=row['score'],
             max_score_snapshot=row['max_score'],
             weight_snapshot=row['criterion'].weight,
@@ -769,6 +773,7 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
             rubric=schedule.rubric,
             evaluation_type=GradeBreakdown.EVAL_PANEL,
             criterion_name=row['criterion'].name,
+            section_snapshot=getattr(row['criterion'], 'section', '') or '',
             score=row['score'],
             max_score=row['max_score'],
             weight_snapshot=row['criterion'].weight,
@@ -1855,6 +1860,8 @@ def assigned_adviser_rubric_payload(grade):
         {
             'id': criterion.id,
             'name': criterion.name,
+            'section': criterion.section,
+            'scale': criterion.scale,
             'description': criterion.description,
             'max_score': criterion.max_score,
             'weight': str(criterion.weight),
@@ -1876,6 +1883,7 @@ def rebuild_component_breakdown(grade, evaluation_type, ratio):
     rows = [
         {
             'name': criterion.name,
+            'section': getattr(criterion, 'section', '') or '',
             'max_score': Decimal(str(criterion.max_score)),
             'weight': criterion.weight,
             'display_order': criterion.display_order,
@@ -1898,6 +1906,7 @@ def rebuild_component_breakdown(grade, evaluation_type, ratio):
                 rubric=rubric,
                 evaluation_type=evaluation_type,
                 criterion_name=row['name'],
+                section_snapshot=row['section'],
                 score=score,
                 max_score=max_score,
                 weight_snapshot=row['weight'],

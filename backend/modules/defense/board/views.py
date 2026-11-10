@@ -206,12 +206,18 @@ def board_payload(request, queryset=None, *, workspace=None):
     for row in schedules:
         row['can_manage'] = row['id'] in manageable_ids
     semester = active_semester()
+    # Summary totals and picker options share the selected program, while
+    # legacy `all` retains its authorized-workspace meaning for other callers.
+    scope = request.query_params.get('scope', '').strip()
+    scoped = base.filter(scope=scope) if scope in ('capstone', 'pit') else base
+    counts = counts_payload(base, current)
+    counts['scope_total'] = scoped.count() if scope else counts['all']
     return {
         'schedules': schedules,
-        'counts': counts_payload(base, current),
-        'stage_options': stage_options(base),
-        'advisers': adviser_options(base),
-        'sections': section_options(base),
+        'counts': counts,
+        'stage_options': stage_options(scoped),
+        'advisers': adviser_options(scoped),
+        'sections': section_options(scoped),
         'statuses': DISPLAY_STATUSES,
         'scopes': [
             {'value': key, 'label': label}

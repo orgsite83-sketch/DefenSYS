@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:defensys/l10n/app_localizations.dart';
 import 'package:defensys/screens/web/admin/user_management/user_management_screen.dart';
@@ -24,11 +25,17 @@ import 'user_management_screen_test.dart'
 class _Users extends FakeUserManagementNotifier {
   @override
   Future<List<Map<String, dynamic>>> previewEnrollmentSections(
-    List<Map<String, dynamic>> students, int semesterId,
-  ) async => [for (final s in students) {
-    'id_number': s['id_number'], 'section': s['section'] ?? '',
-    'source': 'unassigned', 'message': '',
-  }];
+    List<Map<String, dynamic>> students,
+    int semesterId,
+  ) async => [
+    for (final s in students)
+      {
+        'id_number': s['id_number'],
+        'section': s['section'] ?? '',
+        'source': 'unassigned',
+        'message': '',
+      },
+  ];
 
   final result = Completer<bool>();
   int importCalls = 0;
@@ -140,7 +147,7 @@ void main() {
       await openHub(tester, _Users(), _Records());
       await tester.tap(find.text('Back to Students'));
       await tester.pumpAndSettle();
-      expect(find.text('Batch Student Enrollment Hub'), findsNothing);
+      expect(find.text('Student enrollment'), findsNothing);
       expect(find.text('User & Team Management'), findsOneWidget);
       expect(find.text('Batch Enrollment'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -180,21 +187,22 @@ void main() {
             );
         await tester.tap(find.text('Batch Enrollment'));
         await tester.pumpAndSettle();
-        final confirm = find.text('Confirm Student Intake (256 students)');
+        final confirm = find.text('Confirm enrollment (256)');
         await tester.ensureVisible(confirm);
         await tester.tap(confirm);
         await tester.pump();
         expect(users.importCalls, 1);
         final pendingButton = find.ancestor(
           of: find.text('Importing 256 students...'),
-          matching: find.byWidgetPredicate((widget) => widget is ButtonStyleButton),
+          matching: find.byWidgetPredicate((widget) => widget is ShadButton),
         );
-        expect(tester.widget<ButtonStyleButton>(pendingButton).onPressed, isNull);
+        expect(tester.widget<ShadButton>(pendingButton).onPressed, isNull);
+        expect(tester.widget<ShadButton>(pendingButton).enabled, isFalse);
         expect(container.read(studentBatchDraftProvider).hasFreshDraft, isTrue);
         users.result.complete(success);
         await tester.pumpAndSettle();
         if (success) {
-          expect(find.text('Batch Student Enrollment Hub'), findsNothing);
+          expect(find.text('Student enrollment'), findsNothing);
           expect(find.text('Batch Enrollment'), findsOneWidget);
           expect(
             container.read(studentBatchDraftProvider).hasFreshDraft,
@@ -203,7 +211,7 @@ void main() {
           expect(records.refresh.isCompleted, isFalse);
           expect(records.loads, 2); // Initial load plus one post-import reload.
         } else {
-          expect(find.text('Batch Student Enrollment Hub'), findsOneWidget);
+          expect(find.text('Student enrollment'), findsOneWidget);
           expect(
             container.read(studentBatchDraftProvider).freshParsedStudents,
             hasLength(256),

@@ -10,6 +10,7 @@ import '../../../../services/dashboard_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/unsaved_changes.dart';
+import '../../../../utils/rubric_weight_allocation.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../widgets/defensys_admin_shell.dart';
@@ -22,6 +23,7 @@ const _kDefaultScales = [
   '10-Point Scale',
   '100-Point Scale',
   'Custom Scale',
+  'Points-Based (Sections)',
 ];
 
 int? _asInt(dynamic value) {
@@ -34,6 +36,7 @@ int _defaultMaxForScale(String scale) {
   return switch (scale) {
     '5-Point Scale' => 5,
     '100-Point Scale' => 100,
+    'Points-Based (Sections)' => 10,
     _ => 10,
   };
 }
@@ -115,6 +118,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   int? _pitEventId;
   String? _eventName;
   late List<RubricCriterionDraft> _criteria;
+  final List<SectionEditorDraft> _sections = [];
   late List<String> _scales;
   bool _isDirty = false;
   bool _isCustomName = false;
@@ -192,11 +196,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
 
   void _attachCriteriaListeners() {
     for (final draft in _criteria) {
+      draft.section.removeListener(_markDirty);
       draft.name.removeListener(_markDirty);
       draft.description.removeListener(_markDirty);
       draft.maxScore.removeListener(_markDirty);
       draft.weight.removeListener(_markDirty);
       draft.displayOrder.removeListener(_markDirty);
+      draft.section.addListener(_markDirty);
       draft.name.addListener(_markDirty);
       draft.description.addListener(_markDirty);
       draft.maxScore.addListener(_markDirty);
@@ -302,6 +308,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     _pitEventId = _asInt(r?['pit_event_id']);
     _eventName = r?['event_name']?.toString();
     try {
+      for (final s in _sections) {
+        s.dispose();
+      }
       _disposeCriteriaList(_criteria);
     } catch (_) {}
     _criteria = _buildCriterionDrafts(r, _scales);
@@ -334,6 +343,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     }
     _name.addListener(_markDirty);
     _attachCriteriaListeners();
+    if (_rubricScale == 'Points-Based (Sections)') {
+      _syncSectionsFromCriteria();
+    }
   }
 
   @override
@@ -385,11 +397,15 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     _name.dispose();
     _customMaxScore.dispose();
     for (final draft in _criteria) {
+      draft.section.removeListener(_markDirty);
       draft.name.removeListener(_markDirty);
       draft.description.removeListener(_markDirty);
       draft.maxScore.removeListener(_markDirty);
       draft.weight.removeListener(_markDirty);
       draft.displayOrder.removeListener(_markDirty);
+    }
+    for (final s in _sections) {
+      s.dispose();
     }
     _disposeCriteriaList(_criteria);
     releaseUnsavedChangesAfterFrame(_unsavedNotifier, _unsavedDraftNotifier);
@@ -412,6 +428,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       _defenseStageId = null;
       _pitEventId = null;
 
+      for (final s in _sections) {
+        s.dispose();
+      }
       _disposeCriteriaList(_criteria);
       final clonedCriteria = sourceRubric['criteria'];
       if (clonedCriteria is List) {
@@ -423,6 +442,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         _criteria = [
           RubricCriterionDraft(scales: _scales, scale: _rubricScale),
         ];
+      }
+      if (_rubricScale == 'Points-Based (Sections)') {
+        _syncSectionsFromCriteria();
       }
       _attachCriteriaListeners();
     });
@@ -705,6 +727,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
             for (final criterion in _criteria) {
               criterion.targetType = 'individual';
             }
+            for (final section in _sections) {
+              section.targetType = 'individual';
+            }
           }
           syncName();
         });
@@ -722,6 +747,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
           if (value != 'both') {
             for (final criterion in _criteria) {
               criterion.targetType = value;
+            }
+            for (final section in _sections) {
+              section.targetType = value;
             }
           }
         });
@@ -807,10 +835,21 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   void _onRubricScaleChanged(String newScale) {
     setState(() {
       _rubricScale = newScale;
-      final max = _rubricMaxScore;
-      for (final c in _criteria) {
-        c.scale = newScale;
-        c.maxScore.text = max.toString();
+      if (newScale == 'Points-Based (Sections)') {
+        _syncSectionsFromCriteria();
+      } else {
+        if (_sections.isNotEmpty) {
+          _recomputeCriteriaWeightsFromSections();
+          for (final section in _sections) {
+            section.dispose();
+          }
+          _sections.clear();
+        }
+        final max = _rubricMaxScore;
+        for (final c in _criteria) {
+          c.scale = newScale;
+          c.maxScore.text = max.toString();
+        }
       }
     });
     _markDirty();
@@ -821,6 +860,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       : _defaultMaxForScale(_rubricScale);
 
   void _onCustomMaxScoreChanged(String value) {
+    if (_rubricScale == 'Points-Based (Sections)') return;
     final maximum = int.tryParse(value.trim());
     setState(() {
       if (maximum != null && maximum >= 1 && maximum <= 32767) {
@@ -840,25 +880,211 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     return total;
   }
 
+  num get _totalSectionWeight {
+    num total = 0;
+    for (final s in _sections) {
+      total += num.tryParse(s.weight.text.trim()) ?? 0;
+    }
+    return total;
+  }
+
+  bool get _hasSections =>
+      _criteria.any((c) => c.section.text.trim().isNotEmpty);
+
+  Future<void> _distributeWeightsBySections() async {
+    if (_criteria.isEmpty) return;
+    final sectionNames = <String>[];
+    for (final c in _criteria) {
+      final s = c.section.text.trim();
+      final key = s.isEmpty ? 'General' : s;
+      if (!sectionNames.contains(key)) sectionNames.add(key);
+    }
+    if (sectionNames.isEmpty) return;
+
+    final sectionPoints = <String, int>{};
+    for (final s in sectionNames) {
+      int pts = 0;
+      for (final c in _criteria) {
+        final key = c.section.text.trim().isEmpty
+            ? 'General'
+            : c.section.text.trim();
+        if (key == s) {
+          pts += int.tryParse(c.maxScore.text.trim()) ?? 10;
+        }
+      }
+      sectionPoints[s] = pts > 0 ? pts : 10;
+    }
+
+    final sectionWeightControllers = <String, TextEditingController>{};
+    final shares = allocateRubricWeight(
+      10000,
+      List<int>.filled(sectionNames.length, 1),
+    );
+    for (int i = 0; i < sectionNames.length; i++) {
+      final s = sectionNames[i];
+      sectionWeightControllers[s] = TextEditingController(
+        text: formatRubricWeight(shares[i]),
+      );
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => DefensysShadcnScope(
+        child: StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            num totalWeight = 0;
+            for (final ctrl in sectionWeightControllers.values) {
+              totalWeight += num.tryParse(ctrl.text.trim()) ?? 0;
+            }
+            final isValid =
+                (totalWeight - 100).abs() < 0.000001 &&
+                sectionWeightControllers.values.every((controller) {
+                  final value = num.tryParse(controller.text.trim());
+                  return value != null &&
+                      value.isFinite &&
+                      value > 0 &&
+                      value <= 100 &&
+                      (value * 100 - (value * 100).round()).abs() < 0.000001;
+                });
+
+            return ShadDialog(
+              title: const Text('Calculate Section Weights'),
+              description: const Text(
+                'Enter the target weight percentage for each section. DefenSYS will proportionally allocate criterion weights so they total 100%.',
+              ),
+              actions: [
+                ShadButton.outline(
+                  size: ShadButtonSize.sm,
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ShadButton(
+                  size: ShadButtonSize.sm,
+                  enabled: isValid,
+                  onPressed: () {
+                    Navigator.of(dialogCtx).pop();
+                    _applySectionWeights(sectionWeightControllers);
+                  },
+                  child: const Text('Apply Weights'),
+                ),
+              ],
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final s in sectionNames) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    s,
+                                    style: DefensysTokens.body.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${sectionPoints[s]} total points',
+                                    style: DefensysTokens.caption,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            SizedBox(
+                              width: 90,
+                              child: ShadInput(
+                                controller: sectionWeightControllers[s],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                trailing: const Text('%'),
+                                onChanged: (_) => setDialogState(() {}),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Total Weight:',
+                          style: DefensysTokens.body.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        ShadBadge.outline(
+                          child: Text(
+                            '$totalWeight% / 100%',
+                            style: TextStyle(
+                              color: isValid
+                                  ? const Color(0xFF16A34A)
+                                  : const Color(0xFFDC2626),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    for (final ctrl in sectionWeightControllers.values) {
+      ctrl.dispose();
+    }
+  }
+
+  void _applySectionWeights(Map<String, TextEditingController> weightCtrls) {
+    setState(() {
+      for (final entry in weightCtrls.entries) {
+        final criteria = _criteria.where((criterion) {
+          final section = criterion.section.text.trim();
+          return (section.isEmpty ? 'General' : section) == entry.key;
+        }).toList();
+        final total = ((num.tryParse(entry.value.text.trim()) ?? 0) * 100)
+            .round();
+        final shares = allocateRubricWeight(total, [
+          for (final criterion in criteria) _allocationPoints(criterion),
+        ]);
+        for (var i = 0; i < criteria.length; i++) {
+          criteria[i].weight.text = formatRubricWeight(shares[i]);
+        }
+      }
+    });
+    _markDirty();
+    showSuccessToast(
+      context,
+      'Weights calculated for ${weightCtrls.length} sections.',
+    );
+  }
+
   void _distributeWeightsEvenly() {
     if (_criteria.isEmpty) return;
-    final count = _criteria.length;
-    final base = (100.0 / count);
-    final roundedBase = (base * 10).round() / 10.0;
-    num running = 0;
-    for (int i = 0; i < count; i++) {
-      if (i == count - 1) {
-        final remainder = ((100.0 - running) * 10).round() / 10.0;
-        _criteria[i].weight.text =
-            (remainder % 1 == 0 ? remainder.toInt() : remainder).toString();
-      } else {
-        _criteria[i].weight.text =
-            (roundedBase % 1 == 0 ? roundedBase.toInt() : roundedBase)
-                .toString();
-        running += roundedBase;
+    final shares = allocateRubricWeight(
+      10000,
+      List<int>.filled(_criteria.length, 1),
+    );
+    setState(() {
+      for (var i = 0; i < _criteria.length; i++) {
+        _criteria[i].weight.text = formatRubricWeight(shares[i]);
       }
-    }
-    setState(() {});
+    });
     _markDirty();
   }
 
@@ -888,9 +1114,706 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     }
   }
 
+  void _syncSectionsFromCriteria() {
+    for (final s in _sections) {
+      s.dispose();
+    }
+    _sections.clear();
+
+    final sectionMap = <String, List<RubricCriterionDraft>>{};
+    final sectionOrder = <String>[];
+    const unsectionedKey = '__UNSECTIONED__';
+    var needsInitialWeightSync = false;
+
+    for (final draft in _criteria) {
+      final sName = draft.section.text.trim();
+      final key = sName.isEmpty ? unsectionedKey : sName;
+      if (sName.isEmpty) {
+        needsInitialWeightSync = true;
+      }
+      if (!sectionMap.containsKey(key)) {
+        sectionMap[key] = [];
+        sectionOrder.add(key);
+      }
+      sectionMap[key]!.add(draft);
+    }
+
+    if (sectionOrder.isEmpty) {
+      final defaultTarget = _targetType == 'individual' ? 'individual' : 'team';
+      final first = RubricCriterionDraft(
+        scales: _scales,
+        name: '',
+        scale: 'Points-Based (Sections)',
+        maxScore: 10,
+        weight: 100,
+        displayOrder: 0,
+        targetType: defaultTarget,
+      );
+      final sec = SectionEditorDraft(
+        title: 'Section 1',
+        weight: '100',
+        targetType: defaultTarget,
+        criteria: [first],
+      );
+      _sections.add(sec);
+      needsInitialWeightSync = true;
+    } else {
+      for (int i = 0; i < sectionOrder.length; i++) {
+        final key = sectionOrder[i];
+        final list = sectionMap[key]!;
+        num secWeight = list.fold<num>(0, (sum, c) {
+          final w = num.tryParse(c.weight.text.trim()) ?? 0;
+          if (w <= 0) needsInitialWeightSync = true;
+          return sum + w;
+        });
+        if (secWeight <= 0 && sectionOrder.length == 1) {
+          secWeight = 100;
+          needsInitialWeightSync = true;
+        }
+        final target = list.every((c) => c.targetType == 'individual')
+            ? 'individual'
+            : 'team';
+        final formattedWeight = secWeight > 0
+            ? (secWeight % 1 == 0
+                  ? secWeight.toInt().toString()
+                  : secWeight
+                        .toStringAsFixed(2)
+                        .replaceFirst(RegExp(r'\.?0+$'), ''))
+            : '';
+        final resolvedTitle = key == unsectionedKey ? 'Section ${i + 1}' : key;
+        for (final c in list) {
+          if (c.section.text.trim() != resolvedTitle) {
+            c.section.text = resolvedTitle;
+          }
+        }
+        _sections.add(
+          SectionEditorDraft(
+            title: resolvedTitle,
+            weight: formattedWeight,
+            targetType: target,
+            criteria: list,
+          ),
+        );
+      }
+    }
+
+    _attachSectionListeners();
+    if (needsInitialWeightSync) {
+      _recomputeCriteriaWeightsFromSections();
+    }
+  }
+
+  void _attachSectionListeners() {
+    for (final s in _sections) {
+      s.title.removeListener(_markDirty);
+      s.weight.removeListener(_markDirty);
+      s.title.addListener(_markDirty);
+      s.weight.addListener(_markDirty);
+      for (final c in s.criteria) {
+        c.name.removeListener(_markDirty);
+        c.description.removeListener(_markDirty);
+        c.maxScore.removeListener(_markDirty);
+        c.name.addListener(_markDirty);
+        c.description.addListener(_markDirty);
+        c.maxScore.addListener(_markDirty);
+      }
+    }
+  }
+
+  void _recomputeCriteriaWeightsFromSections() {
+    final allCriteria = <RubricCriterionDraft>[];
+    int runningDisplayOrder = 0;
+
+    for (final section in _sections) {
+      final secTitle = section.title.text.trim();
+      final secWeight = num.tryParse(section.weight.text.trim()) ?? 0;
+      final critCount = section.criteria.length;
+      final totalBasisPoints = secWeight.isFinite && secWeight > 0
+          ? (secWeight * 100).round()
+          : 0;
+
+      if (totalBasisPoints > 0 && critCount > 0) {
+        final shares = allocateRubricWeight(totalBasisPoints, [
+          for (final criterion in section.criteria)
+            _allocationPoints(criterion),
+        ]);
+        for (var i = 0; i < critCount; i++) {
+          final c = section.criteria[i];
+          c.section.text = secTitle;
+          c.targetType = _targetType == 'both'
+              ? section.targetType
+              : _targetType;
+          c.scale = 'Points-Based (Sections)';
+          c.displayOrder.text = (runningDisplayOrder++).toString();
+          c.weight.text = formatRubricWeight(shares[i]);
+          allCriteria.add(c);
+        }
+      } else {
+        for (final c in section.criteria) {
+          c.section.text = secTitle;
+          c.targetType = _targetType == 'both'
+              ? section.targetType
+              : _targetType;
+          c.scale = 'Points-Based (Sections)';
+          c.displayOrder.text = (runningDisplayOrder++).toString();
+          c.weight.text = '0';
+          allCriteria.add(c);
+        }
+      }
+    }
+
+    _criteria = allCriteria;
+  }
+
+  void _distributeSectionWeightsEvenly() {
+    if (_sections.isEmpty) return;
+    final shares = allocateRubricWeight(
+      10000,
+      List<int>.filled(_sections.length, 1),
+    );
+    setState(() {
+      for (var i = 0; i < _sections.length; i++) {
+        _sections[i].weight.text = formatRubricWeight(shares[i]);
+      }
+      _recomputeCriteriaWeightsFromSections();
+    });
+    _markDirty();
+  }
+
+  int _allocationPoints(RubricCriterionDraft criterion) {
+    final points = int.tryParse(criterion.maxScore.text.trim()) ?? 0;
+    // Incomplete point edits remain editable and are rejected on save.
+    return points > 0 ? points : 0;
+  }
+
+  void _moveSectionUp(int index) {
+    if (index <= 0) return;
+    setState(() {
+      final item = _sections.removeAt(index);
+      _sections.insert(index - 1, item);
+      _recomputeCriteriaWeightsFromSections();
+    });
+    _markDirty();
+  }
+
+  void _moveSectionDown(int index) {
+    if (index >= _sections.length - 1) return;
+    setState(() {
+      final item = _sections.removeAt(index);
+      _sections.insert(index + 1, item);
+      _recomputeCriteriaWeightsFromSections();
+    });
+    _markDirty();
+  }
+
+  void _addNewSection() {
+    setState(() {
+      final defaultTarget = _targetType == 'individual' ? 'individual' : 'team';
+      final newSection = SectionEditorDraft(
+        title: 'Section ${_sections.length + 1}',
+        weight: '',
+        targetType: defaultTarget,
+        criteria: [],
+      );
+      final defaultCrit = RubricCriterionDraft(
+        scales: _scales,
+        name: '',
+        scale: 'Points-Based (Sections)',
+        maxScore: 10,
+        weight: 0,
+        displayOrder: _criteria.length,
+        targetType: defaultTarget,
+      );
+      newSection.criteria.add(defaultCrit);
+      _sections.add(newSection);
+      _attachSectionListeners();
+      _recomputeCriteriaWeightsFromSections();
+    });
+    _markDirty();
+  }
+
+  void _removeSection(int index) {
+    if (_sections.length <= 1) return;
+    setState(() {
+      final removed = _sections.removeAt(index);
+      for (final c in removed.criteria) {
+        c.dispose();
+      }
+      removed.dispose();
+      _recomputeCriteriaWeightsFromSections();
+    });
+    _markDirty();
+  }
+
+  void _addCriterionToSection(SectionEditorDraft section) {
+    setState(() {
+      final newCrit = RubricCriterionDraft(
+        scales: _scales,
+        name: '',
+        scale: 'Points-Based (Sections)',
+        maxScore: 10,
+        weight: 0,
+        displayOrder: _criteria.length,
+        targetType: section.targetType,
+      );
+      section.criteria.add(newCrit);
+      _attachSectionListeners();
+      _recomputeCriteriaWeightsFromSections();
+    });
+    _markDirty();
+  }
+
+  void _removeCriterionFromSection(
+    SectionEditorDraft section,
+    int criterionIndex,
+  ) {
+    if (section.criteria.length <= 1) return;
+    setState(() {
+      final removed = section.criteria.removeAt(criterionIndex);
+      removed.dispose();
+      _recomputeCriteriaWeightsFromSections();
+    });
+    _markDirty();
+  }
+
+  void _moveCriterionUpInSection(
+    SectionEditorDraft section,
+    int criterionIndex,
+  ) {
+    if (criterionIndex <= 0) return;
+    setState(() {
+      final item = section.criteria.removeAt(criterionIndex);
+      section.criteria.insert(criterionIndex - 1, item);
+      _recomputeCriteriaWeightsFromSections();
+    });
+    _markDirty();
+  }
+
+  void _moveCriterionDownInSection(
+    SectionEditorDraft section,
+    int criterionIndex,
+  ) {
+    if (criterionIndex >= section.criteria.length - 1) return;
+    setState(() {
+      final item = section.criteria.removeAt(criterionIndex);
+      section.criteria.insert(criterionIndex + 1, item);
+      _recomputeCriteriaWeightsFromSections();
+    });
+    _markDirty();
+  }
+
+  Widget _buildSectionedCriteriaEditor(bool canEdit) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildWeightAssistantBar(enabled: canEdit),
+        for (int sIdx = 0; sIdx < _sections.length; sIdx++) ...[
+          _buildSingleSectionCard(
+            section: _sections[sIdx],
+            sectionIndex: sIdx,
+            canEdit: canEdit,
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (canEdit)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ShadButton.outline(
+              onPressed: _addNewSection,
+              leading: const Icon(LucideIcons.plus, size: 16),
+              child: const Text('Add Section'),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSingleSectionCard({
+    required SectionEditorDraft section,
+    required int sectionIndex,
+    required bool canEdit,
+  }) {
+    final secWeight = num.tryParse(section.weight.text.trim()) ?? 0;
+    final totalPts = section.totalPoints;
+    final titleText = section.title.text.trim();
+    final displayTitle = titleText.isNotEmpty
+        ? titleText
+        : 'Section ${sectionIndex + 1}';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              color: _isDark
+                  ? const Color(0xFF1E293B).withValues(alpha: 0.6)
+                  : const Color(0xFFF8FAFC),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(9),
+              ),
+              border: Border(bottom: BorderSide(color: _borderColor)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final titleField = Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.maroonOf(
+                                  context,
+                                ).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(
+                                  DefensysTokens.radiusSm,
+                                ),
+                                border: Border.all(
+                                  color: DefensysTokens.maroonOf(
+                                    context,
+                                  ).withValues(alpha: 0.25),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                (sectionIndex + 1).toString().padLeft(2, '0'),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: DefensysTokens.maroonOf(context),
+                                  fontFamily: DefensysTokens.fontFamilyInter,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'SECTION ${sectionIndex + 1}',
+                              style: DefensysTokens.caption.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: DefensysTokens.maroonOf(context),
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ShadInput(
+                          controller: section.title,
+                          enabled: canEdit,
+                          placeholder: const Text(
+                            'e.g. ORAL EXAMINATION, PROJECT MANUSCRIPT',
+                          ),
+                          style: DefensysTokens.tableCell.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: _textPrimaryColor,
+                          ),
+                          onChanged: (_) {
+                            _recomputeCriteriaWeightsFromSections();
+                            _markDirty();
+                          },
+                        ),
+                      ],
+                    );
+
+                    final weightField = Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Section Weight',
+                          style: DefensysTokens.caption.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: _textPrimaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: 110,
+                          child: ShadInput(
+                            controller: section.weight,
+                            enabled: canEdit,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            trailing: Text('%', style: DefensysTokens.caption),
+                            onChanged: (_) {
+                              setState(() {
+                                _recomputeCriteriaWeightsFromSections();
+                              });
+                              _markDirty();
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+
+                    final actions = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ShadTooltip(
+                          builder: (_) => const Text('Move section up'),
+                          child: ShadButton.ghost(
+                            size: ShadButtonSize.sm,
+                            width: 36,
+                            height: 36,
+                            padding: EdgeInsets.zero,
+                            enabled: canEdit && sectionIndex > 0,
+                            onPressed: canEdit && sectionIndex > 0
+                                ? () => _moveSectionUp(sectionIndex)
+                                : null,
+                            child: const Icon(LucideIcons.arrowUp, size: 16),
+                          ),
+                        ),
+                        ShadTooltip(
+                          builder: (_) => const Text('Move section down'),
+                          child: ShadButton.ghost(
+                            size: ShadButtonSize.sm,
+                            width: 36,
+                            height: 36,
+                            padding: EdgeInsets.zero,
+                            enabled:
+                                canEdit && sectionIndex < _sections.length - 1,
+                            onPressed:
+                                canEdit && sectionIndex < _sections.length - 1
+                                ? () => _moveSectionDown(sectionIndex)
+                                : null,
+                            child: const Icon(LucideIcons.arrowDown, size: 16),
+                          ),
+                        ),
+                        if (canEdit && _sections.length > 1)
+                          ShadTooltip(
+                            builder: (_) => const Text('Remove section'),
+                            child: ShadButton.ghost(
+                              size: ShadButtonSize.sm,
+                              width: 36,
+                              height: 36,
+                              padding: EdgeInsets.zero,
+                              onPressed: () => _removeSection(sectionIndex),
+                              child: const Icon(
+                                LucideIcons.trash2,
+                                size: 16,
+                                color: Color(0xFFDC2626),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+
+                    if (constraints.maxWidth < 640) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          titleField,
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [weightField, actions],
+                          ),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(child: titleField),
+                        const SizedBox(width: 16),
+                        weightField,
+                        const SizedBox(width: 12),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: actions,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                if (_targetType == 'both') ...[
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Text(
+                        'Scoring Target:',
+                        style: DefensysTokens.caption.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: _textSecondaryColor,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ShadRadioGroup<String>(
+                        initialValue: section.targetType,
+                        enabled: canEdit,
+                        axis: Axis.horizontal,
+                        spacing: 16,
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              section.targetType = val;
+                              for (final c in section.criteria) {
+                                c.targetType = val;
+                              }
+                            });
+                            _markDirty();
+                          }
+                        },
+                        items: [
+                          ShadRadio(
+                            value: 'team',
+                            label: Text(
+                              'Team (Entire Group)',
+                              style: DefensysTokens.caption,
+                            ),
+                          ),
+                          ShadRadio(
+                            value: 'individual',
+                            label: Text(
+                              'Individual (Per Student)',
+                              style: DefensysTokens.caption,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (int cIdx = 0; cIdx < section.criteria.length; cIdx++) ...[
+                  Builder(
+                    builder: (context) {
+                      final criterion = section.criteria[cIdx];
+                      final pts =
+                          int.tryParse(criterion.maxScore.text.trim()) ?? 0;
+                      final calcWeight = (totalPts > 0 && secWeight > 0)
+                          ? ((pts / totalPts) * secWeight)
+                                .toStringAsFixed(2)
+                                .replaceFirst(RegExp(r'\.?0+$'), '')
+                          : '0';
+
+                      return RubricCriterionFields(
+                        key: ObjectKey(criterion),
+                        index: cIdx,
+                        section: null,
+                        name: criterion.name,
+                        maxScore: criterion.maxScore,
+                        weight: criterion.weight,
+                        description: criterion.description,
+                        maximum: pts > 0 ? pts : 10,
+                        enabled: canEdit,
+                        showTarget: false,
+                        target: criterion.targetType,
+                        isPointsScale: true,
+                        hideWeight: true,
+                        badge: ShadBadge.outline(
+                          child: Text(
+                            '$pts pts • $calcWeight% of rubric',
+                            style: DefensysTokens.caption.copyWith(
+                              fontWeight: FontWeight.w500,
+                              color: pts > 0
+                                  ? DefensysTokens.maroonOf(context)
+                                  : _textSecondaryColor,
+                            ),
+                          ),
+                        ),
+                        onTargetChanged: (_) {},
+                        onChanged: () {
+                          setState(() {
+                            _recomputeCriteriaWeightsFromSections();
+                          });
+                          _markDirty();
+                        },
+                        onMoveUp: cIdx > 0
+                            ? () => _moveCriterionUpInSection(section, cIdx)
+                            : null,
+                        onMoveDown: cIdx < section.criteria.length - 1
+                            ? () => _moveCriterionDownInSection(section, cIdx)
+                            : null,
+                        onRemove: section.criteria.length > 1
+                            ? () => _removeCriterionFromSection(section, cIdx)
+                            : null,
+                      );
+                    },
+                  ),
+                  if (cIdx < section.criteria.length - 1)
+                    const SizedBox(height: 16),
+                ],
+                const SizedBox(height: 16),
+                if (canEdit)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: ShadButton.outline(
+                      size: ShadButtonSize.sm,
+                      onPressed: () => _addCriterionToSection(section),
+                      leading: const Icon(LucideIcons.plus, size: 14),
+                      child: Text('Add Criterion to $displayTitle'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              color: _isDark
+                  ? const Color(0xFF0F172A).withValues(alpha: 0.4)
+                  : const Color(0xFFF1F5F9),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(9),
+              ),
+              border: Border(top: BorderSide(color: _borderColor)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${section.criteria.length} criteria • Total: $totalPts pts',
+                  style: DefensysTokens.caption.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: _textPrimaryColor,
+                  ),
+                ),
+                ShadBadge.secondary(
+                  child: Text(
+                    'Section Weight: ${section.weight.text.trim().isEmpty ? '0' : section.weight.text.trim()}%',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: secWeight > 0
+                          ? DefensysTokens.maroonOf(context)
+                          : _textSecondaryColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildWeightAssistantBar({required bool enabled}) {
-    final total = _totalCriteriaWeight;
-    final count = _criteria.length;
+    final isSectioned = _rubricScale == 'Points-Based (Sections)';
+    final total = isSectioned ? _totalSectionWeight : _totalCriteriaWeight;
+    final count = isSectioned ? _sections.length : _criteria.length;
     final over = total > 100.000001;
     final under = total < 99.999999;
     String percentage(num value) =>
@@ -905,6 +1828,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         : under
         ? '${percentage(100 - total)}% Unallocated'
         : '100% Balanced';
+    final label = isSectioned
+        ? 'Section weight allocation'
+        : 'Criterion weight allocation';
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 24),
       child: Column(
@@ -934,15 +1861,50 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                       style: DefensysTokens.caption.copyWith(color: color),
                     ),
                   ),
+                  if (isSectioned)
+                    Text(
+                      '($count ${_sections.length == 1 ? 'section' : 'sections'}, ${_criteria.length} criteria)',
+                      style: DefensysTokens.caption.copyWith(
+                        color: _textSecondaryColor,
+                      ),
+                    ),
                 ],
               ),
               if (!widget.readOnly && count > 0)
-                ShadButton.outline(
-                  size: ShadButtonSize.sm,
-                  enabled: enabled,
-                  onPressed: enabled ? _distributeWeightsEvenly : null,
-                  leading: const Icon(LucideIcons.equal, size: 15),
-                  child: const Text('Distribute evenly'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (isSectioned)
+                      ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        enabled: enabled,
+                        onPressed: enabled
+                            ? _distributeSectionWeightsEvenly
+                            : null,
+                        leading: const Icon(LucideIcons.equal, size: 15),
+                        child: const Text('Distribute section weights evenly'),
+                      )
+                    else ...[
+                      if (_hasSections)
+                        ShadButton.outline(
+                          size: ShadButtonSize.sm,
+                          enabled: enabled,
+                          onPressed: enabled
+                              ? _distributeWeightsBySections
+                              : null,
+                          leading: const Icon(LucideIcons.calculator, size: 15),
+                          child: const Text('Calculate from sections'),
+                        ),
+                      ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        enabled: enabled,
+                        onPressed: enabled ? _distributeWeightsEvenly : null,
+                        leading: const Icon(LucideIcons.equal, size: 15),
+                        child: const Text('Distribute evenly'),
+                      ),
+                    ],
+                  ],
                 ),
             ],
           ),
@@ -952,7 +1914,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
             minHeight: 4,
             color: color,
             backgroundColor: _borderColor,
-            semanticsLabel: 'Criterion weight allocation',
+            semanticsLabel: label,
             semanticsValue: '${percentage(total)} percent',
           ),
         ],
@@ -969,13 +1931,16 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }) => RubricCriterionFields(
     key: ObjectKey(draft),
     index: index,
+    section: null,
     name: draft.name,
+    maxScore: draft.maxScore,
     weight: draft.weight,
     description: draft.description,
-    maximum: _rubricMaxScore,
+    maximum: int.tryParse(draft.maxScore.text.trim()) ?? _rubricMaxScore,
     enabled: enabled,
     showTarget: _targetType == 'both',
     target: draft.targetType,
+    isPointsScale: _rubricScale == 'Custom Scale',
     onTargetChanged: (value) {
       setState(() => draft.targetType = value);
       _markDirty();
@@ -1000,6 +1965,79 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       if (maximum == null || maximum < 1 || maximum > 32767) {
         return 'Enter a whole number from 1 to 32767 for the custom scale.';
       }
+    }
+    if (_rubricScale == 'Points-Based (Sections)') {
+      _recomputeCriteriaWeightsFromSections();
+      if (_sections.isEmpty) {
+        return 'Add at least one section.';
+      }
+      final seenSectionTitles = <String>{};
+      for (int sIdx = 0; sIdx < _sections.length; sIdx++) {
+        final s = _sections[sIdx];
+        final title = s.title.text.trim();
+        if (title.isEmpty) {
+          return 'Enter a title for Section ${sIdx + 1}.';
+        }
+        final lowerTitle = title.toLowerCase();
+        if (seenSectionTitles.contains(lowerTitle)) {
+          return 'Section titles must be unique ("$title" is duplicated).';
+        }
+        seenSectionTitles.add(lowerTitle);
+
+        final secWeight = num.tryParse(s.weight.text.trim());
+        if (secWeight == null ||
+            !secWeight.isFinite ||
+            secWeight <= 0 ||
+            secWeight > 100) {
+          return 'Enter a valid weight (> 0% and <= 100%) for section "$title".';
+        }
+        if ((secWeight * 100 - (secWeight * 100).round()).abs() > 0.000001) {
+          return 'Section weights can have at most two decimal places.';
+        }
+
+        if (s.criteria.isEmpty) {
+          return 'Section "$title" must contain at least one criterion.';
+        }
+
+        final seenInSec = <String>{};
+        for (int cIdx = 0; cIdx < s.criteria.length; cIdx++) {
+          final c = s.criteria[cIdx];
+          final cName = c.name.text.trim();
+          if (cName.isEmpty) {
+            return 'Enter a name for Criterion ${cIdx + 1} in section "$title".';
+          }
+          final lowerName = cName.toLowerCase();
+          if (seenInSec.contains(lowerName)) {
+            return 'Criterion "$cName" is duplicated in section "$title".';
+          }
+          seenInSec.add(lowerName);
+
+          final pts = int.tryParse(c.maxScore.text.trim());
+          if (pts == null || pts <= 0 || pts > 32767) {
+            return 'Enter valid points (1–32767) for "$cName" in section "$title".';
+          }
+
+          final computedWeight = num.tryParse(c.weight.text.trim()) ?? 0;
+          if (computedWeight < 0.01) {
+            return 'Criterion "$cName" in section "$title" has an effective weight below 0.01%. Increase the section weight or adjust criterion points.';
+          }
+        }
+      }
+
+      if ((_totalSectionWeight - 100).abs() > 0.0001 ||
+          (_totalCriteriaWeight - 100).abs() > 0.0001) {
+        return 'Section weights must total 100% (up to 2 decimal places). Current total: ${_totalSectionWeight.toStringAsFixed(2)}%.';
+      }
+
+      if (_targetType == 'both') {
+        final hasTeam = _sections.any((s) => s.targetType == 'team');
+        final hasIndiv = _sections.any((s) => s.targetType == 'individual');
+        if (!hasTeam || !hasIndiv) {
+          return "Rubrics set to 'Both (Team & Individual)' must contain at least one Team section and at least one Individual section.";
+        }
+      }
+
+      return null;
     }
     if (_criteria.isEmpty) {
       return 'Add at least one criterion.';
@@ -1051,6 +2089,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     }
 
     if (showConfirmation && !mounted) return false;
+
+    if (_rubricScale == 'Points-Based (Sections)') {
+      _recomputeCriteriaWeightsFromSections();
+    }
 
     // Keep the reviewed values identical to the eventual save request.
     final payload = {
@@ -1421,75 +2463,83 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                     const SizedBox(height: 24),
                     _sectionCard(
                       icon: LucideIcons.listChecks,
-                      title: 'Evaluation Criteria (${_criteria.length})',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildWeightAssistantBar(enabled: canEdit),
-                          ..._criteria.asMap().entries.map((entry) {
-                            final i = entry.key;
-                            final draft = entry.value;
-                            return _criterionCard(
-                              draft,
-                              i,
-                              enabled: canEdit,
-                              onRemove: !canEdit || _criteria.length == 1
-                                  ? null
-                                  : () {
-                                      setState(() {
-                                        draft.dispose();
-                                        _criteria.removeAt(i);
-                                        _reassignDisplayOrders();
-                                      });
-                                      _attachCriteriaListeners();
+                      title: _rubricScale == 'Points-Based (Sections)'
+                          ? 'Evaluation Sections & Criteria (${_sections.length} sections, ${_criteria.length} criteria)'
+                          : 'Evaluation Criteria (${_criteria.length})',
+                      child: _rubricScale == 'Points-Based (Sections)'
+                          ? _buildSectionedCriteriaEditor(canEdit)
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _buildWeightAssistantBar(enabled: canEdit),
+                                ..._criteria.asMap().entries.map((entry) {
+                                  final i = entry.key;
+                                  final draft = entry.value;
+                                  return _criterionCard(
+                                    draft,
+                                    i,
+                                    enabled: canEdit,
+                                    onRemove: !canEdit || _criteria.length == 1
+                                        ? null
+                                        : () {
+                                            setState(() {
+                                              draft.dispose();
+                                              _criteria.removeAt(i);
+                                              _reassignDisplayOrders();
+                                            });
+                                            _attachCriteriaListeners();
+                                            _markDirty();
+                                          },
+                                    onChanged: () {
+                                      setState(() {});
                                       _markDirty();
                                     },
-                              onChanged: () {
-                                setState(() {});
-                                _markDirty();
-                              },
-                            );
-                          }),
-                          if (canEdit)
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: ShadButton.outline(
-                                onPressed: () {
-                                  var defaultTarget =
-                                      _targetType == 'individual'
-                                      ? 'individual'
-                                      : 'team';
-                                  if (_targetType == 'both' &&
-                                      _criteria.any(
-                                        (c) => c.targetType == 'team',
-                                      ) &&
-                                      !_criteria.any(
-                                        (c) => c.targetType == 'individual',
-                                      )) {
-                                    defaultTarget = 'individual';
-                                  }
-                                  setState(
-                                    () => _criteria.add(
-                                      RubricCriterionDraft(
-                                        scales: _scales,
-                                        name: '',
-                                        scale: _rubricScale,
-                                        maxScore: _rubricMaxScore,
-                                        weight: 10,
-                                        displayOrder: _criteria.length,
-                                        targetType: defaultTarget,
-                                      ),
-                                    ),
                                   );
-                                  _attachCriteriaListeners();
-                                  _markDirty();
-                                },
-                                leading: const Icon(LucideIcons.plus, size: 16),
-                                child: const Text('Add Criterion'),
-                              ),
+                                }),
+                                if (canEdit)
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: ShadButton.outline(
+                                      onPressed: () {
+                                        var defaultTarget =
+                                            _targetType == 'individual'
+                                            ? 'individual'
+                                            : 'team';
+                                        if (_targetType == 'both' &&
+                                            _criteria.any(
+                                              (c) => c.targetType == 'team',
+                                            ) &&
+                                            !_criteria.any(
+                                              (c) =>
+                                                  c.targetType == 'individual',
+                                            )) {
+                                          defaultTarget = 'individual';
+                                        }
+                                        setState(
+                                          () => _criteria.add(
+                                            RubricCriterionDraft(
+                                              scales: _scales,
+                                              name: '',
+                                              scale: _rubricScale,
+                                              maxScore: _rubricMaxScore,
+                                              weight: 10,
+                                              displayOrder: _criteria.length,
+                                              targetType: defaultTarget,
+                                            ),
+                                          ),
+                                        );
+                                        _attachCriteriaListeners();
+                                        _markDirty();
+                                      },
+                                      leading: const Icon(
+                                        LucideIcons.plus,
+                                        size: 16,
+                                      ),
+                                      child: const Text('Add Criterion'),
+                                    ),
+                                  ),
+                              ],
                             ),
-                        ],
-                      ),
                     ),
                     const SizedBox(height: 24),
                     Divider(height: 1, color: _borderColor),
@@ -1577,9 +2627,36 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }
 }
 
+class SectionEditorDraft {
+  SectionEditorDraft({
+    required String title,
+    String weight = '',
+    this.targetType = 'team',
+    List<RubricCriterionDraft>? criteria,
+  }) : title = TextEditingController(text: title),
+       weight = TextEditingController(text: weight),
+       criteria = criteria ?? [];
+
+  final TextEditingController title;
+  final TextEditingController weight;
+  String targetType;
+  final List<RubricCriterionDraft> criteria;
+
+  int get totalPoints => criteria.fold<int>(
+    0,
+    (sum, c) => sum + (int.tryParse(c.maxScore.text.trim()) ?? 0),
+  );
+
+  void dispose() {
+    title.dispose();
+    weight.dispose();
+  }
+}
+
 class RubricCriterionDraft {
   RubricCriterionDraft({
     required List<String> scales,
+    String section = '',
     String name = '',
     String description = '',
     String? scale,
@@ -1588,6 +2665,7 @@ class RubricCriterionDraft {
     int displayOrder = 0,
     String targetType = 'team',
   }) : this._(
+         section: TextEditingController(text: section),
          name: TextEditingController(text: name),
          description: TextEditingController(text: description),
          scale: scale ?? defaultScale(scales),
@@ -1601,6 +2679,7 @@ class RubricCriterionDraft {
        );
 
   RubricCriterionDraft._({
+    required this.section,
     required this.name,
     required this.description,
     required this.scale,
@@ -1613,6 +2692,7 @@ class RubricCriterionDraft {
   factory RubricCriterionDraft.fromMap(Map item, List<String> scales) {
     return RubricCriterionDraft(
       scales: scales,
+      section: item['section']?.toString() ?? '',
       name: item['name']?.toString() ?? '',
       description: item['description']?.toString() ?? '',
       scale: item['scale']?.toString(),
@@ -1623,6 +2703,7 @@ class RubricCriterionDraft {
     );
   }
 
+  final TextEditingController section;
   final TextEditingController name;
   final TextEditingController description;
   String scale;
@@ -1633,6 +2714,7 @@ class RubricCriterionDraft {
 
   Map<String, dynamic> toPayload() {
     return {
+      'section': section.text.trim(),
       'name': name.text.trim(),
       'description': description.text.trim(),
       'scale': scale,
@@ -1644,6 +2726,7 @@ class RubricCriterionDraft {
   }
 
   void dispose() {
+    section.dispose();
     name.dispose();
     description.dispose();
     maxScore.dispose();
@@ -1655,6 +2738,7 @@ class RubricCriterionDraft {
     return switch (scale) {
       '5-Point Scale' => 5,
       '100-Point Scale' => 100,
+      'Points-Based (Sections)' => 10,
       _ => 10,
     };
   }

@@ -994,6 +994,9 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
 
   Widget _buildCriteriaBar(Map<String, dynamic> c) {
     final cName = c['criteriaName'] ?? '';
+    final cSection = (c['section'] ?? '').toString().trim();
+    final displayName =
+        cSection.isNotEmpty ? '$cSection · $cName' : cName.toString();
     final cScore = (c['score'] as num?)?.toDouble() ?? 0;
     final cMax = (c['max'] as num?)?.toDouble() ?? 1;
     final cPct = cMax > 0 ? cScore / cMax : 0.0;
@@ -1010,7 +1013,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
           Expanded(
             flex: 4,
             child: Text(
-              cName,
+              displayName,
               style: const TextStyle(fontSize: 11, color: Color(0xFF374151)),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,

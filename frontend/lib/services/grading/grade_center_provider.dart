@@ -73,6 +73,9 @@ class GradeCenterState {
   final List<Map<String, dynamic>> pitEvents;
   final List<Map<String, dynamic>> historySemesters;
   final String historySemester;
+  final Map<String, dynamic> capstoneWorkspace;
+  final List<Map<String, dynamic>> capstonePhases;
+  final Map<String, dynamic> phaseStatistics;
   final String search;
   final String yearLevel;
   final String status;
@@ -97,6 +100,9 @@ class GradeCenterState {
     this.pitEvents = const [],
     this.historySemesters = const [],
     this.historySemester = '',
+    this.capstoneWorkspace = const {},
+    this.capstonePhases = const [],
+    this.phaseStatistics = const {},
     this.search = '',
     this.yearLevel = '',
     this.status = '',
@@ -122,6 +128,9 @@ class GradeCenterState {
     List<Map<String, dynamic>>? pitEvents,
     List<Map<String, dynamic>>? historySemesters,
     String? historySemester,
+    Map<String, dynamic>? capstoneWorkspace,
+    List<Map<String, dynamic>>? capstonePhases,
+    Map<String, dynamic>? phaseStatistics,
     String? search,
     String? yearLevel,
     String? status,
@@ -152,6 +161,9 @@ class GradeCenterState {
       pitEvents: pitEvents ?? this.pitEvents,
       historySemesters: historySemesters ?? this.historySemesters,
       historySemester: historySemester ?? this.historySemester,
+      capstoneWorkspace: capstoneWorkspace ?? this.capstoneWorkspace,
+      capstonePhases: capstonePhases ?? this.capstonePhases,
+      phaseStatistics: phaseStatistics ?? this.phaseStatistics,
       search: search ?? this.search,
       yearLevel: yearLevel ?? this.yearLevel,
       status: status ?? this.status,
@@ -163,6 +175,44 @@ class GradeCenterState {
           : incompleteTeams ?? this.incompleteTeams,
     );
   }
+
+  GradeCenterState forPhase(Map<String, dynamic> phase) {
+    final payload = Map<String, dynamic>.from(phase['payload'] as Map);
+    List<Map<String, dynamic>> rows(String key) => (payload[key] as List? ?? [])
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+    final settings = payload['group_settings'] as Map? ?? {};
+    final phaseSemester = Map<String, dynamic>.from(
+      payload['active_semester'] as Map? ?? {},
+    );
+    final current = activeSemester?['id'] == phaseSemester['id'];
+    return copyWith(
+      grades: current ? grades : rows('grades'),
+      capstoneStages: current ? capstoneStages : rows('capstone_stages'),
+      capstonePhases: [],
+      phaseStatistics: current
+          ? phaseStatistics
+          : Map<String, dynamic>.from(
+              payload['phase_statistics'] as Map? ?? {},
+            ),
+      activeSemester: current ? activeSemester : phaseSemester,
+      groupSettings: current
+          ? groupSettings
+          : {
+              for (final entry in settings.entries)
+                '${entry.key}': Map<String, dynamic>.from(entry.value as Map),
+            },
+      counts: current
+          ? counts
+          : Map<String, dynamic>.from(payload['counts'] as Map? ?? {}),
+      capstoneWorkspace: {
+        ...capstoneWorkspace,
+        'phase_semester_id': phase['semester_id'],
+        'read_only': phase['read_only'],
+      },
+    );
+  }
 }
 
 class GradeCenterNotifier extends Notifier<GradeCenterState> {
@@ -170,9 +220,36 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
   int _fetchVersion = 0;
   static String get baseUrl => ApiConfig.gradeCenterUrl;
 
-  Uri _managementUri(String path) => Uri.parse(
-    '$baseUrl/$path',
-  ).replace(queryParameters: {'workspace': 'operations'});
+  Uri _managementUri(String path) => Uri.parse('$baseUrl/$path').replace(
+    queryParameters: {
+      'workspace': 'operations',
+      if (state.activeSemester?['id'] != null)
+        'semester_id': '${state.activeSemester!['id']}',
+    },
+  );
+
+  Future<void> selectCapstoneWorkspace(
+    String view,
+    String batch,
+    String semester,
+  ) {
+    _fetchVersion++;
+    _completionApprovals.clear();
+    state = state.copyWith(
+      grades: [],
+      capstoneStages: [],
+      capstonePhases: [],
+      groupSettings: {},
+      historySemester: '',
+      capstoneWorkspace: {
+        ...state.capstoneWorkspace,
+        'view': view,
+        'batch_id': batch,
+        'phase_semester_id': semester,
+      },
+    );
+    return fetchGrades(scope: 'capstone', historySemester: '');
+  }
 
   @override
   GradeCenterState build() {
@@ -219,6 +296,12 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     try {
       final queryParameters = <String, String>{
         'workspace': 'operations',
+        if (nextScope == 'capstone') ...{
+          'include_phases': '1',
+          'capstone_view': '${state.capstoneWorkspace['view'] ?? 'ongoing'}',
+          if ('${state.capstoneWorkspace['batch_id'] ?? ''}'.isNotEmpty)
+            'batch_id': '${state.capstoneWorkspace['batch_id']}',
+        },
         if (state.historySemester.isNotEmpty)
           'semester_id': state.historySemester,
         if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
@@ -449,6 +532,8 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
             Uri.parse('$baseUrl/group-settings/').replace(
               queryParameters: {
                 'workspace': 'operations',
+                if (state.activeSemester?['id'] != null)
+                  'semester_id': '${state.activeSemester!['id']}',
                 'scope': scope,
                 'stage_label': stageLabel,
               },
@@ -516,6 +601,11 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     bool? isOfficiallyComplete,
     bool? peerGradingEnabled,
   }) async {
+    if (state.capstoneWorkspace['read_only'] == true ||
+        state.activeSemester?['is_active'] == false) {
+      state = state.copyWith(error: 'This phase is read-only.');
+      return false;
+    }
     if (isOfficiallyComplete == null && peerGradingEnabled == null) {
       return true;
     }
@@ -806,6 +896,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       isLoading: false,
       isSaving: false,
       grades: _readMapList(payload['grades']),
+      capstoneWorkspace: payload['capstone_workspace'] is Map
+          ? Map<String, dynamic>.from(payload['capstone_workspace'])
+          : const {},
       yearLevels: _readStringList(payload['year_levels']),
       statuses: _readStringList(payload['statuses']),
       scopes: _readMapList(payload['scopes']),
@@ -818,6 +911,10 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       clearActiveSemester: payload['active_semester'] == null,
       groupSettings: _readGroupSettings(payload['group_settings']),
       capstoneStages: _readMapList(payload['capstone_stages']),
+      capstonePhases: _readMapList(payload['capstone_phases']),
+      phaseStatistics: payload['phase_statistics'] is Map
+          ? Map<String, dynamic>.from(payload['phase_statistics'])
+          : const {},
       pitEvents: _readMapList(payload['pit_events']),
       historySemesters: _readMapList(payload['history_semesters']),
       message: successMessage,

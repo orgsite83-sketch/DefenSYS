@@ -256,6 +256,7 @@ class DefenseBoardApiTests(APITestCase):
         self.assertEqual(record['display_status'], 'revisions_pending')
         self.assertIsNone(record['minutes_status'])
         self.assertEqual(record['assessment']['verdict'], 'approved_with_revisions')
+        self.assertEqual(record['grade_id'], grade.pk)
         self.assertEqual(record['assessment']['revision_deadline'], '2099-05-22')
         self.assertEqual(record['assessment']['verdict_remarks'], 'Calibrate the soil sensors.')
         self.assertIsNone(record['assessment']['published_result'])
@@ -278,7 +279,26 @@ class DefenseBoardApiTests(APITestCase):
         self.assertEqual(record['assessment']['verdict'], 'for_redefense')
         self.assertEqual(record['assessment']['revision_deadline'], '2099-05-22')
         self.assertIsNone(record['assessment']['grade_status'])
+        self.assertIsNone(record['grade_id'])
         self.assertIsNone(record['assessment']['published_result'])
+
+    def test_evaluation_link_does_not_open_another_hearings_grade(self):
+        from grading.grades.models import TeamGrade
+        from grading.grades.services import GradeContextService
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(self.capstone_schedule)
+        other = DefenseSchedule.objects.create(
+            scope=self.capstone_schedule.scope, semester=self.semester,
+            team=self.capstone_team, defense_stage=self.stage,
+            scheduled_date='2099-06-15', start_time='08:00',
+            slot_duration=60, room='Room 302', created_by=self.admin,
+        )
+        TeamGrade.all_objects.filter(pk=grade.pk).update(schedule=other)
+        self.client.force_authenticate(self.admin)
+        response = self.client.get('/api/defense/board/', {'scope': 'capstone'})
+        self.assertEqual(response.status_code, 200)
+        records = {row['id']: row for row in response.data['schedules']}
+        self.assertIsNone(records[self.capstone_schedule.pk]['grade_id'])
+        self.assertEqual(records[other.pk]['grade_id'], grade.pk)
 
     def test_board_attempt_numbers_belong_to_each_hearing_after_redefense_import(self):
         from django.utils import timezone
@@ -320,6 +340,29 @@ class DefenseBoardApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['counts']['filtered'], 1)
         self.assertEqual(response.data['schedules'][0]['team_name'], 'Team VaultSync')
+
+    def test_program_total_and_stage_options_stay_scoped_when_search_is_empty(self):
+        response = self.client.get('/api/defense/board/', {
+            'scope': 'capstone', 'search': 'no such team',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['counts']['all'], 2)
+        self.assertEqual(response.data['counts']['scope_total'], 1)
+        self.assertEqual(response.data['counts']['filtered'], 0)
+        self.assertEqual(response.data['schedules'], [])
+        self.assertEqual(response.data['stage_options'], ['Project Proposal'])
+
+    def test_program_total_preserves_pit_lead_visibility(self):
+        self.client.force_authenticate(user=self.pit_lead)
+        for scope, expected in [('pit', 1), ('capstone', 0)]:
+            with self.subTest(scope=scope):
+                response = self.client.get('/api/defense/board/', {'scope': scope})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data['counts']['scope_total'], expected)
+                if not expected:
+                    self.assertEqual(response.data['stage_options'], [])
+                    self.assertEqual(response.data['advisers'], [])
+                    self.assertEqual(response.data['sections'], [])
 
     def test_pit_lead_only_sees_assigned_year_pit_schedules(self):
         self.client.force_authenticate(user=self.pit_lead)

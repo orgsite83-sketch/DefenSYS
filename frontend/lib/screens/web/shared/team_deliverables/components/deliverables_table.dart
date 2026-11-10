@@ -1471,12 +1471,21 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  TeamWorkflowStatus _stageDisplayStatus(Map<String, dynamic> stage) {
+    final status = TeamWorkflowStatus.fromStage(
+      stage,
+      scope: widget.state.scope,
+    );
+    return widget.isAdviser && status.code == 'completed'
+        ? TeamWorkflowStatus(status.code, 'Stage completed', status.tone)
+        : status;
+  }
+
   Widget _buildStageStatusBadge(Map<String, dynamic> stage) =>
-      TeamWorkflowBadge(
-        status: TeamWorkflowStatus.fromStage(stage, scope: widget.state.scope),
-      );
+      TeamWorkflowBadge(status: _stageDisplayStatus(stage));
 
   bool _canEndorseTeam(Map<String, dynamic> stage) {
+    if (stage['read_only'] == true) return false;
     final review = stage['endorsement_review'];
     return stage['required_complete'] == true &&
         review is Map &&
@@ -1660,12 +1669,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         !endorsed &&
         (widget.state.scope != 'pit' || stage['endorsement_required'] != false);
     final canCancelEndorsement =
-        (stage['can_cancel_endorsement'] == true) ||
-        (endorsed &&
-            stage['has_active_schedule'] != true &&
-            stage['has_done_schedule'] != true &&
-            stage['is_defense_done'] != true &&
-            stage['stage_status_detail'] == 'endorsed');
+        stage['read_only'] != true &&
+        ((stage['can_cancel_endorsement'] == true) ||
+            (endorsed &&
+                stage['has_active_schedule'] != true &&
+                stage['has_done_schedule'] != true &&
+                stage['is_defense_done'] != true &&
+                stage['stage_status_detail'] == 'endorsed'));
     final isFacultyOrAdmin =
         widget.isAdviser ||
         widget.state.scope == 'pit' ||
@@ -1911,6 +1921,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   Text(
                     widget.state.scope == 'pit'
                         ? 'No PIT events configured for ${team['year_level'] ?? 'this team'}.'
+                        : widget.state.capstoneWorkspace.isNotEmpty
+                        ? 'Awaiting stage setup for this phase.'
                         : 'No defense stages configured.',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
@@ -2238,6 +2250,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             projectVersion: int.tryParse('${team['project_version'] ?? ''}'),
             semesterId: int.tryParse('${team['semester_id'] ?? ''}'),
             adviserName: team['adviser_name']?.toString(),
+            readOnly: stage['read_only'] == true,
           ),
         ] else if (activeTab == 3 && widget.isPitInstructor) ...[
           PitTeamScheduleTab(
@@ -2352,10 +2365,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 ),
                 const SizedBox(height: 6),
                 TeamWorkflowBadge(
-                  status: TeamWorkflowStatus.fromStage(
-                    selectedStage,
-                    scope: widget.state.scope,
-                  ),
+                  status: _stageDisplayStatus(selectedStage),
                   compact: true,
                 ),
                 if (widget.isAdviser &&
@@ -2816,10 +2826,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final reviewReason = review is Map
         ? review['reason']?.toString() ?? ''
         : '';
-    final workflow = TeamWorkflowStatus.fromStage(
-      stagePayload,
-      scope: widget.state.scope,
-    );
+    final workflow = _stageDisplayStatus(stagePayload);
     final workflowHint = workflow.code == 'on_hold' && reviewReason.isNotEmpty
         ? reviewReason
         : workflow.nextStep;
@@ -3364,6 +3371,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
     final normalizedGrade = <String, dynamic>{
       ...gradeData,
+      'read_only': stagePayload['read_only'] == true,
       'scope': 'capstone',
       'id': gradeData['id'] ?? team['grade']?['id'] ?? stagePayload['grade_id'],
       'team_name': team['name']?.toString() ?? 'Team',
@@ -3962,9 +3970,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       for (final team in teams)
         't${team['id']}': widget.conceptReview
             ? _conceptChoiceStatus(team)
-            : TeamWorkflowStatus.fromStage(
+            : _stageDisplayStatus(
                 DeliverablesTriageHelper.resolveActiveStage(team) ?? {},
-                scope: widget.state.scope,
               ),
     };
     return LayoutBuilder(
@@ -4078,24 +4085,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final stagePayload = _stagePayload(stages, selectedStage);
     final currentStage = team['current_stage']?.toString();
 
-    final gradeRecord = gradingState.grades.firstWhere(
-      (g) =>
-          parseAsInt(g['team_id']) == teamId &&
-          g['stage_label']?.toString() == cardSelectedStageLabel,
-      orElse: () {
-        if (team['grade'] is Map &&
-            team['grade']['stage_label']?.toString() ==
-                cardSelectedStageLabel) {
-          return Map<String, dynamic>.from(team['grade'] as Map);
-        }
-        if (stagePayload['grade'] is Map &&
-            stagePayload['grade']['stage_label']?.toString() ==
-                cardSelectedStageLabel) {
-          return Map<String, dynamic>.from(stagePayload['grade'] as Map);
-        }
-        return <String, dynamic>{};
-      },
-    );
+    final gradeRecord =
+        adviserGradeForTeam(
+          team,
+          cardSelectedStageLabel,
+          gradingState.grades,
+        ) ??
+        <String, dynamic>{};
 
     return Container(
       decoration: cardDecoration(context),

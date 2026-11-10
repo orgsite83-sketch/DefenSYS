@@ -54,12 +54,15 @@ def _is_grade_center_admin(user):
 def filter_grade_queryset(request, queryset):
     semester = selected_grade_semester(request)
     queryset = queryset.filter(semester=semester) if semester else queryset.none()
+    from student_teams.capstone_workspace import enabled, grade_queryset
+    if enabled(request):
+        queryset = grade_queryset(request, queryset)
     search = request.query_params.get('search', '').strip()
     year_level = request.query_params.get('year_level', '').strip()
     status_filter = request.query_params.get('status', '').strip()
 
     if search:
-        queryset = queryset.filter(
+        search_filter = (
             Q(team__name__icontains=search)
             | Q(team__project_title__icontains=search)
             | Q(stage_label__icontains=search)
@@ -69,9 +72,23 @@ def filter_grade_queryset(request, queryset):
             | Q(schedule__panel_assignments__panelist__first_name__icontains=search)
             | Q(schedule__panel_assignments__panelist__last_name__icontains=search)
             | Q(schedule__panel_assignments__panelist__username__icontains=search)
-        ).distinct()
+        )
+        if enabled(request):
+            from student_teams.capstone_workspace import projection, identity_text
+            term_teams = projection(request)['contexts'].values()
+            matching = [team.pk for team in term_teams if search.casefold() in identity_text(team)]
+            search_filter = (Q(team_id__in=matching) | Q(stage_label__icontains=search)
+                | Q(schedule__panel_assignments__panelist__first_name__icontains=search)
+                | Q(schedule__panel_assignments__panelist__last_name__icontains=search)
+                | Q(schedule__panel_assignments__panelist__username__icontains=search))
+        queryset = queryset.filter(search_filter).distinct()
     if year_level:
-        queryset = queryset.filter(team__year_level=year_level)
+        if enabled(request):
+            from student_teams.capstone_workspace import projection
+            queryset = queryset.filter(team_id__in=[t.pk for t in projection(request)['contexts'].values()
+                if t.year_level == year_level])
+        else:
+            queryset = queryset.filter(team__year_level=year_level)
     if status_filter:
         queryset = queryset.filter(status=status_filter)
 
@@ -91,6 +108,9 @@ def filter_grade_queryset(request, queryset):
 
 
 def selected_grade_semester(request):
+    from student_teams.capstone_workspace import enabled, projection
+    if enabled(request):
+        return projection(request)['semester']
     if request.query_params.get('semester_id'):
         from academic_period_management.models import Semester
         from rest_framework.serializers import IntegerField
@@ -143,12 +163,14 @@ def counts_payload(base_queryset, current_queryset=None):
     }
 
 
-def options_payload(queryset):
+def options_payload(queryset, team_contexts=None):
     year_levels = [
         value
         for value in queryset.values_list('team__year_level', flat=True).distinct()
         if value
     ]
+    if team_contexts is not None:
+        year_levels = [team.year_level for team in team_contexts if team.year_level]
     return {
         'statuses': [choice[0] for choice in TeamGrade.STATUS_CHOICES],
         'year_levels': sorted(set(year_levels)),
@@ -159,8 +181,23 @@ def options_payload(queryset):
     }
 
 
+def workspace_grade_records(request):
+    base = workspace_grades_for(request.user, request.query_params.get('workspace'))
+    from student_teams.capstone_workspace import enabled, projection
+    if not enabled(request):
+        return base
+    from student_teams.capstone_history import recorded_authority
+    historical = Q(pk__in=[])
+    for context in projection(request)['contexts'].values():
+        row = getattr(context, '_recorded_term', None)
+        if recorded_authority(request.user, row):
+            historical |= Q(team_id=context.pk, semester_id=context.semester_id,
+                project_version=context.project_version, scope='capstone')
+    return TeamGrade.all_objects.with_relations().filter(Q(pk__in=base.values('pk')) | historical)
+
+
 def grade_center_payload(request, queryset=None, sync_info=None):
-    raw_base = workspace_grades_for(request.user, request.query_params.get('workspace'))
+    raw_base = workspace_grade_records(request)
     semester = selected_grade_semester(request)
     available_terms = set(raw_base.values_list('semester_id', flat=True))
     from defense.scheduler.event_scope import pit_events_for_user
@@ -169,11 +206,16 @@ def grade_center_payload(request, queryset=None, sync_info=None):
     if active:
         available_terms.add(active.pk)
     raw_base = raw_base.filter(semester=semester) if semester else raw_base.none()
+    from student_teams.capstone_workspace import enabled, grade_queryset, projection
+    phase_view = projection(request) if enabled(request) else None
+    if phase_view:
+        raw_base = grade_queryset(request, raw_base)
     base = without_stale_unscheduled_placeholders(grade_review_queryset(raw_base))
     current = without_stale_unscheduled_placeholders(
         grade_review_queryset(queryset if queryset is not None else raw_base)
     )
     payload = {
+        **({'capstone_workspace': phase_view['metadata']} if phase_view else {}),
         'grades': TeamGradeSerializer(current, many=True, context={'request': request}).data,
         'counts': counts_payload(base, current),
         'active_semester': SemesterSerializer(semester).data if semester else None,
@@ -184,8 +226,10 @@ def grade_center_payload(request, queryset=None, sync_info=None):
                 .exclude(pk=active.pk if active else None)
                 .order_by('-school_year__label', 'label')],
         'group_settings': build_group_settings_map(current, semester, user=request.user),
-        **options_payload(base),
+        **options_payload(base, team_contexts=phase_view['contexts'].values() if phase_view else None),
     }
+    if phase_view:
+        payload['phase_statistics'] = phase_team_statistics(request, phase_view, base, current, payload['grades'])
     if CanManageModule().has_permission(request, None):
         from authentication_access_control.scopes import is_admin_user
         active_stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')) if is_admin_user(request.user) else []
@@ -193,7 +237,7 @@ def grade_center_payload(request, queryset=None, sync_info=None):
             from authentication_access_control.workspaces import workspace_teams_for
             from student_teams.capstone_lifecycle import teams_in_recorded_term, recorded_team
             from student_teams.capstone_context import phase_requirements
-            teams = teams_in_recorded_term(workspace_teams_for(request.user,
+            teams = phase_view['contexts'].values() if phase_view else teams_in_recorded_term(workspace_teams_for(request.user,
                 request.query_params.get('workspace')).filter(level__icontains='Capstone'), semester)
             applicable = {r['id'] for team in teams for r in phase_requirements(recorded_team(team, semester))}
             active_stages = [s for s in active_stages if s.pk in applicable]
@@ -217,7 +261,57 @@ def grade_center_payload(request, queryset=None, sync_info=None):
             payload['pit_events'] = []
     if sync_info is not None:
         payload['sync'] = sync_info
+    if phase_view and request.query_params.get('include_phases') == '1':
+        phases = []
+        for group in phase_view['metadata']['phase_groups']:
+            child = _PhaseReadRequest(request, group['semester_id'])
+            records = filter_grade_queryset(child, workspace_grade_records(child))
+            phases.append({**group, 'payload': grade_center_payload(child, records)})
+        payload['capstone_phases'] = phases
+        payload['year_levels'] = sorted(set(payload['year_levels']) |
+            {level for phase in phases for level in phase['payload']['year_levels']})
     return payload
+
+
+def phase_team_statistics(request, phase_view, base, current, serialized_grades):
+    """Count teams once in the displayed phase, including unscheduled teams."""
+    from student_teams.capstone_workspace import identity_text
+    from student_teams.capstone_context import phase_requirements
+    params = request.query_params
+    contexts = phase_view['contexts']
+    ids = set(contexts)
+    if params.get('year_level'):
+        ids &= {team.pk for team in contexts.values() if team.year_level == params['year_level']}
+    if params.get('search'):
+        search = params['search'].strip().casefold()
+        ids &= {team.pk for team in contexts.values() if search in identity_text(team)} | set(current.values_list('team_id', flat=True))
+    if params.get('status'):
+        ids &= set(current.values_list('team_id', flat=True))
+    if params.get('team_id'):
+        ids = {team_id for team_id in ids if str(team_id) == params['team_id']}
+    published = {}
+    awaiting = {row['team_id'] for row in serialized_grades if row['team_id'] in ids
+        and row.get('schedule_id') and row['status'] != 'published' and not row['panel_complete']}
+    for row in base.filter(team_id__in=ids).values('team_id', 'defense_stage_id', 'status'):
+        if row['status'] == 'published':
+            published.setdefault(row['team_id'], set()).add(row['defense_stage_id'])
+    complete = 0
+    for team_id in ids:
+        required = {r['id'] for r in phase_requirements(contexts[team_id])}
+        complete += int(bool(required) and required <= published.get(team_id, set()))
+    return {'total_teams': len(ids), 'fully_graded_teams': complete, 'awaiting_panelists': len(awaiting)}
+
+
+class _PhaseReadRequest:
+    """Delegate request authority while reading a different recorded phase."""
+    def __init__(self, request, semester_id):
+        self._source = request
+        self.query_params = request.query_params.copy()
+        self.query_params.pop('include_phases', None)
+        self.query_params['phase_semester_id'] = str(semester_id)
+
+    def __getattr__(self, name):
+        return getattr(self._source, name)
 
 
 def grade_audit_values(grade):
@@ -241,7 +335,7 @@ class GradeCenterListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        queryset = filter_grade_queryset(request, workspace_grades_for(request.user, request.query_params.get('workspace')))
+        queryset = filter_grade_queryset(request, workspace_grade_records(request))
         return Response(grade_center_payload(request, queryset))
 
 
@@ -427,6 +521,8 @@ class GradeCenterGroupSettingsView(APIView):
 
     def get(self, request):
         semester = active_semester()
+        if request.query_params.get('semester_id') and str(semester.pk if semester else '') != request.query_params['semester_id']:
+            return Response({'detail': 'Historical phase settings are read-only.'}, status=status.HTTP_400_BAD_REQUEST)
         if semester is None:
             return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
         serializer = GradeCenterGroupReadinessSerializer(data=request.query_params)
@@ -444,6 +540,8 @@ class GradeCenterGroupSettingsView(APIView):
 
     def patch(self, request):
         semester = active_semester()
+        if request.query_params.get('semester_id') and str(semester.pk if semester else '') != request.query_params['semester_id']:
+            return Response({'detail': 'Historical phase settings are read-only.'}, status=status.HTTP_400_BAD_REQUEST)
         if semester is None:
             return Response(
                 {'detail': 'No active semester is configured.'},

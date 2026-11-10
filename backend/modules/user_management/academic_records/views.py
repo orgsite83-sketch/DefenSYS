@@ -14,8 +14,9 @@ from user_management.permissions import IsSystemAdmin
 from .models import StudentAcademicRecord
 from .rollover import (
     active_semester, clean_spaces as _clean_spaces, confirm_rollover,
-    latest_records_by_student, next_rollover_semester,
-    normalize_year_level as _normalize_year_level,
+    latest_records_by_student, next_academic_step,
+    next_rollover_semester, normalize_year_level as _normalize_year_level,
+    semester_key, YEAR_LEVELS,
 )
 from .serializers import (
     EnrollmentSectionPreviewRowSerializer,
@@ -133,8 +134,10 @@ class EnrollmentSectionPreviewView(APIView):
     permission_classes = [IsSystemAdmin]
 
     def post(self, request):
-        """Resolve defaults without creating users, enrollment, or participation."""
+        """Resolve defaults and preflight row validations without creating users or enrollment."""
         from student_teams.continuation_sections import section_decisions
+        from student_teams.section_years import enrollment_section_issue
+
         semester_id = request.data.get('semester_id')
         if not isinstance(semester_id, int) or isinstance(semester_id, bool):
             return Response({'detail': 'semester_id must be an integer.'}, status=400)
@@ -144,20 +147,170 @@ class EnrollmentSectionPreviewView(APIView):
             return Response({'detail': 'Provide up to 1000 student rows.'}, status=400)
         if any(not isinstance(s, dict) for s in students):
             return Response({'detail': 'Each student must be an object.'}, status=400)
+
         serializer = EnrollmentSectionPreviewRowSerializer(data=students, many=True)
         serializer.is_valid(raise_exception=True)
-        students = serializer.validated_data
-        names = [_clean_spaces(s.get('id_number')) for s in students]
-        users = {u.username: u for u in User.objects.filter(username__in=names, role='student')}
-        years = {users[name].pk: _normalize_year_level(s.get('year_level', ''))
-            for name, s in zip(names, students) if name in users}
-        explicit = {users[name].pk: _clean_spaces(s.get('section', ''))
-            for name, s in zip(names, students) if name in users}
+        validated_students = serializer.validated_data
+
+        names = [_clean_spaces(s.get('id_number')) for s in validated_students]
+        all_users = {u.username: u for u in User.objects.filter(username__in=names)}
+        student_users = {uname: u for uname, u in all_users.items() if u.role == 'student'}
+
+        years = {
+            student_users[name].pk: _normalize_year_level(s.get('year_level', ''))
+            for name, s in zip(names, validated_students)
+            if name in student_users
+        }
+        explicit = {
+            student_users[name].pk: _clean_spaces(s.get('section', ''))
+            for name, s in zip(names, validated_students)
+            if name in student_users
+        }
         decisions = section_decisions(semester, years, explicit)
-        return Response({'sections': [dict(id_number=name, **decisions[users[name].pk])
-            if name in users else {'id_number': name, 'section': _clean_spaces(s.get('section', '')),
-                'source': 'explicit' if s.get('section') else 'unassigned', 'message': ''}
-            for name, s in zip(names, students)]})
+
+        student_pks = [u.pk for u in student_users.values()]
+        active_records = {
+            r.student_id: r
+            for r in StudentAcademicRecord.objects.filter(student_id__in=student_pks, semester=semester)
+        }
+        latest_records = {
+            r.student_id: r
+            for r in latest_records_by_student(student_pks)
+        }
+        year_rank = {yr: idx for idx, yr in enumerate(YEAR_LEVELS, start=1)}
+
+        results = []
+        seen_in_request = {}
+        for idx, (name, s) in enumerate(zip(names, validated_students)):
+            raw_student_dict = students[idx] if idx < len(students) else {}
+            client_error = _clean_spaces(str(raw_student_dict.get('_client_validation_error') or ''))
+            norm_year = _normalize_year_level(s.get('year_level', ''))
+            supplied_sec = _clean_spaces(s.get('section', ''))
+
+            # Base decision dictionary
+            if name in student_users:
+                base = dict(id_number=name, **decisions[student_users[name].pk])
+            else:
+                sec_issue = enrollment_section_issue(supplied_sec, norm_year, semester) if norm_year in year_rank else ''
+                base = {
+                    'id_number': name,
+                    'section': supplied_sec,
+                    'source': 'review' if sec_issue else ('explicit' if supplied_sec else 'unassigned'),
+                    'message': sec_issue,
+                }
+
+            blocking = False
+            status_code = 'ready'
+            status_label = 'Ready to Enroll'
+
+            # 1. Cross-file / within-batch conflict
+            prev_pair = seen_in_request.get(name)
+            if prev_pair is not None and prev_pair != (norm_year, supplied_sec):
+                blocking = True
+                status_code = 'duplicate_conflict'
+                status_label = 'Blocked (Conflicting Duplicate)'
+                base['source'] = 'review'
+                base['message'] = f"Conflicting rows for student '{name}' across staged files."
+            seen_in_request[name] = (norm_year, supplied_sec)
+
+            if client_error and not blocking:
+                blocking = True
+                status_code = 'client_conflict'
+                status_label = 'Blocked (File Conflict)'
+                base['source'] = 'review'
+                base['message'] = client_error
+
+            # 2. Missing or invalid year level
+            if not blocking and norm_year not in year_rank:
+                blocking = True
+                status_code = 'invalid_year'
+                status_label = 'Blocked (Invalid Year Level)'
+                base['source'] = 'review'
+                base['message'] = 'A valid year level (1st Year to 4th Year) is required.'
+
+            # 3. ID belongs to faculty / admin
+            existing_any = all_users.get(name)
+            if not blocking and existing_any is not None and existing_any.role != 'student':
+                blocking = True
+                status_code = 'role_conflict'
+                status_label = f"Blocked ({existing_any.role.title()} ID)"
+                base['source'] = 'review'
+                base['message'] = f"ID '{name}' is already assigned to a {existing_any.role} account."
+
+            # 4. Existing student progression & active-term checks
+            student_user = student_users.get(name)
+            if not blocking and student_user is not None:
+                active_rec = active_records.get(student_user.pk)
+                latest_rec = latest_records.get(student_user.pk)
+
+                if active_rec is not None:
+                    if active_rec.year_level != norm_year:
+                        blocking = True
+                        status_code = 'year_conflict'
+                        status_label = f'Blocked (Enrolled as {active_rec.year_level})'
+                        base['source'] = 'review'
+                        base['message'] = (
+                            f'Student is already enrolled in {semester.display_name} as {active_rec.year_level}, '
+                            f'but file specifies {norm_year}.'
+                        )
+                    elif supplied_sec and supplied_sec != active_rec.section:
+                        status_code = 'update_section'
+                        status_label = 'Already Enrolled (Updates Section)'
+                    else:
+                        status_code = 'already_enrolled'
+                        status_label = 'Already Enrolled'
+                elif latest_rec is not None:
+                    if semester_key(semester) < semester_key(latest_rec.semester):
+                        blocking = True
+                        status_code = 'term_regression'
+                        status_label = 'Blocked (Newer Term Exists)'
+                        base['source'] = 'review'
+                        base['message'] = (
+                            f'Student already has a record in a later term ({latest_rec.semester.display_name}).'
+                        )
+                    elif year_rank.get(norm_year, 0) < year_rank.get(latest_rec.year_level, 0):
+                        blocking = True
+                        status_code = 'year_regression'
+                        status_label = f'Blocked (Was {latest_rec.year_level})'
+                        base['source'] = 'review'
+                        base['message'] = (
+                            f'Year level cannot regress from {latest_rec.year_level} '
+                            f'({latest_rec.semester.display_name}) to {norm_year}.'
+                        )
+                    else:
+                        expected_year, _ = next_academic_step(
+                            latest_rec.year_level, latest_rec.semester.label
+                        )
+                        if (
+                            latest_rec.semester.label == Semester.SECOND
+                            and semester.label == Semester.FIRST
+                            and norm_year == latest_rec.year_level
+                            and expected_year != norm_year
+                        ):
+                            blocking = True
+                            status_code = 'progression_mismatch'
+                            status_label = f'Blocked (Expected {expected_year})'
+                            base['source'] = 'review'
+                            base['message'] = (
+                                f'Student completed {latest_rec.year_level} in {latest_rec.semester.display_name}. '
+                                f'Expected {expected_year} for 1st Semester (or use Semester Rollover to retain).'
+                            )
+                        else:
+                            status_code = 'existing_student'
+                            status_label = 'Existing Student — Ready'
+
+            # 5. Section / Capstone continuation review flag from section_decisions
+            if not blocking and base.get('source') == 'review':
+                blocking = True
+                status_code = 'section_review'
+                status_label = 'Needs Review'
+
+            base['blocking'] = blocking
+            base['status_code'] = status_code
+            base['status_label'] = status_label
+            results.append(base)
+
+        return Response({'sections': results})
 
 
 class RolloverPreviewView(APIView):
@@ -214,6 +367,19 @@ class RolloverPreviewView(APIView):
         students_data = request.data.get('students', [])
         if not isinstance(students_data, list):
             return Response({'detail': 'students must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        for s in students_data:
+            if not isinstance(s, dict):
+                return Response({'detail': 'Each student must be an object.'}, status=status.HTTP_400_BAD_REQUEST)
+            file_meta = s.get('_fileMetadata') if isinstance(s.get('_fileMetadata'), dict) else {}
+            file_sy = _clean_spaces(file_meta.get('school_year'))
+            file_sem = _clean_spaces(file_meta.get('semester'))
+            if (file_sy and file_sy != active.school_year.label) or (file_sem and file_sem != active.label):
+                file_term = f'{file_sem}, A.Y. {file_sy}'.strip(', ')
+                return Response(
+                    {'detail': f'Academic term mismatch: The uploaded class list is for {file_term}, but the active semester is {active.display_name}.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         latest = latest_records_by_student()
         latest_by_username = {r.student.username: r for r in latest}

@@ -12,12 +12,14 @@ class AdviserDefenseTab extends ConsumerWidget {
     this.projectVersion,
     this.semesterId,
     this.adviserName,
+    this.readOnly = false,
   });
 
   final int teamId;
   final String selectedStage;
   final int? projectVersion, semesterId;
   final String? adviserName;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => TeamDefenseRecordsView(
@@ -27,6 +29,6 @@ class AdviserDefenseTab extends ConsumerWidget {
     semesterId: semesterId,
     adviserName: adviserName,
     grades: ref.watch(adviserGradingProvider).grades,
-    allowAdviserReview: true,
+    allowAdviserReview: !readOnly,
   );
 }

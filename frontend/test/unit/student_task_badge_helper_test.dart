@@ -326,6 +326,179 @@ void main() {
       );
     });
 
+    group('event-scoped peer indicators', () {
+      const members = [
+        {'id': 1, 'name': 'Alex'},
+        {'id': 2, 'name': 'Sam'},
+      ];
+      const completeSubmissions = [
+        {'evaluateeId': 1},
+        {'evaluateeId': 2},
+      ];
+
+      Map<String, dynamic> dashboard({
+        bool enabled = false,
+        List<Map<String, dynamic>> submissions = const [],
+        List<Map<String, dynamic>> stages = const [],
+      }) => {
+        'team': {'id': 7, 'currentStage': 'Current event'},
+        'members': members,
+        'peerEvalEnabled': enabled,
+        'myPeerSubmissions': submissions,
+        'stages': stages,
+      };
+
+      test(
+        'red starts with zero submissions and clears only after self and peer',
+        () {
+          for (final submissions in [
+            <Map<String, dynamic>>[],
+            <Map<String, dynamic>>[
+              {'evaluateeId': 2},
+            ],
+            completeSubmissions,
+          ]) {
+            final data = dashboard(
+              stages: [
+                {
+                  'stage_label': 'Current event',
+                  'peer_eval_allowed': true,
+                  'my_peer_submissions': submissions,
+                },
+              ],
+            );
+            expect(
+              StudentTaskBadgeHelper.hasPendingPeerEval(data),
+              submissions.length < members.length,
+            );
+            expect(
+              StudentTaskBadgeHelper.hasPendingEvents(studentData: data),
+              submissions.length < members.length,
+            );
+          }
+        },
+      );
+
+      test('completed history cannot satisfy an empty current event', () {
+        expect(
+          StudentTaskBadgeHelper.hasPendingPeerEval(
+            dashboard(
+              enabled: true,
+              submissions: completeSubmissions,
+              stages: [
+                {
+                  'stage_label': 'Earlier event',
+                  'peer_eval_allowed': false,
+                  'my_peer_submissions': completeSubmissions,
+                },
+                {
+                  'stage_label': 'Current event',
+                  'peer_eval_allowed': true,
+                  'my_peer_submissions': <Map<String, dynamic>>[],
+                },
+              ],
+            ),
+          ),
+          isTrue,
+        );
+      });
+
+      test('closed event overrides stale top-level availability', () {
+        expect(
+          StudentTaskBadgeHelper.hasPendingPeerEval(
+            dashboard(
+              enabled: true,
+              stages: [
+                {
+                  'stage_label': 'Current event',
+                  'peer_eval_allowed': false,
+                  'my_peer_submissions': <Map<String, dynamic>>[],
+                },
+              ],
+            ),
+          ),
+          isFalse,
+        );
+      });
+
+      test('legacy submissions from another stage do not clear the dot', () {
+        expect(
+          StudentTaskBadgeHelper.hasPendingPeerEval(
+            dashboard(
+              enabled: true,
+              submissions: [
+                for (final sub in completeSubmissions)
+                  {...sub, 'stage': 'Earlier event'},
+              ],
+            ),
+          ),
+          isTrue,
+        );
+      });
+
+      test(
+        'event dot follows the selected event while navigation includes all',
+        () {
+          final data = dashboard(
+            stages: [
+              {
+                'stage_label': 'Earlier event',
+                'team_id': 8,
+                'team': {'id': 8, 'members': members},
+                'peer_eval_allowed': true,
+                'my_peer_submissions': <Map<String, dynamic>>[],
+              },
+              {'stage_label': 'Current event', 'peer_eval_allowed': false},
+            ],
+          );
+          expect(StudentTaskBadgeHelper.hasPendingPeerEval(data), isTrue);
+          expect(
+            StudentTaskBadgeHelper.hasPendingPeerEval(
+              data,
+              stageLabel: 'Current event',
+              teamId: '7',
+            ),
+            isFalse,
+          );
+          expect(
+            StudentTaskBadgeHelper.hasPendingPeerEval(
+              data,
+              stageLabel: 'Earlier event',
+              teamId: '8',
+            ),
+            isTrue,
+          );
+        },
+      );
+
+      test('teams in the same event retain independent completion', () {
+        final data = dashboard(
+          stages: [
+            for (final id in [8, 9])
+              {
+                'stage_label': 'Earlier event',
+                'team_id': id,
+                'team': {'id': id, 'members': members},
+                'peer_eval_allowed': true,
+                'my_peer_submissions': id == 8
+                    ? completeSubmissions
+                    : <Map<String, dynamic>>[],
+              },
+          ],
+        );
+        for (final id in [8, 9]) {
+          expect(
+            StudentTaskBadgeHelper.hasPendingPeerEval(
+              data,
+              stageLabel: 'Earlier event',
+              teamId: '$id',
+            ),
+            id == 9,
+          );
+        }
+      });
+    });
+
     test('hasPendingEvents aggregates deliverables and peer eval', () {
       final completeStage = {
         'deliverables': [

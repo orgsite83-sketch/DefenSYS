@@ -454,6 +454,7 @@ class BulkImportUsersMixin:
             return Response({'detail': 'users must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
 
         student_context = request.data.get('student_context') or {}
+        is_student_import = self.force_student_only or bool(request.data.get('student_context'))
         if self.force_pit_lead_context:
             context_semester = _active_semester()
             context_year_level = (getattr(request.user, 'pit_lead_year', None) or '').strip()
@@ -466,11 +467,34 @@ class BulkImportUsersMixin:
             context_semester = self._resolve_context_semester(student_context)
             context_year_level = _normalize_year_level(student_context.get('year_level') or '')
 
-        if (self.force_student_only or bool(request.data.get('student_context'))) and context_semester is None:
+        if is_student_import and context_semester is None:
             return Response(
                 {'detail': 'An active academic semester is required to import and enroll students. Please configure an active semester first.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if is_student_import and context_semester is not None:
+            meta_candidates = [student_context] + [
+                row['_fileMetadata']
+                for row in rows
+                if isinstance(row, dict) and isinstance(row.get('_fileMetadata'), dict)
+            ]
+            for meta in meta_candidates:
+                meta_sy = _clean_spaces(meta.get('school_year'))
+                meta_sem = _clean_spaces(meta.get('semester'))
+                if (meta_sy and meta_sy != context_semester.school_year.label) or (
+                    meta_sem and meta_sem != context_semester.label
+                ):
+                    file_term = f'{meta_sem}, A.Y. {meta_sy}'.strip(', ')
+                    return Response(
+                        {
+                            'detail': (
+                                f'Academic term mismatch: The uploaded file is for {file_term}, '
+                                f'but the target active semester is {context_semester.display_name}.'
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
         context_section = ' '.join((student_context.get('section') or '').strip().split())
         faculty_name = _clean_spaces(
             student_context.get('instructor_name')
@@ -515,6 +539,8 @@ class BulkImportUsersMixin:
 
         validated_rows = []
         usernames_to_check = set()
+        seen_in_batch = {}
+        conflicting_usernames = set()
 
         for index, row in enumerate(rows, start=1):
             serializer = BulkUserRowSerializer(data=row)
@@ -532,8 +558,23 @@ class BulkImportUsersMixin:
                     'errors': {'role': ['PIT Leads can import student users only.']},
                 })
                 continue
+            if is_student_import and role != 'student':
+                errors.append({
+                    'row': index,
+                    'id_number': username,
+                    'errors': {'role': ['Student enrollment import accepts student rows only.']},
+                })
+                continue
 
             year_level = _normalize_year_level(data.get('year_level') or context_year_level or '')
+            if (is_student_import or role == 'student') and context_semester is not None and not year_level:
+                errors.append({
+                    'row': index,
+                    'id_number': username,
+                    'errors': {'year_level': ['Year level is required to enroll a student in the active semester.']},
+                })
+                continue
+
             if self.force_pit_lead_context:
                 row_year = (data.get('year_level') or '').strip()
                 if row_year and row_year != context_year_level:
@@ -545,6 +586,20 @@ class BulkImportUsersMixin:
                     continue
                 year_level = context_year_level
             section = ' '.join((data.get('section') or context_section or '').strip().split())
+
+            if username in seen_in_batch:
+                if seen_in_batch[username] != (year_level, section):
+                    conflicting_usernames.add(username)
+                    errors.append({
+                        'row': index,
+                        'id_number': username,
+                        'errors': {'id_number': [f"Conflicting duplicate rows for '{username}' in batch."]},
+                    })
+                    continue
+                else:
+                    continue
+            seen_in_batch[username] = (year_level, section)
+
             from student_teams.section_years import enrollment_section_issue
             section_issue = enrollment_section_issue(section, year_level, context_semester) if role == 'student' else ''
             if section_issue:
@@ -565,6 +620,12 @@ class BulkImportUsersMixin:
 
             validated_rows.append((index, username, data, role, year_level, section))
             usernames_to_check.add(username)
+
+        if conflicting_usernames:
+            validated_rows = [
+                item for item in validated_rows if item[1] not in conflicting_usernames
+            ]
+            usernames_to_check -= conflicting_usernames
 
         # Batch lookup all existing users in a single query
         existing_users_map = {
@@ -598,6 +659,16 @@ class BulkImportUsersMixin:
             locked_users = User.objects.select_for_update().filter(
                 username__in=usernames_to_check).order_by('pk')
             existing_users_map = {u.username: u for u in locked_users}
+            from user_management.academic_records.rollover import (
+                latest_records_by_student, next_academic_step, semester_key, YEAR_LEVELS,
+            )
+            year_rank = {yr: i for i, yr in enumerate(YEAR_LEVELS, start=1)}
+            student_user_ids = [u.pk for u in existing_users_map.values() if u.role == 'student']
+            latest_by_student = {r.student_id: r for r in latest_records_by_student(student_user_ids)} if context_semester else {}
+            active_by_student = (
+                {r.student_id: r for r in StudentAcademicRecord.objects.filter(student_id__in=student_user_ids, semester=context_semester)}
+                if context_semester else {}
+            )
             from student_teams.continuation_sections import section_decisions, reconcile_sections
             section_defaults = section_decisions(context_semester,
                 {existing_users_map[username].pk: year for _, username, _, role, year, _ in validated_rows
@@ -625,7 +696,53 @@ class BulkImportUsersMixin:
                         continue
 
                 if existing_user:
+                    if (is_student_import or role == 'student') and existing_user.role != 'student':
+                        errors.append({
+                            'row': index,
+                            'id_number': username,
+                            'errors': {'id_number': [f"ID '{username}' belongs to an existing {existing_user.role} account."]},
+                        })
+                        continue
+
                     if existing_user.role == 'student' and context_semester is not None and year_level:
+                        active_rec = active_by_student.get(existing_user.pk)
+                        latest_rec = latest_by_student.get(existing_user.pk)
+                        if active_rec is not None and active_rec.year_level != year_level:
+                            errors.append({
+                                'row': index,
+                                'id_number': username,
+                                'errors': {'year_level': [f'Already enrolled in {context_semester.display_name} as {active_rec.year_level}.']},
+                            })
+                            continue
+                        if active_rec is None and latest_rec is not None:
+                            if semester_key(context_semester) < semester_key(latest_rec.semester):
+                                errors.append({
+                                    'row': index,
+                                    'id_number': username,
+                                    'errors': {'semester': [f'Student already has a record in a later term ({latest_rec.semester.display_name}).']},
+                                })
+                                continue
+                            if year_rank.get(year_level, 0) < year_rank.get(latest_rec.year_level, 0):
+                                errors.append({
+                                    'row': index,
+                                    'id_number': username,
+                                    'errors': {'year_level': [f'Year level cannot regress from {latest_rec.year_level} to {year_level}.']},
+                                })
+                                continue
+                            expected_year, _ = next_academic_step(latest_rec.year_level, latest_rec.semester.label)
+                            if (
+                                latest_rec.semester.label == Semester.SECOND
+                                and context_semester.label == Semester.FIRST
+                                and year_level == latest_rec.year_level
+                                and expected_year != year_level
+                            ):
+                                errors.append({
+                                    'row': index,
+                                    'id_number': username,
+                                    'errors': {'year_level': [f'Expected {expected_year} after {latest_rec.year_level} {latest_rec.semester.display_name} (use Semester Rollover to retain).']},
+                                })
+                                continue
+
                         decision = section_defaults.get(existing_user.pk)
                         if decision:
                             section = decision['section']
@@ -850,6 +967,20 @@ class PitLeadOfficialClassListImportView(APIView):
         metadata = request.data.get('metadata') or {}
         if not isinstance(metadata, dict):
             return Response({'metadata': ['metadata must be an object.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        meta_sy = _clean_spaces(metadata.get('school_year') or request.data.get('school_year'))
+        meta_sem = _clean_spaces(metadata.get('semester') or request.data.get('semester'))
+        if (meta_sy and meta_sy != active.school_year.label) or (meta_sem and meta_sem != active.label):
+            file_term = f'{meta_sem}, A.Y. {meta_sy}'.strip(', ')
+            return Response(
+                {
+                    'detail': (
+                        f'Academic term mismatch: The uploaded class list is for {file_term}, '
+                        f'but the active semester is {active.display_name}.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         section = _clean_spaces(
             metadata.get('section')

@@ -206,7 +206,13 @@ def _member_ids(team, semester):
 
 def _sources(request, context, assessments):
     semester, scope, workspace = context['semester'], context['scope'], context['workspace']
-    grades = list(workspace_grades_for(request.user, workspace, include_previous_projects=True)
+    from student_teams.capstone_workspace import enabled, projection
+    phase_view = projection(request) if enabled(request) else None
+    grade_base = workspace_grades_for(request.user, workspace, include_previous_projects=True)
+    if phase_view:
+        from .views import workspace_grade_records
+        grade_base = workspace_grade_records(request).filter(team_id__in=phase_view['contexts'], semester=phase_view['semester'])
+    grades = list(grade_base
                   .prefetch_related(None).select_related(None)
                   .filter(semester=semester, scope=scope)
                   .select_related('team', 'semester', 'schedule', 'schedule__rubric', 'pit_event_config__panel_rubric')
@@ -232,6 +238,8 @@ def _sources(request, context, assessments):
         | Q(pk__in={s['team_id'] for s in schedules}))
     teams = teams.filter(Q(semester=semester) | Q(term_participations__semester=semester))
     teams = teams.filter(level__icontains='PIT' if scope == 'pit' else 'Capstone')
+    if phase_view:
+        teams = teams.filter(pk__in=phase_view['contexts'])
     teams = list(teams.select_related('adviser', 'leader').prefetch_related(
         'memberships__student', 'term_participations', 'roster_details').distinct().order_by('name', 'pk'))
     team_map = {t.pk: t for t in teams}
@@ -272,6 +280,9 @@ def _sources(request, context, assessments):
         records = records.filter(year_level=context['year_level'])
     elif scope == 'pit' and context['coverage'] == 'assessment' and assessments:
         records = records.filter(year_level=assessments[0]['year_level'])
+    if phase_view:
+        allowed_students = set().union(*[_member_ids(team, semester) for team in teams]) if teams else set()
+        records = records.filter(student_id__in=allowed_students)
     if not is_admin_user(request.user) and not is_pit_lead_only(request.user):
         allowed_ids = set().union(*[_member_ids(t, semester) for t in teams]) if teams else set()
         allowed = Q(student_id__in=allowed_ids)
@@ -326,7 +337,7 @@ def _cell(grade, assessment, team, student_grade=None, *, individual=False):
             'team': {**team, 'project_title': grade.project_title_snapshot or team['project_title']},
             'components': components, 'final_grade': final, 'status': status, 'status_label': labels.get(status, 'Pending'),
             'publication_status': grade.status, 'outcome': 'Failed (stage closure)' if grade.closed_as_failed else grade.get_verdict_display() if grade.verdict else '',
-            'missing_components': missing, 'evaluators': [], 'is_locked': grade.status == 'published',
+            'missing_components': missing, 'evaluators': [], 'is_locked': grade.status == 'published' or not grade.semester.is_active,
             'project_version': grade.project_version, 'attempt': grade.attempt_count}
 
 

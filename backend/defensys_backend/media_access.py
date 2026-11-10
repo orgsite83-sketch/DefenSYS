@@ -13,6 +13,13 @@ def _can_read_submission(user, submission):
 
     guest = getattr(user, 'is_guest_panelist', False)
     if not guest:
+        if submission.archive_semester_id:
+            from student_teams.capstone_history import recorded_authority
+            row = submission.team.term_participations.filter(
+                semester_id=submission.archive_semester_id,
+                project_version=submission.project_version, closed_at__isnull=False).first()
+            if recorded_authority(user, row):
+                return True
         # Team assignments grant access independently of the PIT cohort role.
         # Cohort access follows the same captured year as the archive listing.
         if team_queryset_for_user(user, include_pit_lead=False).filter(pk=submission.team_id).exists():

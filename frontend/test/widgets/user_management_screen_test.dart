@@ -562,13 +562,13 @@ Student Number,Full Name,Email,Year Level
       await tester.pumpAndSettle();
 
       // Verify Hub Elements
-      expect(find.text('Batch Student Enrollment Hub'), findsOneWidget);
-      expect(find.text('Fresh Student Intake (Import)'), findsOneWidget);
-      expect(find.text('Semester Rollover & Promotion'), findsOneWidget);
+      expect(find.text('Student enrollment'), findsOneWidget);
+      expect(find.text('Import class lists'), findsOneWidget);
+      expect(find.text('Semester rollover'), findsOneWidget);
       expect(find.text('Back to Students'), findsOneWidget);
 
       // Switch to Semester Rollover & Promotion mode
-      await tester.tap(find.text('Semester Rollover & Promotion'));
+      await tester.tap(find.text('Semester rollover'));
       await tester.pumpAndSettle();
 
       // Click Back to Students
@@ -621,14 +621,14 @@ Student Number,Full Name,Email,Year Level
         findsNothing,
       );
 
-      // Verify Target Term in template card
+      // Verify the import term uses the active academic period.
       expect(
-        find.textContaining('Target Term: 1st Semester, A.Y. 2026-2027'),
+        find.textContaining('Enrollment term: 1st Semester, A.Y. 2026-2027'),
         findsOneWidget,
       );
 
       // Switch to Rollover mode
-      await tester.tap(find.text('Semester Rollover & Promotion'));
+      await tester.tap(find.text('Semester rollover'));
       await tester.pumpAndSettle();
 
       // Verify Target Term in rollover rules card

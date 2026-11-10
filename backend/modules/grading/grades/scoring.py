@@ -35,13 +35,24 @@ def rubric_score_rows(rubric, submitted, *, target_type=None, name_key='criterio
     if not isinstance(submitted, list) or not submitted:
         raise ValidationError({'criteria_scores': 'Score every criterion in the assigned rubric.'})
     by_id = {criterion.pk: criterion for criterion in criteria}
-    by_name = {criterion.name: criterion for criterion in criteria}
+    by_section_and_name = {
+        ((criterion.section or '').strip().lower(), criterion.name.strip().lower()): criterion
+        for criterion in criteria
+    }
+    name_counts = {}
+    by_unique_name = {}
+    for criterion in criteria:
+        lowered_name = criterion.name.strip().lower()
+        name_counts[lowered_name] = name_counts.get(lowered_name, 0) + 1
+        by_unique_name[lowered_name] = criterion
+
     scores = {}
     for item in submitted:
         if not isinstance(item, dict):
             raise ValidationError({'criteria_scores': 'Each criterion score must be an object.'})
         criterion_id = item.get('criterion_id')
         name = item.get(name_key)
+        section = item.get('section')
         if criterion_id is not None:
             try:
                 criterion = by_id[int(criterion_id)]
@@ -52,7 +63,18 @@ def rubric_score_rows(rubric, submitted, *, target_type=None, name_key='criterio
         else:
             if not isinstance(name, str):
                 raise ValidationError({'criteria_scores': 'A criterion ID or name is required.'})
-            criterion = by_name.get(name)
+            raw_name = name.strip().lower()
+            raw_section = str(section or '').strip().lower()
+            if raw_section and (raw_section, raw_name) in by_section_and_name:
+                criterion = by_section_and_name[(raw_section, raw_name)]
+            elif name_counts.get(raw_name, 0) == 1:
+                criterion = by_unique_name.get(raw_name)
+            elif name_counts.get(raw_name, 0) > 1:
+                raise ValidationError({
+                    'criteria_scores': f'Criterion name "{name}" appears in multiple sections; include criterion_id or section.'
+                })
+            else:
+                criterion = None
             if criterion is None:
                 raise ValidationError({'criteria_scores': 'Use only criteria from the assigned rubric.'})
         if criterion.pk in scores:

@@ -53,58 +53,127 @@ class EvaluationReviewScreen extends StatelessWidget {
     String label,
     List<Criterion> criteria,
     String? studentId,
-  ) => Padding(
-    padding: const EdgeInsets.only(top: 16),
-    child: ShadCard(
-      padding: const EdgeInsets.all(16),
-      width: double.infinity,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          for (final criterion in criteria)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: Text(criterion.name)),
-                  const SizedBox(width: 12),
-                  Text(
-                    '${criterion.isScored ? formatEvaluationScore(criterion.score!) : '—'} / ${formatEvaluationScore(criterion.maxScore)}',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-            ),
-          if (criteria.every((criterion) => criterion.isScored)) ...[
-            const Divider(height: 20),
+  ) {
+    final hasSections = criteria.any((c) => c.section.trim().isNotEmpty);
+    final grouped = <String, List<Criterion>>{};
+    for (final c in criteria) {
+      final s = c.section.trim();
+      grouped.putIfAbsent(s, () => []).add(c);
+    }
+    final isAllScored =
+        criteria.isNotEmpty && criteria.every((criterion) => criterion.isScored);
+    final totalScore = criteria.fold(0.0, (sum, c) => sum + (c.score ?? 0.0));
+    final totalMax = criteria.fold(0.0, (sum, c) => sum + c.maxScore);
+    final totalWeight = criteria.fold(0.0, (sum, c) => sum + (c.weight ?? 0.0));
+    final effectiveTotalWeight = totalWeight > 0 ? totalWeight : 100.0;
+    final weightedEarned = criteria.fold(
+      0.0,
+      (sum, c) =>
+          sum +
+          (c.maxScore > 0
+              ? ((c.score ?? 0.0) / c.maxScore) * (c.weight ?? 0.0)
+              : 0.0),
+    );
+    final weightedPct = (weightedEarned / effectiveTotalWeight) * 100.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: ShadCard(
+        padding: const EdgeInsets.all(16),
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             Text(
-              'Total: ${formatEvaluationScore(criteria.fold(0.0, (sum, criterion) => sum + criterion.score!))} / ${formatEvaluationScore(criteria.fold(0.0, (sum, criterion) => sum + criterion.maxScore))}',
+              label,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
-          ],
-          if (!team.isPosted) ...[
-            const SizedBox(height: 10),
-            ShadButton.outline(
-              height: 0,
-              expands: true,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              key: ValueKey('review-edit-${studentId ?? 'team'}'),
-              onPressed: () => Navigator.pop(
-                context,
-                EvaluationReviewAction.edit(studentId),
+            const SizedBox(height: 8),
+            if (!hasSections)
+              for (final criterion in criteria)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: Text(criterion.name)),
+                      const SizedBox(width: 12),
+                      Text(
+                        '${criterion.isScored ? formatEvaluationScore(criterion.score!) : '—'} / ${formatEvaluationScore(criterion.maxScore)}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                )
+            else
+              for (final entry in grouped.entries) ...[
+                if (entry.key.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          entry.key,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.maroonOf(context),
+                          ),
+                        ),
+                        Text(
+                          '${entry.value.fold<double>(0, (s, c) => s + (c.weight ?? 0)).toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.textSecondaryOf(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                for (final criterion in entry.value)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: Text(criterion.name)),
+                        const SizedBox(width: 12),
+                        Text(
+                          '${criterion.isScored ? formatEvaluationScore(criterion.score!) : '—'} / ${formatEvaluationScore(criterion.maxScore)}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            if (isAllScored) ...[
+              const Divider(height: 20),
+              Text(
+                'Total: ${formatEvaluationScore(totalScore)} / ${formatEvaluationScore(totalMax)} (${weightedPct.toStringAsFixed(1)}%)',
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              child: Text('Edit $label'),
-            ),
+            ],
+            if (!team.isPosted) ...[
+              const SizedBox(height: 10),
+              ShadButton.outline(
+                height: 0,
+                expands: true,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                key: ValueKey('review-edit-${studentId ?? 'team'}'),
+                onPressed: () => Navigator.pop(
+                  context,
+                  EvaluationReviewAction.edit(studentId),
+                ),
+                child: Text('Edit $label'),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(

@@ -44,6 +44,25 @@ void main() {
       expect(res.description, 'Please select a valid student candidate.');
     });
 
+    test('does not truncate filename with extension and strips compound exception prefix', () {
+      final res = humanizeErrorMessage(
+        'Unable to add timetable: FormatException: team16roster - test.xlsx has no timetable slots.',
+      );
+      expect(res.title, 'Operation Failed');
+      expect(res.description, 'team16roster - test.xlsx has no timetable slots.');
+    });
+
+    test('retains helpful roster import error without truncation', () {
+      final res = humanizeErrorMessage(
+        'FormatException: Team16roster - test.xlsx is a Student Team Roster file, not a Defense Schedule timetable. Please import it under Student Teams > Import Teams.',
+      );
+      expect(res.title, 'Operation Failed');
+      expect(
+        res.description,
+        'Team16roster - test.xlsx is a Student Team Roster file, not a Defense Schedule timetable.',
+      );
+    });
+
     test('handles empty message gracefully', () {
       final res = humanizeErrorMessage('');
       expect(res.title, 'Operation Failed');

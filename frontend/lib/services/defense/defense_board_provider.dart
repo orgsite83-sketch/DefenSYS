@@ -202,7 +202,12 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
     final nextSection = section ?? state.section;
 
     state = state.copyWith(
-      isLoading: state.schedules.isEmpty,
+      isLoading: state.schedules.isEmpty || nextScope != state.scope,
+      schedules: nextScope != state.scope ? const [] : null,
+      counts: nextScope != state.scope ? const {} : null,
+      stageOptions: nextScope != state.scope ? const [] : null,
+      advisers: nextScope != state.scope ? const [] : null,
+      sections: nextScope != state.scope ? const [] : null,
       isSaving: false,
       search: nextSearch,
       stage: nextStage,

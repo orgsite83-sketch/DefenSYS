@@ -490,6 +490,81 @@ void main() {
     );
 
     testWidgets(
+      'GradeSheetTab displays section containers and subtotals when rubric has sections',
+      (tester) async {
+        final team = TeamData(
+          teamId: '101',
+          scheduleId: '201',
+          name: 'Team EcoSort',
+          project: 'Smart Waste Sorting',
+          defenseDate: 'Final Defense - 2026-10-20 09:00',
+          scheduledDate: DateTime(2000, 1, 1),
+          stageName: 'Final Defense',
+          eventName: 'Capstone 2026',
+          startTime: '09:00',
+          room: 'Room 301',
+          scope: 'capstone',
+          isCapstone: true,
+          members: const ['Adrian'],
+          memberDetails: const [TeamMember(id: '1', name: 'Adrian')],
+          criteria: const [],
+          isPosted: true,
+          serverGradingAvailable: true,
+          panelRubric: {
+            'target_type': 'team',
+            'criteria': [
+              {
+                'id': 101,
+                'name': 'Mastery of subject matters',
+                'section': 'ORAL EXAMINATION',
+                'max_score': 40,
+                'weight': 4.0,
+                'target_type': 'team',
+              },
+              {
+                'id': 102,
+                'name': 'Delivery and Presentation',
+                'section': 'ORAL EXAMINATION',
+                'max_score': 40,
+                'weight': 4.0,
+                'target_type': 'team',
+              },
+              {
+                'id': 103,
+                'name': 'Delivered Features',
+                'section': 'PROJECT OUTPUT',
+                'max_score': 40,
+                'weight': 40.0,
+                'target_type': 'team',
+              },
+            ],
+          },
+        );
+
+        await pumpDefensysWidget(
+          tester,
+          GradeSheetTab(
+            teams: [team],
+            selectedTeamIndex: 0,
+            onTeamChanged: (_) {},
+          ),
+        );
+
+        // Section header banners
+        expect(find.text('ORAL EXAMINATION'), findsOneWidget);
+        expect(find.text('PROJECT OUTPUT'), findsOneWidget);
+
+        // Section weights
+        expect(find.text('8% weight'), findsOneWidget);
+        expect(find.text('40% weight'), findsOneWidget);
+
+        // Subtotals
+        expect(find.textContaining('0 / 80 pts'), findsOneWidget);
+        expect(find.textContaining('0 / 40 pts'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'AssignmentsTab filters retain completed defenses under Submitted',
       (tester) async {
         int? openedIndex;

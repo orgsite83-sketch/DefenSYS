@@ -152,17 +152,21 @@ class DefenseWorkflowPanel extends ConsumerWidget {
     if (grade['scope'] != 'capstone') return const SizedBox.shrink();
     final user = ref.watch(authProvider).user ?? <String, dynamic>{};
     final workflow = Map<String, dynamic>.from(grade['workflow'] as Map? ?? {});
-    final admin = user['role'] == 'admin' || user['is_superuser'] == true;
+    final readOnly = grade['read_only'] == true;
+    final admin =
+        !readOnly && (user['role'] == 'admin' || user['is_superuser'] == true);
     final id = int.tryParse('${user['id']}');
     if ((workflow['outcome_rule'] as Map?)?['automatic'] == true) {
       return AutomaticAssessmentPanel(
         grade: grade,
-        isChair: id != null && id == workflow['chair_id'],
+        isChair: !readOnly && id != null && id == workflow['chair_id'],
         onUpdated: onUpdated,
       );
     }
-    final chair = admin || id != null && id == workflow['chair_id'];
-    final adviser = admin || id != null && id == workflow['adviser_id'];
+    final chair =
+        !readOnly && (admin || id != null && id == workflow['chair_id']);
+    final adviser =
+        !readOnly && (admin || id != null && id == workflow['adviser_id']);
     final busy = ref.watch(gradeCenterProvider).isSaving;
     final verdict = grade['verdict']?.toString() ?? '';
     final conceptWorkflow = workflow['concept_workflow'] as Map?;

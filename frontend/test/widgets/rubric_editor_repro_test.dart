@@ -131,6 +131,9 @@ void main() {
     WidgetTester tester,
     List<Object> weights, {
     bool readOnly = false,
+    String scale = '10-Point Scale',
+    List<String>? sections,
+    List<int>? points,
   }) async {
     tester.view.physicalSize = const Size(1400, 1100);
     tester.view.devicePixelRatio = 1;
@@ -158,12 +161,16 @@ void main() {
                 'scope': 'capstone',
                 'evaluation_type': 'panel',
                 'semester_id': 1,
+                'scale': scale,
+                if (scale == 'Custom Scale') 'custom_max_score': 25,
                 'criteria': [
                   for (var i = 0; i < weights.length; i++)
                     {
                       'name': 'Criterion $i',
                       'weight': weights[i],
-                      'max_score': 10,
+                      'max_score': points?[i] ?? 10,
+                      'scale': scale,
+                      'section': sections?[i] ?? '',
                       'display_order': i,
                     },
                 ],
@@ -178,6 +185,180 @@ void main() {
     await tester.pumpAndSettle();
     return container;
   }
+
+  for (final scale in [
+    '5-Point Scale',
+    '10-Point Scale',
+    '100-Point Scale',
+    'Custom Scale',
+  ]) {
+    testWidgets('$scale distributes evenly to exactly 100 and saves', (
+      tester,
+    ) async {
+      final container = await pumpWeightEditor(
+        tester,
+        List<Object>.filled(6, 1),
+        scale: scale,
+      );
+      final distribute = find.text('Distribute evenly');
+      await tester.ensureVisible(distribute);
+      await tester.tap(distribute);
+      await tester.pumpAndSettle();
+      expect(find.text('100% of 100%'), findsOneWidget);
+      expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
+      final notifier =
+          container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+      final weights =
+          (notifier.savedPayload!['criteria'] as List)
+              .map((c) => ((c['weight'] as num) * 100).round())
+              .toList()
+            ..sort();
+      expect(weights.reduce((a, b) => a + b), 10000);
+      expect(weights.last - weights.first, lessThanOrEqualTo(1));
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    });
+  }
+
+  testWidgets(
+    'points distribution refreshes an already edited total and saves exact section shares',
+    (tester) async {
+      final container = await pumpWeightEditor(
+        tester,
+        [10, 20, 30],
+        scale: 'Points-Based (Sections)',
+        sections: ['Oral', 'Manuscript', 'Output'],
+      );
+      final sectionWeight = find.descendant(
+        of: find
+            .byWidgetPredicate(
+              (w) =>
+                  w is ShadInput &&
+                  w.trailing is Text &&
+                  (w.trailing as Text).data == '%',
+            )
+            .first,
+        matching: find.byType(EditableText),
+      );
+      await tester.ensureVisible(sectionWeight);
+      await tester.enterText(sectionWeight, '15');
+      await tester.pumpAndSettle();
+      expect(container.read(unsavedChangesProvider), isTrue);
+      expect(find.text('65% of 100%'), findsOneWidget);
+      final distribute = find.text('Distribute section weights evenly');
+      await tester.ensureVisible(distribute);
+      await tester.tap(distribute);
+      await tester.pumpAndSettle();
+      expect(find.text('100% of 100%'), findsOneWidget);
+      expect(find.text('100% Balanced'), findsOneWidget);
+      expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
+      final notifier =
+          container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+      final weights = (notifier.savedPayload!['criteria'] as List)
+          .map((c) => c['weight'])
+          .toList();
+      expect(weights, [33.34, 33.33, 33.33]);
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    },
+  );
+
+  for (final sectioned in [true, false]) {
+    testWidgets(
+      '${sectioned ? 'points-based' : 'calculate from sections'} preserves rounded budgets inside each section',
+      (tester) async {
+        final container = await pumpWeightEditor(
+          tester,
+          List<Object>.filled(7, 1),
+          scale: sectioned ? 'Points-Based (Sections)' : '10-Point Scale',
+          sections: [
+            'Oral',
+            'Oral',
+            'Oral',
+            'Manuscript',
+            'Manuscript',
+            'Manuscript',
+            'Output',
+          ],
+          points: [1, 1, 1, 1, 2, 4, 1],
+        );
+        final action = find.text(
+          sectioned
+              ? 'Distribute section weights evenly'
+              : 'Calculate from sections',
+        );
+        await tester.ensureVisible(action);
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+        if (!sectioned) {
+          await tester.tap(find.text('Apply Weights'));
+          await tester.pumpAndSettle();
+        }
+        expect(find.text('100% of 100%'), findsOneWidget);
+        expect(
+          await container.read(unsavedChangesSaveDraftProvider)!(),
+          isTrue,
+        );
+        final notifier =
+            container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+        final criteria = notifier.savedPayload!['criteria'] as List;
+        final budgets = <String, int>{};
+        for (final criterion in criteria) {
+          final section = criterion['section'] as String;
+          budgets[section] =
+              (budgets[section] ?? 0) +
+              ((criterion['weight'] as num) * 100).round();
+        }
+        expect(budgets, {'Oral': 3334, 'Manuscript': 3333, 'Output': 3333});
+        expect(criteria.map((c) => c['weight']).toList(), [
+          11.12,
+          11.11,
+          11.11,
+          4.76,
+          9.52,
+          19.05,
+          33.33,
+        ]);
+        expect(criteria.map((c) => c['max_score']).toList(), [
+          1,
+          1,
+          1,
+          1,
+          2,
+          4,
+          1,
+        ]);
+        await tester.pumpAndSettle(const Duration(seconds: 5));
+      },
+    );
+  }
+
+  testWidgets(
+    'changing preset scales does not restore obsolete section weights',
+    (tester) async {
+      final container = await pumpWeightEditor(
+        tester,
+        [20, 80],
+        scale: 'Points-Based (Sections)',
+        sections: ['Oral', 'Output'],
+      );
+      for (final action in ['5-point', 'Distribute evenly', '10-point']) {
+        final button = find.text(action).first;
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+      }
+      expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
+      final notifier =
+          container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+      expect(
+        (notifier.savedPayload!['criteria'] as List)
+            .map((c) => c['weight'])
+            .toList(),
+        [50, 50],
+      );
+      expect(notifier.savedPayload!['scale'], '10-Point Scale');
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    },
+  );
 
   testWidgets(
     'incomplete totals block draft, publish and unsaved draft saves',

@@ -33,6 +33,7 @@ class CapstoneDeliverablesState {
   final String batchId;
   final String participation;
   final List<Map<String, dynamic>> batchOptions;
+  final Map<String, dynamic> capstoneWorkspace;
 
   const CapstoneDeliverablesState({
     this.isLoading = false,
@@ -55,6 +56,7 @@ class CapstoneDeliverablesState {
     this.batchId = '',
     this.participation = 'ongoing',
     this.batchOptions = const [],
+    this.capstoneWorkspace = const {},
   });
 
   CapstoneDeliverablesState copyWith({
@@ -81,6 +83,7 @@ class CapstoneDeliverablesState {
     String? batchId,
     String? participation,
     List<Map<String, dynamic>>? batchOptions,
+    Map<String, dynamic>? capstoneWorkspace,
   }) {
     return CapstoneDeliverablesState(
       isLoading: isLoading ?? this.isLoading,
@@ -105,6 +108,7 @@ class CapstoneDeliverablesState {
       batchId: batchId ?? this.batchId,
       participation: participation ?? this.participation,
       batchOptions: batchOptions ?? this.batchOptions,
+      capstoneWorkspace: capstoneWorkspace ?? this.capstoneWorkspace,
     );
   }
 
@@ -313,37 +317,80 @@ class StudentTaskBadgeHelper {
     return null;
   }
 
-  /// Checks for required self-evaluations and teammate evaluations.
-  static bool hasPendingPeerEval(Map<String, dynamic>? studentData) {
+  /// Checks each available event against its own roster and submissions.
+  /// Without a stage filter, navigation badges include every open event.
+  static bool hasPendingPeerEval(
+    Map<String, dynamic>? studentData, {
+    String? stageLabel,
+    String? teamId,
+  }) {
     if (studentData == null) return false;
-    final peerEvalAllowed =
-        studentData['peerEvalEnabled'] == true ||
-        studentData['peer_eval_enabled'] == true;
-    if (!peerEvalAllowed) return false;
+    String label(dynamic value) => value?.toString().trim().toLowerCase() ?? '';
+    final homeTeam = studentData['team'] as Map?;
+    final homeTeamId = homeTeam?['id']?.toString();
+    final homeStage = label(
+      studentData['current_stage'] ??
+          homeTeam?['currentStage'] ??
+          studentData['peerEvalContext']?['stage_label'],
+    );
+    final requestedStage = stageLabel == null ? null : label(stageLabel);
+    final homeMembers =
+        studentData['members'] as List? ?? homeTeam?['members'] as List? ?? [];
+    final homeSubmissions = studentData['myPeerSubmissions'] as List? ?? [];
+    var homeStageHasAvailability = false;
 
-    final members = (studentData['members'] as List? ?? [])
-        .cast<Map<String, dynamic>>()
-        .toList();
-    if (members.isEmpty) return false;
+    for (final stage
+        in (studentData['stages'] as List? ?? []).whereType<Map>()) {
+      final stageName = label(stage['stage_label']);
+      final stageTeam = stage['team'] as Map?;
+      final stageTeamId =
+          (stage['team_id'] ?? stageTeam?['id'])?.toString() ?? homeTeamId;
+      if (requestedStage != null && stageName != requestedStage) continue;
+      if (teamId != null && stageTeamId != teamId) continue;
+      if (!stage.containsKey('peer_eval_allowed')) continue;
 
-    var mySubmissions = (studentData['myPeerSubmissions'] as List? ?? [])
-        .cast<Map<String, dynamic>>();
-    if (mySubmissions.isEmpty) {
-      final stages =
-          (studentData['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-      for (final s in stages) {
-        final stageSubs =
-            (s['my_peer_submissions'] as List?)?.cast<Map<String, dynamic>>() ??
-            [];
-        if (stageSubs.isNotEmpty) {
-          mySubmissions = stageSubs;
-          break;
-        }
+      final isHomeTeam = stageTeamId == homeTeamId;
+      final isHomeStage = isHomeTeam && stageName == homeStage;
+      if (isHomeStage) homeStageHasAvailability = true;
+      if (stage['peer_eval_allowed'] != true) continue;
+
+      final members =
+          stageTeam?['members'] as List? ?? (isHomeTeam ? homeMembers : []);
+      // An empty event list means nothing has been submitted for this event.
+      final submissions =
+          stage['my_peer_submissions'] as List? ??
+          (isHomeStage ? homeSubmissions : []);
+      if (_hasPendingPeerTargets(members, submissions, stageName)) {
+        return true;
       }
     }
 
+    if (homeStageHasAvailability ||
+        (requestedStage != null && requestedStage != homeStage) ||
+        (teamId != null && teamId != homeTeamId)) {
+      return false;
+    }
+    final peerEvalAllowed =
+        studentData['peerEvalEnabled'] == true ||
+        studentData['peer_eval_enabled'] == true;
+    return peerEvalAllowed &&
+        _hasPendingPeerTargets(homeMembers, homeSubmissions, homeStage);
+  }
+
+  static bool _hasPendingPeerTargets(
+    List members,
+    List submissions,
+    String stageLabel,
+  ) {
     final evaluatedKeys = <String>{};
-    for (final sub in mySubmissions) {
+    for (final sub in submissions.whereType<Map>()) {
+      final submissionStage = sub['stage']?.toString().trim().toLowerCase();
+      if (stageLabel.isNotEmpty &&
+          submissionStage != null &&
+          submissionStage.isNotEmpty &&
+          submissionStage != stageLabel) {
+        continue;
+      }
       final id =
           sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
       if (id != null && id.isNotEmpty) {
@@ -360,7 +407,7 @@ class StudentTaskBadgeHelper {
       }
     }
 
-    return members.any((m) {
+    return members.whereType<Map>().any((m) {
       final mId = m['id']?.toString() ?? '';
       final mName = (m['name']?.toString() ?? '').trim().toLowerCase();
       final isEvaluated = mId.isNotEmpty
@@ -418,12 +465,68 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     return fetchDeliverables(selectedStage: '');
   }
 
+  Future<void> selectCapstoneWorkspace(
+    String view,
+    String batch,
+    String semester,
+  ) {
+    _requestVersion++;
+    state = state.copyWith(
+      teams: [],
+      stageOptions: [],
+      selectedStage: '',
+      status: '',
+      capstoneWorkspace: {
+        ...state.capstoneWorkspace,
+        'view': view,
+        'batch_id': batch,
+        'phase_semester_id': semester,
+        'selected_stage_key': '',
+      },
+    );
+    return fetchDeliverables();
+  }
+
+  Future<void> selectSequenceStage(String key) {
+    final options = (state.capstoneWorkspace['stage_options'] as List? ?? [])
+        .whereType<Map>();
+    final option = options.where((o) => '${o['key']}' == key).firstOrNull;
+    if (option == null) return Future.value();
+    _requestVersion++;
+    state = state.copyWith(
+      teams: [],
+      selectedStage: '${option['stage_label']}',
+      capstoneWorkspace: {
+        ...state.capstoneWorkspace,
+        'selected_stage_key': key,
+        'phase_semester_id': '${option['semester_id']}',
+      },
+    );
+    return fetchDeliverables(selectedStage: '${option['stage_label']}');
+  }
+
   Map<String, String> get _batchParameters =>
       state.batchFiltersEnabled && state.scope == 'capstone'
-      ? {
-          if (state.batchId.isNotEmpty) 'batch_id': state.batchId,
-          'participation': state.participation,
-        }
+      ? state.workspace == 'adviser'
+            ? {
+                'stage_sequence': 'all',
+                'capstone_view':
+                    '${state.capstoneWorkspace['view'] ?? 'ongoing'}',
+                if ('${state.capstoneWorkspace['selected_stage_key'] ?? ''}'
+                    .isNotEmpty)
+                  'stage_key':
+                      '${state.capstoneWorkspace['selected_stage_key']}',
+                if ('${state.capstoneWorkspace['batch_id'] ?? ''}'.isNotEmpty)
+                  'batch_id': '${state.capstoneWorkspace['batch_id']}',
+                if ('${state.capstoneWorkspace['phase_semester_id'] ?? ''}'
+                    .isNotEmpty)
+                  'phase_semester_id':
+                      '${state.capstoneWorkspace['phase_semester_id']}',
+              }
+            : {
+                if (state.batchId.isNotEmpty) 'batch_id': state.batchId,
+                'participation': state.participation,
+              }
       : {};
 
   Map<String, String> get _viewParameters => {
@@ -471,6 +574,33 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     final nextSearch = search ?? (contextChanged ? '' : state.search);
     final nextStage =
         selectedStage ?? (contextChanged ? '' : state.selectedStage);
+    if (!contextChanged &&
+        nextWorkspace == 'adviser' &&
+        selectedStage != null &&
+        selectedStage != state.selectedStage) {
+      final matches = (state.capstoneWorkspace['stage_options'] as List? ?? [])
+          .whereType<Map>()
+          .where((o) => o['stage_label'] == selectedStage)
+          .toList();
+      final option =
+          matches
+              .where(
+                (o) =>
+                    '${o['semester_id']}' ==
+                    '${state.capstoneWorkspace['phase_semester_id']}',
+              )
+              .firstOrNull ??
+          matches.lastOrNull;
+      if (option != null) {
+        state = state.copyWith(
+          capstoneWorkspace: {
+            ...state.capstoneWorkspace,
+            'selected_stage_key': option['key'],
+            'phase_semester_id': option['semester_id'],
+          },
+        );
+      }
+    }
     final nextStatus = status ?? (contextChanged ? '' : state.status);
     if (contextChanged) {
       state = CapstoneDeliverablesState(
@@ -944,6 +1074,9 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
       isSaving: _actionInFlight,
       teams: _readMapList(payload['teams']),
       batchOptions: _readMapList(payload['batch_options']),
+      capstoneWorkspace: payload['capstone_workspace'] is Map
+          ? Map<String, dynamic>.from(payload['capstone_workspace'])
+          : const {},
       stageOptions: _readStringList(payload['stage_options']),
       statuses: _readMapList(payload['statuses']),
       counts: payload['counts'] is Map

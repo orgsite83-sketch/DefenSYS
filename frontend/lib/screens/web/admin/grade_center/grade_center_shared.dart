@@ -1849,7 +1849,6 @@ Widget gradeCenterPeerMemberTile(
 
 Widget gradeCenterHeroSummaryCard({required Map<String, dynamic> grade}) {
   final finalGrade = asDouble(grade['final_grade']);
-  final result = gradeResult(grade);
   final status = gradeDisplayStatus(grade);
   final isPit = grade['scope'] == 'pit';
 
@@ -2069,20 +2068,7 @@ Widget gradeCenterHeroSummaryCard({required Map<String, dynamic> grade}) {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _resultOutcomeBadge(result),
-                      if (!isPit &&
-                          grade['verdict'] != null &&
-                          (grade['verdict']?.toString() ?? '').isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        verdictBadgeWidget(grade['verdict']?.toString()),
-                      ],
-                      const SizedBox(width: 8),
-                      statusChipWidget(status),
-                    ],
-                  ),
+                  statusChipWidget(status),
                 ],
               ),
             );
@@ -2159,21 +2145,23 @@ Widget gradeCenterHeroSummaryCard({required Map<String, dynamic> grade}) {
                 badgeBorder: const Color(0xFFA7F3D0),
               ),
             ],
-            const Icon(Icons.add_rounded, size: 16, color: Color(0xFF94A3B8)),
-            _formulaPill(
-              label: 'Peer',
-              weight: '${peerWeight.toStringAsFixed(0)}%',
-              score: peerScore != null
-                  ? '${peerScore.toStringAsFixed(2)}%'
-                  : 'Pending',
-              contrib: peerContrib != null
-                  ? '+${peerContrib.toStringAsFixed(2)}'
-                  : null,
-              icon: Icons.groups_rounded,
-              accentColor: const Color(0xFF7C3AED),
-              badgeBg: const Color(0xFFF5F3FF),
-              badgeBorder: const Color(0xFFDDD6FE),
-            ),
+            if (peerWeight > 0) ...[
+              const Icon(Icons.add_rounded, size: 16, color: Color(0xFF94A3B8)),
+              _formulaPill(
+                label: 'Peer',
+                weight: '${peerWeight.toStringAsFixed(0)}%',
+                score: peerScore != null
+                    ? '${peerScore.toStringAsFixed(2)}%'
+                    : 'Pending',
+                contrib: peerContrib != null
+                    ? '+${peerContrib.toStringAsFixed(2)}'
+                    : null,
+                icon: Icons.groups_rounded,
+                accentColor: const Color(0xFF7C3AED),
+                badgeBg: const Color(0xFFF5F3FF),
+                badgeBorder: const Color(0xFFDDD6FE),
+              ),
+            ],
             const Icon(
               Icons.drag_handle_rounded,
               size: 16,
@@ -2238,60 +2226,6 @@ Widget _metaIconLabel(IconData icon, String text) {
         ),
       ),
     ],
-  );
-}
-
-Widget _resultOutcomeBadge(String result) {
-  final isPassed = result == 'passed';
-  final isFailed = result == 'failed';
-  final color = isPassed
-      ? const Color(0xFF047857)
-      : isFailed
-      ? const Color(0xFFB91C1C)
-      : const Color(0xFFB45309);
-  final bg = isPassed
-      ? const Color(0xFFECFDF5)
-      : isFailed
-      ? const Color(0xFFFEF2F2)
-      : const Color(0xFFFFFBEB);
-  final border = isPassed
-      ? const Color(0xFFA7F3D0)
-      : isFailed
-      ? const Color(0xFFFECACA)
-      : const Color(0xFFFDE68A);
-  final icon = isPassed
-      ? Icons.check_circle_outline_rounded
-      : isFailed
-      ? Icons.highlight_off_rounded
-      : Icons.pending_outlined;
-  final label = isPassed
-      ? 'PASSED'
-      : isFailed
-      ? 'FAILED'
-      : 'PENDING';
-
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: bg,
-      borderRadius: BorderRadius.circular(6),
-      border: Border.all(color: border),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 13, color: color),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.w800,
-            fontSize: 11,
-          ),
-        ),
-      ],
-    ),
   );
 }
 
@@ -4378,8 +4312,6 @@ Widget _verdictDirectivesCard(Map<String, dynamic> grade) {
                 color: accentColor,
               ),
             ),
-            const SizedBox(width: 8),
-            verdictBadgeWidget(verdict),
             const Spacer(),
             if (deadline != null && deadline.isNotEmpty) ...[
               Container(

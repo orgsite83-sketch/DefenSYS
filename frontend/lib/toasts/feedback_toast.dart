@@ -137,16 +137,23 @@ HumanizedToastMessage humanizeErrorMessage(String raw) {
   // 8. Clean technical prefixes (e.g. "Exception: ", "Error: ", "DioException: ")
   String cleaned = trimmed;
   final prefixRegex = RegExp(
-    r'^(?:(?:DioException\s*\[[^\]]+\]:\s*)|(?:[A-Za-z]*Exception:\s*)|(?:Error:\s*)|(?:ClientException:\s*))+',
+    r'^(?:(?:Unable to [^:]+:\s*)|(?:DioException\s*\[[^\]]+\]:\s*)|(?:[A-Za-z]*Exception:\s*)|(?:Error:\s*)|(?:ClientException:\s*))+',
     caseSensitive: false,
   );
   cleaned = cleaned.replaceFirst(prefixRegex, '').trim();
+  final nestedExceptionRegex = RegExp(
+    r'^(?:[A-Za-z]*Exception:\s*)+',
+    caseSensitive: false,
+  );
+  cleaned = cleaned.replaceFirst(nestedExceptionRegex, '').trim();
 
   // If the message is long or contains multiple lines / stack trace
   final isLongOrMultiLine = cleaned.contains('\n') || cleaned.length > 80;
   if (isLongOrMultiLine) {
     final firstLine = cleaned.split('\n').first.trim();
-    final firstSentenceMatch = RegExp(r'^([^.?!]+[.?!])').firstMatch(firstLine);
+    // Match up to the first terminal sentence punctuation followed by whitespace or line end.
+    // Avoid splitting on file extensions (.xlsx, .csv), abbreviations (A.Y., Dr.), or numbers.
+    final firstSentenceMatch = RegExp(r'^(.+?[.?!])(?:\s|$)').firstMatch(firstLine);
     final summary = firstSentenceMatch?.group(1) ??
         (firstLine.length > 70 ? '${firstLine.substring(0, 67)}...' : firstLine);
 

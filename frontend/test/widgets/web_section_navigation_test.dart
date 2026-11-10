@@ -135,6 +135,60 @@ class _Board extends DefenseBoardNotifier {
   }
 }
 
+class _EvaluationBoard extends _Board {
+  _EvaluationBoard(this.faculty);
+  final bool faculty;
+
+  @override
+  Future<void> fetchBoard({
+    String? search,
+    String? stage,
+    String? status,
+    String? scope,
+    String? adviser,
+    String? section,
+    String? successMessage,
+  }) async {
+    loads++;
+    state = state.copyWith(
+      search: search,
+      stage: stage,
+      status: status,
+      scope: scope,
+      adviser: adviser,
+      section: section,
+    );
+  }
+
+  @override
+  DefenseBoardState build() => DefenseBoardState(
+    scope: faculty ? 'pit' : 'capstone',
+    schedules: [
+      {
+        'id': 31,
+        'team_id': 1,
+        'grade_id': 6,
+        'team_name': 'Team AgriSense',
+        'project_title': 'Smart Agriculture',
+        'scope': faculty ? 'pit' : 'capstone',
+        'session_id': 'session-31',
+        'semester_id': 1,
+        'defense_stage_id': 1,
+        'stage_label': 'Concept Proposal',
+        'scheduled_date': '2026-11-01',
+        'start_time': '08:00:00',
+        'slot_duration': 30,
+        'room': 'Room 301',
+        'status': 'done',
+        'display_status': 'pending_post_defense',
+        'grade_status': 'published',
+        'panelists': <Map<String, dynamic>>[],
+        'can_manage': true,
+      },
+    ],
+  );
+}
+
 class _ActionClient implements AuthenticatedHttpClient {
   _ActionClient({this.lead = false});
   final bool lead;
@@ -368,11 +422,13 @@ class _Notifications extends NotificationsNotifier {
 
 class _Stages extends DefenseStagesNotifier {
   @override
-  Future<void> fetchStages({String? scope,
+  Future<void> fetchStages({
+    String? scope,
     String? intake,
     String? phase,
     String? stage,
-    String? successMessage,}) async {}
+    String? successMessage,
+  }) async {}
 }
 
 class _Teams extends StudentTeamsNotifier {
@@ -500,6 +556,7 @@ void main() {
     Map<String, Object> preferences = const {},
     bool dark = false,
     DefenseSchedulerNotifier? scheduler,
+    DefenseBoardNotifier? board,
   }) async {
     await loadPreviewFonts(force: true);
     SharedPreferences.setMockInitialValues(preferences);
@@ -519,7 +576,7 @@ void main() {
         academicPeriodProvider.overrideWith(_Periods.new),
         notificationsProvider.overrideWith2(_Notifications.new),
         defenseStagesProvider.overrideWith(_Stages.new),
-        defenseBoardProvider.overrideWith(_Board.new),
+        defenseBoardProvider.overrideWith(() => board ?? _Board()),
         defenseSchedulerProvider.overrideWith(() => scheduler ?? _Schedules()),
         studentTeamsProvider.overrideWith(_Teams.new),
         teamDetailProvider(1).overrideWith(_Team.new),
@@ -562,7 +619,7 @@ void main() {
         scheduler: scheduler,
       );
       final router = container.read(appRouterProvider);
-      await tester.tap(find.text('Generate Schedule'));
+      await tester.tap(find.text('Generate schedule'));
       await tester.pumpAndSettle();
       for (var visit = 0; visit < 2; visit++) {
         final configure = find.text('Configure event rubrics');
@@ -922,9 +979,7 @@ void main() {
     expect(detail.initialDeliverableStage, 'Concept Proposal');
     expect(find.byKey(const ValueKey('team-detail-tabs-1')), findsOneWidget);
     expect(
-      find.text(
-        'No defense stages configured for this team.',
-      ),
+      find.text('No defense stages configured for this team.'),
       findsOneWidget,
     );
   });
@@ -960,10 +1015,7 @@ void main() {
     final detailState = tester.state(find.byType(TeamDetailPage));
     await tester.tap(find.text('Academic Progress'));
     await tester.pumpAndSettle();
-    expect(
-      find.text('ACADEMIC PROGRESS'),
-      findsOneWidget,
-    );
+    expect(find.text('ACADEMIC PROGRESS'), findsOneWidget);
 
     await tester.tap(find.text('Academic Periods'));
     await tester.pumpAndSettle();
@@ -983,10 +1035,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(router.state.uri.path, '/admin/student-teams/1');
     expect(tester.state(find.byType(TeamDetailPage)), same(detailState));
-    expect(
-      find.text('ACADEMIC PROGRESS'),
-      findsOneWidget,
-    );
+    expect(find.text('ACADEMIC PROGRESS'), findsOneWidget);
     expect(
       teams.loads,
       2,
@@ -1001,6 +1050,116 @@ void main() {
   });
 
   for (final faculty in [false, true]) {
+    testWidgets(
+      '${faculty ? 'faculty' : 'admin'} board evaluation menu preserves section navigation and explicit return',
+      (tester) async {
+        final prefix = faculty ? '/faculty' : '/admin';
+        final container = await pumpWorkspace(
+          tester,
+          '$prefix/defense-board',
+          faculty: faculty,
+          board: _EvaluationBoard(faculty),
+        );
+        final router = container.read(appRouterProvider);
+        final boardState = tester.state(find.byType(DefenseBoardScreen));
+        await tester.enterText(find.byType(EditableText).first, 'AgriSense');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+        final menu = find.byKey(const ValueKey('defense-actions-31'));
+        await tester.ensureVisible(menu);
+        await tester.tap(menu);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Evaluation & grades'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/grade-center/grades/6');
+        await tester.tap(find.text('Individual Rubric Breakdown'));
+        await tester.pumpAndSettle();
+        expect(find.text('Master Student Grade Sheet'), findsNothing);
+        final evaluationState = tester.state(
+          find.byType(GradeCenterTeamDetailScreen),
+        );
+
+        await tester.tap(
+          find.text(faculty ? 'Dashboard' : 'Academic Periods').first,
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(GradeCenterTeamDetailScreen), findsNothing);
+        await tester.tap(find.byIcon(Icons.view_agenda_rounded).first);
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/defense-board');
+        expect(tester.state(find.byType(DefenseBoardScreen)), same(boardState));
+        expect(find.byType(GradeCenterTeamDetailScreen), findsNothing);
+        await tester.tap(find.text('Evaluation & Grades').first);
+        await tester.pumpAndSettle();
+        expect(
+          tester.state(find.byType(GradeCenterTeamDetailScreen)),
+          same(evaluationState),
+        );
+        expect(find.text('Master Student Grade Sheet'), findsNothing);
+        await tester.tap(find.text('Back to Defense Operations'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/defense-board');
+        expect(tester.state(find.byType(DefenseBoardScreen)), same(boardState));
+        expect(
+          find.byKey(const ValueKey('defense-actions-31')),
+          findsOneWidget,
+        );
+        expect(container.read(defenseBoardProvider).search, 'AgriSense');
+        expect(find.text('AgriSense'), findsOneWidget);
+        await tester.ensureVisible(menu);
+        await tester.tap(menu);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Evaluation & grades'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/grade-center/grades/6');
+        await tester.tap(find.text('Master Grade Sheet'));
+        await tester.pumpAndSettle();
+        expect(find.text('Master Student Grade Sheet'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      '${faculty ? 'faculty' : 'admin'} direct board evaluation link restores planner context',
+      (tester) async {
+        final prefix = faculty ? '/faculty' : '/admin';
+        final scope = faculty ? 'pit' : 'capstone';
+        final origin =
+            '$prefix/grade-center/grades/6?locked=1&fromBoard=1&boardScope=$scope&boardDate=2026-11-01&boardSession=session-31';
+        final container = await pumpWorkspace(
+          tester,
+          origin,
+          faculty: faculty,
+          board: _EvaluationBoard(faculty),
+        );
+        final router = container.read(appRouterProvider);
+        expect(find.text('Back to Defense Operations'), findsOneWidget);
+        await tester.tap(find.text('Back to Defense Operations'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/defense-board');
+        expect(router.state.uri.queryParameters, {
+          'scope': scope,
+          'date': '2026-11-01',
+          'session': 'session-31',
+        });
+        expect(find.textContaining('Session scheduled for'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('defense-actions-31')),
+          findsOneWidget,
+        );
+        // Simulate browser Back to the direct evaluation URL, then Forward.
+        await router.routeInformationProvider.didPushRouteInformation(
+          RouteInformation(uri: Uri.parse(origin)),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(GradeCenterTeamDetailScreen), findsOneWidget);
+        await tester.tap(find.text('Back to Defense Operations'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.queryParameters['session'], 'session-31');
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     for (final collapsed in [false, true]) {
       testWidgets(
         '${faculty ? 'faculty' : 'admin'} ${collapsed ? 'collapsed' : 'expanded'} sidebar clears pressed highlights when switching sections',

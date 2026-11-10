@@ -693,7 +693,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       delivState.hasPendingDeliverables;
                   final hasPendingPeer =
                       StudentTaskBadgeHelper.hasPendingPeerEval(
-                        widget.studentData,
+                        {...?widget.studentData, 'stages': stagesList},
+                        stageLabel: selectedStage,
+                        teamId: team?['id']?.toString(),
                       );
 
                   return Container(
@@ -792,6 +794,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                 if (hasPendingPeer) ...[
                                   const SizedBox(width: 4),
                                   Container(
+                                    key: const ValueKey(
+                                      'peer-evaluation-pending-indicator',
+                                    ),
                                     width: 6,
                                     height: 6,
                                     decoration: BoxDecoration(

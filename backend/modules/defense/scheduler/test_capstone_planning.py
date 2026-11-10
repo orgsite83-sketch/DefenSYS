@@ -148,6 +148,52 @@ class CapstoneWorkspaceTests(APITestCase):
         self.assertFalse(scheduled['can_schedule'])
         self.assertFalse(scheduled['include_in_scheduler'])
 
+    def test_redefense_timing_respects_completed_batch_on_the_requested_date(self):
+        from django.utils import timezone
+        from grading.grades.models import TeamGrade
+
+        second = self.make_team(1, self.adviser)
+        self.assertEqual(self.save_people([self.team, second]).status_code, 200)
+        preview = self.client.post(self.url + 'generate-plan/',
+            self.inputs(team_ids=[self.team.pk, second.pk]), format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        confirmed = self.client.post(self.url + 'confirm-plan/', {
+            'planning_mode': 'adviser_auto', 'preview_token': preview.data['preview_token'],
+            'idempotency_key': str(uuid4()),
+        }, format='json')
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        originals = list(DefenseSchedule.objects.order_by('start_time'))
+        self.assertEqual([s.start_time for s in originals], [time(8), time(8, 20)])
+        DefenseSchedule.objects.filter(pk__in=[s.pk for s in originals]).update(status='done')
+        TeamGrade.objects.filter(schedule=originals[0]).update(
+            verdict=TeamGrade.VERDICT_FOR_REDEFENSE, verdict_at=timezone.now())
+        mark_stage_ready(self.team, self.stage, user=self.adviser)
+
+        same_day_preview = None
+        for start_date, expected_start in [('2026-11-16', '08:40:00'), ('2026-11-17', '08:00:00')]:
+            with self.subTest(start_date=start_date):
+                retry = self.client.post(self.url + 'generate-plan/',
+                    self.inputs(start_date=start_date), format='json')
+                self.assertEqual(retry.status_code, 200, retry.data)
+                self.assertEqual(retry.data['slots'][0]['scheduled_date'], start_date)
+                self.assertEqual(retry.data['slots'][0]['start_time'], expected_start)
+                if start_date == '2026-11-16':
+                    same_day_preview = retry.data
+        self.assertEqual(DefenseSchedule.objects.count(), 2)
+        confirmed_retry = self.client.post(self.url + 'confirm-plan/', {
+            'planning_mode': 'adviser_auto', 'preview_token': same_day_preview['preview_token'],
+            'idempotency_key': str(uuid4()),
+        }, format='json')
+        self.assertEqual(confirmed_retry.status_code, 201, confirmed_retry.data)
+        retry_schedule = DefenseSchedule.objects.get(pk=confirmed_retry.data['schedule_ids'][0])
+        self.assertEqual(retry_schedule.team_id, self.team.pk)
+        self.assertEqual(retry_schedule.start_time, time(8, 40))
+        self.assertEqual(retry_schedule.slot_duration, 20)
+        self.assertEqual(DefenseSchedule.objects.count(), 3)
+        self.assertEqual(list(DefenseSchedule.objects.filter(pk__in=[s.pk for s in originals])
+            .order_by('start_time').values_list('start_time', 'slot_duration', 'status')),
+            [(time(8), 20, 'done'), (time(8, 20), 20, 'done')])
+
     def test_confirmation_is_atomic_and_idempotent_and_preserves_actual_people(self):
         self.save_people()
         preview = self.client.post(self.url + 'generate-plan/', self.inputs(), format='json')
@@ -361,6 +407,49 @@ class CapstoneWorkspaceTests(APITestCase):
         self.assertEqual(candidate['roster'], self.roster)
         self.assertIsNone(context.data['teams'][0]['assignment'])
         self.assertFalse(CapstonePeopleAssignment.objects.exists())
+        # Assigning people at second stage for a team with no continuing assignment succeeds and links schedules.
+        second_stage = DefenseStage.objects.create(
+            setup_semester=self.term,
+            label='Second review',
+            display_order=8,
+            qualifying_score=75,
+            minutes_required=True,
+            is_active=True,
+        )
+        save_res = self.client.post(self.url + 'capstone-workspace/', {
+            'semester_id': self.term.pk,
+            'defense_stage_id': second_stage.pk,
+            'team_ids': [self.team.pk],
+            'expected_revisions': {str(self.team.pk): 0},
+            'roster': candidate['roster'],
+        }, format='json')
+        self.assertEqual(save_res.status_code, 200, save_res.data)
+        self.assertTrue(CapstonePeopleAssignment.objects.filter(team=self.team).exists())
+        schedule = DefenseSchedule.objects.get()
+        self.assertIsNotNone(schedule.continuing_assignment)
+
+    def test_imported_capstone_schedule_creates_and_links_continuing_assignment(self):
+        from .serializers import DefenseScheduleWriteSerializer
+        other_team = self.make_team(99, self.adviser)
+        serializer = DefenseScheduleWriteSerializer(data={
+            'scope': 'capstone',
+            'semester_id': self.term.pk,
+            'defense_stage_id': self.stage.pk,
+            'team_id': other_team.pk,
+            'scheduled_date': '2026-11-16',
+            'start_time': '09:00:00',
+            'slot_duration': 60,
+            'room': '301',
+            'chair_panelist_id': self.chair.pk if hasattr(self, 'chair') else self.people[0].pk,
+            'panelist_ids': [p.pk for p in self.people[:2]],
+            'documenter_id': self.documenter.pk,
+        }, context={'request': type('Actor', (), {'user': self.admin})()})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        schedule = serializer.save()
+        self.assertIsNotNone(schedule.continuing_assignment)
+        assignment = CapstonePeopleAssignment.objects.get(team=other_team)
+        self.assertEqual(schedule.continuing_assignment, assignment)
+        self.assertEqual(assignment.documenter, self.documenter)
 
 
 class ConcurrentCapstonePlanningTests(APITransactionTestCase):

@@ -98,8 +98,8 @@ void main() {
         submitted = rows;
         return true;
       });
-      expect(find.text('Section: BSIT-4A (inferred)'), findsOneWidget);
-      final button = find.text('Confirm Student Intake (1 students)');
+      expect(find.text('BSIT-4A (inferred)'), findsOneWidget);
+      final button = find.text('Confirm enrollment (1)');
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();
@@ -112,18 +112,19 @@ void main() {
   testWidgets(
     'changed continuation defaults require reviewing the refreshed preview',
     (tester) async {
-      final users = _Users()..defaultSection = 'BSIT-4B';
+      final users = _Users();
       var imports = 0;
       await open(tester, users, (rows, _) async {
         imports++;
         return true;
       });
-      final button = find.text('Confirm Student Intake (1 students)');
+      users.defaultSection = 'BSIT-4B';
+      final button = find.text('Confirm enrollment (1)');
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();
       expect(imports, 0);
-      expect(find.text('Section: BSIT-4B (inferred)'), findsOneWidget);
+      expect(find.text('BSIT-4B (inferred)'), findsOneWidget);
       await tester.tap(button);
       await tester.pumpAndSettle();
       expect(imports, 1);
@@ -148,8 +149,8 @@ void main() {
       await tester.enterText(find.byType(TextField).last, 'BSIT-4C');
       await tester.tap(find.text('Apply'));
       await tester.pumpAndSettle();
-      expect(find.text('Section: BSIT-4C'), findsOneWidget);
-      final button = find.text('Confirm Student Intake (1 students)');
+      expect(find.text('BSIT-4C'), findsOneWidget);
+      final button = find.text('Confirm enrollment (1)');
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();

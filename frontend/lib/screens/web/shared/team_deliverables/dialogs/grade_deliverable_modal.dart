@@ -34,14 +34,20 @@ double? parseAsDouble(dynamic value) {
   return null;
 }
 
-Widget buildRosterAndIndividualGrades(Map<String, dynamic> team, Map<String, dynamic>? grade) {
+Widget buildRosterAndIndividualGrades(
+  Map<String, dynamic> team,
+  Map<String, dynamic>? grade,
+) {
   final List<dynamic> members = team['members'] as List? ?? [];
   final List<dynamic> peerGrades = grade?['peer_per_student'] as List? ?? [];
 
   if (members.isEmpty) {
     return const Text(
       'No members assigned to this team.',
-      style: TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+      style: TextStyle(
+        color: AppColors.textSecondary,
+        fontStyle: FontStyle.italic,
+      ),
     );
   }
 
@@ -55,13 +61,17 @@ Widget buildRosterAndIndividualGrades(Map<String, dynamic> team, Map<String, dyn
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: members.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, color: Color(0xFFE5E7EB)),
       itemBuilder: (context, index) {
         final rawMember = members[index];
         if (rawMember is! Map) return const SizedBox.shrink();
         final member = Map<String, dynamic>.from(rawMember);
         final studentId = member['id'];
-        final name = member['name']?.toString() ?? member['username']?.toString() ?? 'Student';
+        final name =
+            member['name']?.toString() ??
+            member['username']?.toString() ??
+            'Student';
         final role = member['role']?.toString() ?? 'member';
         final isLeader = role == 'leader';
 
@@ -72,13 +82,17 @@ Widget buildRosterAndIndividualGrades(Map<String, dynamic> team, Map<String, dyn
 
         final double? avgScore = parseAsDouble(peerDetails?['average_score']);
         final double maxScore = parseAsDouble(peerDetails?['max_score']) ?? 5.0;
-        final double? normScore = parseAsDouble(peerDetails?['normalized_score']);
+        final double? normScore = parseAsDouble(
+          peerDetails?['normalized_score'],
+        );
 
         final sanitizedName = name.trim().replaceAll(RegExp(r'\s+'), ' ');
         final parts = sanitizedName.split(' ');
         final initials = parts.isNotEmpty
             ? (parts.first.isNotEmpty ? parts.first[0] : '') +
-                (parts.length > 1 && parts.last.isNotEmpty ? parts.last[0] : '')
+                  (parts.length > 1 && parts.last.isNotEmpty
+                      ? parts.last[0]
+                      : '')
             : '';
 
         return Padding(
@@ -119,7 +133,10 @@ Widget buildRosterAndIndividualGrades(Map<String, dynamic> team, Map<String, dyn
                         if (isLeader) ...[
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.gold.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
@@ -203,7 +220,8 @@ class GradeDeliverableTab extends ConsumerStatefulWidget {
   final bool isAdviser;
   final String? programScope;
   final Map<String, Map<String, TextEditingController>> teamCriteriaScoreCtrls;
-  final Map<String, Map<dynamic, Map<String, TextEditingController>>> teamStudentCriteriaScoreCtrls;
+  final Map<String, Map<dynamic, Map<String, TextEditingController>>>
+  teamStudentCriteriaScoreCtrls;
   final Map<String, TextEditingController> teamManualScoreCtrls;
   final Map<String, Map<String, dynamic>?> teamSelectedRubrics;
 
@@ -220,7 +238,8 @@ class GradeDeliverableTab extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<GradeDeliverableTab> createState() => _GradeDeliverableTabState();
+  ConsumerState<GradeDeliverableTab> createState() =>
+      _GradeDeliverableTabState();
 }
 
 class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
@@ -244,9 +263,11 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final criteria = grade['assigned_adviser_criteria'];
     return {
       'id': rubricId,
-      'name': grade['assigned_adviser_rubric_name']?.toString() ?? 'Adviser rubric',
+      'name':
+          grade['assigned_adviser_rubric_name']?.toString() ?? 'Adviser rubric',
       'scale': grade['assigned_adviser_rubric_scale'],
-      'target_type': grade['assigned_adviser_rubric_target_type']?.toString() ?? 'team',
+      'target_type':
+          grade['assigned_adviser_rubric_target_type']?.toString() ?? 'team',
       'criteria': criteria is List ? criteria : [],
     };
   }
@@ -258,7 +279,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     }
     final gradeMembers = gradeRecord['members'];
     if (gradeMembers is List && gradeMembers.isNotEmpty) {
-      return gradeMembers.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      return gradeMembers
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
     }
     final pps = gradeRecord['peer_per_student'];
     if (pps is List && pps.isNotEmpty) {
@@ -289,7 +312,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         .toList();
   }
 
-  List<Map<String, dynamic>> _getIndividualCriteria(Map<String, dynamic>? rubric) {
+  List<Map<String, dynamic>> _getIndividualCriteria(
+    Map<String, dynamic>? rubric,
+  ) {
     if (rubric == null) return [];
     final criteria = (rubric['criteria'] as List? ?? []);
     final targetType = rubric['target_type']?.toString() ?? 'team';
@@ -324,7 +349,8 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     widget.teamManualScoreCtrls[key] = manualCtrl;
 
     final criteriaCtrls = <String, TextEditingController>{};
-    final studentCriteriaCtrls = <dynamic, Map<String, TextEditingController>>{};
+    final studentCriteriaCtrls =
+        <dynamic, Map<String, TextEditingController>>{};
     final assigned = _assignedRubricFromGrade(gradeRecord);
     widget.teamSelectedRubrics[key] = assigned;
 
@@ -336,13 +362,19 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
           if (row is! Map) continue;
           if (row['evaluation_type']?.toString() != 'adviser') continue;
           final name = row['criterion_name']?.toString() ?? '';
+          final sec = (row['section_snapshot'] ?? row['section'] ?? '')
+              .toString()
+              .trim();
           final sId = row['student_id'] ?? row['student'];
           final scoreVal = row['score']?.toString() ?? '';
           if (name.isEmpty) continue;
+          final secKey = sec.isNotEmpty ? '$sec::$name' : name;
           if (sId == null) {
-            teamSaved[name] = scoreVal;
+            teamSaved[secKey] = scoreVal;
+            teamSaved.putIfAbsent(name, () => scoreVal);
           } else {
-            studentSaved.putIfAbsent(sId, () => {})[name] = scoreVal;
+            studentSaved.putIfAbsent(sId, () => {})[secKey] = scoreVal;
+            studentSaved[sId]!.putIfAbsent(name, () => scoreVal);
           }
         }
       }
@@ -353,7 +385,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
 
       for (final c in teamCrits) {
         final name = c['name']?.toString() ?? '';
-        criteriaCtrls[name] = TextEditingController(text: teamSaved[name] ?? '');
+        final cKey = _criterionKey(c);
+        final savedVal = teamSaved[cKey] ?? teamSaved[name] ?? '';
+        criteriaCtrls[cKey] = TextEditingController(text: savedVal);
       }
 
       for (final m in members) {
@@ -361,13 +395,29 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         final subMap = <String, TextEditingController>{};
         for (final c in indCrits) {
           final name = c['name']?.toString() ?? '';
-          subMap[name] = TextEditingController(text: studentSaved[sId]?[name] ?? '');
+          final cKey = _criterionKey(c);
+          final savedVal =
+              studentSaved[sId]?[cKey] ?? studentSaved[sId]?[name] ?? '';
+          subMap[cKey] = TextEditingController(text: savedVal);
         }
         studentCriteriaCtrls[sId] = subMap;
       }
     }
     widget.teamCriteriaScoreCtrls[key] = criteriaCtrls;
     widget.teamStudentCriteriaScoreCtrls[key] = studentCriteriaCtrls;
+  }
+
+  String _criterionKey(Map<String, dynamic> c) {
+    final name = c['name']?.toString() ?? '';
+    final sec = (c['section'] ?? '').toString().trim();
+    return sec.isNotEmpty ? '$sec::$name' : name;
+  }
+
+  TextEditingController? _ctrlForCriterion(
+    Map<String, TextEditingController> subMap,
+    Map<String, dynamic> c,
+  ) {
+    return subMap[_criterionKey(c)] ?? subMap[c['name']?.toString() ?? ''];
   }
 
   double _computeStudentScore(
@@ -388,20 +438,35 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final teamSubMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
     if (targetType == 'team' || targetType == 'both') {
       for (final c in teamCrits) {
-        final name = c['name']?.toString() ?? '';
         final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-        final entered = double.tryParse(teamSubMap[name]?.text ?? '') ?? 0;
-        scoreRows.add(RubricScore(entered.clamp(0, maxScore).toDouble(), maxScore, rubricWeight(c['weight'])));
+        final entered =
+            double.tryParse(_ctrlForCriterion(teamSubMap, c)?.text ?? '') ?? 0;
+        scoreRows.add(
+          RubricScore(
+            entered.clamp(0, maxScore).toDouble(),
+            maxScore,
+            rubricWeight(c['weight']),
+          ),
+        );
       }
     }
 
-    if (studentId != null && (targetType == 'individual' || targetType == 'both')) {
-      final studentSubMap = widget.teamStudentCriteriaScoreCtrls[key]?[studentId] ?? const {};
+    if (studentId != null &&
+        (targetType == 'individual' || targetType == 'both')) {
+      final studentSubMap =
+          widget.teamStudentCriteriaScoreCtrls[key]?[studentId] ?? const {};
       for (final c in indCrits) {
-        final name = c['name']?.toString() ?? '';
         final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-        final entered = double.tryParse(studentSubMap[name]?.text ?? '') ?? 0;
-        scoreRows.add(RubricScore(entered.clamp(0, maxScore).toDouble(), maxScore, rubricWeight(c['weight'])));
+        final entered =
+            double.tryParse(_ctrlForCriterion(studentSubMap, c)?.text ?? '') ??
+            0;
+        scoreRows.add(
+          RubricScore(
+            entered.clamp(0, maxScore).toDouble(),
+            maxScore,
+            rubricWeight(c['weight']),
+          ),
+        );
       }
     }
 
@@ -442,9 +507,8 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final teamCrits = _getTeamCriteria(rubric);
     final teamSubMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
     for (final c in teamCrits) {
-      final name = c['name']?.toString() ?? '';
       final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-      final text = teamSubMap[name]?.text.trim() ?? '';
+      final text = _ctrlForCriterion(teamSubMap, c)?.text.trim() ?? '';
       if (text.isEmpty) return false;
       final value = double.tryParse(text);
       if (value == null || value < 0 || value > maxScore) return false;
@@ -452,17 +516,21 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     return true;
   }
 
-  bool _isStudentCriteriaComplete(int teamId, String stageLabel, dynamic studentId) {
+  bool _isStudentCriteriaComplete(
+    int teamId,
+    String stageLabel,
+    dynamic studentId,
+  ) {
     final key = '$teamId-$stageLabel';
     final rubric = widget.teamSelectedRubrics[key];
     if (rubric == null) return false;
     final indCrits = _getIndividualCriteria(rubric);
     if (indCrits.isEmpty) return true;
-    final studentSubMap = widget.teamStudentCriteriaScoreCtrls[key]?[studentId] ?? const {};
+    final studentSubMap =
+        widget.teamStudentCriteriaScoreCtrls[key]?[studentId] ?? const {};
     for (final c in indCrits) {
-      final name = c['name']?.toString() ?? '';
       final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-      final text = studentSubMap[name]?.text.trim() ?? '';
+      final text = _ctrlForCriterion(studentSubMap, c)?.text.trim() ?? '';
       if (text.isEmpty) return false;
       final value = double.tryParse(text);
       if (value == null || value < 0 || value > maxScore) return false;
@@ -470,7 +538,11 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     return true;
   }
 
-  bool _allCriteriaFilledForTeam(int teamId, String stageLabel, Map<String, dynamic> gradeRecord) {
+  bool _allCriteriaFilledForTeam(
+    int teamId,
+    String stageLabel,
+    Map<String, dynamic> gradeRecord,
+  ) {
     final key = '$teamId-$stageLabel';
     final rubric = widget.teamSelectedRubrics[key];
     if (rubric == null) return false;
@@ -487,7 +559,11 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     return true;
   }
 
-  int _filledCountForTeam(int teamId, String stageLabel, Map<String, dynamic> gradeRecord) {
+  int _filledCountForTeam(
+    int teamId,
+    String stageLabel,
+    Map<String, dynamic> gradeRecord,
+  ) {
     final key = '$teamId-$stageLabel';
     final rubric = widget.teamSelectedRubrics[key];
     if (rubric == null) return 0;
@@ -495,11 +571,12 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final teamCrits = _getTeamCriteria(rubric);
     final teamSubMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
     for (final c in teamCrits) {
-      final name = c['name']?.toString() ?? '';
       final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-      final text = teamSubMap[name]?.text.trim() ?? '';
+      final text = _ctrlForCriterion(teamSubMap, c)?.text.trim() ?? '';
       final value = double.tryParse(text);
-      if (text.isNotEmpty && value != null && value >= 0 && value <= maxScore) count++;
+      if (text.isNotEmpty && value != null && value >= 0 && value <= maxScore) {
+        count++;
+      }
     }
 
     final indCrits = _getIndividualCriteria(rubric);
@@ -507,27 +584,37 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
       final members = _getMembers(gradeRecord);
       for (final m in members) {
         final sId = m['id'] ?? m['student_id'];
-        final studentSubMap = widget.teamStudentCriteriaScoreCtrls[key]?[sId] ?? const {};
+        final studentSubMap =
+            widget.teamStudentCriteriaScoreCtrls[key]?[sId] ?? const {};
         for (final c in indCrits) {
-          final name = c['name']?.toString() ?? '';
           final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-          final text = studentSubMap[name]?.text.trim() ?? '';
+          final text = _ctrlForCriterion(studentSubMap, c)?.text.trim() ?? '';
           final value = double.tryParse(text);
-          if (text.isNotEmpty && value != null && value >= 0 && value <= maxScore) count++;
+          if (text.isNotEmpty &&
+              value != null &&
+              value >= 0 &&
+              value <= maxScore) {
+            count++;
+          }
         }
       }
     }
     return count;
   }
 
-  int _totalCountForTeam(int teamId, String stageLabel, Map<String, dynamic> gradeRecord) {
+  int _totalCountForTeam(
+    int teamId,
+    String stageLabel,
+    Map<String, dynamic> gradeRecord,
+  ) {
     final key = '$teamId-$stageLabel';
     final rubric = widget.teamSelectedRubrics[key];
     if (rubric == null) return 0;
     final teamCrits = _getTeamCriteria(rubric);
     final indCrits = _getIndividualCriteria(rubric);
     final members = _getMembers(gradeRecord);
-    return teamCrits.length + (indCrits.length * (members.isEmpty ? 1 : members.length));
+    return teamCrits.length +
+        (indCrits.length * (members.isEmpty ? 1 : members.length));
   }
 
   Future<void> _submitAdviserGrade({
@@ -538,7 +625,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final key = '$teamId-$stageLabel';
     final gradeId = gradeRecord['id'] as int?;
     if (gradeId == null) {
-      showErrorToast(context, 'No grading record available for this team and stage.');
+      showErrorToast(
+        context,
+        'No grading record available for this team and stage.',
+      );
       return;
     }
 
@@ -561,11 +651,15 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
 
       for (final c in teamCrits) {
         final name = c['name']?.toString() ?? '';
+        final sec = (c['section'] ?? '').toString().trim();
         final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-        final entered = (double.tryParse(teamSubMap[name]?.text ?? '') ?? 0).clamp(0, maxScore);
+        final entered =
+            (double.tryParse(_ctrlForCriterion(teamSubMap, c)?.text ?? '') ?? 0)
+                .clamp(0, maxScore);
         final entry = {
           'criterion_id': c['id'],
           'criterion_name': name,
+          if (sec.isNotEmpty) 'section': sec,
           'score': entered,
           'max_score': maxScore,
           'display_order': c['display_order'] ?? 0,
@@ -578,24 +672,29 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
 
       for (final m in members) {
         final sId = m['id'] ?? m['student_id'];
-        final studentSubMap = widget.teamStudentCriteriaScoreCtrls[key]?[sId] ?? const {};
+        final studentSubMap =
+            widget.teamStudentCriteriaScoreCtrls[key]?[sId] ?? const {};
         final sScores = <Map<String, dynamic>>[];
         for (final c in indCrits) {
           final name = c['name']?.toString() ?? '';
+          final sec = (c['section'] ?? '').toString().trim();
           final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-          final entered = (double.tryParse(studentSubMap[name]?.text ?? '') ?? 0).clamp(0, maxScore);
+          final entered =
+              (double.tryParse(
+                        _ctrlForCriterion(studentSubMap, c)?.text ?? '',
+                      ) ??
+                      0)
+                  .clamp(0, maxScore);
           sScores.add({
             'criterion_id': c['id'],
-          'criterion_name': name,
+            'criterion_name': name,
+            if (sec.isNotEmpty) 'section': sec,
             'score': entered,
             'max_score': maxScore,
             'display_order': c['display_order'] ?? 0,
           });
         }
-        studentSubmissions.add({
-          'student_id': sId,
-          'criteria_scores': sScores,
-        });
+        studentSubmissions.add({'student_id': sId, 'criteria_scores': sScores});
       }
 
       adviserScore = _computeOverallTeamScore(teamId, stageLabel, gradeRecord);
@@ -605,7 +704,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
       adviserScore = adviserScore.clamp(0, 100);
     }
 
-    final success = await ref.read(adviserGradingProvider.notifier).submitGrade(
+    final success = await ref
+        .read(adviserGradingProvider.notifier)
+        .submitGrade(
           gradeId: gradeId,
           adviserScore: adviserScore,
           rubricId: rubricId,
@@ -657,9 +758,11 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
           final i = entry.key;
           final c = entry.value;
           final name = c['name']?.toString() ?? '';
+          final section = (c['section'] ?? '').toString().trim();
+          final weight = num.tryParse((c['weight'] ?? '').toString());
           final desc = c['description']?.toString() ?? '';
           final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-          final ctrl = subMap[name] ?? TextEditingController();
+          final ctrl = _ctrlForCriterion(subMap, c) ?? TextEditingController();
 
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -678,6 +781,36 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                 final label = Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (section.isNotEmpty) ...[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.maroonOf(
+                                context,
+                              ).withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              weight != null
+                                  ? '$section · ${weight.toStringAsFixed(1)}%'
+                                  : section,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: DefensysTokens.maroonTextOf(context),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                    ],
                     Text(
                       name,
                       style: TextStyle(
@@ -797,12 +930,13 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         'capstone';
     final isPit = scope == 'pit';
     final canEnterAdviserGrades = widget.isAdviser && !isPit;
-    if (canEnterAdviserGrades)
+    if (canEnterAdviserGrades) {
       _initializeGradingControllersForTeam(
         teamId,
         widget.selectedStage,
         gradeRecord,
       );
+    }
     final officiallyComplete =
         gradeRecord['is_officially_complete'] == true ||
         (widget.team['stages'] is List &&
@@ -810,7 +944,8 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
               (s) =>
                   s is Map &&
                   s['stage_label']?.toString() == widget.selectedStage &&
-                  s['is_officially_complete'] == true,
+                  (s['is_officially_complete'] == true ||
+                      s['read_only'] == true),
             ));
     final guidance = AdviserGradingStatus.fromGrade(
       gradeRecord,

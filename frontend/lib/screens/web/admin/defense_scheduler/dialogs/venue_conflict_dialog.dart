@@ -484,6 +484,7 @@ class ScheduleImportDialog {
                           ? state.defenseStages.first
                           : <String, dynamic>{},
                     );
+                    final resolvedActiveStageId = asInt(activeStageObj['id']);
                     final activeStageLabel = activeStageObj['label']?.toString() ?? '';
                     resolvedMatch = findBestMatch<Map<String, dynamic>>(
                       source: rawStage,
@@ -492,7 +493,11 @@ class ScheduleImportDialog {
                     );
                     if (resolvedMatch.isMatched) {
                       final matchedStageId = asInt(resolvedMatch.item?['id']);
-                      if (initialStageId != null && matchedStageId != initialStageId) {
+                      final labelsMatch = resolvedMatch.label.trim().toLowerCase() ==
+                          activeStageLabel.trim().toLowerCase();
+                      if (!labelsMatch &&
+                          initialStageId != null &&
+                          matchedStageId != resolvedActiveStageId) {
                         warning =
                             'File header specifies "$rawStage" (matched to "${resolvedMatch.label}"), while active defense stage is "$activeStageLabel".';
                       }

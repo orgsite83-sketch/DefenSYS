@@ -296,6 +296,42 @@ class ParsedScheduleImportRow {
   }
 }
 
+bool _isLikelyTeamRosterWorkbook(Excel workbook) {
+  for (final tableName in workbook.tables.keys) {
+    final lowerName = tableName.toLowerCase();
+    if (lowerName.contains('team_roster') || lowerName.contains('team roster')) {
+      return true;
+    }
+    final sheet = workbook.tables[tableName];
+    if (sheet == null) continue;
+    var hasTeamName = false;
+    var hasMembers = false;
+    var hasSection = false;
+    var hasTimeSlot = false;
+    for (final row in sheet.rows.take(20)) {
+      for (final cell in row) {
+        final text = _excelCellText(cell).toLowerCase().trim();
+        if (text.contains('team name') || text.startsWith('team')) hasTeamName = true;
+        if (text.contains('member') || text.contains('team members')) hasMembers = true;
+        if (text == 'section') hasSection = true;
+        if (text.contains('time slot') || text.contains('start time') || text == 'time') hasTimeSlot = true;
+      }
+    }
+    if ((hasMembers || (hasTeamName && hasSection)) && !hasTimeSlot) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _isLikelyTeamRosterCsv(String csvContent) {
+  final lower = csvContent.toLowerCase();
+  final hasMembers = lower.contains('team members') || lower.contains('member');
+  final hasSection = lower.contains('section');
+  final hasTimeSlot = lower.contains('time slot') || lower.contains('start time');
+  return hasMembers && hasSection && !hasTimeSlot;
+}
+
 ParsedScheduleImport parseScheduleImportFile({
   required Uint8List bytes,
   required String filename,
@@ -303,10 +339,17 @@ ParsedScheduleImport parseScheduleImportFile({
 }) {
   final lower = filename.toLowerCase();
   if (lower.endsWith('.csv')) {
-    return parseScheduleImportMatrix(
-      _csvToMatrix(utf8.decode(bytes)),
+    final csvText = utf8.decode(bytes);
+    final parsed = parseScheduleImportMatrix(
+      _csvToMatrix(csvText),
       configuredStages: configuredStages,
     );
+    if (parsed.rows.isEmpty && _isLikelyTeamRosterCsv(csvText)) {
+      throw FormatException(
+        '$filename is a Student Team Roster file, not a Defense Schedule timetable. Please import it under Student Teams > Import Teams.',
+      );
+    }
+    return parsed;
   }
 
   final workbook = safeDecodeExcel(bytes);
@@ -338,6 +381,12 @@ ParsedScheduleImport parseScheduleImportFile({
       detectedRoom ??= parsed.room;
       if (parsed.isRedefense) isRedefense = true;
     }
+  }
+
+  if (allRows.isEmpty && _isLikelyTeamRosterWorkbook(workbook)) {
+    throw FormatException(
+      '$filename is a Student Team Roster file, not a Defense Schedule timetable. Please import it under Student Teams > Import Teams.',
+    );
   }
 
   return ParsedScheduleImport(

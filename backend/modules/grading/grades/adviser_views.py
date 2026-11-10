@@ -95,7 +95,9 @@ class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
                 GradeBreakdown(
                     team_grade=grade, student=student, rubric=rubric,
                     evaluation_type=GradeBreakdown.EVAL_ADVISER,
-                    criterion_name=row['criterion'].name, score=row['score'],
+                    criterion_name=row['criterion'].name,
+                    section_snapshot=getattr(row['criterion'], 'section', '') or '',
+                    score=row['score'],
                     max_score=row['max_score'], weight_snapshot=row['weight'],
                     display_order=row['criterion'].display_order,
                 ) for row in rows

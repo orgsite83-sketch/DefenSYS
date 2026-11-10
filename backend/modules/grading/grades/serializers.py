@@ -3,6 +3,14 @@ from rest_framework import serializers
 from grading.rubrics.models import Rubric
 from .models import GradeAttemptHistory, GradeBreakdown, StudentStageGrade, TeamGrade
 from .services import display_name
+from defensys_backend.read_projection import read_memoize
+
+
+@read_memoize
+def _closed_grade_term(team_id, semester_id, project_version):
+    from student_teams.models import TeamTermParticipation
+    return TeamTermParticipation.objects.filter(team_id=team_id, semester_id=semester_id,
+        project_version=project_version, closed_at__isnull=False).first()
 
 
 class GradeAttemptHistorySerializer(serializers.ModelSerializer):
@@ -61,6 +69,7 @@ class GradeBreakdownSerializer(serializers.ModelSerializer):
             'evaluation_type',
             'rubric_name',
             'criterion_name',
+            'section_snapshot',
             'score',
             'max_score',
             'weight_snapshot',
@@ -242,6 +251,21 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        if instance.scope == TeamGrade.SCOPE_CAPSTONE:
+            row = _closed_grade_term(instance.team_id, instance.semester_id, instance.project_version)
+            if row:
+                snapshot = row.snapshot
+                for target, source in {'team_name': 'name', 'team_level': 'level',
+                        'year_level': 'year_level', 'team_status': 'status',
+                        'adviser_name': 'adviser_name', 'leader_name': 'leader_name',
+                        'project_title': 'project_title'}.items():
+                    if source in snapshot:
+                        data[target] = snapshot[source]
+                if 'members' in snapshot:
+                    data['members'] = [{'id': member['student_id'], 'student_id': member['student_id'],
+                        'username': member.get('username', ''), 'name': member.get('name', ''),
+                        'is_leader': member.get('is_leader', False)} for member in snapshot['members']]
+                data['read_only'] = True
         if instance.scope == TeamGrade.SCOPE_PIT:
             # Keep historical values in storage without presenting them as PIT decisions.
             data.update({

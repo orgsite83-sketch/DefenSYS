@@ -143,6 +143,7 @@ class RubricDetailsFields extends StatelessWidget {
 
   Widget _scale(BuildContext context) {
     final custom = scale == 'Custom Scale';
+    final pointsBased = scale == 'Points-Based (Sections)';
     final points = int.tryParse(customPoints.text.trim());
     final valid = points != null && points >= 1 && points <= 32767;
     const labels = {
@@ -150,6 +151,7 @@ class RubricDetailsFields extends StatelessWidget {
       '10-Point Scale': '10-point',
       '100-Point Scale': '100-point',
       'Custom Scale': 'Custom',
+      'Points-Based (Sections)': 'Points-based',
     };
     final maximum = custom
         ? points
@@ -213,7 +215,15 @@ class RubricDetailsFields extends StatelessWidget {
               ),
             ),
         ],
-        if (!custom || valid)
+        if (pointsBased)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Each criterion defines its own maximum points and section.',
+              style: _caption(context),
+            ),
+          )
+        else if (!custom || valid)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(

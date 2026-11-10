@@ -480,6 +480,7 @@ def _panel_rubric_payload(rubric, grade_weights):
         'name': rubric.name,
         'status': rubric.status,
         'evaluation_type': rubric.evaluation_type,
+        'scale': rubric.scale,
         'scope': rubric.scope,
         'context_label': rubric.context_label,
         'display_semester': rubric.semester.display_name,
@@ -492,8 +493,10 @@ def _panel_rubric_payload(rubric, grade_weights):
                 'scale': criterion.scale,
                 'description': criterion.description,
                 'target_type': criterion.target_type,
+                'section': criterion.section or '',
+                'weight': float(criterion.weight) if criterion.weight is not None else 0.0,
             }
-            for criterion in rubric.criteria.all()
+            for criterion in rubric.criteria.order_by('display_order', 'id')
         ],
         'weights': grade_weights,
     }
