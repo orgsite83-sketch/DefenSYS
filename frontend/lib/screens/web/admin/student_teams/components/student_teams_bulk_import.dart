@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:defensys/widgets/team_import_format_guide.dart';
 import 'package:defensys/widgets/team_import_review.dart';
+import 'package:defensys/widgets/team_import_reference_corrections.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
@@ -186,12 +187,20 @@ class _StudentTeamsBulkImportViewState
     super.dispose();
   }
 
-  String _facultyValue(Map<String, dynamic> row) =>
-      (widget.isCapstoneAdmin
-              ? row['adviser_name'] ?? row['adviser_id'] ?? ''
-              : row['instructor_name'] ?? '')
-          .toString()
-          .trim();
+  String _facultyValue(Map<String, dynamic> row) {
+    final reference =
+        (widget.isCapstoneAdmin
+                ? row['adviser_name'] ?? row['adviser_id'] ?? ''
+                : row['instructor_name'] ?? '')
+            .toString()
+            .trim();
+    final account = teamImportAccounts(
+      widget.state.advisers,
+    ).where((a) => teamImportAccountId(a) == reference).firstOrNull;
+    return account == null
+        ? reference
+        : '${teamImportAccountName(account)} ($reference)';
+  }
 
   String _getActiveSemLabel() {
     final sem = widget.activeSemester;

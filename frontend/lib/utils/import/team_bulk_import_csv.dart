@@ -22,7 +22,11 @@ String rowsToTeamCsv(
         (row['team_name'] ?? '').toString().trim().isEmpty ||
         (row['system_name'] ?? '').toString().isNotEmpty ||
         (row['project_manager'] ?? '').toString().isNotEmpty ||
-        row['project_kind'] == 'module',
+        row['project_kind'] == 'module' ||
+        ((row['leader_id'] ?? '').toString().isNotEmpty &&
+            row['member_ids'] is List &&
+            (row['member_ids'] as List).isNotEmpty &&
+            row['leader_id'] != (row['member_ids'] as List).first),
   )) {
     const fields = [
       'team_name',

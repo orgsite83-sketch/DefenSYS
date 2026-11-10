@@ -22,6 +22,7 @@ from user_management.models import SectionInstructorAssignment
 from user_management.permissions import IsSystemAdmin, CanManageTeams
 from .bulk_import import (
     format_bulk_import_errors,
+    import_user_lookup,
     ADVISER_FILTER_ALL,
     build_team_payload_from_row,
     collect_bulk_section_metadata,
@@ -584,6 +585,7 @@ def _bulk_rows_for_event(request, rows):
 class BulkImportTeamsPreviewView(APIView):
     permission_classes = [CanManageTeams]
 
+    @import_user_lookup()
     def post(self, request):
         section = request.data.get('section', '').strip()
 
@@ -646,6 +648,7 @@ class BulkImportTeamsView(APIView):
     permission_classes = [CanManageTeams]
 
     @transaction.atomic
+    @import_user_lookup()
     def post(self, request):
         section = request.data.get('section', '').strip()
 

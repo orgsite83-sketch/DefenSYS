@@ -1,15 +1,15 @@
-import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from django.contrib.auth import get_user_model
 
+from .person_names import PersonNames, PersonNameIndex
 from .models import StudentTeam, TeamMembership
 from .serializers import BulkTeamRowSerializer, display_name
 from .team_levels import prepare_bulk_row, program_label_for_row, user_is_pit_lead_only
 
 
 User = get_user_model()
-_import_users = ContextVar('team_import_users', default=None)
+_import_names = ContextVar('team_import_names', default=None)
 
 
 def participation_preview(student_ids):
@@ -20,28 +20,17 @@ def participation_preview(student_ids):
 
 @contextmanager
 def import_user_lookup():
-    """One account projection per review; retain the normal name/ID matching rules."""
-    if _import_users.get() is not None:
+    """One indexed account projection per review, including nested lookups."""
+    if _import_names.get() is not None:
         yield
         return
-    token = _import_users.set(list(User.objects.only(
-        'id', 'username', 'first_name', 'last_name', 'role', 'is_active')))
+    token = _import_names.set(PersonNameIndex(User.objects.only(
+        'id', 'username', 'first_name', 'last_name', 'role', 'is_active'), _person_names))
     try:
         yield
     finally:
-        _import_users.reset(token)
+        _import_names.reset(token)
 
-
-def _role_users(role):
-    cached = _import_users.get()
-    if cached is not None:
-        roles = role if isinstance(role, (list, tuple, set)) else [role]
-        return [u for u in cached if not role or u.role in roles]
-    queryset = User.objects.all()
-    if role:
-        roles = role if isinstance(role, (list, tuple, set)) else [role]
-        queryset = queryset.filter(role__in=roles)
-    return queryset
 
 ADVISER_STATUS_NONE = 'none'
 ADVISER_STATUS_VALID = 'valid'
@@ -137,355 +126,95 @@ SUFFIX_PATTERNS = [
     r'ii|iii|iv|v',
 ]
 
-PREFIX_RE = re.compile(r'^(?:' + '|'.join(PREFIX_PATTERNS) + r')\b[\s\.]*', re.IGNORECASE)
-SUFFIX_RE = re.compile(r'(?:[\s,\.]+|\b)(?:' + '|'.join(SUFFIX_PATTERNS) + r')\.?$', re.IGNORECASE)
-SUFFIX_ISOLATED_RE = re.compile(r'^(?:' + '|'.join(SUFFIX_PATTERNS) + r')\.?$', re.IGNORECASE)
-
-
-def _strip_token(token):
-    prev = None
-    s = (token or '').strip()
-    while s and s != prev:
-        prev = s
-        s = SUFFIX_RE.sub('', s).strip()
-        s = PREFIX_RE.sub('', s).strip()
-    return s
-
-
-def clean_person_name(name):
-    """
-    Strip academic, professional, and courtesy titles/honorifics (e.g. 'Prof.', 'Dr.',
-    'Engr.', 'Atty.', 'PhD', 'MSIT') from a person's name string so it can match
-    a user registered in the system.
-    """
-    if not name:
-        return ''
-    s = name.strip()
-    prev = None
-    while s and s != prev:
-        prev = s
-        s = SUFFIX_RE.sub('', s).strip()
-        s = PREFIX_RE.sub('', s).strip()
-
-    if ',' in s:
-        raw_parts = [p.strip() for p in s.split(',')]
-        valid_parts = []
-        for p in raw_parts:
-            if not p or SUFFIX_ISOLATED_RE.match(p.strip().rstrip('.')):
-                continue
-            cleaned = _strip_token(p)
-            if cleaned:
-                valid_parts.append(cleaned)
-        if len(valid_parts) == 2:
-            return f'{valid_parts[1]} {valid_parts[0]}'
-        elif len(valid_parts) == 1:
-            return valid_parts[0]
-        elif valid_parts:
-            return ' '.join(valid_parts)
-
-    return _strip_token(s)
+_person_names = PersonNames(PREFIX_PATTERNS, SUFFIX_PATTERNS[:-2])
+clean_person_name = _person_names.clean
 
 
 def normalize_name(value):
     return ' '.join((value or '').strip().split()).casefold()
 
 
+def _person_index():
+    cached = _import_names.get()
+    if cached is not None:
+        return cached
+    return PersonNameIndex(User.objects.only(
+        'id', 'username', 'first_name', 'last_name', 'role', 'is_active'), _person_names)
+
+
 def _users_matching_full_name(value, *, role=None):
-    normalized = normalize_name(value)
-    if not normalized:
-        return []
-
-    queryset = _role_users(role)
-
-    matches = []
-    cleaned_input = normalize_name(clean_person_name(value))
-    for user in queryset:
-        d_name = display_name(user)
-        user_norm = normalize_name(d_name)
-        if user_norm == normalized:
-            matches.append(user)
-        elif cleaned_input:
-            user_clean = normalize_name(clean_person_name(d_name))
-            if user_clean == cleaned_input or user_norm == cleaned_input:
-                matches.append(user)
-    return matches
+    return list(_person_index().full_matches(value, role))
 
 
-def _user_by_username_ref(raw, *, role=None):
-    if _import_users.get() is not None:
-        return next((u for u in _role_users(role) if u.username.casefold() == raw.casefold()), None)
-    queryset = User.objects.filter(username__iexact=raw)
-    if role:
-        if isinstance(role, (list, tuple, set)):
-            queryset = queryset.filter(role__in=role)
-        else:
-            queryset = queryset.filter(role=role)
-    return queryset.first()
+def reference_resolution(value, *, role=None, field='member_ids'):
+    """Review metadata exposes no suggested accounts outside existing pickers."""
+    result = _person_index().resolve(value, role)
+    status = 'inactive' if result.user is not None and not result.user.is_active else result.status
+    projection = {'field': field, 'reference': value, 'status': status}
+    if result.user is not None:
+        projection.update(username=result.user.username, name=display_name(result.user))
+    return projection
 
 
-def _users_matching_initial_and_surname(surname, initial, *, role=None):
-    clean_sur = clean_person_name(surname)
-    norm_surname = normalize_name(clean_sur or surname)
-    clean_init = clean_person_name(initial)
-    norm_initial = normalize_name((clean_init or initial).rstrip('.'))
-    if not norm_surname or not norm_initial:
-        return []
-    queryset = _role_users(role)
-    matches = []
-    for user in queryset:
-        user_last = normalize_name(user.last_name)
-        user_last_clean = normalize_name(clean_person_name(user.last_name))
-        user_first = normalize_name(user.first_name)
-        user_first_clean = normalize_name(clean_person_name(user.first_name))
-        last_matches = (user_last == norm_surname or user_last_clean == norm_surname)
-        first_matches = (user_first.startswith(norm_initial) or user_first_clean.startswith(norm_initial))
-        if last_matches and first_matches:
-            matches.append(user)
-    return matches
+def team_reference_resolutions(data, *, pit=False):
+    members = data.get('member_ids', [])
+    if isinstance(members, str):
+        members = members.split(';')
+    if not isinstance(members, list):
+        members = []
+    references = [('member_ids', ref, 'student') for ref in members]
+    references.append(('leader_id', data.get('leader_id', ''), 'student'))
+    references.append(('project_manager', data.get('project_manager', ''), 'student'))
+    if pit:
+        references.append(('instructor_name', data.get('instructor_name', ''), ['faculty', 'admin']))
+    else:
+        references.append(('adviser_name', data.get('adviser_name') or data.get('adviser_id', ''),
+                           ['faculty', 'admin']))
+    return [reference_resolution(str(ref), role=role, field=field)
+            for field, ref, role in references if ref]
 
 
-def _users_matching_surname_only(surname, *, role=None):
-    clean_sur = clean_person_name(surname)
-    norm_surname = normalize_name(clean_sur or surname)
-    if not norm_surname:
-        return []
-    queryset = _role_users(role)
-    matches = []
-    for user in queryset:
-        user_last = normalize_name(user.last_name)
-        user_last_clean = normalize_name(clean_person_name(user.last_name))
-        if user_last == norm_surname or user_last_clean == norm_surname:
-            matches.append(user)
-    return matches
-
-
-def _resolve_user_by_name_or_id(raw, *, role=None, field_label='User'):
-    # 1. By ID (username)
-    by_username = _user_by_username_ref(raw, role=role)
-    if by_username is not None:
-        return by_username, None
-
-    # 2. Exact full display name
-    matches = _users_matching_full_name(raw, role=role)
-    if len(matches) == 1:
-        return matches[0], None
-    if len(matches) > 1:
-        candidates = [f"{display_name(u)} ({u.username})" for u in matches]
-        return None, (
-            f'{field_label} "{raw}": multiple users match that name ({", ".join(candidates)}). '
-            'Use Student ID to specify.'
-        )
-
-    # 3. Inverted name with comma ("Last, First")
-    if ',' in raw:
-        parts = [p.strip() for p in raw.split(',', 1)]
-        last_part, first_part = parts[0], parts[1]
-
-        clean_initial = first_part.rstrip('.').strip()
-        if len(clean_initial) == 1 and clean_initial.isalpha():
-            initial_matches = _users_matching_initial_and_surname(last_part, clean_initial, role=role)
-            if len(initial_matches) == 1:
-                return initial_matches[0], None
-            if len(initial_matches) > 1:
-                candidates = [f"{display_name(u)} ({u.username})" for u in initial_matches]
-                return None, (
-                    f'{field_label} "{raw}": multiple users match surname "{last_part}" with initial "{clean_initial}" '
-                    f'({", ".join(candidates)}). Please specify full name or Student ID.'
-                )
-
-        inverted = f"{first_part} {last_part}"
-        inverted_matches = _users_matching_full_name(inverted, role=role)
-        if len(inverted_matches) == 1:
-            return inverted_matches[0], None
-        if len(inverted_matches) > 1:
-            candidates = [f"{display_name(u)} ({u.username})" for u in inverted_matches]
-            return None, (
-                f'{field_label} "{raw}": multiple users match that name ({", ".join(candidates)}). '
-                'Use Student ID to specify.'
-            )
-
-    # 4. Space-separated Initial + Surname ("M. Garcia" or "Garcia M.")
-    words = raw.split()
-    if len(words) == 2:
-        w0_clean = words[0].rstrip('.').strip()
-        w1_clean = words[1].rstrip('.').strip()
-        if len(w0_clean) == 1 and w0_clean.isalpha():
-            initial_matches = _users_matching_initial_and_surname(words[1], w0_clean, role=role)
-            if len(initial_matches) == 1:
-                return initial_matches[0], None
-            if len(initial_matches) > 1:
-                candidates = [f"{display_name(u)} ({u.username})" for u in initial_matches]
-                return None, (
-                    f'{field_label} "{raw}": multiple users match surname "{words[1]}" with initial "{w0_clean}" '
-                    f'({", ".join(candidates)}). Please specify full name or Student ID.'
-                )
-        elif len(w1_clean) == 1 and w1_clean.isalpha():
-            initial_matches = _users_matching_initial_and_surname(words[0], w1_clean, role=role)
-            if len(initial_matches) == 1:
-                return initial_matches[0], None
-            if len(initial_matches) > 1:
-                candidates = [f"{display_name(u)} ({u.username})" for u in initial_matches]
-                return None, (
-                    f'{field_label} "{raw}": multiple users match surname "{words[0]}" with initial "{w1_clean}" '
-                    f'({", ".join(candidates)}). Please specify full name or Student ID.'
-                )
-
-    # 5. Surname lookup (e.g. "Baguingco", "Dela Cruz", "Santos")
-    if not (',' in raw):
-        surname_matches = _users_matching_surname_only(raw, role=role)
-        if len(surname_matches) == 1:
-            return surname_matches[0], None
-        if len(surname_matches) > 1:
-            candidates = [f"{display_name(u)} ({u.username})" for u in surname_matches]
-            return None, (
-                f'{field_label} "{raw}": multiple users share the surname "{raw}" '
-                f'({", ".join(candidates)}). Please specify their first name or Student ID.'
-            )
-
-    return None, f'{field_label} "{raw}": no user found with that name.'
+def _resolution_error(raw, result, field_label):
+    if result.status == 'ambiguous':
+        kind = 'share the surname' if result.kind == 'surname' else 'match that name'
+        return (f'{field_label} "{raw}": multiple users {kind}. '
+                'Select the correct account or use its registered ID.')
+    if result.status == 'selection_required':
+        return (f'{field_label} "{raw}": a similar name exists with different middle initials. '
+                'Select the registered account or use its ID to confirm the match.')
+    return (f'{field_label} "{raw}": no user found with that name. '
+            'Select an account or use its registered ID.')
 
 
 def resolve_user_by_full_name(value, *, role=None, field_label='User'):
-    """
-    Resolve a CSV reference by student/faculty ID (username) or full display name,
-    with smart support for:
-    - Exact student/faculty ID
-    - Full name ("First Last")
-    - Inverted name with comma ("Last, First")
-    - Surname + Initial ("Garcia, M." / "M. Garcia")
-    - Unique surname within cohort ("Baguingco")
-    - Academic/courtesy titles and honorifics ("Prof. Jonathan Beltran", "Dr. Beltran")
-    Returns (user_or_none, error_message_or_none).
-    """
+    """ID first, then safe name equivalence; uncertain identities require selection."""
     raw = (value or '').strip()
-    if not raw:
+    result = _person_index().resolve(raw, role)
+    if result.status == 'empty':
         return None, None
-
-    user, error = _resolve_user_by_name_or_id(raw, role=role, field_label=field_label)
-    if user is not None:
-        return user, None
-
-    cleaned = clean_person_name(raw)
-    if cleaned and normalize_name(cleaned) != normalize_name(raw):
-        c_user, c_error = _resolve_user_by_name_or_id(cleaned, role=role, field_label=field_label)
-        if c_user is not None:
-            return c_user, None
-        if c_error and 'multiple users' in c_error:
-            return None, c_error
-
-    return None, error
+    if result.user is not None:
+        if not result.user.is_active:
+            return None, f'{field_label} "{raw}" is inactive.'
+        return result.user, None
+    return None, _resolution_error(raw, result, field_label)
 
 
 def resolve_adviser(name_or_username):
-    """
-    Resolve CSV adviser reference (full name, surname, or username/faculty ID) to a User and validation status.
-    Supports academic titles and honorifics (e.g., 'Prof. Jonathan Beltran', 'Dr. Beltran', 'Jonathan Beltran, PhD').
-    Returns (user_or_none, status, display_name_or_empty).
-    """
+    """Share person matching while retaining the existing adviser-status contract."""
     raw = (name_or_username or '').strip()
-    if not raw:
+    index = _person_index()
+    result = index.resolve(raw, ['faculty', 'admin'])
+    if result.status == 'empty':
         return None, ADVISER_STATUS_NONE, ''
-
-    # 1. Try resolving by username first (matching role=['faculty', 'admin'])
-    user = _user_by_username_ref(raw, role=['faculty', 'admin'])
-    if user:
+    if result.user is not None:
+        user = result.user
         if not user.is_active:
             return None, ADVISER_STATUS_INACTIVE, display_name(user)
         return user, ADVISER_STATUS_VALID, display_name(user)
-
-    # 2. Try resolving by full name
-    faculty_matches = _users_matching_full_name(raw, role=['faculty', 'admin'])
-    if len(faculty_matches) == 1:
-        user = faculty_matches[0]
-        if not user.is_active:
-            return None, ADVISER_STATUS_INACTIVE, display_name(user)
-        return user, ADVISER_STATUS_VALID, display_name(user)
-
-    # 3. Try inverted name "Last, First"
-    if ',' in raw:
-        parts = [p.strip() for p in raw.split(',', 1)]
-        inverted = f"{parts[1]} {parts[0]}"
-        inv_matches = _users_matching_full_name(inverted, role=['faculty', 'admin'])
-        if len(inv_matches) == 1:
-            user = inv_matches[0]
-            if not user.is_active:
-                return None, ADVISER_STATUS_INACTIVE, display_name(user)
-            return user, ADVISER_STATUS_VALID, display_name(user)
-
-    # 4. Try single surname lookup for faculty
-    words = raw.split()
-    if len(words) == 1 and not (',' in raw):
-        sur_matches = _users_matching_surname_only(raw, role=['faculty', 'admin'])
-        if len(sur_matches) == 1:
-            user = sur_matches[0]
-            if not user.is_active:
-                return None, ADVISER_STATUS_INACTIVE, display_name(user)
-            return user, ADVISER_STATUS_VALID, display_name(user)
-
-    # 5. Smart title / honorific fallback (e.g. "Prof. Jonathan Beltran", "Dr. Beltran", "Jonathan Beltran, PhD")
-    cleaned = clean_person_name(raw)
-    if cleaned and normalize_name(cleaned) != normalize_name(raw):
-        c_user = _user_by_username_ref(cleaned, role=['faculty', 'admin'])
-        if c_user:
-            if not c_user.is_active:
-                return None, ADVISER_STATUS_INACTIVE, display_name(c_user)
-            return c_user, ADVISER_STATUS_VALID, display_name(c_user)
-
-        c_matches = _users_matching_full_name(cleaned, role=['faculty', 'admin'])
-        if len(c_matches) == 1:
-            user = c_matches[0]
-            if not user.is_active:
-                return None, ADVISER_STATUS_INACTIVE, display_name(user)
-            return user, ADVISER_STATUS_VALID, display_name(user)
-
-        if ',' in cleaned:
-            parts = [p.strip() for p in cleaned.split(',', 1)]
-            inverted = f"{parts[1]} {parts[0]}"
-            inv_matches = _users_matching_full_name(inverted, role=['faculty', 'admin'])
-            if len(inv_matches) == 1:
-                user = inv_matches[0]
-                if not user.is_active:
-                    return None, ADVISER_STATUS_INACTIVE, display_name(user)
-                return user, ADVISER_STATUS_VALID, display_name(user)
-
-        c_words = cleaned.split()
-        if len(c_words) == 1 and not (',' in cleaned):
-            sur_matches = _users_matching_surname_only(cleaned, role=['faculty', 'admin'])
-            if len(sur_matches) == 1:
-                user = sur_matches[0]
-                if not user.is_active:
-                    return None, ADVISER_STATUS_INACTIVE, display_name(user)
-                return user, ADVISER_STATUS_VALID, display_name(user)
-
-        if len(c_words) == 2:
-            w0 = c_words[0].rstrip('.').strip()
-            w1 = c_words[1].rstrip('.').strip()
-            if len(w0) == 1 and w0.isalpha():
-                init_matches = _users_matching_initial_and_surname(c_words[1], w0, role=['faculty', 'admin'])
-                if len(init_matches) == 1:
-                    user = init_matches[0]
-                    if not user.is_active:
-                        return None, ADVISER_STATUS_INACTIVE, display_name(user)
-                    return user, ADVISER_STATUS_VALID, display_name(user)
-            elif len(w1) == 1 and w1.isalpha():
-                init_matches = _users_matching_initial_and_surname(c_words[0], w1, role=['faculty', 'admin'])
-                if len(init_matches) == 1:
-                    user = init_matches[0]
-                    if not user.is_active:
-                        return None, ADVISER_STATUS_INACTIVE, display_name(user)
-                    return user, ADVISER_STATUS_VALID, display_name(user)
-
-    all_matches = _users_matching_full_name(raw)
-    if not all_matches and cleaned:
-        all_matches = _users_matching_full_name(cleaned)
-    if not all_matches:
-        any_user = _user_by_username_ref(raw) or (cleaned and _user_by_username_ref(cleaned))
-        if any_user:
-            return None, ADVISER_STATUS_NOT_ADVISER, display_name(any_user)
-        return None, ADVISER_STATUS_USER_NOT_FOUND, ''
-    if len(all_matches) > 1:
-        return None, ADVISER_STATUS_USER_NOT_FOUND, ''
-    return None, ADVISER_STATUS_NOT_ADVISER, display_name(all_matches[0])
+    other = index.resolve(raw)
+    if other.user is not None and other.user.role not in ('faculty', 'admin'):
+        return None, ADVISER_STATUS_NOT_ADVISER, display_name(other.user)
+    return None, ADVISER_STATUS_USER_NOT_FOUND, ''
 
 
 def is_pit_bulk_row(data, user=None):
@@ -545,6 +274,7 @@ def row_passes_adviser_filter(adviser_status, adviser_filter):
     return True
 
 
+@import_user_lookup()
 def validate_bulk_team_row(
     data,
     adviser_filter=ADVISER_FILTER_ALL,
@@ -578,13 +308,9 @@ def validate_bulk_team_row(
         adviser, adviser_status, adviser_name = resolve_adviser(adviser_ref)
 
     if not pit_row and adviser_ref and adviser_status not in (ADVISER_STATUS_VALID,):
-        normalized = normalize_name(adviser_ref)
-        duplicate_advisers = _users_matching_full_name(adviser_ref, role=['faculty', 'admin'])
-        if len(duplicate_advisers) > 1:
-            issues.append(
-                f'Adviser "{adviser_ref}": multiple users match that name. '
-                'Names must be unique in the system.'
-            )
+        resolution = _person_index().resolve(adviser_ref, ['faculty', 'admin'])
+        if resolution.status in ('ambiguous', 'selection_required'):
+            issues.append(_resolution_error(adviser_ref, resolution, 'Adviser'))
         elif adviser_status == ADVISER_STATUS_USER_NOT_FOUND:
             issues.append(f'Adviser "{adviser_ref}" was not found.')
         elif adviser_status == ADVISER_STATUS_INACTIVE:
@@ -593,6 +319,7 @@ def validate_bulk_team_row(
             issues.append(f'User "{adviser_ref}" is not a faculty member.')
 
     member_ref_map = {}
+    resolved_member_count = 0
     for member_ref in data['member_ids']:
         member_user, error = resolve_user_by_full_name(
             member_ref,
@@ -603,6 +330,7 @@ def validate_bulk_team_row(
             issues.append(error)
         elif member_user is not None:
             member_ref_map[member_ref] = member_user.id
+            resolved_member_count += 1
 
     leader_ref = (data.get('leader_id') or '').strip()
     leader, leader_error = resolve_user_by_full_name(
@@ -616,6 +344,8 @@ def validate_bulk_team_row(
         issues.append(f'Leader "{leader_ref}" must be a valid student user.')
 
     member_user_ids = set(member_ref_map.values())
+    if len(member_user_ids) != resolved_member_count:
+        issues.append('A student is listed more than once under different names or IDs. Keep each account once.')
     if leader is not None and leader.id not in member_user_ids:
         issues.append('Leader must be included in member_ids.')
 
@@ -743,9 +473,11 @@ def validate_bulk_team_row(
         'concept_assignment': concept_assignment,
         'concept_requirement': concept_requirement,
         'participation_preview': participation_preview(member_user_ids) if not pit_row and not issues else [],
+        'reference_resolutions': team_reference_resolutions(data, pit=pit_row),
     }
 
 
+@import_user_lookup()
 def preview_bulk_teams(
     rows,
     adviser_filter=ADVISER_FILTER_ALL,
@@ -862,6 +594,7 @@ def preview_bulk_teams(
             'membership_conflicts': result['membership_conflicts'],
             'concept_requirement': result['concept_requirement'],
             'participation_preview': result['participation_preview'],
+            'reference_resolutions': result['reference_resolutions'],
         })
 
         summary['total'] += 1

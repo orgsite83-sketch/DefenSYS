@@ -112,7 +112,7 @@ void main() {
     await tester.tap(find.text('Ethan Salazar'));
     await tester.pumpAndSettle();
 
-    expect(rows[0]['member_ids'], contains('Ethan Salazar'));
+    expect(rows[0]['member_ids'], contains('2024-0003'));
     expect(find.text('3/4'), findsOneWidget);
 
     // 6. Test Safe Member Removal with confirmation dialog
@@ -143,7 +143,8 @@ void main() {
     await tester.tap(find.text('Elena Ramos'));
     await tester.pumpAndSettle();
 
-    expect(rows[0]['adviser_name'], 'Elena Ramos');
+    expect(rows[0]['adviser_name'], 'eramos');
+    expect(rows[0]['adviser_id'], 'eramos');
   });
 
   testWidgets('TeamBulkImportReviewTable allows dynamically adding a class section', (tester) async {

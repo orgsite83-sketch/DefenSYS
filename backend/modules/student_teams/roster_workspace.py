@@ -258,6 +258,14 @@ def context(user, data):
     can_generate = user.role == 'faculty' and instructor_sections(user, term, year).filter(section=section).exists()
     return {'semester_id': term.pk, 'semester': str(term), 'year_level': year, 'section': section or None,
         'scope_options': available, 'can_generate': can_generate,
+        'student_options': [
+            {'username': record.student.username, 'name': record.student.get_full_name(),
+             'section': record.section}
+            for record in StudentAcademicRecord.objects.filter(
+                Q(section=section) | Q(section='') | Q(section__iexact='BSIT'),
+                semester=term, year_level=year, student__role='student', student__is_active=True,
+            ).select_related('student').order_by('student__username')
+        ] if section else [],
         'can_import_sections': user_is_pit_lead_only(user) and data.get('workspace') != 'instructor',
         'fingerprint': fingerprint(term, year, section) if section else None,
         'rosters': ([roster_payload(term, year, section)] + [roster_payload(term, year, section, e) for e in events])

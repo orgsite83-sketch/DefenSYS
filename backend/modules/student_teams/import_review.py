@@ -6,7 +6,8 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from user_management.academic_records.models import StudentAcademicRecord
 from .bulk_import import (collect_bulk_section_metadata, format_bulk_import_errors,
-    import_user_lookup, imported_concept_requirement, resolve_user_by_full_name)
+    import_user_lookup, imported_concept_requirement, resolve_user_by_full_name,
+    team_reference_resolutions)
 from .models import SectionAssignment, TeamMembership
 from .serializers import display_name
 
@@ -84,6 +85,8 @@ def review_roster_import(user, term, year, section, raw, event, *, workspace=Non
                 'section': section, 'program_label': f'{year} PIT', 'ready': False,
                 'issues': [], 'warnings': [], 'notes': []}
             results.append(result)
+            if isinstance(item, dict):
+                result['reference_resolutions'] = team_reference_resolutions(item, pit=True)
             try:
                 row = imported_rows(term, year, section, [item])[0]
                 row['group_key'] = result['group_key'] or f'import/{index}'

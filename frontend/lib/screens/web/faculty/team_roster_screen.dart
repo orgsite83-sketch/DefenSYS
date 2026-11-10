@@ -1592,6 +1592,7 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
               pitLeadYear: year,
               showIssuesOnly: false,
               lockAssignments: true,
+              studentOptions: _maps(data?['student_options']),
               sectionOptions: [if (section != null) section!],
               onRowChanged: (_) => scheduleImportValidation(),
               onDeleteRow: (index) {
@@ -1885,7 +1886,8 @@ class _TeamRosterScreenState extends ConsumerState<TeamRosterScreen> {
               if (action == 'copy')
                 const WorkflowNotice(
                   title: 'Create separate teams',
-                  message: 'Copy creates new team identities. To make existing event teams the default, use “Use as Current roster” on that event instead.',
+                  message:
+                      'Copy creates new team identities. To make existing event teams the default, use “Use as Current roster” on that event instead.',
                 ),
               WorkflowNotice(
                 title: review!['reuses_teams'] == true

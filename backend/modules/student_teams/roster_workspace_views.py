@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from defensys_backend.read_projection import ReadAPIView
 from .formation_access import CanFormTeams
+from .bulk_import import import_user_lookup
 from . import roster_workspace as service
 
 
@@ -16,6 +17,7 @@ class RosterWorkspaceView(ReadAPIView):
 class RosterPreviewView(APIView):
     permission_classes = [CanFormTeams]
 
+    @import_user_lookup()
     def post(self, request):
         return Response(service.prepare(request.user, request.data))
 
@@ -23,6 +25,7 @@ class RosterPreviewView(APIView):
 class RosterApplyView(APIView):
     permission_classes = [CanFormTeams]
 
+    @import_user_lookup()
     def post(self, request):
         return Response(service.apply(request, request.data.get('preview_token')), status=201)
 

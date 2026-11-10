@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/team_import_review.dart';
+import 'package:defensys/widgets/team_import_reference_corrections.dart';
 
 import '../widgets/defensys_admin_shell.dart';
 
@@ -153,6 +154,53 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       5; // Default limit 5 teams per page to prevent long vertical scrolling
   int _currentPage = 0;
   final Set<String> _customSections = {};
+  final Map<Map<String, dynamic>, List<String>> _selectedReferences = {};
+
+  String _accountLabel(String reference, {bool faculty = false}) {
+    final options = teamImportAccounts(
+      faculty ? widget.adviserOptions : widget.studentOptions,
+    );
+    final account = options
+        .where((a) => teamImportAccountId(a) == reference)
+        .firstOrNull;
+    if (account != null) {
+      return '${teamImportAccountName(account)} ($reference)';
+    }
+    for (final preview in widget.previewRows) {
+      for (final resolution
+          in (preview['reference_resolutions'] as List? ?? const [])) {
+        if (resolution is Map &&
+            resolution['username'] == reference &&
+            resolution['name'] != null) {
+          return '${resolution['name']} ($reference)';
+        }
+      }
+    }
+    return reference;
+  }
+
+  String _studentIdentity(String reference) {
+    for (final preview in widget.previewRows) {
+      for (final resolution
+          in (preview['reference_resolutions'] as List? ?? const [])) {
+        if (resolution is Map &&
+            resolution['reference'] == reference &&
+            resolution['status'] == 'matched') {
+          return '${resolution['username']}';
+        }
+      }
+    }
+    final options = teamImportAccounts(widget.studentOptions)
+        .where(
+          (a) =>
+              teamImportAccountId(a) == reference ||
+              teamImportAccountName(a) == reference,
+        )
+        .toList();
+    return options.length == 1
+        ? teamImportAccountId(options.single)
+        : reference;
+  }
 
   @override
   Widget build(BuildContext context) =>
@@ -169,16 +217,22 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             .toUpperCase()
             .contains('PIT');
     if (pit) {
-      return (row['instructor_name'] ?? preview?['instructor_name'] ?? '')
-          .toString()
-          .trim();
+      return _accountLabel(
+        (row['instructor_name'] ?? preview?['instructor_name'] ?? '')
+            .toString()
+            .trim(),
+        faculty: true,
+      );
     }
-    return (row['adviser_name'] ??
-            row['adviser_id'] ??
-            preview?['adviser_name'] ??
-            '')
-        .toString()
-        .trim();
+    return _accountLabel(
+      (row['adviser_name'] ??
+              row['adviser_id'] ??
+              preview?['adviser_name'] ??
+              '')
+          .toString()
+          .trim(),
+      faculty: true,
+    );
   }
 
   Widget _contextBadge(String label, {IconData? icon}) => ShadBadge.outline(
@@ -257,7 +311,14 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         } else if (widget.adviserFilter == 'without_adviser') {
           if (adv.isNotEmpty) return false;
         } else {
-          if (adv.toLowerCase() != widget.adviserFilter!.toLowerCase()) {
+          final raw =
+              (row['instructor_name'] ??
+                      row['adviser_name'] ??
+                      row['adviser_id'] ??
+                      '')
+                  .toString();
+          if (adv.toLowerCase() != widget.adviserFilter!.toLowerCase() &&
+              raw.toLowerCase() != widget.adviserFilter!.toLowerCase()) {
             return false;
           }
         }
@@ -690,6 +751,68 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               ),
             ),
 
+            TeamImportReferenceCorrections(
+              resolutions:
+                  (preview?['reference_resolutions'] as List? ?? const [])
+                      .whereType<Map>()
+                      .map((r) => Map<String, dynamic>.from(r))
+                      .toList(),
+              students: widget.studentOptions,
+              faculty: widget.adviserOptions,
+              enabled: !widget.isValidating,
+              onSelected: (resolution, username) {
+                if (index >= widget.rows.length ||
+                    !identical(widget.rows[index], row)) {
+                  return;
+                }
+                final original = '${resolution['reference']}';
+                final field = '${resolution['field']}';
+                final storedReference =
+                    field == 'adviser_name' && '${row[field] ?? ''}'.isEmpty
+                    ? row['adviser_id']
+                    : row[field];
+                final current = field == 'member_ids'
+                    ? (row[field] as List? ?? const []).contains(original)
+                    : '${storedReference ?? ''}' == original;
+                if (!current) return;
+                late List<int> changed;
+                setState(() {
+                  changed = applyTeamImportAccount(
+                    rows: widget.rows,
+                    index: index,
+                    resolution: resolution,
+                    username: username,
+                    resolutions:
+                        (preview?['reference_resolutions'] as List? ?? const [])
+                            .whereType<Map>()
+                            .map((r) => Map<String, dynamic>.from(r))
+                            .toList(),
+                  );
+                  _selectedReferences
+                      .putIfAbsent(row, () => [])
+                      .add(
+                        '${resolution['reference']} → ${_accountLabel(username, faculty: const ['adviser_name', 'instructor_name'].contains(resolution['field']))}',
+                      );
+                });
+                for (final changedIndex in changed) {
+                  widget.onRowChanged(changedIndex);
+                }
+              },
+            ),
+            for (final reference
+                in _selectedReferences[row] ?? const <String>[])
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  'Selected account: $reference',
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    fontSize: 11,
+                    color: _muted,
+                  ),
+                ),
+              ),
+
             // 2. Validation Issues / Warnings Alerts (if any)
             if (issues.isNotEmpty)
               Container(
@@ -1085,7 +1208,7 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
-                          'Leader: $leaderId',
+                          'Leader: ${_accountLabel(leaderId)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -1138,7 +1261,7 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
 
                 return _buildMemberCard(
                   context: context,
-                  member: member,
+                  member: _accountLabel(member),
                   isLeader: isLeader,
                   onDesignateLeader: () {
                     setState(() {
@@ -1411,12 +1534,14 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       for (final st in widget.studentOptions!) {
         if (st is Map<String, dynamic>) {
           final name = (st['name'] ?? st['full_name'] ?? '').toString().trim();
-          final id = (st['student_id'] ?? st['username'] ?? '')
+          final id = (st['username'] ?? st['student_id'] ?? '')
               .toString()
               .trim();
           final sec = (st['section'] ?? '').toString().trim();
           if (name.isNotEmpty) {
-            candidatesMap[name.toLowerCase()] = _StudentCandidate(
+            candidatesMap[id.isNotEmpty
+                ? id
+                : name.toLowerCase()] = _StudentCandidate(
               name: name,
               id: id.isNotEmpty ? id : null,
               subtitle: sec.isNotEmpty ? 'Sec: $sec · $id' : id,
@@ -1439,7 +1564,7 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 .where((e) => e.isNotEmpty)
                 .toList();
       for (final m in list) {
-        if (!candidatesMap.containsKey(m.toLowerCase())) {
+        if (!candidatesMap.values.any((c) => c.name == m || c.id == m)) {
           candidatesMap[m.toLowerCase()] = _StudentCandidate(
             name: m,
             subtitle: 'From imported sheet',
@@ -1449,12 +1574,12 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     }
 
     // Exclude students already on this team
-    final existingLower = currentMembers
-        .map((e) => e.trim().toLowerCase())
-        .toSet();
+    final existingLower = currentMembers.map(_studentIdentity).toSet();
     final available =
         candidatesMap.values
-            .where((c) => !existingLower.contains(c.name.toLowerCase()))
+            .where(
+              (c) => !existingLower.contains(c.id ?? _studentIdentity(c.name)),
+            )
             .toList()
           ..sort((a, b) => a.name.compareTo(b.name));
 
@@ -1654,7 +1779,7 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                   _addStudentToTeam(
                                     index,
                                     currentMembers,
-                                    st.name,
+                                    st.id ?? st.name,
                                   );
                                   Navigator.of(dialogCtx).pop();
                                 },
@@ -1682,8 +1807,8 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     if (studentName.isEmpty) return;
     if (currentMembers.length >= 4) return;
 
-    final lower = studentName.toLowerCase();
-    if (!currentMembers.any((m) => m.trim().toLowerCase() == lower)) {
+    final identity = _studentIdentity(studentName);
+    if (!currentMembers.any((m) => _studentIdentity(m) == identity)) {
       final updated = List<String>.from(currentMembers)..add(studentName);
       setState(() {
         widget.rows[index]['member_ids'] = updated;
@@ -1802,9 +1927,9 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               .toString()
               .trim();
           final username = (adv['username'] ?? '').toString().trim();
-          final id = adv['id']?.toString();
+          final id = username.isNotEmpty ? username : null;
           if (name.isNotEmpty) {
-            candidatesMap[name.toLowerCase()] = _AdviserCandidate(
+            candidatesMap[id ?? name.toLowerCase()] = _AdviserCandidate(
               name: name,
               id: id,
               subtitle: username.isNotEmpty ? '@$username' : '',
@@ -1820,7 +1945,8 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
 
     for (final r in widget.rows) {
       final a = (r[field] ?? '').toString().trim();
-      if (a.isNotEmpty && !candidatesMap.containsKey(a.toLowerCase())) {
+      if (a.isNotEmpty &&
+          !candidatesMap.values.any((c) => c.id == a || c.name == a)) {
         candidatesMap[a.toLowerCase()] = _AdviserCandidate(
           name: a,
           subtitle: 'From imported sheet',
@@ -1989,8 +2115,10 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                 itemBuilder: (ctx, i) {
                                   final adv = filtered[i];
                                   final isSelected =
-                                      adv.name.toLowerCase() ==
-                                      currentAdviser.trim().toLowerCase();
+                                      currentAdviser == adv.name ||
+                                      currentAdviser == adv.id ||
+                                      currentAdviser ==
+                                          '${adv.name} (${adv.id})';
 
                                   return ListTile(
                                     dense: true,
@@ -2035,7 +2163,8 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                         : null,
                                     onTap: () {
                                       setState(() {
-                                        widget.rows[index][field] = adv.name;
+                                        widget.rows[index][field] =
+                                            adv.id ?? adv.name;
                                         if (!isInstructor) {
                                           widget.rows[index]['adviser_id'] =
                                               adv.id ?? adv.name;
