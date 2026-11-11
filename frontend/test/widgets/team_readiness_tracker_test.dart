@@ -3,9 +3,109 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/components/team_readiness_tracker.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
+import 'package:defensys/theme/app_theme.dart';
+import '../helpers/capture_preview.dart';
 import '../helpers/auth_test_overrides.dart';
 
 void main() {
+  for (final width in [390.0, 1280.0, 1580.0]) {
+    for (final dark in [false, true]) {
+      testWidgets(
+        'pending Capstone sections expand at $width (dark: $dark)',
+        (tester) async {
+          tester.view.physicalSize = Size(width, 1100);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await loadPreviewFonts();
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: authTestOverrides(),
+              child: MaterialApp(
+                theme: AppTheme.lightTheme,
+                darkTheme: AppTheme.mistDarkTheme,
+                themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+                home: Scaffold(
+                  body: SingleChildScrollView(
+                    key: const PageStorageKey('defense-operations-scroll'),
+                    child: TeamReadinessTracker(
+                      state: DefenseSchedulerState(
+                        teams: [
+                          for (var id = 1; id <= 20; id++)
+                            {
+                              'id': id,
+                              'name': 'Team $id',
+                              'project_title': 'Capstone project $id',
+                              'level': '3rd Year Capstone',
+                              'section': id <= 9 ? 'BSIT-3A' : 'BSIT-3B',
+                              'adviser': id % 3,
+                              'adviser_capacity': {
+                                'active_count': 7,
+                                'effective_limit': 7,
+                                'has_exception': true,
+                                'is_overloaded': false,
+                              },
+                              'adviser_name': [
+                                'ARNEL MANGGA',
+                                'HANES ONGOS',
+                                'LUTCHE NERI',
+                              ][id % 3],
+                              'eligible_stages': <String>[],
+                              'stage_progress': {'Project Proposal': 'pending'},
+                            },
+                        ],
+                      ),
+                      scope: 'capstone',
+                      activeStageOrEventName: 'Project Proposal',
+                      onReviewTeamDeliverables: (_, _) {},
+                      onSendReminder: (_, _) {},
+                      isSendingReminder: false,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('BSIT-3A'));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(find.text('Team 1'), findsOneWidget);
+          expect(find.text('Awaiting Endorsement'), findsNWidgets(9));
+          await capturePreview(
+            tester,
+            find.byType(Scaffold),
+            'readiness-expanded-$width-$dark',
+            viewport: true,
+          );
+          await tester.tap(find.text('ARNEL MANGGA'));
+          await tester.pumpAndSettle();
+          expect(find.text('Awaiting Endorsement'), findsNWidgets(3));
+          await tester.tap(find.text('All'));
+          await tester.pumpAndSettle();
+          expect(find.text('Awaiting Endorsement'), findsNWidgets(9));
+          await tester.tap(find.text('BSIT-3A'));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('BSIT-3B'));
+          await tester.tap(find.text('BSIT-3B'));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(find.text('Team 10'), findsOneWidget);
+          await tester.ensureVisible(find.text('BSIT-3A'));
+          await tester.tap(find.text('BSIT-3A'));
+          await tester.pumpAndSettle();
+          expect(find.text('Team 1'), findsOneWidget);
+          expect(find.text('Team 10'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
+      );
+    }
+  }
+
   for (final width in [390.0, 1280.0]) {
     for (final scenario in [
       ('awaiting_upload', 'Shared files missing', 'upload required'),

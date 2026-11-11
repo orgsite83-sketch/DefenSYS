@@ -49,6 +49,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
+  String _adviserKey(Map<String, dynamic> team) => team['adviser'] == null
+      ? 'name:${team['adviser_name']?.toString().trim() ?? ''}'
+      : 'id:${team['adviser']}';
+
   @override
   void dispose() {
     _trackerSearchController.dispose();
@@ -89,8 +93,13 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
     );
   }
 
-  Widget _readinessTable(Widget table) => LayoutBuilder(
+  Widget _readinessTable(String section, Widget table) => LayoutBuilder(
     builder: (context, constraints) => SingleChildScrollView(
+      // ExpansionTile saves a bool; scroll views save a double. Never let
+      // either reuse the board's PageStorageKey or the section's state key.
+      key: PageStorageKey(
+        'readiness-table-${widget.scope}-${widget.activeStageOrEventName}-$section',
+      ),
       scrollDirection: Axis.horizontal,
       child: SizedBox(
         width: constraints.maxWidth < 900 ? 900 : constraints.maxWidth,
@@ -173,7 +182,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
       if (showConceptFilters && _conceptFilter != 'all') {
         final workflow = (team['concept_workflows'] as Map? ?? {})[activeStageOrEventName] as Map? ?? {};
         if (_conceptFilter == 'failed') {
-          if (!['failed', 'project_rejected'].contains((team['stage_verdicts'] as Map? ?? {})[activeStageOrEventName])) return false;
+          if (!['failed', 'project_rejected'].contains((team['stage_verdicts'] as Map? ?? {})[activeStageOrEventName])) {
+            return false;
+          }
         } else if (workflow['status'] != _conceptFilter) {
           return false;
         }
@@ -363,11 +374,16 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                   widget.scope,
                   yearLevel: widget.scope == 'pit' ? _selectedPitYearLevel : null,
                 );
-                final Map<String, int> adviserLoadCounts = {};
+                final Map<String, String> adviserNames = {};
+                final Map<String, Map> adviserCapacities = {};
                 for (final t in allScopeTeams) {
                   final adviser = t['adviser_name']?.toString().trim() ?? '';
                   if (adviser.isNotEmpty) {
-                    adviserLoadCounts[adviser] = (adviserLoadCounts[adviser] ?? 0) + 1;
+                    final key = _adviserKey(t);
+                    adviserNames[key] = adviser;
+                    if (t['adviser_capacity'] is Map) {
+                      adviserCapacities[key] = t['adviser_capacity'] as Map;
+                    }
                   }
                 }
 
@@ -405,8 +421,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                     final displayedTeams = (selectedAdviser == null || selectedAdviser == 'all' || widget.scope == 'pit')
                         ? sectionTeams
                         : sectionTeams.where((t) {
-                            final adviser = t['adviser_name']?.toString().trim() ?? '';
-                            return adviser == selectedAdviser;
+                            return _adviserKey(t) == selectedAdviser;
                           }).toList();
 
                     final isSectionCompleted = activeStageOrEventName.isNotEmpty &&
@@ -447,6 +462,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                           dividerColor: Colors.transparent,
                         ),
                         child: ExpansionTile(
+                          key: PageStorageKey(
+                            'readiness-section-${widget.scope}-$activeStageOrEventName-$section',
+                          ),
                           initiallyExpanded: false,
                           collapsedIconColor: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                           iconColor: DefensysTokens.maroonTextOf(context),
@@ -585,11 +603,11 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                 }
 
                                 final sectionAdvisers = sectionTeams
-                                    .map((t) => t['adviser_name']?.toString().trim() ?? '')
-                                    .where((adv) => adv.isNotEmpty)
+                                    .map(_adviserKey)
+                                    .where(adviserNames.containsKey)
                                     .toSet()
                                     .toList()
-                                  ..sort();
+                                  ..sort((a, b) => adviserNames[a]!.compareTo(adviserNames[b]!));
 
                                 if (sectionAdvisers.isEmpty) {
                                   return const SizedBox.shrink();
@@ -599,9 +617,16 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
 
                                 return Padding(
                                   padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 4),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Wrap(
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    spacing: 8,
+                                    runSpacing: 4,
                                     children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
                                       Icon(
                                         Icons.people_outline_rounded,
                                         size: 16,
@@ -619,12 +644,8 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                           ),
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Wrap(
-                                          spacing: 8,
-                                          runSpacing: 4,
-                                          children: [
+                                        ],
+                                      ),
                                             GestureDetector(
                                               onTap: () {
                                                 setState(() {
@@ -662,8 +683,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                             ),
                                             ...sectionAdvisers.map((adv) {
                                               final isSelected = selectedAdviser == adv;
-                                              final load = adviserLoadCounts[adv] ?? 0;
-                                              final isOverloaded = load > 4;
+                                              final capacity = adviserCapacities[adv];
+                                              final load = asInt(capacity?['active_count']);
+                                              final limit = asInt(capacity?['effective_limit']);
+                                              final isOverloaded = capacity?['is_overloaded'] == true;
 
                                               Color bgColor;
                                               Color borderColor;
@@ -710,23 +733,29 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                     child: Row(
                                                       mainAxisSize: MainAxisSize.min,
                                                       children: [
-                                                        Text(
-                                                          adv,
+                                                      Flexible(
+                                                        child: Text(
+                                                          adviserNames[adv]!,
                                                           style: TextStyle(
+                                                            fontFamily: DefensysTokens.fontFamilyInter,
                                                             fontSize: 11,
                                                             fontWeight: FontWeight.w600,
                                                             color: textColor,
                                                           ),
                                                         ),
+                                                      ),
+                                                      if (load != null &&
+                                                          limit != null) ...[
                                                         const SizedBox(width: 4),
                                                         Text(
-                                                          '($load/4)',
+                                                          '($load/$limit)',
                                                           style: TextStyle(
                                                             fontSize: 10.5,
                                                             fontWeight: FontWeight.bold,
                                                             color: countColor,
                                                           ),
                                                         ),
+                                                      ],
                                                         if (isOverloaded) ...[
                                                           const SizedBox(width: 4),
                                                           Icon(
@@ -743,17 +772,15 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                 ),
                                               );
                                             }),
-                                          ],
-                                        ),
-                                      ),
                                     ],
+                                  ),
                                   ),
                                 );
                               },
                             ),
                             Padding(
                               padding: const EdgeInsets.all(12),
-                              child: _readinessTable(Table(
+                              child: _readinessTable(section, Table(
                                 columnWidths: const {
                                   0: FlexColumnWidth(4),
                                   1: FlexColumnWidth(2.5),
@@ -888,13 +915,16 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                       children: [
                                                         Icon(Icons.person_outline_rounded, size: 13, color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary),
                                                         const SizedBox(width: 4),
-                                                        Text(
+                                                          Flexible(
+                                                            child: Text(
                                                           instructorName.isEmpty ? 'Instructor: Unassigned' : 'Instructor: $instructorName',
                                                           style: TextStyle(
-                                                            fontSize: 12,
+                                                                fontFamily: DefensysTokens.fontFamilyInter,
+                                                                fontSize: 12,
                                                             color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                                                             fontWeight: FontWeight.w500,
                                                             fontStyle: instructorName.isEmpty ? FontStyle.italic : FontStyle.normal,
+                                                              ),
                                                           ),
                                                         ),
                                                       ],
@@ -918,21 +948,28 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                       ],
                                                     );
                                                   }
-                                                  final load = adviserLoadCounts[adviserName] ?? 0;
-                                                  final isOverloaded = load > 4;
+                                                  final capacity = adviserCapacities[_adviserKey(team)];
+                                                  final load = asInt(capacity?['active_count']);
+                                                  final limit = asInt(capacity?['effective_limit']);
+                                                  final isOverloaded = capacity?['is_overloaded'] == true;
                                                   return Row(
                                                     children: [
                                                       Icon(Icons.person_outline_rounded, size: 13, color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary),
                                                       const SizedBox(width: 4),
-                                                      Text(
+                                                        Flexible(
+                                                          child: Text(
                                                         'Adviser: $adviserName',
                                                         style: TextStyle(
-                                                          fontSize: 12,
+                                                              fontFamily: DefensysTokens.fontFamilyInter,
+                                                              fontSize: 12,
                                                           color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                                                           fontWeight: FontWeight.w500,
                                                         ),
                                                       ),
-                                                      const SizedBox(width: 4),
+                                                        ),
+                                                        if (load != null &&
+                                                            limit != null) ...[
+                                                          const SizedBox(width: 4),
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                                         decoration: BoxDecoration(
@@ -947,7 +984,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                           ),
                                                         ),
                                                         child: Text(
-                                                          '$load/4 teams',
+                                                              '$load/$limit teams',
                                                           style: TextStyle(
                                                             fontSize: 10,
                                                             fontWeight: FontWeight.bold,
@@ -957,6 +994,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                           ),
                                                         ),
                                                       ),
+                                                        ],
                                                     ],
                                                   );
                                                 },
@@ -1028,7 +1066,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                   foregroundColor: DefensysTokens.maroonTextOf(context),
                                                   disabledForegroundColor: _isDark ? DefensysTokens.textSecondaryDark.withValues(alpha: 0.4) : null,
                                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                                  textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontWeight: FontWeight.bold, fontSize: 12),
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
@@ -1043,7 +1081,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                     foregroundColor: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
                                                     disabledForegroundColor: _isDark ? DefensysTokens.textSecondaryDark.withValues(alpha: 0.4) : null,
                                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                                    textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                                    textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamilyInter, fontWeight: FontWeight.bold, fontSize: 12),
                                                   ),
                                                 ),
                                             ],

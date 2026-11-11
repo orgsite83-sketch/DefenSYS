@@ -48,6 +48,34 @@ class CapacityFixtures:
 
 
 class AdviserCapacityTests(CapacityFixtures, APITestCase):
+    def test_readiness_uses_approved_capacity_and_total_workload(self):
+        from defense.scheduler.serializers import ScheduleTeamSerializer
+        from student_teams.adviser_capacity import capacity_projections as project
+        teams = self.fill()
+        self.approve()
+        fifth = self.team(5, section='Another section')
+        with patch('student_teams.adviser_capacity.capacity_projections', wraps=project) as projections:
+            # A filtered section must still show the adviser's complete load.
+            rows = ScheduleTeamSerializer([teams[0], fifth], many=True).data
+        projections.assert_called_once()
+        for row in rows:
+            capacity = row['adviser_capacity']
+            self.assertEqual((capacity['active_count'], capacity['effective_limit']), (5, 5))
+            self.assertTrue(capacity['has_exception'])
+            self.assertFalse(capacity['is_overloaded'])
+
+    def test_readiness_retains_warning_after_exception_revocation(self):
+        from defense.scheduler.serializers import ScheduleTeamSerializer
+        self.fill()
+        self.approve()
+        fifth = self.team(5)
+        save_exception(self.admin, {'adviser_id': self.adviser.pk, 'semester_id': self.term.pk,
+                                  'reason': 'Authorization withdrawn'}, revoke=True)
+        capacity = ScheduleTeamSerializer(fifth).data['adviser_capacity']
+        self.assertEqual((capacity['active_count'], capacity['effective_limit']), (5, 4))
+        self.assertFalse(capacity['has_exception'])
+        self.assertTrue(capacity['is_overloaded'])
+
     def test_standard_approved_and_other_adviser_limits(self):
         self.fill()
         with self.assertRaises(ValidationError):

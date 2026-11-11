@@ -132,7 +132,17 @@ class PanelistOptionSerializer(serializers.ModelSerializer):
         return display_name(obj)
 
 
+class ScheduleTeamListSerializer(serializers.ListSerializer):
+    def to_representation(self, data):
+        from student_teams.adviser_capacity import capacity_projections
+        teams = list(data.all() if hasattr(data, 'all') else data)
+        adviser_ids = {team.adviser_id for team in teams if team.is_capstone and team.adviser_id}
+        self.context['_scheduler_adviser_capacities'] = capacity_projections(adviser_ids) if adviser_ids else {}
+        return super().to_representation(teams)
+
+
 class ScheduleTeamSerializer(serializers.ModelSerializer):
+    adviser_capacity = serializers.SerializerMethodField()
     concept_workflows = serializers.SerializerMethodField()
     shared_readiness = serializers.SerializerMethodField()
     stage_readiness = serializers.SerializerMethodField()
@@ -194,6 +204,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StudentTeam
+        list_serializer_class = ScheduleTeamListSerializer
         fields = [
             'id',
             'name',
@@ -208,6 +219,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'leader_name',
             'adviser',
             'adviser_name',
+            'adviser_capacity',
             'instructor_name',
             'instructors',
             'completed_stages',
@@ -227,6 +239,15 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
 
     def get_adviser_name(self, obj):
         return display_name(obj.adviser)
+
+    def get_adviser_capacity(self, obj):
+        if not obj.is_capstone or not obj.adviser_id:
+            return None
+        from student_teams.adviser_capacity import capacity_projections
+        capacities = self.context.get('_scheduler_adviser_capacities')
+        if capacities is None:
+            capacities = capacity_projections([obj.adviser_id])
+        return capacities.get(obj.adviser_id)
 
     def get_instructor_name(self, obj):
         people = self.get_instructors(obj)
