@@ -114,8 +114,10 @@ def extract_pdf_content(file_path: str, classify: bool = False) -> Dict[str, any
                     full_text.append('')
                     continue
         
-        # Combine all text
-        combined_text = '\f'.join(full_text)
+        # PDF font mappings can produce NULs, which PostgreSQL text fields
+        # cannot store. Clean derived text before summary/ML processing while
+        # preserving page boundaries and the original uploaded PDF bytes.
+        combined_text = '\f'.join(full_text).replace('\x00', '')
         result['text'] = combined_text
         
         # Generate summary (first 500 characters)

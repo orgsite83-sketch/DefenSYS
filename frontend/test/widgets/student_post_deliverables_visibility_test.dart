@@ -210,7 +210,7 @@ void main() {
       expect(find.text('Upload $_postLabel'), findsNothing);
       final card=find.byKey(const ValueKey('student-requirement-APPROVED'));
       await tester.ensureVisible(card);
-      await tester.tap(find.descendant(of:card, matching:find.text('Manage files')));
+      await tester.tap(find.descendant(of: card, matching: find.byType(InkWell)).first);
       await tester.pumpAndSettle();
       expect(find.text('Upload $_postLabel'), findsOneWidget);
       expect(find.text('0/1 Uploaded'), findsWidgets);

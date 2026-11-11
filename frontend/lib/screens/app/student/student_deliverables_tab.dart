@@ -3,6 +3,7 @@ import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'package:defensys/widgets/repository/concept_workspace.dart';
 import 'package:defensys/widgets/repository/document_group.dart';
 import 'package:defensys/widgets/repository/deliverable_file_widgets.dart';
+import 'package:defensys/widgets/repository/deliverable_filename_confirmation.dart';
 import 'package:defensys/widgets/repository/deliverable_requirement_card.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -1329,6 +1330,25 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
       final filename = isPost && suggested.isNotEmpty
           ? format.recommendedFileName(suggested, selectedFileName: file.name)
           : file.name;
+      if (filename != file.name) {
+        final confirmed = await confirmDeliverableFilename(
+          context,
+          originalName: file.name,
+          repositoryName: filename,
+        );
+        if (!confirmed || !mounted || !context.mounted) return;
+        // Confirmation may stay open while the academic context changes.
+        final latest = ref.read(capstoneDeliverablesProvider);
+        final latestTeam = latest.teams
+            .where((row) => row['id'] == team['id'])
+            .firstOrNull;
+        if (latest.selectedStage != stageLabel ||
+            latestTeam == null ||
+            latestTeam['semester_id'] != team['semester_id'] ||
+            latestTeam['project_version'] != team['project_version']) {
+          return;
+        }
+      }
       final saved = await ref
           .read(capstoneDeliverablesProvider.notifier)
           .uploadDocument(

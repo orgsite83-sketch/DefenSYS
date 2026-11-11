@@ -121,7 +121,7 @@ void main() {
         ],
       );
       expect(find.text('Replace File'), findsNothing);
-      await tester.tap(find.text('Manage files'));
+      await tester.tap(find.text('Adviser Acceptance Form'));
       await tester.pumpAndSettle();
       expect(find.text('Replace File'), findsOneWidget);
       expect(find.textContaining(replacementReason), findsOneWidget);
@@ -154,7 +154,7 @@ void main() {
       ],
     );
     expect(find.text('Replace File'), findsNothing);
-    await tester.tap(find.text('Manage files'));
+    await tester.tap(find.text('Adviser Acceptance Form'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('wrong.pdf'));
     await tester.pumpAndSettle();
