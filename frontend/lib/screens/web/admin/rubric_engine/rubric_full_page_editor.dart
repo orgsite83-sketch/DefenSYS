@@ -17,6 +17,7 @@ import '../widgets/defensys_admin_shell.dart';
 import 'rubric_details_fields.dart';
 import 'rubric_criterion_fields.dart';
 import 'rubric_publish_review.dart';
+import 'rubric_editor_field.dart';
 
 const _kDefaultScales = [
   '5-Point Scale',
@@ -98,14 +99,10 @@ class RubricFullPageEditor extends ConsumerStatefulWidget {
 
 class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _surfaceColor =>
-      _isDark ? DefensysTokens.mistSurface : Colors.white;
-  Color get _borderColor =>
-      _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
-  Color get _textPrimaryColor =>
-      _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A);
-  Color get _textSecondaryColor =>
-      _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
+  Color get _surfaceColor => DefensysTokens.surfaceOf(context);
+  Color get _borderColor => DefensysTokens.borderOf(context);
+  Color get _textPrimaryColor => DefensysTokens.textPrimaryOf(context);
+  Color get _textSecondaryColor => DefensysTokens.textSecondaryOf(context);
 
   late final TextEditingController _name;
   late final TextEditingController _customMaxScore;
@@ -113,6 +110,12 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   late String _evaluationType;
   late String _targetType;
   late String _rubricScale;
+  String _standardScale = '10-Point Scale';
+  bool _showValidation = false;
+  final _nameFieldKey = GlobalKey<RubricEditorFieldState>();
+  final _customPointsFieldKey = GlobalKey<RubricEditorFieldState>();
+  final _detailsAnchor = GlobalKey();
+  final _weightsAnchor = GlobalKey();
   late int? _semesterId;
   int? _defenseStageId;
   int? _pitEventId;
@@ -320,6 +323,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
             ? _criteria.first.scale
             : RubricCriterionDraft.defaultScale(_scales));
     _customMaxScore.text = (_asInt(r?['custom_max_score']) ?? 20).toString();
+    _standardScale = _rubricScale == 'Points-Based (Sections)'
+        ? '10-Point Scale'
+        : _rubricScale;
+    _showValidation = false;
     if (r != null) {
       final pitYear =
           ref
@@ -423,6 +430,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         _targetType = 'individual';
       }
       _rubricScale = sourceRubric['scale']?.toString() ?? _rubricScale;
+      if (_rubricScale != 'Points-Based (Sections)') {
+        _standardScale = _rubricScale;
+      }
+      _showValidation = false;
       _customMaxScore.text = (_asInt(sourceRubric['custom_max_score']) ?? 20)
           .toString();
       _defenseStageId = null;
@@ -593,7 +604,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _assignmentSelect(
-          label: 'PIT event (optional)',
+          label: 'PIT event',
           fieldKey: 'pit-event-$_semesterId-$_pitEventId',
           value: _pitEventId,
           names: {
@@ -621,7 +632,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
           },
           note: events.isEmpty
               ? 'No configured PIT events for this semester. Create one in PIT Events Setup, or save this rubric as a template.'
-              : 'Choose an event or keep this rubric as an unassigned template.',
+              : null,
         ),
         if (replacing) ...[
           const SizedBox(height: 8),
@@ -669,7 +680,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     final assignment = _scope == 'pit'
         ? _pitEventControl(state, canEdit: canEdit, syncName: syncName)
         : _assignmentSelect(
-            label: 'Defense stage (optional)',
+            label: 'Defense stage',
             fieldKey: 'stage-$_defenseStageId',
             value: _defenseStageId,
             names: {
@@ -694,10 +705,15 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
               _markDirty();
             },
             note: _defenseStageId == null
-                ? 'Choose a stage or keep this rubric as an unassigned template.'
+                ? null
                 : 'Saving will automatically assign this rubric to the selected defense stage.',
           );
     return RubricDetailsFields(
+      key: _detailsAnchor,
+      nameFieldKey: _nameFieldKey,
+      pointsFieldKey: _customPointsFieldKey,
+      standardScale: _standardScale,
+      showValidation: _showValidation,
       semesterLabel: _semesterLabel(state),
       semesterActive:
           _semesterId != null &&
@@ -784,10 +800,12 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 children: [
                   Icon(icon, size: 18, color: _textSecondaryColor),
                   const SizedBox(width: 10),
-                  Text(
-                    title,
-                    style: DefensysTokens.sectionTitle.copyWith(
-                      color: _textPrimaryColor,
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: DefensysTokens.sectionTitle.copyWith(
+                        color: _textPrimaryColor,
+                      ),
                     ),
                   ),
                 ],
@@ -795,7 +813,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
               if (trailing != null) trailing,
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           child,
         ],
       ),
@@ -835,6 +853,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   void _onRubricScaleChanged(String newScale) {
     setState(() {
       _rubricScale = newScale;
+      if (newScale != 'Points-Based (Sections)') _standardScale = newScale;
       if (newScale == 'Points-Based (Sections)') {
         _syncSectionsFromCriteria();
       } else {
@@ -875,7 +894,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   num get _totalCriteriaWeight {
     num total = 0;
     for (final c in _criteria) {
-      total += num.tryParse(c.weight.text.trim()) ?? 0;
+      final weight = num.tryParse(c.weight.text.trim());
+      if (weight != null && weight.isFinite) total += weight;
     }
     return total;
   }
@@ -883,195 +903,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   num get _totalSectionWeight {
     num total = 0;
     for (final s in _sections) {
-      total += num.tryParse(s.weight.text.trim()) ?? 0;
+      final weight = num.tryParse(s.weight.text.trim());
+      if (weight != null && weight.isFinite) total += weight;
     }
     return total;
-  }
-
-  bool get _hasSections =>
-      _criteria.any((c) => c.section.text.trim().isNotEmpty);
-
-  Future<void> _distributeWeightsBySections() async {
-    if (_criteria.isEmpty) return;
-    final sectionNames = <String>[];
-    for (final c in _criteria) {
-      final s = c.section.text.trim();
-      final key = s.isEmpty ? 'General' : s;
-      if (!sectionNames.contains(key)) sectionNames.add(key);
-    }
-    if (sectionNames.isEmpty) return;
-
-    final sectionPoints = <String, int>{};
-    for (final s in sectionNames) {
-      int pts = 0;
-      for (final c in _criteria) {
-        final key = c.section.text.trim().isEmpty
-            ? 'General'
-            : c.section.text.trim();
-        if (key == s) {
-          pts += int.tryParse(c.maxScore.text.trim()) ?? 10;
-        }
-      }
-      sectionPoints[s] = pts > 0 ? pts : 10;
-    }
-
-    final sectionWeightControllers = <String, TextEditingController>{};
-    final shares = allocateRubricWeight(
-      10000,
-      List<int>.filled(sectionNames.length, 1),
-    );
-    for (int i = 0; i < sectionNames.length; i++) {
-      final s = sectionNames[i];
-      sectionWeightControllers[s] = TextEditingController(
-        text: formatRubricWeight(shares[i]),
-      );
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => DefensysShadcnScope(
-        child: StatefulBuilder(
-          builder: (dialogCtx, setDialogState) {
-            num totalWeight = 0;
-            for (final ctrl in sectionWeightControllers.values) {
-              totalWeight += num.tryParse(ctrl.text.trim()) ?? 0;
-            }
-            final isValid =
-                (totalWeight - 100).abs() < 0.000001 &&
-                sectionWeightControllers.values.every((controller) {
-                  final value = num.tryParse(controller.text.trim());
-                  return value != null &&
-                      value.isFinite &&
-                      value > 0 &&
-                      value <= 100 &&
-                      (value * 100 - (value * 100).round()).abs() < 0.000001;
-                });
-
-            return ShadDialog(
-              title: const Text('Calculate Section Weights'),
-              description: const Text(
-                'Enter the target weight percentage for each section. DefenSYS will proportionally allocate criterion weights so they total 100%.',
-              ),
-              actions: [
-                ShadButton.outline(
-                  size: ShadButtonSize.sm,
-                  onPressed: () => Navigator.of(dialogCtx).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ShadButton(
-                  size: ShadButtonSize.sm,
-                  enabled: isValid,
-                  onPressed: () {
-                    Navigator.of(dialogCtx).pop();
-                    _applySectionWeights(sectionWeightControllers);
-                  },
-                  child: const Text('Apply Weights'),
-                ),
-              ],
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final s in sectionNames) ...[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    s,
-                                    style: DefensysTokens.body.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${sectionPoints[s]} total points',
-                                    style: DefensysTokens.caption,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            SizedBox(
-                              width: 90,
-                              child: ShadInput(
-                                controller: sectionWeightControllers[s],
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                trailing: const Text('%'),
-                                onChanged: (_) => setDialogState(() {}),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                    ],
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Total Weight:',
-                          style: DefensysTokens.body.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        ShadBadge.outline(
-                          child: Text(
-                            '$totalWeight% / 100%',
-                            style: TextStyle(
-                              color: isValid
-                                  ? const Color(0xFF16A34A)
-                                  : const Color(0xFFDC2626),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-
-    for (final ctrl in sectionWeightControllers.values) {
-      ctrl.dispose();
-    }
-  }
-
-  void _applySectionWeights(Map<String, TextEditingController> weightCtrls) {
-    setState(() {
-      for (final entry in weightCtrls.entries) {
-        final criteria = _criteria.where((criterion) {
-          final section = criterion.section.text.trim();
-          return (section.isEmpty ? 'General' : section) == entry.key;
-        }).toList();
-        final total = ((num.tryParse(entry.value.text.trim()) ?? 0) * 100)
-            .round();
-        final shares = allocateRubricWeight(total, [
-          for (final criterion in criteria) _allocationPoints(criterion),
-        ]);
-        for (var i = 0; i < criteria.length; i++) {
-          criteria[i].weight.text = formatRubricWeight(shares[i]);
-        }
-      }
-    });
-    _markDirty();
-    showSuccessToast(
-      context,
-      'Weights calculated for ${weightCtrls.length} sections.',
-    );
   }
 
   void _distributeWeightsEvenly() {
@@ -1120,20 +955,24 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     }
     _sections.clear();
 
-    final sectionMap = <String, List<RubricCriterionDraft>>{};
-    final sectionOrder = <String>[];
-    const unsectionedKey = '__UNSECTIONED__';
+    final sectionMap = <Object, List<RubricCriterionDraft>>{};
+    final sectionOrder = <Object>[];
+    final sectionNames = <Object, String>{};
+    final unsectionedKey = Object();
     var needsInitialWeightSync = false;
 
     for (final draft in _criteria) {
       final sName = draft.section.text.trim();
-      final key = sName.isEmpty ? unsectionedKey : sName;
+      final key = sName.isEmpty
+          ? draft.sectionIdentity ?? unsectionedKey
+          : sName;
       if (sName.isEmpty) {
         needsInitialWeightSync = true;
       }
       if (!sectionMap.containsKey(key)) {
         sectionMap[key] = [];
         sectionOrder.add(key);
+        sectionNames[key] = sName;
       }
       sectionMap[key]!.add(draft);
     }
@@ -1150,7 +989,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         targetType: defaultTarget,
       );
       final sec = SectionEditorDraft(
-        title: 'Section 1',
+        title: '',
         weight: '100',
         targetType: defaultTarget,
         criteria: [first],
@@ -1180,7 +1019,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                         .toStringAsFixed(2)
                         .replaceFirst(RegExp(r'\.?0+$'), ''))
             : '';
-        final resolvedTitle = key == unsectionedKey ? 'Section ${i + 1}' : key;
+        final resolvedTitle = sectionNames[key]!;
         for (final c in list) {
           if (c.section.text.trim() != resolvedTitle) {
             c.section.text = resolvedTitle;
@@ -1239,6 +1078,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         ]);
         for (var i = 0; i < critCount; i++) {
           final c = section.criteria[i];
+          c.sectionIdentity = section.identity;
           c.section.text = secTitle;
           c.targetType = _targetType == 'both'
               ? section.targetType
@@ -1250,6 +1090,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         }
       } else {
         for (final c in section.criteria) {
+          c.sectionIdentity = section.identity;
           c.section.text = secTitle;
           c.targetType = _targetType == 'both'
               ? section.targetType
@@ -1307,14 +1148,14 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }
 
   void _addNewSection() {
+    final defaultTarget = _targetType == 'individual' ? 'individual' : 'team';
+    final newSection = SectionEditorDraft(
+      title: '',
+      weight: '',
+      targetType: defaultTarget,
+      criteria: [],
+    );
     setState(() {
-      final defaultTarget = _targetType == 'individual' ? 'individual' : 'team';
-      final newSection = SectionEditorDraft(
-        title: 'Section ${_sections.length + 1}',
-        weight: '',
-        targetType: defaultTarget,
-        criteria: [],
-      );
       final defaultCrit = RubricCriterionDraft(
         scales: _scales,
         name: '',
@@ -1330,6 +1171,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       _recomputeCriteriaWeightsFromSections();
     });
     _markDirty();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) newSection.titleFieldKey.currentState?.focus();
+    });
   }
 
   void _removeSection(int index) {
@@ -1435,375 +1279,244 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }) {
     final secWeight = num.tryParse(section.weight.text.trim()) ?? 0;
     final totalPts = section.totalPoints;
-    final titleText = section.title.text.trim();
-    final displayTitle = titleText.isNotEmpty
-        ? titleText
-        : 'Section ${sectionIndex + 1}';
-
-    return Container(
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _borderColor),
+    final needed = _sectionWeightToBalance(section);
+    final title = RubricEditorField(
+      key: section.titleFieldKey,
+      label: 'Section name',
+      inputKey: ValueKey('section-name-$sectionIndex'),
+      controller: section.title,
+      enabled: canEdit,
+      showValidation: _showValidation,
+      placeholder: 'Enter section name',
+      validator: (value) {
+        final name = value.trim().toLowerCase();
+        if (name.isEmpty) return 'Enter a section name.';
+        return _sections.any(
+              (other) =>
+                  other != section &&
+                  other.title.text.trim().toLowerCase() == name,
+            )
+            ? 'Section names must be unique.'
+            : null;
+      },
+      onChanged: (_) {
+        _recomputeCriteriaWeightsFromSections();
+        _markDirty();
+      },
+    );
+    final weight = RubricEditorField(
+      key: section.weightFieldKey,
+      label: 'Section weight',
+      inputKey: ValueKey('section-weight-$sectionIndex'),
+      controller: section.weight,
+      enabled: canEdit,
+      showValidation: _showValidation,
+      validator: rubricWeightError,
+      hint:
+          canEdit &&
+              needed != null &&
+              needed > 0 &&
+              needed <= 100 &&
+              needed != secWeight
+          ? 'Enter ${formatRubricPercentage(needed)}% to reach 100%.'
+          : null,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      trailing: Text(
+        '%',
+        style: DefensysTokens.body.copyWith(color: _textPrimaryColor),
       ),
+      onChanged: (_) {
+        setState(_recomputeCriteriaWeightsFromSections);
+        _markDirty();
+      },
+    );
+    Widget action(String label, IconData icon, VoidCallback? onPressed) =>
+        ShadTooltip(
+          builder: (_) => Text(label),
+          child: ShadButton.ghost(
+            size: ShadButtonSize.sm,
+            width: 36,
+            height: 36,
+            padding: EdgeInsets.zero,
+            enabled: canEdit && onPressed != null,
+            onPressed: canEdit ? onPressed : null,
+            child: Semantics(label: label, child: Icon(icon, size: 16)),
+          ),
+        );
+    final actions = Wrap(
+      spacing: 2,
+      children: [
+        action(
+          'Move section up',
+          LucideIcons.arrowUp,
+          sectionIndex > 0 ? () => _moveSectionUp(sectionIndex) : null,
+        ),
+        action(
+          'Move section down',
+          LucideIcons.arrowDown,
+          sectionIndex < _sections.length - 1
+              ? () => _moveSectionDown(sectionIndex)
+              : null,
+        ),
+        if (_sections.length > 1)
+          action(
+            'Remove section',
+            LucideIcons.trash2,
+            () => _removeSection(sectionIndex),
+          ),
+      ],
+    );
+    return ShadCard(
+      key: ObjectKey(section),
+      padding: const EdgeInsets.all(16),
+      backgroundColor: _surfaceColor,
+      border: ShadBorder.all(color: _borderColor, width: 1),
+      radius: BorderRadius.circular(DefensysTokens.radiusMd),
+      shadows: const [],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            decoration: BoxDecoration(
-              color: _isDark
-                  ? const Color(0xFF1E293B).withValues(alpha: 0.6)
-                  : const Color(0xFFF8FAFC),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(9),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 700) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    title,
+                    const SizedBox(height: 12),
+                    weight,
+                    if (canEdit)
+                      Align(alignment: Alignment.centerRight, child: actions),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 12),
+                  SizedBox(width: 190, child: weight),
+                  if (canEdit) ...[const SizedBox(width: 8), actions],
+                ],
+              );
+            },
+          ),
+          if (_targetType == 'both') ...[
+            const SizedBox(height: 12),
+            ShadRadioGroup<String>(
+              key: ValueKey(
+                'section-target-$sectionIndex-${section.targetType}',
               ),
-              border: Border(bottom: BorderSide(color: _borderColor)),
+              initialValue: section.targetType,
+              enabled: canEdit,
+              axis: Axis.horizontal,
+              spacing: 16,
+              runSpacing: 8,
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  section.targetType = value;
+                  for (final criterion in section.criteria) {
+                    criterion.targetType = value;
+                  }
+                });
+                _markDirty();
+              },
+              items: [
+                ShadRadio(
+                  value: 'team',
+                  color: DefensysTokens.maroonOf(context),
+                  label: Text(
+                    'Team',
+                    style: DefensysTokens.body.copyWith(
+                      color: _textPrimaryColor,
+                    ),
+                  ),
+                ),
+                ShadRadio(
+                  value: 'individual',
+                  color: DefensysTokens.maroonOf(context),
+                  label: Text(
+                    'Individual',
+                    style: DefensysTokens.body.copyWith(
+                      color: _textPrimaryColor,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final titleField = Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: DefensysTokens.maroonOf(
-                                  context,
-                                ).withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(
-                                  DefensysTokens.radiusSm,
-                                ),
-                                border: Border.all(
-                                  color: DefensysTokens.maroonOf(
-                                    context,
-                                  ).withValues(alpha: 0.25),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Text(
-                                (sectionIndex + 1).toString().padLeft(2, '0'),
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: DefensysTokens.maroonOf(context),
-                                  fontFamily: DefensysTokens.fontFamilyInter,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'SECTION ${sectionIndex + 1}',
-                              style: DefensysTokens.caption.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: DefensysTokens.maroonOf(context),
-                                letterSpacing: 0.8,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        ShadInput(
-                          controller: section.title,
-                          enabled: canEdit,
-                          placeholder: const Text(
-                            'e.g. ORAL EXAMINATION, PROJECT MANUSCRIPT',
-                          ),
-                          style: DefensysTokens.tableCell.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: _textPrimaryColor,
-                          ),
-                          onChanged: (_) {
-                            _recomputeCriteriaWeightsFromSections();
-                            _markDirty();
-                          },
-                        ),
-                      ],
-                    );
-
-                    final weightField = Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Section Weight',
-                          style: DefensysTokens.caption.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: _textPrimaryColor,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: 110,
-                          child: ShadInput(
-                            controller: section.weight,
-                            enabled: canEdit,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            trailing: Text('%', style: DefensysTokens.caption),
-                            onChanged: (_) {
-                              setState(() {
-                                _recomputeCriteriaWeightsFromSections();
-                              });
-                              _markDirty();
-                            },
-                          ),
-                        ),
-                      ],
-                    );
-
-                    final actions = Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ShadTooltip(
-                          builder: (_) => const Text('Move section up'),
-                          child: ShadButton.ghost(
-                            size: ShadButtonSize.sm,
-                            width: 36,
-                            height: 36,
-                            padding: EdgeInsets.zero,
-                            enabled: canEdit && sectionIndex > 0,
-                            onPressed: canEdit && sectionIndex > 0
-                                ? () => _moveSectionUp(sectionIndex)
-                                : null,
-                            child: const Icon(LucideIcons.arrowUp, size: 16),
-                          ),
-                        ),
-                        ShadTooltip(
-                          builder: (_) => const Text('Move section down'),
-                          child: ShadButton.ghost(
-                            size: ShadButtonSize.sm,
-                            width: 36,
-                            height: 36,
-                            padding: EdgeInsets.zero,
-                            enabled:
-                                canEdit && sectionIndex < _sections.length - 1,
-                            onPressed:
-                                canEdit && sectionIndex < _sections.length - 1
-                                ? () => _moveSectionDown(sectionIndex)
-                                : null,
-                            child: const Icon(LucideIcons.arrowDown, size: 16),
-                          ),
-                        ),
-                        if (canEdit && _sections.length > 1)
-                          ShadTooltip(
-                            builder: (_) => const Text('Remove section'),
-                            child: ShadButton.ghost(
-                              size: ShadButtonSize.sm,
-                              width: 36,
-                              height: 36,
-                              padding: EdgeInsets.zero,
-                              onPressed: () => _removeSection(sectionIndex),
-                              child: const Icon(
-                                LucideIcons.trash2,
-                                size: 16,
-                                color: Color(0xFFDC2626),
-                              ),
-                            ),
-                          ),
-                      ],
-                    );
-
-                    if (constraints.maxWidth < 640) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          titleField,
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [weightField, actions],
-                          ),
-                        ],
-                      );
-                    }
-
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Expanded(child: titleField),
-                        const SizedBox(width: 16),
-                        weightField,
-                        const SizedBox(width: 12),
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: actions,
-                        ),
-                      ],
-                    );
+          ],
+          const SizedBox(height: 12),
+          for (var i = 0; i < section.criteria.length; i++)
+            Builder(
+              builder: (context) {
+                final criterion = section.criteria[i];
+                final points =
+                    int.tryParse(criterion.maxScore.text.trim()) ?? 0;
+                final effective =
+                    num.tryParse(criterion.weight.text.trim()) ?? 0;
+                return RubricCriterionFields(
+                  key: criterion.editorKey,
+                  index: i,
+                  initiallyExpanded: section.criteria.length == 1,
+                  showValidation: _showValidation,
+                  nameError: _duplicateCriterionName(
+                    criterion,
+                    section.criteria,
+                  ),
+                  name: criterion.name,
+                  maxScore: criterion.maxScore,
+                  weight: criterion.weight,
+                  description: criterion.description,
+                  maximum: points,
+                  enabled: canEdit,
+                  showTarget: false,
+                  target: criterion.targetType,
+                  isPointsScale: true,
+                  hideWeight: true,
+                  badge: ShadBadge.secondary(
+                    child: Text(
+                      '$points pts · ${formatRubricPercentage(effective)}% of rubric',
+                    ),
+                  ),
+                  onTargetChanged: (_) {},
+                  onChanged: () {
+                    setState(_recomputeCriteriaWeightsFromSections);
+                    _markDirty();
                   },
+                  onMoveUp: i > 0
+                      ? () => _moveCriterionUpInSection(section, i)
+                      : null,
+                  onMoveDown: i < section.criteria.length - 1
+                      ? () => _moveCriterionDownInSection(section, i)
+                      : null,
+                  onRemove: section.criteria.length > 1
+                      ? () => _removeCriterionFromSection(section, i)
+                      : null,
+                );
+              },
+            ),
+          const SizedBox(height: 8),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              if (canEdit)
+                ShadButton.outline(
+                  size: ShadButtonSize.sm,
+                  onPressed: () => _addCriterionToSection(section),
+                  leading: const Icon(LucideIcons.plus, size: 14),
+                  child: const Text('Add criterion'),
                 ),
-                if (_targetType == 'both') ...[
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Text(
-                        'Scoring Target:',
-                        style: DefensysTokens.caption.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: _textSecondaryColor,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      ShadRadioGroup<String>(
-                        initialValue: section.targetType,
-                        enabled: canEdit,
-                        axis: Axis.horizontal,
-                        spacing: 16,
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() {
-                              section.targetType = val;
-                              for (final c in section.criteria) {
-                                c.targetType = val;
-                              }
-                            });
-                            _markDirty();
-                          }
-                        },
-                        items: [
-                          ShadRadio(
-                            value: 'team',
-                            label: Text(
-                              'Team (Entire Group)',
-                              style: DefensysTokens.caption,
-                            ),
-                          ),
-                          ShadRadio(
-                            value: 'individual',
-                            label: Text(
-                              'Individual (Per Student)',
-                              style: DefensysTokens.caption,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (int cIdx = 0; cIdx < section.criteria.length; cIdx++) ...[
-                  Builder(
-                    builder: (context) {
-                      final criterion = section.criteria[cIdx];
-                      final pts =
-                          int.tryParse(criterion.maxScore.text.trim()) ?? 0;
-                      final calcWeight = (totalPts > 0 && secWeight > 0)
-                          ? ((pts / totalPts) * secWeight)
-                                .toStringAsFixed(2)
-                                .replaceFirst(RegExp(r'\.?0+$'), '')
-                          : '0';
-
-                      return RubricCriterionFields(
-                        key: ObjectKey(criterion),
-                        index: cIdx,
-                        section: null,
-                        name: criterion.name,
-                        maxScore: criterion.maxScore,
-                        weight: criterion.weight,
-                        description: criterion.description,
-                        maximum: pts > 0 ? pts : 10,
-                        enabled: canEdit,
-                        showTarget: false,
-                        target: criterion.targetType,
-                        isPointsScale: true,
-                        hideWeight: true,
-                        badge: ShadBadge.outline(
-                          child: Text(
-                            '$pts pts • $calcWeight% of rubric',
-                            style: DefensysTokens.caption.copyWith(
-                              fontWeight: FontWeight.w500,
-                              color: pts > 0
-                                  ? DefensysTokens.maroonOf(context)
-                                  : _textSecondaryColor,
-                            ),
-                          ),
-                        ),
-                        onTargetChanged: (_) {},
-                        onChanged: () {
-                          setState(() {
-                            _recomputeCriteriaWeightsFromSections();
-                          });
-                          _markDirty();
-                        },
-                        onMoveUp: cIdx > 0
-                            ? () => _moveCriterionUpInSection(section, cIdx)
-                            : null,
-                        onMoveDown: cIdx < section.criteria.length - 1
-                            ? () => _moveCriterionDownInSection(section, cIdx)
-                            : null,
-                        onRemove: section.criteria.length > 1
-                            ? () => _removeCriterionFromSection(section, cIdx)
-                            : null,
-                      );
-                    },
-                  ),
-                  if (cIdx < section.criteria.length - 1)
-                    const SizedBox(height: 16),
-                ],
-                const SizedBox(height: 16),
-                if (canEdit)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ShadButton.outline(
-                      size: ShadButtonSize.sm,
-                      onPressed: () => _addCriterionToSection(section),
-                      leading: const Icon(LucideIcons.plus, size: 14),
-                      child: Text('Add Criterion to $displayTitle'),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            decoration: BoxDecoration(
-              color: _isDark
-                  ? const Color(0xFF0F172A).withValues(alpha: 0.4)
-                  : const Color(0xFFF1F5F9),
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(9),
+              Text(
+                '${section.criteria.length} ${section.criteria.length == 1 ? 'criterion' : 'criteria'} · $totalPts points total',
+                style: DefensysTokens.caption.copyWith(
+                  color: _textSecondaryColor,
+                ),
               ),
-              border: Border(top: BorderSide(color: _borderColor)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${section.criteria.length} criteria • Total: $totalPts pts',
-                  style: DefensysTokens.caption.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: _textPrimaryColor,
-                  ),
-                ),
-                ShadBadge.secondary(
-                  child: Text(
-                    'Section Weight: ${section.weight.text.trim().isEmpty ? '0' : section.weight.text.trim()}%',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: secWeight > 0
-                          ? DefensysTokens.maroonOf(context)
-                          : _textSecondaryColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
         ],
       ),
@@ -1833,7 +1546,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         : 'Criterion weight allocation';
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
+      key: _weightsAnchor,
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1861,50 +1575,19 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                       style: DefensysTokens.caption.copyWith(color: color),
                     ),
                   ),
-                  if (isSectioned)
-                    Text(
-                      '($count ${_sections.length == 1 ? 'section' : 'sections'}, ${_criteria.length} criteria)',
-                      style: DefensysTokens.caption.copyWith(
-                        color: _textSecondaryColor,
-                      ),
-                    ),
                 ],
               ),
               if (!widget.readOnly && count > 0)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    if (isSectioned)
-                      ShadButton.outline(
-                        size: ShadButtonSize.sm,
-                        enabled: enabled,
-                        onPressed: enabled
-                            ? _distributeSectionWeightsEvenly
-                            : null,
-                        leading: const Icon(LucideIcons.equal, size: 15),
-                        child: const Text('Distribute section weights evenly'),
-                      )
-                    else ...[
-                      if (_hasSections)
-                        ShadButton.outline(
-                          size: ShadButtonSize.sm,
-                          enabled: enabled,
-                          onPressed: enabled
-                              ? _distributeWeightsBySections
-                              : null,
-                          leading: const Icon(LucideIcons.calculator, size: 15),
-                          child: const Text('Calculate from sections'),
-                        ),
-                      ShadButton.outline(
-                        size: ShadButtonSize.sm,
-                        enabled: enabled,
-                        onPressed: enabled ? _distributeWeightsEvenly : null,
-                        leading: const Icon(LucideIcons.equal, size: 15),
-                        child: const Text('Distribute evenly'),
-                      ),
-                    ],
-                  ],
+                ShadButton.outline(
+                  size: ShadButtonSize.sm,
+                  enabled: enabled,
+                  onPressed: !enabled
+                      ? null
+                      : isSectioned
+                      ? _distributeSectionWeightsEvenly
+                      : _distributeWeightsEvenly,
+                  leading: const Icon(LucideIcons.equal, size: 15),
+                  child: const Text('Distribute evenly'),
                 ),
             ],
           ),
@@ -1929,7 +1612,11 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     required VoidCallback? onRemove,
     required VoidCallback onChanged,
   }) => RubricCriterionFields(
-    key: ObjectKey(draft),
+    key: draft.editorKey,
+    initiallyExpanded: _criteria.length == 1,
+    showValidation: _showValidation,
+    nameError: _duplicateCriterionName(draft, _criteria),
+    weightToBalance: _weightToBalance(draft),
     index: index,
     section: null,
     name: draft.name,
@@ -1952,6 +1639,92 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         : null,
     onRemove: onRemove,
   );
+
+  String? _duplicateCriterionName(
+    RubricCriterionDraft draft,
+    List<RubricCriterionDraft> group,
+  ) {
+    final name = draft.name.text.trim().toLowerCase();
+    return name.isNotEmpty &&
+            group.any(
+              (other) =>
+                  other != draft &&
+                  other.name.text.trim().toLowerCase() == name,
+            )
+        ? 'Criterion names must be unique.'
+        : null;
+  }
+
+  num? _weightToBalance(RubricCriterionDraft draft) {
+    num others = 0;
+    for (final other in _criteria) {
+      if (identical(other, draft)) continue;
+      final weight = num.tryParse(other.weight.text.trim());
+      if (weight == null || !weight.isFinite) return null;
+      others += weight;
+    }
+    return ((100 - others) * 100).round() / 100;
+  }
+
+  num? _sectionWeightToBalance(SectionEditorDraft section) {
+    num others = 0;
+    for (final other in _sections) {
+      if (identical(other, section)) continue;
+      final weight = num.tryParse(other.weight.text.trim());
+      if (weight == null || !weight.isFinite) return null;
+      others += weight;
+    }
+    return ((100 - others) * 100).round() / 100;
+  }
+
+  void _revealValidationIssue() {
+    setState(() => _showValidation = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      bool focusField(GlobalKey<RubricEditorFieldState> key) {
+        if (key.currentState?.error == null) return false;
+        key.currentState!.focusError();
+        return true;
+      }
+
+      if (focusField(_nameFieldKey)) return;
+      if (_semesterId == null) {
+        final target = _detailsAnchor.currentContext;
+        if (target != null) Scrollable.ensureVisible(target);
+        return;
+      }
+      if (focusField(_customPointsFieldKey)) return;
+      if (_rubricScale == 'Points-Based (Sections)') {
+        for (final section in _sections) {
+          if (focusField(section.titleFieldKey) ||
+              focusField(section.weightFieldKey)) {
+            return;
+          }
+          for (final draft in section.criteria) {
+            if (draft.editorKey.currentState?.hasError == true) {
+              draft.editorKey.currentState!.revealFirstError();
+              return;
+            }
+          }
+        }
+      } else {
+        for (final draft in _criteria) {
+          if (draft.editorKey.currentState?.hasError == true) {
+            draft.editorKey.currentState!.revealFirstError();
+            return;
+          }
+        }
+      }
+      final target = _weightsAnchor.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          alignment: 0.2,
+          duration: const Duration(milliseconds: 180),
+        );
+      }
+    });
+  }
 
   String? _validationMessage() {
     if (_name.text.trim().isEmpty) {
@@ -2084,6 +1857,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   Future<bool> _save(String status, {bool showConfirmation = true}) async {
     final validationMessage = _validationMessage();
     if (validationMessage != null) {
+      _revealValidationIssue();
       showValidationToast(context, validationMessage);
       return false;
     }
@@ -2464,8 +2238,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                     _sectionCard(
                       icon: LucideIcons.listChecks,
                       title: _rubricScale == 'Points-Based (Sections)'
-                          ? 'Evaluation Sections & Criteria (${_sections.length} sections, ${_criteria.length} criteria)'
-                          : 'Evaluation Criteria (${_criteria.length})',
+                          ? 'Weighted sections (${_sections.length})'
+                          : 'Evaluation criteria (${_criteria.length})',
                       child: _rubricScale == 'Points-Based (Sections)'
                           ? _buildSectionedCriteriaEditor(canEdit)
                           : Column(
@@ -2639,6 +2413,9 @@ class SectionEditorDraft {
 
   final TextEditingController title;
   final TextEditingController weight;
+  final identity = Object();
+  final titleFieldKey = GlobalKey<RubricEditorFieldState>();
+  final weightFieldKey = GlobalKey<RubricEditorFieldState>();
   String targetType;
   final List<RubricCriterionDraft> criteria;
 
@@ -2704,6 +2481,8 @@ class RubricCriterionDraft {
   }
 
   final TextEditingController section;
+  Object? sectionIdentity;
+  final editorKey = GlobalKey<RubricCriterionFieldsState>();
   final TextEditingController name;
   final TextEditingController description;
   String scale;

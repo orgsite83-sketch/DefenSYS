@@ -66,7 +66,7 @@ void main() {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Text(
-                              'PIT event (optional)',
+                              'PIT event',
                               style: DefensysTokens.tableCell.copyWith(
                                 color: DefensysTokens.textPrimaryOf(context),
                               ),
@@ -98,10 +98,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        expect(
-          find.text('Use the suggested name or enter your own.'),
-          findsOneWidget,
-        );
+        expect(find.text('Standard criteria'), findsOneWidget);
+        expect(find.text('Weighted sections'), findsOneWidget);
         await capturePreview(
           tester,
           find.byType(RubricDetailsFields),

@@ -1,0 +1,109 @@
+<div id="rubric-wireframe">
+  <style>
+    #rubric-wireframe { --rw-bg: light-dark(#f6f7f9,#17191e); --rw-panel: light-dark(#ffffff,#202329); --rw-text: light-dark(#192232,#eef0f3); --rw-sub: light-dark(#5c6674,#aab1ba); --rw-line: light-dark(#cfd4db,#535b65); --rw-soft: light-dark(#edf0f3,#2c3037); --rw-maroon: light-dark(#83170f,#ba5148); --rw-warn: light-dark(#8e5e12,#e4bc72); --rw-error: light-dark(#a32b22,#ef7e75); color:var(--rw-text); font-family:Inter,Arial,sans-serif; background:var(--rw-bg); padding:18px; }
+    #rubric-wireframe * { box-sizing:border-box; }
+    #rubric-wireframe [hidden] { display:none !important; }
+    #rubric-wireframe .rw-page { max-width:980px; margin:auto; display:grid; gap:13px; }
+    #rubric-wireframe .rw-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    #rubric-wireframe .rw-heading { font-size:19px; font-weight:600; }
+    #rubric-wireframe .rw-muted { color:var(--rw-sub); font-size:12px; }
+    #rubric-wireframe .rw-panel { background:var(--rw-panel); border:1px solid var(--rw-line); border-radius:7px; padding:16px; }
+    #rubric-wireframe .rw-panel-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:13px; }
+    #rubric-wireframe .rw-title { font-size:14px; font-weight:600; }
+    #rubric-wireframe .rw-link { border:0; background:none; color:var(--rw-maroon); padding:6px 0; font:inherit; font-size:12px; }
+    #rubric-wireframe .rw-grid { display:grid; grid-template-columns:1.45fr 1fr; gap:12px; }
+    #rubric-wireframe .rw-grid-three { display:grid; grid-template-columns:1fr 1.25fr 1.35fr; gap:12px; margin-top:13px; }
+    #rubric-wireframe .rw-mode { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:13px; }
+    #rubric-wireframe .rw-mode-note { color:var(--rw-sub); font-size:12px; }
+    #rubric-wireframe .rw-section { border-top:1px solid var(--rw-line); padding:12px 0; display:grid; gap:10px; }
+    #rubric-wireframe .rw-section-top { display:grid; grid-template-columns:1fr 130px; gap:10px; }
+    #rubric-wireframe .rw-section-criterion { display:grid; grid-template-columns:1fr 110px 130px; align-items:center; gap:10px; padding:8px 10px; background:var(--rw-soft); border-radius:5px; font-size:12px; }
+    #rubric-wireframe .rw-section-criterion input { background:var(--rw-panel); }
+    #rubric-wireframe .rw-field { display:grid; gap:5px; min-width:0; }
+    #rubric-wireframe label, #rubric-wireframe .rw-label { font-size:12px; font-weight:600; }
+    #rubric-wireframe .rw-required { color:var(--rw-sub); font-weight:400; }
+    #rubric-wireframe input, #rubric-wireframe select, #rubric-wireframe textarea { color:var(--rw-text); background:var(--rw-panel); border:1px solid var(--rw-line); border-radius:5px; padding:9px 10px; min-height:37px; width:100%; font:inherit; font-size:13px; }
+    #rubric-wireframe input::placeholder, #rubric-wireframe textarea::placeholder { color:var(--rw-sub); }
+    #rubric-wireframe .rw-static { background:var(--rw-soft); border:1px solid var(--rw-line); border-radius:5px; padding:9px 10px; min-height:37px; font-size:13px; }
+    #rubric-wireframe .rw-choice { display:flex; flex-wrap:wrap; gap:5px; }
+    #rubric-wireframe .rw-choice button, #rubric-wireframe .rw-button { color:var(--rw-text); background:var(--rw-panel); border:1px solid var(--rw-line); border-radius:5px; padding:8px 10px; font:inherit; font-size:12px; min-height:36px; }
+    #rubric-wireframe .rw-choice button[aria-pressed="true"] { border-color:var(--rw-maroon); background:var(--rw-soft); }
+    #rubric-wireframe .rw-choice button[aria-pressed="true"]::before { content:'● '; color:var(--rw-maroon); }
+    #rubric-wireframe .rw-choice button[aria-pressed="false"]::before { content:'○ '; }
+    #rubric-wireframe .rw-criteria-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+    #rubric-wireframe .rw-allocation { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:9px 11px; background:var(--rw-soft); border-radius:5px; font-size:12px; margin-bottom:12px; }
+    #rubric-wireframe .rw-meter { height:5px; background:var(--rw-line); flex:1; min-width:90px; border-radius:6px; overflow:hidden; }
+    #rubric-wireframe .rw-meter span { display:block; width:60%; height:100%; background:var(--rw-warn); }
+    #rubric-wireframe .rw-criterion { border-top:1px solid var(--rw-line); }
+    #rubric-wireframe .rw-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 1px; }
+    #rubric-wireframe .rw-row-main { display:flex; align-items:center; gap:12px; min-width:0; flex-wrap:wrap; }
+    #rubric-wireframe .rw-row-title { font-size:13px; font-weight:600; }
+    #rubric-wireframe .rw-chip { background:var(--rw-soft); padding:4px 7px; border-radius:4px; color:var(--rw-sub); font-size:11px; }
+    #rubric-wireframe .rw-row-actions { display:flex; align-items:center; gap:4px; }
+    #rubric-wireframe .rw-icon { border:0; background:transparent; color:var(--rw-sub); min-width:30px; min-height:30px; font-size:15px; }
+    #rubric-wireframe .rw-details { display:grid; gap:10px; padding:2px 0 14px; }
+    #rubric-wireframe .rw-detail-grid { display:grid; grid-template-columns:1fr 128px; gap:10px; }
+    #rubric-wireframe .rw-hint { color:var(--rw-warn); font-size:12px; }
+    #rubric-wireframe .rw-error { color:var(--rw-error); font-size:12px; display:none; }
+    #rubric-wireframe .rw-invalid .rw-error { display:block; }
+    #rubric-wireframe .rw-invalid .rw-missing { border-color:var(--rw-error); }
+    #rubric-wireframe textarea { min-height:43px; resize:vertical; }
+    #rubric-wireframe .rw-footer { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    #rubric-wireframe .rw-footer-right { display:flex; gap:8px; flex-wrap:wrap; }
+    #rubric-wireframe .rw-primary { background:var(--rw-maroon); border-color:var(--rw-maroon); color:#fff; }
+    @media(max-width:740px) { #rubric-wireframe .rw-grid, #rubric-wireframe .rw-grid-three { grid-template-columns:1fr; } }
+    @media(max-width:520px) { #rubric-wireframe { padding:8px; } #rubric-wireframe .rw-detail-grid, #rubric-wireframe .rw-section-top { grid-template-columns:1fr; } #rubric-wireframe .rw-section-criterion { grid-template-columns:1fr 90px; } #rubric-wireframe .rw-section-criterion span { grid-column:1 / -1; } #rubric-wireframe .rw-row { align-items:flex-start; } }
+  </style>
+  <div class="rw-page">
+    <div class="rw-top"><div><div class="rw-heading">Create rubric</div><div class="rw-muted">Low fidelity layout</div></div><button class="rw-button" type="button" id="rw-validation">Preview missing fields</button></div>
+    <section class="rw-panel" aria-label="Rubric details">
+      <div class="rw-panel-head"><div class="rw-title">Rubric details</div><button class="rw-link" type="button">Copy from rubric</button></div>
+      <div class="rw-grid">
+        <div class="rw-field"><label for="rw-name">Rubric name <span class="rw-required">· Required</span></label><input id="rw-name" value="Panel Evaluation Rubric"></div>
+        <div class="rw-field"><div class="rw-label">Academic period</div><div class="rw-static">2nd Semester, A.Y. 2025–2026 · Active</div></div>
+      </div>
+      <div class="rw-mode"><div class="rw-label">Scoring setup</div><div class="rw-choice" data-choice="mode"><button type="button" aria-pressed="true" data-mode="standard">Standard criteria</button><button type="button" aria-pressed="false" data-mode="sections">Weighted sections</button></div><span class="rw-mode-note" id="rw-mode-note">Give each criterion a percentage of the rubric.</span></div>
+      <div class="rw-grid-three" id="rw-standard-settings">
+        <div class="rw-field"><div class="rw-label">Evaluation type</div><div class="rw-choice" data-choice="type"><button type="button" aria-pressed="true">Panel</button><button type="button" aria-pressed="false">Adviser</button><button type="button" aria-pressed="false">Peer</button></div></div>
+        <div class="rw-field"><div class="rw-label">Maximum points per criterion</div><div class="rw-choice" data-choice="scale"><button type="button" aria-pressed="false">5</button><button type="button" aria-pressed="true">10</button><button type="button" aria-pressed="false">100</button><button type="button" aria-pressed="false">Custom</button></div></div>
+        <div class="rw-field"><div class="rw-label">Score recipient</div><div class="rw-choice" data-choice="recipient"><button type="button" aria-pressed="true">Team</button><button type="button" aria-pressed="false">Individual</button><button type="button" aria-pressed="false">Both</button></div></div>
+      </div>
+      <div class="rw-grid" id="rw-section-settings" hidden style="margin-top:13px"><div class="rw-field"><div class="rw-label">Evaluation type</div><div class="rw-choice" data-choice="section-type"><button type="button" aria-pressed="true">Panel</button><button type="button" aria-pressed="false">Adviser</button><button type="button" aria-pressed="false">Peer</button></div></div><div class="rw-field"><div class="rw-label">Score recipient</div><div class="rw-choice" data-choice="section-recipient"><button type="button" aria-pressed="true">Team</button><button type="button" aria-pressed="false">Individual</button><button type="button" aria-pressed="false">Both</button></div></div></div>
+      <div class="rw-field" style="margin-top:13px"><label for="rw-stage">Defense stage</label><select id="rw-stage"><option>Unassigned template</option><option>Proposal defense</option><option>Final defense</option></select></div>
+    </section>
+    <section class="rw-panel" aria-label="Evaluation criteria" id="rw-standard-criteria">
+      <div class="rw-criteria-head"><div class="rw-title">Evaluation criteria · 2</div><button class="rw-button" type="button" id="rw-distribute">Distribute evenly</button></div>
+      <div class="rw-allocation"><strong id="rw-total">60% of 100%</strong><span id="rw-remaining">40% remaining</span><div class="rw-meter" aria-hidden="true"><span id="rw-meter-fill"></span></div></div>
+      <div class="rw-criterion"><div class="rw-row"><div class="rw-row-main"><span class="rw-row-title">1 · Technical implementation</span><span class="rw-chip">60% weight</span><span class="rw-chip">Team</span></div><div class="rw-row-actions"><button class="rw-icon" type="button" aria-label="Move criterion 1 down">↓</button><button class="rw-button" type="button" data-expand="rw-first" aria-expanded="false">Edit ▾</button></div></div><div class="rw-details" id="rw-first" hidden><div class="rw-detail-grid"><div class="rw-field"><label for="rw-first-name">Criterion name · Required</label><input id="rw-first-name" value="Technical implementation"></div><div class="rw-field"><label for="rw-first-weight">Weight · Required</label><input id="rw-first-weight" value="60%"></div></div><div class="rw-field"><label for="rw-first-guidelines">Evaluation guidelines</label><textarea id="rw-first-guidelines">Assess functionality and implementation quality.</textarea></div></div></div>
+      <div class="rw-criterion"><div class="rw-row"><div class="rw-row-main"><span class="rw-row-title">2 · Untitled criterion</span><span class="rw-chip">Weight missing</span><span class="rw-chip">Team</span></div><div class="rw-row-actions"><button class="rw-icon" type="button" aria-label="Move criterion 2 up">↑</button><button class="rw-button" type="button" data-expand="rw-second" aria-expanded="true">Close ▴</button></div></div><div class="rw-details" id="rw-second"><div class="rw-detail-grid"><div class="rw-field"><label for="rw-second-name">Criterion name <span class="rw-required">· Required</span></label><input class="rw-missing" id="rw-second-name" placeholder="Enter criterion name"><div class="rw-error" role="alert">Enter a criterion name.</div></div><div class="rw-field"><label for="rw-second-weight">Weight <span class="rw-required">· Required</span></label><input class="rw-missing" id="rw-second-weight" placeholder="%" inputmode="decimal"><div class="rw-hint" id="rw-needed">Enter 40% to reach 100%.</div><div class="rw-error" role="alert">Enter a weight.</div></div></div><div class="rw-field"><label for="rw-second-guidelines">Evaluation guidelines</label><textarea id="rw-second-guidelines" placeholder="Add scoring guidance"></textarea></div></div></div>
+      <button class="rw-button" type="button" id="rw-add" style="margin-top:12px">+ Add criterion</button>
+    </section>
+    <section class="rw-panel" aria-label="Weighted sections" id="rw-weighted-sections" hidden>
+      <div class="rw-criteria-head"><div><div class="rw-title">Weighted sections · 2 sections, 3 criteria</div><div class="rw-muted">Set section weights; criterion points divide each section’s weight.</div></div><button class="rw-button" type="button">Distribute section weights evenly</button></div>
+      <div class="rw-allocation"><strong id="rw-section-total">100% of 100%</strong><span id="rw-section-status">Balanced</span><div class="rw-meter" aria-hidden="true"><span id="rw-section-meter" style="width:100%"></span></div></div>
+      <div class="rw-section"><div class="rw-section-top"><div class="rw-field"><label for="rw-section-one">Section name · Required</label><input id="rw-section-one" value="Oral presentation"></div><div class="rw-field"><label for="rw-section-one-weight">Section weight · Required</label><input id="rw-section-one-weight" value="60%" inputmode="decimal"></div></div><div class="rw-section-criterion"><input aria-label="First criterion name" value="Clarity and delivery"><input id="rw-points-one" aria-label="Clarity and delivery maximum points" value="10 pts" inputmode="numeric"><span id="rw-share-one">20% of rubric</span></div><div class="rw-section-criterion"><input aria-label="Second criterion name" value="Responses to questions"><input id="rw-points-two" aria-label="Responses to questions maximum points" value="20 pts" inputmode="numeric"><span id="rw-share-two">40% of rubric</span></div><button class="rw-link" type="button" style="justify-self:start">+ Add criterion to section</button></div>
+      <div class="rw-section"><div class="rw-section-top"><div class="rw-field"><label for="rw-section-two">Section name · Required</label><input id="rw-section-two" value="Manuscript"></div><div class="rw-field"><label for="rw-section-two-weight">Section weight · Required</label><input id="rw-section-two-weight" value="40%" inputmode="decimal"></div></div><div class="rw-section-criterion"><input aria-label="Third criterion name" value="Technical quality"><input id="rw-points-three" aria-label="Technical quality maximum points" value="20 pts" inputmode="numeric"><span id="rw-share-three">40% of rubric</span></div><button class="rw-link" type="button" style="justify-self:start">+ Add criterion to section</button></div>
+      <button class="rw-button" type="button">+ Add section</button>
+    </section>
+    <div class="rw-footer"><button class="rw-link" type="button">Cancel</button><div class="rw-footer-right"><button class="rw-button" type="button">Save as Draft</button><button class="rw-button rw-primary" type="button" id="rw-publish">Publish rubric</button></div></div>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('rubric-wireframe');
+      const state = { invalid:false };
+      const applyValidation = () => { root.classList.toggle('rw-invalid',state.invalid); root.querySelector('#rw-validation').textContent = state.invalid ? 'Hide missing-field errors' : 'Preview missing fields'; };
+      root.querySelector('#rw-validation').addEventListener('click', () => { state.invalid=!state.invalid; applyValidation(); });
+      root.querySelector('#rw-publish').addEventListener('click', () => { state.invalid=true; applyValidation(); root.querySelector('#rw-second-name').focus(); });
+      root.querySelectorAll('[data-expand]').forEach(button => button.addEventListener('click', () => { const details=root.querySelector('#'+button.dataset.expand); details.hidden=!details.hidden; button.setAttribute('aria-expanded',String(!details.hidden)); button.textContent=details.hidden?'Edit ▾':'Close ▴'; }));
+      root.querySelectorAll('[data-choice]').forEach(group => group.querySelectorAll('button').forEach(button => button.addEventListener('click', () => { group.querySelectorAll('button').forEach(item => item.setAttribute('aria-pressed',String(item===button))); })));
+      root.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => { const sectioned=button.dataset.mode==='sections'; root.querySelector('#rw-standard-settings').hidden=sectioned; root.querySelector('#rw-section-settings').hidden=!sectioned; root.querySelector('#rw-standard-criteria').hidden=sectioned; root.querySelector('#rw-weighted-sections').hidden=!sectioned; root.querySelector('#rw-validation').hidden=sectioned; root.querySelector('#rw-mode-note').textContent=sectioned?'Give each section a percentage; set points separately for its criteria.':'Give each criterion a percentage of the rubric.'; }));
+      const updateWeight = () => { const first=parseFloat(root.querySelector('#rw-first-weight').value)||0; const second=parseFloat(root.querySelector('#rw-second-weight').value)||0; const total=first+second; const remaining=100-total; root.querySelector('#rw-total').textContent=`${total}% of 100%`; root.querySelector('#rw-remaining').textContent=remaining===0?'Balanced':remaining>0?`${remaining}% remaining`:`${Math.abs(remaining)}% over`; root.querySelector('#rw-needed').textContent=`Enter ${Math.max(0,100-first)}% to reach 100%.`; root.querySelector('#rw-meter-fill').style.width=`${Math.min(100,Math.max(0,total))}%`; };
+      root.querySelector('#rw-first-weight').addEventListener('input',updateWeight);
+      root.querySelector('#rw-second-weight').addEventListener('input',updateWeight);
+      root.querySelector('#rw-distribute').addEventListener('click', () => { root.querySelector('#rw-first-weight').value='50%'; root.querySelector('#rw-second-weight').value='50%'; updateWeight(); });
+      const updateSections = () => { const sectionOne=parseFloat(root.querySelector('#rw-section-one-weight').value)||0; const sectionTwo=parseFloat(root.querySelector('#rw-section-two-weight').value)||0; const pointsOne=parseFloat(root.querySelector('#rw-points-one').value)||0; const pointsTwo=parseFloat(root.querySelector('#rw-points-two').value)||0; const pointsThree=parseFloat(root.querySelector('#rw-points-three').value)||0; const firstTotal=pointsOne+pointsTwo; const total=sectionOne+sectionTwo; const format=value=>`${Math.round(value*100)/100}% of rubric`; root.querySelector('#rw-share-one').textContent=format(firstTotal?sectionOne*pointsOne/firstTotal:0); root.querySelector('#rw-share-two').textContent=format(firstTotal?sectionOne*pointsTwo/firstTotal:0); root.querySelector('#rw-share-three').textContent=format(pointsThree?sectionTwo:0); root.querySelector('#rw-section-total').textContent=`${total}% of 100%`; root.querySelector('#rw-section-status').textContent=total===100?'Balanced':total<100?`${100-total}% remaining`:`${total-100}% over`; root.querySelector('#rw-section-meter').style.width=`${Math.min(100,Math.max(0,total))}%`; };
+      ['rw-section-one-weight','rw-section-two-weight','rw-points-one','rw-points-two','rw-points-three'].forEach(id => root.querySelector('#'+id).addEventListener('input',updateSections));
+      root.querySelector('#rw-add').addEventListener('click', () => { root.querySelector('#rw-second-name').focus(); });
+    })();
+  </script>
+</div>

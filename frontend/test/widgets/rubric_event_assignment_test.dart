@@ -1,4 +1,5 @@
 import 'package:defensys/screens/web/admin/rubric_engine/rubric_full_page_editor.dart';
+import 'package:defensys/screens/web/admin/rubric_engine/rubric_criterion_fields.dart';
 import 'package:defensys/screens/web/admin/rubric_engine/rubric_publish_review.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
@@ -434,7 +435,7 @@ void main() {
             of: review,
             matching: find.text('No evaluation guidelines provided.'),
           ),
-          findsOneWidget,
+          findsNothing,
         );
         await capturePreview(
           tester,
@@ -496,6 +497,70 @@ void main() {
         await tester.ensureVisible(find.text('Publish Rubric'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        final sections = find.text('Weighted sections');
+        await tester.ensureVisible(sections);
+        await tester.tap(sections);
+        await tester.pumpAndSettle();
+        expect(find.text('Maximum points per criterion'), findsNothing);
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('section-weight-0')),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byType(RubricFullPageEditor),
+          'rubric-weighted-sections-${dark ? 'dark' : 'light'}-${width.toInt()}',
+          viewport: true,
+        );
+      });
+    }
+  }
+  for (final dark in [false, true]) {
+    for (final width in [320.0, 1280.0]) {
+      testWidgets('weighted section containers fit $width pixels, dark=$dark', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          width: width,
+          dark: dark,
+          scope: 'capstone',
+          scale: 'Points-Based (Sections)',
+          criteria: [
+            {
+              'name': 'Clarity and delivery',
+              'section': 'Oral presentation',
+              'weight': 60,
+              'max_score': 30,
+              'scale': 'Points-Based (Sections)',
+            },
+            {
+              'name': 'Technical quality',
+              'section': 'Manuscript',
+              'weight': 40,
+              'max_score': 20,
+              'scale': 'Points-Based (Sections)',
+            },
+          ],
+        );
+        final cards = find.byWidgetPredicate(
+          (widget) => widget is ShadCard && widget.key is ObjectKey,
+        );
+        expect(cards, findsNWidgets(2));
+        expect(
+          tester.getRect(cards.first).bottom,
+          lessThan(tester.getRect(cards.last).top),
+        );
+        await tester.ensureVisible(cards.first);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byType(RubricFullPageEditor),
+          'rubric-section-containers-${dark ? 'dark' : 'light'}-${width.toInt()}',
+          viewport: true,
+        );
       });
     }
   }
@@ -520,7 +585,18 @@ void main() {
         await tester.tap(find.text('Copy rubric'));
         await tester.pumpAndSettle();
         expect(find.byType(ShadDialog), findsNothing);
-        expect(find.text('25 points maximum'), findsNWidgets(2));
+        expect(
+          find.byKey(const ValueKey('criterion-description-0')),
+          findsNothing,
+        );
+        expect(
+          tester
+              .widgetList<RubricCriterionFields>(
+                find.byType(RubricCriterionFields),
+              )
+              .map((field) => field.maximum),
+          [25, 25],
+        );
         expect(find.text('100% of 100%'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpAndSettle(const Duration(seconds: 5));
@@ -704,7 +780,9 @@ void main() {
         tester.widget<EditableText>(name).controller.text,
         'Prototype presentation rubric',
       );
-      await tester.ensureVisible(find.byKey(const ValueKey('reset-rubric-name')));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('reset-rubric-name')),
+      );
       await tester.tap(find.byKey(const ValueKey('reset-rubric-name')));
       await tester.pumpAndSettle();
       expect(
@@ -804,8 +882,8 @@ void main() {
       expect(picker.enabled, isFalse);
       expect(find.text('Prototype Showcase'), findsOneWidget);
       await _pump(tester, scope: 'capstone');
-      expect(find.text('PIT event (optional)'), findsNothing);
-      expect(find.text('Defense stage (optional)'), findsOneWidget);
+      expect(find.text('PIT event'), findsNothing);
+      expect(find.text('Defense stage'), findsOneWidget);
     },
   );
 }

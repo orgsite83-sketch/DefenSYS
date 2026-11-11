@@ -125,6 +125,51 @@ class SectionEditorTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['system_name'], 'Shared system')
 
+    def test_capstone_one_section_with_third_and_fourth_year_students_is_editable(self):
+        year = SchoolYear.objects.create(label='2027-2028')
+        intake = Semester.objects.create(school_year=year, label=Semester.SECOND, is_active=True)
+        student_3 = User.objects.create_user(username='intake-third', role='student')
+        student_4 = User.objects.create_user(username='intake-fourth', role='student')
+        for student, academic_year in ((student_3, '3rd Year'), (student_4, '4th Year')):
+            StudentAcademicRecord.objects.create(
+                student=student, semester=intake, year_level=academic_year, section='BSIT-4A',
+            )
+        team = StudentTeam.objects.create(
+            name='Returning intake', semester=intake, leader=student_4,
+            level=StudentTeam.LEVEL_4_CAPSTONE, year_level='4th Year', section='BSIT-4A',
+        )
+        TeamMembership.objects.create(team=team, student=student_4, is_leader=True)
+        TeamMembership.objects.create(team=team, student=student_3)
+        url = f'/api/teams/{team.pk}/section/'
+
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual({student['id'] for student in response.data['students']}, {student_3.pk, student_4.pk})
+        response = self.client.patch(url, {
+            'expected_section': 'BSIT-4A', 'section': 'BSIT-4A', 'system_name': 'Repeat intake',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['system_name'], 'Repeat intake')
+
+    def test_pit_section_still_rejects_another_enrollment_year(self):
+        StudentAcademicRecord.objects.create(
+            student=User.objects.create_user(username='pit-wrong-year', role='student'),
+            semester=self.term, year_level='3rd Year', section='BSIT-2b',
+        )
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+
+    def test_capstone_two_section_still_rejects_third_year_enrollment(self):
+        student = User.objects.create_user(username='continuation-wrong-year', role='student')
+        StudentAcademicRecord.objects.create(
+            student=student, semester=self.term, year_level='3rd Year', section='BSIT-4A',
+        )
+        team = StudentTeam.objects.create(
+            name='Continuation section', semester=self.term, leader=student,
+            level=StudentTeam.LEVEL_4_CAPSTONE, year_level='4th Year', section='BSIT-4A',
+        )
+        TeamMembership.objects.create(team=team, student=student, is_leader=True)
+        self.assertEqual(self.client.get(f'/api/teams/{team.pk}/section/').status_code, 403)
+
     def test_invalid_manager_and_duplicate_section_leave_all_data_unchanged(self):
         outsider = User.objects.create_user(username='section-outsider', role='student')
         response = self.save(project_manager_id=outsider.pk, system_name='Wrong system')

@@ -62,6 +62,8 @@ class RubricPublishReview extends StatelessWidget {
     };
     final scale = payload['scale'] == 'Custom Scale'
         ? 'Custom (${payload['custom_max_score']} points)'
+        : payload['scale'] == 'Points-Based (Sections)'
+        ? 'Weighted sections'
         : payload['scale'].toString();
     final primary = DefensysTokens.textPrimaryOf(context);
     final secondary = DefensysTokens.textSecondaryOf(context);
@@ -176,13 +178,19 @@ class RubricPublishReview extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             for (final (index, criterion) in criteria.indexed) ...[
-              if (criteria.any((c) => (c['section'] ?? '').toString().trim().isNotEmpty) &&
+              if (criteria.any(
+                    (c) => (c['section'] ?? '').toString().trim().isNotEmpty,
+                  ) &&
                   (index == 0 ||
                       (criterion['section'] ?? '').toString().trim() !=
-                          (criteria[index - 1]['section'] ?? '').toString().trim())) ...[
+                          (criteria[index - 1]['section'] ?? '')
+                              .toString()
+                              .trim())) ...[
                 Builder(
                   builder: (context) {
-                    final secName = (criterion['section'] ?? '').toString().trim();
+                    final secName = (criterion['section'] ?? '')
+                        .toString()
+                        .trim();
                     final sectionCriteria = criteria.where(
                       (c) => (c['section'] ?? '').toString().trim() == secName,
                     );
@@ -266,18 +274,22 @@ class RubricPublishReview extends StatelessWidget {
                       '${criterion['max_score']} points maximum',
                       style: DefensysTokens.caption.copyWith(color: secondary),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Evaluation guidelines',
-                      style: DefensysTokens.caption.copyWith(color: secondary),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      (criterion['description'] as String).isEmpty
-                          ? 'No evaluation guidelines provided.'
-                          : criterion['description'] as String,
-                      style: DefensysTokens.tableCell.copyWith(color: primary),
-                    ),
+                    if ((criterion['description'] as String).isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Evaluation guidelines',
+                        style: DefensysTokens.caption.copyWith(
+                          color: secondary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        criterion['description'] as String,
+                        style: DefensysTokens.tableCell.copyWith(
+                          color: primary,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../theme/defensys_tokens.dart';
+import 'rubric_editor_field.dart';
 
-/// A responsive criterion row with the same controls as the rubric settings.
-class RubricCriterionFields extends StatelessWidget {
+/// A compact criterion summary that opens inline for editing.
+class RubricCriterionFields extends StatefulWidget {
   const RubricCriterionFields({
     super.key,
     required this.index,
@@ -25,35 +26,84 @@ class RubricCriterionFields extends StatelessWidget {
     this.onMoveUp,
     this.onMoveDown,
     this.onRemove,
+    this.initiallyExpanded = false,
+    this.showValidation = false,
+    this.weightToBalance,
+    this.nameError,
   });
 
   final int index, maximum;
   final TextEditingController? section, maxScore, weight;
   final TextEditingController name, description;
   final bool enabled, showTarget, isPointsScale, hideWeight;
+  final bool initiallyExpanded, showValidation;
   final Widget? badge;
   final String target;
+  final String? nameError;
+  final num? weightToBalance;
   final ValueChanged<String> onTargetChanged;
   final VoidCallback onChanged;
   final VoidCallback? onMoveUp, onMoveDown, onRemove;
 
+  @override
+  State<RubricCriterionFields> createState() => RubricCriterionFieldsState();
+}
+
+class RubricCriterionFieldsState extends State<RubricCriterionFields> {
+  late final ShadAccordionController<bool> _accordion;
+  final _headerFocus = FocusNode();
+  bool get _expanded => _accordion.value.contains(true);
+  final _nameKey = GlobalKey<RubricEditorFieldState>();
+  final _pointsKey = GlobalKey<RubricEditorFieldState>();
+  final _weightKey = GlobalKey<RubricEditorFieldState>();
+
+  String? _nameError(String value) =>
+      value.trim().isEmpty ? 'Enter a criterion name.' : widget.nameError;
+
+  bool get hasError =>
+      _nameError(widget.name.text) != null ||
+      (widget.isPointsScale &&
+          widget.maxScore != null &&
+          rubricPointsError(widget.maxScore!.text) != null) ||
+      (!widget.hideWeight &&
+          widget.weight != null &&
+          rubricWeightError(widget.weight!.text) != null);
+
+  void revealFirstError() {
+    _accordion.value = [true];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final key in [_nameKey, _pointsKey, _weightKey]) {
+        if (key.currentState?.error != null) {
+          key.currentState!.focusError();
+          break;
+        }
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _accordion = ShadAccordionController<bool>(
+      widget.initiallyExpanded || widget.name.text.trim().isEmpty ? true : null,
+    )..addListener(_expansionChanged);
+  }
+
+  void _expansionChanged() {
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _accordion.removeListener(_expansionChanged);
+    _accordion.dispose();
+    _headerFocus.dispose();
+    super.dispose();
+  }
+
   TextStyle _body(BuildContext context) => DefensysTokens.body.copyWith(
     color: DefensysTokens.textPrimaryOf(context),
-  );
-
-  Widget _field(BuildContext context, String label, Widget child) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Text(
-        label,
-        style: DefensysTokens.tableCell.copyWith(
-          fontWeight: FontWeight.w600,
-          color: DefensysTokens.textPrimaryOf(context),
-        ),
-      ),
-      const SizedBox(height: 8),
-      child,
-    ],
   );
 
   Widget _action(
@@ -64,220 +114,291 @@ class RubricCriterionFields extends StatelessWidget {
   }) => ShadTooltip(
     builder: (_) => Text(label),
     child: ShadButton.ghost(
-      key: ValueKey('criterion-$index-$label'),
+      key: ValueKey('criterion-${widget.index}-$label'),
       size: ShadButtonSize.sm,
       width: 36,
       height: 36,
       padding: EdgeInsets.zero,
-      enabled: enabled && onPressed != null,
-      onPressed: enabled ? onPressed : null,
+      enabled: widget.enabled && onPressed != null,
+      onPressed: widget.enabled ? onPressed : null,
       child: Semantics(
         label: label,
         child: Icon(
           icon,
           size: 16,
-          color: destructive ? const Color(0xFFDC2626) : null,
+          color: destructive ? DefensysTokens.maroonTextOf(context) : null,
         ),
       ),
     ),
   );
 
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 16),
-    child: ShadCard(
-      padding: const EdgeInsets.all(20),
-      radius: BorderRadius.circular(8),
-      shadows: const [],
-      backgroundColor: DefensysTokens.surfaceOf(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Text(
-                      'Criterion ${index + 1}',
-                      style: DefensysTokens.tableCell.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: DefensysTokens.textSecondaryOf(context),
-                      ),
-                    ),
-                    if (badge != null) ...[
-                      const SizedBox(width: 12),
-                      badge!,
-                    ],
-                  ],
-                ),
-              ),
-              _action('Move up', LucideIcons.arrowUp, onMoveUp),
-              _action('Move down', LucideIcons.arrowDown, onMoveDown),
-              if (onRemove != null)
-                _action(
-                  'Remove criterion',
-                  LucideIcons.trash2,
-                  onRemove,
-                  destructive: true,
-                ),
-            ],
+  void _changed(String _) {
+    setState(() {});
+    widget.onChanged();
+  }
+
+  Widget _fields(BuildContext context) {
+    final name = RubricEditorField(
+      key: _nameKey,
+      label: 'Criterion name',
+      inputKey: ValueKey('criterion-name-${widget.index}'),
+      controller: widget.name,
+      enabled: widget.enabled,
+      showValidation: widget.showValidation,
+      validator: _nameError,
+      placeholder: 'Enter criterion name',
+      onChanged: _changed,
+    );
+    final points = widget.isPointsScale && widget.maxScore != null
+        ? RubricEditorField(
+            key: _pointsKey,
+            label: 'Maximum points',
+            inputKey: ValueKey('criterion-max-score-${widget.index}'),
+            controller: widget.maxScore!,
+            enabled: widget.enabled,
+            showValidation: widget.showValidation,
+            validator: rubricPointsError,
+            keyboardType: TextInputType.number,
+            trailing: Text('pts', style: _body(context)),
+            onChanged: _changed,
+          )
+        : null;
+    final weight = !widget.hideWeight && widget.weight != null
+        ? RubricEditorField(
+            key: _weightKey,
+            label: 'Weight',
+            inputKey: ValueKey('criterion-weight-${widget.index}'),
+            controller: widget.weight!,
+            enabled: widget.enabled,
+            showValidation: widget.showValidation,
+            validator: rubricWeightError,
+            placeholder: 'Enter weight',
+            hint:
+                widget.enabled &&
+                    widget.weightToBalance != null &&
+                    widget.weightToBalance! > 0 &&
+                    widget.weightToBalance! <= 100 &&
+                    num.tryParse(widget.weight!.text.trim()) !=
+                        widget.weightToBalance
+                ? 'Enter ${widget.weightToBalance!.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')}% to reach 100%.'
+                : null,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            trailing: Text('%', style: _body(context)),
+            onChanged: _changed,
+          )
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.section != null) ...[
+          RubricEditorField(
+            label: 'Section / Category',
+            inputKey: ValueKey('criterion-section-${widget.index}'),
+            controller: widget.section!,
+            enabled: widget.enabled,
+            onChanged: _changed,
           ),
-          const SizedBox(height: 16),
-          if (section != null) ...[
-            _field(
-              context,
-              'Section / Category',
-              ShadInput(
-                key: ValueKey('criterion-section-$index'),
-                controller: section!,
-                enabled: enabled,
-                style: _body(context),
-                padding: const EdgeInsets.all(12),
-                placeholder: const Text('e.g. ORAL EXAMINATION, MANUSCRIPT, OUTPUT'),
-                onChanged: (_) => onChanged(),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final title = _field(
-                context,
-                'Criterion name',
-                ShadInput(
-                  key: ValueKey('criterion-name-$index'),
-                  controller: name,
-                  enabled: enabled,
-                  style: _body(context),
-                  padding: const EdgeInsets.all(12),
-                  placeholder: const Text('e.g. Technical implementation'),
-                  onChanged: (_) => onChanged(),
-                ),
-              );
-              final pointsField = isPointsScale && maxScore != null
-                  ? _field(
-                      context,
-                      'Points',
-                      ShadInput(
-                        key: ValueKey('criterion-max-score-$index'),
-                        controller: maxScore!,
-                        enabled: enabled,
-                        keyboardType: TextInputType.number,
-                        style: _body(context),
-                        padding: const EdgeInsets.all(12),
-                        trailing: Text('pts', style: _body(context)),
-                        onChanged: (_) => onChanged(),
-                      ),
-                    )
-                  : null;
-              final allocation = (!hideWeight && weight != null)
-                  ? _field(
-                      context,
-                      'Weight',
-                      ShadInput(
-                        key: ValueKey('criterion-weight-$index'),
-                        controller: weight!,
-                        enabled: enabled,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        style: _body(context),
-                        padding: const EdgeInsets.all(12),
-                        trailing: Text('%', style: _body(context)),
-                        onChanged: (_) => onChanged(),
-                      ),
-                    )
-                  : null;
-              if (constraints.maxWidth < 600) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    title,
-                    if (pointsField != null) ...[
-                      const SizedBox(height: 16),
-                      pointsField,
-                    ],
-                    if (allocation != null) ...[
-                      const SizedBox(height: 16),
-                      allocation,
-                    ],
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 12),
+        ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final extras = [
+              if (points != null) (points, 210.0),
+              if (weight != null) (weight, 170.0),
+            ];
+            if (constraints.maxWidth < (extras.length > 1 ? 760 : 600)) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(child: title),
-                  if (pointsField != null) ...[
-                    const SizedBox(width: 16),
-                    SizedBox(width: 110, child: pointsField),
-                  ],
-                  if (allocation != null) ...[
-                    const SizedBox(width: 16),
-                    SizedBox(width: 110, child: allocation),
+                  name,
+                  for (final field in extras) ...[
+                    const SizedBox(height: 12),
+                    field.$1,
                   ],
                 ],
               );
-            },
-          ),
-          const SizedBox(height: 16),
-          _field(
-            context,
-            'Evaluation guidelines',
-            ShadInput(
-              key: ValueKey('criterion-description-$index'),
-              controller: description,
-              enabled: enabled,
-              minLines: 2,
-              maxLines: 5,
-              style: _body(context),
-              padding: const EdgeInsets.all(12),
-              placeholder: const Text(
-                'Describe what earns full or partial credit.',
-              ),
-              onChanged: (_) => onChanged(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: name),
+                for (final field in extras) ...[
+                  const SizedBox(width: 12),
+                  SizedBox(width: field.$2, child: field.$1),
+                ],
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        RubricEditorField(
+          label: 'Evaluation guidelines',
+          inputKey: ValueKey('criterion-description-${widget.index}'),
+          controller: widget.description,
+          enabled: widget.enabled,
+          minLines: 1,
+          maxLines: 5,
+          placeholder: 'Add scoring guidance',
+          onChanged: _changed,
+        ),
+        if (widget.showTarget) ...[
+          const SizedBox(height: 12),
+          ShadRadioGroup<String>(
+            key: ValueKey('criterion-target-${widget.index}-${widget.target}'),
+            initialValue: widget.target,
+            enabled: widget.enabled,
+            axis: Axis.horizontal,
             spacing: 16,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              if (!hideWeight)
-                ShadBadge.secondary(
-                  child: Text(
-                    '${(isPointsScale && maxScore != null && maxScore!.text.trim().isNotEmpty) ? maxScore!.text.trim() : maximum} points maximum',
-                  ),
-                ),
-              if (showTarget)
-                ShadRadioGroup<String>(
-                  initialValue: target,
-                  enabled: enabled,
-                  axis: Axis.horizontal,
-                  spacing: 16,
-                  runSpacing: 12,
-                  onChanged: (value) {
-                    if (value != null && value != target) {
-                      onTargetChanged(value);
-                    }
-                  },
-                  items: [
-                    ShadRadio(
-                      value: 'team',
-                      label: Text('Team', style: _body(context)),
-                    ),
-                    ShadRadio(
-                      value: 'individual',
-                      label: Text('Individual', style: _body(context)),
-                    ),
-                  ],
-                ),
+            runSpacing: 8,
+            onChanged: (value) {
+              if (value != null && value != widget.target) {
+                widget.onTargetChanged(value);
+              }
+            },
+            items: [
+              ShadRadio(
+                value: 'team',
+                color: DefensysTokens.maroonOf(context),
+                label: Text('Team', style: _body(context)),
+              ),
+              ShadRadio(
+                value: 'individual',
+                color: DefensysTokens.maroonOf(context),
+                label: Text('Individual', style: _body(context)),
+              ),
             ],
           ),
         ],
+        if (!widget.hideWeight) ...[
+          const SizedBox(height: 8),
+          Text(
+            '${widget.maximum} points maximum',
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = widget.name.text.trim();
+    final weight = widget.weight?.text.trim() ?? '';
+    final summary = Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          '${widget.index + 1} \u00b7 ${name.isEmpty ? 'Untitled criterion' : name}',
+          style: DefensysTokens.tableCell.copyWith(
+            fontWeight: FontWeight.w600,
+            color: DefensysTokens.textPrimaryOf(context),
+          ),
+        ),
+        if (widget.badge != null)
+          widget.badge!
+        else if (!widget.hideWeight)
+          ShadBadge.secondary(
+            child: Text(weight.isEmpty ? 'Weight missing' : '$weight% weight'),
+          ),
+        ShadBadge.secondary(
+          child: Text(widget.target == 'individual' ? 'Individual' : 'Team'),
+        ),
+        if (widget.showValidation && hasError)
+          Text(
+            'Needs attention',
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.maroonTextOf(context),
+            ),
+          ),
+      ],
+    );
+    final actions = Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 2,
+      children: [
+        _action('Move up', LucideIcons.arrowUp, widget.onMoveUp),
+        _action('Move down', LucideIcons.arrowDown, widget.onMoveDown),
+        if (widget.onRemove != null)
+          _action(
+            'Remove criterion',
+            LucideIcons.trash2,
+            widget.onRemove,
+            destructive: true,
+          ),
+      ],
+    );
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
       ),
-    ),
-  );
+      child: ShadAccordion<bool>(
+        controller: _accordion,
+        children: [
+          ShadAccordionItem<bool>(
+            value: true,
+            focusNode: _headerFocus,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            underlineTitleOnHover: false,
+            titleStyle: DefensysTokens.tableCell.copyWith(
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 180),
+            icon: Icon(
+              _expanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+              size: 16,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+            iconEffects: const [],
+            separator: const SizedBox.shrink(),
+            title: Semantics(
+              key: ValueKey('criterion-toggle-${widget.index}'),
+              button: true,
+              expanded: _expanded,
+              child: ColoredBox(
+                color: Colors.transparent,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (!widget.enabled) return summary;
+                      if (constraints.maxWidth < 600) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            summary,
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: actions,
+                            ),
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(child: summary),
+                          const SizedBox(width: 12),
+                          actions,
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+            child: _fields(context),
+          ),
+        ],
+      ),
+    );
+  }
 }

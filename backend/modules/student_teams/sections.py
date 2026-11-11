@@ -41,7 +41,14 @@ def section_context(user, team_id, *, lock=False):
             raise ValidationError({'section': 'This section contains multiple year levels. Correct the team sections first.'})
 
     records = StudentAcademicRecord.objects.filter(semester_id=team.semester_id, section=team.section)
-    if records.exclude(year_level=team.year_level).exists() or SectionInstructorAssignment.objects.filter(
+    # A regular Capstone 1 intake can include returning fourth-year students
+    # alongside third-year students without changing their official enrollment.
+    mixed_capstone_intake = team.is_capstone and team.semester.label == Semester.SECOND and \
+        team.year_level in {'3rd Year', '4th Year'}
+    wrong_year_records = records.exclude(
+        year_level__in=['3rd Year', '4th Year'] if mixed_capstone_intake else [team.year_level],
+    )
+    if wrong_year_records.exists() or SectionInstructorAssignment.objects.filter(
         semester_id=team.semester_id, section=team.section,
     ).exclude(year_level=team.year_level).exists():
         raise PermissionDenied('This section includes students outside the team year level.')
