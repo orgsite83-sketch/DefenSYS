@@ -1,3 +1,4 @@
+import 'package:defensys/navigation/workspace_http_context.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -622,7 +623,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
           (user?['is_adviser'] == true &&
               minutes['adviser_name'] == user?['name']);
 
-      final isAdmin = user?['role']?.toString() == 'admin';
+      final isAdmin = isAdminWorkspace(user);
       final isCancelled = schedule?['status']?.toString() == 'cancelled';
 
       body = Column(

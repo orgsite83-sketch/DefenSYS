@@ -570,7 +570,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         return attrs
 
     def _ensure_adviser_role(self, adviser, changed_by=None):
-        if adviser and getattr(adviser, 'role', None) == 'faculty' and not getattr(adviser, 'is_adviser', False):
+        if adviser and getattr(adviser, 'role', None) in ('faculty', 'admin') and not getattr(adviser, 'is_adviser', False):
             from user_management.role_assignments import record_role_changes, snapshot_role_flags
             before_flags = snapshot_role_flags(adviser)
             adviser.is_adviser = True

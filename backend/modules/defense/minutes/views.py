@@ -38,7 +38,10 @@ class MyDocumenterAssignmentsView(APIView):
 def has_minutes_view_permission(user, schedule):
     if not user or not user.is_authenticated:
         return False
-    if getattr(user, 'role', None) == 'admin' or user.is_superuser:
+    from authentication_access_control.scopes import is_admin_user, visible_schedules_for
+    if getattr(user, '_workspace', ''):
+        return visible_schedules_for(user).filter(pk=schedule.pk).exists()
+    if is_admin_user(user):
         return True
     if schedule.documenter == user:
         return True
@@ -313,7 +316,8 @@ class MinutesSignAdviserView(APIView):
             )
             
         # Only the team's adviser can sign
-        if not schedule.team or schedule.team.adviser != request.user:
+        from authentication_access_control.workspace_roles import is_adviser
+        if not schedule.team or not is_adviser(request.user, schedule.team):
             return Response(
                 {"detail": "Only the team's adviser can sign these minutes."},
                 status=status.HTTP_403_FORBIDDEN
@@ -368,7 +372,8 @@ class MinutesSignChairmanView(APIView):
 
     def post(self, request, schedule_id):
         # Only administrators can sign as Chairman
-        if getattr(request.user, 'role', None) != 'admin' and not request.user.is_superuser:
+        from authentication_access_control.scopes import is_admin_user
+        if not is_admin_user(request.user):
             return Response(
                 {"detail": "Only administrators can sign as Chairman."},
                 status=status.HTTP_403_FORBIDDEN

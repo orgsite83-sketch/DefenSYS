@@ -256,7 +256,8 @@ def _faculty_roles(user):
             if norm_year in ('3rd Year', '4th Year'):
                 has_capstone = True
 
-        if has_pit:
+        from student_teams.team_levels import is_capstone_scope
+        if has_pit and not is_capstone_scope(norm_year, assign.semester):
             if norm_year not in pit_instructor_years:
                 pit_instructor_years.append(norm_year)
             sec_item = {'year_level': norm_year, 'section': sec}
@@ -1495,6 +1496,17 @@ class FacultyDashboardView(APIView):
         pit_lead_overview = _pit_lead_overview_payload(user, active_sem=active_sem)
         pit_assistant = None  # Repository assistant feature removed
         panelist_assignments = _panelist_assignments_payload(user, active_sem=active_sem)
+
+        workspace = getattr(user, '_workspace', '')
+        if workspace:
+            from authentication_access_control.scopes import visible_teams_for
+            scoped = visible_teams_for(user)
+            advised_teams = advised_teams.filter(pk__in=scoped.values('pk')) if workspace == 'adviser' else advised_teams.none()
+            pit_teams = pit_teams.filter(pk__in=scoped.values('pk')) if workspace in ('pit_lead', 'instructor') else StudentTeam.objects.none()
+            capstone_info_teams = []
+            if workspace != 'pit_lead':
+                pit_lead_overview = None
+            panelist_assignments = []
 
         return Response({
             'faculty': _user_payload(user, active_sem),

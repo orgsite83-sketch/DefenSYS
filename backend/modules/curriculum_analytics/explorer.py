@@ -4,6 +4,8 @@ Projects are team records, not files. Each period keeps the team's latest
 project version. Grades come from recorded assessments; document ML is only
 used for estimated computing categories. Nothing here creates or updates data.
 """
+from authentication_access_control.scopes import is_admin_user
+from authentication_access_control.workspace_roles import is_institutional_staff
 from collections import Counter, defaultdict
 from statistics import mean
 from types import SimpleNamespace
@@ -115,11 +117,11 @@ class CurriculumExplorer:
         if self.view not in ('', 'overview', 'year', 'assessment', 'projects', 'project_output', 'detail'):
             raise ValidationError({'view': 'Select a curriculum analytics view.'})
         self.load_project_evidence = self.view in ('', 'projects', 'detail')
-        admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False)
+        admin = is_admin_user(user)
         self.pit_lead_year = None
         if not admin:
             assigned = (getattr(user, 'pit_lead_year', '') or '').strip()
-            if (getattr(user, 'role', None) != 'faculty' or
+            if (not is_institutional_staff(user) or
                     not getattr(user, 'is_pit_lead', False) or assigned not in YEAR_LEVELS.values()):
                 raise PermissionDenied('Curriculum analytics requires an admin or an assigned PIT Lead.')
             self.pit_lead_year = next(k for k, v in YEAR_LEVELS.items() if v == assigned)

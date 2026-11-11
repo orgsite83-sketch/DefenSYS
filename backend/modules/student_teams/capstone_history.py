@@ -6,13 +6,14 @@ from rest_framework import serializers
 from .capstone_context import phase_for, phase_label, phase_requirements, stage_context
 from .capstone_lifecycle import historical_payload, recorded_team, team_snapshot, term_key
 from .participation import intake_for
+from authentication_access_control.workspace_roles import is_adviser
 
 
 def recorded_authority(user, row):
     if not row or not row.closed_at:
         return False
     snapshot = row.snapshot
-    if getattr(user, 'role', None) == 'faculty':
+    if is_adviser(user):
         return snapshot.get('adviser_id') == user.pk
     if getattr(user, 'role', None) == 'student':
         return user.pk in snapshot.get('member_ids', []) or snapshot.get('leader_id') == user.pk
@@ -27,7 +28,7 @@ def history_teams_for(user, workspace=None):
     if workspace not in (None, '', 'adviser') or not user.is_authenticated:
         return base
     query = Q(pk__in=[])
-    if user.role == 'faculty':
+    if is_adviser(user):
         query = Q(snapshot__adviser_id=user.pk)
     elif user.role == 'student':
         query = Q(snapshot__member_ids__contains=[user.pk]) | Q(snapshot__leader_id=user.pk)

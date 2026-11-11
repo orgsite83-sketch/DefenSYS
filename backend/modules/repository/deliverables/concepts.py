@@ -1,4 +1,5 @@
 """Concept selection, version-specific clearance and hearing history."""
+from authentication_access_control.scopes import is_admin_user
 from copy import deepcopy
 from hashlib import sha256
 import json
@@ -550,7 +551,7 @@ def override_clearance(team, stage, actor, reason):
     from student_teams.models import StudentTeam
     from .services import get_deliverable_definitions_for_team, submissions_for, required_complete
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
-    if not (actor.is_superuser or actor.role == 'admin'):
+    if not (is_admin_user(actor)):
         raise PermissionError('Only an administrator can override adviser clearance.')
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError('Record the reason for overriding adviser clearance.')

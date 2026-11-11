@@ -1,12 +1,15 @@
 """Shared row-level visibility scopes for authenticated users."""
 
 from django.db.models import Q
+from .workspace_roles import is_institutional_staff
 
 
 def is_admin_user(user):
+    """Administrative authority in the current request's selected context."""
     return bool(
         user
         and getattr(user, 'is_authenticated', False)
+        and not getattr(user, '_workspace', '')
         and (
             getattr(user, 'role', None) == 'admin'
             or getattr(user, 'is_superuser', False)
@@ -20,6 +23,7 @@ def is_pit_lead_only(user):
         and getattr(user, 'is_authenticated', False)
         and getattr(user, 'is_pit_lead', False)
         and not is_admin_user(user)
+        and getattr(user, '_workspace', '') in ('', 'pit_lead')
     )
 
 
@@ -40,6 +44,11 @@ def section_instructor_section_filters(user):
 
     query = Q(pk__in=[])
     for semester_id, year_level, section in assignments:
+        if getattr(user, '_workspace', '') == 'instructor':
+            if getattr(user, '_workspace_year', '') and year_level != user._workspace_year:
+                continue
+            if getattr(user, '_workspace_section', '') and section != user._workspace_section:
+                continue
         if not section:
             continue
         query |= Q(
@@ -65,7 +74,17 @@ def visible_teams_for(user):
         return base.none()
     if is_admin_user(user):
         return base
-    if getattr(user, 'role', None) == 'faculty':
+    workspace = getattr(user, '_workspace', '')
+    if workspace == 'adviser':
+        return base.filter(adviser=user, level__icontains='Capstone')
+    if workspace == 'instructor':
+        return base.filter(section_instructor_section_filters(user), level__icontains='PIT')
+    if workspace == 'pit_lead':
+        from .workspace_roles import pit_teams_for
+        return pit_teams_for(user, base)
+    if workspace in ('panelist', 'documenter'):
+        return base.none()
+    if is_institutional_staff(user):
         allowed = Q(adviser=user) | section_instructor_section_filters(user)
         if is_pit_lead_only(user) and _pit_year(user):
             allowed |= Q(level__icontains='PIT', year_level=_pit_year(user))
@@ -121,7 +140,18 @@ def visible_schedules_for(user):
         return base.none()
     if is_admin_user(user):
         return base
-    if getattr(user, 'role', None) == 'faculty':
+    workspace = getattr(user, '_workspace', '')
+    if workspace == 'adviser':
+        return base.filter(scope='capstone', team__adviser=user)
+    if workspace == 'instructor':
+        return base.filter(scope='pit', team__in=StudentTeam.objects.filter(section_instructor_section_filters(user)))
+    if workspace == 'pit_lead':
+        return base.filter(_pit_schedule_filters(user))
+    if workspace == 'panelist':
+        return base.filter(panel_assignments__panelist=user).distinct()
+    if workspace == 'documenter':
+        return base.filter(scope='capstone', documenter=user)
+    if is_institutional_staff(user):
         # Faculty assignments remain visible when the same account is also a
         # PIT lead. PIT management scope must not replace adviser/panel access.
         assignments = (
@@ -188,7 +218,19 @@ def grade_records_for(user, *, include_previous_projects=False):
         return base.none()
     if is_admin_user(user):
         return base
-    if getattr(user, 'role', None) == 'faculty':
+    workspace = getattr(user, '_workspace', '')
+    if workspace == 'adviser':
+        return base.filter(scope='capstone', team__adviser=user)
+    if workspace == 'instructor':
+        from student_teams.models import StudentTeam
+        return base.filter(scope='pit', team__in=StudentTeam.objects.filter(section_instructor_section_filters(user)))
+    if workspace == 'pit_lead':
+        return base.filter(pit_grade_filters(user))
+    if workspace == 'panelist':
+        return base.filter(schedule__panel_assignments__panelist=user).distinct()
+    if workspace == 'documenter':
+        return base.none()
+    if is_institutional_staff(user):
         from student_teams.models import StudentTeam
         allowed = (
             Q(team__adviser=user)

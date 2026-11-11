@@ -1,3 +1,4 @@
+import 'package:defensys/navigation/workspace_http_context.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'dart:async';
 
@@ -447,8 +448,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
 
   bool _isGradeCenterAdmin(Map<String, dynamic>? user) {
     if (user == null) return false;
-    if (user['role']?.toString() == 'admin') return true;
-    if (user['is_superuser'] == true) return true;
+    if (isAdminWorkspace(user)) return true;
     return false;
   }
 

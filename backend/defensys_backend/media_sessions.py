@@ -11,7 +11,7 @@ from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from authentication_access_control.workspace_authentication import WorkspaceJWTAuthentication as JWTAuthentication
 
 from authentication_access_control.guest_authentication import GuestJWTAuthentication
 
@@ -50,7 +50,9 @@ class MediaCookieAuthentication(BaseAuthentication):
         if not raw:
             raise AuthenticationFailed('Media session expired. Sign in again.')
         # Keep the credential server-side; reuse account/guest expiry and revocation checks.
-        authenticated = SimpleNamespace(META={'HTTP_AUTHORIZATION': 'Bearer ' + raw})
+        grant = raw if isinstance(raw, dict) else {'token': raw, 'headers': {}}
+        authenticated = SimpleNamespace(META={'HTTP_AUTHORIZATION': 'Bearer ' + grant['token']},
+                                        headers=grant['headers'])
         for backend in (GuestJWTAuthentication(), JWTAuthentication()):
             result = backend.authenticate(authenticated)
             if result is not None:
@@ -77,7 +79,9 @@ class MediaSessionView(APIView):
         raw = request.META.get('HTTP_AUTHORIZATION', '').split(' ', 1)[-1]
         value = secrets.token_urlsafe(32)
         revoke_media_grant(request)
-        grant_cache().set(grant_key(value), raw, ttl)
+        headers = {key: request.headers[key] for key in (
+            'X-Defensys-Workspace', 'X-Defensys-Year', 'X-Defensys-Section') if key in request.headers}
+        grant_cache().set(grant_key(value), {'token': raw, 'headers': headers}, ttl)
         response = Response({'expires_in': ttl})
         response.set_cookie(cookie_name(), value, max_age=ttl, path='/api/media/',
                             secure=not settings.DEBUG, httponly=True, samesite='Strict')

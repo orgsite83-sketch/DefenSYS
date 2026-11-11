@@ -1,3 +1,4 @@
+import 'package:defensys/navigation/workspace_http_context.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -141,7 +142,7 @@ class _DefenseSchedulerScreenState
 
   bool _canScheduleScope(DefenseSchedulerState state, String scope) {
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final isPitLead = user?['is_pit_lead'] == true;
 
     if (scope == 'capstone') {
@@ -159,7 +160,7 @@ class _DefenseSchedulerScreenState
 
   String _scheduleNoticeMessage(DefenseSchedulerState state) {
     final user = ref.watch(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final isPitLead = user?['is_pit_lead'] == true;
 
     if (!isAdmin && !isPitLead) {
@@ -577,7 +578,7 @@ class _DefenseSchedulerScreenState
   void _initializeScopeFromState(DefenseSchedulerState state) {
     if (_scopeInitializedFromState) return;
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final isPitLead = user?['is_pit_lead'] == true;
 
     String targetScope = '';

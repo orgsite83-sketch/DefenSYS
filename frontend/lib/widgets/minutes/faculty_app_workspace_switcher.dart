@@ -7,6 +7,8 @@ import '../shadcn/defensys_action_menu.dart';
 import '../../navigation/admin_route_paths.dart';
 import '../../navigation/workspace_access.dart';
 import '../../navigation/workspace_preference.dart';
+import '../../navigation/staff_workspaces.dart';
+import 'staff_workspace_switcher.dart';
 import '../../services/auth_provider.dart';
 import '../../theme/defensys_tokens.dart';
 
@@ -20,8 +22,17 @@ class FacultyAppWorkspaceSwitcher extends ConsumerWidget {
   final Future<bool> Function()? beforeSwitch;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    watchStaffWorkspaceAssignments(ref);
     final user = ref.watch(authProvider).user ?? {};
     final options = [
+      if (kIsWeb)
+        for (final option in StaffWorkspace.available(user))
+          if (const {'adviser', 'pit_lead', 'instructor'}.contains(option.key))
+            (
+              route: option.location,
+              label: option.label,
+              icon: Icons.desktop_windows_outlined,
+            ),
       if (WorkspaceAccess.canEvaluate(user))
         (
           route: AppRoutes.panelist,
@@ -69,8 +80,15 @@ class FacultyAppWorkspaceSwitcher extends ConsumerWidget {
                         return;
                       }
                       if (!context.mounted) return;
+                      if (!await prepareStaffWorkspaceSwitch(context, ref)) {
+                        return;
+                      }
+                      if (!context.mounted) return;
                       await rememberWorkspace(ref, option.route);
-                      if (context.mounted) context.go(option.route);
+                      if (context.mounted) {
+                        clearStaffWorkspaceData(ref);
+                        context.go(option.route);
+                      }
                     },
             ),
         ],

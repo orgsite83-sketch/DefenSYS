@@ -1,3 +1,5 @@
+from authentication_access_control.scopes import is_admin_user, is_pit_lead_only
+from authentication_access_control.workspace_roles import is_institutional_staff
 from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
@@ -39,11 +41,11 @@ class CanManageDeliverables(BasePermission):
         user = request.user
         if not (user and user.is_authenticated):
             return False
-        if getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False):
+        if is_admin_user(user):
             return True
         if getattr(user, 'role', None) == 'student':
             return True
-        if getattr(user, 'role', None) == 'faculty':
+        if is_institutional_staff(user):
             if getattr(user, 'is_adviser', False) or getattr(user, 'is_pit_lead', False):
                 return True
             from user_management.models import SectionInstructorAssignment
@@ -56,7 +58,7 @@ class CanManageDeliverables(BasePermission):
 
 def check_deliverable_write_permission(user, team):
     # Admins and superusers can always manage
-    if getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False):
+    if is_admin_user(user):
         return True
     
     # Team members (students) can upload/manage their own deliverables
@@ -65,7 +67,7 @@ def check_deliverable_write_permission(user, team):
             return True
         return False
         
-    if getattr(user, 'role', None) == 'faculty':
+    if is_institutional_staff(user):
         # Advisers can manage deliverables for teams they advise
         if getattr(user, 'is_adviser', False) and team.adviser == user:
             return True
@@ -136,7 +138,7 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
     if scope == 'pit':
         from defense.scheduler.models import PitEventGradingConfig
         from authentication_access_control.scopes import is_pit_lead_only, _pit_year
-        pit_lead = is_pit_lead_only(request.user) and request.query_params.get('workspace', '') in ('', 'operations')
+        pit_lead = is_pit_lead_only(request.user) and request.query_params.get('workspace', '') in ('', 'operations', 'pit_lead')
         pit_year = _pit_year(request.user) if pit_lead else None
         requested_year = (request.query_params.get('year_level') or pit_year or '').strip()
 

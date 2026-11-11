@@ -1,4 +1,5 @@
 """PIT Lead concept decisions; academic PIT results remain score-based."""
+from authentication_access_control.scopes import is_admin_user
 from hashlib import sha256
 import json
 
@@ -16,7 +17,7 @@ from .models import ConceptRound
 def can_manage(actor, team, stage=None):
     if not actor or getattr(actor, 'is_guest_panelist', False):
         return False
-    if getattr(actor, 'is_superuser', False) or getattr(actor, 'role', '') == 'admin':
+    if is_admin_user(actor):
         return True
     from student_teams.team_levels import normalize_year_level
     year = normalize_year_level(getattr(actor, 'pit_lead_year', '') or '')

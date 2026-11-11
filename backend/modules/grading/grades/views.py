@@ -42,13 +42,8 @@ from .services import (
 
 
 def _is_grade_center_admin(user):
-    return bool(
-        user
-        and (
-            getattr(user, 'role', None) == 'admin'
-            or getattr(user, 'is_superuser', False)
-        )
-    )
+    from authentication_access_control.scopes import is_admin_user
+    return is_admin_user(user)
 
 
 def filter_grade_queryset(request, queryset):
@@ -618,11 +613,7 @@ class TeamGradeVerdictView(APIView):
         queryset = workspace_grades_for(request.user, workspace) if workspace else TeamGrade.objects.with_relations()
         grade = get_object_or_404(queryset, pk=grade_id)
 
-        is_admin = (
-            request.user.is_staff
-            or request.user.is_superuser
-            or getattr(request.user, 'role', None) == 'admin'
-        )
+        is_admin = _is_grade_center_admin(request.user)
         is_chair = False
         if grade.schedule:
             is_chair = grade.schedule.panel_assignments.filter(

@@ -12,6 +12,7 @@ import '../auth/jwt_utils.dart';
 import '../app/data_refresh_provider.dart';
 import '../session/session_expired.dart';
 import 'protected_file_cache.dart';
+import '../../navigation/workspace_http_context.dart';
 
 final authenticatedHttpClientProvider = Provider<AuthenticatedHttpClient>((
   ref,
@@ -187,6 +188,9 @@ class AuthenticatedHttpClient {
   }
 
   Future<http.Response> get(Uri uri, {Map<String, String>? headers}) {
+    final workspaceHeaders = currentWorkspaceHeaders(uri);
+    uri = workspaceRequestUri(uri, workspaceHeaders);
+    headers = {...?headers, ...workspaceHeaders};
     return _send((h) => _getShared(uri, h), headers: headers);
   }
 
@@ -195,6 +199,9 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     Object? body,
   }) {
+    final workspaceHeaders = currentWorkspaceHeaders(uri);
+    uri = workspaceRequestUri(uri, workspaceHeaders);
+    headers = {...?headers, ...workspaceHeaders};
     return _write(
       () => _send(
         (h) => apiHttpClient.post(uri, headers: h, body: body),
@@ -208,6 +215,9 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     Object? body,
   }) {
+    final workspaceHeaders = currentWorkspaceHeaders(uri);
+    uri = workspaceRequestUri(uri, workspaceHeaders);
+    headers = {...?headers, ...workspaceHeaders};
     return _write(
       () => _send(
         (h) => apiHttpClient.put(uri, headers: h, body: body),
@@ -221,6 +231,9 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     Object? body,
   }) {
+    final workspaceHeaders = currentWorkspaceHeaders(uri);
+    uri = workspaceRequestUri(uri, workspaceHeaders);
+    headers = {...?headers, ...workspaceHeaders};
     return _write(
       () => _send(
         (h) => apiHttpClient.patch(uri, headers: h, body: body),
@@ -234,6 +247,9 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     Object? body,
   }) {
+    final workspaceHeaders = currentWorkspaceHeaders(uri);
+    uri = workspaceRequestUri(uri, workspaceHeaders);
+    headers = {...?headers, ...workspaceHeaders};
     return _write(
       () => _send(
         (h) => apiHttpClient.delete(uri, headers: h, body: body),
@@ -257,7 +273,8 @@ class AuthenticatedHttpClient {
     // Guest invitations have short-lived, server-scoped access; keep their
     // existing authorization check on every opening.
     final cacheAllowed = !_isGuestPanelist;
-    final cached = cacheAllowed ? _fileCache.get(url) : null;
+    final cacheKey = '$url:${jsonEncode(currentWorkspaceHeaders(Uri.parse(url)))}';
+    final cached = cacheAllowed ? _fileCache.get(cacheKey) : null;
     if (cached != null) return cached;
     final generation = _fileGeneration;
     final response = await get(
@@ -267,7 +284,7 @@ class AuthenticatedHttpClient {
       throw Exception('Failed to load file (${response.statusCode})');
     }
     final bytes = response.bodyBytes;
-    if (cacheAllowed && generation == _fileGeneration) _fileCache.put(url, bytes);
+    if (cacheAllowed && generation == _fileGeneration) _fileCache.put(cacheKey, bytes);
     return bytes;
   }
 
@@ -288,6 +305,7 @@ class AuthenticatedHttpClient {
     http.BaseRequest request, {
     bool retryOn401 = true,
   }) {
+    request.headers.addAll(currentWorkspaceHeaders(request.url));
     if (request.method == 'GET' || request.method == 'HEAD') {
       return _sendAuthenticated(request, retryOn401: retryOn401);
     }

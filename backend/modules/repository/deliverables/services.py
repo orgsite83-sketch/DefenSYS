@@ -1,3 +1,5 @@
+from authentication_access_control.scopes import is_admin_user
+from authentication_access_control.workspace_roles import is_institutional_staff
 from student_teams.pit_rosters import endorsed as pit_endorsed, set_endorsed as set_pit_endorsed
 from defensys_backend.file_cleanup import delete_repository_file_on_commit, replacement_file_name
 from defensys_backend.read_projection import read_memoize
@@ -343,9 +345,12 @@ def team_queryset_for_user(user, *, include_pit_lead=True):
         )
     )
 
-    if getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False):
+    if getattr(user, '_workspace', ''):
+        from authentication_access_control.scopes import visible_teams_for
+        return queryset.filter(pk__in=visible_teams_for(user).values('pk'))
+    if is_admin_user(user):
         return queryset
-    if getattr(user, 'role', None) == 'faculty':
+    if is_institutional_staff(user):
         q = Q()
         if getattr(user, 'is_adviser', False):
             q |= Q(adviser=user)
@@ -998,7 +1003,7 @@ def can_submit_files(user, team):
     """File submission ownership is independent from faculty review authority."""
     if not user:
         return False
-    if getattr(user, 'is_superuser', False) or getattr(user, 'role', '') == 'admin':
+    if is_admin_user(user):
         return True
     return getattr(user, 'role', '') == 'student' and team.memberships.filter(student=user).exists()
 
@@ -1963,9 +1968,11 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     except DeliverableSubmission.DoesNotExist:
         raise ValueError('Deliverable submission not found.')
 
-    is_admin = getattr(reviewer_user, 'role', None) == 'admin' or getattr(reviewer_user, 'is_superuser', False)
-    if not is_admin and getattr(reviewer_user, 'role', None) != 'faculty':
+    is_admin = is_admin_user(reviewer_user)
+    if not is_admin and not is_institutional_staff(reviewer_user):
         raise PermissionError('Only assigned faculty or an Admin can review deliverables.')
+    if not is_admin and not team_queryset_for_user(reviewer_user).filter(pk=team.pk).exists():
+        raise PermissionError('This team is outside your assigned workspace.')
     is_defense_done = is_stage_defense_done(team, stage_label)
     from .concepts import latest_round, stage_for
     concept_round = latest_round(team, stage_for(team, stage_label))

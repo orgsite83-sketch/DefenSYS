@@ -31,6 +31,7 @@ from .models import StudentTeam, TeamMembership, PITSectionRoster, PITEventRoste
 from .pit_rosters import resolve, event_in_use, pin
 from .team_levels import is_capstone_scope, user_is_admin, user_is_pit_lead_only
 from .term_scope import get_active_semester
+from authentication_access_control.workspace_roles import is_institutional_staff, is_pit_lead
 
 SALT = 'student-teams.roster-workspace.v1'
 YEARS = ('1st Year', '2nd Year', '3rd Year')
@@ -43,26 +44,30 @@ def text(value):
 def require_roster_scope(user, term, year, section, workspace=None, *, allow_empty_section=False):
     if year not in YEARS or is_capstone_scope(year, term) or (not section and not allow_empty_section):
         raise ValidationError('Choose an active PIT year and section.')
-    if workspace not in (None, '', 'instructor', 'operations'):
+    if workspace not in (None, '', 'instructor', 'operations', 'pit_lead'):
         raise PermissionDenied('Choose an instructor or PIT management workspace.')
+    if workspace == 'pit_lead':
+        if is_pit_lead(user) and user.pit_lead_year == year:
+            return
+        raise PermissionDenied('This roster is outside your assigned PIT year.')
     if workspace != 'instructor' and (user_is_admin(user) or (
             user_is_pit_lead_only(user) and text(user.pit_lead_year) == year)):
         return
     if workspace == 'operations':
         raise PermissionDenied('This roster is outside your PIT management year. Use your assigned instructor workspace for other sections.')
-    if user.role != 'faculty' or not instructor_sections(user, term, year).filter(section=section).exists():
+    if not is_institutional_staff(user) or not instructor_sections(user, term, year).filter(section=section).exists():
         raise PermissionDenied('You can manage rosters only for your active assigned PIT sections.')
 
 
 def choices(user, term, workspace):
     assignments = instructor_sections(user, term)
     result = {(a['year_level'], a['section']) for a in assignments.values('year_level', 'section')}
-    if workspace != 'instructor' and (user_is_admin(user) or user_is_pit_lead_only(user)):
+    if workspace != 'instructor' and (user_is_admin(user) or user_is_pit_lead_only(user) or (workspace == 'pit_lead' and is_pit_lead(user))):
         records = StudentAcademicRecord.objects.filter(semester=term)
         teams = StudentTeam.objects.filter(semester=term, level__icontains='PIT')
         sections = SectionAssignment.objects.filter(semester=term)
         instructors = SectionInstructorAssignment.objects.filter(semester=term, is_active=True)
-        if not user_is_admin(user):
+        if workspace == 'pit_lead' or not user_is_admin(user):
             records = records.filter(year_level=user.pit_lead_year)
             teams = teams.filter(year_level=user.pit_lead_year)
             sections = sections.filter(year_level=user.pit_lead_year)
@@ -80,7 +85,7 @@ def scope(user, data, *, allow_empty_section=False):
     term = get_active_semester()
     if not term:
         raise ValidationError('No active semester is configured.')
-    workspace = data.get('workspace') or None
+    workspace = getattr(user, '_workspace', '') or data.get('workspace') or None
     available = choices(user, term, workspace)
     year, section = text(data.get('year_level')), text(data.get('section'))
     if not year and available:
@@ -255,7 +260,7 @@ def context(user, data):
     # Browsing an unsectioned cohort is valid; preview/apply still need a section.
     term, year, section, available = scope(user, data, allow_empty_section=True)
     events = list(PitEventGradingConfig.objects.filter(semester=term, year_level=year).order_by('pk'))
-    can_generate = user.role == 'faculty' and instructor_sections(user, term, year).filter(section=section).exists()
+    can_generate = is_institutional_staff(user) and instructor_sections(user, term, year).filter(section=section).exists()
     return {'semester_id': term.pk, 'semester': str(term), 'year_level': year, 'section': section or None,
         'scope_options': available, 'can_generate': can_generate,
         'student_options': [

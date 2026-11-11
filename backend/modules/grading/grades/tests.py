@@ -247,6 +247,15 @@ class GradeCenterApiTests(APITestCase):
             submit_panelist_grade(self.capstone_schedule, grade,
                 [{'criterion_id': self.panel_rubric.criteria.first().pk, 'score': 8}], panelist=self.panelist)
 
+    def test_admin_adviser_save_uses_the_same_rubric_and_ownership_rules(self):
+        from authentication_access_control.workspace_authentication import bind_workspace
+        self.adviser.role = 'admin'
+        self.adviser.save(update_fields=['role'])
+        bind_workspace(self.adviser, {'X-Defensys-Workspace': 'adviser'})
+        self.test_adviser_save_response_contains_new_breakdowns_and_student_scores()
+        self.adviser.refresh_from_db()
+        self.assertEqual(self.adviser.role, 'admin')
+
     def test_adviser_save_response_contains_new_breakdowns_and_student_scores(self):
         grade = self._capstone_grade()
         self.adviser_rubric.criteria.update(name='Current criterion')

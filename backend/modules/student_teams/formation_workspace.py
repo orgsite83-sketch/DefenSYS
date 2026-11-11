@@ -79,7 +79,7 @@ class TeamCreationContextView(APIView):
             'events': list(pit_events_for_user(request.user, semester=term).values(
                 'id', 'year_level', 'event_name', 'is_officially_complete')),
             'can_manage_policy': is_manager(request.user),
-            'can_generate': request.user.role == 'faculty' and instructor_sections(request.user, term).exists(),
+            'can_generate': request.user.role in ('faculty', 'admin') and instructor_sections(request.user, term).exists(),
         })
 
 

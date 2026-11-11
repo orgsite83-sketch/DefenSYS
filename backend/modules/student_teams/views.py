@@ -33,6 +33,7 @@ from .bulk_import import (
     validate_bulk_section_metadata,
 )
 from .team_levels import levels_for_user, user_is_admin, user_is_pit_lead_only
+from urllib.parse import urlencode
 from .term_scope import (
     apply_team_scope,
     get_active_semester,
@@ -74,7 +75,7 @@ def teams_queryset_for_user(user):
 def user_can_see_full_team_directory(user):
     if not user or not user.is_authenticated:
         return False
-    if user.is_superuser or getattr(user, 'role', None) == 'admin':
+    if user_is_admin(user):
         return True
     if getattr(user, 'is_pit_lead', False):
         return True
@@ -182,7 +183,7 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
     
     # Auto-detect PIT Lead and apply filtering
     is_pit_lead = user and getattr(user, 'is_pit_lead', False)
-    is_admin = user and (getattr(user, 'role', None) == 'admin' or user.is_superuser)
+    is_admin = user_is_admin(user)
     
     # If user is PIT Lead (and not admin), automatically filter for PIT students
     if is_pit_lead and not is_admin:
@@ -363,7 +364,7 @@ class StudentTeamListCreateView(APIView):
 
         # Get team_level from query params for filtering students
         team_level_filter = request.query_params.get('team_level', '').strip()
-        full_dir = user_can_see_full_team_directory(request.user) and request.query_params.get('workspace', '') in ('', 'operations')
+        full_dir = user_can_see_full_team_directory(request.user) and request.query_params.get('workspace', '') in ('', 'operations', 'pit_lead')
 
         stats_base = apply_team_scope(visible, scope='active', user=request.user)
         if level == 'Capstone':
@@ -443,7 +444,7 @@ class StudentTeamDetailView(APIView):
             **options_payload(team_id=team_id, team_level=team.level, user=request.user,
                               event_name=selected.event_name if selected else None,
                               workspace=request.query_params.get('workspace'),
-                              include_roster_options=request.query_params.get('workspace', '') in ('', 'operations')),
+                              include_roster_options=request.query_params.get('workspace', '') in ('', 'operations', 'pit_lead')),
         })
 
     def patch(self, request, team_id):
@@ -980,7 +981,7 @@ class StudentTeamSendReminderView(APIView):
         team = get_object_or_404(StudentTeam, pk=team_id)
 
         # Permissions check: Admins can remind any team. PIT leads can remind PIT teams in their year.
-        is_admin = getattr(user, 'role', None) == 'admin' or user.is_superuser
+        is_admin = user_is_admin(user)
         is_pit_lead = getattr(user, 'is_pit_lead', False)
 
         if not is_admin:
@@ -1107,8 +1108,8 @@ class StudentTeamSendReminderView(APIView):
                 sender=user,
                 title=f"CC Reminder: Team {team.name} Pending Deliverables ({stage_label})",
                 message=adviser_body,
-                workspace='admin' if adviser.role == 'admin' else 'adviser',
-                action_route='/admin/student-teams' if adviser.role == 'admin' else '/faculty/deliverables',
+                workspace='adviser',
+                action_route='/faculty/deliverables?workspace=adviser',
                 action_payload=notification_target,
             )
             notified_user_ids.add(adviser.id)
@@ -1122,8 +1123,8 @@ class StudentTeamSendReminderView(APIView):
             is_active=True
         ).select_related('faculty')
         
-        # Faculty duties have independent inboxes; admin duties share one inbox.
-        notified_instructors = {adviser.id} if adviser and adviser.role == 'admin' else set()
+        # Each duty keeps its own inbox, including duties held by an admin.
+        notified_instructors = set()
         for assignment in assignments:
             instructor = assignment.faculty
             if instructor and instructor.id not in notified_instructors:
@@ -1144,8 +1145,9 @@ class StudentTeamSendReminderView(APIView):
                     sender=user,
                     title=f"CC Reminder: Team {team.name} Pending Deliverables ({stage_label})",
                     message=inst_body,
-                    workspace='admin' if instructor.role == 'admin' else 'pit_instructor',
-                    action_route='/admin/student-teams' if instructor.role == 'admin' else '/faculty/deliverables',
+                    workspace='pit_instructor',
+                    action_route='/faculty/deliverables?' + urlencode({'workspace': 'instructor',
+                        'workspaceYear': team.year_level, 'workspaceSection': team.section}),
                     action_payload=notification_target,
                 )
                 notified_instructors.add(instructor.id)

@@ -1423,11 +1423,8 @@ class DefenseScheduleVerdictView(APIView):
     def patch(self, request, schedule_id):
         schedule = get_object_or_404(DefenseSchedule, id=schedule_id)
 
-        is_admin = (
-            request.user.is_staff
-            or request.user.is_superuser
-            or getattr(request.user, 'role', None) == 'admin'
-        )
+        from authentication_access_control.scopes import is_admin_user
+        is_admin = is_admin_user(request.user)
         is_chair = schedule.panel_assignments.filter(
             panelist=request.user,
             is_chair=True,

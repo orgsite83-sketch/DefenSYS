@@ -10,7 +10,7 @@ from django.http import FileResponse, Http404, HttpResponse, StreamingHttpRespon
 from django.utils.http import content_disposition_header, http_date, parse_http_date_safe
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from authentication_access_control.workspace_authentication import WorkspaceJWTAuthentication as JWTAuthentication
 from rest_framework.views import APIView
 
 from authentication_access_control.guest_authentication import GuestJWTAuthentication

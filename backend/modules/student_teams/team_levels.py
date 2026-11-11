@@ -31,20 +31,13 @@ def level_year(level):
 
 
 def user_is_admin(user):
-    return bool(
-        user
-        and user.is_authenticated
-        and (user.is_superuser or getattr(user, 'role', None) == 'admin')
-    )
+    from authentication_access_control.scopes import is_admin_user
+    return is_admin_user(user)
 
 
 def user_is_pit_lead_only(user):
-    return bool(
-        user
-        and user.is_authenticated
-        and getattr(user, 'is_pit_lead', False)
-        and not user_is_admin(user)
-    )
+    from authentication_access_control.scopes import is_pit_lead_only
+    return is_pit_lead_only(user)
 
 
 def levels_for_user(user):

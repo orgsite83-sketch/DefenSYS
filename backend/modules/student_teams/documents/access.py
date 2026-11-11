@@ -10,6 +10,9 @@ def document_teams_for(user):
         return teams.none()
     if is_admin_user(user):
         return teams
+    if getattr(user, '_workspace', ''):
+        from authentication_access_control.scopes import visible_teams_for
+        return teams.filter(pk__in=visible_teams_for(user).values('pk'))
     allowed = Q(leader=user) | Q(memberships__student=user)
     if user.role == 'faculty':
         allowed |= Q(adviser=user)

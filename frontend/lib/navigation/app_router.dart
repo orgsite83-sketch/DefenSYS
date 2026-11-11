@@ -87,7 +87,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     }
     if ((location == AppRoutes.login || location == '/') &&
-        (WorkspaceAccess.canEvaluate(auth.user!) ||
+        (WorkspaceAccess.hasStaffWorkspace(auth.user!) || WorkspaceAccess.canEvaluate(auth.user!) ||
             WorkspaceAccess.canDocument(auth.user!)) &&
         ref.read(workspacePreferenceProvider).isLoading) {
       return null;
@@ -95,7 +95,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     final preference = ref.read(workspacePreferenceProvider);
     return WorkspaceAccess.redirect(
       auth.user!,
-      location,
+      state.uri.toString(),
       viewportWidth: preference.isLoading
           ? null
           : MediaQuery.sizeOf(context).width,

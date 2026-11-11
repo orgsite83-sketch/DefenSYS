@@ -199,7 +199,7 @@ def board_payload(request, queryset=None, *, workspace=None):
     current = current.select_related('documenter', 'minutes')
     manageable_ids = set(manageable_schedules_for(request.user).filter(
         pk__in=current.values('pk'),
-    ).values_list('pk', flat=True)) if workspace in ('', 'operations') else set()
+    ).values_list('pk', flat=True)) if workspace in ('', 'operations', 'pit_lead') else set()
     schedules = DefenseScheduleSerializer(current, many=True, context={
         'latest_changes': latest_schedule_changes(current.filter(pk__in=manageable_ids)),
     }).data

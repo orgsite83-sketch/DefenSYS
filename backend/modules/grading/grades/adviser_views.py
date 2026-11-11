@@ -6,6 +6,8 @@ from django.shortcuts import get_object_or_404
 from rest_framework import serializers as drf_serializers
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission
+from authentication_access_control.workspace_roles import is_adviser
 from rest_framework.response import Response
 from defensys_backend.read_projection import ReadAPIView as APIView
 
@@ -163,6 +165,13 @@ class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
         return grade
 
 
+class AssignedAdviser(BasePermission):
+    message = 'An assigned adviser role is required.'
+
+    def has_permission(self, request, view):
+        return is_adviser(request.user)
+
+
 class AdviserGradeListView(APIView):
     """
     GET /api/grade-center/adviser-grades/
@@ -170,7 +179,7 @@ class AdviserGradeListView(APIView):
     user is the adviser, along with a simple count summary.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, AssignedAdviser]
 
     def get(self, request):
         canonical_rows = adviser_capstone_grades_for_user(request.user)
@@ -206,7 +215,7 @@ class AdviserSubmitGradeView(APIView):
     team they advise.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, AssignedAdviser]
 
     @transaction.atomic
     def post(self, request, grade_id):

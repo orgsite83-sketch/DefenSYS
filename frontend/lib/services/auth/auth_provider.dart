@@ -74,6 +74,7 @@ class AuthState {
 class AuthNotifier extends Notifier<AuthState> {
   SessionStorage? _sessionStorage;
   bool _isLoggingOut = false;
+  int _profileRequestRevision = 0;
 
   static String get baseUrl => ApiConfig.authUrl;
 
@@ -403,6 +404,9 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<bool> fetchCurrentUser(String access) async {
+    final revision = ++_profileRequestRevision;
+    final tokenAtStart = state.token;
+    final userAtStart = state.user?['id'];
     try {
       final response = await apiHttpClient.get(
         Uri.parse('$baseUrl/me/'),
@@ -411,7 +415,11 @@ class AuthNotifier extends Notifier<AuthState> {
           'Authorization': 'Bearer $access',
         },
       );
-      if (response.statusCode != 200) return false;
+      if (!ref.mounted || revision != _profileRequestRevision ||
+          state.token != tokenAtStart || state.user?['id'] != userAtStart ||
+          _isLoggingOut || response.statusCode != 200) {
+        return false;
+      }
       final data = _decodeJsonMap(response.body);
       if (data == null) return false;
       final user = Map<String, dynamic>.from(data);

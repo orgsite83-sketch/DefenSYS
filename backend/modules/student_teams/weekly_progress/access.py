@@ -4,10 +4,14 @@ from django.db.models import F, Q
 from .models import WeeklyProgressReport
 
 
-def reports_for(user):
+def reports_for(user, workspace=''):
     reports = WeeklyProgressReport.objects.select_related('team', 'team__semester', 'student')
     if not user or not user.is_authenticated:
         return reports.none()
+    workspace = workspace or getattr(user, '_workspace', '')
+    if workspace:
+        from authentication_access_control.workspaces import workspace_teams_for
+        return reports.filter(team__in=workspace_teams_for(user, workspace))
     if is_admin_user(user):
         return reports
     if user.role == 'student':

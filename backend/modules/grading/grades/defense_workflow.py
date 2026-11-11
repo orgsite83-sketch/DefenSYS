@@ -1,4 +1,5 @@
 """Defense outcomes and clearance; finalized failures cannot be reopened."""
+from authentication_access_control.scopes import is_admin_user
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -10,7 +11,7 @@ from .models import TeamGrade
 
 
 def is_admin(user):
-    return bool(user and (getattr(user, 'role', None) == 'admin' or user.is_superuser))
+    return is_admin_user(user)
 
 
 def is_chair(grade, user):

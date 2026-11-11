@@ -3,6 +3,7 @@
 Deadlines only describe timing. Writes enforce ownership and recorded evidence,
 never a deadline-based upload cutoff. All writers lock team, then period, report.
 """
+from authentication_access_control.scopes import is_admin_user
 from datetime import date, datetime, time, timedelta
 from hashlib import sha256
 from pathlib import PurePath
@@ -12,6 +13,7 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.core.exceptions import ValidationError as DomainValidationError
 from django.db import transaction
+from authentication_access_control.workspace_roles import is_adviser
 from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -64,9 +66,9 @@ def can_read_report(actor, report, *, team=None):
     leader = bool(report.period_id and actor.role == 'student' and team.leader_id == actor.pk
         and team.semester.is_active and report.semester_id == team.semester_id
         and report.project_version == team.project_version)
-    return bool(actor.is_superuser or actor.role == 'admin' or leader
+    return bool(is_admin_user(actor) or leader
         or actor.role == 'student' and report.student_id == actor.pk
-        or actor.role == 'faculty' and actor.is_adviser and report.team.adviser_id == actor.pk)
+        or is_adviser(actor, team))
 
 
 def version_payload(version):
@@ -173,7 +175,7 @@ def collection_state(team, definition, *, actor=None, details=False, now=None):
             blocker = blockers.get(number, '')
             leader = bool(actor and actor.role == 'student' and actor.pk == team.leader_id)
             owner = report is None or leader or bool(actor and report.student_id == actor.pk)
-            reviewer = bool(actor and actor.role == 'faculty' and actor.is_adviser and team.adviser_id == actor.pk)
+            reviewer = is_adviser(actor, team)
             weeks.append({'week_number': number, 'required': is_required, 'starts_on': str(start),
                 'ends_on': str(end), 'due_at': due.isoformat(), 'timing': timing, 'status': status,
                 'file': visible, 'report_id': report.pk if may_read else None,
@@ -316,7 +318,7 @@ def review_report(team, stage_label, *, actor, version_id, decision, feedback=''
     WeeklyReportingPeriod.objects.select_for_update().get(pk=config['period_id'])
     definition = require_definition(team, stage_label)
     config = definition['weekly_reporting']
-    if actor.role != 'faculty' or not actor.is_adviser or team.adviser_id != actor.pk:
+    if not is_adviser(actor, team):
         raise PermissionError('Only the assigned Capstone adviser can review weekly reports.')
     version = WeeklyReportVersion.objects.select_for_update().select_related('report').filter(pk=version_id,
         report__team=team, report__period_id=config['period_id'], report__semester_id=team.semester_id,

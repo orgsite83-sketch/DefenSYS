@@ -187,7 +187,8 @@ TECH_STACKS = [
 
 
 def ensure_admin(user):
-    if getattr(user, 'role', None) != 'admin' and not getattr(user, 'is_superuser', False):
+    from authentication_access_control.scopes import is_admin_user
+    if not is_admin_user(user):
         raise PermissionDenied('Curriculum analytics is available to admins only.')
 
 

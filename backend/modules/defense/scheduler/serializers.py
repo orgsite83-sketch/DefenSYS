@@ -1,3 +1,4 @@
+from authentication_access_control.scopes import is_admin_user, is_pit_lead_only
 from student_teams.pit_rosters import endorsed as pit_event_endorsed
 import uuid
 from datetime import datetime, timedelta
@@ -748,7 +749,7 @@ class ScheduleBaseSerializer(serializers.Serializer):
     def validate(self, attrs):
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        if user and getattr(user, 'is_pit_lead', False) and getattr(user, 'role', None) != 'admin':
+        if user and is_pit_lead_only(user):
             attrs['scope'] = DefenseSchedule.SCOPE_PIT
 
         attrs['room'] = attrs['room'].strip()
@@ -852,7 +853,7 @@ class ScheduleBaseSerializer(serializers.Serializer):
     def _pit_lead_year_scope(self):
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        if not user or getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False):
+        if not user or is_admin_user(user):
             return None
         if not getattr(user, 'is_pit_lead', False):
             return None

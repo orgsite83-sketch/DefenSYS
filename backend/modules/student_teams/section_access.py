@@ -6,6 +6,8 @@ from user_management.academic_records.models import StudentAcademicRecord
 from user_management.models import SectionInstructorAssignment
 from .models import SectionAssignment, StudentTeam
 from .team_levels import is_capstone_scope, YEAR_LEVEL_CHOICES
+from authentication_access_control.workspace_roles import is_institutional_staff
+from .formation_access import instructor_sections
 
 
 def sections_for(user):
@@ -13,13 +15,18 @@ def sections_for(user):
     if is_admin_user(user):
         return sections
     allowed = Q(pk__in=[])
-    if user.role == 'faculty':
+    if is_institutional_staff(user):
         if is_pit_lead_only(user) and user.pit_lead_year:
             pit = Q(year_level__in=['1st Year', '2nd Year']) | (Q(year_level='3rd Year') & ~Q(semester__label='2nd Semester'))
             allowed |= Q(year_level=user.pit_lead_year) & pit
-        for term, year, section in SectionInstructorAssignment.objects.filter(faculty=user, is_active=True).values_list('semester_id', 'year_level', 'section'):
+        assignments = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True)
+        if getattr(user, '_workspace', ''):
+            from .term_scope import get_active_semester
+            assignments = instructor_sections(user, get_active_semester()) if user._workspace == 'instructor' else assignments.none()
+        for term, year, section in assignments.values_list('semester_id', 'year_level', 'section'):
             allowed |= Q(semester_id=term, year_level=year, section=section)
-        teams = StudentTeam.objects.filter(adviser=user)
+        from authentication_access_control.scopes import visible_teams_for
+        teams = visible_teams_for(user) if getattr(user, '_workspace', '') else StudentTeam.objects.filter(adviser=user)
     elif user.role == 'student':
         teams = StudentTeam.objects.filter(memberships__student=user)
     else:
@@ -45,8 +52,7 @@ def require_section_write(user, semester, year, section, pm=None):
         if is_pit_lead_only(user):
             if not user.pit_lead_year or year != user.pit_lead_year:
                 raise PermissionDenied('This section is outside your PIT year scope.')
-        elif not SectionInstructorAssignment.objects.filter(faculty=user, semester=semester,
-                year_level=year, section=section, is_active=True).exists():
+        elif not instructor_sections(user, semester, year).filter(section=section).exists():
             raise PermissionDenied('An assigned PIT section is required.')
         if StudentTeam.objects.filter(semester=semester, section=section).exclude(level__icontains='PIT').exists():
             raise PermissionDenied('This section contains Capstone teams.')

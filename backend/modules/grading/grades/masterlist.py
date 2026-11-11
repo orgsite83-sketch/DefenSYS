@@ -88,7 +88,8 @@ def _integer(params, key, default=None):
 
 def _context(request):
     user, params = request.user, request.query_params
-    if not is_admin_user(user) and getattr(user, 'role', '') != 'faculty':
+    from authentication_access_control.workspace_roles import is_institutional_staff
+    if not is_admin_user(user) and not is_institutional_staff(user):
         raise PermissionDenied('Grade masterlists are available to authorized faculty and administrators.')
     scope = _choice(params, 'scope', 'pit' if is_pit_lead_only(user) else 'capstone', ('pit', 'capstone'))
     year = params.get('year_level', '').strip()
@@ -108,7 +109,7 @@ def _context(request):
     entity = _choice(params, 'entity', 'students', ('students', 'teams'))
     detail = _choice(params, 'detail_level', 'summary', ('summary', 'full'))
     workspace = params.get('workspace', 'operations' if is_admin_user(user) or is_pit_lead_only(user) else '')
-    if workspace not in ('', 'operations', 'adviser', 'instructor', 'panelist'):
+    if workspace not in ('', 'operations', 'pit_lead', 'adviser', 'instructor', 'panelist'):
         raise ValidationError({'workspace': 'Choose a supported grading workspace.'})
     return {
         'scope': scope, 'semester': semester, 'year_level': year, 'entity': entity,

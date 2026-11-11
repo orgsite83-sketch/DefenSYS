@@ -1,3 +1,4 @@
+import 'package:defensys/navigation/workspace_http_context.dart';
 import 'package:defensys/theme/program_colors.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -201,7 +202,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Future<void> _checkImportDraft() async {
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final isPitLead = user?['is_pit_lead'] == true;
     if (!isAdmin && !isPitLead) return;
     final scope = _effectiveBoardScope(ref.read(defenseBoardProvider));
@@ -225,7 +226,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Future<void> _checkSchedulerDraft() async {
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final isPitLead = user?['is_pit_lead'] == true;
     if (!isAdmin && !isPitLead) return;
     final scope = _effectiveBoardScope(ref.read(defenseBoardProvider));
@@ -285,7 +286,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   Widget build(BuildContext context) {
     if (_showScheduleBulkImport) {
       final user = ref.watch(authProvider).user;
-      final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+      final isAdmin = isAdminWorkspace(user);
       final effectiveScope = isAdmin ? 'capstone' : 'pit';
 
       return DefenseScheduleBulkImportView(
@@ -1444,8 +1445,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Widget _buildManageSchedulesButton(DefenseBoardState state) {
     final user = ref.read(authProvider).user;
-    if (!(user?['role'] == 'admin' ||
-        user?['is_superuser'] == true ||
+    if (!(isAdminWorkspace(user) ||
         user?['is_pit_lead'] == true)) {
       return const SizedBox.shrink();
     }
@@ -1464,19 +1464,19 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   bool get _canSwitchBoardScope {
     final user = ref.read(authProvider).user;
-    return user?['role'] == 'admin' || user?['is_superuser'] == true;
+    return isAdminWorkspace(user);
   }
 
   String _effectiveBoardScope(DefenseBoardState state) {
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     if (!isAdmin && user?['is_pit_lead'] == true) return 'pit';
     return state.scope == 'pit' ? 'pit' : 'capstone';
   }
 
   bool _canScheduleScope(String scope) {
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     return scope == 'capstone'
         ? isAdmin
         : !isAdmin && user?['is_pit_lead'] == true;
@@ -1929,8 +1929,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   bool _canManageSchedule(Map<String, dynamic> schedule) {
     final user = ref.read(authProvider).user;
-    return user?['role'] == 'admin' ||
-        user?['is_superuser'] == true ||
+    return isAdminWorkspace(user) ||
         (user?['is_pit_lead'] == true && schedule['can_manage'] == true);
   }
 
@@ -2533,7 +2532,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     _SessionGroup group,
   ) {
     final user = ref.watch(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final isSchedulePit = schedule['scope'] == 'pit';
     final canManage = _canManageSchedule(schedule);
     final editable =
@@ -3417,7 +3416,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Future<void> _openManualScheduleDialog() async {
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final isPitLead = user?['is_pit_lead'] == true;
     if (!isAdmin && !isPitLead) return;
 
@@ -3470,7 +3469,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   void _openImportScheduleDialog() {
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final isPitLead = user?['is_pit_lead'] == true;
     if (!isAdmin && !isPitLead) return;
     if (!_canScheduleScope(
@@ -3488,7 +3487,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   void _openScheduler({String? scope, int? stageId, String? eventName}) {
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final isPitLead = user?['is_pit_lead'] == true;
     if (!isAdmin && !isPitLead) return;
     if (!_canScheduleScope(
@@ -3563,7 +3562,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final scheduleId = _asInt(schedule['id']);
     if (scheduleId == null) return;
     final user = ref.read(authProvider).user;
-    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isAdmin = isAdminWorkspace(user);
     final signed = await MinutesPdfDialog.show(
       context,
       scheduleId: scheduleId,

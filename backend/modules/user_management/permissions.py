@@ -138,14 +138,17 @@ class CanManageModule(BasePermission):
     def has_permission(self, request, view):
         user = request.user
         workspace = (getattr(request, 'query_params', {}).get('workspace') or '').strip()
+        from authentication_access_control.scopes import is_admin_user, is_pit_lead_only
+        from authentication_access_control.workspace_roles import is_pit_lead
+        if workspace == 'pit_lead':
+            return is_pit_lead(user)
         if workspace and workspace != 'operations':
             return False
         return bool(
             user
             and user.is_authenticated
             and (
-                getattr(user, 'role', None) == 'admin'
-                or user.is_superuser
-                or getattr(user, 'is_pit_lead', False)
+                is_admin_user(user)
+                or is_pit_lead_only(user)
             )
         )

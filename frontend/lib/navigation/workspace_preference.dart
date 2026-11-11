@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_provider.dart';
@@ -10,9 +11,14 @@ final workspacePreferenceProvider = FutureProvider<String?>((ref) async {
 Future<String?> readRememberedWorkspace(dynamic userId) async {
   if (userId == null) return null;
   try {
-    return (await SharedPreferences.getInstance()).getString(
+    final value = (await SharedPreferences.getInstance()).getString(
       'app.workspace.$userId',
     );
+    if (value == null || !value.startsWith('{')) return value;
+    final data = jsonDecode(value);
+    return data is Map && data['version'] == 1
+        ? data['location'] as String?
+        : null;
   } catch (_) {
     return null;
   }
@@ -24,7 +30,7 @@ Future<void> rememberWorkspace(WidgetRef ref, String route) async {
   try {
     await (await SharedPreferences.getInstance()).setString(
       'app.workspace.$id',
-      route,
+      jsonEncode({'version': 1, 'location': route}),
     );
     ref.invalidate(workspacePreferenceProvider);
     // Navigation immediately after a switch must see the new choice rather

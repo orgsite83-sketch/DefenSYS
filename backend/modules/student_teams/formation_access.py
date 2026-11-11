@@ -5,6 +5,7 @@ from rest_framework.permissions import BasePermission
 from user_management.models import SectionInstructorAssignment
 from .team_levels import user_is_admin, user_is_pit_lead_only, is_capstone_scope
 from .term_scope import get_active_semester
+from authentication_access_control.workspace_roles import is_institutional_staff
 
 
 def instructor_sections(user, semester, year=None):
@@ -12,6 +13,11 @@ def instructor_sections(user, semester, year=None):
         faculty=user, semester=semester, is_active=True)
     if year:
         assignments = assignments.filter(year_level=year)
+    if getattr(user, '_workspace', '') == 'instructor':
+        if getattr(user, '_workspace_year', ''):
+            assignments = assignments.filter(year_level=user._workspace_year)
+        if getattr(user, '_workspace_section', ''):
+            assignments = assignments.filter(section=user._workspace_section)
     # Capstone rosters are finalized by the school and imported by Admin.
     # An old instructor assignment never creates Capstone formation authority.
     assignments = assignments.exclude(year_level='4th Year')
@@ -25,7 +31,7 @@ def is_manager(user):
 
 
 def allowed_sections(user, semester, year):
-    if is_manager(user):
+    if is_manager(user) and getattr(user, '_workspace', '') != 'instructor':
         return None
     return set(instructor_sections(user, semester, year).values_list('section', flat=True))
 
@@ -39,7 +45,7 @@ def require_formation_scope(user, semester, level, section=None):
             raise PermissionDenied('This roster is outside your assigned PIT year level.')
         return
     sections = allowed_sections(user, semester, year)
-    if getattr(user, 'role', None) != 'faculty' or not sections:
+    if not is_institutional_staff(user) or not sections:
         raise PermissionDenied('An active instructor assignment is required to form teams.')
     expected = f'{year} {"Capstone" if is_capstone_scope(year, semester) else "PIT"}'
     if level != expected:
@@ -52,7 +58,7 @@ def require_generation_scope(user, semester, level, section=None):
     """Generation belongs to assigned PIT instructors, even for multi-role faculty."""
     year = level.rsplit(' ', 1)[0]
     sections = set(instructor_sections(user, semester, year).values_list('section', flat=True))
-    if getattr(user, 'role', None) != 'faculty' or 'PIT' not in level or not sections:
+    if not is_institutional_staff(user) or 'PIT' not in level or not sections:
         raise PermissionDenied('Only an assigned PIT instructor can generate teams.')
     if section is not None and section not in sections:
         raise PermissionDenied('Choose one of your assigned PIT sections.')
@@ -61,7 +67,7 @@ def require_generation_scope(user, semester, level, section=None):
 class CanGenerateTeams(BasePermission):
     def has_permission(self, request, view):
         user = request.user
-        return bool(user and user.is_authenticated and user.role == 'faculty' and
+        return bool(is_institutional_staff(user) and
                     instructor_sections(user, get_active_semester()).exists())
 
 
@@ -69,7 +75,7 @@ class CanFormTeams(BasePermission):
     def has_permission(self, request, view):
         user = request.user
         return bool(user and user.is_authenticated and (
-            is_manager(user) or (user.role == 'faculty' and
+            is_manager(user) or (is_institutional_staff(user) and
                 instructor_sections(user, get_active_semester()).exists())))
 
 

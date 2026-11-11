@@ -230,6 +230,26 @@ class WeeklyReportCollectionTests(APITestCase):
             with self.assertRaises(PermissionError):
                 self.review(version, actor=actor)
 
+    def test_assigned_admin_adviser_can_review_in_adviser_workspace(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        self.adviser.role = 'admin'
+        self.adviser.save(update_fields=['role'])
+        version = self.upload()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(self.adviser).access_token}',
+            HTTP_X_DEFENSYS_WORKSPACE='adviser')
+        response = self.client.get(self.url, {'team_id': self.team.pk, 'stage_label': self.stage.label})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data['weeks'][0]['can_review'])
+        response = self.client.post('/api/teams/weekly-progress/collection/review/',
+            {'team_id': self.team.pk, 'stage_label': self.stage.label,
+             'version_id': version.pk, 'status': 'accepted'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        version.refresh_from_db()
+        self.assertEqual(version.status, 'accepted')
+        self.assertEqual(version.reviewed_by_id, self.adviser.pk)
+        self.adviser.refresh_from_db()
+        self.assertEqual(self.adviser.role, 'admin')
+
     def test_private_version_history_and_media_have_same_scope(self):
         version = self.upload()
         for actor, expected in ((self.student, 200), (self.adviser, 200), (self.admin, 200), (self.unassigned, 404), (self.other, 404)):

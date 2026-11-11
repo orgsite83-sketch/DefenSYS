@@ -30,7 +30,7 @@ class StudentWeeklyProgressListCreateView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        reports = reports_for(user)
+        reports = reports_for(user, request.query_params.get('workspace', ''))
 
         if team_id is not None:
             reports = reports.filter(team_id=team_id)
@@ -115,7 +115,7 @@ class StudentWeeklyProgressDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self, pk, user):
-        return get_object_or_404(reports_for(user), pk=pk)
+        return get_object_or_404(reports_for(user, self.request.query_params.get('workspace', '')), pk=pk)
 
     def get(self, request, pk):
         report = self.get_object(pk, request.user)
@@ -187,7 +187,7 @@ class WeeklyProgressReportFileView(APIView):
                 pass
 
         user = request.user
-        report = get_object_or_404(reports_for(user), pk=pk)
+        report = get_object_or_404(reports_for(user, request.query_params.get('workspace', '')), pk=pk)
 
         selected_file = report.report_file
         if report.period_id:
@@ -218,13 +218,13 @@ class WeeklyProgressReportFileView(APIView):
 
 def collection_team(request, *, writing=False):
     """Resolve explicit team and captured context without widening report reads."""
-    from repository.deliverables.services import team_queryset_for_user
+    from repository.deliverables.views import workspace_deliverable_teams
     params = request.data if writing else request.query_params
     raw = params.get('team_id')
     if not str(raw).isdigit() or not params.get('stage_label'):
         from rest_framework.exceptions import ValidationError
         raise ValidationError('Choose a team and defense stage.')
-    team = get_object_or_404(team_queryset_for_user(request.user), pk=int(raw))
+    team = get_object_or_404(workspace_deliverable_teams(request), pk=int(raw))
     semester_id = params.get('semester_id')
     project = params.get('project_version')
     if any(value is not None and (not str(value).isdigit() or int(value) < 1)
@@ -293,7 +293,7 @@ class WeeklyReportVersionsView(APIView):
 
     def get(self, request, pk):
         from .services import version_payload
-        report = get_object_or_404(reports_for(request.user), pk=pk)
+        report = get_object_or_404(reports_for(request.user, request.query_params.get('workspace', '')), pk=pk)
         from authentication_access_control.models import SystemAuditLog
         versions = list(report.versions.select_related('reviewed_by', 'uploaded_by').all())
         reviews = {}

@@ -1,4 +1,5 @@
 """Atomic operational changes. Every write rechecks scope, revision, and evidence."""
+from authentication_access_control.scopes import is_admin_user
 from datetime import datetime, timedelta
 
 from django.contrib.auth import get_user_model
@@ -39,7 +40,7 @@ def selection(actor, data):
     if not anchor:
         raise PermissionDenied('This defense is outside your management scope.')
     # A visible record is not, by itself, permission to mutate it.
-    if not (actor.role == 'admin' or actor.is_superuser or (actor.is_pit_lead and anchor.scope == 'pit')):
+    if not (is_admin_user(actor) or (actor.is_pit_lead and anchor.scope == 'pit')):
         raise PermissionDenied('Only administrators and scoped PIT leads can manage schedules.')
     items = visible.filter(semester_id=anchor.semester_id, scope=anchor.scope)
     if data['target'] in ('semester', 'management_selected'):
@@ -429,7 +430,7 @@ def execute_operation(actor, data, request=None):
         diffs[schedule.pk] = change_details(old_values[schedule.pk], after_values[schedule.pk])
         timetable_changed = any(d['field'] in ('scheduled_date', 'start_time', 'slot_duration', 'room') for d in diffs[schedule.pk])
         if minutes and (roster_changed or timetable_changed) and (minutes.status != 'draft' or minutes.pdf_file):
-            if changes.get('acknowledge_minutes_amendment') is not True or not (actor.role == 'admin' or actor.is_superuser):
+            if changes.get('acknowledge_minutes_amendment') is not True or not (is_admin_user(actor)):
                 raise ValidationError('Acknowledge a document amendment to preserve the signed version and restart its signatures.')
         if timetable_changed and schedule.panelist_grade_submissions.exists():
             raise ValidationError('This defense has recorded evaluations. Pause/resume it without rewriting its original timetable.')
@@ -437,7 +438,7 @@ def execute_operation(actor, data, request=None):
     continuing_edits = {}
     if data.get('assignment_scope') == 'continuing':
         from .capstone_planning import current_assignment, roster_payload, validate_roster
-        if not (actor.role == 'admin' or actor.is_superuser) or any(s.scope != 'capstone' for s in items):
+        if not (is_admin_user(actor)) or any(s.scope != 'capstone' for s in items):
             raise PermissionDenied('Continuing assignments are managed by Capstone administrators.')
         for schedule in items:
             assignment = current_assignment(schedule.team)

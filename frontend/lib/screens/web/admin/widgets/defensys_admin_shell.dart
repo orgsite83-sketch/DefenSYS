@@ -15,6 +15,7 @@ import '../../../../widgets/buttons/defensys_theme_toggle.dart';
 import '../../../../services/theme_provider.dart';
 import '../../../../navigation/admin_route_paths.dart';
 import '../../../../navigation/workspace_access.dart';
+import '../../../../widgets/minutes/staff_workspace_switcher.dart';
 
 export '../../../../widgets/status_badge.dart';
 
@@ -358,7 +359,7 @@ class _TopNav extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.edit_note_rounded),
               tooltip: 'Documenter workspace',
-              onPressed: () => context.push(AppRoutes.documenter),
+              onPressed: () => switchStaffWorkspace(context, ref, AppRoutes.documenter),
             ),
             const SizedBox(width: 4),
           ],
@@ -366,7 +367,7 @@ class _TopNav extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.rate_review_outlined),
               tooltip: 'Panelist evaluations',
-              onPressed: () => context.push(AppRoutes.panelist),
+              onPressed: () => switchStaffWorkspace(context, ref, AppRoutes.panelist),
             ),
             const SizedBox(width: 4),
           ],
@@ -694,6 +695,8 @@ class _Sidebar extends StatelessWidget {
               ),
             ),
 
+          StaffWorkspaceSwitcher(collapsed: isCollapsed),
+
           // Hairline divider below header
           Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
 
@@ -972,9 +975,9 @@ class _UserProfileCard extends ConsumerWidget {
 
     void handleSelect(String value) {
       if (value == 'panelist_workspace') {
-        context.push(AppRoutes.panelist);
+        switchStaffWorkspace(context, ref, AppRoutes.panelist);
       } else if (value == 'documenter_workspace') {
-        context.push(AppRoutes.documenter);
+        switchStaffWorkspace(context, ref, AppRoutes.documenter);
       } else if (value == 'profile') {
         context.go('/admin/profile');
       } else if (value == 'signature') {

@@ -132,7 +132,7 @@ class _DefensysActionMenuState extends State<DefensysActionMenu> {
                     height: 32,
                     padding: EdgeInsets.zero,
                     onPressed: widget.enabled ? _controller.toggle : null,
-                    child: const Icon(LucideIcons.ellipsis, size: 18),
+                    child: Icon(widget.triggerIcon ?? LucideIcons.ellipsis, size: 18),
                   ),
           ),
         ),

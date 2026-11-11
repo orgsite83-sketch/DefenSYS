@@ -46,6 +46,7 @@ class UserSerializer(serializers.ModelSerializer):
     is_project_manager = serializers.SerializerMethodField()
     managed_section = serializers.SerializerMethodField()
     has_staff_workspace = serializers.SerializerMethodField()
+    staff_workspaces = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -55,6 +56,7 @@ class UserSerializer(serializers.ModelSerializer):
             'is_documenter', 'is_uploader', 'e_signature', 'avatar', 'facultyRoles',
             'is_project_manager', 'managed_section',
             'has_staff_workspace',
+            'staff_workspaces',
         ]
 
     def get_has_staff_workspace(self, obj):
@@ -72,6 +74,13 @@ class UserSerializer(serializers.ModelSerializer):
         if semester:
             assignments = assignments.filter(semester=semester)
         return assignments.exists()
+
+    def get_staff_workspaces(self, obj):
+        if obj.role not in ('faculty', 'admin'):
+            return {}
+        # One authoritative assignment projection for login/me and dashboard.
+        from dashboards.views import _faculty_roles
+        return _faculty_roles(obj)
 
     def get_team_id(self, obj):
         from student_teams.current_identity import current_team_for_student

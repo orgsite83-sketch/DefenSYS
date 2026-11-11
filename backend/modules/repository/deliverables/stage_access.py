@@ -1,4 +1,5 @@
 """Stage upload overrides shared by the access dialog and upload enforcement."""
+from authentication_access_control.scopes import is_admin_user, is_pit_lead_only
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
@@ -34,8 +35,8 @@ def _stage_teams(teams, stage, program_scope):
 
 def _scope(user, *, scope='global', team=None, program_scope='capstone', year_level=None):
     from academic_period_management.services import active_semester
-    is_admin = user.role == 'admin' or user.is_superuser
-    is_pit_lead = bool(getattr(user, 'is_pit_lead', False))
+    is_admin = is_admin_user(user)
+    is_pit_lead = is_pit_lead_only(user)
     if scope not in {'team', 'global'} or program_scope not in {'capstone', 'pit'}:
         raise ValidationError('Invalid stage access scope.')
     if scope == 'team' and team is None:
@@ -125,7 +126,7 @@ def access_payload(user, *, scope='global', team=None, program_scope='capstone',
             })
         rows.append(row)
     return {'scope': scope, 'program_scope': program_scope, 'year_level': year_level or '',
-            'can_choose_program': bool(user.role == 'admin' or user.is_superuser),
+            'can_choose_program': bool(is_admin_user(user)),
             'semester_id': semester.pk, 'semester_label': f'{semester.school_year.label} · {semester.label}',
             'team_count': len(teams), 'stages': rows}
 

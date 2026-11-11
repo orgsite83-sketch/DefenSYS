@@ -48,7 +48,7 @@ class LocalCorsMiddleware:
             response['Access-Control-Allow-Origin'] = origin
             response['Access-Control-Allow-Credentials'] = 'true'
             response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-            response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Range'
+            response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Range, X-Defensys-Workspace, X-Defensys-Year, X-Defensys-Section'
             response['Access-Control-Max-Age'] = '86400'
             response['Access-Control-Expose-Headers'] = 'Content-Disposition, Content-Type, Content-Length, Accept-Ranges, Content-Range, X-Minutes-Status'
             response['Vary'] = 'Origin'

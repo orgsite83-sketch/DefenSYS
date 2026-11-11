@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../../navigation/admin_route_paths.dart';
 import '../../../navigation/web_section_navigation.dart';
 import '../../../navigation/workspace_access.dart';
+import '../../../navigation/staff_workspaces.dart';
+import '../../../widgets/minutes/staff_workspace_switcher.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/documenter_provider.dart';
@@ -148,8 +150,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   @override
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('faculty'));
-    final roles =
-        (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
+    final roles = (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ??
+        (ref.watch(authProvider).user?['staff_workspaces'] as Map?)?.cast<String, dynamic>() ?? {};
 
     final routerState = GoRouterState.of(context);
     final sectionFromRoute = FacultyRoutes.sectionForLocation(
@@ -398,7 +400,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
   List<WorkspaceOption> _availableWorkspaces(Map<String, dynamic> roles) {
     final workspaces = <WorkspaceOption>[];
-    if (roles['pit_lead'] == true) {
+    if (roles['pit_lead'] == true && const {'1st Year', '2nd Year', '3rd Year'}.contains(roles['pit_lead_year'])) {
       workspaces.add(
         WorkspaceOption(
           type: FacultyWorkspace.pitLead,
@@ -521,6 +523,19 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       routerState.uri.path,
     );
     final currentSection = sectionFromRoute ?? _activeSection;
+    final requested = routerState.uri.queryParameters;
+    final key = requested['workspace'];
+    if (key != null) {
+      for (final option in available) {
+        final optionKey = _workspaceKey(option.type);
+        if (optionKey == key &&
+            (option.yearLevel == null || option.yearLevel == requested['workspaceYear']) &&
+            (option.section == null || option.section == requested['workspaceSection'])) {
+          return option;
+        }
+      }
+    }
+
 
     if (_activeWorkspaceOption != null &&
         available.contains(_activeWorkspaceOption) &&
@@ -539,6 +554,19 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
     return available.first;
   }
+
+  String _workspaceKey(FacultyWorkspace type) => switch (type) {
+    FacultyWorkspace.adviser => 'adviser',
+    FacultyWorkspace.pitLead => 'pit_lead',
+    FacultyWorkspace.pitInstructor => 'instructor',
+    FacultyWorkspace.documenter => 'documenter',
+    FacultyWorkspace.faculty => 'faculty',
+  };
+
+  String _workspaceLocation(String path, WorkspaceOption option,
+      {Map<String, String> parameters = const {}}) =>
+    StaffWorkspace(_workspaceKey(option.type), '',
+      year: option.yearLevel, section: option.section).at(path, parameters: parameters);
 
   String _workspaceLabel(WorkspaceOption ws) {
     switch (ws.type) {
@@ -577,41 +605,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     ref.invalidate(documenterProvider);
   }
 
-  void _switchWorkspace(WorkspaceOption workspaceOption) async {
-    final hasUnsaved = ref.read(unsavedChangesProvider);
-    if (hasUnsaved) {
-      final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
-      final action = await showDiscardUnsavedChangesDialog(
-        context,
-        onSaveDraft: saveDraftCallback,
-      );
-      if (action == UnsavedChangesAction.cancel || !mounted) return;
-      if (action == UnsavedChangesAction.saveDraft &&
-          saveDraftCallback != null) {
-        final ok = await saveDraftCallback();
-        if (!ok || !mounted) return;
-      }
-    }
-    ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
-    ref.read(unsavedChangesProvider.notifier).setDirty(false);
-    _clearWorkspaceData();
-    setState(() {
-      _activeWorkspaceOption = workspaceOption;
-      _activeSection = workspaceOption.type == FacultyWorkspace.faculty
-          ? 'project_archive'
-          : 'dashboard';
-      _navigationEpoch++;
-      _workspaceSections.clear();
-      _selectedMinutesScheduleId = null;
-      _selectedMinutesSection = null;
-    });
-    context.go(
-      workspaceOption.type == FacultyWorkspace.faculty
-          ? FacultyRoutes.projectArchive
-          : FacultyRoutes.dashboard,
-    );
-  }
-
   void _goToSection(
     String section, {
     Map<String, String>? queryParameters,
@@ -645,17 +638,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       if (workspace != _activeWorkspaceOption) _clearWorkspaceData();
       setState(() => _activeWorkspaceOption = workspace);
     }
-    final path = FacultyRoutes.pathForSection(section);
-    if (queryParameters != null && queryParameters.isNotEmpty) {
-      final uri = Uri(path: path, queryParameters: queryParameters);
-      context.go(uri.toString());
-    } else if (!resumeWebSection(
-      widget.navigationShell,
-      path,
-      initialLocation: !_workspaceSections.contains(section),
-    )) {
-      context.go(path);
-    }
+    final option = workspace ?? _resolvedWorkspace(
+      (ref.read(dashboardProvider('faculty')).data?['roles'] as Map?)?.cast<String, dynamic>() ?? {});
+    context.go(_workspaceLocation(FacultyRoutes.pathForSection(section), option,
+      parameters: queryParameters ?? {}));
   }
 
   void _afterSidebarAction(bool isWide, VoidCallback action) {
@@ -762,12 +748,17 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     VoidCallback? onToggleCollapse,
   }) {
     final workspaceOption = _resolvedWorkspace(roles);
-    final available = _availableWorkspaces(roles);
     if (_activeWorkspaceOption != workspaceOption) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           if (_activeWorkspaceOption != null) _clearWorkspaceData();
-          setState(() => _activeWorkspaceOption = workspaceOption);
+          setState(() {
+            _activeWorkspaceOption = workspaceOption;
+            _navigationEpoch++;
+            _workspaceSections.clear();
+            _selectedMinutesScheduleId = null;
+            _selectedMinutesSection = null;
+          });
         }
       });
     }
@@ -907,141 +898,13 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               ),
             ),
 
-          // Workspace Switcher (Multi-role switcher)
-          if (available.length > 1) ...[
-            if (isCollapsed)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 4,
-                ),
-                child: PopupMenuButton<WorkspaceOption>(
-                  tooltip: _workspaceLabel(workspaceOption),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(
-                      color: DefensysTokens.borderOf(context),
-                      width: 1,
-                    ),
-                  ),
-                  color: DefensysTokens.panelOf(context),
-                  elevation: 4,
-                  offset: const Offset(50, 0),
-                  onSelected: (value) {
-                    _afterSidebarAction(isWide, () => _switchWorkspace(value));
-                  },
-                  itemBuilder: (context) => available
-                      .map(
-                        (ws) => PopupMenuItem(
-                          value: ws,
-                          height: 36,
-                          child: Text(
-                            _workspaceLabel(ws),
-                            style: TextStyle(
-                              fontFamily: DefensysTokens.fontFamily,
-                              fontSize: 12.5,
-                              fontWeight: ws == workspaceOption
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: ws == workspaceOption
-                                  ? DefensysTokens.maroonOf(context)
-                                  : (isDark
-                                        ? const Color(0xFFF4F4F5)
-                                        : const Color(0xFF0F172A)),
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  child: Container(
-                    width: 40,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF28272D)
-                          : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: DefensysTokens.borderOf(context),
-                      ),
-                    ),
-                    child: Center(
-                      child: Icon(
-                        Icons.swap_horiz_rounded,
-                        size: 16,
-                        color: isDark
-                            ? const Color(0xFFA1A1AA)
-                            : const Color(0xFF475569),
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            else
-              Container(
-                margin: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF28272D)
-                      : const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: DefensysTokens.borderOf(context),
-                    width: 1,
-                  ),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<WorkspaceOption>(
-                    isExpanded: true,
-                    value: workspaceOption,
-                    dropdownColor: DefensysTokens.panelOf(context),
-                    iconEnabledColor: isDark
-                        ? const Color(0xFFA1A1AA)
-                        : const Color(0xFF64748B),
-                    icon: const Icon(Icons.unfold_more_rounded, size: 18),
-                    style: TextStyle(
-                      fontFamily: DefensysTokens.fontFamily,
-                      color: isDark
-                          ? const Color(0xFFF4F4F5)
-                          : const Color(0xFF0F172A),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    items: available
-                        .map(
-                          (ws) => DropdownMenuItem(
-                            value: ws,
-                            child: Text(
-                              _workspaceLabel(ws),
-                              style: TextStyle(
-                                fontFamily: DefensysTokens.fontFamily,
-                                color: isDark
-                                    ? const Color(0xFFF4F4F5)
-                                    : const Color(0xFF0F172A),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        _afterSidebarAction(
-                          isWide,
-                          () => _switchWorkspace(value),
-                        );
-                      }
-                    },
-                  ),
-                ),
-              ),
-          ],
+          StaffWorkspaceSwitcher(
+            collapsed: isCollapsed,
+            userOverride: {
+              ...?ref.watch(authProvider).user,
+              'staff_workspaces': roles,
+            },
+          ),
 
           // Hairline divider below header
           Divider(
