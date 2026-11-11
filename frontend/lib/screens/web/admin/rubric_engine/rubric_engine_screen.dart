@@ -155,12 +155,16 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
 
     ref.listen(rubricEngineProvider, (previous, next) {
       final error = next.error;
-      if (error != null && error.isNotEmpty && error != previous?.error) {
+      if (!_rubricEditorOpen &&
+          error != null &&
+          error.isNotEmpty &&
+          error != previous?.error) {
         _showRubricToast(error, ToastificationType.error);
       }
 
       final message = next.message;
-      if (message != null &&
+      if (!_rubricEditorOpen &&
+          message != null &&
           message.isNotEmpty &&
           message != previous?.message) {
         _showRubricToast(message, ToastificationType.success);
@@ -780,7 +784,8 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     );
   }
 
-  Widget _scopeCell(Map<String, dynamic> rubric) => ProgramBadge(scope: rubric['scope']?.toString());
+  Widget _scopeCell(Map<String, dynamic> rubric) =>
+      ProgramBadge(scope: rubric['scope']?.toString());
 
   Widget _evaluationTypeCell(Map<String, dynamic> rubric) {
     return _evaluationTypeChip(rubric['evaluation_type']?.toString());

@@ -149,7 +149,7 @@ class Rubric(models.Model):
 class RubricCriterion(models.Model):
     rubric = models.ForeignKey(Rubric, related_name='criteria', on_delete=models.CASCADE)
     section = models.CharField(max_length=160, blank=True, default='')
-    name = models.CharField(max_length=160)
+    name = models.CharField(max_length=1000)
     description = models.TextField(blank=True)
     scale = models.CharField(max_length=30, choices=Rubric.SCALE_CHOICES, default=Rubric.SCALE_10)
     max_score = models.PositiveSmallIntegerField(default=10)

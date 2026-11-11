@@ -594,7 +594,7 @@ void main() {
               .widgetList<RubricCriterionFields>(
                 find.byType(RubricCriterionFields),
               )
-              .map((field) => field.maximum),
+              .map((field) => int.parse(field.maxScore!.text)),
           [25, 25],
         );
         expect(find.text('100% of 100%'), findsOneWidget);

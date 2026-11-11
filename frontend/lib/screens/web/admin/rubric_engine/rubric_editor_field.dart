@@ -6,6 +6,17 @@ import '../../../../theme/defensys_tokens.dart';
 String formatRubricPercentage(num value) =>
     value.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
 
+const rubricCriterionNameLimit = 1000;
+
+String? rubricCriterionNameError(String text) {
+  final name = text.trim();
+  if (name.isEmpty) return 'Enter a criterion name.';
+  if (name.runes.length > rubricCriterionNameLimit) {
+    return 'Use $rubricCriterionNameLimit characters or fewer.';
+  }
+  return null;
+}
+
 String? rubricPointsError(String text) {
   final value = int.tryParse(text.trim());
   return value == null || value < 1 || value > 32767
@@ -43,6 +54,8 @@ class RubricEditorField extends StatefulWidget {
     this.minLines = 1,
     this.maxLines = 1,
     this.labelAction,
+    this.showLabel = true,
+    this.showRequired = true,
   });
 
   final String label;
@@ -53,6 +66,8 @@ class RubricEditorField extends StatefulWidget {
   final String? Function(String)? validator;
   final String? placeholder, hint;
   final Widget? trailing, labelAction;
+  final bool showLabel;
+  final bool showRequired;
   final TextInputType? keyboardType;
   final int? maxLength;
   final int minLines, maxLines;
@@ -111,60 +126,68 @@ class RubricEditorFieldState extends State<RubricEditorField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            Text.rich(
-              TextSpan(
-                text: widget.label,
-                children: [
-                  if (widget.validator != null && widget.enabled)
-                    TextSpan(
-                      text: ' · Required',
-                      style: DefensysTokens.caption.copyWith(color: secondary),
-                    ),
-                ],
-              ),
-              style: DefensysTokens.tableCell.copyWith(
-                color: primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            if (widget.labelAction != null) widget.labelAction!,
-          ],
-        ),
-        const SizedBox(height: 6),
-        ShadInput(
-          key: widget.inputKey,
-          controller: widget.controller,
-          focusNode: _focus,
-          enabled: widget.enabled,
-          style: DefensysTokens.body.copyWith(color: primary),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          placeholder: widget.placeholder == null
-              ? null
-              : Text(widget.placeholder!),
-          trailing: widget.trailing,
-          keyboardType: widget.keyboardType,
-          maxLength: widget.maxLength,
-          minLines: widget.minLines,
-          maxLines: widget.maxLines,
-          decoration: message == null
-              ? null
-              : ShadDecoration(
-                  border: ShadBorder.all(
-                    color: errorColor,
-                    width: 1,
-                    radius: BorderRadius.circular(DefensysTokens.radiusMd),
-                  ),
+        if (widget.showLabel)
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              Text.rich(
+                TextSpan(
+                  text: widget.label,
+                  children: [
+                    if (widget.showRequired &&
+                        widget.validator != null &&
+                        widget.enabled)
+                      TextSpan(
+                        text: ' · Required',
+                        style: DefensysTokens.caption.copyWith(
+                          color: secondary,
+                        ),
+                      ),
+                  ],
                 ),
-          onChanged: (value) {
-            setState(() {});
-            widget.onChanged(value);
-          },
+                style: DefensysTokens.tableCell.copyWith(
+                  color: primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (widget.labelAction != null) widget.labelAction!,
+            ],
+          ),
+        if (widget.showLabel) const SizedBox(height: 6),
+        Semantics(
+          label: widget.showLabel ? null : widget.label,
+          child: ShadInput(
+            key: widget.inputKey,
+            controller: widget.controller,
+            focusNode: _focus,
+            enabled: widget.enabled,
+            style: DefensysTokens.body.copyWith(color: primary),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            placeholder: widget.placeholder == null
+                ? null
+                : Text(widget.placeholder!),
+            trailing: widget.trailing,
+            keyboardType: widget.keyboardType,
+            maxLength: widget.maxLength,
+            minLines: widget.minLines,
+            maxLines: widget.maxLines,
+            decoration: message == null
+                ? null
+                : ShadDecoration(
+                    border: ShadBorder.all(
+                      color: errorColor,
+                      width: 1,
+                      radius: BorderRadius.circular(DefensysTokens.radiusMd),
+                    ),
+                  ),
+            onChanged: (value) {
+              setState(() {});
+              widget.onChanged(value);
+            },
+          ),
         ),
         if (message != null || widget.hint != null) ...[
           const SizedBox(height: 5),

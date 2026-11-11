@@ -78,6 +78,33 @@ class RubricEngineApiTests(APITestCase):
         self.assertEqual(response.data['rubric']['criteria_count'], 2)
         self.assertEqual(Rubric.objects.get().criteria.count(), 2)
 
+    def test_thousand_character_criterion_name_round_trips_on_create_and_update(self):
+        payload = self.rubric_payload(defense_stage_id=None)
+        long_name = 'Evaluate the delivered modules against the agreed project objectives. '
+        long_name = (long_name * 20)[:1000].rstrip()
+        long_name += 'X' * (1000 - len(long_name))
+        payload['criteria'][0]['name'] = long_name
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        rubric = Rubric.objects.get(pk=response.data['rubric']['id'])
+        self.assertEqual(rubric.criteria.first().name, long_name)
+        self.assertEqual(response.data['rubric']['criteria'][0]['name'], long_name)
+
+        # Older guideline text must survive changes made in the simpler editor.
+        payload['criteria'][0]['name'] = 'Revised ' + long_name[8:]
+        updated = self.client.patch(f'/api/grading/rubrics/{rubric.pk}/', payload, format='json')
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(updated.data['rubric']['criteria'][0]['name'], payload['criteria'][0]['name'])
+        self.assertEqual(updated.data['rubric']['criteria'][0]['description'], payload['criteria'][0]['description'])
+
+    def test_criterion_name_over_one_thousand_characters_is_rejected(self):
+        payload = self.rubric_payload()
+        payload['criteria'][0]['name'] = 'X' * 1001
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('name', response.data['criteria'][0])
+        self.assertFalse(Rubric.objects.exists())
+
     def test_assign_existing_template_uses_all_stage_weights(self):
         for concept, weights in (
             (True, (100, 0, 0)),

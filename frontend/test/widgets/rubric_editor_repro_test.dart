@@ -33,9 +33,17 @@ class FakeAuthNotifier extends AuthNotifier {
 
 class FakeRubricNotifier extends RubricEngineNotifier {
   Map<String, dynamic>? savedPayload;
+  Map<int, Map<String, String>> rejectedCriteria = {};
 
   @override
   Future<bool> updateRubric(int rubricId, Map<String, dynamic> payload) async {
+    if (rejectedCriteria.isNotEmpty) {
+      state = state.copyWith(
+        error: 'Check the criterion name.',
+        criterionErrors: rejectedCriteria,
+      );
+      return false;
+    }
     savedPayload = payload;
     return true;
   }
@@ -136,6 +144,8 @@ void main() {
     String scale = '10-Point Scale',
     List<String>? sections,
     List<int>? points,
+    List<String>? descriptions,
+    bool expandSections = true,
   }) async {
     tester.view.physicalSize = const Size(1400, 1100);
     tester.view.devicePixelRatio = 1;
@@ -174,6 +184,7 @@ void main() {
                       'scale': scale,
                       'section': sections?[i] ?? '',
                       'display_order': i,
+                      'description': descriptions?[i] ?? '',
                     },
                 ],
               },
@@ -185,6 +196,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    if (expandSections && scale == 'Points-Based (Sections)') {
+      for (var index = 1; index < sections!.toSet().length; index++) {
+        final toggle = find.byKey(ValueKey('section-toggle-$index'));
+        await tester.ensureVisible(toggle);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+      }
+    }
     return container;
   }
 
@@ -435,49 +454,45 @@ void main() {
   });
 
   testWidgets(
-    'compact criteria preserve edits through closing and reordering',
+    'inline criteria preserve names and legacy guidelines through reordering',
     (tester) async {
-      final container = await pumpWeightEditor(tester, [60, 40]);
+      final container = await pumpWeightEditor(
+        tester,
+        [60, 40],
+        descriptions: ['Explain the implementation choices.', ''],
+      );
       expect(
         find.byKey(const ValueKey('criterion-description-0')),
         findsNothing,
       );
-      final toggle = find.byKey(const ValueKey('criterion-toggle-0'));
-      await tester.ensureVisible(toggle);
-      await tester.tap(toggle);
-      await tester.pumpAndSettle();
-      final description = find.descendant(
-        of: find.byKey(const ValueKey('criterion-description-0')),
+      final name = find.descendant(
+        of: find.byKey(const ValueKey('criterion-name-0')),
         matching: find.byType(EditableText),
       );
-      await tester.ensureVisible(description);
-      await tester.enterText(
-        description,
-        'Explain the implementation choices.',
-      );
-      await tester.ensureVisible(toggle);
-      await tester.tap(toggle);
+      await tester.ensureVisible(name);
+      await tester.enterText(name, 'Implementation quality');
+      final actions = find.byKey(const ValueKey('criterion-actions-0'));
+      await tester.ensureVisible(actions);
+      await tester.tap(actions);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('criterion-0-Move down')));
       await tester.pumpAndSettle();
-      expect(find.text('2 · Criterion 0'), findsOneWidget);
-      final movedToggle = find.byKey(const ValueKey('criterion-toggle-1'));
-      await tester.ensureVisible(movedToggle);
-      await tester.tap(movedToggle);
-      await tester.pumpAndSettle();
-      final movedDescription = find.descendant(
-        of: find.byKey(const ValueKey('criterion-description-1')),
+      final movedName = find.descendant(
+        of: find.byKey(const ValueKey('criterion-name-1')),
         matching: find.byType(EditableText),
       );
       expect(
-        tester.widget<EditableText>(movedDescription).controller.text,
-        'Explain the implementation choices.',
+        tester.widget<EditableText>(movedName).controller.text,
+        'Implementation quality',
       );
       expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
       final notifier =
           container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
       final criteria = notifier.savedPayload!['criteria'] as List;
-      expect(criteria.map((c) => c['name']), ['Criterion 1', 'Criterion 0']);
+      expect(criteria.map((c) => c['name']), [
+        'Criterion 1',
+        'Implementation quality',
+      ]);
       expect(
         criteria.last['description'],
         'Explain the implementation choices.',
@@ -486,44 +501,38 @@ void main() {
     },
   );
 
-  testWidgets(
-    'save opens a collapsed invalid criterion and focuses its missing name',
-    (tester) async {
-      final container = await pumpWeightEditor(tester, [60, 40]);
-      final toggle = find.byKey(const ValueKey('criterion-toggle-0'));
-      await tester.ensureVisible(toggle);
-      await tester.tap(toggle);
-      await tester.pumpAndSettle();
-      final name = find.descendant(
-        of: find.byKey(const ValueKey('criterion-name-0')),
-        matching: find.byType(EditableText),
-      );
-      await tester.enterText(name, '');
-      await tester.ensureVisible(toggle);
-      await tester.tap(toggle);
-      await tester.pumpAndSettle();
-      expect(name, findsNothing);
-      final save = container.read(unsavedChangesSaveDraftProvider)!;
-      expect(await save(), isFalse);
-      await tester.pumpAndSettle();
-      expect(find.text('Enter a criterion name.'), findsOneWidget);
-      expect(tester.widget<EditableText>(name).focusNode.hasFocus, isTrue);
-      expect(tester.getRect(name).top, greaterThanOrEqualTo(0));
-      expect(tester.getRect(name).bottom, lessThanOrEqualTo(1100));
-      await tester.enterText(name, 'Implementation');
-      await tester.pumpAndSettle();
-      expect(await save(), isTrue);
-      final notifier =
-          container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
-      expect(
-        (notifier.savedPayload!['criteria'] as List).first['description'],
-        '',
-      );
-      expect(find.textContaining('Optional'), findsNothing);
-      expect(tester.takeException(), isNull);
-      await tester.pumpAndSettle(const Duration(seconds: 5));
-    },
-  );
+  testWidgets('save focuses the missing name in an inline criterion', (
+    tester,
+  ) async {
+    final container = await pumpWeightEditor(tester, [60, 40]);
+    final name = find.descendant(
+      of: find.byKey(const ValueKey('criterion-name-0')),
+      matching: find.byType(EditableText),
+    );
+    await tester.ensureVisible(name);
+    await tester.enterText(name, '');
+    await tester.pumpAndSettle();
+    expect(name, findsOneWidget);
+    final save = container.read(unsavedChangesSaveDraftProvider)!;
+    expect(await save(), isFalse);
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a criterion name.'), findsOneWidget);
+    expect(tester.widget<EditableText>(name).focusNode.hasFocus, isTrue);
+    expect(tester.getRect(name).top, greaterThanOrEqualTo(0));
+    expect(tester.getRect(name).bottom, lessThanOrEqualTo(1100));
+    await tester.enterText(name, 'Implementation');
+    await tester.pumpAndSettle();
+    expect(await save(), isTrue);
+    final notifier =
+        container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+    expect(
+      (notifier.savedPayload!['criteria'] as List).first['description'],
+      '',
+    );
+    expect(find.textContaining('Optional'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+  });
 
   testWidgets(
     'weighted sections derive percentages from edited criterion points',
@@ -538,13 +547,6 @@ void main() {
       expect(find.text('Weighted sections'), findsOneWidget);
       expect(find.text('5-point'), findsNothing);
       final firstCriterion = find.byType(RubricCriterionFields).first;
-      final toggle = find.descendant(
-        of: firstCriterion,
-        matching: find.byKey(const ValueKey('criterion-toggle-0')),
-      );
-      await tester.ensureVisible(toggle);
-      await tester.tap(toggle);
-      await tester.pumpAndSettle();
       final points = find.descendant(
         of: firstCriterion,
         matching: find.byKey(const ValueKey('criterion-max-score-0')),
@@ -556,7 +558,7 @@ void main() {
       await tester.ensureVisible(input);
       await tester.enterText(input, '20');
       await tester.pumpAndSettle();
-      expect(find.text('20 pts · 30% of rubric'), findsNWidgets(2));
+      expect(find.text('30% of rubric'), findsNWidgets(2));
       expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
       final notifier =
           container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
@@ -660,34 +662,36 @@ void main() {
   );
 
   testWidgets(
-    'criterion headers expand with clicks and keyboard without edit or close buttons',
+    'criterion action menu opens with the keyboard and preserves the moved row',
     (tester) async {
       await pumpWeightEditor(tester, [60, 40]);
       final first = find.byType(RubricCriterionFields).first;
-      final accordion = find.descendant(
-        of: first,
-        matching: find.byType(ShadAccordionItem<bool>),
-      );
-      final header = find.byKey(const ValueKey('criterion-toggle-0'));
-      await tester.ensureVisible(header);
-      tester
-          .widget<ShadAccordionItem<bool>>(accordion)
-          .focusNode!
-          .requestFocus();
+      final state = tester.state(first);
+      final menu = find.byKey(const ValueKey('criterion-actions-0'));
+      await tester.ensureVisible(menu);
+      tester.widget<ShadButton>(menu).focusNode!.requestFocus();
       await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('criterion-name-0')), findsOneWidget);
+      expect(find.text('Move down'), findsOneWidget);
       expect(find.text('Close'), findsNothing);
       expect(find.text('Edit'), findsNothing);
-      await tester.tap(header);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('criterion-name-0')), findsNothing);
-      await tester.tap(find.text('1 · Criterion 0'));
-      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('criterion-0-Move down')));
       await tester.pumpAndSettle();
-      expect(find.text('2 · Criterion 0'), findsOneWidget);
+      expect(
+        tester.state(find.byType(RubricCriterionFields).last),
+        same(state),
+      );
+      final movedInput = find
+          .descendant(
+            of: find.byType(RubricCriterionFields).last,
+            matching: find.byType(EditableText),
+          )
+          .first;
+      expect(
+        tester.widget<EditableText>(movedInput).controller.text,
+        'Criterion 0',
+      );
       expect(find.byKey(const ValueKey('criterion-name-1')), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -698,13 +702,7 @@ void main() {
     (tester) async {
       await pumpWeightEditor(tester, [25, 25, 25, 25], readOnly: true);
       expect(find.text('100% of 100%'), findsOneWidget);
-      expect(find.text('25% weight'), findsNWidgets(4));
-      for (var i = 0; i < 4; i++) {
-        final toggle = find.byKey(ValueKey('criterion-toggle-$i'));
-        await tester.ensureVisible(toggle);
-        await tester.tap(toggle);
-        await tester.pumpAndSettle();
-      }
+      expect(find.byKey(const ValueKey('criterion-actions-0')), findsNothing);
       final weightFields = tester.widgetList<ShadInput>(
         find.byWidgetPredicate(
           (widget) =>
@@ -719,6 +717,101 @@ void main() {
         '25',
       ]);
       expect(weightFields.every((widget) => widget.enabled == false), isTrue);
+    },
+  );
+
+  for (final scale in ['10-Point Scale', 'Points-Based (Sections)']) {
+    testWidgets(
+      '$scale saves long names and focuses an over-limit name without truncating it',
+      (tester) async {
+        final container = await pumpWeightEditor(
+          tester,
+          [100],
+          scale: scale,
+          sections: ['Oral'],
+        );
+        final name = find.descendant(
+          of: find.byKey(const ValueKey('criterion-name-0')),
+          matching: find.byType(EditableText),
+        );
+        await tester.ensureVisible(name);
+        final longName = 'Criterion ${'X' * 990}';
+        await tester.enterText(name, longName);
+        await tester.pumpAndSettle();
+        final save = container.read(unsavedChangesSaveDraftProvider)!;
+        expect(await save(), isTrue);
+        final notifier =
+            container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+        expect(
+          (notifier.savedPayload!['criteria'] as List).single['name'],
+          longName,
+        );
+        await tester.enterText(name, '${longName}X');
+        await tester.pumpAndSettle();
+        expect(await save(), isFalse);
+        await tester.pumpAndSettle();
+        expect(find.text('Use 1000 characters or fewer.'), findsOneWidget);
+        expect(tester.widget<EditableText>(name).controller.text.length, 1001);
+        expect(tester.widget<EditableText>(name).focusNode.hasFocus, isTrue);
+        await tester.pumpAndSettle(const Duration(seconds: 5));
+      },
+    );
+  }
+
+  testWidgets(
+    'save reveals a server-rejected criterion in a collapsed section',
+    (tester) async {
+      final container = await pumpWeightEditor(
+        tester,
+        [60, 40],
+        scale: 'Points-Based (Sections)',
+        sections: ['Oral', 'Manuscript'],
+        expandSections: false,
+      );
+      expect(find.byType(RubricCriterionFields), findsOneWidget);
+      final notifier =
+          container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+      notifier.rejectedCriteria = {
+        1: {'name': 'This criterion name is unavailable.'},
+      };
+      expect(await container.read(unsavedChangesSaveDraftProvider)!(), isFalse);
+      await tester.pumpAndSettle();
+      expect(find.text('This criterion name is unavailable.'), findsOneWidget);
+      final input = find
+          .descendant(
+            of: find.byType(RubricCriterionFields).last,
+            matching: find.byType(EditableText),
+          )
+          .first;
+      expect(tester.widget<EditableText>(input).focusNode.hasFocus, isTrue);
+      await tester.enterText(input, 'Revised manuscript');
+      await tester.pumpAndSettle();
+      expect(find.text('This criterion name is unavailable.'), findsNothing);
+      notifier.rejectedCriteria = {};
+      expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    },
+  );
+
+  testWidgets(
+    'new criteria focus their name and can be deleted through the row menu',
+    (tester) async {
+      await pumpWeightEditor(tester, [100]);
+      final add = find.text('Add criterion');
+      await tester.ensureVisible(add);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      final name = find.descendant(
+        of: find.byKey(const ValueKey('criterion-name-1')),
+        matching: find.byType(EditableText),
+      );
+      expect(tester.widget<EditableText>(name).focusNode.hasFocus, isTrue);
+      await tester.tap(find.byKey(const ValueKey('criterion-actions-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete criterion'));
+      await tester.pumpAndSettle();
+      expect(find.byType(RubricCriterionFields), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
 

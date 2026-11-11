@@ -184,6 +184,29 @@ class GradeCenterApiTests(APITestCase):
         sync_missing_grade_rows(user=self.admin)
         return TeamGrade.objects.get(team=self.capstone_team)
 
+    def test_panel_submission_preserves_long_criterion_name_in_grade_snapshots(self):
+        from .models import PanelistCriterionScore
+
+        criterion = self.panel_rubric.criteria.first()
+        criterion.name = 'Criterion ' + 'X' * 990
+        criterion.weight = 100
+        criterion.save()
+        self._capstone_grade()
+        self.client.force_authenticate(user=self.panelist)
+        response = self.client.post('/api/defense/schedules/submit-grades/', {
+            'team_id': self.capstone_team.id,
+            'schedule_id': self.capstone_schedule.id,
+            'submissions': [{
+                'student_id': None,
+                'criteria_scores': [{'criterion_id': criterion.id, 'score': 8}],
+            }],
+        }, format='json')
+        self.assertIn(response.status_code, (200, 201), response.data)
+        snapshot = PanelistCriterionScore.objects.get(criterion=criterion)
+        self.assertEqual(snapshot.criterion_name_snapshot, criterion.name)
+        breakdown = GradeBreakdown.objects.get(source_submission=snapshot.submission)
+        self.assertEqual(breakdown.criterion_name, criterion.name)
+
     def _enable_capstone_peer_grading(self):
         self.semester.capstone_peer_evaluation_enabled = True
         self.semester.save(update_fields=['capstone_peer_evaluation_enabled'])

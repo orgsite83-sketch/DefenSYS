@@ -406,7 +406,7 @@ class GradeBreakdown(models.Model):
         on_delete=models.SET_NULL,
     )
     evaluation_type = models.CharField(max_length=20, choices=EVALUATION_TYPE_CHOICES)
-    criterion_name = models.CharField(max_length=160)
+    criterion_name = models.CharField(max_length=1000)
     section_snapshot = models.CharField(max_length=150, blank=True, default='')
     score = models.DecimalField(max_digits=7, decimal_places=2)
     max_score = models.DecimalField(max_digits=7, decimal_places=2)
@@ -540,7 +540,7 @@ class PanelistCriterionScore(models.Model):
         related_name='panelist_scores',
         on_delete=models.PROTECT,
     )
-    criterion_name_snapshot = models.CharField(max_length=160)
+    criterion_name_snapshot = models.CharField(max_length=1000)
     section_snapshot = models.CharField(max_length=160, blank=True, default='')
     score = models.DecimalField(max_digits=7, decimal_places=2)
     max_score_snapshot = models.DecimalField(max_digits=7, decimal_places=2)

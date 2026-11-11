@@ -1031,6 +1031,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
             weight: formattedWeight,
             targetType: target,
             criteria: list,
+            expanded: i == 0 || resolvedTitle.isEmpty,
           ),
         );
       }
@@ -1190,21 +1191,25 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }
 
   void _addCriterionToSection(SectionEditorDraft section) {
+    final newCrit = RubricCriterionDraft(
+      scales: _scales,
+      name: '',
+      scale: 'Points-Based (Sections)',
+      maxScore: 10,
+      weight: 0,
+      displayOrder: _criteria.length,
+      targetType: section.targetType,
+    );
     setState(() {
-      final newCrit = RubricCriterionDraft(
-        scales: _scales,
-        name: '',
-        scale: 'Points-Based (Sections)',
-        maxScore: 10,
-        weight: 0,
-        displayOrder: _criteria.length,
-        targetType: section.targetType,
-      );
+      section.expanded = true;
       section.criteria.add(newCrit);
       _attachSectionListeners();
       _recomputeCriteriaWeightsFromSections();
     });
     _markDirty();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) newCrit.editorKey.currentState?.focusName();
+    });
   }
 
   void _removeCriterionFromSection(
@@ -1279,10 +1284,106 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }) {
     final secWeight = num.tryParse(section.weight.text.trim()) ?? 0;
     final totalPts = section.totalPoints;
-    final needed = _sectionWeightToBalance(section);
+    if (!section.expanded) {
+      return ShadCard(
+        key: ObjectKey(section),
+        padding: const EdgeInsets.all(16),
+        backgroundColor: _surfaceColor,
+        border: ShadBorder.all(color: _borderColor, width: 1),
+        radius: BorderRadius.circular(DefensysTokens.radiusMd),
+        shadows: const [],
+        child: ShadButton.ghost(
+          key: ValueKey('section-toggle-$sectionIndex'),
+          padding: EdgeInsets.zero,
+          height: 0,
+          expands: true,
+          onPressed: () => setState(() => section.expanded = true),
+          child: Semantics(
+            expanded: false,
+            label: 'Expand section ${sectionIndex + 1}',
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Section ${sectionIndex + 1}',
+                        style: DefensysTokens.caption.copyWith(
+                          color: _textSecondaryColor,
+                        ),
+                      ),
+                      Text(
+                        section.title.text.trim().isEmpty
+                            ? 'Untitled section'
+                            : section.title.text.trim(),
+                        style: DefensysTokens.body.copyWith(
+                          color: _textPrimaryColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '${section.targetType == 'individual' ? 'Individual' : 'Team'} · ${section.criteria.length} ${section.criteria.length == 1 ? 'criterion' : 'criteria'} · $totalPts points',
+                        style: DefensysTokens.caption.copyWith(
+                          color: _textSecondaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '${formatRubricPercentage(secWeight)}%',
+                  style: DefensysTokens.caption.copyWith(
+                    color: _textSecondaryColor,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(LucideIcons.chevronDown, size: 16),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    final target = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Scoring target',
+          style: DefensysTokens.tableCell.copyWith(
+            color: _textPrimaryColor,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ShadSelect<String>(
+          key: ValueKey('section-target-$sectionIndex-${section.targetType}'),
+          initialValue: section.targetType,
+          enabled: canEdit && _targetType == 'both',
+          options: const [
+            ShadOption(value: 'team', child: Text('Team')),
+            ShadOption(value: 'individual', child: Text('Individual')),
+          ],
+          selectedOptionBuilder: (_, value) =>
+              Text(value == 'individual' ? 'Individual' : 'Team'),
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              section.targetType = value;
+              for (final criterion in section.criteria) {
+                criterion.targetType = value;
+              }
+            });
+            _markDirty();
+          },
+        ),
+      ],
+    );
     final title = RubricEditorField(
       key: section.titleFieldKey,
       label: 'Section name',
+      showRequired: false,
       inputKey: ValueKey('section-name-$sectionIndex'),
       controller: section.title,
       enabled: canEdit,
@@ -1291,6 +1392,12 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       validator: (value) {
         final name = value.trim().toLowerCase();
         if (name.isEmpty) return 'Enter a section name.';
+        if (name.runes.length > 160) return 'Use 160 characters or fewer.';
+        for (final criterion in section.criteria) {
+          if (criterion.serverErrors['section'] != null) {
+            return criterion.serverErrors['section'];
+          }
+        }
         return _sections.any(
               (other) =>
                   other != section &&
@@ -1300,6 +1407,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
             : null;
       },
       onChanged: (_) {
+        for (final criterion in section.criteria) {
+          criterion.serverErrors.remove('section');
+        }
         _recomputeCriteriaWeightsFromSections();
         _markDirty();
       },
@@ -1307,19 +1417,12 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     final weight = RubricEditorField(
       key: section.weightFieldKey,
       label: 'Section weight',
+      showRequired: false,
       inputKey: ValueKey('section-weight-$sectionIndex'),
       controller: section.weight,
       enabled: canEdit,
       showValidation: _showValidation,
       validator: rubricWeightError,
-      hint:
-          canEdit &&
-              needed != null &&
-              needed > 0 &&
-              needed <= 100 &&
-              needed != secWeight
-          ? 'Enter ${formatRubricPercentage(needed)}% to reach 100%.'
-          : null,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       trailing: Text(
         '%',
@@ -1364,6 +1467,18 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
             LucideIcons.trash2,
             () => _removeSection(sectionIndex),
           ),
+        ShadButton.ghost(
+          key: ValueKey('section-toggle-$sectionIndex'),
+          width: 44,
+          height: 44,
+          padding: EdgeInsets.zero,
+          onPressed: () => setState(() => section.expanded = false),
+          child: Semantics(
+            label: 'Collapse section',
+            expanded: true,
+            child: const Icon(LucideIcons.chevronUp, size: 16),
+          ),
+        ),
       ],
     );
     return ShadCard(
@@ -1376,17 +1491,29 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Text(
+            'Section ${sectionIndex + 1}',
+            style: DefensysTokens.caption.copyWith(color: _textSecondaryColor),
+          ),
+          const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
-              if (constraints.maxWidth < 700) {
+              if (constraints.maxWidth < 900) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     title,
                     const SizedBox(height: 12),
-                    weight,
-                    if (canEdit)
-                      Align(alignment: Alignment.centerRight, child: actions),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      crossAxisAlignment: WrapCrossAlignment.end,
+                      children: [
+                        SizedBox(width: 140, child: target),
+                        SizedBox(width: 140, child: weight),
+                      ],
+                    ),
+                    Align(alignment: Alignment.centerRight, child: actions),
                   ],
                 );
               }
@@ -1395,92 +1522,39 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 children: [
                   Expanded(child: title),
                   const SizedBox(width: 12),
-                  SizedBox(width: 190, child: weight),
-                  if (canEdit) ...[const SizedBox(width: 8), actions],
+                  SizedBox(width: 140, child: target),
+                  const SizedBox(width: 12),
+                  SizedBox(width: 140, child: weight),
+                  const SizedBox(width: 8),
+                  actions,
                 ],
               );
             },
           ),
-          if (_targetType == 'both') ...[
-            const SizedBox(height: 12),
-            ShadRadioGroup<String>(
-              key: ValueKey(
-                'section-target-$sectionIndex-${section.targetType}',
-              ),
-              initialValue: section.targetType,
-              enabled: canEdit,
-              axis: Axis.horizontal,
-              spacing: 16,
-              runSpacing: 8,
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() {
-                  section.targetType = value;
-                  for (final criterion in section.criteria) {
-                    criterion.targetType = value;
-                  }
-                });
-                _markDirty();
-              },
-              items: [
-                ShadRadio(
-                  value: 'team',
-                  color: DefensysTokens.maroonOf(context),
-                  label: Text(
-                    'Team',
-                    style: DefensysTokens.body.copyWith(
-                      color: _textPrimaryColor,
-                    ),
-                  ),
-                ),
-                ShadRadio(
-                  value: 'individual',
-                  color: DefensysTokens.maroonOf(context),
-                  label: Text(
-                    'Individual',
-                    style: DefensysTokens.body.copyWith(
-                      color: _textPrimaryColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
           const SizedBox(height: 12),
+          const RubricCriterionHeader(points: true),
           for (var i = 0; i < section.criteria.length; i++)
             Builder(
               builder: (context) {
                 final criterion = section.criteria[i];
-                final points =
-                    int.tryParse(criterion.maxScore.text.trim()) ?? 0;
-                final effective =
-                    num.tryParse(criterion.weight.text.trim()) ?? 0;
                 return RubricCriterionFields(
                   key: criterion.editorKey,
                   index: i,
-                  initiallyExpanded: section.criteria.length == 1,
                   showValidation: _showValidation,
-                  nameError: _duplicateCriterionName(
-                    criterion,
-                    section.criteria,
-                  ),
+                  nameError:
+                      _duplicateCriterionName(criterion, section.criteria) ??
+                      criterion.serverErrors['name'],
+                  pointsError: criterion.serverErrors['max_score'],
                   name: criterion.name,
                   maxScore: criterion.maxScore,
                   weight: criterion.weight,
-                  description: criterion.description,
-                  maximum: points,
                   enabled: canEdit,
                   showTarget: false,
                   target: criterion.targetType,
                   isPointsScale: true,
-                  hideWeight: true,
-                  badge: ShadBadge.secondary(
-                    child: Text(
-                      '$points pts · ${formatRubricPercentage(effective)}% of rubric',
-                    ),
-                  ),
                   onTargetChanged: (_) {},
                   onChanged: () {
+                    criterion.serverErrors.clear();
                     setState(_recomputeCriteriaWeightsFromSections);
                     _markDirty();
                   },
@@ -1613,26 +1687,26 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     required VoidCallback onChanged,
   }) => RubricCriterionFields(
     key: draft.editorKey,
-    initiallyExpanded: _criteria.length == 1,
     showValidation: _showValidation,
-    nameError: _duplicateCriterionName(draft, _criteria),
-    weightToBalance: _weightToBalance(draft),
+    nameError:
+        _duplicateCriterionName(draft, _criteria) ?? draft.serverErrors['name'],
+    weightError: draft.serverErrors['weight'],
     index: index,
-    section: null,
     name: draft.name,
     maxScore: draft.maxScore,
     weight: draft.weight,
-    description: draft.description,
-    maximum: int.tryParse(draft.maxScore.text.trim()) ?? _rubricMaxScore,
     enabled: enabled,
     showTarget: _targetType == 'both',
     target: draft.targetType,
-    isPointsScale: _rubricScale == 'Custom Scale',
+    isPointsScale: false,
     onTargetChanged: (value) {
       setState(() => draft.targetType = value);
       _markDirty();
     },
-    onChanged: onChanged,
+    onChanged: () {
+      draft.serverErrors.clear();
+      onChanged();
+    },
     onMoveUp: index > 0 ? () => _moveCriterionUp(index) : null,
     onMoveDown: index < _criteria.length - 1
         ? () => _moveCriterionDown(index)
@@ -1655,30 +1729,33 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         : null;
   }
 
-  num? _weightToBalance(RubricCriterionDraft draft) {
-    num others = 0;
-    for (final other in _criteria) {
-      if (identical(other, draft)) continue;
-      final weight = num.tryParse(other.weight.text.trim());
-      if (weight == null || !weight.isFinite) return null;
-      others += weight;
-    }
-    return ((100 - others) * 100).round() / 100;
-  }
-
-  num? _sectionWeightToBalance(SectionEditorDraft section) {
-    num others = 0;
-    for (final other in _sections) {
-      if (identical(other, section)) continue;
-      final weight = num.tryParse(other.weight.text.trim());
-      if (weight == null || !weight.isFinite) return null;
-      others += weight;
-    }
-    return ((100 - others) * 100).round() / 100;
-  }
-
   void _revealValidationIssue() {
-    setState(() => _showValidation = true);
+    setState(() {
+      _showValidation = true;
+      // Collapsed sections have no mounted inputs. Open the first invalid
+      // section from its draft before looking up fields to scroll and focus.
+      for (final section in _sections) {
+        final title = section.title.text.trim().toLowerCase();
+        if (title.isEmpty ||
+            title.runes.length > 160 ||
+            _sections.any(
+              (other) =>
+                  other != section &&
+                  other.title.text.trim().toLowerCase() == title,
+            ) ||
+            rubricWeightError(section.weight.text) != null ||
+            section.criteria.any(
+              (draft) =>
+                  rubricCriterionNameError(draft.name.text) != null ||
+                  _duplicateCriterionName(draft, section.criteria) != null ||
+                  rubricPointsError(draft.maxScore.text) != null ||
+                  draft.serverErrors.isNotEmpty,
+            )) {
+          section.expanded = true;
+          break;
+        }
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       bool focusField(GlobalKey<RubricEditorFieldState> key) {
@@ -1751,6 +1828,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         if (title.isEmpty) {
           return 'Enter a title for Section ${sIdx + 1}.';
         }
+        if (title.runes.length > 160) {
+          return 'Section ${sIdx + 1} must use 160 characters or fewer.';
+        }
         final lowerTitle = title.toLowerCase();
         if (seenSectionTitles.contains(lowerTitle)) {
           return 'Section titles must be unique ("$title" is duplicated).';
@@ -1778,6 +1858,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
           final cName = c.name.text.trim();
           if (cName.isEmpty) {
             return 'Enter a name for Criterion ${cIdx + 1} in section "$title".';
+          }
+          if (rubricCriterionNameError(cName) != null) {
+            return 'Criterion ${cIdx + 1} in section "$title" must use $rubricCriterionNameLimit characters or fewer.';
           }
           final lowerName = cName.toLowerCase();
           if (seenInSec.contains(lowerName)) {
@@ -1821,6 +1904,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       if (name.isEmpty) {
         return 'Enter a name for each criterion.';
       }
+      if (rubricCriterionNameError(name) != null) {
+        return 'Criterion names must use $rubricCriterionNameLimit characters or fewer.';
+      }
       final lowerName = name.toLowerCase();
       if (seenNames.contains(lowerName)) {
         return 'Criterion names must be unique.';
@@ -1855,6 +1941,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }
 
   Future<bool> _save(String status, {bool showConfirmation = true}) async {
+    for (final draft in _criteria) {
+      draft.serverErrors.clear();
+    }
     final validationMessage = _validationMessage();
     if (validationMessage != null) {
       _revealValidationIssue();
@@ -1988,6 +2077,17 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         widget.onBack();
       }
     } else {
+      final errors = ref.read(rubricEngineProvider).criterionErrors;
+      if (errors.isNotEmpty) {
+        setState(() {
+          for (final entry in errors.entries) {
+            if (entry.key >= 0 && entry.key < _criteria.length) {
+              _criteria[entry.key].serverErrors.addAll(entry.value);
+            }
+          }
+        });
+        _revealValidationIssue();
+      }
       final error =
           ref.read(rubricEngineProvider).error ?? 'Rubric could not be saved.';
       showErrorToast(context, error);
@@ -2246,6 +2346,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 _buildWeightAssistantBar(enabled: canEdit),
+                                RubricCriterionHeader(
+                                  showTarget: _targetType == 'both',
+                                ),
                                 ..._criteria.asMap().entries.map((entry) {
                                   final i = entry.key;
                                   final draft = entry.value;
@@ -2270,48 +2373,70 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                     },
                                   );
                                 }),
-                                if (canEdit)
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: ShadButton.outline(
-                                      onPressed: () {
-                                        var defaultTarget =
-                                            _targetType == 'individual'
-                                            ? 'individual'
-                                            : 'team';
-                                        if (_targetType == 'both' &&
-                                            _criteria.any(
-                                              (c) => c.targetType == 'team',
-                                            ) &&
-                                            !_criteria.any(
-                                              (c) =>
-                                                  c.targetType == 'individual',
-                                            )) {
-                                          defaultTarget = 'individual';
-                                        }
-                                        setState(
-                                          () => _criteria.add(
-                                            RubricCriterionDraft(
-                                              scales: _scales,
-                                              name: '',
-                                              scale: _rubricScale,
-                                              maxScore: _rubricMaxScore,
-                                              weight: 10,
-                                              displayOrder: _criteria.length,
-                                              targetType: defaultTarget,
+                                Wrap(
+                                  alignment: WrapAlignment.spaceBetween,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 16,
+                                  runSpacing: 12,
+                                  children: [
+                                    if (canEdit)
+                                      ShadButton.outline(
+                                        onPressed: () {
+                                          var defaultTarget =
+                                              _targetType == 'individual'
+                                              ? 'individual'
+                                              : 'team';
+                                          if (_targetType == 'both' &&
+                                              _criteria.any(
+                                                (c) => c.targetType == 'team',
+                                              ) &&
+                                              !_criteria.any(
+                                                (c) =>
+                                                    c.targetType ==
+                                                    'individual',
+                                              )) {
+                                            defaultTarget = 'individual';
+                                          }
+                                          setState(
+                                            () => _criteria.add(
+                                              RubricCriterionDraft(
+                                                scales: _scales,
+                                                name: '',
+                                                scale: _rubricScale,
+                                                maxScore: _rubricMaxScore,
+                                                weight: 10,
+                                                displayOrder: _criteria.length,
+                                                targetType: defaultTarget,
+                                              ),
                                             ),
-                                          ),
-                                        );
-                                        _attachCriteriaListeners();
-                                        _markDirty();
-                                      },
-                                      leading: const Icon(
-                                        LucideIcons.plus,
-                                        size: 16,
+                                          );
+                                          _attachCriteriaListeners();
+                                          _markDirty();
+                                          WidgetsBinding.instance
+                                              .addPostFrameCallback((_) {
+                                                if (mounted) {
+                                                  _criteria
+                                                      .last
+                                                      .editorKey
+                                                      .currentState
+                                                      ?.focusName();
+                                                }
+                                              });
+                                        },
+                                        leading: const Icon(
+                                          LucideIcons.plus,
+                                          size: 16,
+                                        ),
+                                        child: const Text('Add criterion'),
                                       ),
-                                      child: const Text('Add Criterion'),
+                                    Text(
+                                      '${_criteria.length} ${_criteria.length == 1 ? 'criterion' : 'criteria'} · ${formatRubricPercentage(_totalCriteriaWeight)}% total weight',
+                                      style: DefensysTokens.caption.copyWith(
+                                        color: _textSecondaryColor,
+                                      ),
                                     ),
-                                  ),
+                                  ],
+                                ),
                               ],
                             ),
                     ),
@@ -2406,6 +2531,7 @@ class SectionEditorDraft {
     required String title,
     String weight = '',
     this.targetType = 'team',
+    this.expanded = true,
     List<RubricCriterionDraft>? criteria,
   }) : title = TextEditingController(text: title),
        weight = TextEditingController(text: weight),
@@ -2417,6 +2543,7 @@ class SectionEditorDraft {
   final titleFieldKey = GlobalKey<RubricEditorFieldState>();
   final weightFieldKey = GlobalKey<RubricEditorFieldState>();
   String targetType;
+  bool expanded;
   final List<RubricCriterionDraft> criteria;
 
   int get totalPoints => criteria.fold<int>(
@@ -2483,6 +2610,7 @@ class RubricCriterionDraft {
   final TextEditingController section;
   Object? sectionIdentity;
   final editorKey = GlobalKey<RubricCriterionFieldsState>();
+  final Map<String, String> serverErrors = {};
   final TextEditingController name;
   final TextEditingController description;
   String scale;

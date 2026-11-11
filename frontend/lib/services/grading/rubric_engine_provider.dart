@@ -32,6 +32,7 @@ class RubricEngineState {
   final String termContext;
   final String? error;
   final String? message;
+  final Map<int, Map<String, String>> criterionErrors;
 
   const RubricEngineState({
     this.isLoading = false,
@@ -52,6 +53,7 @@ class RubricEngineState {
     this.termContext = '',
     this.error,
     this.message,
+    this.criterionErrors = const {},
   });
 
   RubricEngineState copyWith({
@@ -76,6 +78,7 @@ class RubricEngineState {
     bool clearActiveSemester = false,
     bool clearError = false,
     bool clearMessage = false,
+    Map<int, Map<String, String>>? criterionErrors,
   }) {
     return RubricEngineState(
       isLoading: isLoading ?? this.isLoading,
@@ -98,6 +101,9 @@ class RubricEngineState {
       termContext: termContext ?? this.termContext,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
+      criterionErrors: clearError
+          ? const {}
+          : criterionErrors ?? this.criterionErrors,
     );
   }
 }
@@ -222,7 +228,8 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
 
       state = state.copyWith(
         isSaving: false,
-        error: _errorFromResponse(response),
+        error: _errorFromResponse(response, payload: payload),
+        criterionErrors: _criterionErrorsFromResponse(response),
       );
       return false;
     } catch (e) {
@@ -253,7 +260,8 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
 
       state = state.copyWith(
         isSaving: false,
-        error: _errorFromResponse(response),
+        error: _errorFromResponse(response, payload: payload),
+        criterionErrors: _criterionErrorsFromResponse(response),
       );
       return false;
     } catch (e) {
@@ -417,20 +425,89 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     return value.map((item) => item.toString()).toList();
   }
 
-  String _errorFromResponse(http.Response response) {
+  String? _validationText(dynamic value) {
+    if (value is String) return value.isEmpty ? null : value;
+    if (value is List) {
+      for (final item in value) {
+        final text = _validationText(item);
+        if (text != null) return text;
+      }
+    }
+    if (value is Map) {
+      for (final item in value.entries) {
+        final text = _validationText(item.value);
+        if (text != null) {
+          return '${item.key.toString().replaceAll('_', ' ')}: $text';
+        }
+      }
+    }
+    return null;
+  }
+
+  Map<int, Map<String, String>> _criterionErrorsFromResponse(
+    http.Response response,
+  ) {
+    try {
+      final data = jsonDecode(response.body);
+      if (data is! Map) return {};
+      final errors = data['criteria'];
+      final entries = errors is List
+          ? errors.asMap().entries
+          : errors is Map
+          ? errors.entries
+          : const <MapEntry<dynamic, dynamic>>[];
+      final result = <int, Map<String, String>>{};
+      for (final entry in entries) {
+        final index = int.tryParse(entry.key.toString());
+        if (index == null || entry.value is! Map) {
+          continue;
+        }
+        final fields = <String, String>{};
+        for (final field in (entry.value as Map).entries) {
+          final text = _validationText(field.value);
+          if (text != null) fields[field.key.toString()] = text;
+        }
+        if (fields.isNotEmpty) result[index] = fields;
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  String _errorFromResponse(
+    http.Response response, {
+    Map<String, dynamic>? payload,
+  }) {
     try {
       final data = jsonDecode(response.body);
       if (data is Map) {
-        if (data['detail'] != null) {
-          return data['detail'].toString();
-        }
-        if (data.isNotEmpty) {
-          final firstValue = data.values.first;
-          if (firstValue is List && firstValue.isNotEmpty) {
-            return firstValue.first.toString();
+        final detail = _validationText(data['detail']);
+        if (detail != null) return detail;
+        final errors = _criterionErrorsFromResponse(response);
+        if (errors.isNotEmpty) {
+          final entry = errors.entries.first;
+          final criteria = payload?['criteria'];
+          var label = 'Criterion ${entry.key + 1}';
+          if (criteria is List &&
+              entry.key >= 0 &&
+              entry.key < criteria.length) {
+            final criterion = criteria[entry.key];
+            final section = criterion is Map
+                ? criterion['section']?.toString() ?? ''
+                : '';
+            if (section.isNotEmpty) {
+              final localIndex = criteria
+                  .take(entry.key + 1)
+                  .where((item) => item is Map && item['section'] == section)
+                  .length;
+              label = 'Section "$section", criterion $localIndex';
+            }
           }
-          return firstValue.toString();
+          final field = entry.value.entries.first;
+          return '$label — ${field.key.replaceAll('_', ' ')}: ${field.value}';
         }
+        return _validationText(data) ?? 'Rubric could not be saved.';
       }
     } catch (_) {
       return 'Request failed. Status: ${response.statusCode}';
