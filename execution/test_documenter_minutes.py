@@ -79,7 +79,7 @@ class DocumenterMinutesAutomationTests(APITestCase):
                 e_signature=SimpleUploadedFile(f'{username}.gif', gif, content_type='image/gif'), **kwargs)
         cls.admin = signer('minutes-auto-admin', 'admin')
         cls.doc = signer('minutes-auto-doc', 'faculty', is_documenter=True)
-        cls.adviser = signer('minutes-auto-adviser', 'faculty')
+        cls.adviser = signer('minutes-auto-adviser', 'faculty', is_adviser=True)
         cls.panel = User.objects.create_user(username='minutes-auto-panel', role='faculty', is_panelist=True)
         cls.student = User.objects.create_user(username='minutes-auto-student', role='student')
         year = SchoolYear.objects.create(label='2097-2098')
@@ -165,9 +165,29 @@ class DocumenterMinutesAutomationTests(APITestCase):
         self.assertEqual(self.exercise('--sign-all'), 1, self.output)
         self.assertEqual(self.attempted_failures, 1)
         self.assertEqual(DefenseMinutes.objects.get(schedule=self.schedule).status, 'adviser_signed')
+        self.assertIn("'comments': 1", self.output)
+        self.assertIn("'signatures': 2", self.output)
+        self.assertIn('failed=1', self.output)
         self.fail_action = None
         self.assertEqual(self.exercise('--sign-all'), 0, self.output)
         self.assertEqual([call[1].rsplit('/', 2)[1] for call in self.writes()], ['sign-chairman'])
+
+    def test_missing_adviser_duty_blocks_signing_before_draft_creation(self):
+        get_user_model().objects.filter(pk=self.adviser.pk).update(is_adviser=False)
+        for flags in [('--dry-run',), ()]:
+            with self.subTest(flags=flags):
+                self.assertEqual(self.exercise('--sign-all', *flags), 1, self.output)
+                self.assertIn('Adviser duty', self.output)
+                self.assertEqual(self.calls, [])
+                self.assertFalse(DefenseMinutes.objects.filter(schedule=self.schedule).exists())
+
+    def test_draft_comments_do_not_require_adviser_duty_or_signature(self):
+        get_user_model().objects.filter(pk=self.adviser.pk).update(is_adviser=False, e_signature='')
+        self.assertEqual(self.exercise(), 0, self.output)
+        minutes = DefenseMinutes.objects.get(schedule=self.schedule)
+        self.assertEqual(minutes.status, 'draft')
+        self.assertIsNone(minutes.documenter_signed_at)
+        self.assertFalse(any(call[0] == 'POST' for call in self.calls))
 
     def test_missing_signature_blocks_before_draft_creation(self):
         for user in [self.doc, self.adviser, self.admin]:

@@ -244,6 +244,7 @@ def minutes_context(schedule_id, admin_username=None):
         from django.contrib.auth import get_user_model
         from django.db.models import Q
         from django.utils import timezone
+        from authentication_access_control.workspace_roles import is_adviser
         from defense.scheduler.models import DefenseSchedule
         from defense.minutes.models import DefenseMinutes
         from defense.minutes.services import missing_panelist_comments, minutes_panel_roster
@@ -284,6 +285,8 @@ def minutes_context(schedule_id, admin_username=None):
                 signer_problems.append(f'No active {role} account is available. Select the administrator with --admin when needed.')
             elif not user.e_signature or not user.e_signature.storage.exists(user.e_signature.name):
                 signer_problems.append(f'{role.title()} {user.username} has no available uploaded signature.')
+            if role == 'adviser' and status in ('draft', 'submitted') and user and not is_adviser(user, schedule.team):
+                signer_problems.append(f'{user.username} needs the Adviser duty enabled for this Capstone team before signing.')
         if minutes:
             for role, field in [('documenter', 'documenter'), ('adviser', 'adviser')]:
                 signed_by = getattr(minutes, f'{field}_signed_by_id')
@@ -345,10 +348,10 @@ class MinutesClient:
             session.close()
 
 
-def process_schedule(schedule_id, args, client):
+def process_schedule(schedule_id, args, client, *, progress=None):
     context = minutes_context(schedule_id, args.admin)
     original_stamp = context['stamp']
-    result = {'comments': 0, 'signatures': 0, 'completed': 0, 'preserved': 0}
+    result = progress if progress is not None else {'comments': 0, 'signatures': 0, 'completed': 0, 'preserved': 0}
     if context['status'] == 'completed':
         if not context['pdf_file']:
             raise MinutesAutomationError('Completed minutes have no stored PDF. Review the record in the app.')
@@ -442,15 +445,18 @@ def run(argv=None):
     try:
         for schedule in schedules:
             print(f"\n[*] Schedule #{schedule['id']} | {schedule['team_name']} ({schedule['stage_label']})")
+            progress = {key: 0 for key in totals}
             try:
-                result = process_schedule(schedule['id'], args, client)
-                for key in totals:
-                    totals[key] += result[key]
+                process_schedule(schedule['id'], args, client, progress=progress)
             except MinutesAutomationError as exc:
                 print(f'[FAIL] {exc}')
                 failed += 1
                 if exc.fatal:
                     break
+            finally:
+                # Keep acknowledged saves even when a later signing step fails.
+                for key in totals:
+                    totals[key] += progress[key]
             if args.delay:
                 time.sleep(args.delay)
     finally:
