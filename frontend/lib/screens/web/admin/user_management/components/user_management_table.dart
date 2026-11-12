@@ -193,7 +193,8 @@ class UserManagementTable extends StatelessWidget {
 
     if (role == 'admin') {
       individualRoles.add({'tone': 'admin', 'label': 'Administrator'});
-    } else if (role == 'student') {
+    }
+    if (role == 'student') {
       final displayRole = user['displayRole'];
       final label = displayRole is Map && displayRole['label'] != null
           ? displayRole['label'].toString()
@@ -202,7 +203,7 @@ class UserManagementTable extends StatelessWidget {
                 : 'Student');
       individualRoles.add({'tone': 'student', 'label': label});
     } else {
-      // Faculty/General
+      // Staff duties also apply to administrators; retain their primary badge.
       if (user['is_pit_lead'] == true) {
         final year = user['pit_lead_year'];
         final label = year != null && year.toString().isNotEmpty

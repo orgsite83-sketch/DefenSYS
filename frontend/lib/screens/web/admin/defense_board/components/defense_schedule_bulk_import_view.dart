@@ -1,3 +1,10 @@
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
+import 'dart:typed_data';
+import 'package:defensys/utils/import/schedule_import_references.dart';
+import 'package:defensys/widgets/tabular_encoding_review.dart';
+import 'package:defensys/services/auth_provider.dart';
+import 'schedule_faculty_review_dialog.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
@@ -78,6 +85,147 @@ class _DefenseScheduleBulkImportViewState
   String _importEventName = '';
   MatchResult<dynamic>? _headerMatch;
   String? _mismatchWarning;
+  Map<String, Map<String, dynamic>> _facultyReferences = {};
+  String _referenceFingerprint = '';
+  String _scheduledReferenceKey = '';
+  String? _referenceError;
+  bool _referenceLoading = false;
+  int _referenceSerial = 0;
+
+  String _referenceKey() => _parsed == null
+      ? ''
+      : jsonEncode([
+          ref.read(authProvider).user?['id'],
+          widget.scope,
+          _semesterId,
+          _importStageId,
+          _importEventName,
+          scheduleReferenceRequests(_parsed!.rows, isPit: _isPit),
+        ]);
+
+  Future<bool> _refreshFacultyReferences() async {
+    if (_parsed == null || !mounted) return false;
+    final key = _referenceKey(), serial = ++_referenceSerial;
+    final requests = scheduleReferenceRequests(_parsed!.rows, isPit: _isPit);
+    setState(() {
+      _referenceLoading = true;
+      _referenceError = null;
+      _facultyReferences = {};
+      _referenceFingerprint = key;
+      _scheduledReferenceKey = key;
+    });
+    try {
+      final results = await ref
+          .read(defenseSchedulerProvider.notifier)
+          .previewImportReferences({
+            'revision': '$serial',
+            'scope': widget.scope,
+            'semester_id': _semesterId,
+            'defense_stage_id': _importStageId,
+            'event_name': _importEventName,
+            'references': requests,
+          });
+      if (!mounted || serial != _referenceSerial || key != _referenceKey()) {
+        return false;
+      }
+      if (results.length != requests.length ||
+          requests.any((r) => !results.containsKey(r['reference_id']))) {
+        throw Exception('Incomplete faculty validation.');
+      }
+      setState(() => _facultyReferences = results);
+      return true;
+    } catch (_) {
+      if (mounted && serial == _referenceSerial && key == _referenceKey()) {
+        setState(
+          () => _referenceError =
+              'Faculty validation unavailable. Retry validation before importing.',
+        );
+      }
+      return false;
+    } finally {
+      if (mounted && serial == _referenceSerial) {
+        setState(() => _referenceLoading = false);
+      }
+    }
+  }
+
+  Future<void> _reviewFaculty(ScheduleImportPreviewRow preview) async {
+    final revision = _referenceKey();
+    if (_referenceLoading ||
+        _referenceFingerprint != revision ||
+        _parsed == null) {
+      return;
+    }
+    final row = preview.source;
+    final unresolved = scheduleFacultyFields(row, isPit: _isPit).entries
+        .where(
+          (entry) =>
+              entry.key != 'adviser' &&
+              _facultyReferences[scheduleReferenceId(
+                    row,
+                    entry.key,
+                  )]?['account'] ==
+                  null &&
+              entry.value.trim().isNotEmpty,
+        )
+        .toList();
+    final fields = scheduleFacultyFields(row, isPit: _isPit)..remove('adviser');
+    final duty = unresolved.isNotEmpty
+        ? unresolved.first.key
+        : await showScheduleFacultyDuty(context, fields);
+    if (duty == null || !mounted || revision != _referenceKey()) return;
+    final field = fields.entries.firstWhere((entry) => entry.key == duty),
+        referenceId = scheduleReferenceId(row, duty);
+    final resolution = _facultyReferences[referenceId];
+    if (resolution == null) return;
+    final candidates = <int, Map<String, dynamic>>{};
+    for (final candidate in [
+      ...(resolution['candidates'] as List? ?? []),
+      ...ref.read(defenseSchedulerProvider).faculty,
+    ]) {
+      if (candidate is Map &&
+          asInt(candidate['id']) != null &&
+          candidate['is_active'] != false) {
+        candidates.putIfAbsent(
+          asInt(candidate['id'])!,
+          () => Map<String, dynamic>.from(candidate),
+        );
+      }
+    }
+    final count = _parsed!.rows.where((other) {
+      final otherId = scheduleReferenceId(other, field.key),
+          match = _facultyReferences[scheduleReferenceId(other, field.key)];
+      return otherId == referenceId ||
+          !other.selectedAccountIds.containsKey(field.key) &&
+              match != null &&
+              match['duty'] == field.key &&
+              match['reference_key'] == resolution['reference_key'];
+    }).length;
+    final selected = await showScheduleFacultyReview(
+      context,
+      original: field.value,
+      reason: '${resolution['reason'] ?? ''}',
+      duty: field.key,
+      accounts: candidates.values.toList(),
+      equivalentCount: count,
+    );
+    if (selected == null || !mounted || revision != _referenceKey()) return;
+    setState(
+      () => _parsed = _parsed!.copyWith(
+        rows: selectScheduleAccount(
+          rows: _parsed!.rows,
+          referenceId: referenceId,
+          duty: field.key,
+          accountId: selected.id,
+          resolutions: _facultyReferences,
+          applyEquivalent: selected.equivalent,
+        ),
+      ),
+    );
+    _syncSourceFiles();
+    await _refreshFacultyReferences();
+    _scheduleDraftSave();
+  }
 
   int? _panelRubricId;
   int? _adviserRubricId;
@@ -313,11 +461,30 @@ class _DefenseScheduleBulkImportViewState
       await _loadPitEventConfig(_importEventName);
     }
 
+    if (existingDraft != null &&
+        existingDraft.parsed.parserVersion < 2 &&
+        _parsed != null) {
+      _parsed = _parsed!.copyWith(
+        rows: _parsed!.rows
+            .map(
+              (row) => row.copyWith(
+                parseIssues: [
+                  ...row.parseIssues,
+                  'Replace this file to reparse its original timetable with the current importer.',
+                ],
+              ),
+            )
+            .toList(),
+      );
+      _syncSourceFiles();
+    }
     if (_parsed != null) await _refreshConflictSchedules();
     if (mounted) setState(() {});
   }
 
   Future<bool> _refreshConflictSchedules() async {
+    if (!mounted) return false;
+    final referencesReady = await _refreshFacultyReferences();
     if (!mounted) return false;
     setState(() {
       _conflictLoading = true;
@@ -329,7 +496,7 @@ class _DefenseScheduleBulkImportViewState
           .fetchImportConflictSchedules();
       if (!mounted) return false;
       setState(() => _conflictSchedules = schedules);
-      return true;
+      return referencesReady;
     } catch (_) {
       if (mounted) {
         setState(
@@ -534,74 +701,17 @@ class _DefenseScheduleBulkImportViewState
     required ParsedScheduleImport parsed,
     required DefenseSchedulerState schedState,
   }) {
-    final rawStage = parsed.stage?.trim() ?? '';
-    MatchResult<dynamic>? resolvedMatch;
-    String? warning;
-
-    if (_isPit) {
-      final activeEventName = (widget.initialEventName ?? '').trim();
-      if (rawStage.isNotEmpty) {
-        resolvedMatch = findBestMatch<Map<String, dynamic>>(
-          source: rawStage,
-          items: schedState.pitEvents,
-          labelGetter: (e) => e['event_name']?.toString() ?? '',
-        );
-        if (resolvedMatch.isMatched) {
-          final matchedName = resolvedMatch.label;
-          if (activeEventName.isNotEmpty &&
-              matchedName.toLowerCase() != activeEventName.toLowerCase()) {
-            warning =
-                'File header specifies "$rawStage" (matched to "$matchedName"), while active PIT event is "$activeEventName".';
-          }
-          _importEventName = matchedName;
-        } else {
-          warning =
-              'File header specifies event "$rawStage", which does not match active event "$activeEventName" (or any registered PIT event for this semester).';
-          if (_importEventName.isEmpty) _importEventName = activeEventName;
-        }
-      } else {
-        if (_importEventName.isEmpty) _importEventName = activeEventName;
-      }
-    } else {
-      final activeStageId = widget.initialStageId;
-      final activeStageObj = schedState.defenseStages.firstWhere(
-        (s) => asInt(s['id']) == activeStageId,
-        orElse: () => schedState.defenseStages.isNotEmpty
-            ? schedState.defenseStages.first
-            : <String, dynamic>{},
-      );
-      final resolvedActiveStageId = asInt(activeStageObj['id']);
-      final activeStageLabel = activeStageObj['label']?.toString() ?? '';
-
-      if (rawStage.isNotEmpty) {
-        resolvedMatch = findBestMatch<Map<String, dynamic>>(
-          source: rawStage,
-          items: schedState.defenseStages,
-          labelGetter: (s) => s['label']?.toString() ?? '',
-        );
-        if (resolvedMatch.isMatched) {
-          final matchedStageId = asInt(resolvedMatch.item?['id']);
-          final labelsMatch = resolvedMatch.label.trim().toLowerCase() ==
-              activeStageLabel.trim().toLowerCase();
-          if (!labelsMatch &&
-              activeStageId != null &&
-              matchedStageId != resolvedActiveStageId) {
-            warning =
-                'File header specifies "$rawStage" (matched to "${resolvedMatch.label}"), while active defense stage is "$activeStageLabel".';
-          }
-          _importStageId = matchedStageId;
-        } else {
-          warning =
-              'File header specifies stage "$rawStage", which does not match active stage "$activeStageLabel" (or any stage in your Academic Stage Chain).';
-          _importStageId ??= activeStageId ?? resolvedActiveStageId;
-        }
-      } else {
-        _importStageId ??= activeStageId ?? resolvedActiveStageId;
-      }
-    }
-
-    _headerMatch = resolvedMatch;
-    _mismatchWarning = warning;
+    final label = _isPit
+        ? _importEventName
+        : '${schedState.defenseStages.where((s) => asInt(s['id']) == _importStageId).firstOrNull?['label'] ?? ''}';
+    final raw = parsed.stage?.trim() ?? '';
+    _headerMatch = null;
+    _mismatchWarning =
+        raw.isNotEmpty &&
+            label.isNotEmpty &&
+            scheduleStageKey(raw) != scheduleStageKey(label)
+        ? 'Spreadsheet ${_isPit ? 'event' : 'stage'} "$raw" does not match selected target "$label".'
+        : null;
   }
 
   void _syncSourceFiles() {
@@ -674,6 +784,19 @@ class _DefenseScheduleBulkImportViewState
         allowMultiple: replaceFileId == null,
       );
       if (result == null || result.files.isEmpty || !mounted) return;
+      final prepared = await prepareTabularFiles(
+        context,
+        result.files
+            .map(
+              (file) => PickedTabularFile(
+                name: file.name,
+                extension: file.extension ?? '',
+                bytes: file.bytes ?? [],
+              ),
+            )
+            .toList(),
+      );
+      if (prepared == null || !mounted) return;
       final state = ref.read(defenseSchedulerProvider);
       final targets = _isPit ? state.pitEvents : state.defenseStages;
       final configured = targets
@@ -685,13 +808,14 @@ class _DefenseScheduleBulkImportViewState
           .toList();
       final incoming = <ScheduleImportSourceFile>[];
       String? batchTarget;
-      for (final file in result.files) {
-        if (file.bytes == null) {
+      for (final file in prepared) {
+        if (file.bytes.isEmpty) {
           throw FormatException('Unable to read ${file.name}.');
         }
         final parsed = parseScheduleImportFile(
-          bytes: file.bytes!,
+          bytes: Uint8List.fromList(file.bytes),
           filename: file.name,
+          encodingConfirmed: file.encodingConfirmed,
           configuredStages: configured,
         );
         if (parsed.rows.isEmpty) {
@@ -707,17 +831,21 @@ class _DefenseScheduleBulkImportViewState
         }
         final raw = parsed.stage?.trim() ?? '';
         if (raw.isNotEmpty) {
-          final match = findBestMatch<Map<String, dynamic>>(
-            source: raw,
-            items: targets,
-            labelGetter: (target) =>
-                (_isPit ? target['event_name'] : target['label'])?.toString() ??
-                '',
-          );
-          if (match.isMatched) {
+          final matchedTarget = targets
+              .where(
+                (target) =>
+                    scheduleStageKey(raw) ==
+                    scheduleStageKey(
+                      (_isPit ? target['event_name'] : target['label'])
+                              ?.toString() ??
+                          '',
+                    ),
+              )
+              .firstOrNull;
+          if (matchedTarget != null) {
             final target = _isPit
-                ? match.label.toLowerCase()
-                : asInt(match.item?['id']).toString();
+                ? '${matchedTarget['event_name']}'.toLowerCase()
+                : '${asInt(matchedTarget['id'])}';
             final current = _isPit
                 ? _importEventName.toLowerCase()
                 : _importStageId?.toString();
@@ -791,8 +919,9 @@ class _DefenseScheduleBulkImportViewState
       _scheduleDraftSave();
     } catch (error) {
       if (mounted) {
-        final message =
-            error is FormatException ? error.message : error.toString();
+        final message = error is FormatException
+            ? error.message
+            : error.toString();
         showErrorToast(context, 'Unable to add timetable: $message');
       }
     } finally {
@@ -855,6 +984,9 @@ class _DefenseScheduleBulkImportViewState
     peerRubricId: _peerRubricId,
     panelWeight: _panelWeight,
     peerWeight: _peerWeight,
+    facultyReferences: _referenceFingerprint == _referenceKey()
+        ? _facultyReferences
+        : const {},
   );
 
   List<ScheduleImportPreviewRow> _buildPreviewRows(
@@ -865,7 +997,24 @@ class _DefenseScheduleBulkImportViewState
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider),
         semester = _getActiveSemLabel(state);
+    ref.watch(authProvider);
+    final currentReferenceKey = _referenceKey();
+    if (_parsed != null &&
+        currentReferenceKey != _referenceFingerprint &&
+        currentReferenceKey != _scheduledReferenceKey) {
+      _scheduledReferenceKey = currentReferenceKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && currentReferenceKey == _referenceKey()) {
+          _refreshFacultyReferences();
+        }
+      });
+    }
     final rows = _buildPreviewRows(state);
+    _mismatchWarning = rows
+        .where((row) => row.hasStageMismatch)
+        .firstOrNull
+        ?.stageIssues
+        .firstOrNull;
     final theme = Theme.of(context);
     return Theme(
       data: theme.copyWith(
@@ -933,6 +1082,42 @@ class _DefenseScheduleBulkImportViewState
                   child: _buildMismatchBanner(
                     message: _mismatchWarning!,
                     onDismiss: () => setState(() => _mismatchWarning = null),
+                  ),
+                ),
+              if (_parsed != null &&
+                  (_referenceLoading || _referenceError != null))
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _referenceError ?? 'Checking faculty references…',
+                        ),
+                      ),
+                      if (!_referenceLoading)
+                        DefensysShadcnScope(
+                          child: ShadButton.outline(
+                            onPressed: _refreshConflictSchedules,
+                            child: const Text('Retry validation'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (_parsed != null && _parsed!.ignoredRows.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Tooltip(
+                    message: _parsed!.ignoredRows
+                        .map(
+                          (r) =>
+                              '${r['file'] ?? ''} ${r['sheet'] ?? ''} · Row ${r['row']}: ${r['label']}',
+                        )
+                        .join('\n'),
+                    child: Text(
+                      '${_parsed!.ignoredRows.length} break or unassigned reservation rows excluded.',
+                    ),
                   ),
                 ),
               const SizedBox(height: 26),
@@ -1014,7 +1199,10 @@ class _DefenseScheduleBulkImportViewState
         _awaitingImportConfirmation ||
         _rubricLoading ||
         _conflictLoading ||
-        _conflictCheckError != null) {
+        _conflictCheckError != null ||
+        _referenceLoading ||
+        _referenceError != null ||
+        _referenceFingerprint != _referenceKey()) {
       return;
     }
     final readyRows = previewRows.where((row) => row.ready).toList();
@@ -1045,7 +1233,18 @@ class _DefenseScheduleBulkImportViewState
           .where((row) => row.ready)
           .map((row) => row.source)
           .toSet();
-      if (readyRows.any((row) => !latestReadySources.contains(row.source))) {
+      if (readyRows.any(
+        (row) =>
+            !latestReadySources.contains(row.source) ||
+            jsonEncode(row.toPayload()) !=
+                jsonEncode(
+                  latestRows
+                      .firstWhere(
+                        (fresh) => identical(fresh.source, row.source),
+                      )
+                      .toPayload(),
+                ),
+      )) {
         setState(
           () => _importErrors = [
             'The schedule changed during review. Resolve the new conflicts before importing.',
@@ -2356,7 +2555,11 @@ class _DefenseScheduleBulkImportViewState
             busy: _busy,
             busyLabel: _importProgressLabel,
             validating: _rubricLoading || _conflictLoading,
-            validationFailed: _conflictCheckError != null,
+            validationFailed:
+                _conflictCheckError != null ||
+                _referenceError != null ||
+                _referenceLoading ||
+                _referenceFingerprint != _referenceKey(),
             onSave: () => _persistDraft(showToast: true),
             onDiscard: _confirmDiscardDraft,
             showDraftOptions: false,
@@ -2487,13 +2690,26 @@ class _DefenseScheduleBulkImportViewState
           (row) => row.source.copyWith(
             date: row.date,
             room: row.room,
+            chair: row.chairLabel,
+            panelMembers: [
+              for (var i = 0; i < row.source.panelMembers.length; i++)
+                row.resolvedFacultyNames['panel_$i'] ??
+                    row.source.panelMembers[i],
+            ],
+            documenter: row.documenterLabel == '-' ? '' : row.documenterLabel,
             startTime: row.effectiveStartTime,
             endTime: row.effectiveEndTime,
             slotDuration: row.duration,
           ),
         )
         .toList();
-    return scheduleImportSessionGroups(effective).map((group) {
+    return scheduleImportSessionGroups(
+      effective,
+      committeeKey: (row) {
+        final preview = byId[row.importRowId]!;
+        return '${preview.chairPanelistId}|${preview.panelistIds.join(',')}|${preview.documenterId}';
+      },
+    ).map((group) {
       final first = group.first;
       return _CommitteeSessionGroup(
         date: first.date,
@@ -2623,6 +2839,25 @@ class _DefenseScheduleBulkImportViewState
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
+                                      Tooltip(
+                                        message: 'Review faculty',
+                                        child: DefensysShadcnScope(
+                                          child: ShadButton.ghost(
+                                            size: ShadButtonSize.sm,
+                                            width: 28,
+                                            height: 24,
+                                            padding: EdgeInsets.zero,
+                                            onPressed:
+                                                _busy || _referenceLoading
+                                                ? null
+                                                : () => _reviewFaculty(row),
+                                            child: const Icon(
+                                              Icons.manage_accounts_outlined,
+                                              size: 15,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -2644,7 +2879,7 @@ class _DefenseScheduleBulkImportViewState
                             child: Padding(
                               padding: const EdgeInsets.symmetric(vertical: 10),
                               child: Text(
-                                'Chair: ${row.source.chair}\nPanel: ${row.panelLabel}\nDocumenter: ${row.source.documenter}',
+                                'Chair: ${row.chairLabel}\nPanel: ${row.panelLabel}\nDocumenter: ${row.documenterLabel}',
                                 style: secondary,
                               ),
                             ),
@@ -2686,10 +2921,16 @@ class _DefenseScheduleBulkImportViewState
           color: const Color(0xFFB45309),
           bg: const Color(0xFFFFFBEB),
           border: const Color(0xFFFDE68A),
-          tooltip: row.scope == 'pit'
+          tooltip: row.hasStageMismatch
+              ? 'Review the selected import target or replace the source file'
+              : row.scope == 'pit'
               ? 'Click to configure PIT event in PIT Events Management'
               : 'Click to configure stage rubrics in Defense Stages Setup',
           onTap: () {
+            if (row.hasStageMismatch || row.needsTarget) {
+              _openSettings(ref.read(defenseSchedulerProvider));
+              return;
+            }
             if (row.scope == 'pit') {
               context.go(FacultyRoutes.pitEvents);
             } else if (row.stageId != null) {
@@ -2773,10 +3014,7 @@ class _DefenseScheduleBulkImportViewState
           row.source.parseIssues.isNotEmpty ||
           row.source.chair.trim().isEmpty ||
           row.hasInvalidAdviserColumn;
-      final needsFacultyReview =
-          !hasFileIssue &&
-          row.hasUnresolvedFaculty &&
-          ref.read(defenseSchedulerProvider).canApprovePanelists;
+      final needsFacultyReview = !hasFileIssue && row.hasUnresolvedFaculty;
       issueWidgets.add(
         _issueCategoryPill(
           prefix: hasFileIssue ? 'File' : 'Slot',
@@ -2787,7 +3025,7 @@ class _DefenseScheduleBulkImportViewState
           tooltip: hasFileIssue
               ? 'Correct the spreadsheet and upload it again'
               : needsFacultyReview
-              ? 'Click to open User Management to check faculty accounts'
+              ? 'Select the registered faculty account inside this import'
               : row.hasUnresolvedFaculty
               ? 'Correct the faculty name in the spreadsheet or ask an admin to check the account'
               : null,
@@ -2795,7 +3033,7 @@ class _DefenseScheduleBulkImportViewState
               ? () async {
                   await _persistDraft();
                   if (!context.mounted) return;
-                  context.go('${AdminRoutes.users}?tab=faculty');
+                  await _reviewFaculty(row);
                 }
               : null,
         ),
@@ -2929,9 +3167,26 @@ class _DefenseScheduleBulkImportViewState
       );
     }
 
+    if (row.hasUnresolvedFaculty) {
+      return _statusChipBadge(
+        label: _referenceLoading
+            ? 'Checking'
+            : _referenceError != null
+            ? 'Unverified'
+            : 'Faculty review',
+        icon: Icons.person_search_outlined,
+        fg: DefensysTokens.warningText,
+        bg: DefensysTokens.warningBg,
+        border: DefensysTokens.warningBorder,
+      );
+    }
     if (row.hasStageIssue) {
       return _statusChipBadge(
-        label: 'Stage Incomplete',
+        label: row.hasStageMismatch
+            ? 'Stage mismatch'
+            : row.needsTarget
+            ? (row.isPit ? 'Select event' : 'Select stage')
+            : 'Setup required',
         icon: Icons.layers_clear_outlined,
         fg: const Color(0xFFB45309),
         bg: const Color(0xFFFFFBEB),

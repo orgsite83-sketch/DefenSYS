@@ -22,6 +22,55 @@ void main() {
   }
 
   test(
+    'faculty reference preview posts typed selections and verifies the returned revision',
+    () async {
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          expect(
+            request.url.path.endsWith('/import-reference-preview/'),
+            isTrue,
+          );
+          final payload = jsonDecode(request.body) as Map;
+          expect(
+            (payload['references'] as List).single['selected_account_id'],
+            42,
+          );
+          return http.Response(
+            jsonEncode({
+              'revision': payload['revision'],
+              'references': [
+                {
+                  'reference_id': 'file:0:chair',
+                  'review_state': 'matched',
+                  'account': {'id': 42},
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      final scope = container();
+      final references = await scope
+          .read(defenseSchedulerProvider.notifier)
+          .previewImportReferences({
+            'revision': 'r1',
+            'scope': 'capstone',
+            'semester_id': 1,
+            'references': [
+              {
+                'reference_id': 'file:0:chair',
+                'duty': 'chair',
+                'text': 'Name in file',
+                'selected_account_id': 42,
+              },
+            ],
+          });
+      expect(references['file:0:chair']!['account']['id'], 42);
+    },
+  );
+
+  test(
     'conflict check requests only the lightweight appointments view',
     () async {
       setApiHttpClientForTesting(

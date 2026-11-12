@@ -340,9 +340,9 @@ Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Docume
       expect(result.rows[5].teamName, equals('Team NexGen'));
     });
 
-    test('parses spreadsheet with coloqium in preamble row without hardcoded stage words', () {
+    test('parses an explicitly declared custom stage without hardcoded stage words', () {
       const csv = '''
-coloqium,,,,,,,
+Stage,coloqium,,,,,,
 6/18/2026,,,,,,,
 Room 301,,,,,,,
 Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Documenter

@@ -98,6 +98,12 @@ ParsedScheduleImport combineScheduleImportSources(
 ) => ParsedScheduleImport(
   rows: files.expand((file) => file.parsed.rows).toList(),
   isRedefense: files.any((file) => file.parsed.isRedefense),
+  ignoredRows: files
+      .expand(
+        (file) =>
+            file.parsed.ignoredRows.map((row) => {...row, 'file': file.name}),
+      )
+      .toList(),
 );
 
 /// Natural spreadsheet sessions follow committee lanes and explicit breaks.
@@ -107,6 +113,7 @@ List<List<ParsedScheduleImportRow>> scheduleImportSessionGroups(
   String date = '',
   String room = '',
   int duration = 60,
+  String Function(ParsedScheduleImportRow)? committeeKey,
 }) {
   final lanes = <String, List<ParsedScheduleImportRow>>{};
   for (final row in rows) {
@@ -114,7 +121,7 @@ List<List<ParsedScheduleImportRow>> scheduleImportSessionGroups(
     final rowRoom = row.room.trim().isEmpty ? room : row.room.trim();
     final key = row.sessionId.isNotEmpty
         ? 'planned|${row.sessionId}|$rowDate|$rowRoom'
-        : '${row.sourceFileId}|$rowDate|$rowRoom|${row.chair}|${row.panelMembers.join(',')}|${row.documenter}';
+        : '${row.sourceFileId}|$rowDate|$rowRoom|${committeeKey?.call(row) ?? '${row.chair}|${row.panelMembers.join(',')}|${row.documenter}'}';
     (lanes[key.toLowerCase()] ??= []).add(row);
   }
   final groups = <List<ParsedScheduleImportRow>>[];

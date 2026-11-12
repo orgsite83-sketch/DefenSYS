@@ -1,4 +1,5 @@
 from django.urls import path
+from .import_references import ScheduleImportReferencePreviewView
 
 from .views import (
     CapstoneSchedulingWorkspaceView,
@@ -20,6 +21,7 @@ from .views import (
 
 
 urlpatterns = [
+    path('import-reference-preview/', ScheduleImportReferencePreviewView.as_view(), name='schedule_import_reference_preview'),
     path('capstone-workspace/', CapstoneSchedulingWorkspaceView.as_view(), name='capstone_scheduling_workspace'),
     path('', DefenseScheduleListCreateView.as_view(), name='defense_schedules'),
     path('pit-event-config/', PitEventConfigLookupView.as_view(), name='defense_pit_event_config'),

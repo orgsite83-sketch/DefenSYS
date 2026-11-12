@@ -1624,6 +1624,27 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  List<Map<String, dynamic>> _checklistDeliverables(
+    Map<String, dynamic> stage,
+    String type,
+  ) {
+    final items = _deliverables(stage, type);
+    return items.isNotEmpty
+        ? items
+        : _deliverables(
+            stage,
+            'deliverables',
+          ).where((item) => item['type'] == type).toList();
+  }
+
+  List<Map<String, dynamic>> _facultyChecklistItems(
+    Map<String, dynamic> stage,
+  ) => [
+    ..._checklistDeliverables(stage, 'pre'),
+    if (stage['post_defense_ready'] == true)
+      ..._checklistDeliverables(stage, 'post'),
+  ];
+
   Widget _buildExpandedSection(Map<String, dynamic> team) {
     final teamId = parseAsInt(team['id']);
     final stages = _stageList(team);
@@ -1644,16 +1665,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       selectedStage,
       ref.watch(teamDefenseProvider).schedules,
     );
-    var pre = _deliverables(stage, 'pre');
-    var vault = _deliverables(stage, 'post');
-    if (pre.isEmpty) {
-      final allDeliverables = _deliverables(stage, 'deliverables');
-      pre = allDeliverables.where((d) => d['type'] == 'pre').toList();
-    }
-    if (vault.isEmpty) {
-      final allDeliverables = _deliverables(stage, 'deliverables');
-      vault = allDeliverables.where((d) => d['type'] == 'post').toList();
-    }
+    final pre = _checklistDeliverables(stage, 'pre');
+    final vault = _checklistDeliverables(stage, 'post');
     final beforeEndorsement = pre;
 
     final isPresentationOnly = stage['is_presentation_only'] == true;
@@ -1821,7 +1834,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             key: ValueKey('requirements-$teamId-$selectedStage'),
             viewState: _requirementsView(teamId, selectedStage),
             items: [
-              for (final item in [...pre, if (showPostChecklist) ...vault])
+              for (final item in _facultyChecklistItems(stage))
                 {
                   ...item,
                   'can_faculty_review': item['can_faculty_review'] is bool
@@ -3426,7 +3439,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         : storedTitle.isNotEmpty
         ? storedTitle
         : assignedTitle;
-    final summaries = TeamWorkflowStatus.items(stage)
+    final summaries = _facultyChecklistItems(stage)
         .map((item) => RequirementSummary(Map<String, dynamic>.from(item)))
         .toList();
     final uploaded = summaries.fold<int>(

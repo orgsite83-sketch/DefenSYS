@@ -294,6 +294,32 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
   String? _fetchKey;
   int _fetchSerial = 0;
 
+  Future<Map<String, Map<String, dynamic>>> previewImportReferences(
+    Map<String, dynamic> payload,
+  ) async {
+    final actor = ref.read(authProvider).user?['id'];
+    final response = await _client
+        .post(
+          Uri.parse('$baseUrl/import-reference-preview/'),
+          body: jsonEncode(payload),
+        )
+        .timeout(importRequestTimeout);
+    if (!ref.mounted || actor != ref.read(authProvider).user?['id']) {
+      throw Exception('Account changed. Validate references again.');
+    }
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    final result = Map<String, dynamic>.from(jsonDecode(response.body));
+    if (result['revision'] != payload['revision']) {
+      throw Exception('Outdated reference validation.');
+    }
+    return {
+      for (final item in _readMapList(result['references']))
+        '${item['reference_id']}': item,
+    };
+  }
+
   /// Import validation needs every active appointment, including those hidden
   /// by the board's search, scope or status filters. Do not change those filters.
   Future<List<Map<String, dynamic>>> fetchImportConflictSchedules() async {
@@ -640,8 +666,12 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     );
 
     try {
-      final response = await saveTemplateConfiguration(_client, 'POST',
-        Uri.parse('$baseUrl/pit-event-config/'), payload);
+      final response = await saveTemplateConfiguration(
+        _client,
+        'POST',
+        Uri.parse('$baseUrl/pit-event-config/'),
+        payload,
+      );
 
       if (response.statusCode == 200) {
         state = state.copyWith(

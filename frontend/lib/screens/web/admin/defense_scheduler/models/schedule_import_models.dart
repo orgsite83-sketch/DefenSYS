@@ -1,3 +1,7 @@
+import 'package:defensys/utils/import/schedule_import_workspace.dart'
+    show scheduleImportDateIsValid;
+import 'package:defensys/utils/person_name.dart';
+import 'package:defensys/utils/import/schedule_import_references.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
 import 'package:defensys/utils/string_matching_utils.dart';
@@ -55,7 +59,10 @@ DateTime? parseHumanDate(String text) {
     final year = int.tryParse(match1.group(3) ?? '');
     final month = months[monthStr];
     if (month != null && day != null && year != null) {
-      return DateTime(year, month, day);
+      final value = DateTime(year, month, day);
+      return value.year == year && value.month == month && value.day == day
+          ? value
+          : null;
     }
   }
 
@@ -68,7 +75,10 @@ DateTime? parseHumanDate(String text) {
     final year = int.tryParse(match2.group(3) ?? '');
     final month = months[monthStr];
     if (month != null && day != null && year != null) {
-      return DateTime(year, month, day);
+      final value = DateTime(year, month, day);
+      return value.year == year && value.month == month && value.day == day
+          ? value
+          : null;
     }
   }
 
@@ -81,8 +91,10 @@ String normalizeImportDate(String? value) {
     return '';
   }
   final parsed = DateTime.tryParse(text);
-  if (parsed != null) {
-    return formatScheduleDate(parsed);
+  if (parsed != null &&
+      RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text) &&
+      formatScheduleDate(parsed) == text) {
+    return text;
   }
   final humanParsed = parseHumanDate(text);
   if (humanParsed != null) {
@@ -99,7 +111,10 @@ String normalizeImportDate(String? value) {
     final month = int.tryParse(yearFirstMatch.group(2) ?? '') ?? 1;
     final day = int.tryParse(yearFirstMatch.group(3) ?? '') ?? 1;
     if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      return formatScheduleDate(DateTime(year, month, day));
+      final value = DateTime(year, month, day);
+      return value.year == year && value.month == month && value.day == day
+          ? formatScheduleDate(value)
+          : text;
     }
   }
 
@@ -128,7 +143,10 @@ String normalizeImportDate(String? value) {
       day = part2;
     }
     if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      return formatScheduleDate(DateTime(year, month, day));
+      final value = DateTime(year, month, day);
+      return value.year == year && value.month == month && value.day == day
+          ? formatScheduleDate(value)
+          : text;
     }
   }
 
@@ -165,11 +183,14 @@ Map<String, dynamic> sharedSchedulingReadiness(
   (team['shared_readiness'] as Map?)?[stageLabel] as Map? ?? const {},
 );
 
-bool hasPendingSharedRequirements(Map<String, dynamic> team, String stageLabel) =>
-    sharedSchedulingReadiness(team, stageLabel)['complete'] == false;
+bool hasPendingSharedRequirements(
+  Map<String, dynamic> team,
+  String stageLabel,
+) => sharedSchedulingReadiness(team, stageLabel)['complete'] == false;
 
 String sharedRequirementsStatus(Map<String, dynamic> readiness) {
-  final requirements = (readiness['requirements'] as List? ?? []).whereType<Map>();
+  final requirements = (readiness['requirements'] as List? ?? [])
+      .whereType<Map>();
   if (requirements.any((row) => row['status'] == 'awaiting_upload')) {
     return 'Shared files missing';
   }
@@ -180,15 +201,18 @@ String sharedRequirementsStatus(Map<String, dynamic> readiness) {
 }
 
 String sharedRequirementsDetail(Map<String, dynamic> readiness) {
-  final requirements = (readiness['requirements'] as List? ?? []).whereType<Map>();
-  final details = requirements.map((row) {
-    final action = switch (row['status']) {
-      'awaiting_upload' => 'upload required',
-      'changes_requested' => 'changes requested',
-      _ => 'awaiting review',
-    };
-    return '${row['label']} — $action';
-  }).join('; ');
+  final requirements = (readiness['requirements'] as List? ?? [])
+      .whereType<Map>();
+  final details = requirements
+      .map((row) {
+        final action = switch (row['status']) {
+          'awaiting_upload' => 'upload required',
+          'changes_requested' => 'changes requested',
+          _ => 'awaiting review',
+        };
+        return '${row['label']} — $action';
+      })
+      .join('; ');
   final manager = readiness['project_manager_name']?.toString() ?? '';
   return '$details${manager.isEmpty ? '' : '. Project manager: $manager.'}';
 }
@@ -225,21 +249,32 @@ String getTeamStageStatus(Map<String, dynamic> team, String stageLabel) {
   if (progVal == 'grading') return 'grading_incomplete';
   if (progVal == 'ongoing') return 'evaluating';
   const assessmentStatuses = {
-    'awaiting_evaluation', 'evaluating', 'awaiting_verdict',
-    'revisions_pending', 'redefense_required', 'grading_incomplete',
-    'awaiting_completion', 'failed', 'project_rejected', 'assessed', 'done',
-    'paused', 'postponed', 'no_show', 'archived',
+    'awaiting_evaluation',
+    'evaluating',
+    'awaiting_verdict',
+    'revisions_pending',
+    'redefense_required',
+    'grading_incomplete',
+    'awaiting_completion',
+    'failed',
+    'project_rejected',
+    'assessed',
+    'done',
+    'paused',
+    'postponed',
+    'no_show',
+    'archived',
   };
   if (assessmentStatuses.contains(progVal)) return progVal;
-  if (progVal == 'scheduled' ||
-      scheduledStages.contains(stageLabel)) {
+  if (progVal == 'scheduled' || scheduledStages.contains(stageLabel)) {
     return 'scheduled';
   }
   if (hasPendingSharedRequirements(team, stageLabel)) return 'pending';
   if (progVal == 'ready' ||
       team['ready_for_stage']?.toString().trim() == stageLabel) {
     if (team['eligible_stages'] is List &&
-        (team['level']?.toString().toLowerCase().contains('capstone') ?? false) &&
+        (team['level']?.toString().toLowerCase().contains('capstone') ??
+            false) &&
         !(team['eligible_stages'] as List).contains(stageLabel)) {
       return 'pending';
     }
@@ -257,17 +292,20 @@ bool isTeamStageCompleted(Map<String, dynamic> team, String stageLabel) {
 
 bool isTeamStageReady(Map<String, dynamic> team, String stageLabel) {
   if (hasPendingSharedRequirements(team, stageLabel)) return false;
-  if (team['eligible_stages'] is List && (team['level']?.toString().toLowerCase().contains('capstone') ?? false)) {
+  if (team['eligible_stages'] is List &&
+      (team['level']?.toString().toLowerCase().contains('capstone') ?? false)) {
     return (team['eligible_stages'] as List).contains(stageLabel);
   }
   return getTeamStageStatus(team, stageLabel) == 'ready';
 }
 
 bool pitEventRequiresEndorsement(Map<String, dynamic> event) {
-  return (event['deliverables'] as List? ?? []).any((item) =>
-      item is Map &&
-      item['deliverable_type'] == 'pre' &&
-      item['required'] == true);
+  return (event['deliverables'] as List? ?? []).any(
+    (item) =>
+        item is Map &&
+        item['deliverable_type'] == 'pre' &&
+        item['required'] == true,
+  );
 }
 
 bool isPitTeamReadyToSchedule(
@@ -344,6 +382,8 @@ class ScheduleImportPreviewRow {
     this.panelistEligibilityIds = const <int>[],
     this.panelistEligibilityIssues = const <String>[],
     this.hasUnresolvedFaculty = false,
+    this.hasStageMismatch = false,
+    this.resolvedFacultyNames = const {},
     this.issues = const <String>[],
     required this.warnings,
     this.rowType = ScheduleImportRowType.invalid,
@@ -374,10 +414,13 @@ class ScheduleImportPreviewRow {
   final List<int> panelistEligibilityIds;
   final List<String> panelistEligibilityIssues;
   final bool hasUnresolvedFaculty;
+  final bool hasStageMismatch;
+  final Map<String, String> resolvedFacultyNames;
   final List<String> issues;
   final List<String> warnings;
   final ScheduleImportRowType rowType;
 
+  bool get needsTarget => isPit ? eventName.trim().isEmpty : stageId == null;
   bool get hasStageIssue => stageIssues.isNotEmpty;
   bool get hasTeamIssue => teamIssues.isNotEmpty;
   bool get hasSlotIssue => slotIssues.isNotEmpty;
@@ -435,11 +478,18 @@ class ScheduleImportPreviewRow {
   String get teamLabel => source.teamName.isEmpty ? '-' : source.teamName;
   String get projectLabel =>
       source.projectTitle.isEmpty ? '-' : source.projectTitle;
-  String get chairLabel => source.chair.isEmpty ? '-' : source.chair;
-  String get panelLabel =>
-      source.panelMembers.isEmpty ? '-' : source.panelMembers.join(', ');
-  String get documenterLabel =>
-      (!isPit && source.documenter.isNotEmpty) ? source.documenter : '-';
+  String get chairLabel =>
+      resolvedFacultyNames['chair'] ??
+      (source.chair.isEmpty ? '-' : source.chair);
+  String get panelLabel => source.panelMembers.isEmpty
+      ? '-'
+      : [
+          for (var i = 0; i < source.panelMembers.length; i++)
+            resolvedFacultyNames['panel_$i'] ?? source.panelMembers[i],
+        ].join(', ');
+  String get documenterLabel => (!isPit && source.documenter.isNotEmpty)
+      ? resolvedFacultyNames['documenter'] ?? source.documenter
+      : '-';
   String get adviserLabel => isPit ? '' : adviserName ?? source.adviser;
   String get facultyLabel => isPit ? instructorName : adviserLabel;
 
@@ -592,163 +642,50 @@ String cleanPersonName(String value) {
   return s;
 }
 
-ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
-  final name = normalizeName(rawName);
-  if (name.isEmpty) {
-    return const ImportNameMatch(message: 'Panelist name is missing.');
+ImportNameMatch _localFacultyMatch(
+  String rawName,
+  List<Map<String, dynamic>> pool,
+) {
+  final key = personNameKey(rawName);
+  final matches = pool
+      .where(
+        (p) =>
+            '${p['username']}' == rawName.trim() ||
+            personNameKey('${p['name'] ?? ''}') == key,
+      )
+      .toList();
+  if (matches.length == 1) {
+    return ImportNameMatch(id: asInt(matches.single['id']));
   }
-  final pool = state.faculty.isNotEmpty ? state.faculty : state.panelists;
-  final cleanInput = normalizeName(cleanPersonName(rawName));
-
-  // 1. Exact full name / username / title-cleaned name
-  final exact = pool.where((panelist) {
-    final pName = panelist['name']?.toString() ?? '';
-    final pUser = panelist['username']?.toString() ?? '';
-    final normPName = normalizeName(pName);
-    final normPUser = normalizeName(pUser);
-    if (normPName == name || normPUser == name) return true;
-    if (cleanInput.isNotEmpty) {
-      final cleanPName = normalizeName(cleanPersonName(pName));
-      if (cleanPName == cleanInput || normPName == cleanInput) return true;
-    }
-    return false;
-  }).toList();
-  if (exact.length == 1) {
-    return ImportNameMatch(id: asInt(exact.first['id']));
-  }
-  if (exact.length > 1) {
-    return ImportNameMatch(message: 'Panelist "$rawName" is ambiguous.');
-  }
-
-  // 2. Exact Last Name (checking raw and cleaned)
-  final cleanLastInput = cleanInput.split(RegExp(r'\s+')).last;
-  final lastNameMatches = pool.where((panelist) {
-    final display = panelist['name']?.toString() ?? '';
-    final parts = display.trim().split(RegExp(r'\s+'));
-    final last = parts.isEmpty ? '' : parts.last;
-    final normLast = normalizeName(last);
-    final cleanLast = normalizeName(cleanPersonName(last));
-    return normLast == name ||
-        normLast == cleanInput ||
-        (cleanLastInput.isNotEmpty &&
-            cleanLast == cleanLastInput &&
-            cleanInput.split(RegExp(r'\s+')).length == 1);
-  }).toList();
-  if (lastNameMatches.length == 1) {
-    return ImportNameMatch(id: asInt(lastNameMatches.first['id']));
-  }
-  if (lastNameMatches.length > 1) {
-    return ImportNameMatch(
-      message: 'Panelist "$rawName" matches multiple faculty.',
-    );
-  }
-
-  // 3. Fuzzy Typo Match on Full Name or Last Name
-  final fuzzyMatches = <Map<String, dynamic>>[];
-  for (final panelist in pool) {
-    final display = panelist['name']?.toString() ?? '';
-    final parts = display.trim().split(RegExp(r'\s+'));
-    final last = parts.isEmpty ? '' : parts.last;
-    final simFull = stringSimilarity(rawName, display);
-    final simLast = stringSimilarity(rawName, last);
-    final simClean = cleanInput.isNotEmpty
-        ? stringSimilarity(cleanInput, normalizeName(cleanPersonName(display)))
-        : 0.0;
-    if (simFull >= 0.85 || simLast >= 0.85 || simClean >= 0.85) {
-      fuzzyMatches.add(panelist);
-    }
-  }
-  if (fuzzyMatches.length == 1) {
-    final matched = fuzzyMatches.first;
-    final matchedName = matched['name']?.toString() ?? '';
-    return ImportNameMatch(
-      id: asInt(matched['id']),
-      message: 'Matched to "$matchedName" (typo in file: "$rawName").',
-    );
-  }
-
-  return ImportNameMatch(message: 'Panelist "$rawName" was not found.');
+  return ImportNameMatch(
+    message: matches.length > 1
+        ? 'Multiple faculty match "$rawName". Select the registered ID.'
+        : 'Faculty "$rawName" needs account review.',
+  );
 }
 
-ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
-  final name = normalizeName(rawName);
-  if (name.isEmpty) {
-    return const ImportNameMatch();
-  }
-  final pool = state.faculty.isNotEmpty ? state.faculty : state.documenters;
-  final cleanInput = normalizeName(cleanPersonName(rawName));
-
-  // 1. Exact full name / username / title-cleaned name
-  final exact = pool.where((doc) {
-    final dName = doc['name']?.toString() ?? '';
-    final dUser = doc['username']?.toString() ?? '';
-    final normDName = normalizeName(dName);
-    final normDUser = normalizeName(dUser);
-    if (normDName == name || normDUser == name) return true;
-    if (cleanInput.isNotEmpty) {
-      final cleanDName = normalizeName(cleanPersonName(dName));
-      if (cleanDName == cleanInput || normDName == cleanInput) return true;
-    }
-    return false;
-  }).toList();
-  if (exact.length == 1) {
-    return ImportNameMatch(id: asInt(exact.first['id']));
-  }
-  if (exact.length > 1) {
-    return ImportNameMatch(message: 'Documenter "$rawName" is ambiguous.');
-  }
-
-  // 2. Exact Last Name (checking raw and cleaned)
-  final cleanLastInput = cleanInput.split(RegExp(r'\s+')).last;
-  final lastNameMatches = pool.where((doc) {
-    final display = doc['name']?.toString() ?? '';
-    final parts = display.trim().split(RegExp(r'\s+'));
-    final last = parts.isEmpty ? '' : parts.last;
-    final normLast = normalizeName(last);
-    final cleanLast = normalizeName(cleanPersonName(last));
-    return normLast == name ||
-        normLast == cleanInput ||
-        (cleanLastInput.isNotEmpty &&
-            cleanLast == cleanLastInput &&
-            cleanInput.split(RegExp(r'\s+')).length == 1);
-  }).toList();
-  if (lastNameMatches.length == 1) {
-    return ImportNameMatch(id: asInt(lastNameMatches.first['id']));
-  }
-  if (lastNameMatches.length > 1) {
-    return ImportNameMatch(
-      message: 'Documenter "$rawName" matches multiple documenters.',
+ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) =>
+    _localFacultyMatch(
+      rawName,
+      state.faculty.isNotEmpty ? state.faculty : state.panelists,
     );
-  }
 
-  // 3. Fuzzy Typo Match on Full Name or Last Name
-  final fuzzyMatches = <Map<String, dynamic>>[];
-  for (final doc in pool) {
-    final display = doc['name']?.toString() ?? '';
-    final parts = display.trim().split(RegExp(r'\s+'));
-    final last = parts.isEmpty ? '' : parts.last;
-    final simFull = stringSimilarity(rawName, display);
-    final simLast = stringSimilarity(rawName, last);
-    if (simFull >= 0.85 || simLast >= 0.85) {
-      fuzzyMatches.add(doc);
-    }
-  }
-  if (fuzzyMatches.length == 1) {
-    final matched = fuzzyMatches.first;
-    final matchedName = matched['name']?.toString() ?? '';
-    return ImportNameMatch(
-      id: asInt(matched['id']),
-      message: 'Matched to "$matchedName" (typo in file: "$rawName").',
-    );
-  }
-
-  return ImportNameMatch(message: 'Documenter "$rawName" was not found.');
-}
+ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) =>
+    rawName.trim().isEmpty
+    ? const ImportNameMatch()
+    : _localFacultyMatch(
+        rawName,
+        state.faculty.isNotEmpty ? state.faculty : state.documenters,
+      );
 
 bool pitScheduleRequiresPeer(DefenseSchedulerState state, String eventName) {
-  final event = state.pitEvents.where((event) =>
-      normalizeName(event['event_name']?.toString() ?? '') ==
-      normalizeName(eventName)).firstOrNull;
+  final event = state.pitEvents
+      .where(
+        (event) =>
+            normalizeName(event['event_name']?.toString() ?? '') ==
+            normalizeName(eventName),
+      )
+      .firstOrNull;
   final concepts = event?['concept_config'];
   if (concepts is Map && concepts['enabled'] == true) return false;
   return (asInt(event?['peer_weight']) ?? 20) > 0;
@@ -776,6 +713,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
   required String room,
   int? slotDuration,
   bool reflowStartTimes = true,
+  Map<String, Map<String, dynamic>>? facultyReferences,
   required int fallbackDuration,
   required int? panelRubricId,
   required int? adviserRubricId,
@@ -816,6 +754,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final source = entry.value;
     final startTime = starts[entry.key] ?? source.startTime;
     final stageIssues = <String>[];
+    var stageMismatch = false;
     final teamIssues = <String>[];
     final slotIssues = <String>[...source.parseIssues];
     if (isPit &&
@@ -828,6 +767,31 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final panelistEligibilityIssues = <String>[];
     var hasUnresolvedFaculty = false;
     final warnings = <String>[];
+    final resolvedNames = <String, String>{};
+    ImportNameMatch facultyMatch(String duty, String name) {
+      if (facultyReferences == null) {
+        return duty == 'documenter'
+            ? matchDocumenter(name, state)
+            : matchPanelist(name, state);
+      }
+      final result = facultyReferences[scheduleReferenceId(source, duty)];
+      if (result == null) {
+        return const ImportNameMatch(
+          message:
+              'Faculty validation pending. Validate references before importing.',
+        );
+      }
+      final account = result['account'];
+      if (account is Map && account['name'] != null)
+        resolvedNames[duty] = '${account['name']}';
+      final warning = '${result['name_warning'] ?? ''}';
+      if (warning.isNotEmpty) warnings.add(warning);
+      return ImportNameMatch(
+        id: account is Map ? asInt(account['id']) : null,
+        message: '${result['reason'] ?? 'Review the faculty account.'}',
+      );
+    }
+
     final rowDate = normalizeImportDate(source.date).isNotEmpty
         ? normalizeImportDate(source.date)
         : normalizeImportDate(date);
@@ -866,10 +830,10 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
               asInt(matchedTeam?['adviser']) ??
               (adviserName.trim().isEmpty
                   ? null
-                  : matchPanelist(adviserName, state).id);
+                  : facultyMatch('adviser', adviserName).id);
     final panelistMatches = <ImportNameMatch>[];
 
-    final chairMatch = matchPanelist(source.chair, state);
+    final chairMatch = facultyMatch('chair', source.chair);
     if (source.chair.trim().isNotEmpty) {
       panelistMatches.add(chairMatch);
     } else {
@@ -877,13 +841,13 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
         'Chair is missing. Check the Chair / Panel Chair / Chair Panel header and cell.',
       );
     }
-    for (final name in source.panelMembers) {
-      panelistMatches.add(matchPanelist(name, state));
+    for (var i = 0; i < source.panelMembers.length; i++) {
+      panelistMatches.add(facultyMatch('panel_$i', source.panelMembers[i]));
     }
 
     int? documenterId;
     if (!isPit && source.documenter.trim().isNotEmpty) {
-      final docMatch = matchDocumenter(source.documenter, state);
+      final docMatch = facultyMatch('documenter', source.documenter);
       if (docMatch.id == null) {
         hasUnresolvedFaculty = true;
         slotIssues.add(docMatch.message);
@@ -895,24 +859,12 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     if (isPit) {
       if (eventName.trim().isEmpty) {
         stageIssues.add('Select a PIT event.');
-      } else if (source.stage.trim().isNotEmpty) {
-        final eventMatch = findBestMatch<Map<String, dynamic>>(
-          source: source.stage,
-          items: state.pitEvents,
-          labelGetter: (e) => e['event_name']?.toString() ?? '',
+      } else if (source.stage.trim().isNotEmpty &&
+          scheduleStageKey(source.stage) != scheduleStageKey(eventName)) {
+        stageMismatch = true;
+        stageIssues.add(
+          'Spreadsheet event "${source.stage}" does not match active event "$eventName".',
         );
-        if (eventMatch.isMatched) {
-          if (eventMatch.label.trim().toLowerCase() !=
-              eventName.trim().toLowerCase()) {
-            stageIssues.add(
-              'Spreadsheet event "${source.stage}" matches "${eventMatch.label}", not active event "$eventName".',
-            );
-          }
-        } else {
-          stageIssues.add(
-            'Spreadsheet event "${source.stage}" does not match active event "$eventName".',
-          );
-        }
       }
       if (panelRubricId == null) {
         stageIssues.add('Panel rubric is missing.');
@@ -929,24 +881,14 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
           orElse: () => <String, dynamic>{},
         );
         final targetStageLabel = stageObj['label']?.toString() ?? '';
-        if (targetStageLabel.isNotEmpty && source.stage.trim().isNotEmpty) {
-          final stageMatch = findBestMatch<Map<String, dynamic>>(
-            source: source.stage,
-            items: state.defenseStages,
-            labelGetter: (s) => s['label']?.toString() ?? '',
+        if (targetStageLabel.isNotEmpty &&
+            source.stage.trim().isNotEmpty &&
+            scheduleStageKey(source.stage) !=
+                scheduleStageKey(targetStageLabel)) {
+          stageMismatch = true;
+          stageIssues.add(
+            'Spreadsheet stage "${source.stage}" does not match active stage "$targetStageLabel".',
           );
-          if (stageMatch.isMatched) {
-            final matchedId = asInt(stageMatch.item?['id']);
-            if (matchedId != stageId) {
-              stageIssues.add(
-                'Spreadsheet stage "${source.stage}" matches "${stageMatch.label}", not active stage "$targetStageLabel".',
-              );
-            }
-          } else {
-            stageIssues.add(
-              'Spreadsheet stage "${source.stage}" does not match active stage "$targetStageLabel".',
-            );
-          }
         }
       }
       final stage =
@@ -965,6 +907,8 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     }
     if (rowDate.isEmpty) {
       slotIssues.add('Date is missing.');
+    } else if (!scheduleImportDateIsValid(rowDate)) {
+      slotIssues.add('Date is invalid. Select an exact calendar date.');
     }
     if (rowRoom.isEmpty) {
       slotIssues.add('Room is missing.');
@@ -1150,7 +1094,17 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
         slotIssues.add(match.message);
       } else if (!panelistIds.contains(match.id)) {
         panelistIds.add(match.id!);
+      } else {
+        slotIssues.add(
+          'The same person is assigned more than once in the panel.',
+        );
       }
+    }
+    if (documenterId != null &&
+        (panelistIds.contains(documenterId) || documenterId == adviserId)) {
+      slotIssues.add(
+        'Documenter cannot also be a panelist or the team adviser.',
+      );
     }
     if (panelistIds.isEmpty) {
       slotIssues.add('At least one chair or panel member is required.');
@@ -1203,6 +1157,8 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       panelistEligibilityIds: panelistEligibilityIds,
       panelistEligibilityIssues: panelistEligibilityIssues,
       hasUnresolvedFaculty: hasUnresolvedFaculty,
+      hasStageMismatch: stageMismatch,
+      resolvedFacultyNames: resolvedNames,
       issues: allIssues,
       warnings: warnings,
       rowType: rowType,

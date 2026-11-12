@@ -61,12 +61,14 @@ class _Scheduler extends DefenseSchedulerNotifier {
     this.failedIndex,
     this.conflictSchedules,
     this.validationFailure = false,
+    this.referenceFailure = false,
   });
 
   final DefenseSchedulerState fixture;
   final int? failedIndex;
   final List<Map<String, dynamic>>? conflictSchedules;
   final bool validationFailure;
+  final bool referenceFailure;
   var conflictReads = 0;
   final imports = <List<Map<String, dynamic>>>[];
   Completer<void>? pendingImport;
@@ -74,6 +76,39 @@ class _Scheduler extends DefenseSchedulerNotifier {
 
   @override
   DefenseSchedulerState build() => fixture;
+
+  @override
+  Future<Map<String, Map<String, dynamic>>> previewImportReferences(
+    Map<String, dynamic> payload,
+  ) async {
+    if (referenceFailure) throw Exception('Network unavailable');
+    final pool = [
+      ...fixture.faculty,
+      ...fixture.panelists,
+      ...fixture.documenters,
+    ];
+    final results = <String, Map<String, dynamic>>{};
+    for (final raw in payload['references'] as List) {
+      final item = Map<String, dynamic>.from(raw as Map);
+      final account = pool
+          .where(
+            (p) => item['selected_account_id'] != null
+                ? p['id'] == item['selected_account_id']
+                : '${p['name']}'.toLowerCase() ==
+                      '${item['text']}'.toLowerCase(),
+          )
+          .firstOrNull;
+      results['${item['reference_id']}'] = {
+        ...item,
+        'reference_key': '${item['text']}'.toLowerCase(),
+        'account': account,
+        'candidates': pool,
+        'review_state': account == null ? 'needs_confirmation' : 'matched',
+        'reason': account == null ? 'Select the registered account.' : '',
+      };
+    }
+    return results;
+  }
 
   @override
   Future<List<Map<String, dynamic>>> fetchImportConflictSchedules() async {
@@ -269,6 +304,7 @@ Future<_Scheduler> _pumpReview(
   int? failedIndex,
   List<Map<String, dynamic>>? conflictSchedules,
   bool validationFailure = false,
+  bool referenceFailure = false,
   Size size = const Size(1600, 1000),
   bool dark = false,
   VoidCallback? onBack,
@@ -303,6 +339,7 @@ Future<_Scheduler> _pumpReview(
     failedIndex: failedIndex,
     conflictSchedules: conflictSchedules,
     validationFailure: validationFailure,
+    referenceFailure: referenceFailure,
   );
   await tester.pumpWidget(
     ProviderScope(
@@ -417,6 +454,35 @@ Future<GoRouter> _pumpRoutedReview(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+    'faculty selection preserves uploaded name and submits the reviewed account ID',
+    (tester) async {
+      final scheduler = await _pumpReview(tester, count: 1);
+      await _tap(tester, find.byTooltip('Review faculty'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('chair: Maricel Suarez'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select chair account'), findsOneWidget);
+      await tester.enterText(find.byType(EditableText).last, 'Renato');
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Renato Villanueva ·'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      final draft = await loadScheduleImportDraft(
+        scope: 'capstone',
+        semesterId: 1,
+      );
+      expect(draft!.parsed.rows.single.chair, 'Maricel Suarez');
+      expect(draft.parsed.rows.single.selectedAccountIds['chair'], 105);
+      await _tap(tester, find.text('Import 1 slot'));
+      await tester.pumpAndSettle();
+      expect(scheduler.imports.single.single['chair_panelist_id'], 105);
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   testWidgets(
     'panel-only repeat import uses the readiness badge without a violet banner',
     (tester) async {
@@ -935,6 +1001,28 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'failed faculty lookup blocks readiness without claiming accounts are missing',
+    (tester) async {
+      final scheduler = await _pumpReview(
+        tester,
+        count: 1,
+        referenceFailure: true,
+      );
+      expect(
+        find.text(
+          'Faculty validation unavailable. Retry validation before importing.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Import 0 slots'), findsOneWidget);
+      expect(find.textContaining('No matching account found'), findsNothing);
+      await _tap(tester, find.text('Retry validation'));
+      expect(scheduler.imports, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('failed availability checks disable import and offer retry', (
     tester,

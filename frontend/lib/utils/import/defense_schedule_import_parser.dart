@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'tabular_text_decode.dart';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
@@ -78,6 +78,8 @@ class ParsedScheduleImport {
     this.semester,
     this.room,
     this.isRedefense = false,
+    this.parserVersion = 2,
+    this.ignoredRows = const [],
   });
 
   final List<ParsedScheduleImportRow> rows;
@@ -86,6 +88,8 @@ class ParsedScheduleImport {
   final String? semester;
   final String? room;
   final bool isRedefense;
+  final int parserVersion;
+  final List<Map<String, dynamic>> ignoredRows;
 
   Map<String, dynamic> toJson() => {
     'rows': rows.map((r) => r.toJson()).toList(),
@@ -94,6 +98,8 @@ class ParsedScheduleImport {
     'semester': semester,
     'room': room,
     'is_redefense': isRedefense,
+    'parser_version': parserVersion,
+    'ignored_rows': ignoredRows,
   };
 
   factory ParsedScheduleImport.fromJson(Map<String, dynamic> json) {
@@ -111,6 +117,10 @@ class ParsedScheduleImport {
       semester: json['semester']?.toString(),
       room: json['room']?.toString(),
       isRedefense: json['is_redefense'] == true,
+      parserVersion: json['parser_version'] as int? ?? 1,
+      ignoredRows: (json['ignored_rows'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(),
     );
   }
 
@@ -121,6 +131,7 @@ class ParsedScheduleImport {
     String? semester,
     String? room,
     bool? isRedefense,
+    List<Map<String, dynamic>>? ignoredRows,
   }) {
     return ParsedScheduleImport(
       rows: rows ?? this.rows,
@@ -129,6 +140,8 @@ class ParsedScheduleImport {
       semester: semester ?? this.semester,
       room: room ?? this.room,
       isRedefense: isRedefense ?? this.isRedefense,
+      parserVersion: parserVersion,
+      ignoredRows: ignoredRows ?? this.ignoredRows,
     );
   }
 }
@@ -157,6 +170,8 @@ class ParsedScheduleImportRow {
     this.sourceFileName = '',
     this.importRowId = '',
     this.sessionId = '',
+    this.sourceSheetName = '',
+    this.selectedAccountIds = const {},
   });
 
   final int sheetRow;
@@ -182,6 +197,8 @@ class ParsedScheduleImportRow {
   final String sourceFileName;
   final String importRowId;
   final String sessionId;
+  final String sourceSheetName;
+  final Map<String, int> selectedAccountIds;
 
   Map<String, dynamic> toJson() => {
     'sheet_row': sheetRow,
@@ -206,6 +223,8 @@ class ParsedScheduleImportRow {
     'source_file_name': sourceFileName,
     'import_row_id': importRowId,
     'session_id': sessionId,
+    'source_sheet_name': sourceSheetName,
+    'selected_account_ids': selectedAccountIds,
   };
 
   factory ParsedScheduleImportRow.fromJson(Map<String, dynamic> json) {
@@ -242,6 +261,13 @@ class ParsedScheduleImportRow {
       sourceFileName: json['source_file_name']?.toString() ?? '',
       importRowId: json['import_row_id']?.toString() ?? '',
       sessionId: json['session_id']?.toString() ?? '',
+      sourceSheetName: json['source_sheet_name']?.toString() ?? '',
+      selectedAccountIds: {
+        for (final entry
+            in (json['selected_account_ids'] as Map? ?? const {}).entries)
+          if ((int.tryParse('${entry.value}') ?? 0) > 0)
+            '${entry.key}': int.parse('${entry.value}'),
+      },
     );
   }
 
@@ -268,6 +294,8 @@ class ParsedScheduleImportRow {
     String? sourceFileName,
     String? importRowId,
     String? sessionId,
+    String? sourceSheetName,
+    Map<String, int>? selectedAccountIds,
   }) {
     return ParsedScheduleImportRow(
       sheetRow: sheetRow ?? this.sheetRow,
@@ -292,6 +320,8 @@ class ParsedScheduleImportRow {
       sourceFileName: sourceFileName ?? this.sourceFileName,
       importRowId: importRowId ?? this.importRowId,
       sessionId: sessionId ?? this.sessionId,
+      sourceSheetName: sourceSheetName ?? this.sourceSheetName,
+      selectedAccountIds: selectedAccountIds ?? this.selectedAccountIds,
     );
   }
 }
@@ -299,7 +329,8 @@ class ParsedScheduleImportRow {
 bool _isLikelyTeamRosterWorkbook(Excel workbook) {
   for (final tableName in workbook.tables.keys) {
     final lowerName = tableName.toLowerCase();
-    if (lowerName.contains('team_roster') || lowerName.contains('team roster')) {
+    if (lowerName.contains('team_roster') ||
+        lowerName.contains('team roster')) {
       return true;
     }
     final sheet = workbook.tables[tableName];
@@ -311,10 +342,18 @@ bool _isLikelyTeamRosterWorkbook(Excel workbook) {
     for (final row in sheet.rows.take(20)) {
       for (final cell in row) {
         final text = _excelCellText(cell).toLowerCase().trim();
-        if (text.contains('team name') || text.startsWith('team')) hasTeamName = true;
-        if (text.contains('member') || text.contains('team members')) hasMembers = true;
+        if (text.contains('team name') || text.startsWith('team')) {
+          hasTeamName = true;
+        }
+        if (text.contains('member') || text.contains('team members')) {
+          hasMembers = true;
+        }
         if (text == 'section') hasSection = true;
-        if (text.contains('time slot') || text.contains('start time') || text == 'time') hasTimeSlot = true;
+        if (text.contains('time slot') ||
+            text.contains('start time') ||
+            text == 'time') {
+          hasTimeSlot = true;
+        }
       }
     }
     if ((hasMembers || (hasTeamName && hasSection)) && !hasTimeSlot) {
@@ -328,7 +367,8 @@ bool _isLikelyTeamRosterCsv(String csvContent) {
   final lower = csvContent.toLowerCase();
   final hasMembers = lower.contains('team members') || lower.contains('member');
   final hasSection = lower.contains('section');
-  final hasTimeSlot = lower.contains('time slot') || lower.contains('start time');
+  final hasTimeSlot =
+      lower.contains('time slot') || lower.contains('start time');
   return hasMembers && hasSection && !hasTimeSlot;
 }
 
@@ -336,10 +376,17 @@ ParsedScheduleImport parseScheduleImportFile({
   required Uint8List bytes,
   required String filename,
   Iterable<String>? configuredStages,
+  bool encodingConfirmed = false,
 }) {
   final lower = filename.toLowerCase();
   if (lower.endsWith('.csv')) {
-    final csvText = utf8.decode(bytes);
+    final decoded = decodeTabularText(bytes);
+    if (decoded.needsConfirmation && !encodingConfirmed) {
+      throw FormatException(
+        '$filename: confirm the displayed names before staging this CSV.',
+      );
+    }
+    final csvText = decoded.text;
     final parsed = parseScheduleImportMatrix(
       _csvToMatrix(csvText),
       configuredStages: configuredStages,
@@ -354,6 +401,7 @@ ParsedScheduleImport parseScheduleImportFile({
 
   final workbook = safeDecodeExcel(bytes);
   final allRows = <ParsedScheduleImportRow>[];
+  final ignoredRows = <Map<String, dynamic>>[];
   String? detectedStage;
   String? detectedDate;
   String? detectedSemester;
@@ -365,16 +413,18 @@ ParsedScheduleImport parseScheduleImportFile({
     if (sheet == null || sheet.rows.isEmpty) {
       continue;
     }
-    _expandSheetSpannedItems(sheet);
-    final matrix = sheet.rows
-        .map((row) => row.map(_excelCellText).toList(growable: false))
-        .toList(growable: false);
+    final matrix = _sheetMatrix(sheet);
     final parsed = parseScheduleImportMatrix(
       matrix,
       configuredStages: configuredStages,
     );
     if (parsed.rows.isNotEmpty) {
-      allRows.addAll(parsed.rows);
+      allRows.addAll(
+        parsed.rows.map((row) => row.copyWith(sourceSheetName: tableName)),
+      );
+      ignoredRows.addAll(
+        parsed.ignoredRows.map((row) => {...row, 'sheet': tableName}),
+      );
       detectedStage ??= parsed.stage;
       detectedDate ??= parsed.date;
       detectedSemester ??= parsed.semester;
@@ -391,6 +441,7 @@ ParsedScheduleImport parseScheduleImportFile({
 
   return ParsedScheduleImport(
     rows: allRows,
+    ignoredRows: ignoredRows,
     stage: detectedStage,
     date: detectedDate,
     semester: detectedSemester,
@@ -408,6 +459,8 @@ ParsedScheduleImport parseScheduleImportMatrix(
   }
 
   final metadata = <String, String>{};
+  final ignoredRows = <Map<String, dynamic>>[];
+  final metadataIssues = <String>[];
   String currentStage = '';
   String currentDate = '';
   String currentRoom = '';
@@ -518,6 +571,13 @@ ParsedScheduleImport parseScheduleImportMatrix(
       );
       if (rowMeta['stage'] != null && rowMeta['stage']!.isNotEmpty) {
         currentStage = rowMeta['stage']!;
+        if (metadata['stage'] != null &&
+            scheduleStageKey(metadata['stage']!) !=
+                scheduleStageKey(currentStage)) {
+          metadataIssues.add(
+            'Conflicting stage headings at row ${rowIndex + 1}. Correct the source stage.',
+          );
+        }
         metadata['stage'] ??= currentStage;
       }
       if (rowMeta['date'] != null && rowMeta['date']!.isNotEmpty) {
@@ -545,6 +605,27 @@ ParsedScheduleImport parseScheduleImportMatrix(
     final rawMember = (memberCol >= 0 && memberCol < rawRow.length)
         ? rawRow[memberCol].trim()
         : '';
+    final reservation = RegExp(
+      r'^(?:re[ -]?defen[cs]e|unassigned|reserved|vacant|tba)$',
+      caseSensitive: false,
+    ).hasMatch(rawTeam);
+    final isBreak = RegExp(
+      r'^(?:(?:lunch|snack|coffee|health)\s+)?break$',
+      caseSensitive: false,
+    ).hasMatch(rawTeam);
+    if (reservation || isBreak) {
+      ignoredRows.add({
+        'row': rowIndex + 1,
+        'label': rawTeam,
+        'kind': isBreak ? 'break' : 'reservation',
+      });
+      fillDown.clear();
+      continue;
+    }
+    final isDayBanner = RegExp(
+      r'^DAY\s*\d+\b',
+      caseSensitive: false,
+    ).hasMatch(rawTime);
     final parsedTime = _parseTimeRange(rawTime);
     final hasValidTime = parsedTime.start.isNotEmpty;
 
@@ -561,7 +642,8 @@ ParsedScheduleImport parseScheduleImportMatrix(
 
     // If row has no valid defense time, no team name, and no student member,
     // it is a section metadata divider row (e.g. "6/19/2026" or "Room 301")
-    if (!hasValidTime && rawTeam.isEmpty && rawMember.isEmpty) {
+    if (isDayBanner ||
+        (!hasValidTime && rawTeam.isEmpty && rawMember.isEmpty)) {
       final rowMeta = _readMetadataRow(
         rawRow,
         configuredStages: configuredStages,
@@ -598,7 +680,7 @@ ParsedScheduleImport parseScheduleImportMatrix(
       return fill ? (fillDown[index] ?? '') : '';
     }
 
-    final parseIssues = <String>[...headerIssues];
+    final parseIssues = <String>[...headerIssues, ...metadataIssues];
     for (var i = 0; i < rawRow.length; i++) {
       final header = i < activeHeaders.length ? activeHeaders[i].trim() : '';
       if (recognizedColumns.contains(i) ||
@@ -629,12 +711,12 @@ ParsedScheduleImport parseScheduleImportMatrix(
     }
 
     // If no team name and no valid time, skip
-    if (rawTeam.isEmpty && !hasValidTime) {
+    if (rawTeam.isEmpty) {
       continue;
     }
 
     final time = read(timeCol);
-    final teamName = read(teamCol);
+    final teamName = read(teamCol, fill: false);
     final project = read(projectCol);
     final adviser = read(adviserCol, fill: true);
     final instructor = read(instructorCol, fill: true);
@@ -655,6 +737,7 @@ ParsedScheduleImport parseScheduleImportMatrix(
     }
 
     final key = [
+      rowIndex.toString(),
       _normalizeMatch(effectiveDate),
       _normalizeMatch(effectiveRoom),
       _normalizeMatch(time),
@@ -714,7 +797,16 @@ ParsedScheduleImport parseScheduleImportMatrix(
           startTime: parsedTime.start,
           endTime: parsedTime.end,
           slotDuration: parsedTime.duration,
-          parseIssues: group.parseIssues,
+          parseIssues: [
+            ...group.parseIssues,
+            if (parsedTime.start.isEmpty ||
+                (group.time.contains(RegExp(r'[-–—]|\bto\b')) &&
+                    parsedTime.end.isEmpty))
+              'Time range is invalid. Correct the source time.',
+            if (parsedTime.duration != null &&
+                (parsedTime.duration! < 15 || parsedTime.duration! > 240))
+              'Time range must be 15–240 minutes within the same day.',
+          ],
         );
       })
       .toList(growable: false);
@@ -727,6 +819,7 @@ ParsedScheduleImport parseScheduleImportMatrix(
 
   return ParsedScheduleImport(
     rows: rows,
+    ignoredRows: ignoredRows,
     stage: metadata['stage'] ?? currentStage,
     date: metadata['date'] ?? currentDate,
     semester: metadata['semester'] ?? currentSemester,
@@ -735,38 +828,69 @@ ParsedScheduleImport parseScheduleImportMatrix(
   );
 }
 
-void _expandSheetSpannedItems(Sheet sheet) {
-  try {
-    for (final span in sheet.spannedItems) {
-      final parts = span.split(':');
-      if (parts.length != 2) continue;
-      final start = CellIndex.indexByString(parts[0]);
-      final end = CellIndex.indexByString(parts[1]);
-      final startVal = sheet.cell(start).value;
-      if (startVal == null) continue;
-      final minR = start.rowIndex < end.rowIndex
-          ? start.rowIndex
-          : end.rowIndex;
-      final maxR = start.rowIndex > end.rowIndex
-          ? start.rowIndex
-          : end.rowIndex;
-      final minC = start.columnIndex < end.columnIndex
-          ? start.columnIndex
-          : end.columnIndex;
-      final maxC = start.columnIndex > end.columnIndex
-          ? start.columnIndex
-          : end.columnIndex;
-      for (var r = minR; r <= maxR; r++) {
-        for (var c = minC; c <= maxC; c++) {
-          if (r == start.rowIndex && c == start.columnIndex) continue;
-          sheet
-                  .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r))
-                  .value =
-              startVal;
+List<List<String>> _sheetMatrix(Sheet sheet) {
+  // Never write through merged cells: the Excel package can alter merge ranges
+  // during iteration. Horizontal banners remain a single structural anchor.
+  final matrix = sheet.rows
+      .map((row) => row.map(_excelCellText).toList())
+      .toList();
+  for (final span in List<String>.of(sheet.spannedItems)) {
+    final parts = span.split(':');
+    if (parts.length != 2) throw FormatException('Invalid merged range $span.');
+    final start = CellIndex.indexByString(parts[0]);
+    final end = CellIndex.indexByString(parts[1]);
+    final value = matrix[start.rowIndex][start.columnIndex];
+    if (start.columnIndex != end.columnIndex) {
+      if (RegExp(
+        r'^(?:re[ -]?defense|unassigned|reserved|vacant|tba)$',
+        caseSensitive: false,
+      ).hasMatch(value.trim())) {
+        for (var r = start.rowIndex + 1; r <= end.rowIndex; r++) {
+          while (matrix.length <= r) {
+            matrix.add([]);
+          }
+          while (matrix[r].length <= start.columnIndex) {
+            matrix[r].add('');
+          }
+          matrix[r][start.columnIndex] = value;
         }
       }
+      continue;
     }
-  } catch (_) {}
+    String? role;
+    for (var r = start.rowIndex; r >= 0; r--) {
+      if (_isHeaderRow(matrix[r])) {
+        role = start.columnIndex < matrix[r].length
+            ? _headerRole(matrix[r][start.columnIndex])
+            : null;
+        break;
+      }
+    }
+    // Team/time merges describe member continuation rows. Only staff/metadata
+    // assignments may be expanded into following physical rows.
+    if (!const [
+      'Adviser',
+      'Instructor',
+      'Chair',
+      'Panel Member 1',
+      'Panel Member 2',
+      'Panel Member 3',
+      'Documenter',
+      'Room',
+      'Date',
+    ].contains(role))
+      continue;
+    for (var r = start.rowIndex + 1; r <= end.rowIndex; r++) {
+      while (matrix.length <= r) {
+        matrix.add([]);
+      }
+      while (matrix[r].length <= start.columnIndex) {
+        matrix[r].add('');
+      }
+      matrix[r][start.columnIndex] = value;
+    }
+  }
+  return matrix;
 }
 
 String _excelCellText(Data? cell) {
@@ -849,32 +973,35 @@ bool _isRoomString(String text) {
       RegExp(r'^(?:smart\s+room|multimedia|conference)$').hasMatch(lower);
 }
 
-bool _matchesConfiguredStage(String text, Iterable<String>? configuredStages) {
-  if (configuredStages == null || configuredStages.isEmpty) return false;
-  final clean = text.trim().toLowerCase();
-  if (clean.isEmpty) return false;
-  for (final stage in configuredStages) {
-    final cleanStage = stage.trim().toLowerCase();
-    if (cleanStage.isEmpty) continue;
-    if (clean == cleanStage ||
-        clean.contains(cleanStage) ||
-        cleanStage.contains(clean)) {
-      return true;
-    }
-  }
-  return false;
-}
+/// Only complete labels with a presentation wrapper are equivalent.
+String scheduleStageKey(String text) => text
+    .trim()
+    .toLowerCase()
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .replaceFirst(RegExp(r'^schedule\s*[:\-–—]?\s*'), '')
+    .replaceFirst(RegExp(r'\s+schedule$'), '')
+    .trim();
 
-bool _isSessionDividerString(String text) {
-  final lower = text.trim().toLowerCase();
-  if (lower.isEmpty) return false;
-  return lower.contains('session') ||
-      lower.contains('day 1') ||
-      lower.contains('day 2') ||
-      lower.contains('day 3') ||
-      lower.contains('day 4') ||
-      lower.contains('morning') ||
-      lower.contains('afternoon');
+bool _stageHeading(String text, Iterable<String>? configured) {
+  final key = scheduleStageKey(text);
+  if (RegExp(r'^re[ -]?defense\b', caseSensitive: false).hasMatch(text)) {
+    return true;
+  }
+  if ((configured ?? const <String>[]).any(
+    (stage) => scheduleStageKey(stage) == key,
+  )) {
+    return true;
+  }
+  if (RegExp(
+    r'\b(?:bsit|bscs|capstone project and research|prepared by|approved by)\b',
+    caseSensitive: false,
+  ).hasMatch(text)) {
+    return false;
+  }
+  return RegExp(
+    r'\b(?:schedule|defense|redefense|proposal|examination|colloquium)\b',
+    caseSensitive: false,
+  ).hasMatch(text);
 }
 
 Map<String, String> _readMetadataRow(
@@ -883,116 +1010,66 @@ Map<String, String> _readMetadataRow(
   bool isPreamble = false,
 }) {
   final result = <String, String>{};
-  final semesterRegex = RegExp(
-    r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b',
-    caseSensitive: false,
-  );
-
   for (var i = 0; i < row.length; i++) {
-    final cell = row[i].trim();
+    final rawCell = row[i].trim();
+    final cell =
+        i + 1 < row.length &&
+            RegExp(r'^\d{4}$').hasMatch(row[i + 1].trim()) &&
+            _isDateString(rawCell)
+        ? '$rawCell, ${row[i + 1].trim()}'
+        : rawCell;
     if (cell.isEmpty) continue;
-    final normalized = _normalizeHeader(cell);
-    final next = i + 1 < row.length ? row[i + 1].trim() : '';
-    final inlineParts = cell.split(RegExp(r':\s*'));
-    final inlineValue = inlineParts.length > 1
-        ? inlineParts.sublist(1).join(':').trim()
-        : '';
-    final value = inlineValue.isNotEmpty ? inlineValue : next;
-
+    final explicit = RegExp(
+      r'^(stage|defense stage|event|pit event|date|defense date|semester|term|room|venue)\s*:\s*(.+)$',
+      caseSensitive: false,
+    ).firstMatch(cell);
+    final key = _normalizeHeader(explicit?.group(1) ?? cell);
+    final value =
+        explicit?.group(2) ?? (i + 1 < row.length ? row[i + 1].trim() : '');
     if (value.isNotEmpty) {
-      if (['stage', 'defensestage', 'event', 'pitevent'].contains(normalized)) {
+      if (['stage', 'defensestage', 'event', 'pitevent'].contains(key)) {
         result['stage'] = value;
       }
-      if (['date', 'defensedate', 'scheduleddate'].contains(normalized)) {
+      if (['date', 'defensedate', 'scheduleddate'].contains(key)) {
         result['date'] = value;
       }
-      if (['semester', 'term'].contains(normalized)) {
-        result['semester'] = value;
-      }
-      if (['room', 'venue', 'roomvenue'].contains(normalized)) {
-        result['room'] = value;
-      }
+      if (['room', 'venue', 'roomvenue'].contains(key)) result['room'] = value;
+      if (['semester', 'term'].contains(key)) result['semester'] = value;
     }
-
-    if (result['semester'] == null || result['semester']!.isEmpty) {
-      final semMatch = semesterRegex.firstMatch(cell);
-      if (semMatch != null) {
-        final rawSem = semMatch.group(1)!.toLowerCase();
-        if (rawSem.contains('1st')) {
-          result['semester'] = '1st Semester';
-        } else if (rawSem.contains('2nd')) {
-          result['semester'] = '2nd Semester';
-        } else if (rawSem.contains('summer')) {
-          result['semester'] = 'Summer';
-        }
+    for (final segment in cell.split('|')) {
+      final text = segment.trim();
+      if (text.isEmpty) continue;
+      if (_isRoomString(text)) {
+        result['room'] ??= text;
+        continue;
       }
-    }
-
-    final combinedWithNext =
-        (i + 1 < row.length && RegExp(r'^\d{4}$').hasMatch(row[i + 1].trim()))
-        ? '$cell, ${row[i + 1].trim()}'
-        : cell;
-
-    final dayDateMatch = RegExp(
-      r'(?:DAY\s*\d+\s*[-â€“]\s*)?([A-Za-z]+\s+\d{1,2}(?:,?\s+\d{4})?)',
-      caseSensitive: false,
-    ).firstMatch(combinedWithNext);
-    if (dayDateMatch != null && dayDateMatch.group(1) != null) {
-      var extractedDate = dayDateMatch.group(1)!.trim();
-      extractedDate = extractedDate
-          .replaceAll(
-            RegExp(r'^DAY\s*\d+\s*[-â€“]\s*', caseSensitive: false),
-            '',
-          )
-          .trim();
-      if (_isDateString(extractedDate)) {
-        result['date'] ??= extractedDate;
+      final range = RegExp(
+        r'\b[A-Za-z]+\s+\d{1,2}\s*[-–—]\s*\d{1,2}',
+        caseSensitive: false,
+      ).hasMatch(text);
+      final human = RegExp(
+        r'\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}\b',
+        caseSensitive: false,
+      ).firstMatch(text);
+      if (!range && human != null) {
+        result['date'] ??= human.group(0)!;
+        continue;
       }
-    } else if (result['date'] == null && _isDateString(cell)) {
-      result['date'] = cell
-          .replaceAll(
-            RegExp(r'^DAY\s*\d+\s*[-â€“]\s*', caseSensitive: false),
-            '',
-          )
-          .trim();
-    } else if (result['room'] == null && _isRoomString(cell)) {
-      result['room'] = cell;
-    } else if (result['stage'] == null) {
-      if (_matchesConfiguredStage(cell, configuredStages) ||
-          _isSessionDividerString(cell)) {
-        result['stage'] = cell;
+      if (RegExp(r'^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}$').hasMatch(text)) {
+        result['date'] ??= text;
+        continue;
       }
+      final semester = RegExp(
+        r'\b(1st|2nd|Summer)\s*(?:Semester|sem)\b',
+        caseSensitive: false,
+      ).firstMatch(text);
+      if (semester != null) {
+        result['semester'] ??= '${semester.group(1)} Semester';
+        continue;
+      }
+      if (_stageHeading(text, configuredStages)) result['stage'] ??= text;
     }
   }
-
-  final nonEmpty = row.map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
-  if (nonEmpty.length == 1) {
-    final single = nonEmpty.first;
-    final dayDateMatch = RegExp(
-      r'(?:DAY\s*\d+\s*[-â€“]\s*)?([A-Za-z]+\s+\d{1,2},?\s+\d{4})',
-      caseSensitive: false,
-    ).firstMatch(single);
-    if (dayDateMatch != null && dayDateMatch.group(1) != null) {
-      final extractedDate = dayDateMatch.group(1)!.trim();
-      if (_isDateString(extractedDate)) {
-        result['date'] ??= extractedDate;
-      }
-    } else if (_isDateString(single)) {
-      result['date'] ??= single;
-    } else if (_isRoomString(single)) {
-      result['room'] ??= single;
-    } else if (result['stage'] == null) {
-      if (isPreamble) {
-        // In preamble before column headers, any single cell that is not a date,
-        // room, or semester is the preamble stage/title header!
-        result['stage'] = single;
-      } else if (_matchesConfiguredStage(single, configuredStages) ||
-          _isSessionDividerString(single)) {
-        result['stage'] = single;
-      }
-    }
-  }
-
   return result;
 }
 
@@ -1031,7 +1108,9 @@ _TimeRange _parseTimeRange(String raw) {
       final startHour = int.tryParse(startHourMatch?.group(1) ?? '') ?? 0;
       final endHourMatch = RegExp(r'^(\d{1,2})').firstMatch(endStr);
       final endHour = int.tryParse(endHourMatch?.group(1) ?? '') ?? 0;
-      if (startHour <= endHour || endHour == 12) {
+      if (startHour == 12 ||
+          startHour <= endHour && endHour != 12 ||
+          endHour == 12 && startHour < 7) {
         startStr += ' PM';
       } else {
         startStr += ' AM';
@@ -1072,6 +1151,7 @@ String _parseTime(String raw) {
   var hour = int.tryParse(match.group(1) ?? '') ?? 0;
   final minute = int.tryParse(match.group(2) ?? '0') ?? 0;
 
+  if (meridiem.isNotEmpty && (hour < 1 || hour > 12)) return '';
   if (meridiem == 'PM' && hour < 12) {
     hour += 12;
   }
@@ -1079,7 +1159,7 @@ String _parseTime(String raw) {
     hour = 0;
   }
   // In typical academic schedules, afternoon slots like "1:00" to "6:00" without meridiem are PM
-  if (meridiem.isEmpty && hour >= 1 && hour <= 6) {
+  if (meridiem.isEmpty && !text.startsWith('0') && hour >= 1 && hour <= 6) {
     hour += 12;
   }
 
@@ -1092,9 +1172,7 @@ String _parseTime(String raw) {
 int _minutesBetween(String start, String end) {
   final startMinutes = _timeMinutes(start);
   var endMinutes = _timeMinutes(end);
-  if (endMinutes <= startMinutes) {
-    endMinutes += 24 * 60;
-  }
+  // Negative/zero intervals stay invalid; never wrap into the next day.
   return endMinutes - startMinutes;
 }
 
@@ -1129,9 +1207,7 @@ List<List<String>> _csvToMatrix(String csv) {
       }
       currentRow.add(cell.toString().trim());
       cell.clear();
-      if (currentRow.any((item) => item.isNotEmpty)) {
-        rows.add(List<String>.from(currentRow));
-      }
+      rows.add(List<String>.from(currentRow));
       currentRow.clear();
     } else {
       cell.write(char);

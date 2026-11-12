@@ -147,7 +147,7 @@ void main() {
       'workspaceYear': '1st Year',
       'workspaceSection': 'BSIT-1A',
     });
-    expect(find.text('PIT Instructor · BSIT-1A'), findsOneWidget);
+    expect(find.text('PIT Instructor · 1st Year (BSIT-1A)'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

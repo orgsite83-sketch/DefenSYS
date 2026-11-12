@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../navigation/staff_workspaces.dart';
 import '../../navigation/workspace_preference.dart';
@@ -23,7 +22,6 @@ import '../../services/documenter_provider.dart';
 import '../../services/defense/team_defense_provider.dart';
 import '../../services/network/authenticated_client.dart';
 import '../../theme/defensys_tokens.dart';
-import '../shadcn/defensys_action_menu.dart';
 
 void watchStaffWorkspaceAssignments(WidgetRef ref) {
   ref.listen(dataRefreshProvider, (previous, next) {
@@ -105,8 +103,10 @@ class StaffWorkspaceSwitcher extends ConsumerWidget {
     this.userOverride,
     this.onSwitched,
     this.isWeb = kIsWeb,
+    this.currentLocation,
   });
   final bool isWeb;
+  final String? currentLocation;
   final bool collapsed;
   final Future<bool> Function()? beforeSwitch;
   final Map<String, dynamic>? userOverride;
@@ -123,50 +123,134 @@ class StaffWorkspaceSwitcher extends ConsumerWidget {
         )
         .toList();
     if (options.length < 2) return const SizedBox.shrink();
-    final uri = GoRouterState.of(context).uri;
-    final current = StaffWorkspace.resolve(user, uri.toString());
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: collapsed ? 8 : 10,
-        vertical: 6,
-      ),
-      child: DefensysActionMenu(
-        label: 'Switch workspace',
-        wrapLabel: true,
-        triggerLabel: collapsed
-            ? null
-            : current?.key == 'instructor'
-            ? 'PIT Instructor · ${current?.section ?? current?.year}'
-            : current?.label ?? 'Workspace',
-        triggerIcon: LucideIcons.chevronsUpDown,
-        triggerForegroundColor: DefensysTokens.textPrimaryOf(context),
-        items: [
-          for (final option in options)
-            DefensysMenuItem(
-              label: option.label,
-              icon: option.matches(uri)
-                  ? Icons.check_rounded
-                  : Icons.workspaces_outline,
-              onPressed: option.matches(uri)
-                  ? null
-                  : () async {
-                      if (beforeSwitch != null && !await beforeSwitch!()) {
-                        return;
-                      }
-                      if (!context.mounted ||
-                          !await prepareStaffWorkspaceSwitch(context, ref)) {
-                        return;
-                      }
-                      if (!context.mounted) return;
-                      FocusManager.instance.primaryFocus?.unfocus();
-                      await rememberWorkspace(ref, option.location);
-                      if (!context.mounted) return;
-                      clearStaffWorkspaceData(ref);
-                      onSwitched?.call();
-                      if (context.mounted) context.go(option.location);
-                    },
+    final uri = currentLocation == null
+        ? GoRouterState.of(context).uri
+        : Uri.parse(currentLocation!);
+    final current =
+        StaffWorkspace.resolve(user, uri.toString()) ?? options.first;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark
+        ? const Color(0xFFF4F4F5)
+        : const Color(0xFF0F172A);
+
+    Future<void> select(String location) async {
+      final option = options.firstWhere((item) => item.location == location);
+      if (option.matches(uri)) return;
+      if (beforeSwitch != null && !await beforeSwitch!()) return;
+      if (!context.mounted || !await prepareStaffWorkspaceSwitch(context, ref)) {
+        return;
+      }
+      if (!context.mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+      await rememberWorkspace(ref, option.location);
+      if (!context.mounted) return;
+      clearStaffWorkspaceData(ref);
+      onSwitched?.call();
+      if (context.mounted) context.go(option.location);
+    }
+
+    // Preserve the established faculty sidebar switcher for every staff duty.
+    if (collapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: PopupMenuButton<String>(
+          tooltip: 'Switch workspace',
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
+          ),
+          color: DefensysTokens.panelOf(context),
+          elevation: 4,
+          offset: const Offset(50, 0),
+          onSelected: select,
+          itemBuilder: (context) => [
+            for (final option in options)
+              PopupMenuItem(
+                value: option.location,
+                height: 36,
+                child: Text(
+                  option.label,
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    fontSize: 12.5,
+                    fontWeight: option.location == current.location
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: option.location == current.location
+                        ? DefensysTokens.maroonOf(context)
+                        : textColor,
+                  ),
+                ),
+              ),
+          ],
+          child: Container(
+            width: 40,
+            height: 32,
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF28272D) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: DefensysTokens.borderOf(context)),
             ),
-        ],
+            child: Center(
+              child: Icon(
+                Icons.swap_horiz_rounded,
+                size: 16,
+                color: isDark
+                    ? const Color(0xFFA1A1AA)
+                    : const Color(0xFF475569),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF28272D) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: DefensysTokens.borderOf(context), width: 1),
+      ),
+      child: Tooltip(
+        message: 'Switch workspace',
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            isExpanded: true,
+            value: current.location,
+            dropdownColor: DefensysTokens.panelOf(context),
+            iconEnabledColor: isDark
+                ? const Color(0xFFA1A1AA)
+                : const Color(0xFF64748B),
+            icon: const Icon(Icons.unfold_more_rounded, size: 18),
+            style: TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              color: textColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            items: [
+              for (final option in options)
+                DropdownMenuItem(
+                  value: option.location,
+                  child: Text(
+                    option.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      color: textColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+            onChanged: (location) {
+              if (location != null) select(location);
+            },
+          ),
+        ),
       ),
     );
   }

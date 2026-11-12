@@ -3,7 +3,7 @@ from defensys_backend.person_names import name_encoding_issue
 from contextvars import ContextVar
 from django.contrib.auth import get_user_model
 
-from .person_names import PersonNames, PersonNameIndex
+from defensys_backend.person_matching import PersonNameIndex, DEFAULT_PERSON_NAMES, PREFIX_PATTERNS, SUFFIX_PATTERNS
 from .models import StudentTeam, TeamMembership
 from .serializers import BulkTeamRowSerializer, display_name
 from .team_levels import prepare_bulk_row, program_label_for_row, user_is_pit_lead_only
@@ -68,66 +68,7 @@ def imported_concept_requirement(data):
         ('' if policy['required_count'] == 1 else 's'), 'stage_label': stage.label if stage else None}
 
 
-PREFIX_PATTERNS = [
-    r'associate\s+professor',
-    r'assistant\s+professor',
-    r'assoc\.?\s*prof\.?',
-    r'asst\.?\s*prof\.?',
-    r'prof(?:essor)?\.?',
-    r'dr\.?',
-    r'doctor',
-    r'engr\.?',
-    r'engineer',
-    r'atty\.?',
-    r'attorney',
-    r'arch(?:itect)?\.?',
-    r'dean',
-    r'chair(?:person)?',
-    r'inst(?:ructor)?\.?',
-    r'lect(?:urer)?\.?',
-    r'hon(?:orable)?\.?',
-    r'rev(?:erend)?\.?',
-    r'pastor|pst\.?',
-    r'fr\.?|father',
-    r'mr\.?',
-    r'mrs\.?',
-    r'ms\.?',
-    r'mx\.?',
-    r'sir',
-    r'ma[\'\’]?am|mam',
-]
-
-SUFFIX_PATTERNS = [
-    r'ph\.?d\.?',
-    r'd\.?eng\.?',
-    r'd\.?i\.?t\.?',
-    r'd\.?b\.?a\.?',
-    r'ed\.?d\.?',
-    r'm\.?d\.?',
-    r'j\.?d\.?',
-    r'sc\.?d\.?',
-    r'm\.?sc\.?',
-    r'm\.?s\.?',
-    r'm\.?a\.?',
-    r'm\.?eng\.?',
-    r'm\.?i\.?t\.?',
-    r'm\.?s\.?i\.?t\.?',
-    r'm\.?b\.?a\.?',
-    r'm\.?p\.?a\.?',
-    r'm\.?ed\.?',
-    r'b\.?sc\.?',
-    r'b\.?s\.?',
-    r'b\.?a\.?',
-    r'b\.?s\.?i\.?t\.?',
-    r'p\.?e\.?',
-    r'c\.?p\.?a\.?',
-    r'rce|ece|ree|rme',
-    r'pmp|cisa|cissp',
-    r'jr\.?|sr\.?',
-    r'ii|iii|iv|v',
-]
-
-_person_names = PersonNames(PREFIX_PATTERNS, SUFFIX_PATTERNS[:-2])
+_person_names = DEFAULT_PERSON_NAMES
 clean_person_name = _person_names.clean
 
 

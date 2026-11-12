@@ -900,6 +900,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
           StaffWorkspaceSwitcher(
             collapsed: isCollapsed,
+            currentLocation: workspaceOption.type == FacultyWorkspace.documenter
+                ? AppRoutes.documenter
+                : _workspaceLocation(FacultyRoutes.pathForSection(_activeSection), workspaceOption),
             userOverride: {
               ...?ref.watch(authProvider).user,
               'staff_workspaces': roles,

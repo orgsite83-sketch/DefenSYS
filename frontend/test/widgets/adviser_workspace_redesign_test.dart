@@ -139,6 +139,114 @@ class _UpcomingDefenseNotifier extends AdviserDefenseNotifier {
 }
 
 void main() {
+  for (final postReady in [false, true]) {
+    for (final grouped in [false, true]) {
+      testWidgets(
+        'compact upload count matches visible requirements (post: $postReady, grouped: $grouped)',
+        (tester) async {
+          tester.view.physicalSize = const Size(1600, 1100);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          final paper = <String, dynamic>{
+            'id': 'PAPER',
+            'label': 'Chapter 1-3',
+            'type': 'pre',
+            'required': true,
+            'uploaded': true,
+            'submission': {
+              'status': 'accepted',
+              if (grouped)
+                'files': [
+                  {'id': 1, 'slot_key': 'paper', 'status': 'accepted'},
+                  {'id': 2, 'slot_key': 'deck', 'status': 'accepted'},
+                ],
+            },
+            if (grouped) ...{
+              'file_policy': {'mode': 'named'},
+              'document_slots': [
+                {'key': 'paper', 'required': true},
+                {'key': 'deck', 'required': true},
+              ],
+            },
+          };
+          final post = [
+            {
+              'id': 'FINAL',
+              'label': 'Final Manuscript',
+              'type': 'post',
+              'required': true,
+            },
+            {
+              'id': 'MINUTES',
+              'label': 'Signed minutes',
+              'type': 'post',
+              'source': 'defense_minutes',
+              'required': true,
+            },
+          ];
+          final state = CapstoneDeliverablesState(
+            selectedStage: 'Proposal Defense',
+            stageOptions: const ['Proposal Defense'],
+            teams: [
+              {
+                'id': 7,
+                'name': 'SysIgnite',
+                'current_stage': 'Proposal Defense',
+                'stages': [
+                  {
+                    'stage_label': 'Proposal Defense',
+                    'deliverables_configured': true,
+                    'required_complete': true,
+                    'endorsed': true,
+                    // Upload permission alone must not expose post-defense work.
+                    'archive_unlocked': true,
+                    'post_defense_ready': postReady,
+                    'pre': [paper],
+                    'post': post,
+                  },
+                ],
+              },
+            ],
+          );
+          await pumpDefensysWidget(
+            tester,
+            SingleChildScrollView(
+              child: DeliverablesTablePane(
+                state: state,
+                isAdviser: true,
+                compactFaculty: true,
+              ),
+            ),
+            overrides: [
+              adviserDefenseProvider.overrideWith(
+                _ScheduledDefenseNotifier.new,
+              ),
+              adviserGradingProvider.overrideWith(_PublishedGradeNotifier.new),
+            ],
+          );
+
+          final uploaded = grouped ? 2 : 1;
+          final required = uploaded + (postReady ? 2 : 0);
+          expect(
+            find.text('$uploaded/$required files uploaded'),
+            findsOneWidget,
+          );
+          expect(
+            find.text('${postReady ? 3 : 1} deliverables'),
+            findsOneWidget,
+          );
+          expect(find.text('Chapter 1-3'), findsOneWidget);
+          expect(
+            find.text('Final Manuscript'),
+            postReady ? findsOneWidget : findsNothing,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   testWidgets('endorsement alone keeps post-defense files hidden', (
     tester,
   ) async {
