@@ -15,6 +15,7 @@ abstract final class WorkspaceAccess {
               'adviser',
               'pit_lead',
               'instructor',
+              'documenter',
             }.contains(option.key),
           ));
 
@@ -200,6 +201,7 @@ abstract final class WorkspaceAccess {
                 'adviser',
                 'pit_lead',
                 'instructor',
+                'documenter',
               }.contains(option.key) &&
               supportsFacultyRoute(option.key, location)) {
             return option.at(location, parameters: requested.queryParameters);

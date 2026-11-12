@@ -37,13 +37,14 @@ void main() {
     bool dark = false,
     bool collapsed = false,
     Map<String, dynamic>? user,
+    String initialLocation = '/admin/overview',
   }) async {
     await loadPreviewFonts();
     final container = ProviderContainer(
       overrides: [authProvider.overrideWith(_Auth.new)],
     );
     final router = GoRouter(
-      initialLocation: '/admin/overview',
+      initialLocation: initialLocation,
       navigatorKey: rootNavigatorKey,
       routes: [
         for (final path in ['/admin/overview', '/faculty/dashboard'])
@@ -89,6 +90,105 @@ void main() {
     await tester.pumpAndSettle();
     return (router, container);
   }
+
+  testWidgets('documenter-only account hides the workspace selector', (
+    tester,
+  ) async {
+    await showSwitcher(
+      tester,
+      user: const {
+        'id': 7,
+        'role': 'faculty',
+        'is_documenter': true,
+        'has_staff_workspace': true,
+      },
+    );
+    expect(find.byTooltip('Switch workspace'), findsNothing);
+    expect(find.text('Staff web workspace'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final collapsed in [false, true]) {
+    testWidgets(
+      'adviser with panelist access has no sidebar switcher collapsed=$collapsed',
+      (tester) async {
+        await showSwitcher(
+          tester,
+          collapsed: collapsed,
+          initialLocation: '/faculty/dashboard?workspace=adviser',
+          user: const {
+            'role': 'faculty',
+            'is_adviser': true,
+            'is_panelist': true,
+          },
+        );
+        expect(find.byTooltip('Switch workspace'), findsNothing);
+        expect(find.text('Panelist'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('sidebar lists only web destinations collapsed=$collapsed', (
+      tester,
+    ) async {
+      final (router, _) = await showSwitcher(
+        tester,
+        collapsed: collapsed,
+        initialLocation: '/faculty/dashboard?workspace=adviser',
+        user: const {
+          'role': 'faculty',
+          'is_adviser': true,
+          'is_documenter': true,
+          'is_panelist': true,
+        },
+      );
+      await tester.tap(find.byTooltip('Switch workspace'));
+      await tester.pumpAndSettle();
+      expect(find.text('Project Adviser'), findsWidgets);
+      expect(find.text('Documenter'), findsWidgets);
+      expect(find.text('Panelist'), findsNothing);
+      await tester.tap(find.text('Documenter').last);
+      await tester.pumpAndSettle();
+      expect(
+        router.routeInformationProvider.value.uri.toString(),
+        '/faculty/dashboard?workspace=documenter',
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets(
+    'browser switches to documenter web workspace and back with saved context',
+    (tester) async {
+      final (router, container) = await showSwitcher(
+        tester,
+        user: const {
+          'id': 7,
+          'role': 'admin',
+          'is_adviser': true,
+          'is_documenter': true,
+        },
+      );
+      await tester.tap(find.byTooltip('Switch workspace'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Documenter').last);
+      await tester.pumpAndSettle();
+      const documenter = '/faculty/dashboard?workspace=documenter';
+      expect(router.routeInformationProvider.value.uri.toString(), documenter);
+      expect(
+        await container.read(workspacePreferenceProvider.future),
+        documenter,
+      );
+      expect(find.text('Documenter'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Switch workspace'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Admin').last);
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, '/admin/overview');
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'API requests capture the selected workspace after real navigation',

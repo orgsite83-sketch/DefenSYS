@@ -146,6 +146,54 @@ class RolloverRegressionTests(APITestCase):
         self.assertEqual(row['retain_result']['target_semester_id'], self.next_first.pk)
         self.assertEqual(row['retain_result']['year_level'], '2nd Year')
 
+    def test_unlisted_student_can_promote_into_active_next_term_with_blank_section(self):
+        self.next_first.is_active = True
+        self.next_first.save()
+        source = self.record(semester=self.second, year='3rd Year', section='')
+        preview = self.client.post('/api/users/academic-records/rollover-preview/',
+            {'students': []}, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        row = preview.data['rows'][0]
+        self.assertEqual(row['action_default'], 'drop')
+        self.assertTrue(row['not_in_csv'])
+        result = row['promote_result']
+        self.assertEqual((result['year_level'], result['semester'], result['target_semester_id'],
+                          result['section']), ('4th Year', Semester.FIRST, self.next_first.pk, ''))
+        self.assertFalse(result['section_automatic'])
+        self.assertEqual(StudentAcademicRecord.objects.count(), 1)
+        response = self.confirm({'record_id': source.pk, 'action': 'promote', **result})
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual((response.data['created'][0]['year_level'],
+                          response.data['created'][0]['section']), ('4th Year', ''))
+        source.refresh_from_db()
+        self.assertEqual((source.year_level, source.section), ('3rd Year', ''))
+        self.assertFalse(StudentTeam.objects.exists())
+
+    def test_unlisted_student_retain_still_preserves_source_standing(self):
+        self.next_first.is_active = True
+        self.next_first.save()
+        source = self.record(semester=self.second, year='3rd Year')
+        preview = self.client.post('/api/users/academic-records/rollover-preview/',
+            {'students': []}, format='json')
+        result = preview.data['rows'][0]['retain_result']
+        self.assertEqual(result['year_level'], '3rd Year')
+        self.assertEqual(result['section'], 'BSIT-3A')
+        response = self.confirm({'record_id': source.pk, 'action': 'retain', **result})
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['created'][0]['year_level'], '3rd Year')
+
+    def test_unlisted_promotion_does_not_infer_skipped_terms(self):
+        source = self.record(year='3rd Year')
+        self.next_first.is_active = True
+        self.next_first.save()
+        preview = self.client.post('/api/users/academic-records/rollover-preview/',
+            {'students': []}, format='json')
+        result = preview.data['rows'][0]['promote_result']
+        self.assertIsNone(result['target_semester_id'])
+        response = self.confirm({'record_id': source.pk, 'action': 'promote', **result})
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(StudentAcademicRecord.objects.count(), 1)
+
     def test_missing_target_and_backwards_target_are_rejected(self):
         source = self.record(semester=self.second)
         self.next_first.delete()

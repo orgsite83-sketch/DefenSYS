@@ -703,7 +703,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             IconButton(
               icon: const Icon(Icons.edit_note_rounded),
               tooltip: 'Open documenter app workspace',
-              onPressed: () => context.push(AppRoutes.documenter),
+              onPressed: () => switchStaffWorkspace(
+                context,
+                ref,
+                AppRoutes.documenter,
+              ),
             ),
           if (WorkspaceAccess.canEvaluate(
             ref.watch(authProvider).user ?? widget.userData ?? {},
@@ -900,9 +904,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
           StaffWorkspaceSwitcher(
             collapsed: isCollapsed,
-            currentLocation: workspaceOption.type == FacultyWorkspace.documenter
-                ? AppRoutes.documenter
-                : _workspaceLocation(FacultyRoutes.pathForSection(_activeSection), workspaceOption),
+            currentLocation: _workspaceLocation(
+              FacultyRoutes.pathForSection(_activeSection), workspaceOption),
             userOverride: {
               ...?ref.watch(authProvider).user,
               'staff_workspaces': roles,

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'admin_route_paths.dart';
 
 /// A URL-addressable duty, independent of the account's primary role.
@@ -8,10 +10,22 @@ class StaffWorkspace {
   final String? year;
   final String? section;
 
-  String get location => switch (key) {
+  /// Panelist evaluation uses the app shell, even when opened in a browser.
+  bool get hasWebWorkspace => const {
+    'admin',
+    'adviser',
+    'pit_lead',
+    'instructor',
+    'documenter',
+    'faculty',
+  }.contains(key);
+
+  String get location => locationFor();
+
+  String locationFor({bool isWeb = kIsWeb}) => switch (key) {
     'admin' => AdminRoutes.overview,
     'panelist' => AppRoutes.panelist,
-    'documenter' => AppRoutes.documenter,
+    'documenter' => isWeb ? at(FacultyRoutes.dashboard) : AppRoutes.documenter,
     'faculty' => FacultyRoutes.dashboard,
     _ => at(FacultyRoutes.dashboard),
   };
@@ -29,7 +43,10 @@ class StaffWorkspace {
   bool matches(Uri uri) => switch (key) {
     'admin' => uri.path.startsWith('/admin'),
     'panelist' => uri.path == AppRoutes.panelist,
-    'documenter' => uri.path.startsWith('/documenter'),
+    'documenter' =>
+      uri.path.startsWith('/documenter') ||
+          (uri.path.startsWith('/faculty') &&
+              uri.queryParameters['workspace'] == key),
     _ =>
       uri.path.startsWith('/faculty') &&
           uri.queryParameters['workspace'] == key &&
@@ -72,8 +89,12 @@ class StaffWorkspace {
     ];
     if (user['role'] == 'faculty' &&
         !options.any(
-          (option) =>
-              const {'adviser', 'pit_lead', 'instructor'}.contains(option.key),
+          (option) => const {
+            'adviser',
+            'pit_lead',
+            'instructor',
+            'documenter',
+          }.contains(option.key),
         ) &&
         user['has_staff_workspace'] != false) {
       options.add(const StaffWorkspace('faculty', 'Staff web workspace'));

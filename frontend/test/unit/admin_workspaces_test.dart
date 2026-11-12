@@ -7,6 +7,104 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test(
+    'documenter-only accounts have one workspace without a staff fallback',
+    () {
+      for (final hint in [null, false, true]) {
+        final user = {
+          'role': 'faculty',
+          'is_documenter': true,
+          if (hint != null) 'has_staff_workspace': hint,
+        };
+        expect(StaffWorkspace.available(user).map((option) => option.key), [
+          'documenter',
+        ]);
+      }
+      expect(
+        StaffWorkspace.available({
+          'role': 'faculty',
+          'is_documenter': true,
+          'is_pit_lead': true,
+          'pit_lead_year': '1st Year',
+        }).map((option) => option.key),
+        ['pit_lead', 'documenter'],
+      );
+      // Older faculty/uploader accounts still need their existing web home.
+      for (final user in [
+        {'role': 'faculty'},
+        {'role': 'faculty', 'is_uploader': true},
+      ]) {
+        expect(StaffWorkspace.available(user).map((option) => option.key), [
+          'faculty',
+        ]);
+      }
+    },
+  );
+
+  test(
+    'documenter destinations preserve platform and enforce role context',
+    () {
+      const documenter = StaffWorkspace('documenter', 'Documenter');
+      const web = '/faculty/dashboard?workspace=documenter';
+      expect(documenter.locationFor(isWeb: true), web);
+      expect(documenter.locationFor(isWeb: false), AppRoutes.documenter);
+      for (final role in ['faculty', 'admin']) {
+        final user = {'role': role, 'is_documenter': true};
+        expect(StaffWorkspace.resolve(user, web)?.key, 'documenter');
+        expect(
+          StaffWorkspace.resolve(user, AppRoutes.documenter)?.key,
+          'documenter',
+        );
+        for (final path in [
+          web,
+          '/faculty/documenter-records?workspace=documenter',
+          '/faculty/profile?workspace=documenter',
+        ]) {
+          expect(WorkspaceAccess.redirect(user, path, isWeb: true), isNull);
+        }
+        expect(
+          WorkspaceAccess.home(user, isWeb: true, preferredWorkspace: web),
+          web,
+        );
+        expect(
+          WorkspaceAccess.redirect(
+            user,
+            AppRoutes.documenter,
+            isWeb: true,
+            viewportWidth: 1440,
+          ),
+          isNull,
+        );
+        expect(
+          WorkspaceAccess.redirect(
+            user,
+            '/documenter/minutes/42',
+            isWeb: true,
+            viewportWidth: 1440,
+          ),
+          isNull,
+        );
+        for (final isWeb in [true, false]) {
+          expect(
+            WorkspaceAccess.redirect(
+              user,
+              AppRoutes.documenter,
+              isWeb: isWeb,
+              viewportWidth: 390,
+            ),
+            isNull,
+          );
+        }
+        final revoked = {...user, 'is_documenter': false};
+        expect(StaffWorkspace.resolve(revoked, web), isNull);
+        expect(
+          WorkspaceAccess.redirect(revoked, web, isWeb: true),
+          role == 'admin' ? AdminRoutes.overview : FacultyRoutes.dashboard,
+        );
+      }
+    },
+  );
+
   const admin = {'role': 'admin', 'is_adviser': true};
   test('admin adviser has distinct admin and adviser destinations', () {
     final options = StaffWorkspace.available(admin);

@@ -12,6 +12,7 @@ import 'package:defensys/screens/web/admin/user_management/access_control/access
 import 'package:http/http.dart' as http;
 import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/screens/web/admin/grade_center_team_detail_screen.dart';
+import 'package:defensys/screens/web/admin/grade_center_screen.dart';
 import 'package:defensys/screens/web/admin/defense_board_screen.dart';
 import 'package:defensys/screens/web/admin/defense_board/components/defense_schedule_bulk_import_view.dart';
 import 'package:defensys/screens/web/admin/student_teams_screen.dart';
@@ -1210,10 +1211,8 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(navIcon(grades));
           await tester.pumpAndSettle();
-          expect(
-            router.state.uri.toString(),
-            '$prefix/grade-center/grades/6?locked=1',
-          );
+          // Reselecting grades above exits detail before switching sections.
+          expect(router.state.uri.path, '$prefix/grade-center');
           expectSelection(grades, board);
 
           // The highlight also follows navigation that bypasses a sidebar tap.
@@ -1296,6 +1295,46 @@ void main() {
         expect(router.state.uri.path, '$prefix/student-teams/1');
         expect(tester.state(find.byType(TeamDetailPage)), same(teamState));
         expect(team.loads, 3);
+      },
+    );
+
+    testWidgets(
+      '${faculty ? 'faculty' : 'admin'} reselecting Evaluation & Grades exits team-origin detail to the main page',
+      (tester) async {
+        final prefix = faculty ? '/faculty' : '/admin';
+        final container = await pumpWorkspace(
+          tester,
+          '$prefix/student-teams/1?tab=academic-progress',
+          faculty: faculty,
+        );
+        final router = container.read(appRouterProvider);
+
+        await tester.ensureVisible(find.text('View evaluation details'));
+        await tester.tap(find.text('View evaluation details'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/grade-center/grades/6');
+        await tester.tap(find.text('Back to Team AgriSense'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/student-teams/1');
+        expect(router.state.uri.queryParameters['tab'], 'academic-progress');
+
+        await tester.ensureVisible(find.text('View evaluation details'));
+        await tester.tap(find.text('View evaluation details'));
+        await tester.pumpAndSettle();
+        expect(find.text('Back to Team AgriSense'), findsOneWidget);
+        for (var click = 0; click < 3; click++) {
+          await tester.tap(find.text('Evaluation & Grades').first);
+          await tester.pumpAndSettle();
+          expect(router.state.uri.path, '$prefix/grade-center');
+          expect(
+            router.state.uri.queryParameters.containsKey('fromTeam'),
+            isFalse,
+          );
+          expect(find.byType(GradeCenterScreen), findsOneWidget);
+          expect(find.byType(GradeCenterTeamDetailScreen), findsNothing);
+          expect(find.byType(TeamDetailPage), findsNothing);
+        }
+        expect(tester.takeException(), isNull);
       },
     );
 

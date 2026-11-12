@@ -6,6 +6,7 @@ import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/navigation/app_router.dart';
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/navigation/workspace_preference.dart';
+import 'package:defensys/navigation/workspace_access.dart';
 import 'package:defensys/l10n/app_localizations.dart';
 import 'package:defensys/services/connectivity_provider.dart';
 import 'package:defensys/screens/web/faculty/documenter/minutes_form_screen.dart';
@@ -287,13 +288,14 @@ void main() {
   );
   setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() => registerFallbackValue(Uri.parse('https://example.test')));
-  for (final (width, pitLead) in [
-    (1400.0, false),
-    (700.0, false),
-    (1400.0, true),
+  for (final (width, pitLead, explicitDocumenter) in [
+    (1400.0, false, false),
+    (700.0, false, false),
+    (1400.0, true, false),
+    (1400.0, true, true),
   ]) {
     testWidgets(
-      'web documenter navigates assignments and records at $width, PIT lead=$pitLead',
+      'web documenter navigates assignments and records at $width, PIT lead=$pitLead, explicit=$explicitDocumenter',
       (tester) async {
         tester.view.physicalSize = Size(width, 1000);
         tester.view.devicePixelRatio = 1;
@@ -301,7 +303,9 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
         await tester.runAsync(() async => loadPreviewFonts());
         final router = GoRouter(
-          initialLocation: pitLead
+          initialLocation: explicitDocumenter
+              ? '/faculty/dashboard?workspace=documenter'
+              : pitLead
               ? FacultyRoutes.documenterRecords
               : FacultyRoutes.dashboard,
           routes: [
@@ -349,7 +353,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        if (pitLead) {
+        if (pitLead && !explicitDocumenter) {
           // A records deep link must keep the documenter role when returning to
           // the shared dashboard URL, even if PIT lead is the default workspace.
           expect(find.text('Team BioPulse'), findsOneWidget);
@@ -357,6 +361,7 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(find.text('Team AgriSense'), findsOneWidget);
+        expect(find.byType(NavigationBar), findsNothing);
         await capture(tester, key, 'web-assignments-${width.toInt()}');
         if (width < 1180) {
           await tester.tap(find.byTooltip('Open menu'));
@@ -449,6 +454,64 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets(
+    'top app menu switches explicitly between documenter app and web',
+    (tester) async {
+      const user = {'role': 'faculty', 'is_documenter': true};
+      final router = GoRouter(
+        initialLocation: AppRoutes.documenter,
+        redirect: (context, state) => WorkspaceAccess.redirect(
+          user,
+          state.uri.toString(),
+          isWeb: true,
+          viewportWidth: 1440,
+        ),
+        routes: [
+          for (final path in [AppRoutes.documenter, FacultyRoutes.dashboard])
+            GoRoute(
+              path: path,
+              builder: (_, state) => Scaffold(
+                body: FacultyAppWorkspaceSwitcher(
+                  currentRoute: state.uri.toString(),
+                  isWeb: true,
+                ),
+              ),
+            ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [authProvider.overrideWith(_Doc.new)],
+          child: MaterialApp.router(
+            theme: AppTheme.theme,
+            routerConfig: router,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, AppRoutes.documenter);
+      await tester.tap(find.text('Workspace'));
+      await tester.pumpAndSettle();
+      expect(find.text('Documenter web workspace'), findsOneWidget);
+      expect(find.text('Staff web workspace'), findsNothing);
+      await tester.tap(find.text('Documenter web workspace'));
+      await tester.pumpAndSettle();
+      expect(
+        router.state.uri.toString(),
+        '/faculty/dashboard?workspace=documenter',
+      );
+      await tester.tap(find.text('Workspace'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Documenter workspace'));
+      await tester.pumpAndSettle();
+      expect(router.state.uri.path, AppRoutes.documenter);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'workspace menu exposes eligible roles and honors the save guard',
     (tester) async {

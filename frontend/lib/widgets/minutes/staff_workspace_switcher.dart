@@ -118,8 +118,9 @@ class StaffWorkspaceSwitcher extends ConsumerWidget {
     final user = userOverride ?? ref.watch(authProvider).user ?? {};
     final options = StaffWorkspace.available(user)
         .where(
-          (option) =>
-              isWeb || const {'panelist', 'documenter'}.contains(option.key),
+          (option) => isWeb
+              ? option.hasWebWorkspace
+              : const {'panelist', 'documenter'}.contains(option.key),
         )
         .toList();
     if (options.length < 2) return const SizedBox.shrink();
@@ -128,25 +129,28 @@ class StaffWorkspaceSwitcher extends ConsumerWidget {
         : Uri.parse(currentLocation!);
     final current =
         StaffWorkspace.resolve(user, uri.toString()) ?? options.first;
+    String locationOf(StaffWorkspace option) =>
+        option.locationFor(isWeb: isWeb);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = isDark
         ? const Color(0xFFF4F4F5)
         : const Color(0xFF0F172A);
 
     Future<void> select(String location) async {
-      final option = options.firstWhere((item) => item.location == location);
+      final option = options.firstWhere((item) => locationOf(item) == location);
       if (option.matches(uri)) return;
       if (beforeSwitch != null && !await beforeSwitch!()) return;
-      if (!context.mounted || !await prepareStaffWorkspaceSwitch(context, ref)) {
+      if (!context.mounted ||
+          !await prepareStaffWorkspaceSwitch(context, ref)) {
         return;
       }
       if (!context.mounted) return;
       FocusManager.instance.primaryFocus?.unfocus();
-      await rememberWorkspace(ref, option.location);
+      await rememberWorkspace(ref, locationOf(option));
       if (!context.mounted) return;
       clearStaffWorkspaceData(ref);
       onSwitched?.call();
-      if (context.mounted) context.go(option.location);
+      if (context.mounted) context.go(locationOf(option));
     }
 
     // Preserve the established faculty sidebar switcher for every staff duty.
@@ -166,17 +170,17 @@ class StaffWorkspaceSwitcher extends ConsumerWidget {
           itemBuilder: (context) => [
             for (final option in options)
               PopupMenuItem(
-                value: option.location,
+                value: locationOf(option),
                 height: 36,
                 child: Text(
                   option.label,
                   style: TextStyle(
                     fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 12.5,
-                    fontWeight: option.location == current.location
+                    fontWeight: locationOf(option) == locationOf(current)
                         ? FontWeight.w700
                         : FontWeight.w500,
-                    color: option.location == current.location
+                    color: locationOf(option) == locationOf(current)
                         ? DefensysTokens.maroonOf(context)
                         : textColor,
                   ),
@@ -217,7 +221,7 @@ class StaffWorkspaceSwitcher extends ConsumerWidget {
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             isExpanded: true,
-            value: current.location,
+            value: locationOf(current),
             dropdownColor: DefensysTokens.panelOf(context),
             iconEnabledColor: isDark
                 ? const Color(0xFFA1A1AA)
@@ -232,7 +236,7 @@ class StaffWorkspaceSwitcher extends ConsumerWidget {
             items: [
               for (final option in options)
                 DropdownMenuItem(
-                  value: option.location,
+                  value: locationOf(option),
                   child: Text(
                     option.label,
                     maxLines: 1,

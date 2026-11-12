@@ -161,6 +161,49 @@ class ContinuationSectionTests(APITestCase):
         self.assertEqual(self.sections(), ['', ''])
         self.assertEqual(list(self.team.term_participations.values()), before)
 
+    def test_unlisted_rollover_promotes_migrated_roster_and_preserves_unassigned_students(self):
+        irregular = User.objects.create_user(username='sections-unassigned', role='student')
+        StudentAcademicRecord.objects.create(student=irregular, semester=self.source,
+            year_level='3rd Year', section='')
+        self.assess()
+        self.migrate()
+        before = (StudentCapstoneParticipation.objects.count(),
+                  TeamTermParticipation.objects.count(), SystemAuditLog.objects.count())
+        response = self.client.post('/api/users/academic-records/rollover-preview/',
+            {'students': []}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(before, (StudentCapstoneParticipation.objects.count(),
+                         TeamTermParticipation.objects.count(), SystemAuditLog.objects.count()))
+        self.assertFalse(StudentAcademicRecord.objects.filter(semester=self.target).exists())
+        actions = []
+        for row in response.data['rows']:
+            result = row['promote_result']
+            self.assertEqual(result['year_level'], '4th Year')
+            self.assertEqual(result['target_semester_id'], self.target.pk)
+            unassigned = row['record']['student_username'] == irregular.username
+            self.assertEqual(result['section'], '' if unassigned else 'BSIT-4A')
+            self.assertEqual(result['section_automatic'], not unassigned)
+            action = {'record_id': row['record']['id'], 'action': 'promote',
+                      'year_level': result['year_level'], 'target_semester_id': result['target_semester_id']}
+            if result['section_automatic']:
+                action['section_resolution'] = result['section_resolution']
+            else:
+                action['section'] = result['section']
+            actions.append(action)
+        response = self.client.post('/api/users/academic-records/rollover/',
+            {'actions': actions}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['created_count'], 3)
+        self.assertEqual(response.data['team_updates'], 0)
+        self.assertEqual(self.sections(), ['BSIT-4A', 'BSIT-4A'])
+        self.assertEqual(self.sections(self.source), ['BSIT-3A', 'BSIT-3A'])
+        self.assertEqual(StudentAcademicRecord.objects.get(student=irregular,
+            semester=self.target).section, '')
+        self.assertEqual(StudentCapstoneParticipation.objects.count(), before[0])
+        self.assertEqual(TeamTermParticipation.objects.count(), before[1])
+        self.team.refresh_from_db()
+        self.assertEqual((self.team.semester_id, self.team.section), (self.target.pk, 'BSIT-4A'))
+
     def test_rollover_preview_matches_commit_and_never_moves_team_again(self):
         self.assess()
         self.migrate()

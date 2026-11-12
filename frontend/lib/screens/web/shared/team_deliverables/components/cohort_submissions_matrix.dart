@@ -124,17 +124,21 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     return const Color(0xFF64748B);
   }
 
-  // Calculate deliverable completion stats truthfully
+  // Count team requirements, never system-generated minutes. Archive work joins
+  // the summary once available (or already submitted in a historical payload).
   Map<String, dynamic> _computeDeliverablesStats(Map<String, dynamic>? activeStage) {
     if (activeStage == null) {
       return {'cleared': 0, 'pending': 0, 'missing': 0, 'total': 0, 'isAllCleared': false};
     }
 
     final allItems = DeliverablesTriageHelper.items(activeStage);
-    final requiredPreItems = allItems.where((d) =>
-        d['type'] != 'post' &&
-        d['deliverable_type'] != 'post' &&
-
+    final requiredItems = allItems.where((d) =>
+        d['type'] != 'system' &&
+        d['deliverable_type'] != 'system' &&
+        d['source'] != 'defense_minutes' &&
+        ((d['type'] != 'post' && d['deliverable_type'] != 'post') ||
+            activeStage['post_defense_ready'] == true ||
+            d['submission'] is Map) &&
         d['required'] == true &&
         d['is_waived'] != true).toList();
 
@@ -142,24 +146,31 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     int pending = 0;
     int missing = 0;
 
-    for (final item in requiredPreItems) {
+    for (final item in requiredItems) {
       final sub = item['submission'] as Map?;
       final status = (sub?['status'] ?? item['submission_status'] ?? item['status'])?.toString().toLowerCase();
-      final isUploaded = item['uploaded'] == true || sub != null;
+      final files = (sub?['files'] as List? ?? [])
+          .whereType<Map>()
+          .where((file) => file['is_current'] != false)
+          .toList();
+      bool accepted(dynamic value) => const {
+        'accepted', 'approved', 'cleared', 'passed',
+      }.contains(value?.toString().toLowerCase());
+      final isAccepted = files.isNotEmpty
+          ? item['uploaded'] != false && files.every((file) => accepted(file['status']))
+          : accepted(status);
+      final hasPendingFiles = TeamWorkflowStatus.pendingFileReviewCount(item) > 0;
 
-      if (status == 'accepted' || status == 'approved' || status == 'cleared' || status == 'passed') {
+      if (isAccepted) {
         cleared++;
-      } else if (isUploaded && (status == 'rejected' || status == 'needs revision')) {
-        missing++;
-      } else if (isUploaded) {
+      } else if (hasPendingFiles) {
         pending++;
       } else {
         missing++;
       }
     }
 
-    final backendTotal = _asInt(activeStage['required_total']);
-    final total = requiredPreItems.isNotEmpty ? requiredPreItems.length : backendTotal;
+    final total = requiredItems.length;
     final isAllCleared = total > 0 && cleared >= total;
 
     return {
@@ -507,7 +518,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                   final isAllCleared = stats['isAllCleared'] as bool;
 
                   final isPresentationOnly = activeStage?['is_presentation_only'] == true;
-                  final hasPending = pendingCount > 0 || DeliverablesTriageHelper.hasPendingReview(team);
+                  final hasPending = pendingCount > 0;
 
                   // Accurate Progress Value & Color calculation (truthful amber for pending review)
                   double progressValue;
@@ -842,7 +853,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     final missingCount = stats['missing'] as int;
     final totalRequired = stats['total'] as int;
     final isAllCleared = stats['isAllCleared'] as bool;
-    final hasPending = pendingCount > 0 || DeliverablesTriageHelper.hasPendingReview(team);
+    final hasPending = pendingCount > 0;
     final isMissing = missingCount > 0 || DeliverablesTriageHelper.isOverdueOrMissing(team);
 
 

@@ -495,20 +495,34 @@ class RolloverPreviewView(APIView):
                 'validation_error': val_error,
             })
 
-        # Process non-enrolled students (in database previous semesters, not in CSV)
-        for username, record in latest_by_username.items():
-            if username in processed_usernames:
-                continue
-            if record.semester == active:
-                continue
-
+        # Students absent from the file remain excluded by default. If an admin
+        # explicitly chooses Promote, use the same academic progression and
+        # confirmed continuation defaults as the database rollover preview.
+        unlisted = {username: record for username, record in latest_by_username.items()
+                    if username not in processed_usernames and record.semester_id != active.pk}
+        unlisted_steps = {username: next_rollover_semester(record)
+                          for username, record in unlisted.items()}
+        unlisted_sections = section_decisions(active, {
+            record.student_id: unlisted_steps[username][0]
+            for username, record in unlisted.items()
+            if unlisted_steps[username][2] and unlisted_steps[username][2].pk == active.pk
+        })
+        from student_teams.section_years import enrollment_section_issue
+        for username, record in unlisted.items():
+            next_year, next_semester, next_term = unlisted_steps[username]
+            target_id = active.pk if next_term and next_term.pk == active.pk else None
+            decision = unlisted_sections.get(record.student_id)
+            automatic_section = bool(decision and decision.get('team_id'))
+            fallback_section = '' if enrollment_section_issue(record.section, next_year, next_term) else record.section
             rows.append({
                 'record': StudentAcademicRecordSerializer(record).data,
                 'promote_result': {
-                    'year_level': record.year_level,
-                    'semester': active.label,
-                    'target_semester_id': None,  # Omit target semester ID to flag exclusion
-                    'section': record.section,
+                    'year_level': next_year,
+                    'semester': next_semester,
+                    'target_semester_id': target_id,
+                    'section': decision['section'] if automatic_section else fallback_section,
+                    'section_automatic': automatic_section,
+                    'section_resolution': decision if automatic_section else None,
                 },
                 'retain_result': {
                     'year_level': record.year_level,

@@ -633,4 +633,101 @@ void main() {
     expect(find.text('Before Defense Materials'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  for (final (archiveStatus, grouped) in [
+    ('accepted', false),
+    ('pending', false),
+    ('accepted', true),
+    ('pending', true),
+  ]) {
+    testWidgets(
+      'matrix separates $archiveStatus ${grouped ? 'grouped' : 'single'} archives from finalized system minutes',
+      (tester) async {
+        tester.view.physicalSize = const Size(1600, 1200);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final stage = _stage(accepted: true);
+        (stage['pre'] as List).removeLast();
+        stage['required_total'] = 1;
+        stage['post_defense_ready'] = true;
+        stage['assessment_progress'] = {
+          'display_status': 'awaiting_completion',
+        };
+        final post = {
+          'id': 'FINAL',
+          'label': 'Final manuscript',
+          'type': 'post',
+          'required': true,
+          'uploaded': true,
+          'can_faculty_review': archiveStatus == 'pending',
+          if (grouped) ...{
+            'file_policy': {'mode': 'single'},
+            'document_slots': [
+              {'key': 'paper', 'label': 'Final manuscript', 'required': true},
+            ],
+          },
+          'submission': {
+            // Current file reviews take precedence over a stale container.
+            'status': grouped ? 'pending' : archiveStatus,
+            if (grouped)
+              'files': [
+                {
+                  'id': 91,
+                  'slot_key': 'paper',
+                  'file_name': 'final.pdf',
+                  'status': archiveStatus,
+                  'is_current': true,
+                },
+              ],
+          },
+        };
+        stage['post'] = [post];
+        stage['deliverables'] = [
+          ...(stage['pre'] as List),
+          post,
+          {
+            'id': 'MINUTES',
+            'type': 'system',
+            'source': 'defense_minutes',
+            'required': true,
+            'uploaded': true,
+            'status': 'completed',
+            'can_faculty_review': false,
+          },
+        ];
+        final team = <String, dynamic>{
+          'id': 7,
+          'name': 'Team Review',
+          'current_stage': 'Concept Proposal',
+          'selected_stage': stage,
+        };
+        await pumpDefensysWidget(
+          tester,
+          SingleChildScrollView(
+            child: CohortSubmissionsMatrix(
+              teams: [team],
+              state: CapstoneDeliverablesState(teams: [team]),
+              isAdviser: true,
+              initialExpandedTeamId: 7,
+            ),
+          ),
+          overrides: authTestOverrides(),
+        );
+        if (archiveStatus == 'accepted') {
+          expect(find.text('2 / 2 Cleared'), findsNWidgets(2));
+          expect(find.textContaining('Pending'), findsNothing);
+          expect(find.textContaining('Remind'), findsNothing);
+          if (!grouped) {
+            expect(find.text('Awaiting completion'), findsOneWidget);
+          }
+        } else {
+          expect(find.text('1 cleared · 1 pending review'), findsOneWidget);
+          expect(find.text('1 Pending Review'), findsOneWidget);
+          expect(find.text('1 archive file needs review'), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }

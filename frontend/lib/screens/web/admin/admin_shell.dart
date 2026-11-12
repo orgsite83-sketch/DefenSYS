@@ -204,6 +204,11 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     if (!resumeWebSection(
       widget.navigationShell,
       AdminRoutes.pathForSection(section),
+      // Reselecting grades is an explicit exit from its detail page. Otherwise
+      // a team-origin detail keeps its Back link pointing to Student Teams.
+      initialLocation:
+          section == DefensysAdminSection.gradeCenter &&
+          _currentSection == section,
     )) {
       ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
     }
