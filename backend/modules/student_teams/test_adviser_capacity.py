@@ -293,7 +293,7 @@ class AdviserCapacityTests(CapacityFixtures, APITestCase):
         unmapped = AdviserCapacityException.objects.create(adviser=self.other,
             semester=Semester.objects.create(school_year=self.term.school_year, label=Semester.FIRST),
             approved_limit=5, authorization='Department', reason='Unverified first semester')
-        migrate = import_module('student_teams.migrations.0027_adviser_capacity_batch').map_legacy_batches
+        migrate = import_module('student_teams.migrations.0028_backfill_adviser_capacity_batch').map_legacy_batches
         migrate(apps, SimpleNamespace(connection=connection))
         approval.refresh_from_db()
         unmapped.refresh_from_db()
@@ -314,7 +314,7 @@ class AdviserCapacityTests(CapacityFixtures, APITestCase):
         approvals = [AdviserCapacityException.objects.create(adviser=self.adviser, semester=term,
             approved_limit=5, authorization='Department', reason='Legacy authorization')
             for term in (self.term, target)]
-        migrate = import_module('student_teams.migrations.0027_adviser_capacity_batch').map_legacy_batches
+        migrate = import_module('student_teams.migrations.0028_backfill_adviser_capacity_batch').map_legacy_batches
         migrate(apps, SimpleNamespace(connection=connection))
         for row in approvals:
             row.refresh_from_db()
