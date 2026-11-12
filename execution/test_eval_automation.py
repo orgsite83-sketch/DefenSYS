@@ -34,14 +34,17 @@ class EvaluationAutomationTests(unittest.TestCase):
             'peerEvalEnabled': True, 'myPeerSubmissions': [],
             'peerEvalContext': {'session_id': 'session-a', 'semester_id': 1}, **overrides}
 
-    def run_peer(self, args, dashboard):
+    def run_peer(self, args, dashboard, *, submissions=None, authenticate=True):
         client = Mock()
-        client.authenticate.return_value = True
+        client.authenticate.return_value = authenticate
         client.get_dashboard.return_value = dashboard
+        if submissions is not None:
+            client.submit_evaluation.side_effect = submissions
         with patch.object(auto_peer_eval, 'parse_args', return_value=args), \
                 patch.object(auto_peer_eval, 'fetch_student_records', return_value=[('student', 'unused')]), \
-                patch.object(auto_peer_eval, 'StudentClient', return_value=client), redirect_stdout(StringIO()):
-            auto_peer_eval.run()
+                patch.object(auto_peer_eval, 'StudentClient', return_value=client), redirect_stdout(StringIO()) as output:
+            self.peer_result = auto_peer_eval.run()
+        self.peer_output = output.getvalue()
         return client
 
     def test_closed_peer_form_is_skipped_even_with_criteria(self):
@@ -80,6 +83,36 @@ class EvaluationAutomationTests(unittest.TestCase):
     def test_open_peer_submits_in_matching_context(self):
         client = self.run_peer(self.peer_args(session_id='session-a', semester_id=1), self.peer_dashboard())
         self.assertEqual([call.args[0]['evaluateeId'] for call in client.submit_evaluation.call_args_list], [1, 3])
+
+    def test_peer_aggregate_total_does_not_send_float_precision_artifacts(self):
+        criteria = [{'id': index, 'name': f'Quality {index}', 'maxScore': 10} for index in range(3)]
+        with patch.object(auto_peer_eval.random, 'uniform', return_value=8.1):
+            client = self.run_peer(self.peer_args(), self.peer_dashboard(peerCriteria=criteria))
+        for call in client.submit_evaluation.call_args_list:
+            self.assertEqual(str(call.args[0]['total']), '24.3')
+        self.assertEqual(self.peer_result, 0)
+
+    def test_peer_partial_failure_is_counted_and_never_reported_as_full_success(self):
+        client = self.run_peer(self.peer_args(), self.peer_dashboard(), submissions=[True, False])
+        self.assertEqual(client.submit_evaluation.call_count, 2)
+        self.assertEqual(self.peer_result, 1)
+        self.assertIn('Evaluations Created : 1', self.peer_output)
+        self.assertIn('Evaluations Failed  : 1', self.peer_output)
+        self.assertNotIn('All peer evaluations successfully submitted', self.peer_output)
+
+    def test_peer_account_failures_are_included_in_exit_status(self):
+        for dashboard, authenticated in [(self.peer_dashboard(), False), (None, True)]:
+            with self.subTest(authenticated=authenticated):
+                client = self.run_peer(self.peer_args(), dashboard, authenticate=authenticated)
+                client.submit_evaluation.assert_not_called()
+                self.assertEqual(self.peer_result, 1)
+                self.assertIn('Account Failures    : 1', self.peer_output)
+                self.assertNotIn('All peer evaluations successfully submitted', self.peer_output)
+
+    def test_peer_rerun_skips_and_counts_each_saved_pair(self):
+        client = self.run_peer(self.peer_args(), self.peer_dashboard(myPeerSubmissions=[{'evaluateeId': 1}]))
+        self.assertEqual([call.args[0]['evaluateeId'] for call in client.submit_evaluation.call_args_list], [3])
+        self.assertIn('Already Completed   : 1', self.peer_output)
 
     def test_peer_scores_scale_to_each_maximum_and_identify_section_criteria(self):
         criteria = [{'id': index + 1, 'name': 'Quality', 'section': f'Section {index}',

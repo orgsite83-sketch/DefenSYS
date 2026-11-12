@@ -199,3 +199,77 @@ class WeightedScoringApiTests(APITestCase):
         self.assertEqual(submission.weighted_score, Decimal('82.00'))
         self.assertEqual([row['section'] for row in submission.breakdown], ['Research', 'Teamwork'])
         self.assertEqual([Decimal(row['weight_snapshot']) for row in submission.breakdown], [Decimal(80), Decimal(20)])
+
+    def test_peer_automation_decimal_totals_and_rerun_complete_missing_pairs(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import Mock, patch
+        from rest_framework.test import APIClient
+        from execution import auto_peer_eval
+        from .peer_eval import is_team_peer_eval_complete, peer_criteria_payload, peer_submissions_for_evaluator
+
+        self._complete_capstone_panel_grading()
+        self._enable_capstone_peer_grading()
+        self.peer_rubric.criteria.all().delete()
+        for index, weight in enumerate(['33.33', '33.33', '33.34']):
+            RubricCriterion.objects.create(rubric=self.peer_rubric, name=f'Criterion {index}',
+                max_score=10, weight=weight, target_type='individual', display_order=index)
+        grade = self._capstone_grade()
+        students = [self.student, self.second_student]
+        members = [{'id': student.pk, 'name': student.username} for student in students]
+        args = auto_peer_eval.parse_args(['--all-students', '--min-score', '8.1', '--max-score', '8.1', '--delay', '0'])
+        statuses = []
+        interrupted = False
+
+        def client_for_student(base_url, username, password, **kwargs):
+            user = next(student for student in students if student.username == username)
+            api = APIClient()
+            api.force_authenticate(user)
+            client = Mock()
+            client.authenticate.return_value = True
+            client.get_dashboard.return_value = {
+                'student': {'id': user.pk},
+                'team': {'id': grade.team_id, 'name': grade.team.name, 'members': members},
+                'current_stage': grade.stage_label, 'peerEvalEnabled': True,
+                'peerCriteria': peer_criteria_payload(grade.team, stage_label=grade.stage_label),
+                'myPeerSubmissions': peer_submissions_for_evaluator(grade.team, user, stage_label=grade.stage_label),
+            }
+
+            def submit(payload, dry_run=False):
+                nonlocal interrupted
+                # Simulate one interrupted write; it must not be retried in this run.
+                if not interrupted and user == self.student and payload['evaluateeId'] == self.second_student.pk:
+                    interrupted = True
+                    return False
+                response = api.post('/api/grading/grades/peer-evaluations/', payload, format='json')
+                statuses.append(response.status_code)
+                self.assertEqual(response.status_code, 200, response.data)
+                return response.status_code == 200
+
+            client.submit_evaluation.side_effect = submit
+            return client
+
+        with patch.object(auto_peer_eval, 'parse_args', return_value=args), \
+                patch.object(auto_peer_eval, 'fetch_student_records',
+                    return_value=[(student.username, 'unused') for student in students]), \
+                patch.object(auto_peer_eval, 'StudentClient', side_effect=client_for_student):
+            with redirect_stdout(StringIO()) as first_output:
+                self.assertEqual(auto_peer_eval.run(), 1)
+            saved = list(PeerEvaluationSubmission.objects.filter(team_grade=grade)
+                         .order_by('pk').values_list('pk', 'total_score', 'breakdown'))
+            self.assertEqual(len(saved), 3)
+            self.assertFalse(is_team_peer_eval_complete(grade))
+            self.assertIn('Evaluations Failed  : 1', first_output.getvalue())
+            with redirect_stdout(StringIO()) as second_output:
+                self.assertEqual(auto_peer_eval.run(), 0)
+
+        self.assertEqual(statuses, [200] * 4)
+        self.assertIn('Evaluations Created : 1', second_output.getvalue())
+        self.assertIn('Already Completed   : 3', second_output.getvalue())
+        self.assertEqual(saved, list(PeerEvaluationSubmission.objects.filter(pk__in=[row[0] for row in saved])
+                                     .order_by('pk').values_list('pk', 'total_score', 'breakdown')))
+        self.assertTrue(is_team_peer_eval_complete(grade))
+        grade.refresh_from_db()
+        self.assertEqual(grade.peer_score, Decimal('81.00'))
+        self.assertEqual(set(PeerEvaluationSubmission.objects.filter(team_grade=grade)
+                             .values_list('total_score', flat=True)), {Decimal('24.30')})

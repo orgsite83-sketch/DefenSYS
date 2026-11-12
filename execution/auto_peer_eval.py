@@ -325,6 +325,8 @@ def run():
 
     total_evals_submitted = 0
     total_evals_skipped = 0
+    total_evals_failed = 0
+    total_accounts_failed = 0
     students_processed = 0
 
     for idx, (username, default_pwd) in enumerate(student_records, 1):
@@ -333,10 +335,12 @@ def run():
                                request_timeout=getattr(args, 'request_timeout', 30))
 
         if not client.authenticate(use_http_login=args.http_login):
+            total_accounts_failed += 1
             continue
 
         dashboard = client.get_dashboard()
         if not dashboard:
+            total_accounts_failed += 1
             continue
 
         current_student = dashboard.get("student") or {}
@@ -387,9 +391,9 @@ def run():
             m for m in members
             if m.get("id") not in already_submitted
         ]
+        total_evals_skipped += len(members) - len(teammates_to_rate)
 
         if not teammates_to_rate:
-            total_evals_skipped += len(members)
             continue
 
         students_processed += 1
@@ -403,8 +407,9 @@ def run():
 
             breakdown = generate_breakdown(peer_criteria, min_s, max_s)
 
-            total_score = sum(b["score"] for b in breakdown)
-            max_score = sum(b["max"] for b in breakdown)
+            # The API's decimal fields reject float tails such as 24.299999999999997.
+            total_score = round(sum(b["score"] for b in breakdown), 2)
+            max_score = round(sum(b["max"] for b in breakdown), 2)
 
             payload = {
                 "teamId": int(team_id),
@@ -423,6 +428,7 @@ def run():
                 prefix = "[DRY-RUN]" if args.dry_run else "[OK]"
                 print(f"    {prefix} Rated {teammate_name}: {total_score:g}/{max_score:g} [{scores_desc}]")
             else:
+                total_evals_failed += 1
                 print(f"    [FAIL] Failed to rate {teammate_name}")
 
             time.sleep(args.delay)
@@ -431,16 +437,26 @@ def run():
     print("  Execution Summary")
     print("=" * 70)
     print(f"  Students Evaluated  : {students_processed}")
-    print(f"  Evaluations Created : {total_evals_submitted}")
+    count_label = 'Evaluations Planned' if args.dry_run else 'Evaluations Created'
+    print(f"  {count_label} : {total_evals_submitted}")
     print(f"  Already Completed   : {total_evals_skipped}")
+    print(f"  Evaluations Failed  : {total_evals_failed}")
+    print(f"  Account Failures    : {total_accounts_failed}")
     print("=" * 70)
 
+    if total_evals_failed or total_accounts_failed:
+        print('[FAIL] Peer evaluation run finished with errors. Check the failures above; saved ratings remain recorded.')
+        print('    Rerunning skips saved ratings and attempts only missing evaluations. Writes are never retried automatically.')
+        return 1
     if args.dry_run:
         print("[!] Dry-run complete. Run without --dry-run to apply to the database.")
     elif total_evals_submitted > 0:
         print("[OK] All peer evaluations successfully submitted!")
         print("    Refresh your browser (F5) to see the completed progress and locked cards.")
+    else:
+        print('[OK] No new peer evaluations were submitted. Check completed ratings and any skip reasons above.')
+    return 0
 
 
 if __name__ == "__main__":
-    run()
+    sys.exit(run())

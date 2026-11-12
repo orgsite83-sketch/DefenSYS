@@ -220,6 +220,8 @@ Other peer options include `--students 4001 4002`, `--team-id 25`, `--session-id
 
 For slower student dashboards, add `--request-timeout 90` (default: 30 seconds; maximum: 300). This applies to dashboard reads and submissions. A timed-out submission may already have saved; check the saved state before rerunning. The script does not automatically retry evaluation writes.
 
+Peer automation rounds aggregate totals and maxima to two decimal places before sending JSON. Without that final rounding, adding valid decimal scores can produce a value such as `24.299999999999997`, which the API rejects with a decimal precision error. The summary lists failed evaluations and account failures and exits with status 1 when any fail; a dry run reports planned evaluations rather than saved records. After correcting a failure, rerun the same selection to fill missing evaluator/evaluatee pairs while preserving saved ratings. A team's peer score remains pending until every required self/teammate pair is recorded.
+
 ## 7. Upload the approved concept paper after defense
 
 In the first-year example, **D3: Approved Concept Paper** is a post-defense requirement. Use the folder containing the final approved PDFs. The script maps filenames; it does not determine whether their contents are the approved versions.
