@@ -137,6 +137,84 @@ class WeightedScoringApiTests(APITestCase):
         self.assertEqual(sorted(Decimal(row['adviser_score']) for row in response.data['grade']['peer_per_student']),
                          [Decimal(82), Decimal(92)])
 
+    def _exercise_adviser_automation(self, target):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        from urllib.parse import urlsplit
+        from rest_framework.test import APIClient
+        from execution import auto_adviser_eval
+
+        criteria = self.configure(self.adviser_rubric, target=target)
+        for criterion, section, maximum in zip(criteria, ['Research', 'Teamwork'], [20, 5]):
+            criterion.name = 'Quality'
+            criterion.section = section
+            criterion.max_score = maximum
+            criterion.save()
+        self._capstone_grade()
+        posts = []
+
+        class Session:
+            def __init__(self):
+                self.headers = {}
+
+            def request(self, method, url, json=None, **kwargs):
+                api = APIClient()
+                api.credentials(HTTP_AUTHORIZATION=self.headers['Authorization'])
+                path = urlsplit(url).path
+                response = (api.get(path) if method == 'GET' else api.post(path, json, format='json'))
+                if method == 'POST':
+                    posts.append((json, response.status_code, response.data))
+                return SimpleNamespace(status_code=response.status_code, json=lambda: response.data,
+                                       text=response.content.decode('utf-8'))
+
+            def get(self, url, **kwargs):
+                return self.request('GET', url, **kwargs)
+
+            def post(self, url, **kwargs):
+                return self.request('POST', url, **kwargs)
+
+            def close(self):
+                pass
+
+        args = auto_adviser_eval.parse_args(['--all-advisers', '--base-url', 'http://testserver',
+                                            '--min-score', '5', '--max-score', '10', '--delay', '0'])
+        ratings = {'team': [9, 5], 'individual': [9, 5, 5, 10], 'both': [9, 5, 10]}[target]
+        with patch.object(auto_adviser_eval, 'parse_args', return_value=args), \
+                patch.object(auto_adviser_eval, 'fetch_adviser_users', return_value=[self.adviser.username]), \
+                patch.object(auto_adviser_eval.requests, 'Session', side_effect=Session), \
+                patch.object(auto_adviser_eval.random, 'uniform', side_effect=ratings):
+            with redirect_stdout(StringIO()) as first_output:
+                self.assertEqual(auto_adviser_eval.run(), 0)
+            self.assertEqual(len(posts), 1, first_output.getvalue())
+            self.assertEqual(posts[0][1], 200, posts[0][2])
+            grade = self._capstone_grade()
+            expected = {'team': Decimal(82), 'individual': Decimal(71), 'both': Decimal(87)}[target]
+            self.assertEqual(grade.adviser_score, expected)
+            student_scores = list(grade.student_grades.values_list('adviser_score', flat=True))
+            expected_students = {'team': [Decimal(82), Decimal(82)],
+                                 'individual': [Decimal(82), Decimal(60)],
+                                 'both': [Decimal(82), Decimal(92)]}[target]
+            self.assertEqual(sorted(student_scores), sorted(expected_students))
+            rows = grade.breakdowns.filter(evaluation_type='adviser').order_by('pk')
+            self.assertEqual(set(rows.values_list('section_snapshot', 'weight_snapshot')),
+                             {('Research', Decimal(80)), ('Teamwork', Decimal(20))})
+            saved = list(rows.values_list('pk', 'score', 'weight_snapshot'))
+            with redirect_stdout(StringIO()) as second_output:
+                self.assertEqual(auto_adviser_eval.run(), 0)
+            self.assertEqual(len(posts), 1)
+            self.assertIn('Already Graded      : 1', second_output.getvalue())
+            self.assertEqual(saved, list(rows.values_list('pk', 'score', 'weight_snapshot')))
+
+    def test_adviser_automation_team_weighted_sections_and_repeat(self):
+        self._exercise_adviser_automation('team')
+
+    def test_adviser_automation_individual_weighted_sections_and_repeat(self):
+        self._exercise_adviser_automation('individual')
+
+    def test_adviser_automation_mixed_weighted_sections_and_repeat(self):
+        self._exercise_adviser_automation('both')
+
     def test_peer_backend_computes_weighted_score_from_criteria_instead_of_client_total(self):
         self._complete_capstone_panel_grading()
         self._enable_capstone_peer_grading()

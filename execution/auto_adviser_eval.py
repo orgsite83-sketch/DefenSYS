@@ -22,6 +22,7 @@ Usage Examples:
 """
 
 import argparse
+import math
 import os
 import random
 import sys
@@ -52,7 +53,7 @@ def init_django():
     django.setup()
 
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Automate adviser evaluations across advised capstone teams using random scores."
     )
@@ -80,13 +81,13 @@ def parse_args():
         "--min-score",
         type=float,
         default=7.0,
-        help="Minimum criterion score (default: 7.0)",
+        help="Minimum rating out of 10, scaled to each criterion maximum (default: 7.0)",
     )
     parser.add_argument(
         "--max-score",
         type=float,
         default=9.0,
-        help="Maximum criterion score (default: 9.0)",
+        help="Maximum rating out of 10, scaled to each criterion maximum (default: 9.0)",
     )
     parser.add_argument(
         "--dry-run",
@@ -102,7 +103,17 @@ def parse_args():
     parser.add_argument('--stage', help='Only grade this defense stage.')
     parser.add_argument('--session-id', help='Only grade teams in this scheduled session UUID.')
     parser.add_argument('--semester-id', type=int, help='Only grade teams in this academic term.')
-    return parser.parse_args()
+    parser.add_argument('--request-timeout', type=float, default=30,
+        help='HTTP request timeout in seconds (default: 30). Writes are never retried automatically.')
+    args = parser.parse_args(argv)
+    if not (math.isfinite(args.min_score) and math.isfinite(args.max_score)
+            and 0 <= args.min_score <= args.max_score <= 10):
+        parser.error('Scores must satisfy 0 <= --min-score <= --max-score <= 10 (scaled to each criterion maximum).')
+    if not math.isfinite(args.delay) or not 0 <= args.delay <= 60:
+        parser.error('--delay must be a finite number between 0 and 60 seconds.')
+    if not math.isfinite(args.request_timeout) or not 0 < args.request_timeout <= 300:
+        parser.error('--request-timeout must be a finite number greater than 0 and at most 300 seconds.')
+    return args
 
 
 def fetch_adviser_users(specific_usernames: Optional[List[str]] = None, team_id: Optional[int] = None) -> List[str]:
@@ -141,8 +152,63 @@ def get_jwt_token_for_user(username: str) -> Optional[str]:
         return None
 
 
+def generate_scores(criteria, minimum, maximum):
+    """Send raw scores with rubric identities; the backend applies saved weights."""
+    scores = []
+    for index, criterion in enumerate(criteria):
+        criterion_max = float(criterion.get('max_score', 10))
+        if not math.isfinite(criterion_max) or criterion_max <= 0:
+            raise ValueError('The assigned adviser rubric contains an invalid criterion maximum.')
+        score = min(criterion_max, max(0, round(random.uniform(minimum, maximum) / 10 * criterion_max, 2)))
+        row = {'criterion_name': criterion['name'], 'section': criterion.get('section', ''),
+               'score': score, 'max_score': criterion_max, 'display_order': index}
+        if criterion.get('id') is not None:
+            row['criterion_id'] = criterion['id']
+        scores.append(row)
+    return scores
+
+
+def build_payload(grade, minimum, maximum):
+    rubric_id = grade.get('assigned_adviser_rubric_id')
+    criteria = grade.get('assigned_adviser_criteria') or []
+    target = grade.get('assigned_adviser_rubric_target_type') or 'team'
+    if not rubric_id or not isinstance(criteria, list) or not criteria:
+        raise ValueError('No adviser rubric criteria are assigned.')
+    if target not in ('team', 'individual', 'both'):
+        raise ValueError('The assigned adviser rubric has an unsupported grading target.')
+    ids = [criterion['id'] for criterion in criteria if criterion.get('id') is not None]
+    if len(ids) != len(set(ids)):
+        raise ValueError('The assigned adviser rubric contains duplicate criterion IDs.')
+    members = grade.get('members') or []
+    member_ids = [member.get('student_id') or member.get('id') for member in members]
+    if target != 'team' and (not member_ids or any(value is None for value in member_ids)
+                              or len(member_ids) != len(set(member_ids))):
+        raise ValueError('A complete, unique team membership is required for individual grading.')
+    payload = {'rubric_id': rubric_id, 'team_criteria_scores': [], 'student_submissions': []}
+    if target == 'both':
+        if any(criterion.get('target_type') not in ('team', 'individual') for criterion in criteria):
+            raise ValueError('The assigned mixed rubric contains an unsupported criterion target.')
+        shared = [criterion for criterion in criteria if criterion['target_type'] == 'team']
+        individual = [criterion for criterion in criteria if criterion['target_type'] == 'individual']
+        if not shared or not individual:
+            raise ValueError('A mixed adviser rubric requires both team and individual criteria.')
+    else:
+        shared = criteria if target == 'team' else []
+        individual = criteria if target == 'individual' else []
+    if shared:
+        payload['team_criteria_scores'] = generate_scores(shared, minimum, maximum)
+    if individual:
+        payload['student_submissions'] = [
+            {'student_id': student_id, 'criteria_scores': generate_scores(individual, minimum, maximum)}
+            for student_id in member_ids
+        ]
+    return payload
+
+
 def run():
     args = parse_args()
+    args.base_url = common.server_url(args.base_url)
+    request_timeout = getattr(args, 'request_timeout', 30)
 
     specific_advisers = None
     if args.advisers:
@@ -161,24 +227,31 @@ def run():
         print("[!] No faculty adviser records found.")
         sys.exit(1)
 
-    min_s = int(round(args.min_score))
-    max_s = int(round(args.max_score))
+    min_s = args.min_score
+    max_s = args.max_score
 
     print("=" * 70)
     print("  DefenSYS Adviser Evaluation Automation")
     print("=" * 70)
     print(f"  Target Server   : {args.base_url}")
     print(f"  Total Advisers  : {len(adviser_usernames)}")
-    print(f"  Score Range     : {min_s} to {max_s} per criterion")
+    print(f"  Score Range     : {min_s} to {max_s} out of 10 (scaled per criterion)")
     print(f"  Mode            : {'DRY RUN (No changes saved)' if args.dry_run else 'LIVE SUBMISSION'}")
     print("=" * 70)
 
     total_submitted = 0
     total_skipped = 0
+    total_unavailable = 0
+    total_failed = 0
+    total_accounts_failed = 0
+    abort_batch = False
 
     for idx, username in enumerate(adviser_usernames, 1):
+        if abort_batch:
+            break
         token = get_jwt_token_for_user(username)
         if not token:
+            total_accounts_failed += 1
             continue
 
         session = requests.Session()
@@ -189,13 +262,20 @@ def run():
 
         url = f"{args.base_url.rstrip('/')}/api/grading/grades/adviser-grades/"
         try:
-            resp = session.get(url, timeout=10)
+            resp = session.get(url, timeout=request_timeout, allow_redirects=False)
             if resp.status_code != 200:
                 print(f"  [✗] Failed to fetch advised teams for adviser {username} (HTTP {resp.status_code})")
+                total_accounts_failed += 1
+                abort_batch = resp.status_code in (401, 429)
+                session.close()
                 continue
             data = resp.json()
+            if not isinstance(data, dict) or not isinstance(data.get('grades', data.get('results')), list):
+                raise ValueError('The adviser API returned an invalid grade list.')
         except Exception as e:
             print(f"  [✗] Error connecting to API: {e}")
+            total_accounts_failed += 1
+            session.close()
             continue
 
         results = data.get("grades") or data.get("results") or []
@@ -223,64 +303,17 @@ def run():
             if grade_row.get("adviser_grading_available") is not True:
                 reason = grade_row.get("adviser_grading_unavailable_reason") or "Adviser grading is not open for this team."
                 print(f"  [SKIP] {team_name}: {reason}")
-                total_skipped += 1
+                total_unavailable += 1
                 continue
 
-            rubric_id = grade_row.get("assigned_adviser_rubric_id")
             rubric_name = grade_row.get("assigned_adviser_rubric_name") or "Adviser Rubric"
             target_type = grade_row.get("assigned_adviser_rubric_target_type") or "team"
-            criteria = grade_row.get("assigned_adviser_criteria") or []
-            members = grade_row.get("members") or []
-
-            if not criteria or not rubric_id:
-                print(f"  [!] No adviser rubric assigned for {team_name}. Skipping.")
+            try:
+                payload = build_payload(grade_row, min_s, max_s)
+            except (ValueError, TypeError, KeyError) as error:
+                print(f'    [FAIL] {team_name}: {error}')
+                total_failed += 1
                 continue
-
-            def generate_scores(criterion_list):
-                scores = []
-                for i, c in enumerate(criterion_list):
-                    c_name = c["name"]
-                    c_max = float(c.get("max_score", 10.0))
-                    if c_max >= max_s:
-                        s = random.randint(min_s, max_s)
-                    else:
-                        ratio = random.uniform(min_s / 10.0, max_s / 10.0)
-                        s = max(1, min(int(round(c_max * ratio)), int(c_max)))
-                    scores.append({
-                        "criterion_name": c_name,
-                        "score": float(s),
-                        "max_score": float(c_max),
-                        "display_order": i,
-                    })
-                return scores
-
-            payload = {
-                "rubric_id": rubric_id,
-                "team_criteria_scores": [],
-                "student_submissions": [],
-            }
-
-            if target_type == "team":
-                payload["team_criteria_scores"] = generate_scores(criteria)
-            elif target_type == "individual":
-                for m in members:
-                    s_id = m.get("student_id") or m.get("id")
-                    payload["student_submissions"].append({
-                        "student_id": s_id,
-                        "criteria_scores": generate_scores(criteria),
-                    })
-            else:  # 'both'
-                team_criteria = [c for c in criteria if c.get("target_type") == "team"]
-                ind_criteria = [c for c in criteria if c.get("target_type") == "individual"]
-                if team_criteria:
-                    payload["team_criteria_scores"] = generate_scores(team_criteria)
-                for m in members:
-                    s_id = m.get("student_id") or m.get("id")
-                    if ind_criteria:
-                        payload["student_submissions"].append({
-                            "student_id": s_id,
-                            "criteria_scores": generate_scores(ind_criteria),
-                        })
 
             if args.dry_run:
                 print(f"    [DRY-RUN] Would submit adviser grade for {team_name} using rubric '{rubric_name}' ({target_type})")
@@ -288,29 +321,48 @@ def run():
             else:
                 submit_url = f"{args.base_url.rstrip('/')}/api/grading/grades/adviser-grades/{grade_id}/submit/"
                 try:
-                    s_resp = session.post(submit_url, json=payload, timeout=10)
+                    s_resp = session.post(submit_url, json=payload, timeout=request_timeout, allow_redirects=False)
                     if s_resp.status_code in (200, 201):
                         res_data = s_resp.json()
-                        new_score = res_data.get("adviser_score")
+                        new_score = (res_data.get('grade') or res_data).get('adviser_score')
                         score_str = f"Score: {float(new_score):.2f}%" if new_score is not None else "Saved"
                         print(f"    [OK] {team_name}: Submitted successfully! ({score_str})")
                         total_submitted += 1
                     else:
                         print(f"    [FAIL] Failed to submit for {team_name} (HTTP {s_resp.status_code}): {s_resp.text}")
+                        total_failed += 1
+                        abort_batch = s_resp.status_code in (401, 429)
                 except Exception as e:
                     print(f"    [FAIL] Network error submitting for {team_name}: {e}")
+                    total_failed += 1
 
+            if abort_batch:
+                break
             time.sleep(args.delay)
+        session.close()
 
     print("\n" + "=" * 70)
     print("  Adviser Evaluation Summary")
     print("=" * 70)
-    print(f"  Evaluations Created : {total_submitted}")
+    count_label = 'Evaluations Planned' if args.dry_run else 'Evaluations Created'
+    print(f"  {count_label} : {total_submitted}")
     print(f"  Already Graded      : {total_skipped}")
+    print(f"  Unavailable         : {total_unavailable}")
+    print(f"  Evaluations Failed  : {total_failed}")
+    print(f"  Account Failures    : {total_accounts_failed}")
     print("=" * 70)
-    if total_submitted > 0:
+    if total_failed or total_accounts_failed:
+        print('[FAIL] Adviser evaluation run finished with errors. Check failures above; saved grades remain recorded.')
+        print('    Rerunning skips recorded adviser grades. Writes are never retried automatically.')
+        return 1
+    if args.dry_run:
+        print('[!] Dry-run complete. Run without --dry-run to submit the eligible missing grades.')
+    elif total_submitted > 0:
         print("[OK] Adviser evaluations submitted! Refresh your browser to verify.")
+    else:
+        print('[OK] No new adviser grades were submitted. Check recorded grades and any skip reasons above.')
+    return 0
 
 
 if __name__ == "__main__":
-    run()
+    sys.exit(run())

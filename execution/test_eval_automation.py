@@ -192,6 +192,120 @@ class EvaluationAutomationTests(unittest.TestCase):
             auto_adviser_eval.run()
         session.post.assert_not_called()
 
+    def adviser_args(self, **overrides):
+        return SimpleNamespace(**{
+            'advisers': None, 'all_advisers': True, 'team_id': None, 'min_score': 8,
+            'max_score': 8, 'base_url': 'http://example.test', 'dry_run': False,
+            'delay': 0, 'stage': None, 'session_id': None, 'semester_id': None,
+            'request_timeout': 90, **overrides,
+        })
+
+    def adviser_row(self, **overrides):
+        return {
+            'id': 2, 'team_id': 20, 'team_name': 'Team Test', 'adviser_score': None,
+            'adviser_grading_available': True, 'assigned_adviser_rubric_id': 1,
+            'assigned_adviser_rubric_target_type': 'team', 'stage_label': 'Project Proposal',
+            'semester_id': 3, 'session_id': 'session-a', 'members': [{'student_id': 11}, {'student_id': 12}],
+            'assigned_adviser_criteria': [
+                {'id': 1, 'name': 'Quality', 'section': 'Research', 'max_score': 20, 'target_type': 'team'},
+                {'id': 2, 'name': 'Quality', 'section': 'Teamwork', 'max_score': 5, 'target_type': 'team'},
+            ], **overrides,
+        }
+
+    def run_adviser(self, rows, *, args=None, statuses=(200,), token='test-token', get_status=200):
+        session = Mock()
+        session.get.return_value.status_code = get_status
+        session.get.return_value.json.return_value = {'grades': rows}
+        session.post.side_effect = [status if isinstance(status, Exception) else Mock(status_code=status, text='Failure',
+            json=Mock(return_value={'grade': {'adviser_score': '80.00'}})) for status in statuses]
+        with patch.object(auto_adviser_eval, 'parse_args', return_value=args or self.adviser_args()), \
+                patch.object(auto_adviser_eval, 'fetch_adviser_users', return_value=['adviser']), \
+                patch.object(auto_adviser_eval, 'get_jwt_token_for_user', return_value=token), \
+                patch.object(auto_adviser_eval.requests, 'Session', return_value=session), redirect_stdout(StringIO()) as output:
+            self.adviser_result = auto_adviser_eval.run()
+        self.adviser_output = output.getvalue()
+        return session
+
+    def test_adviser_scales_scores_and_preserves_section_ids_for_all_targets(self):
+        for target in ['team', 'individual', 'both']:
+            with self.subTest(target=target):
+                row = self.adviser_row(assigned_adviser_rubric_target_type=target)
+                if target == 'both':
+                    row['assigned_adviser_criteria'][1]['target_type'] = 'individual'
+                session = self.run_adviser([row])
+                payload = session.post.call_args.kwargs['json']
+                groups = ([payload['team_criteria_scores']] if target != 'individual' else [])
+                groups += [item['criteria_scores'] for item in payload['student_submissions']]
+                for scores in groups:
+                    for score in scores:
+                        expected = {1: (16, 'Research'), 2: (4, 'Teamwork')}
+                        self.assertEqual((score['score'], score['section']), expected[score['criterion_id']])
+                self.assertEqual([item['student_id'] for item in payload['student_submissions']],
+                                 [] if target == 'team' else [11, 12])
+                self.assertEqual(self.adviser_result, 0)
+                self.assertIn('Score: 80.00%', self.adviser_output)
+
+    def test_adviser_preserves_zero_and_decimal_ranges(self):
+        for rating, expected in [(0, [0, 0]), (8.25, [16.5, 4.12])]:
+            with self.subTest(rating=rating):
+                session = self.run_adviser([self.adviser_row()],
+                    args=self.adviser_args(min_score=rating, max_score=rating))
+                self.assertEqual([row['score'] for row in session.post.call_args.kwargs['json']['team_criteria_scores']], expected)
+
+    def test_adviser_partial_failure_has_nonzero_exit_and_does_not_retry(self):
+        session = self.run_adviser([self.adviser_row(), self.adviser_row(id=3)], statuses=(200, 400))
+        self.assertEqual(session.post.call_count, 2)
+        self.assertEqual(self.adviser_result, 1)
+        self.assertIn('Evaluations Failed  : 1', self.adviser_output)
+        self.assertNotIn('[OK] Adviser evaluations submitted!', self.adviser_output)
+
+    def test_adviser_preview_skips_recorded_grades_and_never_posts(self):
+        session = self.run_adviser([self.adviser_row(adviser_score=0), self.adviser_row(id=3)],
+                                   args=self.adviser_args(dry_run=True))
+        session.post.assert_not_called()
+        self.assertEqual(self.adviser_result, 0)
+        self.assertIn('Evaluations Planned : 1', self.adviser_output)
+        self.assertIn('Already Graded      : 1', self.adviser_output)
+        self.assertNotIn('[OK] Adviser evaluations submitted!', self.adviser_output)
+
+    def test_adviser_timeout_applies_to_reads_and_writes(self):
+        session = self.run_adviser([self.adviser_row()])
+        self.assertEqual(session.get.call_args.kwargs['timeout'], 90)
+        self.assertEqual(session.post.call_args.kwargs['timeout'], 90)
+
+    def test_adviser_timed_out_write_is_not_retried_and_is_reported_as_failure(self):
+        session = self.run_adviser([self.adviser_row()], statuses=(auto_adviser_eval.requests.Timeout('Timed out'),))
+        session.post.assert_called_once()
+        self.assertEqual(self.adviser_result, 1)
+        self.assertIn('Evaluations Failed  : 1', self.adviser_output)
+
+    def test_adviser_invalid_rubric_or_missing_members_never_posts(self):
+        for fields in [
+            {'assigned_adviser_rubric_target_type': 'invalid'},
+            {'assigned_adviser_rubric_target_type': 'individual', 'members': []},
+            {'assigned_adviser_rubric_id': None},
+            {'assigned_adviser_rubric_target_type': 'both'},
+        ]:
+            with self.subTest(fields=fields):
+                session = self.run_adviser([self.adviser_row(**fields)])
+                session.post.assert_not_called()
+                self.assertEqual(self.adviser_result, 1)
+
+    def test_adviser_authentication_and_list_failures_are_counted(self):
+        for token, get_status in [(None, 200), ('token', 500)]:
+            with self.subTest(token=token):
+                session = self.run_adviser([], token=token, get_status=get_status)
+                session.post.assert_not_called()
+                self.assertEqual(self.adviser_result, 1)
+                self.assertIn('Account Failures    : 1', self.adviser_output)
+
+    def test_adviser_rejects_invalid_ranges_and_timeout(self):
+        for flags in [['--min-score', '-1'], ['--max-score', '11'], ['--min-score', 'nan'],
+                      ['--min-score', '9', '--max-score', '7'], ['--request-timeout', '0'],
+                      ['--request-timeout', '301'], ['--request-timeout', 'inf']]:
+            with self.subTest(flags=flags), patch('sys.stderr', new=StringIO()), self.assertRaises(SystemExit):
+                auto_adviser_eval.parse_args(['--all-advisers', *flags])
+
     def panelist_args(self, **overrides):
         values = dict(
             panelists=None, all_panelists=True, team_id=None, min_score=7,

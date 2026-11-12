@@ -290,7 +290,9 @@ This script is for assigned Capstone advisers:
   --dry-run
 ```
 
-Remove `--dry-run` to submit eligible missing adviser grades. Default scores are 7-9 for a 10-point criterion. Existing adviser grades are skipped. Availability comes from the API; adviser grading can open before the defense date when endorsement and scheduling requirements are satisfied.
+Remove `--dry-run` to submit eligible missing adviser grades. Default ratings are 7-9 out of 10, scaled proportionally to each criterion maximum: 8-10 generates 16-20/20 or 4-5/5. Zero and decimal ratings are preserved. The script sends raw scores with criterion IDs and sections; the backend applies the configured weights for team, individual, and mixed rubrics. Existing adviser grades, including zero, are skipped. Availability comes from the API; adviser grading can open before the defense date when endorsement and scheduling requirements are satisfied.
+
+Add `--request-timeout 90` for slower grade lists or submissions (default: 30 seconds; maximum: 300). The summary distinguishes planned dry-run evaluations, recorded grades, unavailable grading, submission failures, and account failures. Failures produce exit status 1; authentication/rate-limit responses stop the remaining batch. Timed-out writes are never retried automatically and may already have saved. Check recorded grades before rerunning; the script skips grades already visible in the adviser list. API regressions in `grading.grades.test_weighted_scoring` verify real adviser authentication, repeated names across sections, weighted results for all three targets, and preservation on repeat runs.
 
 Narrow the run with `--team-id 25`, `--advisers 208`, `--session-id UUID` or `--semester-id 2`. This script has no `--year` or `--scope` options. For Capstone uploads and faculty review, use the earlier commands with `--scope capstone` and the exact configured stage/requirement; PIT requirement IDs do not carry over automatically.
 
