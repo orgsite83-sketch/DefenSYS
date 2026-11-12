@@ -81,6 +81,37 @@ class EvaluationAutomationTests(unittest.TestCase):
         client = self.run_peer(self.peer_args(session_id='session-a', semester_id=1), self.peer_dashboard())
         self.assertEqual([call.args[0]['evaluateeId'] for call in client.submit_evaluation.call_args_list], [1, 3])
 
+    def test_peer_scores_scale_to_each_maximum_and_identify_section_criteria(self):
+        criteria = [{'id': index + 1, 'name': 'Quality', 'section': f'Section {index}',
+                     'maxScore': maximum, 'weight': 20}
+                    for index, maximum in enumerate([0.5, 5, 10, 20, 100])]
+        client = self.run_peer(self.peer_args(min_score=8, max_score=8),
+                               self.peer_dashboard(peerCriteria=criteria))
+        self.assertEqual(client.submit_evaluation.call_count, 2)
+        for call in client.submit_evaluation.call_args_list:
+            payload = call.args[0]
+            self.assertEqual([row['score'] for row in payload['breakdown']], [0.4, 4, 8, 16, 80])
+            self.assertEqual([row['criterion_id'] for row in payload['breakdown']], [1, 2, 3, 4, 5])
+            self.assertEqual([row['section'] for row in payload['breakdown']],
+                             [f'Section {index}' for index in range(5)])
+            self.assertAlmostEqual(payload['total'], 108.4)
+            self.assertEqual(payload['max'], 135.5)
+
+    def test_peer_zero_and_decimal_ranges_are_preserved(self):
+        for rating, expected in [(0, [0, 0]), (8.25, [4.12, 16.5])]:
+            with self.subTest(rating=rating):
+                client = self.run_peer(self.peer_args(min_score=rating, max_score=rating),
+                    self.peer_dashboard(peerCriteria=[{'id': 1, 'name': 'First', 'maxScore': 5},
+                                                       {'id': 2, 'name': 'Second', 'maxScore': 20}]))
+                self.assertEqual([row['score'] for row in client.submit_evaluation.call_args.args[0]['breakdown']],
+                                 expected)
+
+    def test_peer_invalid_score_ranges_are_rejected(self):
+        for flags in [['--min-score', '-1'], ['--max-score', '11'], ['--min-score', 'nan'],
+                      ['--max-score', 'inf'], ['--min-score', '9', '--max-score', '7']]:
+            with self.subTest(flags=flags), patch('sys.stderr', new=StringIO()), self.assertRaises(SystemExit):
+                auto_peer_eval.parse_args(['--all-students', *flags])
+
     def test_peer_year_cli_accepts_numbers_and_labels_and_rejects_unknown_years(self):
         for value, expected in [('1', '1st Year'), ('2nd Year', '2nd Year'), ('3', '3rd Year'), ('4', '4th Year')]:
             with self.subTest(value=value), patch.object(sys, 'argv', ['auto_peer_eval.py', '--all-students', '--year', value]):

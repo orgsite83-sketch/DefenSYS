@@ -5,6 +5,7 @@ Run from the repository root:
 """
 from contextlib import redirect_stdout
 from datetime import timedelta
+from decimal import Decimal
 from io import StringIO
 from unittest.mock import patch
 from urllib.parse import urlsplit
@@ -18,7 +19,7 @@ from defense.scheduler.models import PanelistEvaluationDraft, PitEventGradingCon
 from grading.grades import tests as grade_fixtures
 from grading.grades import test_concept_workflow as concept_fixtures
 from grading.grades import test_outcome_rules as outcome_fixtures
-from grading.grades.models import PanelistGradeSubmission, TeamGrade
+from grading.grades.models import PanelistCriterionScore, PanelistGradeSubmission, StudentStageGrade, TeamGrade
 from grading.rubrics.models import Rubric, RubricCriterion
 from repository.deliverables.models import ConceptRound
 from user_management.models import ExternalEvaluator, GuestPanelistCode
@@ -205,6 +206,52 @@ class PanelAutomationApiTests(_AutomationMixin, APITestCase):
                          {None, self.student.pk, self.second_student.pk})
         self.grade.refresh_from_db()
         self.assertEqual(self.grade.verdict, 'approved')
+
+    def test_weighted_sections_use_raw_scores_for_faculty_and_guest(self):
+        self.panel_rubric.target_type = 'both'
+        self.panel_rubric.scale = Rubric.SCALE_POINTS
+        self.panel_rubric.save(update_fields=['target_type', 'scale'])
+        self.panel_rubric.criteria.all().delete()
+        criteria = [RubricCriterion.objects.create(
+            rubric=self.panel_rubric, name='Quality', section=section,
+            scale=Rubric.SCALE_POINTS, target_type=target, max_score=maximum,
+            weight=weight, display_order=index,
+        ) for index, (section, target, maximum, weight) in enumerate([
+            ('Research', 'team', 50, 40),
+            ('Documentation', 'team', 10, 20),
+            ('Presentation', 'individual', 20, 40),
+        ])]
+        # Capture the mixed target in a new hearing's immutable grading policy.
+        self.new_hearing()
+        self.add_guest()
+        # Different scores expose raw-point averaging and double-weighting bugs.
+        with patch.object(automation.random, 'uniform', side_effect=[9, 5, 10, 0] * 2):
+            self.assertEqual(self.exercise('--no-verdict'), 0, self.output)
+        writes = self.writes()
+        self.assertEqual([call['path'].rsplit('/', 2)[1] for call in writes],
+                         ['submit-grades', 'guest-submit-grades'])
+        expected = {
+            None: [{'criterion_id': criteria[0].pk, 'score': 45},
+                   {'criterion_id': criteria[1].pk, 'score': 5}],
+            self.student.pk: [{'criterion_id': criteria[2].pk, 'score': 20}],
+            self.second_student.pk: [{'criterion_id': criteria[2].pk, 'score': 0}],
+        }
+        for call in writes:
+            self.assertEqual(call['status'], 201)
+            self.assertEqual({row['student_id']: row['criteria_scores']
+                              for row in call['payload']['submissions']}, expected)
+        self.grade.refresh_from_db()
+        # Team contribution: 90% * 40 + 50% * 20 = 46; individuals add 40 or 0.
+        self.assertEqual(self.grade.panel_score, Decimal('66.00'))
+        self.assertEqual(dict(StudentStageGrade.objects.filter(team_grade=self.grade)
+                              .values_list('student_id', 'panel_score')),
+                         {self.student.pk: Decimal('86.00'), self.second_student.pk: Decimal('46.00')})
+        rows = PanelistCriterionScore.objects.filter(submission__team_grade=self.grade)
+        self.assertEqual(rows.count(), 8)
+        self.assertEqual(set(rows.values_list('section_snapshot', 'max_score_snapshot', 'weight_snapshot')),
+                         {('Research', Decimal(50), Decimal(40)),
+                          ('Documentation', Decimal(10), Decimal(20)),
+                          ('Presentation', Decimal(20), Decimal(40))})
 
     def test_discovery_filters_cohort_term_and_previous_project(self):
         self.assertEqual(automation.fetch_target_schedule_ids(scope='pit', year='2nd Year'), [])

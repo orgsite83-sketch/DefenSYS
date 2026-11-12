@@ -216,7 +216,7 @@ Remove `--dry-run` to submit. Every student must rate themselves and every teamm
 
 `--year` accepts `1`, `2`, `3`, `4` or labels such as `"1st Year"`. It filters student discovery and rechecks the dashboard team's cohort before scoring. It uses the team's assessment year, rather than the student's latest academic record. The script uses each student's currently selected dashboard evaluation context; `--stage` filters that context rather than switching stages.
 
-Other peer options include `--students 4001 4002`, `--team-id 25`, `--session-id UUID`, `--semester-id 2`, and `--limit 5`. Default scores are 6-9 for a 10-point criterion; customize with `--min-score 7 --max-score 9`. The peer script has no `--scope` option.
+Other peer options include `--students 4001 4002`, `--team-id 25`, `--session-id UUID`, `--semester-id 2`, and `--limit 5`. Default ratings are 6-9 out of 10, scaled proportionally to every criterion maximum; `--min-score 8 --max-score 10` produces 16-20/20 or 4-5/5. Scores retain up to two decimal places and support zero. The script sends raw scores with criterion IDs and sections so repeated names remain distinct; the backend applies the configured weights. The peer script has no `--scope` option.
 
 For slower student dashboards, add `--request-timeout 90` (default: 30 seconds; maximum: 300). This applies to dashboard reads and submissions. A timed-out submission may already have saved; check the saved state before rerunning. The script does not automatically retry evaluation writes.
 

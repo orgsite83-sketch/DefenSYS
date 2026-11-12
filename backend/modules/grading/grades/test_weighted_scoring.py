@@ -172,3 +172,30 @@ class WeightedScoringApiTests(APITestCase):
         }, format='json')
         self.assertEqual(response.status_code, 400)
         self.assertFalse(PeerEvaluationSubmission.objects.filter(evaluator=self.student).exists())
+
+    def test_peer_automation_preserves_weighted_sections_with_repeated_names(self):
+        from unittest.mock import patch
+        from execution import auto_peer_eval
+        from .peer_eval import peer_criteria_payload
+
+        self._complete_capstone_panel_grading()
+        self._enable_capstone_peer_grading()
+        criteria = self.configure(self.peer_rubric, target='individual')
+        for criterion, section, maximum in zip(criteria, ['Research', 'Teamwork'], [20, 5]):
+            criterion.name = 'Quality'
+            criterion.section = section
+            criterion.max_score = maximum
+            criterion.save()
+        team = self.capstone_team
+        with patch.object(auto_peer_eval.random, 'uniform', side_effect=[9, 5]):
+            breakdown = auto_peer_eval.generate_breakdown(peer_criteria_payload(team), 5, 9)
+        self.client.force_authenticate(self.student)
+        response = self.client.post('/api/grading/grades/peer-evaluations/', {
+            'teamId': team.pk, 'evaluateeId': self.second_student.pk,
+            'breakdown': breakdown, 'total': 20.5, 'max': 25,
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        submission = PeerEvaluationSubmission.objects.get(evaluator=self.student, evaluatee=self.second_student)
+        self.assertEqual(submission.weighted_score, Decimal('82.00'))
+        self.assertEqual([row['section'] for row in submission.breakdown], ['Research', 'Teamwork'])
+        self.assertEqual([Decimal(row['weight_snapshot']) for row in submission.breakdown], [Decimal(80), Decimal(20)])

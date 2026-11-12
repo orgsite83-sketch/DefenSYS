@@ -2091,18 +2091,14 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         sectionCriteria.fold<double>(0, (sum, c) => sum + (c.score ?? 0));
     final isAllScored = sectionCriteria.every((c) => c.isScored);
 
-    final totalWeight = allVisibleCriteria.fold<double>(
-      0,
-      (sum, c) => sum + (c.weight ?? 0),
-    );
-    final effectiveTotalWeight = totalWeight > 0 ? totalWeight : 100.0;
-    final weightedEarned = sectionCriteria.fold<double>(
+    // Weights are rubric percentages. Renormalizing the visible target would
+    // inflate mixed-rubric contributions beyond the displayed section weight.
+    final contribution = sectionCriteria.fold<double>(
       0.0,
       (sum, c) =>
           sum +
           (c.maxScore > 0 ? ((c.score ?? 0) / c.maxScore) * (c.weight ?? 0) : 0.0),
     );
-    final contribution = (weightedEarned / effectiveTotalWeight) * 100.0;
     final rawPercentage = totalMax > 0 ? (totalEarned / totalMax * 100) : 0.0;
 
     return Container(

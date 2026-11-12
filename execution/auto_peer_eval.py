@@ -87,13 +87,13 @@ def parse_args(argv=None):
         "--min-score",
         type=float,
         default=6.0,
-        help="Minimum criterion score (default: 6.0)",
+        help="Minimum rating out of 10, scaled to each criterion maximum (default: 6.0)",
     )
     parser.add_argument(
         "--max-score",
         type=float,
         default=9.0,
-        help="Maximum criterion score (default: 9.0)",
+        help="Maximum rating out of 10, scaled to each criterion maximum (default: 9.0)",
     )
     parser.add_argument(
         "--stage",
@@ -129,6 +129,9 @@ def parse_args(argv=None):
     parser.add_argument('--request-timeout', type=float, default=30,
         help='HTTP request timeout in seconds (default: 30). Writes are never retried automatically.')
     args = parser.parse_args(argv)
+    if not (math.isfinite(args.min_score) and math.isfinite(args.max_score)
+            and 0 <= args.min_score <= args.max_score <= 10):
+        parser.error('Scores must satisfy 0 <= --min-score <= --max-score <= 10 (scaled to each criterion maximum).')
     if not math.isfinite(args.request_timeout) or not 0 < args.request_timeout <= 300:
         parser.error('--request-timeout must be a finite number greater than 0 and at most 300 seconds.')
     return args
@@ -261,6 +264,26 @@ class StudentClient:
             return False
 
 
+def generate_breakdown(criteria, minimum, maximum):
+    """Send raw criterion scores; the backend resolves section identities and weights."""
+    breakdown = []
+    for criterion in criteria:
+        criterion_max = float(criterion.get('maxScore', 10))
+        if not math.isfinite(criterion_max) or criterion_max <= 0:
+            raise ValueError('The assigned peer rubric contains an invalid criterion maximum.')
+        score = min(criterion_max, max(0, round(random.uniform(minimum, maximum) / 10 * criterion_max, 2)))
+        row = {
+            'criteriaName': criterion.get('name', 'Criterion'),
+            'section': criterion.get('section', ''),
+            'score': score,
+            'max': criterion_max,
+        }
+        if criterion.get('id') is not None:
+            row['criterion_id'] = criterion['id']
+        breakdown.append(row)
+    return breakdown
+
+
 def run():
     args = parse_args()
 
@@ -285,8 +308,8 @@ def run():
     if args.limit and args.limit > 0:
         student_records = student_records[:args.limit]
 
-    min_s = int(round(args.min_score))
-    max_s = int(round(args.max_score))
+    min_s = args.min_score
+    max_s = args.max_score
 
     print("=" * 70)
     print("  DefenSYS Peer Evaluation Automation")
@@ -295,7 +318,7 @@ def run():
     print(f"  Total Students  : {len(student_records)}")
     if args.year:
         print(f"  Year Filter     : {args.year}")
-    print(f"  Score Range     : {min_s} to {max_s} per criterion")
+    print(f"  Score Range     : {min_s} to {max_s} out of 10 (scaled per criterion)")
     print(f"  Auth Method     : {'HTTP POST /api/login/' if args.http_login else 'Direct JWT (Fast/No-Throttle)'}")
     print(f"  Mode            : {'DRY RUN (No changes saved)' if args.dry_run else 'LIVE SUBMISSION'}")
     print("=" * 70)
@@ -378,25 +401,7 @@ def run():
             if teammate_id == current_id:
                 teammate_name += " (self-evaluation)"
 
-            # Generate random score between min_score and max_score
-            breakdown = []
-            for criterion in peer_criteria:
-                crit_name = criterion.get("name", "Criterion")
-                crit_max = float(criterion.get("maxScore", 10.0))
-
-                # If criterion max is 10, pick directly between min_s and max_s (e.g. 6 to 9)
-                if crit_max >= max_s:
-                    score = random.randint(min_s, max_s)
-                else:
-                    # Scale down proportionally if rubric max is e.g. 5
-                    ratio = random.uniform(min_s / 10.0, max_s / 10.0)
-                    score = max(1, min(int(round(crit_max * ratio)), int(crit_max)))
-
-                breakdown.append({
-                    "criteriaName": crit_name,
-                    "score": float(score),
-                    "max": float(crit_max),
-                })
+            breakdown = generate_breakdown(peer_criteria, min_s, max_s)
 
             total_score = sum(b["score"] for b in breakdown)
             max_score = sum(b["max"] for b in breakdown)
@@ -410,13 +415,13 @@ def run():
                 "max": max_score,
             }
 
-            scores_desc = ", ".join(f"{b['criteriaName']}: {int(b['score'])}/{int(b['max'])}" for b in breakdown)
+            scores_desc = ", ".join(f"{b['criteriaName']}: {b['score']:g}/{b['max']:g}" for b in breakdown)
 
             success = client.submit_evaluation(payload, dry_run=args.dry_run)
             if success:
                 total_evals_submitted += 1
                 prefix = "[DRY-RUN]" if args.dry_run else "[OK]"
-                print(f"    {prefix} Rated {teammate_name}: {total_score:.0f}/{max_score:.0f} [{scores_desc}]")
+                print(f"    {prefix} Rated {teammate_name}: {total_score:g}/{max_score:g} [{scores_desc}]")
             else:
                 print(f"    [FAIL] Failed to rate {teammate_name}")
 

@@ -266,6 +266,94 @@ void main() {
     await loadPreviewFonts(force: true);
   });
 
+  for (final target in ['team', 'individual', 'both']) {
+    testWidgets(
+      'section contribution preserves rubric weights for $target scoring',
+      (tester) async {
+        final team = _team(concepts: false, target: target);
+        final firstTarget = target == 'individual' ? 'individual' : 'team';
+        team.panelRubric!['criteria'] = [
+          {
+            'id': 1,
+            'name': 'Research topic',
+            'section': 'Research',
+            'max_score': 50,
+            'weight': 40,
+            'target_type': firstTarget,
+          },
+          {
+            'id': 2,
+            'name': 'Documentation',
+            'section': 'Documentation',
+            'max_score': 10,
+            'weight': target == 'both' ? 20 : 60,
+            'target_type': firstTarget,
+          },
+          if (target == 'both') ...[
+            {
+              'id': 3,
+              'name': 'Presentation',
+              'section': 'Individual performance',
+              'max_score': 10,
+              'weight': 10,
+              'target_type': 'individual',
+            },
+            {
+              'id': 4,
+              'name': 'Questions',
+              'section': 'Individual performance',
+              'max_score': 20,
+              'weight': 30,
+              'target_type': 'individual',
+            },
+          ],
+        ];
+        team.draftSubmissions = [
+          {
+            'student_id': target == 'individual' ? 1 : null,
+            'criteria_scores': [
+              {'criterion_id': 1, 'score': 42},
+              {'criterion_id': 2, 'score': 10},
+            ],
+          },
+          if (target == 'both')
+            {
+              'student_id': 1,
+              'criteria_scores': [
+                {'criterion_id': 3, 'score': 10},
+                {'criterion_id': 4, 'score': 0},
+              ],
+            },
+        ];
+        await _show(tester, team, width: 1200, height: 1600);
+        expect(find.text('42 / 50 pts (84.0%)'), findsOneWidget);
+        expect(find.text('Contribution: 33.60% / 40.0%'), findsOneWidget);
+        expect(find.text('Contribution: 56.00% / 40.0%'), findsNothing);
+
+        final firstInput = find.descendant(
+          of: find.byType(EvaluationScoreInput).first,
+          matching: find.byType(EditableText),
+        );
+        await tester.ensureVisible(firstInput);
+        await tester.enterText(firstInput, '50');
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pumpAndSettle();
+        expect(find.text('Contribution: 40.00% / 40.0%'), findsOneWidget);
+
+        if (target == 'both') {
+          await _tap(tester, find.text('Individuals'));
+          // Unequal weights and score scales must use each criterion's ratio.
+          expect(find.text('10 / 30 pts (33.3%)'), findsOneWidget);
+          expect(find.text('Contribution: 10.00% / 40.0%'), findsOneWidget);
+          expect(find.text('Contribution: 25.00% / 40.0%'), findsNothing);
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+  }
+
   test(
     'assignment title uses captured proposals until an official choice exists',
     () {
