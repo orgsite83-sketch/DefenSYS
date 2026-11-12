@@ -89,6 +89,8 @@ class CurriculumExplorerTests(APITestCase):
         response = self.get(view='projects', project_status='all', academic_year=self.year.label)
         row = next(p for p in response.data['projects'] if p['team_id'] == self.a.pk)
         self.assertEqual(row['application_area'], 'Information & Document Services')
+        self.assertEqual(row['application_area_status'], 'estimated')
+        self.assertEqual(row['application_area_reason_code'], 'supported')
         detail = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
                                 {'scope': 'capstone', 'academic_year': self.year.label})
         classification = detail.data['classification']
@@ -97,6 +99,40 @@ class CurriculumExplorerTests(APITestCase):
                             for e in classification['application_area_evidence']))
         source.refresh_from_db()
         self.assertEqual((source.category, source.classification), before)
+
+    def test_application_area_source_failures_reach_collection_and_detail(self):
+        source = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+            deliverable_id='AREA_EMPTY', label='Project proposal', deliverable_type='pre', extracted_text='')
+        response = self.get(view='projects', project_status='all', academic_year=self.year.label)
+        row = next(p for p in response.data['projects'] if p['team_id'] == self.a.pk)
+        self.assertEqual(row['application_area_reason_code'], 'unreadable')
+        self.assertEqual(row['application_area_status'], 'unresolved')
+        detail = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+                                {'scope': 'capstone', 'academic_year': self.year.label})
+        self.assertEqual(detail.data['classification']['application_area_reason_code'], 'unreadable')
+        source.refresh_from_db()
+        self.assertEqual(source.classification, {})
+
+    def test_chapter_manuscripts_follow_captured_capstone_year_after_promotion(self):
+        proposal = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+            deliverable_id='CH13', label='Chapter 1-3', deliverable_type='pre',
+            extracted_text='Objectives\nCloudSync implements a web application with React and Django for library book circulation.')
+        future = SchoolYear.objects.create(label='2027-2028')
+        future_sem = Semester.objects.create(school_year=future, label=Semester.FIRST)
+        self.a.semester = future_sem
+        self.a.save(update_fields=['semester'])
+        final = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+            deliverable_id='CH15', label='Chapter 1-5 and Appendices', deliverable_type='post',
+            extracted_text='Objectives\nCloudSync provides a document library of approved handbooks with version dates.')
+        for year, expected in ((self.year.label, proposal), (future.label, final)):
+            with self.subTest(year=year):
+                response = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+                    {'scope': 'capstone', 'academic_year': year})
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertEqual([d['id'] for d in response.data['documents']], [f'submission:{expected.pk}'])
+                self.assertNotEqual(response.data['classification']['reason_code'], 'no_documents')
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.archive_semester_id, self.sem.pk)
 
     def test_workspace_year_reveals_stages_and_assessment_reveals_only_its_components(self):
         response = self.get(view='year', academic_year=self.year.label)

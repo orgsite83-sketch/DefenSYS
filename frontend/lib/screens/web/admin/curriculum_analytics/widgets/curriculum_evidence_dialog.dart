@@ -342,6 +342,16 @@ class _CurriculumEvidenceDialogState
                 'Application area',
                 '${classification['application_area']}',
               ),
+              if (classification['application_area_status'] == 'unresolved' &&
+                  '${classification['application_area_reason'] ?? ''}'
+                      .isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '${classification['application_area_reason']}',
+                  key: const ValueKey('application-area-reason'),
+                  style: _muted,
+                ),
+              ],
             ],
             const SizedBox(height: 12),
             Text(
@@ -953,6 +963,8 @@ class _CurriculumEvidenceDialogState
           'Application area: ${classification['application_area']}',
           style: _muted,
         ),
+      if ('${classification['application_area_reason'] ?? ''}'.isNotEmpty)
+        Text('${classification['application_area_reason']}', style: _muted),
       const SizedBox(height: 8),
       Text('${classification['reason'] ?? ''}', style: _muted),
       ShadAccordion<String>(
@@ -974,7 +986,8 @@ class _CurriculumEvidenceDialogState
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            '${passage['dimension']} · ${passage['section']}',
+                            '${passage['dimension']} · ${passage['section']}'
+                            '${passage['page'] == null ? '' : ' · Page ${passage['page']}'}',
                             style: _muted.copyWith(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 6),
@@ -1069,7 +1082,7 @@ class _CurriculumEvidenceDialogState
         continue;
       }
       final key =
-          '${hit['dimension']}-${hit['document_id']}-${hit['section']}-${hit['excerpt']}';
+          '${hit['dimension']}-${hit['document_id']}-${hit['section']}-${hit['page']}-${hit['excerpt']}';
       final group = passages.putIfAbsent(
         key,
         () => {...hit, 'terms': <String>{}},

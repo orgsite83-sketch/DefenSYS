@@ -111,7 +111,7 @@ The Flutter smartphone app implements offline lessons and push notifications for
 
     def test_section_chunks_preserve_source_passages(self):
         chunks = section_chunks('4. Objectives\nCollect soil moisture readings.\nReferences\nUse MQTT devices.')
-        self.assertEqual(chunks, [{'section': 'Objectives', 'text': 'Collect soil moisture readings.', 'weight': 3}])
+        self.assertEqual(chunks, [{'section': 'Objectives', 'text': 'Collect soil moisture readings.', 'weight': 3, 'page': 1}])
 
     def test_functional_descriptions_establish_project_focus_without_stack_names(self):
         cases = [

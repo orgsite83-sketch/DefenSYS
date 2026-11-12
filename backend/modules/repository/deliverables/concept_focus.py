@@ -59,14 +59,14 @@ def concept_function_evidence(text, chunks):
     information workflow without claiming that it uses a browser or mobile app.
     Repeating the same retrieval operation cannot supply the second function.
     """
-    if not (re.search(r'\b(?:concept paper|project proposal)\b', text[:2000], re.I) or
+    if not (re.search(r'\b(?:concept paper|project proposal|capstone project(?: and research study)?(?: proposal)?)\b', text[:2000], re.I) or
             any(c['section'].lower().startswith('proposed system') for c in chunks)):
         return []
     passages = []
     for chunk in chunks:
         if chunk['section'].lower() not in FUNCTION_SECTIONS:
             continue
-        if passages and passages[-1]['section'] == chunk['section']:
+        if passages and (passages[-1]['section'], passages[-1].get('page')) == (chunk['section'], chunk.get('page')):
             passages[-1]['text'] += ' ' + chunk['text']
         else:
             passages.append(dict(chunk))
@@ -74,7 +74,7 @@ def concept_function_evidence(text, chunks):
     for passage in passages:
         # Rejoin PDF line wraps before splitting sentences and bullet points.
         for sentence in re.split(r'(?<=[.!?])\s+|[\u2022\ufffd]', passage['text']):
-            sentence = sentence.strip()
+            sentence = re.sub(r'^\s*(?:\d+[.)]|[-–—])\s*', '', sentence).strip()
             if not sentence or UNSUPPORTED.search(sentence):
                 continue
             for family, pattern in FUNCTION_PATTERNS.items():
@@ -84,6 +84,7 @@ def concept_function_evidence(text, chunks):
                 start = max(0, match.start() - 80)
                 hits.append({'label': 'Information Systems', 'term': match['operation'],
                              'function': family, 'section': passage['section'],
+                             'page': passage.get('page'),
                              'excerpt': sentence[start:start + 360]})
     independent = []
     for hit in hits:

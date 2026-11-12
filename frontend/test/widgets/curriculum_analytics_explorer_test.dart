@@ -335,6 +335,31 @@ void main() {
     },
   );
 
+  testWidgets('unresolved application area explains its source failure', (
+    tester,
+  ) async {
+    await _mount(tester, unclassified: true);
+    await tester.tap(find.text('Project insights'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Project focus'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('project-group-category-Unclassified')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('project-1:1')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('application-area-reason')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('No eligible manuscript is linked to this academic year.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'sources identify overview evidence and keep file actions visible',
     (tester) async {
@@ -886,7 +911,13 @@ class _FakeExplorer extends CurriculumExplorerNotifier {
           ? 'No readable project evidence is available.'
           : 'Estimated from project documents.',
       'domain': 'Healthcare',
-      if (!unclassified) 'application_area': 'Information & Document Services',
+      'application_area': unclassified
+          ? 'Unresolved application area'
+          : 'Information & Document Services',
+      'application_area_status': unclassified ? 'unresolved' : 'estimated',
+      if (unclassified)
+        'application_area_reason':
+            'No eligible manuscript is linked to this academic year.',
       if (!unclassified)
         'application_area_evidence': [
           {

@@ -8,6 +8,7 @@ import json
 import logging
 import pickle
 import re
+import warnings
 from collections import OrderedDict
 from copy import deepcopy
 from threading import Lock
@@ -17,16 +18,20 @@ from pathlib import Path
 
 from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 from sklearn.naive_bayes import MultinomialNB
+from sklearn import __version__ as SKLEARN_VERSION
+from sklearn.exceptions import InconsistentVersionWarning
 
 from .classification_taxonomy import (
     MODEL_VERSION, TRAINING_SOURCE, TRAINING_EXAMPLES, FOCUS_SIGNALS,
     DOMAIN_SIGNALS, TECHNOLOGY_SIGNALS,
 )
 from .concept_focus import concept_function_evidence
+from .manuscript_sections import manuscript_sections, SECTION_VERSION
 
 logger = logging.getLogger(__name__)
 MIN_SCORE = 60.0
 MIN_MARGIN = 12.0
+FEATURE_VERSION = f'{SECTION_VERSION}-focus-1'
 GENERIC_WORDS = {'project', 'system', 'application', 'software', 'development',
                  'implementation', 'design', 'testing', 'documentation',
                  'requirements', 'proposed', 'prototype', 'provide', 'using'}
@@ -68,44 +73,17 @@ def _term_pattern(term):
 
 def section_chunks(text):
     """Preserve evidence passages while excluding metadata and citations."""
-    lines = (text or '')[:80000].splitlines()
-    # When a structured manuscript has sections, its cover/title page is not
-    # enough to establish the implemented computing focus.
-    section, weight = 'Project description', 0 if any(HEADER.match(line) for line in lines) else 1
-    chunks, seen = [], set()
-    for line in lines:
-        line = re.sub(r'\(cid:\d+\)', ' ', line)
-        line = re.sub(r'\s+', ' ', line).strip(' •\t')
-        if not line or METADATA.match(line):
-            continue
-        heading = HEADER.match(line)
-        if heading:
-            section = heading[1].title()
-            key = heading[1].lower()
-            weight = 0 if key in ('related work', 'related literature', 'literature review',
-                                  'references', 'bibliography', 'preliminary technology considerations',
-                                  'risk considerations and safeguards') else (
-                1 if key in ('scope', 'scope and boundaries', 'scope and limitations', 'success indicators') else 3)
-            line = heading[2].strip()
-            if not line:
-                continue
-        if not weight or TENTATIVE.search(line):
-            continue
-        # De-duplicate repeated headers/boilerplate within one document.
-        fingerprint = line.casefold()
-        if fingerprint in seen:
-            continue
-        seen.add(fingerprint)
-        chunks.append({'section': section, 'text': line, 'weight': weight})
+    chunks = []
+    for passage in manuscript_sections(text):
+        value = ' '.join(sentence for sentence in re.split(r'(?<=[.!?])\s+', passage['text'])
+                         if not TENTATIVE.search(sentence))
+        if value:
+            chunks.append({key: passage[key] for key in ('section', 'weight', 'page')} | {'text': value})
     return chunks
 
 
 def focus_feature_input(text):
-    """The current model's feature contract, shared without changing weights.
-
-    Title/section candidates can be evaluated against this boundary later.
-    Keeping this exact representation preserves the existing trained artifact.
-    """
+    """Versioned manuscript evidence; retain trained vocabulary and thresholds."""
     chunks = section_chunks(text)
     prepared = '\n'.join(c['text'] for c in chunks for _ in range(c['weight']))
     return chunks, prepared
@@ -115,7 +93,7 @@ def _signals(chunks, taxonomy):
     found = {}
     passages = []
     for chunk in chunks:
-        if passages and (passages[-1]['section'], passages[-1]['weight']) == (chunk['section'], chunk['weight']):
+        if passages and (passages[-1]['section'], passages[-1]['weight'], passages[-1].get('page')) == (chunk['section'], chunk['weight'], chunk.get('page')):
             passages[-1]['text'] += ' ' + chunk['text']
         else:
             passages.append(dict(chunk))
@@ -132,7 +110,7 @@ def _signals(chunks, taxonomy):
                 start = max(0, match.start() - 120) if len(hit['text']) > 360 else 0
                 excerpt = hit['text'][start:start + 360]
                 evidence.append({'label': label, 'term': term,
-                                 'section': hit['section'], 'excerpt': excerpt})
+                                 'section': hit['section'], 'page': hit.get('page'), 'excerpt': excerpt})
         if evidence:
             found[label] = evidence
     return found
@@ -168,9 +146,10 @@ class ProjectFocusClassifier:
             self.train_from_examples()
         digest = input_hash(text)
         if (isinstance(cached, dict) and cached.get('model_version') == self.model_version and
+                cached.get('feature_version') == FEATURE_VERSION and
                 cached.get('input_hash') == digest):
             return cached
-        key = (self.model_version, digest)
+        key = (self.model_version, FEATURE_VERSION, digest)
         with self._document_prediction_lock:
             prediction = self._document_predictions.get(key)
             if prediction is not None:
@@ -207,7 +186,7 @@ class ProjectFocusClassifier:
         # Compatibility for existing callers; never repeat keyword lists.
         self.train_from_examples()
 
-    def predict(self, text):
+    def predict(self, text, *, allow_function_fallback=True):
         if not self.is_trained:
             self.train_from_examples()
         text = text or ''
@@ -248,9 +227,9 @@ class ProjectFocusClassifier:
         decision_method = 'naive_bayes'
         predicted = label if status == 'estimated' else 'Other'
         functional = concept_function_evidence(text, chunks)
-        specialist_support = any(category != 'Information Systems' and len(_independent_signals(hits)) >= 2
+        specialist_support = any(category not in ('Information Systems', 'Web Development', 'Mobile Development', 'Desktop Applications') and len(_independent_signals(hits)) >= 2
                                  for category, hits in focus.items())
-        if (status == 'unresolved' and reason_code in ('insufficient_evidence', 'low_score') and
+        if (allow_function_fallback and status == 'unresolved' and reason_code in ('insufficient_evidence', 'low_score') and
                 functional and not specialist_support):
             predicted, status, reason_code = 'Information Systems', 'estimated', 'supported'
             decision_method, independent = 'concept_functions', functional
@@ -272,6 +251,7 @@ class ProjectFocusClassifier:
             'technologies': [{'name': name, 'evidence': hits[:2]} for name, hits in technologies.items()],
             'evidence': independent[:6], 'model_version': self.model_version,
             'training_source': self.training_source, 'input_hash': input_hash(text),
+            'feature_version': FEATURE_VERSION,
             'classified_at': datetime.now(timezone.utc).isoformat(),
             'acceptance': {'minimum_score': MIN_SCORE, 'minimum_margin': MIN_MARGIN,
                            'minimum_independent_terms': 2, 'minimum_independent_functions': 2,
@@ -286,6 +266,7 @@ class ProjectFocusClassifier:
         with temporary.open('wb') as output:
             pickle.dump({'vectorizer': self.vectorizer, 'classifier': self.classifier,
                          'schema_version': MODEL_VERSION, 'model_version': self.model_version,
+                         'sklearn_version': SKLEARN_VERSION,
                          'training_source': self.training_source}, output)
         temporary.replace(destination)
 
@@ -293,16 +274,24 @@ class ProjectFocusClassifier:
         path = Path(filepath)
         if path.is_file():
             # Only the application-owned model path is used by production callers.
-            with path.open('rb') as source:
-                data = pickle.load(source)
-            if data.get('schema_version') == MODEL_VERSION:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter('error', InconsistentVersionWarning)
+                    with path.open('rb') as source:
+                        data = pickle.load(source)
+            except InconsistentVersionWarning:
+                logger.warning('Saved classifier uses a different scikit-learn version; using versioned development examples. No saved model was changed.')
+                self.train_from_examples()
+                return
+            if (data.get('schema_version') == MODEL_VERSION and
+                    data.get('sklearn_version', SKLEARN_VERSION) == SKLEARN_VERSION):
                 self.vectorizer, self.classifier = data['vectorizer'], data['classifier']
                 self.categories = list(self.classifier.classes_)
                 self.training_source = data.get('training_source', TRAINING_SOURCE)
                 self.model_version = data['model_version']
                 self.is_trained = True
                 return
-            logger.info('Legacy project classifier detected; using versioned development examples.')
+            logger.info('Legacy or incompatible project classifier detected; using versioned development examples.')
         self.train_from_examples()
 
 

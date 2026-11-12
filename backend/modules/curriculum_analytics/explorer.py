@@ -30,7 +30,7 @@ from user_management.academic_records.models import StudentAcademicRecord
 from .project_profile import build_project_profile
 from .performance import configure_selection, build_performance, selected_rows, members
 from .comparisons import comparison_key, comparison_options
-from repository.deliverables.project_classification import classification_for_document
+from repository.deliverables.project_classification import classification_for_document, FEATURE_VERSION
 from repository.deliverables.classification_taxonomy import MODEL_VERSION
 
 
@@ -45,7 +45,8 @@ ADMIN_DOCUMENT = re.compile(
 )
 PROJECT_DOCUMENT = re.compile(
     r'\b(project|proposal|concept paper|manuscript|thesis|research|technical|'
-    r'executive journal|final paper|source code|documentation|abstract)\b', re.I,
+    r'executive journal|final paper|source code|documentation|abstract)\b|'
+    r'\bchapters?\s+(?:[1-5]|[ivx]+)\b', re.I,
 )
 
 
@@ -326,16 +327,20 @@ class CurriculumExplorer:
             config = configs.get((submission.stage_label.casefold(), submission.deliverable_id))
             if not _is_project_document(submission.label, config):
                 continue
-            # A live deliverable has no semester FK. It can only be assigned to
-            # its existing project, never used to manufacture a past cohort.
-            period_ids = [str(project['team'].semester_id)] if project['version'] == project['team'].project_version else [
-                str(g.semester_id) for g in project['grades'] if g.stage_label.casefold() == submission.stage_label.casefold()]
+            # Captured upload semester is authoritative for Capstone and PIT.
+            # The team's current semester cannot move last year's manuscript
+            # into this year's source set. Undated legacy rows retain the old
+            # fallback without manufacturing a new historical cohort.
+            period_ids = ([str(submission.archive_semester_id)] if submission.archive_semester_id else
+                [str(project['team'].semester_id)] if project['version'] == project['team'].project_version else [
+                    str(g.semester_id) for g in project['grades'] if g.stage_label.casefold() == submission.stage_label.casefold()])
+            period_ids = [p for p in period_ids if p in project['periods']]
             if self.pit_lead_year:
                 period_ids = ([str(submission.archive_semester_id)] if submission.archive_semester_id else period_ids)
                 period_ids = [p for p in period_ids if p in project['periods'] and
                               self._period_allowed(self.semesters[p])]
-                if not period_ids:
-                    continue
+            if not period_ids:
+                continue
             # Repository displays one current upload per deliverable. The
             # parent is a compatibility mirror, and child files retain history.
             latest_file = submission.latest_file
@@ -628,7 +633,8 @@ class CurriculumExplorer:
         candidates = sorted(related, key=lambda d: -(d['classification']['confidence_score'] or 0))
         domain_docs = [d for d in related if d['classification']['domain'] != 'Unresolved domain']
         domain_source = max(domain_docs, key=lambda d: len(d['classification']['domain_evidence']), default=None)
-        common = {'model_version': MODEL_VERSION, 'review_status': 'Estimated; not faculty-reviewed',
+        common = {'model_version': candidates[0]['classification']['model_version'] if candidates else MODEL_VERSION,
+                  'feature_version': FEATURE_VERSION, 'review_status': 'Estimated; not faculty-reviewed',
                   'domain': domain_source['classification']['domain'] if domain_source else 'Unresolved domain',
                   'domain_evidence': [{**hit, **_source_reference(domain_source)}
                                       for hit in domain_source['classification']['domain_evidence']] if domain_source else [],
@@ -653,7 +659,7 @@ class CurriculumExplorer:
                       'reason_code': code, 'reason': reason, 'model_score': None,
                       'candidates': candidates[0]['classification']['top_3'] if candidates else [],
                       'evidence': candidates[0]['classification']['evidence'] if candidates else []}
-            result.update(application_area(related))
+            result.update(application_area(related, source_reason=code))
             self._classification_cache[cache_key] = result
             return result
         # Duplicate files cannot outvote a project: use one primary document.
@@ -661,6 +667,7 @@ class CurriculumExplorer:
                                             d['uploaded_at'], d['classification']['confidence_score'] or 0))
         prediction = primary['classification']
         result = {**common, 'label': prediction['predicted_category'],
+                  'model_version': prediction['model_version'],
                   'status': 'estimated', 'reason_code': 'supported', 'reason': prediction['reason'],
                   'decision_method': prediction.get('decision_method', 'naive_bayes'),
                   'model_score': prediction['confidence_score'], 'margin': prediction['margin'],
@@ -690,6 +697,10 @@ class CurriculumExplorer:
                 'project_title': project['title'], 'project_version': project['version'],
                 'category': classification['label'], 'domain': classification['domain'],
                 'application_area': classification.get('application_area', 'Unresolved application area'),
+                'application_area_status': classification.get('application_area_status', 'unresolved'),
+                'application_area_reason_code': classification.get('application_area_reason_code', 'not_requested'),
+                'application_area_reason': classification.get('application_area_reason', ''),
+                'application_area_version': classification.get('application_area_version'),
                 'technologies': [t['name'] for t in classification['technologies']],
                 'classification_status': classification['status'],
                 'classification_reason': classification['reason'],
