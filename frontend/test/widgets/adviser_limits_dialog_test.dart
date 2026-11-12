@@ -17,6 +17,8 @@ Map<String, dynamic> fixture({bool approved = false}) => {
         'effective_limit': approved ? 5 : 4,
         'has_exception': approved,
         'is_overloaded': false,
+        'intake_semester_id': 8,
+        'intake_label': '2nd Semester, A.Y. 2025-2026',
       },
     },
   ],
@@ -25,7 +27,9 @@ Map<String, dynamic> fixture({bool approved = false}) => {
       {
         'id': 1,
         'adviser_id': 2,
-        'semester_id': 10,
+        'semester_id': 8,
+        'intake_semester_id': 8,
+        'intake_label': '2nd Semester, A.Y. 2025-2026',
         'approved_limit': 5,
         'authorization': 'Department chair decision',
         'reason': 'Additional solo project',
@@ -99,6 +103,7 @@ void main() {
     expect(sent, containsPair('approved_limit', 5));
     expect(sent, containsPair('adviser_id', 2));
     expect(sent, containsPair('semester_id', 10));
+    expect(sent, containsPair('intake_semester_id', 8));
     expect(
       find.text('Exception saved. You can now assign teams within this limit.'),
       findsOneWidget,
@@ -182,6 +187,75 @@ void main() {
     await tester.tap(find.text('Retry'));
     await tester.pumpAndSettle();
     expect(find.text('4 active teams · Limit: 4'), findsOneWidget);
+  });
+
+  testWidgets('phase 2 retains the original batch approval', (tester) async {
+    await pumpDialog(
+      tester,
+      load: () async => fixture(approved: true),
+      save: (_, _) async {},
+    );
+    expect(
+      find.text('Batch intake: 2nd Semester, A.Y. 2025-2026'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Applies through Capstone 1 and Capstone 2.'),
+      findsOneWidget,
+    );
+    expect(find.text('5 active teams · Approved limit: 5'), findsOneWidget);
+    expect(find.textContaining('Recorded exception'), findsOneWidget);
+  });
+
+  testWidgets('new batch uses four and does not select the old approval', (
+    tester,
+  ) async {
+    final data = fixture(approved: true);
+    data['active_semester'] = {
+      'id': 12,
+      'display_name': '2nd Semester, A.Y. 2026-2027',
+    };
+    final capacity = (data['advisers'] as List).first['capacity'] as Map;
+    capacity.addAll(<String, Object>{
+      'intake_semester_id': 12,
+      'intake_label': '2nd Semester, A.Y. 2026-2027',
+      'effective_limit': 4,
+      'has_exception': false,
+      'is_overloaded': true,
+    });
+    await pumpDialog(tester, load: () async => data, save: (_, _) async {});
+    expect(find.text('5 active teams · Limit: 4'), findsOneWidget);
+    expect(find.text('Revoke exception'), findsNothing);
+    expect(find.textContaining('Recorded exception'), findsNothing);
+    expect(find.textContaining('Existing overload.'), findsOneWidget);
+    await tester.ensureVisible(find.text('Previous batch approvals'));
+    await tester.tap(find.text('Previous batch approvals'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('2nd Semester, A.Y. 2025-2026 · Limit: 5'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('unverified batch cannot save an approval', (tester) async {
+    final data = fixture();
+    final capacity = (data['advisers'] as List).first['capacity'] as Map;
+    capacity.remove('intake_semester_id');
+    capacity.remove('intake_label');
+    await pumpDialog(tester, load: () async => data, save: (_, _) async {});
+    await tester.enterText(input('Department authorization'), 'Department');
+    await tester.enterText(input('Reason for this change'), 'Approved');
+    await tester.pump();
+    expect(
+      tester
+          .widget<ShadButton>(find.widgetWithText(ShadButton, 'Save exception'))
+          .enabled,
+      isFalse,
+    );
+    expect(
+      find.text('No verified Capstone batch in this academic period.'),
+      findsOneWidget,
+    );
   });
 
   for (final dark in [false, true]) {

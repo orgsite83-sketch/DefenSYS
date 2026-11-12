@@ -71,6 +71,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('old batch row cannot replace current adviser capacity', (tester) async {
+    await pumpReadiness(tester, [team(1, capacity: {
+      'active_count': 5, 'effective_limit': 4,
+      'has_exception': false, 'is_overloaded': true,
+      'operating_capacity': {
+        'active_count': 5, 'effective_limit': 6,
+        'has_exception': true, 'is_overloaded': false,
+      },
+    })]);
+    expect(find.text('(5/6)'), findsOneWidget);
+    expect(find.text('5/4 teams'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('adviser filters distinguish identical display names', (tester) async {
     await pumpReadiness(tester, [
       team(1, capacity: {'active_count': 5, 'effective_limit': 5, 'is_overloaded': false}),

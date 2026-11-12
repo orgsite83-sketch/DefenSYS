@@ -382,7 +382,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                     final key = _adviserKey(t);
                     adviserNames[key] = adviser;
                     if (t['adviser_capacity'] is Map) {
-                      adviserCapacities[key] = t['adviser_capacity'] as Map;
+                      final capacity = t['adviser_capacity'] as Map;
+                      adviserCapacities[key] =
+                          capacity['operating_capacity'] as Map? ?? capacity;
                     }
                   }
                 }
@@ -948,7 +950,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                       ],
                                                     );
                                                   }
-                                                  final capacity = adviserCapacities[_adviserKey(team)];
+                                                  final capacity = team['adviser_capacity'] as Map?;
                                                   final load = asInt(capacity?['active_count']);
                                                   final limit = asInt(capacity?['effective_limit']);
                                                   final isOverloaded = capacity?['is_overloaded'] == true;

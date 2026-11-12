@@ -23,9 +23,10 @@ class CapacityFixtures:
         self.adviser = get_user_model().objects.create_user(username='capacity-faculty', role='faculty')
         self.other = get_user_model().objects.create_user(username='capacity-other', role='faculty')
         year = SchoolYear.objects.create(label='2026-2027')
-        self.term = Semester.objects.create(school_year=year, label=Semester.FIRST, is_active=True,
+        self.term = Semester.objects.create(school_year=year, label=Semester.SECOND, is_active=True,
             starts_on='2026-01-01', ends_on='2026-12-31', capstone_team_creation_enabled=True)
-        self.second = Semester.objects.create(school_year=year, label=Semester.SECOND)
+        next_year = SchoolYear.objects.create(label='2027-2028')
+        self.second = Semester.objects.create(school_year=next_year, label=Semester.SECOND)
         if hasattr(self.client, 'force_authenticate'):
             self.client.force_authenticate(self.admin)
 
@@ -220,6 +221,119 @@ class AdviserCapacityTests(CapacityFixtures, APITestCase):
         with CaptureQueriesContext(connection) as queries:
             capacity_projections(ids)
         self.assertLessEqual(len(queries), 5)
+
+    def test_old_batch_approval_cannot_authorize_new_intake_or_transfer(self):
+        self.fill()
+        approval = self.approve()
+        old = self.team(5)
+        self.second.is_active = True
+        self.second.save()
+        approval.refresh_from_db()
+        self.assertEqual(approval.end_kind, 'retired')
+        # Unfinished old projects continue to consume the concurrent workload.
+        capacity = capacity_projections([self.adviser.pk])[self.adviser.pk]
+        self.assertEqual((capacity['active_count'], capacity['effective_limit']), (5, 4))
+        self.assertEqual(capacity['intake_semester_id'], self.second.pk)
+        self.assertFalse(capacity['can_assign'])
+        self.term = self.second
+        with self.assertRaises(ValidationError):
+            self.team(6)
+        incoming = self.team(7, self.other)
+        incoming.adviser = self.adviser
+        with self.assertRaises(ValidationError):
+            incoming.save()
+        old.name = 'Existing assignment remains editable'
+        old.save()
+        new_approval = self.approve(approved_limit=6, reason='New batch decision')
+        self.team(8)
+        self.assertNotEqual(new_approval.pk, approval.pk)
+        self.assertEqual(AdviserCapacityException.objects.count(), 2)
+
+    def test_client_cannot_select_another_intake_for_approval(self):
+        response = self.client.post('/api/teams/adviser-capacity/', {
+            'adviser_id': self.adviser.pk, 'semester_id': self.term.pk,
+            'intake_semester_id': self.second.pk, 'approved_limit': 5,
+            'authorization': 'Department', 'reason': 'Wrong batch',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AdviserCapacityException.objects.exists())
+
+    def test_unverified_first_semester_cannot_create_batch_approval(self):
+        target = Semester.objects.create(school_year=self.second.school_year, label=Semester.FIRST,
+            is_active=True)
+        response = self.client.post('/api/teams/adviser-capacity/', {
+            'adviser_id': self.adviser.pk, 'semester_id': target.pk, 'approved_limit': 5,
+            'authorization': 'Department', 'reason': 'No verified continuation',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_settings_save_preserves_approval_and_closed_unfinished_work_counts(self):
+        teams = self.fill()
+        approval = self.approve()
+        self.term.capstone_peer_evaluation_enabled = False
+        self.term.save(update_fields=['capstone_peer_evaluation_enabled'])
+        approval.refresh_from_db()
+        self.assertIsNone(approval.ended_at)
+        from django.utils import timezone
+        self.second.is_active = True
+        self.second.save()
+        TeamTermParticipation.objects.filter(team__in=teams).update(
+            closed_at=timezone.now(), outcome='needs_review')
+        capacity = capacity_projections([self.adviser.pk])[self.adviser.pk]
+        self.assertEqual((capacity['active_count'], capacity['effective_limit']), (4, 4))
+
+    def test_migration_maps_only_unique_intakes_and_never_renews(self):
+        from django.apps import apps
+        from importlib import import_module
+        from types import SimpleNamespace
+        from django.utils import timezone
+        ended = timezone.now()
+        approval = AdviserCapacityException.objects.create(adviser=self.adviser, semester=self.term,
+            approved_limit=5, authorization='Department', reason='Legacy approval', ended_at=ended)
+        unmapped = AdviserCapacityException.objects.create(adviser=self.other,
+            semester=Semester.objects.create(school_year=self.term.school_year, label=Semester.FIRST),
+            approved_limit=5, authorization='Department', reason='Unverified first semester')
+        migrate = import_module('student_teams.migrations.0027_adviser_capacity_batch').map_legacy_batches
+        migrate(apps, SimpleNamespace(connection=connection))
+        approval.refresh_from_db()
+        unmapped.refresh_from_db()
+        self.assertEqual(approval.intake_semester_id, self.term.pk)
+        self.assertEqual(approval.ended_at, ended)
+        self.assertEqual(approval.end_kind, 'legacy_ended')
+        self.assertIsNone(unmapped.intake_semester_id)
+
+    def test_migration_keeps_conflicting_batch_approvals_unresolved(self):
+        from django.apps import apps
+        from importlib import import_module
+        from types import SimpleNamespace
+        from academic_period_management.models import SemesterTransitionLog
+        target = Semester.objects.create(school_year=self.second.school_year, label=Semester.FIRST)
+        team = self.team(1)
+        SemesterTransitionLog.objects.create(from_semester=self.term, to_semester=target,
+            impact_snapshot={'capstone_review': {'kind': 'continue'}, 'applied_team_ids': [team.pk]})
+        approvals = [AdviserCapacityException.objects.create(adviser=self.adviser, semester=term,
+            approved_limit=5, authorization='Department', reason='Legacy authorization')
+            for term in (self.term, target)]
+        migrate = import_module('student_teams.migrations.0027_adviser_capacity_batch').map_legacy_batches
+        migrate(apps, SimpleNamespace(connection=connection))
+        for row in approvals:
+            row.refresh_from_db()
+            self.assertIsNone(row.intake_semester_id)
+
+    def test_readiness_separates_old_intake_from_current_assignment_capacity(self):
+        from defense.scheduler.serializers import ScheduleTeamSerializer
+        self.fill()
+        self.approve()
+        old = self.team(5)
+        self.second.is_active = True
+        self.second.save()
+        self.term = self.second
+        self.approve(approved_limit=6, reason='Fresh new batch authorization')
+        incoming = self.team(6)
+        rows = ScheduleTeamSerializer([old, incoming], many=True).data
+        self.assertEqual(rows[0]['adviser_capacity']['effective_limit'], 4)
+        self.assertEqual(rows[0]['adviser_capacity']['operating_capacity']['effective_limit'], 6)
+        self.assertEqual(rows[1]['adviser_capacity']['effective_limit'], 6)
 
     def test_manual_api_uses_exception_and_overlimit_existing_edit(self):
         from user_management.academic_records.models import StudentAcademicRecord

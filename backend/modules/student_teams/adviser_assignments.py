@@ -20,7 +20,7 @@ def active_teams_by_adviser(adviser_ids):
     teams = StudentTeam.objects.filter(adviser_id__in=adviser_ids, level__icontains='Capstone').filter(
         Q(semester__is_active=True) | Q(
             term_participations__project_version=F('project_version'),
-            term_participations__closed_at__isnull=True)).distinct().select_related(
+            term_participations__outcome__in=['open', 'needs_review'])).distinct().select_related(
                 'semester__school_year', 'intake_semester__school_year').prefetch_related('term_participations').annotate(
                     has_published_capacity_grade=Exists(TeamGrade.all_objects.filter(
                         team_id=OuterRef('pk'), project_version=OuterRef('project_version'), status='published')))
@@ -55,7 +55,7 @@ def validate_adviser_capacity(team, adviser_id):
             and same_intake and previous.is_capstone \
             and any(row.pk == team.pk for row in active):
         return
-    exception = effective_exception(adviser_id)
+    exception = effective_exception(adviser_id, team=team)
     limit = exception.approved_limit if exception else MAX_ACTIVE_CAPSTONE_TEAMS
     count = len([row for row in active if row.pk != team.pk])
     if count + 1 > limit:

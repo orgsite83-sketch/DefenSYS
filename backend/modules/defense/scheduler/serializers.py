@@ -244,11 +244,13 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
     def get_adviser_capacity(self, obj):
         if not obj.is_capstone or not obj.adviser_id:
             return None
-        from student_teams.adviser_capacity import capacity_projections
+        from student_teams.adviser_capacity import capacity_projections, capacity_for_intake, candidate_intake_id
         capacities = self.context.get('_scheduler_adviser_capacities')
         if capacities is None:
             capacities = capacity_projections([obj.adviser_id])
-        return capacities.get(obj.adviser_id)
+        capacity = capacities.get(obj.adviser_id)
+        scoped = capacity_for_intake(capacity, candidate_intake_id(obj))
+        return scoped if scoped is capacity else {**scoped, 'operating_capacity': capacity}
 
     def get_instructor_name(self, obj):
         people = self.get_instructors(obj)

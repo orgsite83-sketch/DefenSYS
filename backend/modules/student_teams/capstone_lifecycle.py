@@ -344,8 +344,6 @@ def apply_capstone_transition(source, target, review, *, actor, log):
         old = team.term_participations.filter(semester=source).first()
         if not old or not old.closed_at:
             old = capture_participation(team, requirements=requirements)
-            old.outcome, old.closed_at, old.transition = item['outcome'], timezone.now(), log
-            old.save()
         if item['can_include']:
             if team.term_participations.filter(semester=target).exists():
                 raise ValidationError('This team already has destination-term participation. Refresh the preview.')
@@ -367,6 +365,13 @@ def apply_capstone_transition(source, target, review, *, actor, log):
             team.current_defense_stage = (DefenseStage.objects.filter(pk=next_stage['id']).values_list('label', flat=True).first() or next_stage['label']) if next_stage else None
             team.ready_for_stage = None
             team.save()
+        # Keep the source participation open through the destination save. Closing
+        # it first temporarily removes this ongoing project from adviser workload,
+        # so capacity validation mistakes continuation for an additional assignment.
+        if not old.closed_at:
+            old.outcome, old.closed_at, old.transition = item['outcome'], timezone.now(), log
+            old.save()
+        if item['can_include']:
             new = capture_participation(team, requirements=requirements)
             new.transition = log
             new.snapshot['inherited_stage_ids'] = cleared

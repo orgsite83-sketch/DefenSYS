@@ -224,6 +224,10 @@ class AdviserCapacityException(models.Model):
         related_name='capacity_exceptions')
     semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT,
         related_name='adviser_capacity_exceptions')
+    # Original batch identity; semester above preserves the issuance context.
+    # Null is reserved for legacy approvals requiring explicit review.
+    intake_semester = models.ForeignKey('academic_period_management.Semester', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='intake_adviser_capacity_exceptions')
     approved_limit = models.PositiveSmallIntegerField()
     authorization = models.CharField(max_length=500)
     reason = models.CharField(max_length=1000)
@@ -238,10 +242,12 @@ class AdviserCapacityException(models.Model):
     ended_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name='+')
     end_reason = models.CharField(max_length=1000, blank=True)
+    end_kind = models.CharField(max_length=20, blank=True, default='', choices=[
+        ('revoked', 'Revoked'), ('retired', 'Cycle ended'), ('legacy_ended', 'Previously ended')])
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['adviser', 'semester'], name='unique_adviser_capacity_term'),
+            models.UniqueConstraint(fields=['adviser', 'intake_semester'], name='unique_adviser_capacity_intake'),
             models.CheckConstraint(condition=models.Q(approved_limit__gt=4), name='adviser_exception_above_default'),
         ]
 

@@ -50,6 +50,13 @@ def build_semester_transition_preview(target_semester):
 
     from student_teams.capstone_lifecycle import build_capstone_review
     review = build_capstone_review(current_semester, target_semester)
+    from student_teams.models import AdviserCapacityException
+    approval_count = AdviserCapacityException.objects.filter(ended_at__isnull=True).count()
+    if approval_count:
+        preserves_batch = review['kind'] == 'continue' and any(row['can_include'] for row in review['teams'])
+        effects.append({'key': 'adviser_capacity_cycle', 'count': approval_count,
+            'message': ('Adviser approvals follow the continuing batch through Capstone 2.' if preserves_batch else
+                        'Adviser limits reset to four for the next batch. Existing assignments are preserved.')})
     if review['kind'] == 'exceptional' and review['total']:
         issues.append({'key': 'exceptional_transition', 'blocking': True,
             'message': 'This is not a consecutive regular-term transition. No automatic team continuation will be applied.',
@@ -147,8 +154,12 @@ def switch_active_semester(target_semester, user, force=False, reason='', *,
 
         from .capstone_mode import normalize_capstone_flags
         from student_teams.adviser_capacity import retire_exceptions
+        preserve_intake_id = current.pk if current and review.get('kind') == 'continue' and any(
+            item['can_include'] for item in review['teams']) else None
         if current:
-            retire_exceptions([current.pk], actor=user)
+            retire_exceptions([current.pk], actor=user, preserve_intake_id=preserve_intake_id)
+        # Consumed once by Semester.save(); direct activation has no such grant.
+        target._capacity_preserve_intake_id = preserve_intake_id
         target.is_active = True
         capstone_fields = normalize_capstone_flags(target)
         target.save(update_fields=['is_active'] + capstone_fields)

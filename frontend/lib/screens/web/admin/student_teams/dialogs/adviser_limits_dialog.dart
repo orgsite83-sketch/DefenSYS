@@ -63,9 +63,19 @@ class _AdviserLimitsDialogState extends State<AdviserLimitsDialog> {
       .where(
         (e) =>
             e['adviser_id'] == _adviserId &&
-            e['semester_id'] == _data?['active_semester']?['id'],
+            e['intake_semester_id'] != null &&
+            e['intake_semester_id'] == _capacity['intake_semester_id'],
       )
       .firstOrNull;
+  List<Map> get _previousExceptions => (_data?['exceptions'] as List? ?? [])
+      .whereType<Map>()
+      .where(
+        (e) =>
+            e['adviser_id'] == _adviserId &&
+            (e['intake_semester_id'] == null ||
+                e['intake_semester_id'] != _capacity['intake_semester_id']),
+      )
+      .toList();
 
   void _select(int? value) {
     _adviserId = value;
@@ -113,6 +123,7 @@ class _AdviserLimitsDialogState extends State<AdviserLimitsDialog> {
       !_saving &&
       _adviserId != null &&
       _data?['active_semester'] != null &&
+      _capacity['intake_semester_id'] != null &&
       _validReason &&
       _authorization.text.trim().isNotEmpty &&
       _parsedLimit != null &&
@@ -130,6 +141,7 @@ class _AdviserLimitsDialogState extends State<AdviserLimitsDialog> {
       await widget.save({
         'adviser_id': _adviserId,
         'semester_id': _data!['active_semester']['id'],
+        'intake_semester_id': _capacity['intake_semester_id'],
         'reason': _reason.text.trim(),
         if (!revoke) ...{
           'approved_limit': _parsedLimit,
@@ -276,9 +288,29 @@ class _AdviserLimitsDialogState extends State<AdviserLimitsDialog> {
                       ),
                     ),
                     const SizedBox(height: 14),
+                    if (_capacity['intake_label'] != null) ...[
+                      Text('Batch intake: ${_capacity['intake_label']}'),
+                      const SizedBox(height: 6),
+                      const Text('Applies through Capstone 1 and Capstone 2.'),
+                      const SizedBox(height: 10),
+                    ] else
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Text(
+                          'No verified Capstone batch in this academic period.',
+                        ),
+                      ),
                     Text(
                       '$count active teams · ${hasException ? 'Approved limit' : 'Limit'}: $limit',
                     ),
+                    if ((_capacity['other_batch_active_count'] as num? ?? 0) >
+                        0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '${_capacity['other_batch_active_count']} active teams from other batches count toward this limit.',
+                        ),
+                      ),
                     if (_capacity['is_overloaded'] == true)
                       const Padding(
                         padding: EdgeInsets.only(top: 6),
@@ -312,11 +344,35 @@ class _AdviserLimitsDialogState extends State<AdviserLimitsDialog> {
                     _field('Reference (optional)', _reference, maxLength: 255),
                     const SizedBox(height: 12),
                     Text(
-                      'An exception records department approval for this semester. Each team counts once, including solo teams.',
+                      'The next batch starts at the standard limit of four. Each active team counts once, including solo teams.',
                       style: TextStyle(
                         color: DefensysTokens.textSecondaryOf(context),
                       ),
                     ),
+                    if (_previousExceptions.isNotEmpty)
+                      ShadAccordion<String>(
+                        key: ValueKey('approval-history-$_adviserId'),
+                        children: [
+                          ShadAccordionItem(
+                            value: 'previous-batches',
+                            title: const Text('Previous batch approvals'),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (final approval in _previousExceptions)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Text(
+                                      '${approval['intake_label'] ?? 'Batch needs review'} · '
+                                      'Limit: ${approval['approved_limit']}'
+                                      '${approval['ended_at'] != null ? ' · Ended' : ''}',
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ],
                 if (_error != null)

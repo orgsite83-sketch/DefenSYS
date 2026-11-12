@@ -438,17 +438,16 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             if reason:
                 raise serializers.ValidationError({'adviser_id': reason})
 
+        semester = self._resolve_semester(attrs)
+        attrs['semester'] = semester
         if adviser_id and (not self.instance or self.instance.adviser_id != adviser_id):
             from .adviser_assignments import validate_adviser_capacity
             from django.core.exceptions import ValidationError as ModelValidationError
-            candidate = self.instance or StudentTeam(level=attrs.get('level', ''))
+            candidate = self.instance or StudentTeam(level=attrs.get('level', ''), semester=semester)
             try:
                 validate_adviser_capacity(candidate, adviser_id)
             except ModelValidationError as exc:
                 raise serializers.ValidationError({'adviser_id': exc.message_dict['adviser']})
-
-        semester = self._resolve_semester(attrs)
-        attrs['semester'] = semester
 
         user = self.context.get('assigned_by') or self.context.get('user')
         self._assert_write_scope(semester, self.instance)
@@ -595,7 +594,8 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         from .adviser_assignments import validate_adviser_capacity
         from django.core.exceptions import ValidationError as ModelValidationError
         try:
-            validate_adviser_capacity(StudentTeam(level=validated_data['level']), getattr(validated_data.get('adviser'), 'pk', None))
+            validate_adviser_capacity(StudentTeam(level=validated_data['level'], semester=validated_data['semester']),
+                getattr(validated_data.get('adviser'), 'pk', None))
         except ModelValidationError as exc:
             raise serializers.ValidationError({'adviser_id': exc.message_dict['adviser']})
         self._assert_write_scope(validated_data['semester'])

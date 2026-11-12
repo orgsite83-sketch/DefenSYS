@@ -133,8 +133,9 @@ class Semester(models.Model):
                 leaving = Semester.objects.filter(is_active=True)
                 leaving = leaving.exclude(pk=self.pk) if self.is_active else leaving.filter(pk=self.pk)
                 leaving_ids = list(leaving.values_list('pk', flat=True))
+                preserve_intake_id = self.__dict__.pop('_capacity_preserve_intake_id', None)
                 if leaving_ids:
-                    retire_exceptions(leaving_ids)
+                    retire_exceptions(leaving_ids, preserve_intake_id=preserve_intake_id)
             if self.is_active and (update_fields is None or 'is_active' in update_fields):
                 Semester.objects.exclude(pk=self.pk).filter(is_active=True).update(is_active=False)
             super().save(*args, **kwargs)

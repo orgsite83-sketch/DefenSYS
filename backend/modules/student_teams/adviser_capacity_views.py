@@ -21,7 +21,7 @@ class AdviserCapacityView(ReadAPIView):
             'advisers': [{'id': user.pk, 'name': user.get_full_name() or user.username,
                           'capacity': capacities[user.pk]} for user in advisers],
             'exceptions': [{'id': row.pk, **exception_values(row)} for row in
-                AdviserCapacityException.objects.select_related('semester').order_by('-updated_at')]})
+                AdviserCapacityException.objects.select_related('intake_semester__school_year').order_by('-updated_at')]})
 
     def post(self, request):
         row = save_exception(request.user, request.data)

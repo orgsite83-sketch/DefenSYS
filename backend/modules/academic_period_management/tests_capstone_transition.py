@@ -115,6 +115,118 @@ class CapstoneTransitionTests(APITestCase):
         self.team.refresh_from_db()
         self.assertEqual(self.team.semester, self.intake)
 
+    def test_approved_five_team_workload_continues_through_both_phases(self):
+        from student_teams.adviser_capacity import capacity_projections, save_exception
+        adviser = get_user_model().objects.create_user(username='continuing-adviser', role='faculty')
+        exception = save_exception(self.admin, {
+            'adviser_id': adviser.pk, 'semester_id': self.intake.pk, 'approved_limit': 5,
+            'authorization': 'Department chair decision', 'reason': 'Additional continuing project',
+        })
+        teams = [self.team] + [self.make_team(f'Continuing-{index}') for index in range(4)]
+        for team in teams:
+            team.adviser = adviser
+            team.save()
+            self.enroll(team, self.normal)
+            self.assess(team, self.first)
+
+        response = self.activate(self.normal)
+        self.assertEqual(response.status_code, 200, response.data)
+        exception.refresh_from_db()
+        self.assertIsNone(exception.ended_at)
+        self.assertEqual(exception.intake_semester_id, self.intake.pk)
+        self.assertEqual(exception.semester_id, self.intake.pk)
+        for team in teams:
+            team.refresh_from_db()
+            self.assertEqual(team.semester_id, self.normal.pk)
+            self.assertEqual(team.adviser_id, adviser.pk)
+            self.assertEqual(team.project_version, 1)
+            self.assertEqual(team.term_participations.count(), 2)
+            source_record = team.term_participations.get(semester=self.intake)
+            self.assertEqual(source_record.snapshot['year_level'], '3rd Year')
+            self.assertIsNotNone(source_record.closed_at)
+            self.assertEqual(source_record.outcome, 'open')
+        capacity = capacity_projections([adviser.pk])[adviser.pk]
+        self.assertEqual((capacity['active_count'], capacity['effective_limit']), (5, 5))
+        self.assertFalse(capacity['is_overloaded'])
+        teams[-1].name = 'Continuing project edited'
+        teams[-1].save()
+        incoming = self.make_team('Incoming', semester=self.normal)
+        incoming.adviser = adviser
+        from django.core.exceptions import ValidationError as DomainValidationError
+        with self.assertRaises(DomainValidationError):
+            incoming.save()
+
+        # Editing/revoking in phase 2 targets the original approval record.
+        updated = save_exception(self.admin, {
+            'adviser_id': adviser.pk, 'semester_id': self.normal.pk,
+            'intake_semester_id': self.intake.pk, 'approved_limit': 6,
+            'authorization': 'Department chair decision', 'reason': 'Phase 2 decision',
+        })
+        self.assertEqual(updated.pk, exception.pk)
+        self.assertEqual(updated.semester_id, self.intake.pk)
+        from student_teams.models import AdviserCapacityException
+        self.assertEqual(AdviserCapacityException.objects.count(), 1)
+
+        # A forced switch keeps unfinished projects; it does not carry permission
+        # into the new batch or free their occupied places.
+        preview = self.preview(self.extension)
+        self.assertTrue(any(effect['key'] == 'adviser_capacity_cycle' for effect in preview['effects']))
+        response = self.activate(self.extension, force=True, reason='Calendar switch with unfinished projects')
+        self.assertEqual(response.status_code, 200, response.data)
+        exception.refresh_from_db()
+        self.assertEqual(exception.end_kind, 'retired')
+        capacity = capacity_projections([adviser.pk])[adviser.pk]
+        self.assertEqual((capacity['active_count'], capacity['effective_limit']), (5, 4))
+        for team in teams:
+            team.refresh_from_db()
+            self.assertEqual(team.adviser_id, adviser.pk)
+        self.assertEqual(AdviserCapacityException.objects.count(), 1)
+
+    def test_completed_cycle_resets_adviser_limit_for_new_batch(self):
+        from django.core.exceptions import ValidationError as DomainValidationError
+        from student_teams.adviser_capacity import capacity_projections, save_exception
+        adviser = get_user_model().objects.create_user(username='batch-reset-adviser', role='faculty')
+        approval = save_exception(self.admin, {
+            'adviser_id': adviser.pk, 'semester_id': self.intake.pk, 'approved_limit': 5,
+            'authorization': 'Department chair decision', 'reason': 'Batch A approval',
+        })
+        self.team.adviser = adviser
+        self.team.save()
+        self.enter_normal()
+        self.assess(self.team, self.second)
+        response = self.activate(self.extension)
+        self.assertEqual(response.status_code, 200, response.data)
+        approval.refresh_from_db()
+        self.assertEqual(approval.end_kind, 'retired')
+        capacity = capacity_projections([adviser.pk])[adviser.pk]
+        self.assertEqual((capacity['active_count'], capacity['effective_limit']), (0, 4))
+        for index in range(4):
+            team = self.make_team(f'New-batch-{index}', semester=self.extension)
+            team.adviser = adviser
+            team.save()
+        fifth = self.make_team('New-batch-fifth', semester=self.extension)
+        fifth.adviser = adviser
+        with self.assertRaises(DomainValidationError):
+            fifth.save()
+
+    def test_phase_two_can_record_revoke_and_renew_same_batch_approval(self):
+        from student_teams.adviser_capacity import save_exception
+        self.enter_normal()
+        adviser = get_user_model().objects.create_user(username='phase-two-adviser', role='faculty')
+        payload = {'adviser_id': adviser.pk, 'semester_id': self.normal.pk,
+            'intake_semester_id': self.intake.pk, 'approved_limit': 5,
+            'authorization': 'Department', 'reason': 'Phase 2 authorization'}
+        approval = save_exception(self.admin, payload)
+        self.assertEqual(approval.intake_semester_id, self.intake.pk)
+        self.assertEqual(approval.semester_id, self.normal.pk)
+        revoked = save_exception(self.admin, {key: value for key, value in payload.items()
+            if key in ('adviser_id', 'semester_id', 'intake_semester_id', 'reason')}, revoke=True)
+        self.assertEqual(revoked.end_kind, 'revoked')
+        renewed = save_exception(self.admin, {**payload, 'reason': 'Explicit renewal'})
+        self.assertEqual(renewed.pk, approval.pk)
+        self.assertEqual(renewed.created_at, approval.created_at)
+        self.assertIsNone(renewed.ended_at)
+
     def test_mixed_semester_migrates_only_capstone_and_preserves_all_pit_rosters(self):
         pit_teams = self.make_pit_teams(self.intake)
         self.assess(self.team, self.first)
