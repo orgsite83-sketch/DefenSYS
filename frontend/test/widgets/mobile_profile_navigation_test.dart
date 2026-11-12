@@ -339,7 +339,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.getTopLeft(find.text('Change Photo')).dy,
+      tester.getTopLeft(find.byTooltip('Change photo')).dy,
       lessThan(tester.getTopLeft(find.text('My library')).dy),
     );
     expect(

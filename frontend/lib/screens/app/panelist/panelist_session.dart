@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:intl/intl.dart';
 
+import '../../../utils/scheduler/session_period.dart';
 import 'panelist_models.dart';
 
 class PanelistSession {
@@ -42,6 +43,31 @@ class PanelistSession {
           .every((session) => session.finished) &&
       sessions.any((session) => session.day.isAfter(day));
 
+  DefenseSessionWindow get window => DefenseSessionWindow(
+    label: teams.first.sessionLabel,
+    start: teams.first.sessionStartTime,
+    end: teams.first.sessionEndTime,
+  );
+
+  /// Accept retained preferences saved before the roster-split repair.
+  bool matchesKey(String? candidate) =>
+      candidate != null &&
+      (candidate == key ||
+          teams.any(
+            (team) =>
+                team.legacySessionId.isNotEmpty &&
+                json.encode([
+                      team.legacySessionId,
+                      team.scheduledDate?.toIso8601String().split('T').first ??
+                          '',
+                    ]) ==
+                    candidate,
+          ));
+
+  String get timeLabel => window.isConfigured
+      ? '${window.label} · ${window.timeRange}'
+      : DateFormat('h:mm a').format(startsAt);
+
   String get label =>
-      '${DateFormat('MMM d, yyyy · h:mm a').format(startsAt)} · ${teams.first.room}';
+      '${DateFormat('MMM d, yyyy').format(startsAt)} · $timeLabel · ${teams.first.room}';
 }

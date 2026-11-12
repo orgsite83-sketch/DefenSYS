@@ -67,6 +67,8 @@ class DefenseSchedule(models.Model):
 
     batch_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
     session_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
+    # Recovery/compatibility mapping for the one-time roster-split repair.
+    legacy_session_id = models.UUIDField(null=True, blank=True, editable=False, db_index=True)
     revision = models.PositiveIntegerField(default=1)
     project_version = models.PositiveIntegerField(default=1)
     project_title_snapshot = models.CharField(max_length=255, blank=True)

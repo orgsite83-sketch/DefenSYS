@@ -69,14 +69,16 @@ class StageScheduleHeader extends StatelessWidget {
     required this.sessionCount,
     required this.canManage,
     this.isSaving = false,
+    this.padding = const EdgeInsets.fromLTRB(4, 4, 4, 12),
   });
   final Map<String, dynamic> schedule;
   final int sessionCount;
   final bool canManage, isSaving;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+    padding: padding,
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -93,6 +95,7 @@ class StageScheduleHeader extends StatelessWidget {
               Text(
                 '${schedule['stage_label'] ?? 'Defense schedules'}',
                 style: const TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
@@ -101,6 +104,7 @@ class StageScheduleHeader extends StatelessWidget {
               Text(
                 '${schedule['scope'] == 'pit' ? 'PIT event' : 'Capstone stage'} · $sessionCount ${sessionCount == 1 ? 'session' : 'sessions'} shown',
                 style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
                   fontSize: 12,
                   color: DefensysTokens.textSecondaryOf(context),
                 ),

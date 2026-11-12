@@ -916,6 +916,7 @@ class PanelistGradeSubmissionView(APIView):
 
 
 def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None, actor=None):
+    from .sessions import session_context
     from grading.grades.serializers import TeamGradeSerializer
     from grading.grades.outcome_rules import concept_keys
     from .grading_workspace import payload as grading_workspace_payload
@@ -1019,6 +1020,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'id': team.id,
         'schedule_id': schedule.id,
         'session_id': str(schedule.session_id),
+        **session_context(schedule),
         'semester_id': schedule.semester_id,
         'display_semester': schedule.semester.display_name,
         'defense_stage_id': schedule.defense_stage_id,

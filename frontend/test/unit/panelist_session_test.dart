@@ -9,6 +9,11 @@ TeamData assignment(
   bool chair = false,
   bool concepts = false,
   String? verdict,
+  String start = '',
+  String label = '',
+  String windowStart = '',
+  String windowEnd = '',
+  String legacy = '',
 }) => TeamData(
   name: 'Team VaultSync',
   project: 'Cloud File Sync',
@@ -16,6 +21,11 @@ TeamData assignment(
   teamId: '10',
   scheduleId: session,
   sessionId: session,
+  legacySessionId: legacy,
+  startTime: start,
+  sessionLabel: label,
+  sessionStartTime: windowStart,
+  sessionEndTime: windowEnd,
   scope: 'capstone',
   isCapstone: true,
   scheduledDate: date,
@@ -33,6 +43,43 @@ TeamData assignment(
 );
 
 void main() {
+  test('partial personal assignments use the configured afternoon window', () {
+    final team = assignment(
+      'afternoon',
+      DateTime(2026, 11, 13),
+      start: '17:30',
+      label: 'Afternoon',
+      windowStart: '13:00',
+      windowEnd: '19:00',
+    );
+    final session = PanelistSession(PanelistSession.teamKey(team), [team]);
+    expect(session.timeLabel, 'Afternoon · 1:00 PM–7:00 PM');
+    expect(session.startsAt.hour, 17);
+  });
+
+  test('legacy full-day sessions do not invent a morning window', () {
+    final team = assignment('full-day', DateTime(2026, 11, 13), start: '08:00');
+    final session = PanelistSession(PanelistSession.teamKey(team), [team]);
+    expect(session.timeLabel, '8:00 AM');
+    expect(session.window.isConfigured, isFalse);
+  });
+
+  test('saved roster-session preferences resolve to the repaired session', () {
+    final date = DateTime(2026, 11, 13);
+    final old = assignment('old-roster', date);
+    final repaired = assignment('afternoon', date, legacy: 'old-roster');
+    final session = PanelistSession(PanelistSession.teamKey(repaired), [
+      repaired,
+    ]);
+    expect(session.matchesKey(PanelistSession.teamKey(old)), isTrue);
+    expect(
+      session.matchesKey(
+        PanelistSession.teamKey(assignment('unrelated', date)),
+      ),
+      isFalse,
+    );
+  });
+
   test('finished scores stay visible until a new day is assigned', () {
     final team = assignment(
       'session-one',

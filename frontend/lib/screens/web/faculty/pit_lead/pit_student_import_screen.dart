@@ -594,14 +594,13 @@ class _PitStudentImportScreenState
       }
 
       final studentId = id.isNotEmpty ? id : 'STU-${result.length + 1}';
-      final studentEmail = email.isNotEmpty ? email : '$studentId@ustp.edu.ph';
 
       result.add({
         'id_number': studentId,
         'first_name': finalFirstName,
         'last_name': finalLastName,
         'full_name': fullName.isNotEmpty ? fullName : '$finalFirstName $finalLastName'.trim(),
-        'email': studentEmail,
+        'email': email,
         'role': 'student',
         if (section.isNotEmpty) 'section': section,
       });
@@ -1123,6 +1122,7 @@ class _PitStudentImportScreenState
                           _reviewCellWidget(
                             EditableCell(
                               value: email,
+                              hintText: 'None',
                               onChanged: (val) => row['email'] = val.trim(),
                               style: const TextStyle(fontSize: 12.5, color: Color(0xFF536079)),
                             ),
@@ -1249,6 +1249,7 @@ class EditableCell extends StatefulWidget {
   final ValueChanged<String> onChanged;
   final bool enabled;
   final TextStyle? style;
+  final String? hintText;
 
   const EditableCell({
     super.key,
@@ -1256,6 +1257,7 @@ class EditableCell extends StatefulWidget {
     required this.onChanged,
     this.enabled = true,
     this.style,
+    this.hintText,
   });
 
   @override
@@ -1293,6 +1295,7 @@ class _EditableCellState extends State<EditableCell> {
       style: widget.style ?? const TextStyle(fontSize: 13),
       onChanged: widget.onChanged,
       decoration: InputDecoration(
+        hintText: widget.hintText,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         border: widget.enabled

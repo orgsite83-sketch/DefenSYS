@@ -286,11 +286,7 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
         : (metadata['program']?.toString() ?? '');
     final status = currentCols.statusIndex != -1 ? read(currentCols.statusIndex) : '';
 
-    String email = currentCols.emailIndex != -1 ? read(currentCols.emailIndex) : '';
-    if (email.isEmpty && id.isNotEmpty) {
-      final cleanId = id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
-      email = cleanId.isNotEmpty ? '$cleanId@ustp.edu.ph' : '$id@ustp.edu.ph';
-    }
+    final email = currentCols.emailIndex != -1 ? read(currentCols.emailIndex) : '';
 
     students.add({
       'id_number': id,

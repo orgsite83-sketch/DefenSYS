@@ -67,6 +67,98 @@ Future<void> _tap(WidgetTester tester, Finder target) async {
 void main() {
   setUpAll(() => registerFallbackValue(Uri.parse('https://example.test')));
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+    'repaired sessions preserve the panel layout and saved afternoon selection',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final day = TeamData.manilaToday.toIso8601String().split('T').first;
+      SharedPreferences.setMockInitialValues({
+        'panel_stage_guest_panelist_42_session': json.encode([
+          'old-panel-group',
+          day,
+        ]),
+      });
+      final client = _Client();
+      final assignments = [
+        {
+          ..._assignment(20, 'Morning Team'),
+          'session_id': 'morning',
+          'session_label': 'Morning',
+          'session_start_time': '08:00',
+          'session_end_time': '12:30',
+        },
+        for (final id in [21, 22])
+          {
+            ..._assignment(id, 'Afternoon Team $id'),
+            'session_id': 'afternoon',
+            'legacy_session_id': id == 22 ? 'old-panel-group' : null,
+            'session_label': 'Afternoon',
+            'session_start_time': '13:00',
+            'session_end_time': '19:00',
+            'start_time': id == 21 ? '16:00' : '17:30',
+          },
+      ];
+      when(() => client.get(any())).thenAnswer((invocation) async {
+        final path = (invocation.positionalArguments.first as Uri).path;
+        return http.Response(
+          json.encode(
+            path.contains('guest-assignments')
+                ? {'teams': assignments}
+                : {'results': []},
+          ),
+          200,
+        );
+      });
+      await pumpDefensysWidget(
+        tester,
+        const PanelistDashboard(),
+        overrides: [
+          authProvider.overrideWith(_Guest.new),
+          connectivityProvider.overrideWith(_Online.new),
+          authenticatedHttpClientProvider.overrideWithValue(client),
+        ],
+      );
+      final active = tester.widget<AssignmentsTab>(find.byType(AssignmentsTab));
+      expect(active.teams.map((team) => team.scheduleId).toSet(), {'21', '22'});
+      expect(
+        find.byKey(const ValueKey('panel-active-session-card')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Afternoon · 1:00 PM–7:00 PM'),
+        findsOneWidget,
+      );
+      await _tap(tester, find.byKey(const ValueKey('panel-session-selector')));
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key as ValueKey<String>).value.startsWith(
+                'panel-session-option-',
+              ),
+        ),
+        findsNWidgets(2),
+      );
+      await _tap(
+        tester,
+        find.byKey(
+          ValueKey('panel-session-option-${json.encode(['morning', day])}'),
+        ),
+      );
+      expect(
+        tester
+            .widget<AssignmentsTab>(find.byType(AssignmentsTab))
+            .teams
+            .single
+            .scheduleId,
+        '20',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   for (final openViaCard in [true, false]) {
     testWidgets(
       'assignment refresh does not block ${openViaCard ? 'Grade Team' : 'Grade Sheet'}',

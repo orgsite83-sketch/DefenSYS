@@ -96,6 +96,19 @@ abstract final class WorkspaceAccess {
     final role = user['role'];
     if (role == 'guest_panelist') return AppRoutes.guestDefenses;
     if (role == 'student') return AppRoutes.student;
+    // Remember explicit role-workspace choices in the browser as well as the app.
+    if (preferredWorkspace == AppRoutes.documenter && canDocument(user)) {
+      return AppRoutes.documenter;
+    }
+    if (preferredWorkspace == AppRoutes.panelist && canEvaluate(user)) {
+      return AppRoutes.panelist;
+    }
+    if (isWeb && isPhoneWidth(viewportWidth)) {
+      // Phone dashboards use an eligible app workspace even when a desktop
+      // workspace was remembered. Keep that preference for wider browsers.
+      if (canEvaluate(user)) return AppRoutes.panelist;
+      if (canDocument(user)) return AppRoutes.documenter;
+    }
     if (isWeb && preferredWorkspace != null) {
       final preferred = StaffWorkspace.resolve(user, preferredWorkspace);
       final uri = Uri.tryParse(preferredWorkspace);
@@ -105,24 +118,6 @@ abstract final class WorkspaceAccess {
           supportsFacultyRoute(preferred.key, uri.path)) {
         return preferredWorkspace;
       }
-    }
-    // Remember explicit role-workspace choices in the browser as well as the app.
-    if (preferredWorkspace == AppRoutes.documenter && canDocument(user)) {
-      return AppRoutes.documenter;
-    }
-    if (preferredWorkspace == AppRoutes.panelist && canEvaluate(user)) {
-      return AppRoutes.panelist;
-    }
-    if (isWeb && isPhoneWidth(viewportWidth)) {
-      final staffHome = role == 'admin'
-          ? AdminRoutes.overview
-          : FacultyRoutes.dashboard;
-      // Keep an explicit switch back to staff available on a phone browser.
-      if (preferredWorkspace == staffHome && hasStaffWorkspace(user)) {
-        return staffHome;
-      }
-      if (canEvaluate(user)) return AppRoutes.panelist;
-      if (canDocument(user)) return AppRoutes.documenter;
     }
     if (isWeb) {
       if (role == 'admin') return AdminRoutes.overview;

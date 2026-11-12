@@ -60,6 +60,28 @@ class StudentAcademicRecordApiTests(APITestCase):
         self.assertEqual(list_response.data['active_semester']['id'], self.first_semester.id)
         self.assertEqual(list_response.data['students'][0]['username'], '2024-0001')
 
+    def test_create_student_without_contact_does_not_invent_email(self):
+        response = self.client.post('/api/users/academic-records/', {
+            'student_username': 'new-no-contact', 'first_name': 'New', 'last_name': 'Student',
+            'semester_id': self.first_semester.id,
+            'year_level': StudentAcademicRecord.FIRST_YEAR,
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        student = User.objects.get(username='new-no-contact')
+        self.assertEqual((student.email, student.phone_number), ('', ''))
+        self.assertTrue(student.check_password('new-no-contact'))
+
+    def test_create_student_preserves_supplied_real_contacts(self):
+        response = self.client.post('/api/users/academic-records/', {
+            'student_username': 'new-with-contact', 'first_name': 'New', 'last_name': 'Student',
+            'email': 'real@gmail.com', 'phone_number': '0917 123 4567',
+            'semester_id': self.first_semester.id,
+            'year_level': StudentAcademicRecord.FIRST_YEAR,
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        student = User.objects.get(username='new-with-contact')
+        self.assertEqual((student.email, student.phone_number), ('real@gmail.com', '09171234567'))
+
     def test_duplicate_student_semester_record_is_rejected(self):
         StudentAcademicRecord.objects.create(
             student=self.student,

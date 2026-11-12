@@ -580,7 +580,9 @@ def confirm_plan(actor, payload):
         writer._ensure_documenter_role(doc, changed_by=actor)
         roster_key = digest(slot['roster'])
         key = (slot['block_key'], roster_key)
-        session_id = sessions.setdefault(key, uuid.uuid4())
+        # A configured window is one session, even when its teams have different
+        # continuing panels/documenters. Keep invitation groups roster-scoped.
+        session_id = sessions.setdefault(slot['block_key'], uuid.uuid4())
         writer._pop_schedule_meta(attrs)
         schedule = DefenseSchedule.objects.create(**attrs, batch_id=batch.pk, session_id=session_id,
             planning_batch=batch, planning_block_key=slot['block_key'], continuing_assignment_id=slot['assignment_id'], created_by=actor)

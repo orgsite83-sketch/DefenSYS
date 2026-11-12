@@ -1,3 +1,6 @@
+import re
+from collections.abc import Mapping
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -39,9 +42,47 @@ def _coerce_bool(value) -> bool:
     return bool(value)
 
 
+class SelfProfileUpdateSerializer(serializers.Serializer):
+    """Only contacts and the existing media controls are self-service writable."""
+
+    email = serializers.EmailField(required=False, allow_blank=True, max_length=254)
+    phone_number = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    current_password = serializers.CharField(required=False, write_only=True, trim_whitespace=False)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            return super().to_internal_value(data)
+        allowed = set(self.fields) | {'avatar', 'e_signature', 'remove_avatar', 'remove_e_signature'}
+        forbidden = set(data) - allowed
+        if forbidden:
+            raise serializers.ValidationError({key: 'This field cannot be edited here.' for key in sorted(forbidden)})
+        values = {key: data[key] for key in self.fields if key in data}
+        for key in ('email', 'phone_number'):
+            if key in values and values[key] is None:
+                values[key] = ''
+        return super().to_internal_value(values)
+
+    def validate_phone_number(self, value):
+        from notifications.sms_service import clean_phone_number
+        value = clean_phone_number(value)
+        if value and not re.fullmatch(r'\+?[0-9]{7,15}', value):
+            raise serializers.ValidationError('Enter a valid phone number.')
+        return value
+
+    def validate(self, attrs):
+        if {'email', 'phone_number'} & attrs.keys():
+            password = attrs.pop('current_password', '')
+            if not password or not self.context['request'].user.check_password(password):
+                raise serializers.ValidationError({'current_password': 'Current password is incorrect.'})
+        else:
+            attrs.pop('current_password', None)
+        return attrs
+
+
 class UserSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     team_id = serializers.SerializerMethodField()
+    team_name = serializers.SerializerMethodField()
     facultyRoles = serializers.SerializerMethodField()
     is_project_manager = serializers.SerializerMethodField()
     managed_section = serializers.SerializerMethodField()
@@ -52,7 +93,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'phone_number', 'first_name', 'last_name', 'name', 'role',
-            'team_id', 'is_panelist', 'is_pit_lead', 'pit_lead_year', 'is_adviser',
+            'team_id', 'team_name', 'is_panelist', 'is_pit_lead', 'pit_lead_year', 'is_adviser',
             'is_documenter', 'is_uploader', 'e_signature', 'avatar', 'facultyRoles',
             'is_project_manager', 'managed_section',
             'has_staff_workspace',
@@ -82,10 +123,21 @@ class UserSerializer(serializers.ModelSerializer):
         from dashboards.views import _faculty_roles
         return _faculty_roles(obj)
 
-    def get_team_id(self, obj):
+    def _current_team(self, obj):
         from student_teams.current_identity import current_team_for_student
-        team = current_team_for_student(obj)
+        if not hasattr(self, '_current_teams'):
+            self._current_teams = {}
+        if obj.pk not in self._current_teams:
+            self._current_teams[obj.pk] = current_team_for_student(obj)
+        return self._current_teams[obj.pk]
+
+    def get_team_id(self, obj):
+        team = self._current_team(obj)
         return str(team.pk) if team else None
+
+    def get_team_name(self, obj):
+        team = self._current_team(obj)
+        return team.name if team else None
 
     def get_name(self, obj):
         full_name = f"{obj.first_name} {obj.last_name}".strip()

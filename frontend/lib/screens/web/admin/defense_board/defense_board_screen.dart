@@ -39,6 +39,7 @@ import '../../../../notifications/minutes_notification_route.dart';
 import '../../../../utils/import/schedule_import_draft.dart';
 import '../../../../utils/scheduler/defense_scheduler_draft.dart';
 import '../../../../utils/scheduler/session_activity.dart';
+import '../../../../utils/scheduler/session_period.dart';
 import 'components/defense_schedule_bulk_import_view.dart';
 
 int _defenseAttempt(Map<String, dynamic> schedule) {
@@ -69,6 +70,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   bool _isSendingReminder = false;
   bool _showMoreFilters = false;
   bool _showOpenSessionsInfo = false;
+  bool _assignmentsView = false;
 
   // Session Accordion & Pagination State
   final Set<String> _collapsedSessions = {};
@@ -1197,7 +1199,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               MediaQuery.sizeOf(context).width < 600 ? 10 : 16,
             ),
             decoration: BoxDecoration(
-              color: _panelBgColor,
+              color: _surfaceColor,
               border: Border(top: BorderSide(color: _borderColor)),
             ),
             child: state.isLoading
@@ -1445,8 +1447,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Widget _buildManageSchedulesButton(DefenseBoardState state) {
     final user = ref.read(authProvider).user;
-    if (!(isAdminWorkspace(user) ||
-        user?['is_pit_lead'] == true)) {
+    if (!(isAdminWorkspace(user) || user?['is_pit_lead'] == true)) {
       return const SizedBox.shrink();
     }
     return DefensysShadcnScope(
@@ -1663,10 +1664,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     List<Map<String, dynamic>> schedules,
   ) {
     if (_plannerDate == null) return schedules;
+    final canonical = schedules
+        .where(
+          (schedule) =>
+              schedule['session_id']?.toString() == _plannerSessionId ||
+              schedule['legacy_session_id']?.toString() == _plannerSessionId,
+        )
+        .map((schedule) => schedule['session_id']?.toString())
+        .toSet();
     return schedules.where((schedule) {
       if (schedule['scheduled_date']?.toString() != _plannerDate) return false;
       if (_plannerSessionId != null &&
-          schedule['session_id']?.toString() != _plannerSessionId) {
+          !canonical.contains(schedule['session_id']?.toString())) {
         return false;
       }
       return true;
@@ -1711,6 +1720,43 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   static const _openSessionsExplanation =
       'Includes defenses with unfinished evaluation or follow-up requirements, even when their scheduled date has passed.';
 
+  Widget _buildTableViewSwitch() => DefensysShadcnScope(
+    maroonActions: true,
+    neutralActionText: true,
+    child: SizedBox(
+      width: 370,
+      child: ShadTabs<String>(
+        key: const ValueKey('board-table-view'),
+        value: _assignmentsView ? 'assignments' : 'progress',
+        tabBarAlignment: Alignment.centerLeft,
+        scrollable: false,
+        gap: 0,
+        onChanged: (value) =>
+            setState(() => _assignmentsView = value == 'assignments'),
+        tabs: [
+          for (final entry in {
+            'progress': 'Progress',
+            'assignments': 'Assignments',
+          }.entries)
+            ShadTab<String>(
+              key: ValueKey('board-view-${entry.key}'),
+              value: entry.key,
+              content: const SizedBox.shrink(),
+              child: Flexible(
+                child: Text(
+                  entry.value,
+                  style: const TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+
   Widget _buildBoardSection(DefenseBoardState state) {
     final visibleSchedules = _plannerSchedules(state.schedules);
     if (visibleSchedules.isEmpty) {
@@ -1720,6 +1766,21 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final now = DateTime.now();
     final groups = _groupSchedules(visibleSchedules)
       ..sort((a, b) {
+        // Within the same automatic plan, show its configured windows in time
+        // order. Keep existing activity/import ordering for independent plans.
+        final batch = a.schedules.first['batch_id'];
+        final activity = sessionActivity(a.schedules, now: now);
+        if (batch != null &&
+            batch == b.schedules.first['batch_id'] &&
+            activity != SessionActivity.past &&
+            activity == sessionActivity(b.schedules, now: now) &&
+            DefenseSessionWindow.fromJson(a.schedules.first).isConfigured &&
+            DefenseSessionWindow.fromJson(b.schedules.first).isConfigured) {
+          return '${a.scheduledDate} ${a.schedules.first['session_start_time']}'
+              .compareTo(
+                '${b.scheduledDate} ${b.schedules.first['session_start_time']}',
+              );
+        }
         final result = compareSessionActivity(
           a.schedules,
           b.schedules,
@@ -1741,9 +1802,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Align(
-          alignment: Alignment.centerRight,
-          child: _buildCollapseAllButton(state),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
+          children: [_buildTableViewSwitch(), _buildCollapseAllButton(state)],
         ),
         const SizedBox(height: 4),
         for (final section in sections.entries) ...[
@@ -1799,35 +1863,75 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               ],
             ),
           ),
-          for (final stageGroups in section.value.values) ...[
-            StageScheduleHeader(
-              schedule:
-                  stageGroups
-                      .expand((group) => group.schedules)
-                      .where(
-                        (s) =>
-                            s['can_edit'] != false &&
-                            s['status'] == 'scheduled',
-                      )
-                      .firstOrNull ??
-                  stageGroups.first.schedules.first,
-              sessionCount: stageGroups.length,
-              canManage:
-                  _canManageSession(stageGroups.first) &&
-                  (stageGroups.first.scope == 'pit' ||
-                      _asInt(
-                            stageGroups
-                                .first
-                                .schedules
-                                .first['defense_stage_id'],
-                          ) !=
-                          null),
-              isSaving: state.isSaving,
-            ),
-            ...stageGroups.map((group) => _buildSessionCard(group, state)),
-          ],
+          for (final stageGroups in section.value.values)
+            _buildStageSection(stageGroups, state, section.key),
         ],
       ],
+    );
+  }
+
+  Widget _buildStageSection(
+    List<_SessionGroup> groups,
+    DefenseBoardState state,
+    SessionActivity activity,
+  ) {
+    final first = groups.first;
+    final anchor = first.schedules.first;
+    final stageId = first.scope == 'pit'
+        ? first.stageLabel.toLowerCase()
+        : anchor['defense_stage_id'] ?? first.stageLabel;
+    return Container(
+      key: ValueKey(
+        'board-stage-${activity.name}-${first.scope}-${anchor['semester_id']}-$stageId',
+      ),
+      margin: const EdgeInsets.only(bottom: DefensysTokens.spacingXl),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(
+          color: _isDark
+              ? DefensysTokens.mistBorder
+              : DefensysTokens.neutralBorder,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: _borderColor)),
+            ),
+            child: StageScheduleHeader(
+              padding: const EdgeInsets.symmetric(
+                horizontal: DefensysTokens.spacingLg,
+                vertical: DefensysTokens.spacingSm,
+              ),
+              schedule:
+                  groups
+                      .expand((group) => group.schedules)
+                      .where(
+                        (schedule) =>
+                            schedule['can_edit'] != false &&
+                            schedule['status'] == 'scheduled',
+                      )
+                      .firstOrNull ??
+                  anchor,
+              sessionCount: groups.length,
+              canManage:
+                  _canManageSession(first) &&
+                  (first.scope == 'pit' ||
+                      _asInt(anchor['defense_stage_id']) != null),
+              isSaving: state.isSaving,
+            ),
+          ),
+          for (var index = 0; index < groups.length; index++) ...[
+            if (index > 0)
+              Divider(height: 1, thickness: 1, color: _borderColor),
+            _buildSessionCard(groups[index], state),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1840,8 +1944,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       final stageLabel = item['stage_label']?.toString() ?? 'Unspecified Stage';
       final date = item['scheduled_date']?.toString() ?? 'TBD';
       final room = item['room']?.toString() ?? 'TBD';
-      final panel = _panelistNames(item);
-      final documenter = item['documenter_name']?.toString() ?? '';
       final scope = item['scope']?.toString() ?? 'capstone';
 
       final key =
@@ -1853,8 +1955,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           stageLabel: stageLabel,
           scheduledDate: date,
           room: room,
-          panelNames: panel,
-          documenterName: documenter,
           scope: scope,
           schedules: [],
         );
@@ -1864,12 +1964,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     // Sort schedules inside each group by start_time
     for (final group in groupMap.values) {
-      if (group.schedules.map(_panelistNames).toSet().length > 1) {
-        group.panelNames = 'Assignments vary by defense';
-      }
-      if (group.schedules.map((s) => s['documenter_name']).toSet().length > 1) {
-        group.documenterName = 'Varies by defense';
-      }
       if (group.schedules.map((s) => s['room']).toSet().length > 1) {
         group.room = 'Multiple rooms';
       }
@@ -1888,42 +1982,31 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Widget _buildSessionCard(_SessionGroup group, DefenseBoardState state) {
     final isCollapsed =
-        _plannerSessionId == group.schedules.first['session_id']?.toString()
+        _plannerSessionId != null &&
+            group.schedules.any(
+              (schedule) =>
+                  schedule['session_id']?.toString() == _plannerSessionId ||
+                  schedule['legacy_session_id']?.toString() ==
+                      _plannerSessionId,
+            )
         ? false
         : _collapsedSessions.contains(group.key);
 
-    return Container(
+    return Column(
       key: ValueKey('board-session-${group.key}'),
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 16),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSessionHeader(group, isCollapsed),
+        if (!isCollapsed)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < (_assignmentsView ? 900 : 820)) {
+                return _buildCompactTeamList(group, state);
+              }
+              return _buildDesktopTeamTable(group, state);
+            },
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildSessionHeader(group, isCollapsed),
-          if (!isCollapsed)
-            LayoutBuilder(
-              builder: (context, constraints) {
-                if (constraints.maxWidth < 1180) {
-                  return _buildCompactTeamList(group, state);
-                }
-                return _buildDesktopTeamTable(group, state);
-              },
-            ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1950,13 +2033,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         ? group.scheduledDate
         : DateFormat('d MMM yyyy').format(date);
     final count = group.schedules.length;
-    final panel = group.panelNames.isEmpty
-        ? 'No panel assigned'
-        : group.panelNames;
+    final window = DefenseSessionWindow.fromJson(group.schedules.first);
+    final timeLabel = window.isConfigured
+        ? window.timeRange
+        : _actualSessionRange(group);
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(DefensysTokens.spacingMd),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: _borderColor)),
+        border: isCollapsed
+            ? null
+            : Border(bottom: BorderSide(color: _borderColor)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1984,7 +2070,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   ),
                   child: Expanded(
                     child: Text(
-                      '$dateLabel · ${group.room} · $count ${count == 1 ? 'team' : 'teams'}',
+                      '${window.isConfigured ? '${window.label} · ' : ''}$dateLabel · ${group.room} · $count ${count == 1 ? 'team' : 'teams'}',
                       textAlign: TextAlign.start,
                       style: DefensysTokens.body.copyWith(
                         color: _textPrimaryColor,
@@ -1999,21 +2085,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               ],
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            'Panel: $panel',
-            style: DefensysTokens.subtitle.copyWith(color: _textSecondaryColor),
-          ),
-          if (!pit) ...[
+          if (timeLabel.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
-              'Documenter: ${group.documenterName.isEmpty ? 'Unassigned' : group.documenterName}',
+              timeLabel,
               style: DefensysTokens.subtitle.copyWith(
-                color: group.documenterName.isEmpty
-                    ? (_isDark
-                          ? const Color(0xFFFDE68A)
-                          : DefensysTokens.warningText)
-                    : _textSecondaryColor,
+                color: _textSecondaryColor,
               ),
             ),
           ],
@@ -2056,6 +2133,37 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
+  String _actualSessionRange(_SessionGroup group) {
+    final starts =
+        group.schedules
+            .map(
+              (schedule) => DateTime.tryParse(
+                '${schedule['scheduled_date']} ${schedule['start_time']}',
+              ),
+            )
+            .whereType<DateTime>()
+            .toList()
+          ..sort();
+    final ends =
+        group.schedules
+            .map((schedule) {
+              final start = DateTime.tryParse(
+                '${schedule['scheduled_date']} ${schedule['start_time']}',
+              );
+              final minutes = _asInt(schedule['slot_duration']);
+              return start == null || minutes == null
+                  ? null
+                  : start.add(Duration(minutes: minutes));
+            })
+            .whereType<DateTime>()
+            .toList()
+          ..sort();
+    if (starts.isEmpty || ends.isEmpty) return '';
+    final sameDay = DateUtils.isSameDay(starts.first, ends.last);
+    final format = DateFormat(sameDay ? 'h:mm a' : 'MMM d, h:mm a');
+    return '${format.format(starts.first)}–${format.format(ends.last)}';
+  }
+
   Widget _attemptBadge(String label, {Key? key}) => DefensysShadcnScope(
     child: ShadBadge.outline(
       key: key,
@@ -2089,6 +2197,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 : (safePage + 1) * pageSize,
           )
         : group.schedules;
+
+    if (_assignmentsView) {
+      return _buildAssignmentRows(
+        group,
+        state,
+        paginatedSchedules,
+        compact: false,
+        page: safePage,
+        totalPages: totalPages,
+        totalTeams: totalTeams,
+      );
+    }
 
     return Column(
       children: [
@@ -2256,6 +2376,210 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
+  Widget _assignmentPanel(Map<String, dynamic> schedule) {
+    final panel =
+        (schedule['panelists'] as List? ?? []).whereType<Map>().toList()..sort(
+          (a, b) => (b['is_chair'] == true ? 1 : 0).compareTo(
+            a['is_chair'] == true ? 1 : 0,
+          ),
+        );
+    final external = (schedule['external_evaluators'] as List? ?? [])
+        .whereType<Map>()
+        .toList();
+    return Column(
+      key: ValueKey('assignment-panel-${schedule['id']}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (panel.isEmpty && external.isEmpty)
+          Text(
+            'No panel assigned',
+            style: DefensysTokens.tableCell.copyWith(
+              color: _textSecondaryColor,
+            ),
+          ),
+        for (final person in panel)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: person['is_chair'] == true
+                ? Wrap(
+                    spacing: 6,
+                    runSpacing: 3,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        person['name']?.toString() ?? 'Unnamed panelist',
+                        style: DefensysTokens.tableCell.copyWith(
+                          color: _textPrimaryColor,
+                        ),
+                      ),
+                      _attemptBadge('Chair'),
+                    ],
+                  )
+                : Text(
+                    person['name']?.toString() ?? 'Unnamed panelist',
+                    style: DefensysTokens.tableCell.copyWith(
+                      color: _textSecondaryColor,
+                    ),
+                  ),
+          ),
+        for (final person in external)
+          Text(
+            '${person['name'] ?? 'External evaluator'} (External)',
+            style: DefensysTokens.tableCell.copyWith(
+              color: _textSecondaryColor,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _assignmentDocumenter(Map<String, dynamic> schedule) {
+    final name = schedule['documenter_name']?.toString().trim() ?? '';
+    return Text(
+      name.isEmpty ? 'Unassigned' : name,
+      key: ValueKey('assignment-documenter-${schedule['id']}'),
+      style: DefensysTokens.tableCell.copyWith(
+        color: name.isEmpty ? _textSecondaryColor : _textPrimaryColor,
+      ),
+    );
+  }
+
+  Widget _buildAssignmentRows(
+    _SessionGroup group,
+    DefenseBoardState state,
+    List<Map<String, dynamic>> schedules, {
+    required bool compact,
+    required int page,
+    required int totalPages,
+    required int totalTeams,
+  }) {
+    final pit = group.scope == 'pit';
+    Widget identity(Map<String, dynamic> schedule) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => _showDefenseDetailsDialog(schedule, group),
+          child: Text(
+            schedule['team_name']?.toString() ?? 'Unnamed team',
+            style: DefensysTokens.body.copyWith(
+              color: _textPrimaryColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        if (!pit && _defenseAttempt(schedule) > 1) ...[
+          const SizedBox(height: 4),
+          _attemptBadge(
+            'Re-defense · Attempt ${_defenseAttempt(schedule)}',
+            key: ValueKey('defense-attempt-${schedule['id']}'),
+          ),
+        ],
+      ],
+    );
+    return Column(
+      key: ValueKey('assignment-records-${group.key}'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!compact)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: _panelBgColor,
+              border: Border(bottom: BorderSide(color: _borderColor)),
+            ),
+            child: Row(
+              children: [
+                const _HeaderCell('Time slot', flex: 2),
+                const _HeaderCell('Team', flex: 3),
+                _HeaderCell('Panel', flex: pit ? 7 : 5),
+                if (!pit) const _HeaderCell('Documenter', flex: 3),
+                const _HeaderCell('Actions', flex: 1),
+              ],
+            ),
+          ),
+        for (final schedule in schedules)
+          Container(
+            padding: compact
+                ? const EdgeInsets.all(16)
+                : const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: _borderColor)),
+            ),
+            child: compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _slotTimeRange(schedule),
+                              style: DefensysTokens.tableCell.copyWith(
+                                color: _textSecondaryColor,
+                              ),
+                            ),
+                          ),
+                          _rowActionButtons(state, schedule, group),
+                        ],
+                      ),
+                      identity(schedule),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Panel',
+                        style: DefensysTokens.caption.copyWith(
+                          color: _textSecondaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      _assignmentPanel(schedule),
+                      if (!pit) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Documenter',
+                          style: DefensysTokens.caption.copyWith(
+                            color: _textSecondaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        _assignmentDocumenter(schedule),
+                      ],
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _BodyCell(
+                        flex: 2,
+                        child: Text(
+                          _slotTimeRange(schedule),
+                          style: DefensysTokens.tableCell.copyWith(
+                            color: _textPrimaryColor,
+                          ),
+                        ),
+                      ),
+                      _BodyCell(flex: 3, child: identity(schedule)),
+                      _BodyCell(
+                        flex: pit ? 7 : 5,
+                        child: _assignmentPanel(schedule),
+                      ),
+                      if (!pit)
+                        _BodyCell(
+                          flex: 3,
+                          child: _assignmentDocumenter(schedule),
+                        ),
+                      _BodyCell(
+                        flex: 1,
+                        child: _rowActionButtons(state, schedule, group),
+                      ),
+                    ],
+                  ),
+          ),
+        if (totalTeams > 10)
+          _buildTablePagination(group.key, page, totalPages, totalTeams, 10),
+      ],
+    );
+  }
+
   Widget _buildTablePagination(
     String groupKey,
     int currentPage,
@@ -2359,6 +2683,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 : (safePage + 1) * pageSize,
           )
         : group.schedules;
+
+    if (_assignmentsView) {
+      return _buildAssignmentRows(
+        group,
+        state,
+        paginatedSchedules,
+        compact: true,
+        page: safePage,
+        totalPages: totalPages,
+        totalTeams: totalTeams,
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.all(12),
@@ -3717,9 +4053,10 @@ class _HeaderCell extends StatelessWidget {
     return Expanded(
       flex: flex,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: EdgeInsets.symmetric(horizontal: text == 'Actions' ? 8 : 16),
         child: Text(
           text,
+          maxLines: 1,
           style: TextStyle(
             fontFamily: DefensysTokens.fontFamilyInter,
             fontSize: 11,
@@ -3758,8 +4095,6 @@ class _SessionGroup {
   final String stageLabel;
   String scheduledDate;
   String room;
-  String panelNames;
-  String documenterName;
   final String scope;
   final List<Map<String, dynamic>> schedules;
 
@@ -3768,8 +4103,6 @@ class _SessionGroup {
     required this.stageLabel,
     required this.scheduledDate,
     required this.room,
-    required this.panelNames,
-    required this.documenterName,
     required this.scope,
     required this.schedules,
   });

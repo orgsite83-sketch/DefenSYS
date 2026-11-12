@@ -418,6 +418,29 @@ class UserManagementApiTests(APITestCase):
         self.assertEqual(response.data['skipped_count'], 1)
         self.assertTrue(User.objects.get(username='FAC-0001').check_password('FAC-0001'))
 
+    def test_blank_import_contacts_preserve_saved_contacts_and_credentials(self):
+        student = User.objects.create_user(
+            username='contact-existing', password='ExistingTest!29', role='student',
+            email='saved@gmail.com', phone_number='09171234567',
+        )
+        original_hash = student.password
+        response = self.client.post('/api/users/bulk-import/', {
+            'users': [
+                {'id_number': student.username, 'first_name': 'Existing',
+                 'last_name': 'Student', 'role': 'student', 'email': '', 'phone_number': ''},
+                {'id_number': 'contact-new', 'first_name': 'New',
+                 'last_name': 'Student', 'role': 'student'},
+            ],
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        student.refresh_from_db()
+        self.assertEqual(student.email, 'saved@gmail.com')
+        self.assertEqual(student.phone_number, '09171234567')
+        self.assertEqual(student.password, original_hash)
+        new = User.objects.get(username='contact-new')
+        self.assertEqual((new.email, new.phone_number), ('', ''))
+        self.assertTrue(new.check_password('contact-new'))
+
     def test_bulk_import_saves_and_updates_phone_number(self):
         User.objects.create_user(
             username='FAC-0099',
@@ -717,6 +740,41 @@ class UserManagementApiTests(APITestCase):
         self.assertEqual(response.data['created_count'], 0)
         self.assertEqual(response.data['error_count'], 1)
         self.assertFalse(User.objects.filter(username='FAC-7777').exists())
+
+    def test_pit_import_missing_contacts_preserves_saved_contacts(self):
+        school_year = SchoolYear.objects.create(label='2030-2031')
+        Semester.objects.create(school_year=school_year, label=Semester.FIRST, is_active=True)
+        lead = User.objects.create_user(
+            username='contact-pit-lead', password='LeadTest!29', role='faculty',
+            is_pit_lead=True, pit_lead_year=StudentAcademicRecord.FIRST_YEAR,
+        )
+        instructor = User.objects.create_user(
+            username='contact-instructor', password='InstructorTest!29', role='faculty',
+            first_name='Test', last_name='Instructor',
+        )
+        student = User.objects.create_user(
+            username='contact-pit-student', password='ExistingTest!29', role='student',
+            first_name='Existing', last_name='Student',
+            email='saved@gmail.com', phone_number='09171234567',
+        )
+        original_hash = student.password
+        self.client.force_authenticate(lead)
+        response = self.client.post('/api/users/pit-lead/official-class-list-import/', {
+            'metadata': {'section': 'BSIT-1A', 'year_level': StudentAcademicRecord.FIRST_YEAR,
+                         'instructor': instructor.username},
+            'students': [
+                {'id_number': student.username, 'full_name': 'STUDENT, Existing',
+                 'email': '', 'phone_number': ''},
+                {'id_number': 'contact-pit-new', 'full_name': 'STUDENT, New'},
+            ],
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 1)
+        student.refresh_from_db()
+        self.assertEqual((student.email, student.phone_number), ('saved@gmail.com', '09171234567'))
+        self.assertEqual(student.password, original_hash)
+        new = User.objects.get(username='contact-pit-new')
+        self.assertEqual((new.email, new.phone_number), ('', ''))
 
     def test_pit_lead_official_class_list_import_updates_records_and_assigns_instructor(self):
         school_year = SchoolYear.objects.create(label='2030-2031')

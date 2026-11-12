@@ -230,6 +230,7 @@ Future<void> _pumpPlannerLink(
   WidgetTester tester,
   String date, {
   bool focusSession = true,
+  bool repairedSession = false,
 }) async {
   SharedPreferences.setMockInitialValues({});
   tester.view.physicalSize = const Size(1400, 1100);
@@ -253,8 +254,19 @@ Future<void> _pumpPlannerLink(
         authProvider.overrideWith(() => _Auth(_admin)),
         defenseBoardProvider.overrideWith(
           () => _Board([
-            _defense(1, days: 1, session: 'focus'),
-            _defense(2, days: 1, session: 'other'),
+            {
+              ..._defense(
+                1,
+                days: 1,
+                session: repairedSession ? 'repaired' : 'focus',
+              ),
+              if (repairedSession) 'legacy_session_id': 'focus',
+            },
+            _defense(
+              2,
+              days: 1,
+              session: repairedSession ? 'repaired' : 'other',
+            ),
             _defense(3, days: 2, session: 'later'),
           ]),
         ),
@@ -287,7 +299,9 @@ Future<void> _pump(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
-  await loadPreviewFonts();
+  // Layout assertions must use the same Inter metrics as the application,
+  // including when screenshot capture is disabled in ordinary CI runs.
+  await loadPreviewFonts(force: true);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -392,6 +406,116 @@ DefenseSchedulerState readinessState({String capstoneStatus = 'ready'}) =>
     );
 
 void main() {
+  for (final config in [
+    (1440.0, false, 1.0),
+    (1100.0, false, 1.0),
+    (1440.0, true, 1.0),
+    (390.0, true, 1.0),
+    (320.0, false, 1.25),
+  ]) {
+    testWidgets(
+      'session views keep exact assignments at ${config.$1} ${config.$2}',
+      (tester) async {
+        final rows = [
+          for (var id = 1; id <= 7; id++)
+            {
+              ..._defense(
+                id,
+                session: id <= 3 ? 'morning' : 'afternoon',
+                stage: 'Final Defense',
+              ),
+              'batch_id': 'one-confirmed-plan',
+              'session_label': id <= 3 ? 'Morning' : 'Afternoon',
+              'session_start_time': id <= 3 ? '08:00:00' : '13:00:00',
+              'session_end_time': id <= 3 ? '12:30:00' : '19:00:00',
+              'start_time': [
+                '08:00',
+                '09:30',
+                '11:00',
+                '13:00',
+                '14:30',
+                '16:00',
+                '17:30',
+              ][id - 1],
+              'slot_duration': 90,
+              'documenter_name': id == 5
+                  ? 'Trisha Angel Mae Camarista'
+                  : id >= 6
+                  ? 'Richard Paler'
+                  : 'Marites Habagat',
+              'panelists': [
+                {'id': 1, 'name': 'Jubilee Daga-ang', 'is_chair': true},
+                {
+                  'id': 2,
+                  'name': id == 5 ? 'Lutche Neri' : 'Janice Ruiz-Ocampo',
+                },
+                {'id': 3, 'name': id == 5 ? 'Markony Undag' : 'Steve Aranjuez'},
+                if (id != 5) {'id': 4, 'name': 'Ray An Quiñon'},
+              ],
+              if (id == 5)
+                'external_evaluators': [
+                  {'id': 91, 'name': 'External Subject Expert'},
+                ],
+            },
+        ];
+        await _pump(
+          tester,
+          external: _External(),
+          schedules: rows,
+          width: config.$1,
+          height: config.$1 == 1100 ? 768 : null,
+          dark: config.$2,
+          textScale: config.$3,
+        );
+        expect(find.text('2 sessions · 7 defenses shown'), findsOneWidget);
+        expect(find.textContaining('Morning ·'), findsOneWidget);
+        expect(find.textContaining('Afternoon ·'), findsOneWidget);
+        expect(find.byKey(const ValueKey('assignment-panel-1')), findsNothing);
+        expect(find.textContaining('Documenter:'), findsNothing);
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('board-session-preview')),
+          'defense-views-progress-${config.$1.toInt()}-${config.$2 ? 'dark' : 'light'}',
+        );
+        await tester.tap(find.byKey(const ValueKey('board-view-assignments')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('assignment-panel-5')),
+          findsOneWidget,
+        );
+        final documenter = tester.widget<Text>(
+          find.byKey(const ValueKey('assignment-documenter-5')),
+        );
+        expect(documenter.data, 'Trisha Angel Mae Camarista');
+        expect(find.text('External Subject Expert (External)'), findsOneWidget);
+        expect(find.text('0/4 panel evaluations submitted'), findsNothing);
+        final session = find.byKey(
+          const ValueKey('session-toggle-morning|capstone|1'),
+        );
+        await tester.ensureVisible(session);
+        await tester.pumpAndSettle();
+        await tester.tap(session);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('assignment-panel-1')), findsNothing);
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('board-session-preview')),
+          'defense-views-assignments-${config.$1.toInt()}-${config.$2 ? 'dark' : 'light'}',
+        );
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('board-view-progress')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('board-view-progress')));
+        await tester.pumpAndSettle();
+        expect(find.text('Team 1'), findsNothing);
+        expect(find.text('Team 5'), findsOneWidget);
+        expect(find.byKey(const ValueKey('defense-actions-5')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets(
     'sessions workspace explains follow-up and keeps evaluation in More actions',
     (tester) async {
@@ -1017,6 +1141,25 @@ void main() {
     expect(find.text('Team 3'), findsNothing);
     expect(find.textContaining('Schedule for'), findsOneWidget);
   });
+
+  testWidgets(
+    'old planner session links include the complete repaired session',
+    (tester) async {
+      final day = DateTime.now().add(const Duration(days: 1));
+      await _pumpPlannerLink(
+        tester,
+        day.toIso8601String().split('T').first,
+        repairedSession: true,
+      );
+      expect(find.text('Team 1'), findsOneWidget);
+      expect(find.text('Team 2'), findsOneWidget);
+      expect(find.text('Team 3'), findsNothing);
+      expect(
+        find.textContaining('1 session · Showing 2 of 3 defenses'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('schedule actions are anchored to the upper right', (
     tester,

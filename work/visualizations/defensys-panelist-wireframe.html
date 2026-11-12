@@ -1,0 +1,243 @@
+<div id="defensys-panelist-wireframe" aria-label="Panelist session wireframe">
+  <section aria-label="Admin Defense Operations" hidden>
+    <div class="ds-admin ds-product">
+      <aside class="ds-sidebar">
+        <div class="ds-brand">DefenSYS <span>Admin</span></div>
+        <div class="ds-nav-label">ACADEMIC PORTAL</div>
+        <div class="ds-nav-item">Overview</div>
+        <div class="ds-nav-item">Academic periods</div>
+        <div class="ds-nav-item">Defense stages</div>
+        <div class="ds-nav-item">Team management</div>
+        <div class="ds-nav-item ds-nav-active">Defense Operations</div>
+        <div class="ds-nav-item">Evaluation &amp; Grades</div>
+      </aside>
+      <div class="ds-admin-main">
+        <header class="ds-chrome"><div><strong>USTP Oroquieta</strong><small>Department of Information Technology</small></div><span class="ds-badge">2026–2027</span></header>
+        <main class="ds-main">
+          <div class="ds-page-title"><h2>Defense Operations</h2><span class="ds-small">Admin</span></div>
+          <div class="ds-section-tabs"><span class="ds-underlined">Schedules</span><span>Readiness</span></div>
+          <section class="ds-workspace" aria-label="Defense sessions">
+            <div class="ds-workspace-top"><div><h3>Defense sessions</h3><p>2 sessions · 7 defenses</p></div><span class="ds-small">Final Defense · Capstone</span></div>
+            <div class="ds-toolbar">
+              <div class="ds-segment" aria-label="Table view">
+                <button type="button" data-view="progress" aria-pressed="true">Progress</button>
+                <button type="button" data-view="assignments" aria-pressed="false">Assignments</button>
+              </div>
+              <button type="button" class="ds-quiet" data-collapse-all>Collapse all</button>
+            </div>
+            <div class="ds-session-area" id="ds-admin-sessions"></div>
+          </section>
+        </main>
+        <div class="ds-admin-overlay" id="ds-admin-overlay" hidden>
+          <section class="ds-detail" role="dialog" aria-modal="true" aria-labelledby="ds-detail-title">
+            <div class="ds-detail-top"><h3 id="ds-detail-title">Defense details</h3><button type="button" class="ds-square" data-close-admin aria-label="Close defense details">×</button></div>
+            <div id="ds-detail-content"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section aria-label="Panelist assigned defenses">
+    <div class="ds-panel-stage viz-dotted-background">
+      <div class="ds-phone ds-product">
+        <header class="ds-mobile-chrome"><strong>DefenSYS</strong><span class="ds-badge">Panelist</span></header>
+        <div class="ds-panel-heading"><h2>My defenses</h2><p>Jubilee Daga-ang · Panel chair</p></div>
+        <div class="ds-panel-tabs"><span class="ds-underlined">Assigned teams</span><span>Results &amp; history</span></div>
+        <div class="ds-current-session"><div><span class="ds-eyebrow">CURRENT SESSION</span><strong id="ds-current-label">Afternoon · Smart Room</strong><small>Fri, Nov 13, 2026 · Final Defense</small></div><button type="button" class="ds-quiet" id="ds-change-session">Change</button></div>
+        <div class="ds-panel-body"><div class="ds-list-title"><strong>Your assigned teams</strong><span class="ds-small" id="ds-panel-count">4 teams</span></div><div id="ds-panel-teams"></div></div>
+        <footer class="ds-mobile-footer"><span class="ds-underlined">Defenses</span><span>Notifications</span><span>Profile</span></footer>
+        <div class="ds-phone-overlay" id="ds-session-picker" hidden>
+          <section class="ds-sheet" role="dialog" aria-modal="true" aria-labelledby="ds-picker-title">
+            <div class="ds-sheet-handle"></div>
+            <div class="ds-detail-top"><h3 id="ds-picker-title">Choose a session</h3><button type="button" class="ds-square" id="ds-close-picker" aria-label="Close session picker">×</button></div>
+            <p class="ds-picker-date">Friday, Nov 13, 2026</p>
+            <div id="ds-picker-options"></div>
+          </section>
+        </div>
+        <div class="ds-phone-overlay" id="ds-panel-detail" hidden>
+          <section class="ds-sheet" role="dialog" aria-modal="true" aria-labelledby="ds-panel-detail-title">
+            <div class="ds-sheet-handle"></div>
+            <div class="ds-detail-top"><h3 id="ds-panel-detail-title">Defense details</h3><button type="button" class="ds-square" id="ds-close-panel-detail" aria-label="Close team details">×</button></div>
+            <div id="ds-panel-detail-content"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+<style>
+  #defensys-panelist-wireframe { --ds-surface: light-dark(#ffffff,#202020); --ds-background: light-dark(#f7f8fa,#161616); --ds-muted: light-dark(#f0f1f3,#2a2a2a); --ds-line: light-dark(#dce0e5,#424242); --ds-text: light-dark(#20252c,#eeeeee); --ds-secondary: light-dark(#606975,#b6bac1); --ds-maroon: light-dark(#801711,#e8aaa6); --ds-selected: light-dark(#f7eeee,#392726); font-family:Inter,Arial,sans-serif; color:var(--ds-text); }
+  #defensys-panelist-wireframe * { box-sizing:border-box; }
+  #defensys-panelist-wireframe [hidden] { display:none !important; }
+  #defensys-panelist-wireframe .ds-product { background:var(--ds-background); color:var(--ds-text); font-size:14px; line-height:1.45; }
+  #defensys-panelist-wireframe h2, #defensys-panelist-wireframe h3, #defensys-panelist-wireframe p { margin:0; }
+  #defensys-panelist-wireframe h2 { font-size:20px; font-weight:500; }
+  #defensys-panelist-wireframe h3 { font-size:15px; font-weight:500; }
+  #defensys-panelist-wireframe strong { font-weight:500; }
+  #defensys-panelist-wireframe button { font:inherit; color:inherit; background:var(--ds-surface); border:1px solid var(--ds-line); border-radius:6px; padding:7px 11px; }
+  #defensys-panelist-wireframe button:focus-visible { outline:2px solid var(--ds-maroon); outline-offset:3px; }
+  #defensys-panelist-wireframe small, #defensys-panelist-wireframe .ds-small { font-size:12px; color:var(--ds-secondary); }
+  #defensys-panelist-wireframe .ds-admin { display:grid; grid-template-columns:158px minmax(0,1fr); min-height:850px; border:1px solid var(--ds-line); border-radius:8px; overflow:clip; }
+  #defensys-panelist-wireframe .ds-sidebar { background:var(--ds-surface); border-right:1px solid var(--ds-line); padding:20px 10px; }
+  #defensys-panelist-wireframe .ds-brand { font-size:18px; font-weight:500; padding:0 6px; }
+  #defensys-panelist-wireframe .ds-brand span { font-size:11px; color:var(--ds-secondary); }
+  #defensys-panelist-wireframe .ds-nav-label { font-size:10px; letter-spacing:.07em; color:var(--ds-secondary); margin:30px 6px 15px; }
+  #defensys-panelist-wireframe .ds-nav-item { padding:11px 8px; font-size:12px; border-radius:5px; margin-bottom:5px; }
+  #defensys-panelist-wireframe .ds-nav-active { color:var(--ds-maroon); background:var(--ds-selected); font-weight:500; }
+  #defensys-panelist-wireframe .ds-admin-main { position:relative; min-width:0; }
+  #defensys-panelist-wireframe .ds-chrome { display:flex; justify-content:space-between; align-items:center; padding:18px 24px; gap:16px; background:var(--ds-surface); border-bottom:1px solid var(--ds-line); min-height:76px; }
+  #defensys-panelist-wireframe .ds-chrome small { display:block; margin-top:2px; }
+  #defensys-panelist-wireframe .ds-badge { display:inline-block; padding:3px 8px; border:1px solid var(--ds-line); border-radius:5px; white-space:nowrap; font-size:11px; color:var(--ds-secondary); }
+  #defensys-panelist-wireframe .ds-main { padding:24px 20px; }
+  #defensys-panelist-wireframe .ds-page-title { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  #defensys-panelist-wireframe .ds-section-tabs, #defensys-panelist-wireframe .ds-panel-tabs { display:flex; gap:24px; border-bottom:1px solid var(--ds-line); color:var(--ds-secondary); margin-top:20px; }
+  #defensys-panelist-wireframe .ds-section-tabs span, #defensys-panelist-wireframe .ds-panel-tabs span { padding:0 0 10px; font-size:13px; }
+  #defensys-panelist-wireframe .ds-underlined { color:var(--ds-maroon); border-bottom:2px solid var(--ds-maroon); }
+  #defensys-panelist-wireframe .ds-workspace { border:1px solid var(--ds-line); border-radius:8px; margin-top:20px; background:var(--ds-surface); overflow:clip; }
+  #defensys-panelist-wireframe .ds-workspace-top { padding:16px; display:flex; justify-content:space-between; align-items:start; gap:12px; flex-wrap:wrap; }
+  #defensys-panelist-wireframe .ds-workspace-top p { color:var(--ds-secondary); font-size:12px; margin-top:4px; }
+  #defensys-panelist-wireframe .ds-toolbar { padding:0 16px 15px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  #defensys-panelist-wireframe .ds-segment { display:flex; gap:3px; padding:3px; border-radius:7px; background:var(--ds-muted); }
+  #defensys-panelist-wireframe .ds-segment button { background:transparent; border-color:transparent; font-size:12px; padding:5px 12px; }
+  #defensys-panelist-wireframe .ds-segment button[aria-pressed="true"] { background:var(--ds-surface); border-color:var(--ds-line); color:var(--ds-maroon); }
+  #defensys-panelist-wireframe .ds-quiet { border-color:transparent; background:transparent; font-size:12px; color:var(--ds-maroon); }
+  #defensys-panelist-wireframe .ds-session-area { background:var(--ds-background); border-top:1px solid var(--ds-line); padding:12px; display:grid; gap:12px; }
+  #defensys-panelist-wireframe .ds-session { background:var(--ds-surface); border:1px solid var(--ds-line); border-radius:7px; overflow:clip; min-width:0; }
+  #defensys-panelist-wireframe .ds-session-head { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:13px 14px; }
+  #defensys-panelist-wireframe .ds-session-head small { display:block; margin-top:3px; }
+  #defensys-panelist-wireframe .ds-session-head strong { font-size:13px; }
+  #defensys-panelist-wireframe .ds-square { padding:3px; border-color:transparent; min-width:30px; min-height:30px; font-size:18px; background:transparent; }
+  #defensys-panelist-wireframe .ds-table-scroll { overflow-x:auto; }
+  #defensys-panelist-wireframe table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:12px; min-width:610px; }
+  #defensys-panelist-wireframe th { background:var(--ds-background); font-size:11px; font-weight:500; text-align:left; color:var(--ds-secondary); padding:9px 10px; border-top:1px solid var(--ds-line); }
+  #defensys-panelist-wireframe td { padding:13px 10px; border-top:1px solid var(--ds-line); vertical-align:top; overflow-wrap:anywhere; }
+  #defensys-panelist-wireframe td small { display:block; font-size:11px; margin-top:4px; }
+  #defensys-panelist-wireframe .ds-row-title { display:block; border:0; padding:0; text-align:left; background:transparent; font-weight:500; font-size:12px; }
+  #defensys-panelist-wireframe .ds-status { display:inline-block; border:1px solid var(--ds-line); border-radius:5px; padding:2px 6px; font-size:11px; }
+  #defensys-panelist-wireframe .ds-time { white-space:nowrap; font-variant-numeric:tabular-nums; font-size:11px; }
+  #defensys-panelist-wireframe .ds-chair { display:inline-block; border:1px solid var(--ds-line); border-radius:3px; padding:0 4px; font-size:10px; margin-left:3px; color:var(--ds-secondary); }
+  #defensys-panelist-wireframe .ds-admin-overlay { position:absolute; inset:0; background:light-dark(#20252c40,#00000080); z-index:3; padding:90px 20px 20px; display:flex; justify-content:center; align-items:start; }
+  #defensys-panelist-wireframe .ds-detail { width:410px; max-width:100%; border:1px solid var(--ds-line); border-radius:8px; background:var(--ds-surface); padding:20px; }
+  #defensys-panelist-wireframe .ds-detail-top { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; }
+  #defensys-panelist-wireframe .ds-detail dl { margin:20px 0 0; }
+  #defensys-panelist-wireframe dt { color:var(--ds-secondary); font-size:11px; margin-top:15px; }
+  #defensys-panelist-wireframe dd { margin:4px 0 0; font-size:13px; }
+  #defensys-panelist-wireframe .ds-panel-stage { min-height:850px; padding:18px 0; display:flex; justify-content:center; align-items:start; }
+  #defensys-panelist-wireframe .ds-phone { position:relative; width:414px; max-width:100%; min-height:812px; border:1px solid var(--ds-line); border-radius:16px; overflow:clip; display:flex; flex-direction:column; }
+  #defensys-panelist-wireframe .ds-mobile-chrome { background:var(--ds-surface); padding:20px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--ds-line); }
+  #defensys-panelist-wireframe .ds-panel-heading { padding:22px 20px 0; }
+  #defensys-panelist-wireframe .ds-panel-heading p { margin-top:5px; font-size:12px; color:var(--ds-secondary); }
+  #defensys-panelist-wireframe .ds-panel-tabs { margin:20px 20px 0; gap:20px; }
+  #defensys-panelist-wireframe .ds-current-session { margin:18px 16px; background:var(--ds-surface); border:1px solid var(--ds-line); border-radius:7px; padding:13px; display:flex; justify-content:space-between; gap:8px; align-items:center; }
+  #defensys-panelist-wireframe .ds-current-session strong, #defensys-panelist-wireframe .ds-current-session small { display:block; margin-top:4px; }
+  #defensys-panelist-wireframe .ds-current-session strong { font-size:13px; }
+  #defensys-panelist-wireframe .ds-current-session small { font-size:11px; }
+  #defensys-panelist-wireframe .ds-eyebrow { font-size:10px; letter-spacing:.06em; color:var(--ds-maroon); }
+  #defensys-panelist-wireframe .ds-panel-body { padding:0 16px 24px; flex:1; }
+  #defensys-panelist-wireframe .ds-list-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:13px; }
+  #defensys-panelist-wireframe .ds-panel-row { background:var(--ds-surface); border:1px solid var(--ds-line); border-radius:7px; padding:13px; margin-bottom:9px; }
+  #defensys-panelist-wireframe .ds-panel-row-top { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; color:var(--ds-secondary); margin-bottom:6px; }
+  #defensys-panelist-wireframe .ds-panel-row-main { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+  #defensys-panelist-wireframe .ds-panel-row-main strong { display:block; font-size:13px; }
+  #defensys-panelist-wireframe .ds-panel-row-main small { display:block; font-size:11px; margin-top:3px; }
+  #defensys-panelist-wireframe .ds-panel-row-main button { font-size:12px; padding:6px 10px; white-space:nowrap; }
+  #defensys-panelist-wireframe .ds-mobile-footer { display:flex; justify-content:space-around; gap:16px; border-top:1px solid var(--ds-line); padding:16px 12px; background:var(--ds-surface); font-size:11px; color:var(--ds-secondary); }
+  #defensys-panelist-wireframe .ds-mobile-footer span { padding-bottom:4px; }
+  #defensys-panelist-wireframe .ds-phone-overlay { position:absolute; inset:0; z-index:4; background:light-dark(#20252c55,#00000090); display:flex; align-items:end; }
+  #defensys-panelist-wireframe .ds-sheet { width:100%; border:1px solid var(--ds-line); border-bottom:0; border-radius:15px 15px 0 0; padding:10px 18px 30px; min-height:460px; background:var(--ds-surface); }
+  #defensys-panelist-wireframe .ds-sheet-handle { width:32px; height:4px; background:var(--ds-line); border-radius:3px; margin:0 auto 20px; }
+  #defensys-panelist-wireframe .ds-picker-date { font-size:12px; color:var(--ds-secondary); margin:0 0 12px; }
+  #defensys-panelist-wireframe .ds-session-option { display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; padding:15px; margin-bottom:10px; }
+  #defensys-panelist-wireframe .ds-session-option[aria-pressed="true"] { border-color:var(--ds-maroon); background:var(--ds-selected); }
+  #defensys-panelist-wireframe .ds-session-option strong, #defensys-panelist-wireframe .ds-session-option small { display:block; }
+  #defensys-panelist-wireframe .ds-session-option strong { font-size:13px; }
+  #defensys-panelist-wireframe .ds-session-option small { font-size:11px; margin-top:4px; }
+  #defensys-panelist-wireframe .ds-detail-staff { border-top:1px solid var(--ds-line); margin-top:18px; padding-top:2px; }
+  #defensys-panelist-wireframe .ds-detail-staff p { margin:8px 0 0; font-size:12px; }
+  @media(max-width:850px) { #defensys-panelist-wireframe .ds-admin { grid-template-columns:minmax(0,1fr); } #defensys-panelist-wireframe .ds-sidebar { display:none; } }
+  @media(max-width:520px) { #defensys-panelist-wireframe .ds-main { padding:16px 10px; } #defensys-panelist-wireframe .ds-chrome { padding:14px; } #defensys-panelist-wireframe .ds-chrome small { max-width:175px; } #defensys-panelist-wireframe .ds-workspace-top { padding:12px; } #defensys-panelist-wireframe .ds-toolbar { padding:0 12px 12px; } #defensys-panelist-wireframe .ds-session-area { padding:7px; } #defensys-panelist-wireframe .ds-session-head { padding:11px; } #defensys-panelist-wireframe .ds-phone { border-radius:9px; } #defensys-panelist-wireframe .ds-session-option { padding:12px; } }
+  @media(pointer:coarse) { #defensys-panelist-wireframe button { min-height:44px; } }
+</style>
+<script>
+(() => {
+  const root = document.getElementById('defensys-panelist-wireframe');
+  const teams = [
+    {id:1, session:'morning', time:'8:00–9:30', name:'Code Crafters', project:'Capstone project', adviser:'Ginbert Fernandez', panel:['Jubilee Daga-ang','Steve Aranjuez / Janice Ruiz-Ocampo','Lutherly Bongcawel','Arnel Mangga'], doc:'Marites Habagat'},
+    {id:2, session:'morning', time:'9:30–11:00', name:'SysIgnite', project:'Capstone project', adviser:'Ginbert Fernandez', panel:['Jubilee Daga-ang','Steve Aranjuez / Janice Ruiz-Ocampo','Lutherly Bongcawel','Arnel Mangga'], doc:'Marites Habagat'},
+    {id:3, session:'morning', time:'11:00–12:30', name:'BulleTech', project:'Capstone project', adviser:'Ginbert Fernandez', panel:['Jubilee Daga-ang','Steve Aranjuez / Janice Ruiz-Ocampo','Lutherly Bongcawel','Arnel Mangga'], doc:'Marites Habagat'},
+    {id:4, session:'afternoon', time:'13:00–14:30', name:'Quadvision', project:'Capstone project', adviser:'Ginbert Fernandez', panel:['Jubilee Daga-ang','Steve Aranjuez / Janice Ruiz-Ocampo','Lutherly Bongcawel','Arnel Mangga'], doc:'Marites Habagat'},
+    {id:5, session:'afternoon', time:'14:30–16:00', name:'Debug4ce', project:'TRIPPLAN', adviser:'Ray An Quiñon', panel:['Jubilee Daga-ang','Lutche Neri','Markony Undag','Janice Ruiz-Ocampo'], doc:'Trisha Angel Mae Camarista'},
+    {id:6, session:'afternoon', time:'16:00–17:30', name:'Site Avengers', project:'DEFENSYS', adviser:'Hanes Ongos', panel:['Jubilee Daga-ang','Janice Ruiz-Ocampo','Steve Aranjuez','Ray An Quiñon'], doc:'Richard Paler'},
+    {id:7, session:'afternoon', time:'17:30–19:00', name:'SyntaxError', project:'CAMPUS CONNECT', adviser:'Hanes Ongos', panel:['Jubilee Daga-ang','Janice Ruiz-Ocampo','Steve Aranjuez','Ray An Quiñon'], doc:'Richard Paler'}
+  ];
+  const sessions = [{id:'morning', name:'Morning', range:'8:00 AM–12:30 PM', count:3}, {id:'afternoon', name:'Afternoon', range:'1:00 PM–7:00 PM', count:4}];
+  const state = {view:'progress', selected:'afternoon', expanded:{morning:false, afternoon:true}};
+  const el = selector => root.querySelector(selector);
+  const all = selector => [...root.querySelectorAll(selector)];
+  function restore(saved) {
+    const value = saved?.privateContent;
+    if (!value) return;
+    if (['progress','assignments'].includes(value.view)) state.view=value.view;
+    if (['morning','afternoon'].includes(value.selected)) state.selected=value.selected;
+    if (value.expanded && typeof value.expanded.morning==='boolean' && typeof value.expanded.afternoon==='boolean') state.expanded={...value.expanded};
+  }
+  restore(window.openai?.widgetState);
+  function save() {
+    window.openai?.setWidgetState?.({modelContent:{adminView:state.view,panelSession:state.selected}, privateContent:{...state}})?.catch?.(() => {});
+  }
+  function panelNames(team) {
+    return `${team.panel[0]} <span class="ds-chair">Chair</span><small>${team.panel.slice(1).join(' · ')}</small>`;
+  }
+  function table(items) {
+    const assignments=state.view==='assignments';
+    const headings=assignments
+      ? '<colgroup><col style="width:14%"><col style="width:20%"><col style="width:38%"><col style="width:22%"><col style="width:6%"></colgroup><thead><tr><th>Time</th><th>Team</th><th>Panel</th><th>Documenter</th><th><span aria-label="Actions">⋯</span></th></tr></thead>'
+      : '<colgroup><col style="width:15%"><col style="width:32%"><col style="width:30%"><col style="width:17%"><col style="width:6%"></colgroup><thead><tr><th>Time slot</th><th>Team &amp; project</th><th>Progress</th><th>Minutes</th><th><span aria-label="Actions">⋯</span></th></tr></thead>';
+    const rows=items.map(team=>`<tr><td class="ds-time">${team.time}</td><td><button type="button" class="ds-row-title" data-team="${team.id}">${team.name}</button>${assignments?'':`<small>${team.project}</small><small>Adviser: ${team.adviser}</small>`}</td>${assignments?`<td>${panelNames(team)}</td><td>${team.doc}</td>`:'<td><span class="ds-status">Scheduled</span><small>0/4 evaluations submitted</small></td><td>Not started</td>'}<td><button type="button" class="ds-square" data-team="${team.id}" aria-label="Details for ${team.name}">⋯</button></td></tr>`).join('');
+    return `<div class="ds-table-scroll"><table aria-label="${assignments?'Panel and documenter assignments':'Defense progress'}">${headings}<tbody>${rows}</tbody></table></div>`;
+  }
+  function renderAdmin() {
+    all('[data-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.view===state.view)));
+    el('#ds-admin-sessions').innerHTML=sessions.map(session=>`<section class="ds-session"><div class="ds-session-head"><div><strong>${session.name} · Smart Room · ${session.count} teams</strong><small>13 Nov 2026 · ${session.range}</small></div><button type="button" class="ds-square" data-toggle="${session.id}" aria-label="${state.expanded[session.id]?'Collapse':'Expand'} ${session.name.toLowerCase()} session" aria-expanded="${state.expanded[session.id]}">${state.expanded[session.id]?'−':'+'}</button></div>${state.expanded[session.id]?table(teams.filter(team=>team.session===session.id)):''}</section>`).join('');
+    const collapsed=!Object.values(state.expanded).some(Boolean);
+    el('[data-collapse-all]').textContent=collapsed?'Expand all':'Collapse all';
+  }
+  function detail(team) {
+    return `<strong>${team.name}</strong><p class="ds-small">${team.time} · Smart Room</p><dl><dt>Project</dt><dd>${team.project}</dd><dt>Adviser</dt><dd>${team.adviser}</dd><dt>Panel chair</dt><dd>${team.panel[0]}</dd><dt>Panel members</dt><dd>${team.panel.slice(1).join('<br>')}</dd><dt>Documenter</dt><dd>${team.doc}</dd></dl>`;
+  }
+  let returnFocus=null;
+  function openDialog(selector) { returnFocus=document.activeElement; el(selector).hidden=false; el(selector).querySelector('button')?.focus(); }
+  function closeDialog(selector) { el(selector).hidden=true; returnFocus?.focus(); }
+  function renderPanel() {
+    const session=sessions.find(item=>item.id===state.selected);
+    const items=teams.filter(team=>team.session===state.selected);
+    el('#ds-current-label').textContent=`${session.name} · Smart Room`;
+    el('#ds-panel-count').textContent=`${items.length} teams`;
+    el('#ds-panel-teams').innerHTML=items.map(team=>`<div class="ds-panel-row"><div class="ds-panel-row-top"><span>${team.time}</span><span>Not submitted</span></div><div class="ds-panel-row-main"><div><strong>${team.name}</strong><small>${team.project}</small></div><button type="button" data-panel-team="${team.id}">View team</button></div></div>`).join('');
+    el('#ds-picker-options').innerHTML=sessions.map(item=>`<button type="button" class="ds-session-option" data-session="${item.id}" aria-pressed="${item.id===state.selected}"><span><strong>${item.name} · Smart Room</strong><small>${item.range}</small><small>${item.count} assigned teams · Final Defense</small></span><span aria-hidden="true">${item.id===state.selected?'✓':'›'}</span></button>`).join('');
+  }
+  root.addEventListener('click',event=>{
+    const button=event.target.closest('button');
+    if(!button || !root.contains(button)) return;
+    if(button.dataset.view) { state.view=button.dataset.view; renderAdmin(); save(); }
+    if(button.dataset.toggle) { state.expanded[button.dataset.toggle]=!state.expanded[button.dataset.toggle]; renderAdmin(); save(); el(`[data-toggle="${button.dataset.toggle}"]`)?.focus(); }
+    if(button.hasAttribute('data-collapse-all')) { const expand=!Object.values(state.expanded).some(Boolean); state.expanded={morning:expand,afternoon:expand}; renderAdmin(); save(); }
+    if(button.dataset.team) { const team=teams.find(item=>item.id===Number(button.dataset.team)); el('#ds-detail-content').innerHTML=detail(team); openDialog('#ds-admin-overlay'); }
+    if(button.hasAttribute('data-close-admin')) closeDialog('#ds-admin-overlay');
+    if(button.id==='ds-change-session') openDialog('#ds-session-picker');
+    if(button.id==='ds-close-picker') closeDialog('#ds-session-picker');
+    if(button.dataset.session) { state.selected=button.dataset.session; renderPanel(); closeDialog('#ds-session-picker'); save(); }
+    if(button.dataset.panelTeam) { const team=teams.find(item=>item.id===Number(button.dataset.panelTeam)); el('#ds-panel-detail-title').textContent=team.name; el('#ds-panel-detail-content').innerHTML=`<p class="ds-small">${team.time} · Final Defense · Smart Room</p><div class="ds-detail-staff"><p>Panel chair: ${team.panel[0]}</p><p>Panel: ${team.panel.slice(1).join(', ')}</p><p>Documenter: ${team.doc}</p></div><div class="ds-detail-staff"><p>Evaluation: Not submitted</p><p class="ds-small">Grading opens on the scheduled defense date.</p></div>`; openDialog('#ds-panel-detail'); }
+    if(button.id==='ds-close-panel-detail') closeDialog('#ds-panel-detail');
+  });
+  root.addEventListener('keydown',event=>{
+    const dialog=all('[role="dialog"]').find(item=>!item.parentElement.hidden);
+    if(!dialog) return;
+    if(event.key==='Escape') { event.preventDefault(); closeDialog('#'+dialog.parentElement.id); }
+    if(event.key==='Tab') { const controls=[...dialog.querySelectorAll('button')]; const first=controls[0],last=controls[controls.length-1]; if(event.shiftKey && document.activeElement===first) {event.preventDefault();last.focus();} else if(!event.shiftKey && document.activeElement===last) {event.preventDefault();first.focus();} }
+  });
+  window.addEventListener('openai:set_globals',event=>{ if(event.detail?.globals?.widgetState) {restore(event.detail.globals.widgetState);renderAdmin();renderPanel();} });
+  renderAdmin();
+  renderPanel();
+})();
+</script>

@@ -149,6 +149,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
 
   void _ensureStageSelection() {
     final sessions = _activeSessions;
+    final retained = sessions
+        .where((session) => session.matchesKey(_selectedSessionKey))
+        .firstOrNull;
+    if (retained != null) _selectedSessionKey = retained.key;
     if (!sessions.any((session) => session.key == _selectedSessionKey)) {
       final today = TeamData.manilaToday;
       final preferred =
@@ -184,6 +188,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
   void _ensureHistorySelection() {
     if (!_resultsShowHistory && _historySessionKey == null) return;
     final sessions = _historySessions;
+    final retained = sessions
+        .where((session) => session.matchesKey(_historySessionKey))
+        .firstOrNull;
+    if (retained != null) _historySessionKey = retained.key;
     if (!sessions.any((session) => session.key == _historySessionKey)) {
       _historySessionKey = sessions.lastOrNull?.key;
       _historyStageKey = null;
@@ -473,6 +481,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             teamId: (team['id'] ?? 0).toString(),
             scheduleId: (team['schedule_id'] ?? '').toString(),
             sessionId: team['session_id']?.toString() ?? '',
+            legacySessionId: team['legacy_session_id']?.toString() ?? '',
+            sessionLabel: team['session_label']?.toString() ?? '',
+            sessionStartTime: team['session_start_time']?.toString() ?? '',
+            sessionEndTime: team['session_end_time']?.toString() ?? '',
             semesterId: team['semester_id']?.toString() ?? '',
             semesterLabel: team['display_semester']?.toString() ?? '',
             defenseStageId: team['defense_stage_id']?.toString() ?? '',
@@ -835,7 +847,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                                                       CrossAxisAlignment.start,
                                                   children: [
                                                     Text(
-                                                      '${DateFormat('h:mm a').format(item.startsAt)} · ${item.teams.first.room}',
+                                                      '${item.timeLabel} · ${item.teams.first.room}',
                                                       style: const TextStyle(
                                                         fontSize: 13,
                                                         fontWeight:
@@ -1223,7 +1235,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
           ),
           const SizedBox(height: 3),
           Text(
-            '${DateFormat('EEE, MMM d · h:mm a').format(session.startsAt)} · $roomLabel',
+            '${DateFormat('EEE, MMM d').format(session.startsAt)} · ${session.timeLabel} · $roomLabel',
             style: TextStyle(
               color: DefensysTokens.textSecondaryOf(context),
               fontSize: 12,

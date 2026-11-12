@@ -2,10 +2,11 @@ import logging
 import os
 from datetime import timedelta
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q, Count, Max
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -20,6 +21,7 @@ from .serializers import (
     CustomTokenObtainPairSerializer,
     CustomTokenRefreshSerializer,
     SystemAuditLogSerializer,
+    SelfProfileUpdateSerializer,
     UserSerializer,
 )
 from .models import SystemAuditLog
@@ -77,83 +79,53 @@ class CurrentUserView(APIView):
 
     def patch(self, request):
         user = request.user
-        
-        # Check if we are removing the avatar
-        remove_avatar = (
-            request.data.get('remove_avatar') == 'true' or
-            request.data.get('avatar') == '' or
-            (request.data.get('avatar') is None and 'remove_avatar' in request.data)
-        )
-        
-        if 'avatar' in request.data or 'avatar' in request.FILES or remove_avatar:
-            if remove_avatar:
-                if user.avatar:
-                    user.avatar.delete(save=False)
-                user.avatar = None
-            else:
-                avatar_file = request.FILES.get('avatar')
-                if avatar_file:
-                    # Validate size (10MB limit)
-                    if avatar_file.size > 10 * 1024 * 1024:
-                        return Response(
-                            {'detail': 'Avatar file size must not exceed 10MB.'},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    
-                    # Validate extension and content type
-                    ext = os.path.splitext(avatar_file.name)[1].lower().replace('.', '')
-                    allowed_exts = ['png', 'jpg', 'jpeg', 'webp']
-                    allowed_types = ['image/jpeg', 'image/png', 'image/webp', 'application/octet-stream']
-                    ct = (avatar_file.content_type or '').lower()
-                    if ext not in allowed_exts or (ct and ct not in allowed_types and not ct.startswith('image/')):
-                        return Response(
-                            {'detail': 'Unsupported file format. Please upload JPEG, PNG, or WEBP.'},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    
-                    # Delete old avatar file if it exists
-                    if user.avatar:
-                        user.avatar.delete(save=False)
-                    
-                    user.avatar = avatar_file
-
-        # Check if we are removing the e_signature
-        remove_e_sig = (
-            request.data.get('remove_e_signature') == 'true' or
-            request.data.get('e_signature') == '' or
-            (request.data.get('e_signature') is None and 'remove_e_signature' in request.data)
-        )
-
-        if 'e_signature' in request.data or 'e_signature' in request.FILES or remove_e_sig:
-            if remove_e_sig:
-                if user.e_signature:
-                    user.e_signature.delete(save=False)
-                user.e_signature = None
-            else:
-                sig_file = request.FILES.get('e_signature')
-                if sig_file:
-                    if sig_file.size > 10 * 1024 * 1024:
-                        return Response(
-                            {'detail': 'Signature file size must not exceed 10MB.'},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    ext = os.path.splitext(sig_file.name)[1].lower().replace('.', '')
-                    allowed_exts = ['png', 'jpg', 'jpeg', 'webp']
-                    allowed_types = ['image/jpeg', 'image/png', 'image/webp', 'application/octet-stream']
-                    ct = (sig_file.content_type or '').lower()
-                    if ext not in allowed_exts or (ct and ct not in allowed_types and not ct.startswith('image/')):
-                        return Response(
-                            {'detail': 'Unsupported file format. Please upload JPEG, PNG, or WEBP.'},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    if user.e_signature:
-                        user.e_signature.delete(save=False)
-                    user.e_signature = sig_file
-
-        serializer = UserSerializer(user, data=request.data, partial=True, context={'request': request})
+        # Validate identity restrictions and contacts before any media side effects.
+        serializer = SelfProfileUpdateSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+
+        # Preflight every image before deleting an existing file or saving contacts.
+        media_updates = {}
+        for field in ('avatar', 'e_signature'):
+            remove_key = f'remove_{field}'
+            remove = (
+                request.data.get(remove_key) in ('true', True)
+                or (field in request.data and request.data[field] in ('', None))
+            )
+            if remove:
+                media_updates[field] = None
+                continue
+            upload = request.FILES.get(field)
+            if upload is None:
+                continue
+            if upload.size > 10 * 1024 * 1024:
+                label = 'Avatar' if field == 'avatar' else 'Signature'
+                return Response({'detail': f'{label} file size must not exceed 10MB.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            extension = os.path.splitext(upload.name)[1].lower().lstrip('.')
+            content_type = (upload.content_type or '').lower()
+            if extension not in ('png', 'jpg', 'jpeg', 'webp') or (
+                content_type and content_type not in ('image/jpeg', 'image/png', 'image/webp',
+                                                       'application/octet-stream')
+                and not content_type.startswith('image/')
+            ):
+                return Response({'detail': 'Unsupported file format. Please upload JPEG, PNG, or WEBP.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            try:
+                media_updates[field] = serializers.ImageField().run_validation(upload)
+            except (serializers.ValidationError, DjangoValidationError) as exc:
+                errors = exc.detail if isinstance(exc, serializers.ValidationError) else exc.messages
+                return Response({field: errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        for field, value in media_updates.items():
+            previous = getattr(user, field)
+            if previous:
+                previous.delete(save=False)
+            setattr(user, field, value)
+
+        for field, value in serializer.validated_data.items():
+            setattr(user, field, value)
+        user.save()
+        return Response(UserSerializer(user, context={'request': request}).data)
 
 
 class ChangePasswordView(APIView):

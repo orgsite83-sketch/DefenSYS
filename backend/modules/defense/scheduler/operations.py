@@ -54,7 +54,8 @@ def selection(actor, data):
             if not ids or set(items.values_list('pk', flat=True)) != ids:
                 raise PermissionDenied('Choose defenses from this defense type, the active semester, and your management scope.')
     elif data['target'] == 'session':
-        items = items.filter(session_id=anchor.session_id)
+        items = items.filter(session_id=anchor.session_id, defense_stage_id=anchor.defense_stage_id,
+                             event_name__iexact=anchor.event_name)
     elif data['target'] in ('stage', 'stage_selected'):
         from academic_period_management.services import active_semester
         active = active_semester()
@@ -72,7 +73,8 @@ def selection(actor, data):
                 raise PermissionDenied('Choose schedules from this stage, the active semester, and your management scope.')
     elif data['target'] == 'selected':
         ids = set(data.get('schedule_ids') or [])
-        items = items.filter(session_id=anchor.session_id, pk__in=ids)
+        items = items.filter(session_id=anchor.session_id, defense_stage_id=anchor.defense_stage_id,
+                             event_name__iexact=anchor.event_name, pk__in=ids)
         if not ids or set(items.values_list('pk', flat=True)) != ids:
             raise PermissionDenied('Choose schedules from this session and your management scope.')
     else:

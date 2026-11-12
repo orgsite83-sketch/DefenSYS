@@ -56,6 +56,45 @@ void main() {
     {'id': 3, 'username': '208', 'name': 'Jonathan Beltran', 'email': '208@ustp.edu.ph'},
   ];
 
+  for (final includeContacts in [false, true]) {
+    testWidgets('new student intake preserves optional contacts: $includeContacts', (tester) async {
+      Map<String, dynamic>? result;
+      await pumpDefensysWidget(tester, Builder(builder: (context) => TextButton(
+        onPressed: () async {
+          result = await AddStudentDialog.show(context,
+            students: const [], schoolYears: mockSchoolYears,
+            activeSemester: mockActiveSemester);
+        },
+        child: const Text('Open intake'),
+      )), overrides: [
+        studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
+        userManagementProvider.overrideWith(FakeUserManagementNotifier.new),
+      ]);
+      await tester.tap(find.text('Open intake'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Register New Student Intake Instead'));
+      await tester.pumpAndSettle();
+      Future<void> enter(String label, String value) async {
+        final input = find.byWidgetPredicate((widget) => widget is TextField &&
+          widget.decoration?.labelText == label);
+        await tester.ensureVisible(input);
+        await tester.enterText(input, value);
+      }
+      await enter('Student ID Number *', '2026-00123');
+      await enter('First Name *', 'Test');
+      await enter('Last Name *', 'Student');
+      if (includeContacts) {
+        await enter('Email Address (Optional)', 'real@gmail.com');
+        await enter('Mobile / Phone Number (Optional)', '09171234567');
+      }
+      await tester.tap(find.text('Enroll Student'));
+      await tester.pumpAndSettle();
+      expect(result?['email'], includeContacts ? 'real@gmail.com' : '');
+      expect(result?['phone_number'], includeContacts ? '09171234567' : '');
+      expect(result?['student_username'], '2026-00123');
+    });
+  }
+
   testWidgets('AddStudentDialog filters out already enrolled students for active semester', (tester) async {
     // Carlos (id 1) and Maria (id 2) already have records in semester 10
     final mockRecords = [

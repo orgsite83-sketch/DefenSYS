@@ -29,6 +29,8 @@ void main() {
     WidgetTester tester, {
     double width = 390,
     bool panelist = false,
+    String role = 'faculty',
+    String? preferredWorkspace,
     String? initialLocation,
   }) async {
     setWidth(tester, width);
@@ -36,11 +38,17 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final user = {
       'id': 7,
-      'role': 'faculty',
+      'role': role,
+      'is_adviser': true,
       'is_documenter': true,
       'is_panelist': panelist,
       'has_staff_workspace': true,
     };
+    if (preferredWorkspace != null) {
+      SharedPreferences.setMockInitialValues({
+        'app.workspace.7': preferredWorkspace,
+      });
+    }
     final container = ProviderContainer(
       overrides: [authProvider.overrideWith(() => _Auth(user))],
     );
@@ -52,7 +60,7 @@ void main() {
       refreshListenable: container.read(routerRefreshProvider),
       redirect: (context, state) => WorkspaceAccess.redirect(
         user,
-        state.uri.path,
+        state.uri.toString(),
         isWeb: true,
         viewportWidth: MediaQuery.sizeOf(context).width,
         preferredWorkspace: container.read(workspacePreferenceProvider).value,
@@ -61,6 +69,8 @@ void main() {
         for (final route in [
           '/',
           AppRoutes.login,
+          AdminRoutes.overview,
+          AdminRoutes.users,
           FacultyRoutes.dashboard,
           FacultyRoutes.profile,
           AppRoutes.panelist,
@@ -76,8 +86,9 @@ void main() {
                     builder: (context, ref, _) => TextButton(
                       onPressed: () async {
                         await rememberWorkspace(ref, FacultyRoutes.dashboard);
-                        if (context.mounted)
+                        if (context.mounted) {
                           context.go(FacultyRoutes.dashboard);
+                        }
                       },
                       child: const Text('Use staff workspace'),
                     ),
@@ -103,6 +114,59 @@ void main() {
     return (container, router);
   }
 
+  for (final role in ['faculty', 'admin']) {
+    for (final workspace in [
+      role == 'admin' ? AdminRoutes.overview : FacultyRoutes.dashboard,
+      '/faculty/dashboard?workspace=adviser',
+      '/faculty/dashboard?workspace=documenter',
+    ]) {
+      testWidgets('$role resizes with remembered $workspace', (tester) async {
+        final (container, router) = await showWorkspace(
+          tester,
+          role: role,
+          width: 1200,
+          preferredWorkspace: workspace,
+          initialLocation: workspace,
+        );
+        expect(
+          router.routerDelegate.currentConfiguration.uri.toString(),
+          workspace,
+        );
+        setWidth(tester, 600);
+        await tester.pumpAndSettle();
+        expect(
+          router.routerDelegate.currentConfiguration.uri.toString(),
+          workspace,
+        );
+        setWidth(tester, 500);
+        await tester.pumpAndSettle();
+        expect(
+          router.routerDelegate.currentConfiguration.uri.path,
+          AppRoutes.documenter,
+        );
+        expect(
+          await container.read(workspacePreferenceProvider.future),
+          workspace,
+        );
+        router.go('/');
+        await tester.pumpAndSettle();
+        expect(
+          router.routerDelegate.currentConfiguration.uri.path,
+          AppRoutes.documenter,
+        );
+        setWidth(tester, 1200);
+        await tester.pumpAndSettle();
+        router.go('/');
+        await tester.pumpAndSettle();
+        expect(
+          router.routerDelegate.currentConfiguration.uri.toString(),
+          workspace,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
   for (final panelist in [false, true]) {
     testWidgets(
       'phone-width browser defaults to ${panelist ? 'panel' : 'documenter'}',
@@ -115,6 +179,24 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+    for (final role in ['faculty', 'admin']) {
+      testWidgets(
+        '$role opens on a phone with a remembered adviser workspace and panelist=$panelist',
+        (tester) async {
+          final (_, router) = await showWorkspace(
+            tester,
+            role: role,
+            panelist: panelist,
+            preferredWorkspace: '/faculty/dashboard?workspace=adviser',
+          );
+          expect(
+            router.routerDelegate.currentConfiguration.uri.path,
+            panelist ? AppRoutes.panelist : AppRoutes.documenter,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
   }
 
   testWidgets('resizing from desktop to phone redirects the staff dashboard', (
@@ -140,22 +222,30 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('resizing preserves an open staff subpage', (tester) async {
-    final (_, router) = await showWorkspace(
-      tester,
-      width: 1200,
-      initialLocation: FacultyRoutes.profile,
-    );
-    setWidth(tester, 390);
-    await tester.pumpAndSettle();
-    expect(
-      router.routerDelegate.currentConfiguration.uri.path,
-      FacultyRoutes.profile,
-    );
-    expect(tester.takeException(), isNull);
-  });
+  for (final (role, location) in [
+    ('faculty', '/faculty/profile?workspace=adviser'),
+    ('admin', '/faculty/profile?workspace=adviser'),
+    ('admin', AdminRoutes.users),
+  ]) {
+    testWidgets('resizing preserves $role subpage $location', (tester) async {
+      final (_, router) = await showWorkspace(
+        tester,
+        role: role,
+        width: 1200,
+        initialLocation: location,
+        preferredWorkspace: '/faculty/dashboard?workspace=adviser',
+      );
+      setWidth(tester, 390);
+      await tester.pumpAndSettle();
+      expect(
+        router.routerDelegate.currentConfiguration.uri.toString(),
+        location,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
-  testWidgets('phone-width staff choice survives resize and home navigation', (
+  testWidgets('phone width takes priority over a new staff choice', (
     tester,
   ) async {
     final (container, router) = await showWorkspace(tester);
@@ -163,7 +253,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       router.routerDelegate.currentConfiguration.uri.path,
-      FacultyRoutes.dashboard,
+      AppRoutes.documenter,
     );
     expect(
       await container.read(workspacePreferenceProvider.future),
@@ -175,7 +265,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       router.routerDelegate.currentConfiguration.uri.path,
-      FacultyRoutes.dashboard,
+      AppRoutes.documenter,
     );
     expect(tester.takeException(), isNull);
   });

@@ -7,8 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'contact_details_dialog.dart';
+import 'profile_photo_dialog.dart';
 
 import '../../../config/api_config.dart';
 import '../../../navigation/admin_route_paths.dart';
@@ -149,13 +153,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
       final file = result.files.first;
       final name = file.name.toLowerCase();
-      final isSupported = name.endsWith('.png') ||
+      final isSupported =
+          name.endsWith('.png') ||
           name.endsWith('.jpg') ||
           name.endsWith('.jpeg') ||
           name.endsWith('.webp');
       if (!isSupported) {
         if (!mounted) return;
-        showErrorToast(context, 'Unsupported format. Select JPEG, PNG, or WEBP.');
+        showErrorToast(
+          context,
+          'Unsupported format. Select JPEG, PNG, or WEBP.',
+        );
         return;
       }
 
@@ -180,12 +188,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         Uri.parse('${ApiConfig.baseUrl}/me/'),
       );
 
-      request.files.add(http.MultipartFile.fromBytes(
-        'avatar',
-        bytes,
-        filename: file.name,
-        contentType: _inferMediaType(file.name),
-      ));
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'avatar',
+          bytes,
+          filename: file.name,
+          contentType: _inferMediaType(file.name),
+        ),
+      );
 
       final streamedResponse = await client.sendAuthenticated(request);
       final response = await http.Response.fromStream(streamedResponse);
@@ -209,30 +219,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  Future<void> _deleteAvatar() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Remove Photo'),
-        content: const Text('Are you sure you want to remove your profile picture?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Cancel'),
+  Future<void> _deleteAvatar({bool confirm = true}) async {
+    if (confirm) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogCtx) => AlertDialog(
+          title: const Text('Remove Photo'),
+          content: const Text(
+            'Are you sure you want to remove your profile picture?',
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-              foregroundColor: Colors.white,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('Cancel'),
             ),
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(dialogCtx, true),
+              child: const Text('Remove'),
+            ),
+          ],
+        ),
+      );
 
-    if (confirmed != true) return;
+      if (confirmed != true) return;
+    }
 
     setState(() => _isUploadingAvatar = true);
     try {
@@ -273,12 +287,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         Uri.parse('${ApiConfig.baseUrl}/me/'),
       );
 
-      request.files.add(http.MultipartFile.fromBytes(
-        'e_signature',
-        bytes,
-        filename: filename,
-        contentType: _inferMediaType(filename),
-      ));
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'e_signature',
+          bytes,
+          filename: filename,
+          contentType: _inferMediaType(filename),
+        ),
+      );
 
       final streamedResponse = await client.sendAuthenticated(request);
       final response = await http.Response.fromStream(streamedResponse);
@@ -292,7 +308,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         showSuccessToast(context, 'E-Signature updated successfully!');
       } else {
         final data = jsonDecode(response.body);
-        showErrorToast(context, data['detail'] ?? 'Failed to upload e-signature.');
+        showErrorToast(
+          context,
+          data['detail'] ?? 'Failed to upload e-signature.',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -314,13 +333,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
       final file = result.files.first;
       final name = file.name.toLowerCase();
-      final isSupported = name.endsWith('.png') ||
+      final isSupported =
+          name.endsWith('.png') ||
           name.endsWith('.jpg') ||
           name.endsWith('.jpeg') ||
           name.endsWith('.webp');
       if (!isSupported) {
         if (!mounted) return;
-        showErrorToast(context, 'Unsupported format. Select PNG, JPEG, or WEBP.');
+        showErrorToast(
+          context,
+          'Unsupported format. Select PNG, JPEG, or WEBP.',
+        );
         return;
       }
 
@@ -360,7 +383,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('Remove E-Signature'),
-        content: const Text('Are you sure you want to remove your stored digital signature?'),
+        content: const Text(
+          'Are you sure you want to remove your stored digital signature?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, false),
@@ -398,7 +423,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         showSuccessToast(context, 'E-Signature removed.');
       } else {
         final data = jsonDecode(response.body);
-        showErrorToast(context, data['detail'] ?? 'Failed to remove signature.');
+        showErrorToast(
+          context,
+          data['detail'] ?? 'Failed to remove signature.',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -439,11 +467,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         } catch (_) {
           data = null;
         }
-        final errorMsg = data != null ? _extractError(data) : 'Server error (${response.statusCode}). Please try again later.';
+        final errorMsg = data != null
+            ? _extractError(data)
+            : 'Server error (${response.statusCode}). Please try again later.';
         showErrorToast(context, errorMsg);
       }
     } catch (e) {
-      if (mounted) showErrorToast(context, 'Connection error: ${e.toString().split('\n').first}');
+      if (mounted) {
+        showErrorToast(
+          context,
+          'Connection error: ${e.toString().split('\n').first}',
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSavingPassword = false);
     }
@@ -451,15 +486,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   String _extractError(dynamic data) {
     if (data is Map) {
-      for (final key in ['detail', 'current_password', 'new_password', 'confirm_password', 'non_field_errors']) {
+      for (final key in [
+        'detail',
+        'current_password',
+        'new_password',
+        'confirm_password',
+        'non_field_errors',
+      ]) {
         final val = data[key];
         if (val is String && val.isNotEmpty) return val;
         if (val is List && val.isNotEmpty) return val.first.toString();
       }
-      return data.values.firstWhere(
-        (v) => v is String && v.isNotEmpty,
-        orElse: () => 'Failed to change password.',
-      ).toString();
+      return data.values
+          .firstWhere(
+            (v) => v is String && v.isNotEmpty,
+            orElse: () => 'Failed to change password.',
+          )
+          .toString();
     }
     return 'Failed to change password.';
   }
@@ -471,10 +514,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final name = '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
-    final displayName = name.isNotEmpty ? name : (user['username'] ?? 'User');
+    final name = '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'
+        .trim();
+    final displayName = name.isNotEmpty
+        ? name
+        : (user['role'] == 'student'
+              ? 'Student'
+              : (user['username'] ?? 'User'));
     final username = user['username'] ?? '';
-    final email = user['email'] ?? '';
+    final email = user['email']?.toString().trim() ?? '';
     final role = (user['role'] ?? 'student') as String;
     final roleLabel = role[0].toUpperCase() + role.substring(1);
     final isStudent = role.toLowerCase() == 'student';
@@ -488,7 +536,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ? AppBar(
               backgroundColor: DefensysTokens.maroon,
               foregroundColor: Colors.white,
-              title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.bold)),
+              title: const Text(
+                'Profile',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               elevation: 0,
             )
           : null,
@@ -498,9 +549,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Top Hero Card Banner
-            widget.compactPanelistHeader
-                ? _buildPanelistHero(displayName, username, email, roleLabel, user)
-                : _buildHeroBanner(displayName, username, email, roleLabel, user, isWide),
+            widget.compactPanelistHeader && !isStudent
+                ? _buildPanelistHero(
+                    displayName,
+                    username,
+                    email,
+                    roleLabel,
+                    user,
+                  )
+                : _buildHeroBanner(
+                    displayName,
+                    username,
+                    email,
+                    roleLabel,
+                    user,
+                    isWide,
+                  ),
             const SizedBox(height: 16),
             if (isStudent) ...[
               const LibraryActivityPanel(),
@@ -517,7 +581,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     flex: 5,
                     child: Column(
                       children: [
-                        _buildIdentityCard(displayName, username, email, roleLabel, user),
+                        _buildIdentityCard(
+                          displayName,
+                          username,
+                          email,
+                          roleLabel,
+                          user,
+                        ),
                         if (!isStudent) ...[
                           const SizedBox(height: 20),
                           _buildESignatureCard(user),
@@ -559,7 +629,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             else
               Column(
                 children: [
-                  _buildIdentityCard(displayName, username, email, roleLabel, user),
+                  _buildIdentityCard(
+                    displayName,
+                    username,
+                    email,
+                    roleLabel,
+                    user,
+                  ),
                   if (!isStudent) ...[
                     const SizedBox(height: 16),
                     _buildESignatureCard(user),
@@ -717,8 +793,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               CircleAvatar(
                 radius: 29,
                 backgroundColor: accent.withValues(alpha: .10),
-                backgroundImage:
-                    avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                backgroundImage: avatarUrl != null
+                    ? NetworkImage(avatarUrl)
+                    : null,
                 child: avatarUrl == null
                     ? Text(
                         displayName.isNotEmpty
@@ -833,22 +910,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     Map<String, dynamic> user,
     bool isWide,
   ) {
+    final isStudent = user['role'] == 'student';
     final avatarUrl = user['avatar'] != null
         ? ApiConfig.publicMediaUrl(user['avatar'] as String)
         : null;
 
     final facultyRoles = user['facultyRoles'] as Map<String, dynamic>? ?? {};
-    final isPanelist = facultyRoles['panelist'] == true || user['is_panelist'] == true;
-    final isPitLead = facultyRoles['pitLead'] == true || user['is_pit_lead'] == true;
-    final isAdviser = facultyRoles['adviser'] == true || user['is_adviser'] == true;
+    final isPanelist =
+        facultyRoles['panelist'] == true || user['is_panelist'] == true;
+    final isPitLead =
+        facultyRoles['pitLead'] == true || user['is_pit_lead'] == true;
+    final isAdviser =
+        facultyRoles['adviser'] == true || user['is_adviser'] == true;
 
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            DefensysTokens.maroon,
-            const Color(0xFF520B13),
-          ],
+          colors: [DefensysTokens.maroon, const Color(0xFF520B13)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -870,217 +948,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     child: Row(
                       children: [
                         // Avatar stack with quick upload trigger
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white38, width: 2),
-                          ),
-                          child: CircleAvatar(
-                            radius: isWide ? 42 : 36,
-                            backgroundColor: Colors.white24,
-                            backgroundImage:
-                                avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                            child: avatarUrl == null
-                                ? Text(
-                                    displayName.isNotEmpty
-                                        ? displayName[0].toUpperCase()
-                                        : 'U',
-                                    style: TextStyle(
-                                      fontSize: isWide ? 34 : 26,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : null,
-                          ),
-                        ),
-                        if (_isUploadingAvatar)
-                          Positioned.fill(
-                            child: Container(
-                              decoration: const BoxDecoration(
-                                color: Colors.black45,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: InkWell(
-                            onTap: _pickAndUploadAvatar,
-                            borderRadius: BorderRadius.circular(20),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black26,
-                                    blurRadius: 4,
-                                    offset: Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.camera_alt_rounded,
-                                size: 16,
-                                color: DefensysTokens.maroon,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(width: isWide ? 20 : 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  displayName,
-                                  style: TextStyle(
-                                    fontSize: isWide ? 24 : 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                    letterSpacing: -0.3,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isWide ? 10 : 8,
-                                  vertical: isWide ? 4 : 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.18),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.white24),
-                                ),
-                                child: Text(
-                                  roleLabel,
-                                  style: TextStyle(
-                                    fontSize: isWide ? 12 : 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            email.isNotEmpty ? email : 'No email provided',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.white.withValues(alpha: 0.85),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 10),
-                          // Additional Capability Tags
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: [
-                              _badgeTag('ID: $username', Icons.badge_outlined),
-                              if (user['team_id'] != null)
-                                _badgeTag(
-                                  'Team #${user['team_id']}',
-                                  Icons.groups_outlined,
-                                ),
-                              if (isPitLead)
-                                _badgeTag('PIT Leader', Icons.stars_rounded),
-                              if (isPanelist)
-                                _badgeTag('Panelist', Icons.assignment_ind_outlined),
-                              if (isAdviser)
-                                _badgeTag('Adviser', Icons.school_outlined),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 20),
-              // Action Buttons for Avatar
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
-                          icon: const Icon(Icons.upload_file_rounded, size: 16),
-                          label: const Text('Change Photo'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(alpha: 0.15),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            side: const BorderSide(color: Colors.white24),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                        ),
-                        if (avatarUrl != null) ...[
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: _isUploadingAvatar ? null : _deleteAvatar,
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              size: 16,
-                              color: Color(0xFFFCA5A5),
-                            ),
-                            label: const Text(
-                              'Remove',
-                              style: TextStyle(color: Color(0xFFFCA5A5)),
-                            ),
-                            style: TextButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(alpha: 0.1),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 12,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        // Avatar stack with quick upload trigger
                         Stack(
                           clipBehavior: Clip.none,
                           children: [
@@ -1088,20 +955,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               padding: const EdgeInsets.all(3),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white38, width: 2),
+                                border: Border.all(
+                                  color: Colors.white38,
+                                  width: 2,
+                                ),
                               ),
                               child: CircleAvatar(
-                                radius: 36,
+                                radius: isWide ? 42 : 36,
                                 backgroundColor: Colors.white24,
-                                backgroundImage:
-                                    avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                                backgroundImage: avatarUrl != null
+                                    ? NetworkImage(avatarUrl)
+                                    : null,
                                 child: avatarUrl == null
                                     ? Text(
                                         displayName.isNotEmpty
                                             ? displayName[0].toUpperCase()
                                             : 'U',
-                                        style: const TextStyle(
-                                          fontSize: 26,
+                                        style: TextStyle(
+                                          fontSize: isWide ? 34 : 26,
                                           fontWeight: FontWeight.w800,
                                           color: Colors.white,
                                         ),
@@ -1109,39 +980,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     : null,
                               ),
                             ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: _isUploadingAvatar ? null : _pickAndUploadAvatar,
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black26,
-                                          blurRadius: 4,
-                                          offset: Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: const Icon(
-                                      Icons.camera_alt_rounded,
-                                      size: 16,
-                                      color: DefensysTokens.maroon,
+                            if (_isUploadingAvatar)
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black45,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Center(
+                                    child: SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: _buildAvatarCamera(isStudent: isStudent),
                             ),
                           ],
                         ),
-                        const SizedBox(width: 14),
+                        SizedBox(width: isWide ? 20 : 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1151,8 +1016,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   Flexible(
                                     child: Text(
                                       displayName,
-                                      style: const TextStyle(
-                                        fontSize: 18,
+                                      style: TextStyle(
+                                        fontSize: isWide ? 24 : 18,
                                         fontWeight: FontWeight.bold,
                                         color: Colors.white,
                                         letterSpacing: -0.3,
@@ -1162,19 +1027,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   ),
                                   const SizedBox(width: 8),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 3,
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isWide ? 10 : 8,
+                                      vertical: isWide ? 4 : 3,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.18),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.18,
+                                      ),
                                       borderRadius: BorderRadius.circular(20),
                                       border: Border.all(color: Colors.white24),
                                     ),
                                     child: Text(
                                       roleLabel,
-                                      style: const TextStyle(
-                                        fontSize: 11,
+                                      style: TextStyle(
+                                        fontSize: isWide ? 12 : 11,
                                         fontWeight: FontWeight.w700,
                                         color: Colors.white,
                                       ),
@@ -1184,7 +1051,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                email.isNotEmpty ? email : 'No email provided',
+                                email.isNotEmpty
+                                    ? email
+                                    : (isStudent
+                                          ? 'None'
+                                          : 'No email provided'),
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.white.withValues(alpha: 0.85),
@@ -1193,20 +1064,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 10),
+                              // Additional Capability Tags
                               Wrap(
                                 spacing: 6,
                                 runSpacing: 6,
                                 children: [
-                                  _badgeTag('ID: $username', Icons.badge_outlined),
-                                  if (user['team_id'] != null)
+                                  if (!isStudent)
                                     _badgeTag(
-                                      'Team #${user['team_id']}',
+                                      'ID: $username',
+                                      Icons.badge_outlined,
+                                    ),
+                                  if (isStudent || user['team_id'] != null)
+                                    _badgeTag(
+                                      isStudent
+                                          ? _teamLabel(user)
+                                          : 'Team #${user['team_id']}',
                                       Icons.groups_outlined,
                                     ),
                                   if (isPitLead)
-                                    _badgeTag('PIT Leader', Icons.stars_rounded),
+                                    _badgeTag(
+                                      'PIT Leader',
+                                      Icons.stars_rounded,
+                                    ),
                                   if (isPanelist)
-                                    _badgeTag('Panelist', Icons.assignment_ind_outlined),
+                                    _badgeTag(
+                                      'Panelist',
+                                      Icons.assignment_ind_outlined,
+                                    ),
                                   if (isAdviser)
                                     _badgeTag('Adviser', Icons.school_outlined),
                                 ],
@@ -1216,59 +1100,263 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
-                          icon: const Icon(Icons.upload_file_rounded, size: 16),
-                          label: const Text('Change Photo'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(alpha: 0.15),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            side: const BorderSide(color: Colors.white24),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                  ),
+                  if (!isStudent) ...[
+                    const SizedBox(width: 20),
+                    _buildPhotoActions(avatarUrl, isStudent),
+                  ],
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      // Avatar stack with quick upload trigger
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white38,
+                                width: 2,
+                              ),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
+                            child: CircleAvatar(
+                              radius: 36,
+                              backgroundColor: Colors.white24,
+                              backgroundImage: avatarUrl != null
+                                  ? NetworkImage(avatarUrl)
+                                  : null,
+                              child: avatarUrl == null
+                                  ? Text(
+                                      displayName.isNotEmpty
+                                          ? displayName[0].toUpperCase()
+                                          : 'U',
+                                      style: const TextStyle(
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : null,
                             ),
                           ),
-                        ),
-                        if (avatarUrl != null) ...[
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: _isUploadingAvatar ? null : _deleteAvatar,
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              size: 16,
-                              color: Color(0xFFFCA5A5),
-                            ),
-                            label: const Text(
-                              'Remove',
-                              style: TextStyle(color: Color(0xFFFCA5A5)),
-                            ),
-                            style: TextButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(alpha: 0.1),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 12,
-                              ),
-                            ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: _buildAvatarCamera(isStudent: isStudent),
                           ),
                         ],
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    displayName,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                      letterSpacing: -0.3,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.18),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: Text(
+                                    roleLabel,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              email.isNotEmpty
+                                  ? email
+                                  : (isStudent ? 'None' : 'No email provided'),
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white.withValues(alpha: 0.85),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                if (!isStudent)
+                                  _badgeTag(
+                                    'ID: $username',
+                                    Icons.badge_outlined,
+                                  ),
+                                if (isStudent || user['team_id'] != null)
+                                  _badgeTag(
+                                    isStudent
+                                        ? _teamLabel(user)
+                                        : 'Team #${user['team_id']}',
+                                    Icons.groups_outlined,
+                                  ),
+                                if (isPitLead)
+                                  _badgeTag('PIT Leader', Icons.stars_rounded),
+                                if (isPanelist)
+                                  _badgeTag(
+                                    'Panelist',
+                                    Icons.assignment_ind_outlined,
+                                  ),
+                                if (isAdviser)
+                                  _badgeTag('Adviser', Icons.school_outlined),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (!isStudent) ...[
+                    const SizedBox(height: 16),
+                    _buildPhotoActions(avatarUrl, isStudent),
                   ],
-                ),
+                ],
+              ),
       ),
     );
   }
+
+  String _teamLabel(Map<String, dynamic> user) {
+    if (user['team_id'] == null) return 'Not assigned';
+    final name = user['team_name']?.toString().trim() ?? '';
+    return name.isEmpty ? 'Name not set' : name;
+  }
+
+  Widget _buildAvatarCamera({required bool isStudent}) => Tooltip(
+    message: 'Change photo',
+    child: DefensysShadcnScope(
+      maroonActions: true,
+      child: isStudent
+          ? ShadButton.ghost(
+              width: 40,
+              height: 40,
+              padding: EdgeInsets.zero,
+              decoration: const ShadDecoration(
+                border: ShadBorder(
+                  radius: BorderRadius.all(Radius.circular(20)),
+                ),
+              ),
+              onPressed: _isUploadingAvatar
+                  ? null
+                  : () => showProfilePhotoDialog(
+                      context,
+                      upload: _pickAndUploadAvatar,
+                      remove: () => _deleteAvatar(confirm: false),
+                    ),
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.camera_alt_rounded,
+                  size: 16,
+                  color: DefensysTokens.maroon,
+                ),
+              ),
+            )
+          : ShadButton.secondary(
+              width: 40,
+              height: 40,
+              padding: EdgeInsets.zero,
+              backgroundColor: Colors.white,
+              foregroundColor: DefensysTokens.maroon,
+              onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+              child: _isUploadingAvatar
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.camera_alt_rounded, size: 18),
+            ),
+    ),
+  );
+
+  Widget _buildPhotoActions(String? avatarUrl, bool isStudent) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (!isStudent)
+        ElevatedButton.icon(
+          onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+          icon: const Icon(Icons.upload_file_rounded, size: 16),
+          label: const Text('Change Photo'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: 0.15),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            side: const BorderSide(color: Colors.white24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+        ),
+      if (avatarUrl != null) ...[
+        if (!isStudent) const SizedBox(width: 8),
+        TextButton.icon(
+          onPressed: _isUploadingAvatar ? null : _deleteAvatar,
+          icon: const Icon(
+            Icons.delete_outline_rounded,
+            size: 16,
+            color: Color(0xFFFCA5A5),
+          ),
+          label: const Text(
+            'Remove',
+            style: TextStyle(color: Color(0xFFFCA5A5)),
+          ),
+          style: TextButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: 0.1),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          ),
+        ),
+      ],
+    ],
+  );
 
   Widget _badgeTag(String label, IconData icon) {
     return Container(
@@ -1306,6 +1394,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     String roleLabel,
     Map<String, dynamic> user,
   ) {
+    final isStudent = user['role'] == 'student';
     return Container(
       decoration: BoxDecoration(
         color: DefensysTokens.panelOf(context),
@@ -1353,23 +1442,58 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 16),
           Divider(height: 1, color: DefensysTokens.borderOf(context)),
           const SizedBox(height: 16),
-          _detailGridItem('Full Name', displayName, Icons.account_circle_outlined),
+          _detailGridItem(
+            'Full Name',
+            displayName,
+            Icons.account_circle_outlined,
+          ),
           const SizedBox(height: 14),
-          _detailGridItem('Username / ID', username, Icons.badge_outlined),
-          const SizedBox(height: 14),
+          if (!isStudent) ...[
+            _detailGridItem('Username / ID', username, Icons.badge_outlined),
+            const SizedBox(height: 14),
+          ],
           _detailGridItem(
             'Email Address',
-            email.isNotEmpty ? email : 'Not set',
+            email.isNotEmpty ? email : (isStudent ? 'None' : 'Not set'),
             Icons.email_outlined,
           ),
           const SizedBox(height: 14),
-          _detailGridItem('System Role', roleLabel, Icons.admin_panel_settings_outlined),
-          if (user['team_id'] != null) ...[
+          if (isStudent) ...[
+            _detailGridItem(
+              'Phone Number',
+              (user['phone_number']?.toString().trim().isNotEmpty ?? false)
+                  ? user['phone_number'].toString().trim()
+                  : 'None',
+              Icons.phone_outlined,
+            ),
+            const SizedBox(height: 14),
+          ],
+          _detailGridItem(
+            'System Role',
+            roleLabel,
+            Icons.admin_panel_settings_outlined,
+          ),
+          if (isStudent || user['team_id'] != null) ...[
             const SizedBox(height: 14),
             _detailGridItem(
               'Team Assignment',
-              'Team #${user['team_id']}',
+              isStudent ? _teamLabel(user) : 'Team #${user['team_id']}',
               Icons.group_outlined,
+            ),
+          ],
+          if (isStudent) ...[
+            const SizedBox(height: 16),
+            DefensysShadcnScope(
+              maroonActions: true,
+              child: ShadButton.outline(
+                onPressed: () async {
+                  final saved = await showContactDetailsDialog(context, user);
+                  if (saved == true && mounted) {
+                    showSuccessToast(context, 'Contact details updated.');
+                  }
+                },
+                child: const Text('Edit contact details'),
+              ),
             ),
           ],
         ],
@@ -1439,33 +1563,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.draw_rounded,
-                      size: 18,
-                      color: DefensysTokens.maroonOf(context),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Official E-Signature',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: DefensysTokens.textPrimaryOf(context),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.draw_rounded,
+                        size: 18,
+                        color: DefensysTokens.maroonOf(context),
                       ),
                     ),
-                  ),
-                ],
-              )),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Official E-Signature',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: DefensysTokens.textPrimaryOf(context),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1526,10 +1652,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   left: 24,
                   right: 24,
                   bottom: 30,
-                  child: Container(
-                    height: 1,
-                    color: const Color(0xFFCBD5E1),
-                  ),
+                  child: Container(height: 1, color: const Color(0xFFCBD5E1)),
                 ),
                 Positioned(
                   right: 30,
@@ -1558,13 +1681,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       child: Image.network(
                         eSigUrl,
                         headers: {
-                          'Authorization': 'Bearer ${ref.watch(authProvider).token}',
+                          'Authorization':
+                              'Bearer ${ref.watch(authProvider).token}',
                         },
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => const Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.broken_image_outlined, color: Colors.red),
+                            Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.red,
+                            ),
                             SizedBox(height: 4),
                             Text(
                               'Failed to load signature',
@@ -1653,7 +1780,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 const SizedBox(width: 10),
                 IconButton(
                   onPressed: _isUploadingSignature ? null : _deleteSignature,
-                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.red,
+                  ),
                   tooltip: 'Remove signature',
                   style: IconButton.styleFrom(
                     backgroundColor: const Color(0xFFFEE2E2),
@@ -1668,7 +1798,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              Icon(Icons.info_outline_rounded, size: 13, color: Colors.grey.shade500),
+              Icon(
+                Icons.info_outline_rounded,
+                size: 13,
+                color: Colors.grey.shade500,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -1695,13 +1829,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final isMinLength = newPass.length >= 8;
     final hasLetters = RegExp(r'[A-Za-z]').hasMatch(newPass);
-    final hasNumbersOrSymbols = RegExp(r'[0-9!@#$%^&*(),.?":{}|<>]').hasMatch(newPass);
+    final hasNumbersOrSymbols = RegExp(
+      r'[0-9!@#$%^&*(),.?":{}|<>]',
+    ).hasMatch(newPass);
     final hasMix = hasLetters && hasNumbersOrSymbols;
-    
-    final notSimilarToUser = username.isEmpty || !newPass.toLowerCase().contains(username.toLowerCase());
-    final notSimilarToEmail = email.isEmpty || !newPass.toLowerCase().contains(email.split('@').first.toLowerCase());
+
+    final notSimilarToUser =
+        username.isEmpty ||
+        !newPass.toLowerCase().contains(username.toLowerCase());
+    final notSimilarToEmail =
+        email.isEmpty ||
+        !newPass.toLowerCase().contains(email.split('@').first.toLowerCase());
     final isNotSimilar = notSimilarToUser && notSimilarToEmail;
-    
+
     final isMatch = confirmPass.isNotEmpty && newPass == confirmPass;
 
     // Strength score calculation
@@ -1788,8 +1928,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               controller: _currentPassCtrl,
               label: 'Current Password',
               obscure: _obscureCurrent,
-              onToggle: () => setState(() => _obscureCurrent = !_obscureCurrent),
-              validator: (v) => v == null || v.isEmpty ? 'Enter current password' : null,
+              onToggle: () =>
+                  setState(() => _obscureCurrent = !_obscureCurrent),
+              validator: (v) =>
+                  v == null || v.isEmpty ? 'Enter current password' : null,
             ),
             const SizedBox(height: 12),
             _passwordField(
@@ -1801,7 +1943,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Enter new password';
                 if (v.length < 8) return 'Minimum 8 characters required';
-                if (!isNotSimilar) return 'Password is too similar to your username or email';
+                if (!isNotSimilar) {
+                  return 'Password is too similar to your username or email';
+                }
                 return null;
               },
             ),
@@ -1821,7 +1965,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.info_outline_rounded, size: 15, color: DefensysTokens.maroon),
+                        const Icon(
+                          Icons.info_outline_rounded,
+                          size: 15,
+                          color: DefensysTokens.maroon,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -1859,7 +2007,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         value: strengthPercent,
                         minHeight: 5,
                         backgroundColor: const Color(0xFFE2E8F0),
-                        valueColor: AlwaysStoppedAnimation<Color>(strengthColor),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          strengthColor,
+                        ),
                       ),
                     ),
                   ),
@@ -1877,7 +2027,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               const SizedBox(height: 10),
               // Requirement Checklist
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(8),
@@ -1887,9 +2040,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   children: [
                     _reqCheckItem('At least 8 characters long', isMinLength),
                     const SizedBox(height: 4),
-                    _reqCheckItem('Contains letters and numbers/symbols', hasMix),
+                    _reqCheckItem(
+                      'Contains letters and numbers/symbols',
+                      hasMix,
+                    ),
                     const SizedBox(height: 4),
-                    _reqCheckItem('Not similar to your username ($username) or email', isNotSimilar),
+                    _reqCheckItem(
+                      ref.watch(authProvider).user?['role'] == 'student'
+                          ? 'Not similar to your username or email'
+                          : 'Not similar to your username ($username) or email',
+                      isNotSimilar,
+                    ),
                     const SizedBox(height: 4),
                     _reqCheckItem('Matches confirmation password', isMatch),
                   ],
@@ -1902,7 +2063,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               controller: _confirmPassCtrl,
               label: 'Confirm New Password',
               obscure: _obscureConfirm,
-              onToggle: () => setState(() => _obscureConfirm = !_obscureConfirm),
+              onToggle: () =>
+                  setState(() => _obscureConfirm = !_obscureConfirm),
               onChanged: (_) => setState(() {}),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Confirm new password';
@@ -1953,7 +2115,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return Row(
       children: [
         Icon(
-          isSatisfied ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+          isSatisfied
+              ? Icons.check_circle_rounded
+              : Icons.radio_button_unchecked_rounded,
           size: 14,
           color: isSatisfied ? const Color(0xFF10B981) : Colors.grey.shade400,
         ),
@@ -1964,7 +2128,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             style: TextStyle(
               fontSize: 11,
               fontWeight: isSatisfied ? FontWeight.w600 : FontWeight.normal,
-              color: isSatisfied ? DefensysTokens.textPrimaryOf(context) : DefensysTokens.textSecondaryOf(context),
+              color: isSatisfied
+                  ? DefensysTokens.textPrimaryOf(context)
+                  : DefensysTokens.textSecondaryOf(context),
             ),
           ),
         ),
@@ -1988,7 +2154,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       style: const TextStyle(fontSize: 14),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(fontSize: 13, color: DefensysTokens.textSecondaryOf(context)),
+        labelStyle: TextStyle(
+          fontSize: 13,
+          color: DefensysTokens.textSecondaryOf(context),
+        ),
         prefixIcon: const Icon(Icons.key_outlined, size: 18),
         suffixIcon: IconButton(
           icon: Icon(
@@ -1999,7 +2168,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         filled: true,
         fillColor: DefensysTokens.surfaceHigherOf(context),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
@@ -2010,7 +2182,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
+          borderSide: const BorderSide(
+            color: DefensysTokens.maroon,
+            width: 1.5,
+          ),
         ),
       ),
     );
@@ -2039,35 +2214,41 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.history_toggle_off_rounded,
-                      size: 18,
-                      color: DefensysTokens.maroonOf(context),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Activity History',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: DefensysTokens.textPrimaryOf(context),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.history_toggle_off_rounded,
+                        size: 18,
+                        color: DefensysTokens.maroonOf(context),
                       ),
                     ),
-                  ),
-                ],
-              )),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Activity History',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: DefensysTokens.textPrimaryOf(context),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               IconButton(
-                icon: Icon(Icons.refresh_rounded, size: 18, color: DefensysTokens.maroonOf(context)),
+                icon: Icon(
+                  Icons.refresh_rounded,
+                  size: 18,
+                  color: DefensysTokens.maroonOf(context),
+                ),
                 onPressed: _isLoadingHistory ? null : _fetchHistory,
                 tooltip: 'Refresh Activity Log',
               ),
@@ -2090,7 +2271,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Column(
                   children: [
-                    const Icon(Icons.error_outline_rounded, size: 32, color: Colors.red),
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      size: 32,
+                      color: Colors.red,
+                    ),
                     const SizedBox(height: 6),
                     Text(
                       _historyError!,
@@ -2112,11 +2297,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 36),
                 child: Column(
                   children: [
-                    Icon(Icons.history_rounded, size: 36, color: Colors.grey.shade300),
+                    Icon(
+                      Icons.history_rounded,
+                      size: 36,
+                      color: Colors.grey.shade300,
+                    ),
                     const SizedBox(height: 8),
                     Text(
                       'No recent actions recorded.',
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -2131,10 +2323,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   shrinkWrap: true,
                   physics: const ClampingScrollPhysics(),
                   itemCount: _history.length,
-                  separatorBuilder: (context, index) => const Divider(
-                    height: 16,
-                    color: Color(0xFFF8FAFC),
-                  ),
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 16, color: Color(0xFFF8FAFC)),
                   itemBuilder: (context, index) {
                     final log = _history[index];
                     final rawAction = log['action'] ?? 'Unknown Action';
@@ -2148,7 +2338,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     if (createdAtStr != null) {
                       try {
                         final dt = DateTime.parse(createdAtStr).toLocal();
-                        formattedDate = DateFormat('MMM d, yyyy h:mm a').format(dt);
+                        formattedDate = DateFormat(
+                          'MMM d, yyyy h:mm a',
+                        ).format(dt);
                       } catch (_) {
                         formattedDate = createdAtStr;
                       }
@@ -2187,7 +2379,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               color: const Color(0xFFF1F5F9),
                               shape: BoxShape.circle,
                             ),
-                            child: Icon(iconData, size: 16, color: const Color(0xFF475569)),
+                            child: Icon(
+                              iconData,
+                              size: 16,
+                              color: const Color(0xFF475569),
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -2195,7 +2391,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Container(
                                       padding: const EdgeInsets.symmetric(
@@ -2203,7 +2400,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                                        color: DefensysTokens.maroon.withValues(
+                                          alpha: 0.08,
+                                        ),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: Text(
@@ -2230,7 +2429,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: DefensysTokens.textPrimaryOf(context),
+                                    color: DefensysTokens.textPrimaryOf(
+                                      context,
+                                    ),
                                   ),
                                 ),
                                 if (reason.isNotEmpty) ...[
@@ -2240,7 +2441,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontStyle: FontStyle.italic,
-                                      color: DefensysTokens.textSecondaryOf(context),
+                                      color: DefensysTokens.textSecondaryOf(
+                                        context,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -2323,12 +2526,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           default:
             if (verb.isNotEmpty) {
               formattedVerb =
-                  verb[0].toUpperCase() + verb.substring(1).replaceAll('_', ' ');
+                  verb[0].toUpperCase() +
+                  verb.substring(1).replaceAll('_', ' ');
             }
         }
 
         final formattedSubject = subject.isNotEmpty
-            ? subject[0].toUpperCase() + subject.substring(1).replaceAll('_', ' ')
+            ? subject[0].toUpperCase() +
+                  subject.substring(1).replaceAll('_', ' ')
             : '';
         return '$formattedVerb $formattedSubject'.trim();
       }
@@ -2336,7 +2541,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return rawAction
         .split(RegExp(r'[\._]'))
-        .map((word) => word.isNotEmpty ? word[0].toUpperCase() + word.substring(1) : '')
+        .map(
+          (word) =>
+              word.isNotEmpty ? word[0].toUpperCase() + word.substring(1) : '',
+        )
         .join(' ');
   }
 
@@ -2352,7 +2560,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: isDark ? const Color(0x33000000) : Colors.black.withValues(alpha: 0.04),
+            color: isDark
+                ? const Color(0x33000000)
+                : Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -2375,7 +2585,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: Icon(
                   Icons.settings_suggest_outlined,
                   size: 20,
-                  color: isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon,
+                  color: isDark
+                      ? DefensysTokens.mistMaroon
+                      : DefensysTokens.maroon,
                 ),
               ),
               const SizedBox(width: 12),
@@ -2383,13 +2595,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: Text(
                   includeLogout
                       ? (widget.includeAppSettings
-                          ? 'About & Session'
-                          : 'Application & Preferences')
+                            ? 'About & Session'
+                            : 'Application & Preferences')
                       : 'About DefenSYS',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.textPrimary,
+                    color: isDark
+                        ? const Color(0xFFF4F4F5)
+                        : DefensysTokens.textPrimary,
                   ),
                 ),
               ),
@@ -2399,14 +2613,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           if (!widget.includeAppSettings) _themePreferenceTile(),
           if (widget.includeAppSettings &&
               kIsWeb &&
-              WorkspaceAccess.hasStaffWorkspace(ref.watch(authProvider).user ?? {}))
+              WorkspaceAccess.hasStaffWorkspace(
+                ref.watch(authProvider).user ?? {},
+              ))
             _infoTile(
               icon: Icons.desktop_windows_outlined,
               title: 'Staff workspace',
               subtitle: 'Open management tools',
               onTap: () => context.push(FacultyRoutes.dashboard),
             ),
-          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9)),
+          Divider(
+            height: 1,
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9),
+          ),
           _infoTile(
             icon: Icons.info_outline_rounded,
             title: 'About DefenSYS',
@@ -2416,7 +2635,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               MaterialPageRoute(builder: (_) => const AboutScreen()),
             ),
           ),
-          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9)),
+          Divider(
+            height: 1,
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9),
+          ),
           _infoTile(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy Policy',
@@ -2426,7 +2648,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               MaterialPageRoute(builder: (_) => const PrivacyScreen()),
             ),
           ),
-          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9)),
+          Divider(
+            height: 1,
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9),
+          ),
           _infoTile(
             icon: Icons.gavel_rounded,
             title: 'Terms & Conditions',
@@ -2505,7 +2730,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             child: Icon(
               isDark ? Icons.light_mode_rounded : Icons.bedtime_outlined,
               size: 20,
-              color: isDark ? DefensysTokens.mistGold : DefensysTokens.steelGrey,
+              color: isDark
+                  ? DefensysTokens.mistGold
+                  : DefensysTokens.steelGrey,
             ),
           ),
           const SizedBox(width: 14),
@@ -2518,15 +2745,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.textPrimary,
+                    color: isDark
+                        ? const Color(0xFFF4F4F5)
+                        : DefensysTokens.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  isDark ? 'Mist Dark mode (warm & eye-friendly)' : 'Light mode (crisp slate)',
+                  isDark
+                      ? 'Mist Dark mode (warm & eye-friendly)'
+                      : 'Light mode (crisp slate)',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary,
+                    color: isDark
+                        ? const Color(0xFFA1A1AA)
+                        : DefensysTokens.textSecondary,
                   ),
                 ),
               ],
@@ -2561,7 +2794,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary),
+            Icon(
+              icon,
+              size: 20,
+              color: isDark
+                  ? const Color(0xFFA1A1AA)
+                  : DefensysTokens.textSecondary,
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -2572,14 +2811,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.textPrimary,
+                      color: isDark
+                          ? const Color(0xFFF4F4F5)
+                          : DefensysTokens.textPrimary,
                     ),
                   ),
                   Text(
                     subtitle,
                     style: TextStyle(
                       fontSize: 12,
-                      color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary,
+                      color: isDark
+                          ? const Color(0xFFA1A1AA)
+                          : DefensysTokens.textSecondary,
                     ),
                   ),
                 ],
@@ -2588,7 +2831,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             Icon(
               Icons.chevron_right_rounded,
               size: 20,
-              color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary,
+              color: isDark
+                  ? const Color(0xFFA1A1AA)
+                  : DefensysTokens.textSecondary,
             ),
           ],
         ),

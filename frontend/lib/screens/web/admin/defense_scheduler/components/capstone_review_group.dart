@@ -28,6 +28,7 @@ class CapstoneReviewGroup extends StatefulWidget {
     required this.onMove,
     required this.onAccessibleMove,
     required this.onPointerCancel,
+    required this.onMoveTeam,
     required this.facultyName,
     required this.externalName,
     this.intake,
@@ -41,6 +42,7 @@ class CapstoneReviewGroup extends StatefulWidget {
   final String? intake;
   final VoidCallback onToggle, onPickUp, onDrop, onCancel, onPointerCancel;
   final ValueChanged<int> onMove, onAccessibleMove;
+  final void Function(int teamId, int delta) onMoveTeam;
   final String Function(int) facultyName, externalName;
 
   @override
@@ -268,6 +270,7 @@ class _CapstoneReviewGroupState extends State<CapstoneReviewGroup> {
             (slot) => slot['scheduled_date'] == day,
           ))
             _team(
+              capstoneId(slot['team_id'])!,
               '${slot['team_name']}',
               '${_clock(slot['start_time'])} – ${_clock(slot['end_time'])}',
               shared ? null : widget.rosters[capstoneId(slot['team_id'])],
@@ -275,6 +278,7 @@ class _CapstoneReviewGroupState extends State<CapstoneReviewGroup> {
         ],
         for (final team in unallocated)
           _team(
+            capstoneId(team['id'])!,
             '${team['name']}',
             'Not allocated',
             shared ? null : widget.rosters[capstoneId(team['id'])],
@@ -292,41 +296,83 @@ class _CapstoneReviewGroupState extends State<CapstoneReviewGroup> {
       DateFormat.jm().format(DateTime.parse('2000-01-01 $value'));
 
   Widget _team(
+    int teamId,
     String name,
     String time,
     Map<String, dynamic>? roster,
   ) => Padding(
+    key: ValueKey('review-team-$teamId'),
     padding: const EdgeInsets.only(bottom: 12),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         LayoutBuilder(
-          builder: (context, constraints) => constraints.maxWidth < 520
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name, style: _nameStyle.copyWith(fontSize: 13)),
-                    const SizedBox(height: 4),
-                    Text(time, style: _muted),
-                  ],
-                )
-              : Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name,
-                        style: _nameStyle.copyWith(fontSize: 13),
+          builder: (context, constraints) => Row(
+            children: [
+              Expanded(
+                child: constraints.maxWidth < 520
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name, style: _nameStyle.copyWith(fontSize: 13)),
+                          const SizedBox(height: 4),
+                          Text(time, style: _muted),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: _nameStyle.copyWith(fontSize: 13),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Text(time, style: _muted),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(time, style: _muted),
-                  ],
-                ),
+              ),
+              if (widget.teams.length > 1) ...[
+                const SizedBox(width: 12),
+                _teamMoveButton(teamId, name, -1),
+                _teamMoveButton(teamId, name, 1),
+              ],
+            ],
+          ),
         ),
         if (roster != null) ...[const SizedBox(height: 12), _people(roster)],
       ],
     ),
   );
+
+  Widget _teamMoveButton(int teamId, String name, int delta) {
+    final index = widget.teams.indexWhere(
+      (team) => capstoneId(team['id']) == teamId,
+    );
+    final enabled =
+        widget.enabled &&
+        !widget.keyboardActive &&
+        !widget.updating &&
+        index >= 0 &&
+        index + delta >= 0 &&
+        index + delta < widget.teams.length;
+    return Semantics(
+      label: 'Move $name ${delta < 0 ? 'earlier' : 'later'}',
+      child: ShadButton.ghost(
+        key: ValueKey('review-team-$teamId-${delta < 0 ? 'up' : 'down'}'),
+        size: ShadButtonSize.sm,
+        width: 24,
+        height: 18,
+        padding: EdgeInsets.zero,
+        enabled: enabled,
+        onPressed: enabled ? () => widget.onMoveTeam(teamId, delta) : null,
+        child: Icon(
+          delta < 0 ? LucideIcons.arrowUp : LucideIcons.arrowDown,
+          size: 14,
+        ),
+      ),
+    );
+  }
 
   Widget _people(Map<String, dynamic> roster) {
     String faculty(dynamic id) => capstoneId(id) == null

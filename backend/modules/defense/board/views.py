@@ -248,7 +248,9 @@ class DefenseBoardOperationsView(APIView):
             managed = board_queryset_for_user(request.user, workspace='operations')
             schedule = get_object_or_404(managed, pk=schedule_id)
             from authentication_access_control.models import SystemAuditLog
-            schedules = managed.filter(session_id=schedule.session_id, semester_id=schedule.semester_id, scope=schedule.scope) if request.query_params.get('session') == '1' else managed.filter(pk=schedule.pk)
+            schedules = managed.filter(session_id=schedule.session_id, semester_id=schedule.semester_id,
+                scope=schedule.scope, defense_stage_id=schedule.defense_stage_id,
+                event_name__iexact=schedule.event_name) if request.query_params.get('session') == '1' else managed.filter(pk=schedule.pk)
             names = {str(s.pk): s.team.name for s in schedules}
             logs = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id__in=names,
                 action__in=['schedule.operational_change', 'schedule.material_deadline_extended', 'schedule.late_upload_opened']).select_related('actor')[:100]

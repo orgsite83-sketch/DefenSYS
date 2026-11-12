@@ -17,6 +17,8 @@ class TeamData {
   final String teamId;
   final String scheduleId;
   final String sessionId;
+  final String legacySessionId;
+  final String sessionLabel, sessionStartTime, sessionEndTime;
   final String semesterId;
   final String semesterLabel;
   final String defenseStageId;
@@ -80,6 +82,10 @@ class TeamData {
     required this.teamId,
     this.scheduleId = '',
     this.sessionId = '',
+    this.legacySessionId = '',
+    this.sessionLabel = '',
+    this.sessionStartTime = '',
+    this.sessionEndTime = '',
     this.semesterId = '',
     this.semesterLabel = '',
     this.defenseStageId = '',

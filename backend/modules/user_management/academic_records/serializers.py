@@ -1,5 +1,6 @@
 from defensys_backend.name_validation import NameQualityMixin
 from django.contrib.auth import get_user_model
+from django.core.validators import RegexValidator
 from django.db.models.manager import BaseManager
 from rest_framework import serializers
 
@@ -158,9 +159,17 @@ class StudentAcademicRecordWriteSerializer(NameQualityMixin, serializers.Seriali
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True, max_length=32)
     semester_id = serializers.IntegerField()
     year_level = serializers.ChoiceField(choices=[choice[0] for choice in StudentAcademicRecord.YEAR_LEVEL_CHOICES])
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
+
+    def validate_phone_number(self, value):
+        from notifications.sms_service import clean_phone_number
+        value = clean_phone_number(value)
+        if value:
+            RegexValidator(r'^\+?[0-9]{7,15}$', 'Enter a valid phone number.')(value)
+        return value
 
     def validate(self, attrs):
         student = self._student_from_attrs(attrs)
@@ -218,14 +227,13 @@ class StudentAcademicRecordWriteSerializer(NameQualityMixin, serializers.Seriali
             first_name = (attrs.get('first_name') or '').strip()
             last_name = (attrs.get('last_name') or '').strip()
             email = (attrs.get('email') or '').strip()
-            if not email:
-                email = f"{username}@ustp.edu.ph"
             return User.objects.create_user(
                 username=username,
                 password=username,
                 first_name=first_name,
                 last_name=last_name,
                 email=email,
+                phone_number=attrs.get('phone_number', ''),
                 role='student',
             )
 

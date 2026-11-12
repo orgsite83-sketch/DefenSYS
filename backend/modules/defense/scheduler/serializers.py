@@ -111,6 +111,7 @@ def schedule_queryset(queryset=None):
             'defense_stage',
             'rubric',
             'created_by',
+            'planning_batch',
         )
         .prefetch_related('panel_assignments', 'panel_assignments__panelist',
                           Prefetch('grade_records', queryset=TeamGrade.objects.with_relations()),
@@ -488,7 +489,8 @@ class ScheduleImportConflictSerializer(serializers.ModelSerializer):
 class DefenseScheduleSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         from academic_period_management.calendar import schedule_time_payload
-        return {**super().to_representation(instance), **schedule_time_payload(instance)}
+        from .sessions import session_context
+        return {**super().to_representation(instance), **schedule_time_payload(instance), **session_context(instance)}
 
     latest_change = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()

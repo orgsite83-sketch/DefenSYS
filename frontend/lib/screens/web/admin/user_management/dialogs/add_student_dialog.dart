@@ -300,7 +300,7 @@ class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
         'student_username': username,
         'first_name': firstName,
         'last_name': lastName,
-        'email': email.isNotEmpty ? email : '$username@ustp.edu.ph',
+        'email': email,
         'phone_number': phone,
         'semester_id': _selectedSemesterId,
         'year_level': _selectedYearLevel,
@@ -475,7 +475,7 @@ class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
         value: _asInt(st['id'])!,
         label: name.isNotEmpty ? name : username,
         badge: username,
-        subtitle: email.isNotEmpty ? email : '$username@ustp.edu.ph',
+        subtitle: email.isNotEmpty ? email : 'None',
         avatarText: name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'S',
         avatarColor: DefensysUi.techBlue,
       );
@@ -735,7 +735,7 @@ class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
                     controller: _emailCtrl,
                     decoration: _inputDec(
                       'Email Address (Optional)',
-                      hint: 'Leave blank to auto-set as ID@ustp.edu.ph',
+                      hint: 'Email address (optional)',
                       icon: Icons.email_outlined,
                     ),
                   ),

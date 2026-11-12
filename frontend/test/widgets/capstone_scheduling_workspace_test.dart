@@ -199,6 +199,7 @@ void main() {
     bool adminShell = false,
     bool operationsBoard = false,
     bool startWithReadiness = false,
+    bool resetDraft = true,
     Map<String, dynamic>? workspaceData,
     int initialStageId = 71,
     void Function(Map<String, dynamic>)? onPlan,
@@ -209,7 +210,7 @@ void main() {
     void Function(Map<String, dynamic>)? onConfirm,
     Future<http.Response?> Function(Map<String, dynamic>)? confirmResponse,
   }) async {
-    SharedPreferences.setMockInitialValues({});
+    if (resetDraft) SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -925,7 +926,9 @@ void main() {
     tester,
   ) async {
     final data = fixture();
-    ((data['stages'] as List).first as Map).remove('default_slot_duration_minutes');
+    ((data['stages'] as List).first as Map).remove(
+      'default_slot_duration_minutes',
+    );
     for (final team in data['teams'] as List) {
       team['stage_readiness'] = {
         '71': {
@@ -1379,6 +1382,133 @@ void main() {
     },
   );
 
+  for (final variant in [
+    (const Size(1440, 1000), false, 'desktop'),
+    (const Size(320, 900), true, 'narrow-dark'),
+  ]) {
+    testWidgets(
+      'team order buttons swap slots within an adviser at ${variant.$3}',
+      (tester) async {
+        final plans = <Map<String, dynamic>>[];
+        await mount(
+          tester,
+          workspaceData: reviewFixture(),
+          onPlan: plans.add,
+          size: variant.$1,
+          dark: variant.$2,
+        );
+        await openReview(tester);
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('review-expand-21:10')),
+        );
+        await tester.tap(find.byKey(const ValueKey('review-expand-21:10')));
+        await tester.pumpAndSettle();
+
+        ShadButton button(int id, String direction) =>
+            tester.widget<ShadButton>(
+              find.byKey(ValueKey('review-team-$id-$direction')),
+            );
+        expect(button(1, 'up').onPressed, isNull);
+        expect(button(3, 'down').onPressed, isNull);
+        final groupSize = tester.getSize(find.byKey(const ValueKey('21:10')));
+        final before = Map<String, dynamic>.from(plans.last)
+          ..remove('team_ids');
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('review-team-3-up')),
+        );
+        await tester.tap(find.byKey(const ValueKey('review-team-3-up')));
+        await tester.pump();
+        expect(button(1, 'down').onPressed, isNull);
+        expect(
+          tester
+              .widget<ShadButton>(
+                find.widgetWithText(ShadButton, 'Confirm schedule'),
+              )
+              .onPressed,
+          isNull,
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+
+        expect(plans.last['team_ids'], [3, 1, 2, 4]);
+        expect(
+          Map<String, dynamic>.from(plans.last)..remove('team_ids'),
+          before,
+        );
+        expect(button(3, 'up').onPressed, isNull);
+        expect(button(1, 'down').onPressed, isNull);
+        expect(tester.getSize(find.byKey(const ValueKey('21:10'))), groupSize);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('review-team-3')),
+            matching: find.text('8:00 AM – 8:20 AM'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('review-team-1')),
+            matching: find.text('8:20 AM – 8:40 AM'),
+          ),
+          findsOneWidget,
+        );
+        await capturePreview(
+          tester,
+          find.byType(Scaffold).first,
+          'capstone-team-order-${variant.$3}',
+          viewport: true,
+        );
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('review-team-3-down')),
+        );
+        await tester.tap(find.byKey(const ValueKey('review-team-3-down')));
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+        expect(plans.last['team_ids'], [1, 3, 2, 4]);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('team order survives adviser moves and a restored draft', (
+    tester,
+  ) async {
+    final data = reviewFixture();
+    final plans = <Map<String, dynamic>>[];
+    await mount(tester, workspaceData: data, onPlan: plans.add);
+    await openReview(tester);
+    await tester.tap(find.byKey(const ValueKey('review-expand-21:10')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('review-team-3-up')));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    await keyboardMove(tester, '21:10');
+    expect(plans.last['team_ids'], [2, 4, 3, 1]);
+    final prefs = await SharedPreferences.getInstance();
+    final key = prefs.getKeys().firstWhere(
+      (key) => key.startsWith('capstone-auto:'),
+    );
+    final saved = jsonDecode(prefs.getString(key)!) as Map<String, dynamic>;
+    expect(saved['team_order'], {
+      '22:10': [2, 4],
+      '21:10': [3, 1],
+    });
+    // Unknown, duplicate, and cross-adviser IDs must not alter membership.
+    saved['team_order']['21:10'] = [999, 3, 3, 2];
+    await prefs.setString(key, jsonEncode(saved));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await mount(
+      tester,
+      workspaceData: data,
+      onPlan: plans.add,
+      resetDraft: false,
+    );
+    await openReview(tester);
+    expect(plans.last['team_ids'], [2, 4, 3, 1]);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'review keyboard reordering commits whole adviser blocks and Escape restores the order',
     (tester) async {
@@ -1614,7 +1744,7 @@ void main() {
           startWithReadiness: readiness,
           size: const Size(1902, 1009),
         );
-        await tester.tap(find.text('Generate Schedule'));
+        await tester.tap(find.byKey(const ValueKey('board-generate-schedule')));
         await tester.pumpAndSettle();
         await openReview(tester);
         await tester.ensureVisible(find.text('Confirm schedule'));
@@ -1677,7 +1807,7 @@ void main() {
           400,
         ),
       );
-      await tester.tap(find.text('Generate Schedule'));
+      await tester.tap(find.byKey(const ValueKey('board-generate-schedule')));
       await tester.pumpAndSettle();
       await openReview(tester);
       await tester.ensureVisible(find.text('Confirm schedule'));

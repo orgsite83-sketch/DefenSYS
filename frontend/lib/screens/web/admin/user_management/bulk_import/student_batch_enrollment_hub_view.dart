@@ -1234,7 +1234,7 @@ class _StudentBatchEnrollmentHubViewState
                   _buildColumnHeaderCell('Program', flex: 2),
                   _buildColumnHeaderCell('Gender', flex: 2),
                   _buildColumnHeaderCell('Level', flex: 2),
-                  _buildColumnHeaderCell('Email', flex: 4, isRequired: true),
+                  _buildColumnHeaderCell('Email', flex: 4),
                   _buildColumnHeaderCell('Contact', flex: 3),
                 ],
               ),
@@ -2082,6 +2082,7 @@ class _StudentBatchEnrollmentHubViewState
     final primary = DefensysTokens.textPrimaryOf(context);
     final secondary = DefensysTokens.textSecondaryOf(context);
     final id = (student['id_number'] ?? student['username'] ?? '').toString();
+    final email = student['email']?.toString().trim() ?? '';
     final fullName =
         '${student['last_name'] ?? ''}, ${student['first_name'] ?? ''}'.trim();
     final name = fullName == ','
@@ -2126,7 +2127,7 @@ class _StudentBatchEnrollmentHubViewState
             ),
             const SizedBox(height: 3),
             Text(
-              'ID: $id · ${student['email'] ?? ''}',
+              'ID: $id · ${email.isEmpty ? 'None' : email}',
               style: TextStyle(
                 fontFamily: DefensysTokens.fontFamilyInter,
                 fontSize: 12,

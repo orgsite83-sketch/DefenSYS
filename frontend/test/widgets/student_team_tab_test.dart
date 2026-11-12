@@ -276,6 +276,10 @@ void main() {
       expect(find.text('AI Defense Evaluation System'), findsOneWidget);
       expect(find.text('Colloquium'), findsWidgets);
       expect(find.text('Team Members (2)'), findsOneWidget);
+      expect(find.text('ID: student_10'), findsNothing);
+      expect(find.text('ID: student_11'), findsNothing);
+      expect(find.text('Maria Santos'), findsWidgets);
+      expect(find.text('Carlos Reyes'), findsWidgets);
       expect(find.text('Current Defense Stage'), findsOneWidget);
       expect(find.text('View Details'), findsOneWidget);
       expect(find.textContaining('Score: 94.5'), findsNothing);

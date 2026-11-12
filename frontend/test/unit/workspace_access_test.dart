@@ -134,12 +134,27 @@ void main() {
     );
 
     test(
-      'explicit staff choice remains accessible without a redirect loop',
+      'phone dashboards take priority over remembered web workspaces',
       () {
         for (final (user, route) in [
           (panelist, FacultyRoutes.dashboard),
           ({'role': 'admin', 'is_documenter': true}, AdminRoutes.overview),
+          (
+            {...panelist, 'is_adviser': true},
+            '/faculty/dashboard?workspace=adviser',
+          ),
+          (
+            {'role': 'admin', 'is_adviser': true, 'is_documenter': true},
+            '/faculty/dashboard?workspace=adviser',
+          ),
+          (
+            {'role': 'admin', 'is_documenter': true},
+            '/faculty/dashboard?workspace=documenter',
+          ),
         ]) {
+          final phoneHome = user['is_panelist'] == true
+              ? AppRoutes.panelist
+              : AppRoutes.documenter;
           expect(
             WorkspaceAccess.home(
               user,
@@ -147,7 +162,7 @@ void main() {
               viewportWidth: 390,
               preferredWorkspace: route,
             ),
-            route,
+            phoneHome,
           );
           expect(
             WorkspaceAccess.redirect(
@@ -157,7 +172,26 @@ void main() {
               viewportWidth: 390,
               preferredWorkspace: route,
             ),
+            phoneHome,
+          );
+          expect(
+            WorkspaceAccess.redirect(
+              user,
+              phoneHome,
+              isWeb: true,
+              viewportWidth: 390,
+              preferredWorkspace: route,
+            ),
             isNull,
+          );
+          expect(
+            WorkspaceAccess.home(
+              user,
+              isWeb: true,
+              viewportWidth: 1200,
+              preferredWorkspace: route,
+            ),
+            route,
           );
         }
       },

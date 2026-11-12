@@ -1922,11 +1922,14 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               ),
               itemBuilder: (context, index) {
                 final m = members[index];
-                final name = m['name']?.toString().trim() ?? 'Student';
+                final memberName = m['name']?.toString().trim() ?? '';
+                final name =
+                    memberName.isEmpty ||
+                        memberName == m['username']?.toString()
+                    ? 'Student'
+                    : memberName;
                 final isLeader =
                     m['isLeader'] == true || m['is_leader'] == true;
-                final username =
-                    m['username']?.toString() ?? m['id']?.toString() ?? '—';
                 final isCurrent =
                     m['id']?.toString() == studentInfo?['id']?.toString() ||
                     m['username']?.toString() ==
@@ -2025,14 +2028,6 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                                 ),
                               ],
                             ],
-                          ),
-                          const SizedBox(height: 1),
-                          Text(
-                            'ID: $username',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: DefensysTokens.textSecondaryOf(context),
-                            ),
                           ),
                         ],
                       ),

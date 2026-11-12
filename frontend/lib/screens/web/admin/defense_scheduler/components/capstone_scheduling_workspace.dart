@@ -312,6 +312,20 @@ class _CapstoneSchedulingWorkspaceState
                     order.contains(b.key) ? order.indexOf(b.key) : order.length,
                   ),
         );
+        final teamOrder = draft['team_order'] as Map? ?? {};
+        for (final group in _groups) {
+          final byId = {
+            for (final team in group.teams) capstoneId(team['id']): team,
+          };
+          final ordered = <Map<String, dynamic>>[];
+          for (final id in teamOrder[group.key] as List? ?? []) {
+            final team = byId.remove(capstoneId(id));
+            if (team != null) ordered.add(team);
+          }
+          group.teams
+            ..clear()
+            ..addAll([...ordered, ...byId.values]);
+        }
         final windows = capstoneMaps(draft['windows']);
         if (windows.isNotEmpty) {
           for (final w in _windows) {
@@ -604,6 +618,10 @@ class _CapstoneSchedulingWorkspaceState
       jsonEncode({
         ..._inputs(),
         'group_order': _groups.map((g) => g.key).toList(),
+        'team_order': {
+          for (final group in _groups)
+            group.key: group.teams.map((team) => team['id']).toList(),
+        },
         'replacement_events': _replacementEvents,
         'pending_people': {
           for (final entry in _editingRosters.entries)
@@ -2512,6 +2530,20 @@ class _CapstoneSchedulingWorkspaceState
     _announceReview(group.key, reveal: !commit);
   }
 
+  void _moveReviewTeam(CapstoneAdviserGroup group, int teamId, int delta) {
+    if (_busy || _reordering || _reviewUpdating) return;
+    final teams = group.teams
+        .where((team) => _selected.contains(capstoneId(team['id'])))
+        .toList();
+    final index = teams.indexWhere((team) => capstoneId(team['id']) == teamId);
+    final target = index + delta;
+    if (index < 0 || target < 0 || target >= teams.length) return;
+    final team = teams[index], anchor = teams[target];
+    group.teams.remove(team);
+    group.teams.insert(group.teams.indexOf(anchor) + (delta > 0 ? 1 : 0), team);
+    _changed();
+  }
+
   void _beginKeyboardReview(String key) {
     if (_busy || _pointerReorder) return;
     if (_keyboardReviewGroup != null) _endKeyboardReview(cancel: true);
@@ -2692,6 +2724,8 @@ class _CapstoneSchedulingWorkspaceState
               onDrop: _endKeyboardReview,
               onCancel: () => _endKeyboardReview(cancel: true),
               onMove: _moveKeyboardReview,
+              onMoveTeam: (teamId, delta) =>
+                  _moveReviewTeam(group, teamId, delta),
               onPointerCancel: () {
                 if (_pointerReorder) {
                   setState(() {

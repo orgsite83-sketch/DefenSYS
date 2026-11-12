@@ -95,7 +95,7 @@ class SchedulePlannerView(APIView):
             status__in=(DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE,
                         DefenseSchedule.STATUS_ARCHIVED),
             scheduled_date__range=(start, end),
-        ).select_related('defense_stage', 'team').prefetch_related(Prefetch(
+        ).select_related('defense_stage', 'team', 'planning_batch').prefetch_related(Prefetch(
             'grade_records',
             queryset=TeamGrade.all_objects.filter(status=TeamGrade.STATUS_PUBLISHED).only(
                 'schedule_id', 'scope', 'verdict', 'revisions_cleared_at', 'final_grade',
@@ -104,11 +104,13 @@ class SchedulePlannerView(APIView):
         )).order_by('scheduled_date', 'start_time', 'pk')
         own_team_ids = set() if is_admin else set(_pit_teams_queryset(user).values_list('id', flat=True))
 
+        from defense.scheduler.sessions import session_context
         groups = {}
         for schedule in schedules:
             key = (str(schedule.session_id), schedule.scheduled_date)
             group = groups.setdefault(key, {
                 'session_id': str(schedule.session_id),
+                **session_context(schedule),
                 'date': schedule.scheduled_date.isoformat(),
                 'scope': schedule.scope,
                 'event_name': schedule.stage_label or 'Defense session',

@@ -103,7 +103,7 @@ Bachelor of Science in Information Technology,,,,,,,,,,,
       expect(result.students[0]['first_name'], 'Juan');
       expect(result.students[0]['last_name'], 'DELA CRUZ');
       expect(result.students[0]['year_level'], '2nd Year');
-      expect(result.students[0]['email'], '202400001@ustp.edu.ph');
+      expect(result.students[0]['email'], '');
       expect(result.students[0]['gender'], 'M');
       expect(result.students[0]['status'], 'Officially Enrolled');
       expect(result.students[0]['program'], 'BSIT');
@@ -112,13 +112,13 @@ Bachelor of Science in Information Technology,,,,,,,,,,,
       expect(result.students[1]['first_name'], 'Maria');
       expect(result.students[1]['last_name'], 'SANTOS');
       expect(result.students[1]['year_level'], '2nd Year');
-      expect(result.students[1]['email'], '202400002@ustp.edu.ph');
+      expect(result.students[1]['email'], '');
 
       expect(result.students[2]['id_number'], '2024-00051');
       expect(result.students[2]['first_name'], 'Mark');
       expect(result.students[2]['last_name'], 'REYES');
       expect(result.students[2]['year_level'], '2nd Year');
-      expect(result.students[2]['email'], '202400051@ustp.edu.ph');
+      expect(result.students[2]['email'], '');
 
       expect(result.students[3]['id_number'], '2024-00052');
       expect(result.students[3]['first_name'], 'Anna');
