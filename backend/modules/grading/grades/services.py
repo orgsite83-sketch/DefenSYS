@@ -205,6 +205,7 @@ def panelist_result_payload(team_grade, panelist_key):
         'criteria': [
             {
                 'criteriaName': row.criterion_name,
+                'score_kind': row.score_kind,
                 'section': getattr(row, 'section_snapshot', '') or '',
                 'score': float(row.score),
                 'max': float(row.max_score),
@@ -261,7 +262,7 @@ def previous_panel_attempt_results(submissions):
     for schedule_id, rows in groups.items():
         schedule = rows[0].schedule
         snapshot = snapshots.get(schedule_id)
-        scores = [score for row in rows for score in row.criterion_scores.all()]
+        scores = [score for row in rows for score in row.score_rows]
         if not scores:
             continue
         official_scores, concept_results = _concept_result_rows(schedule, scores,
@@ -288,12 +289,13 @@ def previous_panel_attempt_results(submissions):
             'display_status': 'assessed', 'is_completed': False,
             'criteria': [{
                 'criteriaName': score.criterion_name_snapshot,
+                'score_kind': 'section' if hasattr(score, 'section_key') else 'criterion',
                 'section': score.section_snapshot or '',
                 'score': float(score.score),
                 'max': float(score.max_score_snapshot), 'student_id': row.student_id,
                 'weight_snapshot': float(score.weight_snapshot) if score.weight_snapshot is not None else None,
                 'student_name': display_name(row.student) if row.student_id else None,
-            } for row in rows for score in row.criterion_scores.all()],
+            } for row in rows for score in row.score_rows],
             'memberGrades': [{'name': item['name'], 'isLeader': False,
                 'panelContrib': float(Decimal(item['panel_score']) * weights['panel_weight'] / 100)
                     if item['panel_score'] is not None else None,
@@ -345,7 +347,7 @@ def recompute_panel_score(team_grade):
     is_both = (target_type == 'both')
 
     submissions = list(
-        team_grade.panelist_submissions.filter(is_void=False, schedule=team_grade.schedule).prefetch_related('criterion_scores')
+        team_grade.panelist_submissions.filter(is_void=False, schedule=team_grade.schedule).prefetch_related('criterion_scores', 'section_scores')
     )
 
     if submissions:
@@ -356,7 +358,7 @@ def recompute_panel_score(team_grade):
                 student_subs = [s for s in submissions if s.student_id == student.id]
                 percentages = []
                 for sub in student_subs:
-                    pct = panelist_percentage_from_criterion_scores(sub.criterion_scores.all())
+                    pct = panelist_percentage_from_criterion_scores(sub.score_rows)
                     if pct is not None:
                         percentages.append(pct)
                 
@@ -392,9 +394,9 @@ def recompute_panel_score(team_grade):
                     
                     scores_to_sum = []
                     if team_sub:
-                        scores_to_sum.extend(team_sub.criterion_scores.all())
+                        scores_to_sum.extend(team_sub.score_rows)
                     if student_sub:
-                        scores_to_sum.extend(student_sub.criterion_scores.all())
+                        scores_to_sum.extend(student_sub.score_rows)
                     
                     if scores_to_sum:
                         pct = panelist_percentage_from_criterion_scores(scores_to_sum)
@@ -424,7 +426,7 @@ def recompute_panel_score(team_grade):
             if not team_subs:
                 team_subs = submissions
             for sub in team_subs:
-                pct = panelist_percentage_from_criterion_scores(sub.criterion_scores.all())
+                pct = panelist_percentage_from_criterion_scores(sub.score_rows)
                 if pct is not None:
                     percentages.append(pct)
 
@@ -695,7 +697,7 @@ def _submission_identity_kwargs(panelist=None, guest=None):
 
 
 @transaction.atomic
-def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks='', student=None, expected_context=None, concept_key=''):
+def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks='', student=None, expected_context=None, concept_key='', section_scores=None):
     from defense.scheduler.models import DefenseSchedule
     from defense.scheduler.panelist_evaluation import grading_unavailable_reason, evaluation_context
     StudentTeam.objects.select_for_update().get(pk=schedule.team_id)
@@ -724,7 +726,19 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
         raise ValidationError('Choose a concept belonging to this hearing.')
     if team_grade.panelist_submissions.filter(schedule=schedule, student=student, concept_key=concept_key, **identity_filter).exists():
         raise ValidationError('This evaluation has already been recorded. Request a correction instead of submitting again.')
-    rows = _validated_panel_criterion_rows(schedule, criteria_scores, student=student)
+    section_rows = []
+    if section_scores:
+        from .section_scoring import validate_scores, section_definitions
+        criteria = [c for c in schedule.rubric.criteria.all() if schedule.rubric.target_type != 'both'
+                    or c.target_type == ('individual' if student else 'team')]
+        clean, clean_sections = validate_scores(schedule.rubric, criteria, criteria_scores, section_scores)
+        by_id = {c.pk: c for c in criteria}
+        rows = [{'criterion': by_id[item['criterion_id']], 'score': Decimal(str(item['score'])),
+                 'max_score': Decimal(by_id[item['criterion_id']].max_score)} for item in clean]
+        definitions = {s['section_key']: s for s in section_definitions(schedule.rubric)}
+        section_rows = [(definitions[item['section_key']], Decimal(str(item['score']))) for item in clean_sections]
+    else:
+        rows = _validated_panel_criterion_rows(schedule, criteria_scores, student=student)
     identity = _submission_identity_kwargs(panelist=panelist, guest=guest)
     
     lookup = identity['lookup'].copy()
@@ -756,6 +770,15 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
         for row in rows
     ])
 
+    from .models import PanelistSectionScore
+    PanelistSectionScore.objects.bulk_create([
+        PanelistSectionScore(submission=submission, section_key=section['section_key'],
+            section_snapshot=section['name'], criteria_snapshot=section['criteria'],
+            target_snapshot=section['target_type'], score=score,
+            max_score_snapshot=section['max_score'], weight_snapshot=section['weight'],
+            display_order=section['display_order']) for section, score in section_rows
+    ])
+
     remark = f"{identity['remark_key']}\n{remarks or ''}"
     GradeBreakdown.objects.filter(
         team_grade=team_grade,
@@ -781,6 +804,16 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
             display_order=row['criterion'].display_order,
         )
         for row in rows
+    ])
+
+    GradeBreakdown.objects.bulk_create([
+        GradeBreakdown(team_grade=team_grade, source_submission=submission, student=student,
+            rubric=schedule.rubric, evaluation_type=GradeBreakdown.EVAL_PANEL,
+            score_kind='section', source_section_score=section,
+            criterion_name='Overall section score', section_snapshot=section.section_snapshot,
+            score=section.score, max_score=section.max_score_snapshot,
+            weight_snapshot=section.weight_snapshot, remarks=remark, display_order=section.display_order)
+        for section in submission.section_scores.all()
     ])
 
     recompute_panel_score(team_grade)
@@ -2242,7 +2275,7 @@ def _completion_grade_rows(queryset):
         'team__memberships__student', 'student_grades',
         'schedule__team__memberships', 'schedule__rubric__criteria',
         'schedule__panel_assignments', 'schedule__guest_invitations',
-        'schedule__guest_panelist_codes', 'panelist_submissions__criterion_scores',
+        'schedule__guest_panelist_codes', 'panelist_submissions__criterion_scores', 'panelist_submissions__section_scores',
     ))
 
 

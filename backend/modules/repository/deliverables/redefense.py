@@ -39,12 +39,16 @@ def snapshot_hearing(schedule, team, stage):
         schedule.save(update_fields=['documents_snapshot'])
 
 
-def refresh_files(team, stage):
+def refresh_files(team, stage, *, activate=False):
     """Only concept documents and panel materials need fresh versions.
 
     General accepted files retain their status; old bytes and reviews are never
     overwritten. The new round's concept keys determine the next required slots.
     """
+    if not activate:
+        from grading.grades.dissemination import pending_for
+        if pending_for(team, stage):
+            return
     from .models import DeliverableSubmission, DeliverableSubmissionFile
     from .services import get_deliverable_definitions_for_team
     from .documents import sync_submission

@@ -93,6 +93,12 @@ def read_memoize(function=None, *, copy=False, bypass_if=()):
 
 
 class ReadAPIView(APIView):
+    def finalize_response(self, request, response, *args, **kwargs):
+        if getattr(getattr(request, 'user', None), 'role', None) == 'student' and hasattr(response, 'data'):
+            from grading.grades.student_visibility import student_assessment_payload
+            response.data = student_assessment_payload(response.data, request.user)
+        return super().finalize_response(request, response, *args, **kwargs)
+
     def dispatch(self, request, *args, **kwargs):
         if request.method == 'GET':
             with read_projection():

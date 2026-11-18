@@ -293,7 +293,7 @@ abstract class AppLocalizations {
   /// No description provided for @navUserManagement.
   ///
   /// In en, this message translates to:
-  /// **'User Management'**
+  /// **'Users & Roles'**
   String get navUserManagement;
 
   /// No description provided for @navStudentTeams.
@@ -341,13 +341,13 @@ abstract class AppLocalizations {
   /// No description provided for @navDefenseBoard.
   ///
   /// In en, this message translates to:
-  /// **'Defense Operations'**
+  /// **'Defense Schedule'**
   String get navDefenseBoard;
 
   /// No description provided for @navDefenseStages.
   ///
   /// In en, this message translates to:
-  /// **'Defense Stages Setup'**
+  /// **'Defense Stages'**
   String get navDefenseStages;
 
   /// No description provided for @navScheduling.

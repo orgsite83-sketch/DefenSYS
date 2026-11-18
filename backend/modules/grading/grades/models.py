@@ -44,6 +44,7 @@ class TeamGradeQuerySet(models.QuerySet):
             'schedule__guest_panelist_codes__evaluator',
             'panelist_submissions',
             'panelist_submissions__criterion_scores',
+            'panelist_submissions__section_scores',
             'schedule__rubric__criteria',
             'schedule__team__memberships__student',
             'attempt_history__verdict_by',
@@ -378,6 +379,8 @@ class TeamGrade(models.Model):
 
 
 class GradeBreakdown(models.Model):
+    score_kind = models.CharField(max_length=12, default='criterion')
+    source_section_score = models.ForeignKey('grading.PanelistSectionScore', null=True, blank=True, on_delete=models.SET_NULL)
     source_submission = models.ForeignKey('grading.PanelistGradeSubmission', null=True, blank=True, on_delete=models.SET_NULL, related_name='breakdown_rows')
     is_void = models.BooleanField(default=False)
     EVAL_PANEL = 'panel'
@@ -407,9 +410,9 @@ class GradeBreakdown(models.Model):
     )
     evaluation_type = models.CharField(max_length=20, choices=EVALUATION_TYPE_CHOICES)
     criterion_name = models.CharField(max_length=1000)
-    section_snapshot = models.CharField(max_length=150, blank=True, default='')
-    score = models.DecimalField(max_digits=7, decimal_places=2)
-    max_score = models.DecimalField(max_digits=7, decimal_places=2)
+    section_snapshot = models.CharField(max_length=160, blank=True, default='')
+    score = models.DecimalField(max_digits=12, decimal_places=2)
+    max_score = models.DecimalField(max_digits=12, decimal_places=2)
     weight_snapshot = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     remarks = models.TextField(blank=True)
     display_order = models.PositiveSmallIntegerField(default=0)
@@ -444,6 +447,10 @@ class GradeBreakdown(models.Model):
 
 
 class PanelistGradeSubmission(models.Model):
+    @property
+    def score_rows(self):
+        return [*self.criterion_scores.all(), *self.section_scores.all()]
+
     concept_key = models.CharField(max_length=40, blank=True, default='')
     is_void = models.BooleanField(default=False)
     void_reason = models.TextField(blank=True)
@@ -527,6 +534,40 @@ class PanelistGradeSubmission(models.Model):
 
     def __str__(self):
         return f'{self.identity_label} - {self.team_grade}'
+
+
+class PanelistSectionScore(models.Model):
+    submission = models.ForeignKey(PanelistGradeSubmission, related_name='section_scores', on_delete=models.CASCADE)
+    section_key = models.CharField(max_length=64)
+    section_snapshot = models.CharField(max_length=160)
+    criteria_snapshot = models.JSONField(default=list)
+    target_snapshot = models.CharField(max_length=20)
+    score = models.DecimalField(max_digits=12, decimal_places=2)
+    max_score_snapshot = models.DecimalField(max_digits=12, decimal_places=2)
+    weight_snapshot = models.DecimalField(max_digits=5, decimal_places=2)
+    display_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'grading'
+        db_table = 'grade_center_panelistsectionscore'
+        ordering = ['display_order', 'id']
+        constraints = [models.UniqueConstraint(fields=['submission', 'section_key'], name='unique_panel_score_per_section')]
+
+    @property
+    def criterion_name_snapshot(self):
+        return 'Overall section score'
+
+    @property
+    def criterion_id(self):
+        return None
+
+    @property
+    def normalized_score(self):
+        if self.max_score_snapshot <= 0:
+            return Decimal('0.00')
+        return (self.score / self.max_score_snapshot * 100).quantize(Decimal('0.01'))
 
 
 class PanelistCriterionScore(models.Model):

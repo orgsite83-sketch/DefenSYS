@@ -1,6 +1,9 @@
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from unittest.mock import AsyncMock, patch
+import asyncio
+import time
 from rest_framework_simplejwt.tokens import AccessToken
 
 from academic_period_management.models import SchoolYear, Semester
@@ -65,6 +68,22 @@ class RealtimeBroadcastTests(TestCase):
         expected = pit_group_name(self.semester.id, 'PIT Defense Day')
         self.assertEqual(expected, 'pit_{}_pit_defense_day'.format(self.semester.id))
 
+    def test_stalled_redis_cannot_hold_a_saved_grade_response_open(self):
+        from realtime.broadcast import _send_to_groups
+
+        async def stalled(*args):
+            await asyncio.sleep(60)
+
+        layer = AsyncMock()
+        layer.group_send.side_effect = stalled
+        started = time.monotonic()
+        with patch('realtime.broadcast.get_channel_layer', return_value=layer), \
+                patch('realtime.broadcast.BROADCAST_TIMEOUT_SECONDS', 0.01), \
+                self.assertLogs('realtime.broadcast', level='WARNING'):
+            _send_to_groups(['first', 'second'], {'event': 'grading.flags_changed'})
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertEqual(layer.group_send.await_count, 1)
+
 
 class GradingFlagsConsumerTests(TestCase):
     def _websocket_application(self):
@@ -85,6 +104,27 @@ class GradingFlagsConsumerTests(TestCase):
             self.assertFalse(connected)
 
         async_to_sync(run)()
+
+    def test_redis_receive_failure_closes_with_recoverable_code(self):
+        from channels.layers import InMemoryChannelLayer
+        from channels.testing import WebsocketCommunicator
+        from redis.exceptions import TimeoutError as RedisTimeoutError
+
+        class UnavailableLayer(InMemoryChannelLayer):
+            async def receive(self, channel):
+                raise RedisTimeoutError('Redis unavailable')
+
+        async def run():
+            with patch('channels.consumer.get_channel_layer', return_value=UnavailableLayer()), \
+                    patch('realtime.consumers.GradingFlagsConsumer.connect', new=AsyncMock()):
+                communicator = WebsocketCommunicator(self._websocket_application(), '/ws/grading/')
+                connected, code = await communicator.connect()
+                self.assertFalse(connected)
+                self.assertEqual(code, 4500)
+                await communicator.disconnect()
+
+        with self.assertLogs('realtime.consumers', level='WARNING'):
+            async_to_sync(run)()
 
     def test_accepts_valid_token(self):
         from channels.testing import WebsocketCommunicator

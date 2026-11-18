@@ -69,6 +69,7 @@ class GradeBreakdownSerializer(serializers.ModelSerializer):
             'evaluation_type',
             'rubric_name',
             'criterion_name',
+            'score_kind',
             'section_snapshot',
             'score',
             'max_score',
@@ -285,7 +286,7 @@ class TeamGradeSerializer(serializers.ModelSerializer):
                 })
         from .student_visibility import student_assessment_payload
         actor = self.context.get('actor') or getattr(self.context.get('request'), 'user', None)
-        return student_assessment_payload(data, actor)
+        return student_assessment_payload(data, actor, grade=instance)
 
     def get_peer_rating_evidence(self, obj):
         from .masterlist import can_view_peer_evidence

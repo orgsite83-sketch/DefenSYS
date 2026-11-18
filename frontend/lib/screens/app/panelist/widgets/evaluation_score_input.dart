@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -17,6 +19,7 @@ class EvaluationScoreInput extends StatefulWidget {
     this.description = '',
     this.enabled = true,
     this.onNext,
+    this.onCommitted,
   });
 
   final String label;
@@ -26,6 +29,7 @@ class EvaluationScoreInput extends StatefulWidget {
   final bool enabled;
   final ValueChanged<double?> onChanged;
   final VoidCallback? onNext;
+  final Future<bool> Function(double?)? onCommitted;
 
   @override
   State<EvaluationScoreInput> createState() => EvaluationScoreInputState();
@@ -35,6 +39,41 @@ class EvaluationScoreInputState extends State<EvaluationScoreInput> {
   late final TextEditingController _controller;
   final _focusNode = FocusNode();
   bool _showErrors = false;
+  bool _edited = false;
+  Future<bool>? _commitFuture;
+  bool get hasPendingEdit => _edited || _commitFuture != null;
+  bool get hasEnteredText => _text.isNotEmpty;
+
+  void restoreValue() {
+    _controller.text = widget.value == null
+        ? ''
+        : formatEvaluationScore(widget.value!);
+    _edited = false;
+    if (mounted) setState(() => _showErrors = false);
+  }
+
+  Future<bool> commit() async {
+    if (_commitFuture != null) return _commitFuture!;
+    if (!validate(requestFocus: true)) return false;
+    if (!_edited || widget.onCommitted == null) return true;
+    final value = _parsedScore;
+    final future = widget.onCommitted!(value);
+    _commitFuture = future;
+    try {
+      final accepted = await future;
+      if (!mounted) return accepted;
+      _edited = false;
+      if (!accepted) {
+        _controller.text = widget.value == null
+            ? ''
+            : formatEvaluationScore(widget.value!);
+        setState(() => _showErrors = false);
+      }
+      return accepted;
+    } finally {
+      _commitFuture = null;
+    }
+  }
 
   String get _text => _controller.text.trim();
 
@@ -97,7 +136,10 @@ class EvaluationScoreInputState extends State<EvaluationScoreInput> {
   }
 
   void _onFocusChanged() {
-    if (!_focusNode.hasFocus) validate();
+    if (!_focusNode.hasFocus) {
+      validate();
+      if (widget.onCommitted != null) unawaited(commit());
+    }
   }
 
   bool validate({bool requestFocus = false}) {
@@ -112,8 +154,8 @@ class EvaluationScoreInputState extends State<EvaluationScoreInput> {
 
   void requestScoreFocus() => _focusNode.requestFocus();
 
-  void _finishEditing() {
-    if (!validate(requestFocus: true)) return;
+  void _finishEditing() async {
+    if (!await commit() || !mounted) return;
     if (widget.onNext != null) {
       widget.onNext!();
     } else {
@@ -153,8 +195,8 @@ class EvaluationScoreInputState extends State<EvaluationScoreInput> {
               ),
             ShadButton.ghost(
               height: 44,
-              onPressed: () {
-                if (validate(requestFocus: true)) _focusNode.unfocus();
+              onPressed: () async {
+                if (await commit() && mounted) _focusNode.unfocus();
               },
               child: const Text('Done'),
             ),
@@ -215,10 +257,11 @@ class EvaluationScoreInputState extends State<EvaluationScoreInput> {
                   : null,
               keyboardToolbarBuilder: _keyboardToolbar,
               onChanged: (_) {
+                _edited = true;
                 setState(() {
                   _showErrors = _text != '.' && _text != ',';
                 });
-                widget.onChanged(_parsedScore);
+                if (widget.onCommitted == null) widget.onChanged(_parsedScore);
               },
               // Own traversal so Next/Done cannot submit grades or skip an error.
               onEditingComplete: () {},

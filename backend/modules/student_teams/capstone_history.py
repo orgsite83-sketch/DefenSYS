@@ -143,7 +143,7 @@ def history_payload(visible, params, *, user=None, include_details=True):
                 assessments = assessments.filter(defense_stage_id=selected_requirement['id'])
             data['assessments'] = list(assessments.order_by('project_version', 'pk').values(
                 'id', 'project_version', 'project_title_snapshot', 'defense_stage_id',
-                'stage_label', 'status', 'verdict', 'final_grade'))
+                'stage_label', 'schedule_id', 'status', 'verdict', 'final_grade'))
             from .history_events import timeline_for
             data['timeline'] = timeline_for(team, term,
                 stage_id=selected_requirement['id'] if selected_requirement else None,

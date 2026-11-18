@@ -17,8 +17,10 @@ class EvaluationTargetTabs extends StatelessWidget {
     required this.membersRequired,
     required this.enabled,
     required this.onChanged,
+    this.unit = 'criteria',
   });
 
+  final String unit;
   final bool individuals, enabled;
   final int teamEntered, teamRequired, membersComplete, membersRequired;
   final ValueChanged<bool> onChanged;
@@ -65,7 +67,7 @@ class EvaluationTargetTabs extends StatelessWidget {
     final label = target ? 'Individuals' : 'Team';
     final progress = target
         ? '$entered of $required members'
-        : '$entered of $required criteria';
+        : '$entered of $required $unit';
     final accent = DefensysTokens.maroonOf(context);
     final foreground = selected
         ? Colors.white
@@ -227,7 +229,8 @@ class _EvaluationMemberNavigatorState extends State<EvaluationMemberNavigator> {
                     builder: (context) {
                       final criteria =
                           widget.criteria[member.id] ?? <Criterion>[];
-                      final entered = criteria.where((c) => c.isScored).length;
+                      final progress = criteriaProgress(criteria);
+                      final entered = progress.entered;
                       final selected = index == widget.selectedIndex;
                       return Semantics(
                         selected: selected,
@@ -273,8 +276,7 @@ class _EvaluationMemberNavigatorState extends State<EvaluationMemberNavigator> {
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              if (criteria.isNotEmpty &&
-                                  entered == criteria.length)
+                              if (criteria.isNotEmpty && progress.complete)
                                 Icon(
                                   Icons.check_circle_outline_rounded,
                                   size: 16,
@@ -284,7 +286,7 @@ class _EvaluationMemberNavigatorState extends State<EvaluationMemberNavigator> {
                                 )
                               else
                                 Text(
-                                  '$entered/${criteria.length}',
+                                  '$entered/${progress.required}',
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               if (selected) ...[

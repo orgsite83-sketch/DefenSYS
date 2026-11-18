@@ -755,16 +755,44 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
           ),
           actions: [
             if (minutes != null)
-              IconButton(
-                tooltip: minutes['status'] == 'completed'
-                    ? 'View signed PDF'
-                    : 'Preview PDF',
-                onPressed: _isSavingDraft || _isSubmitting || _isReviewing
-                    ? null
-                    : minutes['status'] == 'completed'
-                    ? _viewPdf
-                    : _previewPdf,
-                icon: const Icon(Icons.picture_as_pdf_outlined),
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Center(
+                  child: DefensysShadcnScope(
+                    child: Tooltip(
+                      message: minutes['status'] == 'completed'
+                          ? 'View signed PDF'
+                          : 'Preview PDF',
+                      child: ShadButton.outline(
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        gap: 6,
+                        enabled:
+                            !_isSavingDraft && !_isSubmitting && !_isReviewing,
+                        onPressed: minutes['status'] == 'completed'
+                            ? _viewPdf
+                            : _previewPdf,
+                        leading: const Icon(
+                          Icons.picture_as_pdf_outlined,
+                          size: 16,
+                        ),
+                        child: Text(
+                          MediaQuery.sizeOf(context).width < 420
+                              ? (minutes['status'] == 'completed'
+                                    ? 'PDF'
+                                    : 'Preview')
+                              : (minutes['status'] == 'completed'
+                                    ? 'View signed PDF'
+                                    : 'Preview PDF'),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
           ],
         ),
@@ -1078,17 +1106,6 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
                       ? comment['comments'].toString()
                       : 'No comments recorded.',
                   style: const TextStyle(fontSize: 14, height: 1.5),
-                ),
-              if (editable)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    onPressed: _isSubmitting || _isSavingDraft
-                        ? null
-                        : () => _controllers[comment['id']]?.text =
-                              'No comments or suggestions.',
-                    child: const Text('No comments or suggestions'),
-                  ),
                 ),
               const SizedBox(height: 20),
             ],

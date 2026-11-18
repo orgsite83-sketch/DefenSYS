@@ -38,6 +38,8 @@ class MyDocumenterAssignmentsView(APIView):
 def has_minutes_view_permission(user, schedule):
     if not user or not user.is_authenticated:
         return False
+    if getattr(user, 'role', None) == 'student':
+        return False
     from authentication_access_control.scopes import is_admin_user, visible_schedules_for
     if getattr(user, '_workspace', ''):
         return visible_schedules_for(user).filter(pk=schedule.pk).exists()

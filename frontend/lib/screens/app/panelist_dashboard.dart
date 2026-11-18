@@ -538,6 +538,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                 .map((s) => Map<String, dynamic>.from(s))
                 .toList(),
             draftSavedAt: team['draft']?['saved_at']?.toString(),
+            draftVersion: team['draft']?['version']?.toString(),
             isChair: team['is_chair'] == true,
             verdict: team['verdict']?.toString(),
             verdictRemarks: team['verdict_remarks']?.toString(),
@@ -552,6 +553,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             gradeId: (team['grade_id'] as num?)?.toInt(),
           );
           final previous = previousTeams[assignment.scheduleId];
+          assignment.reconcileServerSubmission();
           assignment.retainDraftFrom(previous);
           return assignment;
         }).toList();

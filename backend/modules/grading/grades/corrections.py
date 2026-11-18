@@ -10,7 +10,7 @@ from rest_framework import serializers
 from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from defense.scheduler.operations import StaleOperation
-from .models import TeamGrade, PanelistCriterionScore, PanelistGradeSubmission, GradeBreakdown
+from .models import TeamGrade, PanelistCriterionScore, PanelistSectionScore, PanelistGradeSubmission, GradeBreakdown
 from .correction_models import GradeCorrection
 
 
@@ -31,25 +31,14 @@ def evaluator_completion(grade):
     expected |= {(None, str(row.pk)) for row in schedule.guest_panelist_codes.all() if row.is_active}
     submissions = grade.panelist_submissions.all()
     if 'panelist_submissions' not in getattr(grade, '_prefetched_objects_cache', {}):
-        submissions = submissions.prefetch_related('criterion_scores')
+        submissions = submissions.prefetch_related('criterion_scores', 'section_scores')
     rows = [row for row in submissions if row.schedule_id == schedule.pk and not row.is_void]
-    from defense.scheduler.panelist_evaluation import validate_evaluation_submissions
-    from .outcome_rules import concept_keys
-    required_keys = set(concept_keys(schedule))
+    from defense.scheduler.panelist_evaluation import evaluation_complete
     complete = 0
     for pid, gid in expected:
-        submissions = [{'student_id': row.student_id, 'concept_key': row.concept_key,
-                        'criteria_scores': [{'criterion_id': score.criterion_id, 'score': str(score.score)} for score in row.criterion_scores.all()],
-                        'remarks': row.remarks}
-                       for row in rows if row.panelist_id == pid and row.guest_code_id == gid
-                       and row.concept_key in required_keys]
-        try:
-            validate_evaluation_submissions(schedule, submissions)
+        submissions = [row for row in rows if row.panelist_id == pid and row.guest_code_id == gid]
+        if evaluation_complete(schedule, submissions):
             complete += 1
-        except Exception as exc:
-            from django.core.exceptions import ValidationError as DjangoValidationError
-            if not isinstance(exc, DjangoValidationError):
-                raise
     return {'submitted': complete, 'required': len(expected)}
 
 
@@ -82,6 +71,14 @@ def snapshot(grade):
                            'student_name': (row.submission.student.get_full_name() or row.submission.student.username) if row.submission.student else 'Team',
                            'evaluator': (row.submission.panelist.get_full_name() or row.submission.panelist.username) if row.submission.panelist else row.submission.guest_name}
                           for row in PanelistCriterionScore.objects.filter(submission__team_grade=grade, submission__schedule_id=grade.schedule_id).select_related('submission__panelist', 'submission__student').order_by('pk')]
+    values['criteria'] += [{'id': f'section:{row.pk}', 'submission_id': row.submission_id,
+        'score_kind': 'section', 'score': str(row.score), 'max_score': str(row.max_score_snapshot),
+        'criterion': f'{row.section_snapshot}: Overall section score', 'concept_key': row.submission.concept_key,
+        'weight_snapshot': str(row.weight_snapshot), 'student_id': row.submission.student_id,
+        'student_name': (row.submission.student.get_full_name() or row.submission.student.username) if row.submission.student else 'Team',
+        'evaluator': (row.submission.panelist.get_full_name() or row.submission.panelist.username) if row.submission.panelist else row.submission.guest_name}
+        for row in PanelistSectionScore.objects.filter(submission__team_grade=grade,
+            submission__schedule_id=grade.schedule_id).select_related('submission__panelist', 'submission__student').order_by('pk')]
     values['submissions'] = list(grade.panelist_submissions.filter(schedule_id=grade.schedule_id).order_by('pk').values('id', 'is_void'))
     values['students'] = [{'id': row.pk, 'student_name': row.student.get_full_name() or row.student.username, 'panel_score': str(row.panel_score) if row.panel_score is not None else None,
                           'adviser_score': str(row.adviser_score) if row.adviser_score is not None else None,
@@ -104,17 +101,20 @@ def correction_payload(item):
 def correction_details(grade):
     rows = []
     guest_references = {str(i['id']): i['email'] for i in grade.schedule.guest_invitations.values('id', 'email')} if grade.schedule_id else {}
-    for submission in grade.panelist_submissions.filter(schedule_id=grade.schedule_id).select_related('panelist', 'student').prefetch_related('criterion_scores').order_by('pk'):
+    for submission in grade.panelist_submissions.filter(schedule_id=grade.schedule_id).select_related('panelist', 'student').prefetch_related('criterion_scores', 'section_scores').order_by('pk'):
         evaluator = (submission.panelist.get_full_name() or submission.panelist.username) if submission.panelist else submission.guest_name
-        for score in submission.criterion_scores.all():
-            rows.append({'id': score.pk, 'submission_id': submission.pk, 'evaluator': evaluator,
+        for score in submission.score_rows:
+            is_section = isinstance(score, PanelistSectionScore)
+            rows.append({'id': f'section:{score.pk}' if is_section else score.pk,
+                         'score_id': score.pk, 'score_kind': 'section' if is_section else 'criterion',
+                         'submission_id': submission.pk, 'evaluator': evaluator,
                          'concept_key': submission.concept_key,
                          'evaluator_key': f'faculty:{submission.panelist_id}' if submission.panelist_id else f'guest:{submission.guest_code_id}',
                          'evaluator_reference': submission.panelist.username if submission.panelist_id else guest_references.get(submission.guest_code_id, 'External evaluator'),
                          'student_id': submission.student_id,
                          'student_reference': submission.student.username if submission.student_id else 'Team',
                          'student': (submission.student.get_full_name() or submission.student.username) if submission.student else 'Team',
-                         'criterion': score.criterion_name_snapshot, 'score': str(score.score),
+                         'criterion': f'{score.section_snapshot}: Overall section score' if is_section else score.criterion_name_snapshot, 'score': str(score.score),
                          'max_score': str(score.max_score_snapshot),
                          'weight_snapshot': str(score.weight_snapshot) if score.weight_snapshot is not None else None,
                          'is_void': submission.is_void})
@@ -142,7 +142,8 @@ def _source_breakdowns(submission, score=None):
     rows = GradeBreakdown.objects.filter(team_grade=submission.team_grade, evaluation_type='panel', student_id=submission.student_id)
     rows = rows.filter(Q(source_submission=submission) | Q(source_submission__isnull=True, remarks__startswith=key))
     if score:
-        rows = rows.filter(criterion_name=score.criterion_name_snapshot, display_order=score.display_order)
+        rows = rows.filter(source_section_score=score) if isinstance(score, PanelistSectionScore) else rows.filter(
+            score_kind='criterion', criterion_name=score.criterion_name_snapshot, display_order=score.display_order)
     return rows
 
 
@@ -150,12 +151,14 @@ def _perform_change(grade, changes):
     from .services import recompute_panel_score
     if not isinstance(changes, dict) or len(changes) != 1:
         raise ValidationError('Correct one criterion, one evaluation, or aggregate scores per request.')
-    if 'criterion' in changes:
-        item = changes['criterion']
+    if 'criterion' in changes or 'section' in changes:
+        is_section = 'section' in changes
+        item = changes['section' if is_section else 'criterion']
         if not isinstance(item, dict) or set(item) != {'id', 'score'}:
             raise ValidationError('Select a criterion score and its corrected value.')
         row_id = serializers.IntegerField(min_value=1).run_validation(item['id'])
-        row = PanelistCriterionScore.objects.select_related('submission__panelist').filter(
+        model = PanelistSectionScore if is_section else PanelistCriterionScore
+        row = model.objects.select_related('submission__panelist').filter(
             pk=row_id, submission__team_grade=grade, submission__schedule_id=grade.schedule_id).first()
         if not row or row.submission.is_void:
             raise ValidationError('This score is missing or belongs to a voided evaluation.')

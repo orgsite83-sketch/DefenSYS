@@ -119,7 +119,7 @@ def deletion_blockers(schedule):
     blockers = []
     if schedule.panelist_grade_submissions.exists():
         blockers.append('This schedule has panelist grades already submitted (including voided evaluations).')
-    if any(any(item.get('criteria_scores') or str(item.get('remarks', '')).strip()
+    if any(any(item.get('criteria_scores') or item.get('section_scores') or str(item.get('remarks', '')).strip()
                for item in draft.submissions if isinstance(item, dict))
            for draft in schedule.evaluation_drafts.all()):
         blockers.append('Saved evaluation drafts contain scores or remarks.')

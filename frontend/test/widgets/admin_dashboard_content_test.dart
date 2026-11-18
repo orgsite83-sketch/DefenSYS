@@ -8,6 +8,7 @@ import 'package:defensys/screens/web/admin/admin_dashboard_content.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
+import 'package:defensys/services/defense_board_provider.dart';
 import 'package:defensys/services/network/authenticated_client.dart';
 
 import '../helpers/fake_planner_client.dart';
@@ -235,7 +236,7 @@ void main() {
     );
 
     // Should show Period: Not configured and No Active Academic Period
-    expect(find.text('Period: Not configured'), findsOneWidget);
+    expect(find.text('Not configured'), findsOneWidget);
     expect(find.text('No Active Academic Period'), findsOneWidget);
     expect(find.text('Configure'), findsOneWidget);
   });
@@ -295,10 +296,16 @@ void main() {
       });
       await tester.pumpAndSettle();
 
-      // The action item should now be immediately cleared and All Clear displayed!
+      // A successful server refresh confirms that the issue is resolved.
+      dashNotifier.updateMockData({
+        ...mockInitialData,
+        'active_semester': '1st Semester, A.Y. 2024-2025',
+        'action_items': <Map<String, dynamic>>[],
+      });
+      await tester.pumpAndSettle();
       expect(find.text('No Active Academic Period'), findsNothing);
-      expect(find.text('All Clear — No Pending Actions'), findsOneWidget);
-      expect(find.text('Period: 1st Semester, A.Y. 2024-2025'), findsOneWidget);
+      expect(find.text('No admin actions pending'), findsOneWidget);
+      expect(find.text('1st Semester, A.Y. 2024-2025'), findsOneWidget);
     },
   );
 
@@ -338,7 +345,7 @@ void main() {
       ],
     );
 
-    expect(find.text('All Clear — No Pending Actions'), findsOneWidget);
+    expect(find.text('No admin actions pending'), findsOneWidget);
 
     final refreshButtons = find.text('Refresh');
     expect(refreshButtons, findsWidgets);
@@ -427,6 +434,8 @@ void main() {
 
       final reviewDraftsBtn = find.text('Review Drafts');
       expect(reviewDraftsBtn, findsOneWidget);
+      await tester.ensureVisible(reviewDraftsBtn);
+      await tester.pumpAndSettle();
       await tester.tap(reviewDraftsBtn);
       await tester.pumpAndSettle();
 
@@ -434,4 +443,95 @@ void main() {
     },
   );
 
+  testWidgets(
+    'Overview actions open grade review, readiness and schedules',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      DefensysAdminSection? navigatedSection;
+
+      final mockData = {
+        'active_semester': '1st Semester, A.Y. 2026-2027',
+        'stats': {
+          'total_students': 179,
+          'total_faculty': 16,
+          'total_teams': 40,
+          'upcoming_defenses': 3,
+          'pending_grades': 7,
+          'published_grades': 0,
+        },
+        'team_pipeline': {
+          'total_teams': 40,
+          'ready_for_defense': 0,
+          'capstone_teams': 40,
+          'pit_teams': 0,
+          'teams_with_adviser': 40,
+          'teams_without_adviser': 0,
+          'stage_distribution': [
+            {'label': 'Final Defense', 'code': 'FD', 'count': 7},
+          ],
+        },
+        'action_items': [
+          {
+            'id': 'pending_grades',
+            'title': '7 Unpublished Capstone Defense Grades',
+            'description': 'Review and publish panel scores in Grade Center.',
+            'category_label': 'GRADE REVIEW',
+            'severity': 'warning',
+            'target_section': 'gradeCenter',
+            'button_label': 'Review',
+          },
+        ],
+        'upcoming_defenses_list': [],
+        'recent_activity': [],
+      };
+
+      final dashNotifier = FakeAdminDashboardNotifier('admin', initialData: mockData);
+      final acadNotifier = FakeAcademicPeriodNotifier();
+
+      await pumpDefensysWidget(
+        tester,
+        AdminDashboardContent(
+          onNavigate: (section) => navigatedSection = section,
+        ),
+        overrides: [
+          dashboardProvider('admin').overrideWith(() => dashNotifier),
+          academicPeriodProvider.overrideWith(() => acadNotifier),
+          authenticatedHttpClientProvider.overrideWithValue(FakePlannerClient()),
+        ],
+      );
+
+      expect(find.text('Semester workflow'), findsOneWidget);
+      expect(find.text('4 of 5 Complete'), findsNothing);
+      expect(find.text('Results'), findsOneWidget);
+      expect(find.text('7 Unpublished Capstone Defense Grades'), findsOneWidget);
+      await tester.ensureVisible(find.text('Results'));
+      await tester.tap(find.text('Results'));
+      await tester.pumpAndSettle();
+
+      expect(navigatedSection, equals(DefensysAdminSection.gradeCenter));
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(AdminDashboardContent)),
+      );
+      await tester.ensureVisible(find.text('View readiness'));
+      await tester.tap(find.text('View readiness'));
+      await tester.pumpAndSettle();
+      expect(navigatedSection, DefensysAdminSection.defenseBoard);
+      expect(
+        container.read(defenseBoardActiveViewProvider),
+        DefenseOperationsView.readiness,
+      );
+      await tester.ensureVisible(find.text('Open schedule'));
+      await tester.tap(find.text('Open schedule'));
+      await tester.pumpAndSettle();
+      expect(navigatedSection, DefensysAdminSection.defenseBoard);
+      expect(
+        container.read(defenseBoardActiveViewProvider),
+        DefenseOperationsView.schedules,
+      );
+    },
+  );
 }

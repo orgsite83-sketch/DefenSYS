@@ -8,6 +8,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import AccessToken
+from redis.exceptions import RedisError
 
 from .groups import groups_for_user_async
 
@@ -16,6 +17,15 @@ User = get_user_model()
 
 
 class GradingFlagsConsumer(AsyncWebsocketConsumer):
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        except (RedisError, OSError, TimeoutError):
+            # Receive-loop Redis failures occur outside connect()/receive().
+            # Close cleanly so the existing client reconnect/fallback can run.
+            logger.warning('Live grading connection interrupted.', exc_info=True)
+            await self.close(code=4500)
+
     async def connect(self):
         query = parse_qs(self.scope.get('query_string', b'').decode())
         raw_token = (query.get('token') or [None])[0]

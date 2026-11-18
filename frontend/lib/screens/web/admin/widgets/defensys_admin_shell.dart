@@ -1,3 +1,5 @@
+import '../../../../services/admin_overview_scope_provider.dart';
+import '../../../../services/dashboard_provider.dart';
 import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -354,7 +356,7 @@ class _TopNav extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
           ],
-          const Expanded(child: _UniversityHeaderBrand()),
+          const Expanded(child: DefensysUniversityHeaderBrand()),
           if (canDoc) ...[
             IconButton(
               icon: const Icon(Icons.edit_note_rounded),
@@ -371,7 +373,7 @@ class _TopNav extends ConsumerWidget {
             ),
             const SizedBox(width: 4),
           ],
-          _SemesterPill(label: activeSemesterLabel),
+          DefensysSemesterPill(label: activeSemesterLabel),
           const SizedBox(width: 16),
           const NotificationsBell(workspace: 'admin', workspaceLabel: 'Administrator'),
           const SizedBox(width: 10),
@@ -382,8 +384,8 @@ class _TopNav extends ConsumerWidget {
   }
 }
 
-class _UniversityHeaderBrand extends StatelessWidget {
-  const _UniversityHeaderBrand();
+class DefensysUniversityHeaderBrand extends StatelessWidget {
+  const DefensysUniversityHeaderBrand({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -504,7 +506,7 @@ class _Sidebar extends StatelessWidget {
 
     final groups = <_NavGroup>[
       _NavGroup(
-        title: 'Dashboard',
+        title: '',
         entries: [
           _NavEntry(
             section: DefensysAdminSection.overview,
@@ -514,7 +516,7 @@ class _Sidebar extends StatelessWidget {
         ],
       ),
       _NavGroup(
-        title: 'Setup & Configuration',
+        title: 'Semester Setup',
         entries: [
           _NavEntry(
             section: DefensysAdminSection.academicPeriods,
@@ -522,19 +524,19 @@ class _Sidebar extends StatelessWidget {
             label: l10n.navAcademicPeriods,
           ),
           _NavEntry(
-            section: DefensysAdminSection.rubrics,
-            icon: Icons.checklist_rounded,
-            label: l10n.navRubricEngine,
-          ),
-          _NavEntry(
             section: DefensysAdminSection.defenseStages,
             icon: Icons.layers_rounded,
             label: l10n.navDefenseStages,
           ),
+          _NavEntry(
+            section: DefensysAdminSection.rubrics,
+            icon: Icons.checklist_rounded,
+            label: l10n.navRubricEngine,
+          ),
         ],
       ),
       _NavGroup(
-        title: 'People & Teams',
+        title: 'Roster & Teams',
         entries: [
           _NavEntry(
             section: DefensysAdminSection.userManagement,
@@ -549,7 +551,7 @@ class _Sidebar extends StatelessWidget {
         ],
       ),
       _NavGroup(
-        title: 'Defense Operations',
+        title: 'Defense & Grading',
         entries: [
           _NavEntry(
             section: DefensysAdminSection.defenseBoard,
@@ -564,7 +566,7 @@ class _Sidebar extends StatelessWidget {
         ],
       ),
       _NavGroup(
-        title: 'Analytics & Audit',
+        title: 'Archive & Reports',
         entries: [
           _NavEntry(
             section: DefensysAdminSection.repositoryAudit,
@@ -708,12 +710,14 @@ class _Sidebar extends StatelessWidget {
                 for (int i = 0; i < groups.length; i++) ...[
                   if (i > 0)
                     SizedBox(height: isCollapsed ? 8 : 20),
-                  _SectionHeader(
-                    title: groups[i].title,
-                    isCollapsed: isCollapsed,
-                    isFirst: i == 0,
-                  ),
-                  const SizedBox(height: 4),
+                  if (groups[i].title.isNotEmpty || isCollapsed) ...[
+                    _SectionHeader(
+                      title: groups[i].title,
+                      isCollapsed: isCollapsed,
+                      isFirst: i == 0,
+                    ),
+                    const SizedBox(height: 4),
+                  ],
                   for (final e in groups[i].entries)
                     _NavItem(
                       section: e.section,
@@ -1242,7 +1246,9 @@ class _NavItemState extends State<_NavItem> {
 
   @override
   Widget build(BuildContext context) {
-    final selected = widget.section == widget.activeSection;
+    final selected = widget.section == widget.activeSection ||
+        (widget.section == DefensysAdminSection.defenseBoard &&
+            widget.activeSection == DefensysAdminSection.scheduling);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final activeBg = isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon;
@@ -1289,11 +1295,10 @@ class _NavItemState extends State<_NavItem> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Center(
-                  child: Icon(
-                    widget.icon,
-                    size: 18,
-                    color: iconColor,
-                  ),
+                  child: Stack(clipBehavior: Clip.none, children: [
+                    Icon(widget.icon, size: 18, color: iconColor),
+                    Positioned(left: 12, top: -9, child: _OverviewTaskBadge(section: widget.section, color: iconColor)),
+                  ]),
                 ),
               ),
             ),
@@ -1350,6 +1355,7 @@ class _NavItemState extends State<_NavItem> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        _OverviewTaskBadge(section: widget.section, color: textColor),
                         if (widget.trailing != null) ...[
                           const SizedBox(width: 6),
                           Icon(
@@ -1375,10 +1381,10 @@ class _NavItemState extends State<_NavItem> {
   }
 }
 
-class _SemesterPill extends StatelessWidget {
+class DefensysSemesterPill extends StatelessWidget {
   final String label;
 
-  const _SemesterPill({required this.label});
+  const DefensysSemesterPill({super.key, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -1485,4 +1491,38 @@ class _SidebarPanelPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SidebarPanelPainter oldDelegate) => oldDelegate.color != color;
+}
+
+class _OverviewTaskBadge extends ConsumerWidget {
+  const _OverviewTaskBadge({required this.section, this.color});
+  final Color? color;
+  final DefensysAdminSection section;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final data = ref.watch(dashboardProvider('admin')).data;
+    final counts = (data?['overview'] as Map?)?['action_counts'] as Map? ?? {};
+    final key = switch (section) {
+      DefensysAdminSection.defenseStages => 'defenseStages',
+      DefensysAdminSection.studentTeams => 'studentTeams',
+      DefensysAdminSection.userManagement => 'userManagement',
+      DefensysAdminSection.gradeCenter => 'gradeCenter',
+      DefensysAdminSection.defenseBoard => 'defenseBoardReadiness',
+      _ => '',
+    };
+    final scope = ref.watch(adminOverviewScopeProvider);
+    final tasks = (data?['overview'] as Map?)?['action_items'] as List?;
+    final count = tasks == null ? (counts[key] as int? ?? 0) : tasks.whereType<Map>().where((item) => item['target_section'] == key && (scope == 'all' || item['scope'] == null || item['scope'] == scope)).length;
+    if (count == 0) return const SizedBox.shrink();
+    final foreground = color ?? DefensysTokens.textPrimaryOf(context);
+    return Semantics(label: '$count administrative tasks', child: Container(
+      constraints: const BoxConstraints(minWidth: 22),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(color: foreground.withValues(alpha: .08), borderRadius: BorderRadius.circular(DefensysTokens.radiusSm)),
+      child: Text('$count', textAlign: TextAlign.center, style: TextStyle(
+        inherit: false, color: foreground, fontFamily: DefensysTokens.fontFamilyInter,
+        fontSize: 11, height: 1, fontWeight: FontWeight.w600, letterSpacing: 0,
+      )),
+    ));
+  }
 }

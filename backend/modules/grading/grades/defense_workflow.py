@@ -110,6 +110,9 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
     from .outcome_rules import validate_outcome, policy_for
     validate_outcome(grade, verdict, concept_decisions)
     grade.verdict = verdict
+    grade.outcome_metadata = {**grade.outcome_metadata,
+        'pre_release_project_title': grade.outcome_metadata.get('pre_release_project_title', grade.team.project_title),
+        'pre_release_team_status': grade.outcome_metadata.get('pre_release_team_status', grade.team.status)}
     grade.verdict_remarks = remarks.strip()
     grade.verdict_by = None if automatic else actor
     grade.verdict_at = timezone.now()
@@ -134,8 +137,7 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
             and policy_for(grade.schedule).get('repeat_files_version') == 1):
         from repository.deliverables.redefense import snapshot_hearing, refresh_files
         snapshot_hearing(grade.schedule, grade.team, context_for_grade(grade))
-        if verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
-            refresh_files(grade.team, context_for_grade(grade))
+        # Student submission slots activate only after explicit dissemination.
     if policy_for(grade.schedule).get('version') == 1:
         from .services import recompute_panel_score
         recompute_panel_score(grade)
@@ -153,14 +155,6 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
     maybe_auto_finalize_passed_grade(grade, user=actor)
     audit(grade, actor, 'defense.outcome_resolved' if automatic else 'defense.verdict_submitted', verdict=verdict, verdict_remarks=remarks,
           verification_required=grade.redefense_verification_required)
-    from notifications.services import notify_team_students
-    notify_team_students(
-        grade.team, title='Defense outcome recorded', category='DEFENSE', sender=actor,
-        message=f'{grade.team.name} ({grade.stage_label}): {grade.get_verdict_display()}.'
-                + (f'\n{remarks}' if remarks else ''),
-        stage_label=grade.stage_label, action_payload={'schedule_id': grade.schedule_id},
-        event_key=f'defense.outcome:{grade.pk}:{grade.schedule_id}',
-    )
     if automatic:
         from .automatic_outcomes import notify_assessment
         transaction.on_commit(lambda: notify_assessment(grade))
@@ -231,7 +225,7 @@ def workflow_payload(grade, actor=None):
 
     }
     from .student_visibility import student_assessment_payload
-    return student_assessment_payload(data, actor)
+    return student_assessment_payload(data, actor, grade=grade)
 
 
 @transaction.atomic

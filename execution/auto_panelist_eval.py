@@ -366,14 +366,28 @@ def build_submissions(assignment, minimum, maximum, remarks, *, include_drafts=F
         if identity not in rows or identity in seen:
             raise ValueError('The saved draft no longer matches the hearing targets.')
         seen.add(identity)
+        definitions = {s['section_key']: s for s in assignment.get('panel_rubric', {}).get('scoring_sections', [])}
+        covered, section_scores = set(), []
+        for item in saved.get('section_scores', []):
+            section = definitions.get(item.get('section_key'))
+            score = float(item.get('score'))
+            if (not section or not set(section['criterion_ids']).issubset(allowed[identity])
+                    or covered.intersection(section['criterion_ids']) or not math.isfinite(score)
+                    or not 0 <= score <= float(section['max_score'])):
+                raise ValueError('The saved overall section score is invalid or outdated. Refresh its rubric.')
+            covered.update(section['criterion_ids'])
+            section_scores.append({'section_key': section['section_key'], 'score': score})
         scores = {}
         for item in saved.get('criteria_scores', []):
             criterion_id = item.get('criterion_id', item.get('id'))
             score = float(item.get('score'))
-            if (criterion_id not in allowed[identity] or criterion_id in scores or not math.isfinite(score)
+            if (criterion_id not in allowed[identity] or criterion_id in covered or criterion_id in scores or not math.isfinite(score)
                     or not 0 <= score <= allowed[identity][criterion_id]):
                 raise ValueError('The saved draft contains an invalid or outdated criterion score.')
             scores[criterion_id] = score
+        if section_scores:
+            rows[identity]['section_scores'] = section_scores
+            rows[identity]['criteria_scores'] = [item for item in rows[identity]['criteria_scores'] if item['criterion_id'] not in covered]
         for item in rows[identity]['criteria_scores']:
             if item['criterion_id'] in scores:
                 item['score'] = scores[item['criterion_id']]
@@ -728,6 +742,8 @@ def run(argv=None):
                 "team_id": team_id,
                 "schedule_id": schedule_id,
                 "evaluation_context": eval_context,
+                "draft_version": (team_payload.get("draft") or {}).get("version", ""),
+                "section_scoring_version": 1,
                 "submissions": submissions,
             }
 

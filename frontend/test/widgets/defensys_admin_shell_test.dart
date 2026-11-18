@@ -45,6 +45,13 @@ void main() {
 
     expect(find.text('Shell child content'), findsOneWidget);
     expect(find.text('Student Teams'), findsWidgets);
+    expect(find.text('DASHBOARD'), findsNothing);
+    expect(find.text('SEMESTER SETUP'), findsOneWidget);
+    expect(find.text('ROSTER & TEAMS'), findsOneWidget);
+    expect(find.text('DEFENSE & GRADING'), findsOneWidget);
+    expect(find.text('ARCHIVE & REPORTS'), findsOneWidget);
+    expect(find.text('Defense Schedule'), findsOneWidget);
+    expect(find.text('Defense Stages'), findsOneWidget);
     expect(find.byIcon(Icons.menu), findsNothing);
   });
 
@@ -75,7 +82,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
 
-    final userMgmtFinder = find.text('User Management');
+    final userMgmtFinder = find.text('Users & Roles');
     expect(userMgmtFinder, findsOneWidget);
     await tester.tap(userMgmtFinder);
     await tester.pumpAndSettle();

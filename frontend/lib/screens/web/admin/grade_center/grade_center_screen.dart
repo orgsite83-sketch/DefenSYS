@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/auth_provider.dart';
+import '../../../../services/admin_overview_scope_provider.dart';
 import '../../../../services/defense_stages_provider.dart';
 import '../../../../services/grade_center_provider.dart';
 import 'grade_center_capstone_table.dart';
@@ -52,7 +53,11 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       final isAdmin = _isGradeCenterAdmin(user);
       ref
           .read(gradeCenterProvider.notifier)
-          .fetchGrades(scope: _defaultScopeForUser(user));
+          .fetchGrades(
+            scope: isAdmin
+                ? ref.read(adminOverviewScopeProvider)
+                : _defaultScopeForUser(user),
+          );
       if (isAdmin) {
         _ensureDefenseStagesLoaded();
       }

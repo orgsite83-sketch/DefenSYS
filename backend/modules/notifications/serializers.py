@@ -4,6 +4,15 @@ from .actions import resolve_actions
 
 
 class NotificationSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.workspace == 'student' and instance.title == 'Defense outcome recorded':
+            from grading.grades.dissemination import latest_release
+            released = latest_release((instance.action_payload or {}).get('schedule_id'), instance.recipient)
+            data.update(title='Defense outcome', message='Your defense outcome and panel feedback are now available.'
+                if released else 'Awaiting official release.')
+        return data
+
     sender_name = serializers.SerializerMethodField()
     action = serializers.SerializerMethodField()
 

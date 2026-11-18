@@ -561,7 +561,7 @@ class EvaluationAutomationTests(unittest.TestCase):
         verdict.assert_not_called()
 
     def test_drafts_are_skipped_unless_explicitly_preserved_and_completed(self):
-        team = self.panelist_schedule_payload(draft={'submissions': [
+        team = self.panelist_schedule_payload(draft={'version': 'protected-draft-version', 'submissions': [
             {'student_id': None, 'criteria_scores': [{'criterion_id': 1, 'score': 0}], 'remarks': 'My saved feedback.'}]})
         session, _, _, result, output = self.run_panel(teams=[team])
         session.post.assert_not_called()
@@ -571,6 +571,7 @@ class EvaluationAutomationTests(unittest.TestCase):
         row = session.post.call_args.kwargs['json']['submissions'][0]
         self.assertEqual(row['criteria_scores'], [{'criterion_id': 1, 'score': 0}])
         self.assertEqual(row['remarks'], 'My saved feedback.')
+        self.assertEqual(session.post.call_args.kwargs['json']['draft_version'], 'protected-draft-version')
 
     def test_individual_draft_keeps_existing_scores_and_fills_missing_members(self):
         team = self.panelist_schedule_payload(panel_rubric={'target_type': 'individual', 'criteria': [
@@ -582,6 +583,20 @@ class EvaluationAutomationTests(unittest.TestCase):
             {'criterion_id': 1, 'score': 0}, {'criterion_id': 2, 'score': 80}], 'remarks': 'Saved'})
         self.assertEqual(rows[1]['student_id'], 12)
         self.assertEqual(rows[1]['criteria_scores'][0]['score'], 4)
+
+    def test_overall_draft_preserved_without_generated_criterion_marks(self):
+        team = self.panelist_schedule_payload(panel_rubric={'target_type': 'team', 'criteria': [
+            {'id': 1, 'max_score': 40}, {'id': 2, 'max_score': 60}, {'id': 3, 'max_score': 10}],
+            'scoring_sections': [{'section_key': 'oral', 'criterion_ids': [1, 2], 'max_score': 100}]},
+            draft={'submissions': [{'student_id': None, 'criteria_scores': [],
+                'section_scores': [{'section_key': 'oral', 'score': 0}], 'remarks': 'Saved'}]})
+        row = auto_panelist_eval.build_submissions(team, 8, 8, 'Generated', include_drafts=True)[0]
+        self.assertEqual(row['section_scores'], [{'section_key': 'oral', 'score': 0}])
+        self.assertEqual(row['criteria_scores'], [{'criterion_id': 3, 'score': 8}])
+        self.assertEqual(row['remarks'], 'Saved')
+        team['draft']['submissions'][0]['criteria_scores'] = [{'criterion_id': 1, 'score': 10}]
+        with self.assertRaises(ValueError):
+            auto_panelist_eval.build_submissions(team, 8, 8, 'Generated', include_drafts=True)
 
     def test_invalid_or_obsolete_draft_scores_are_never_submitted(self):
         for scores in [[{'criterion_id': 999, 'score': 8}], [{'criterion_id': 1, 'score': float('nan')}],

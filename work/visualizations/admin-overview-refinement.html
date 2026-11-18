@@ -1,0 +1,140 @@
+<div id="defensys-overview-concept" aria-label="Proposed DefenSYS overview layout">
+  <style>
+    #defensys-overview-concept{--ds-bg:light-dark(#f8fafc,#161618);--ds-panel:light-dark(#fff,#212024);--ds-text:light-dark(#0f172a,#f4f4f5);--ds-muted:light-dark(#475569,#b4b3ba);--ds-border:light-dark(#e2e8f0,#35343a);--ds-soft:light-dark(#f1f5f9,#28272d);--ds-brand:light-dark(#7a110a,#c0392b);--ds-brand-text:light-dark(#7a110a,#f4a69c);--ds-brand-soft:light-dark(#f7eeed,#332321);--ds-gap:16px;color:var(--ds-text);font-family:Inter,Arial,sans-serif;font-size:14px;line-height:1.45;background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:12px;padding:24px;box-sizing:border-box;color-scheme:light dark}
+    #defensys-overview-concept *{box-sizing:border-box}
+    #defensys-overview-concept h2,#defensys-overview-concept h3,#defensys-overview-concept p{margin:0}
+    #defensys-overview-concept h2{font-size:24px;font-weight:700;letter-spacing:-.5px}
+    #defensys-overview-concept h3{font-size:14px;font-weight:600}
+    #defensys-overview-concept .ds-muted{color:var(--ds-muted);font-size:12px}
+    #defensys-overview-concept .ds-header{display:flex;gap:16px;align-items:center;justify-content:space-between;margin-bottom:20px;padding-right:72px}
+    #defensys-overview-concept .ds-context{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;color:var(--ds-muted);font-size:12px}
+    #defensys-overview-concept button{font:inherit;color:inherit;cursor:pointer}
+    #defensys-overview-concept .ds-button{border:1px solid var(--ds-border);border-radius:6px;background:var(--ds-panel);padding:8px 12px;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;min-height:36px}
+    #defensys-overview-concept .ds-button:hover{background:var(--ds-soft)}
+    #defensys-overview-concept .ds-primary{background:var(--ds-brand);border-color:var(--ds-brand);color:#fff}
+    #defensys-overview-concept .ds-primary:hover{background:var(--ds-brand);filter:brightness(1.08)}
+    #defensys-overview-concept button:focus-visible,#defensys-overview-concept summary:focus-visible{outline:2px solid var(--ds-brand-text);outline-offset:3px}
+    #defensys-overview-concept .ds-stack{display:grid;gap:var(--ds-gap)}
+    #defensys-overview-concept .ds-panel{background:var(--ds-panel);border:1px solid var(--ds-border);border-radius:10px;padding:20px;min-width:0}
+    #defensys-overview-concept .ds-attention{display:flex;gap:20px;align-items:center;justify-content:space-between}
+    #defensys-overview-concept .ds-eyebrow{font-size:12px;font-weight:600;color:var(--ds-brand-text);margin-bottom:5px}
+    #defensys-overview-concept .ds-task-title{font-size:16px;font-weight:600;margin-bottom:3px}
+    #defensys-overview-concept .ds-workflow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;margin-top:14px}
+    #defensys-overview-concept .ds-step{min-width:0;border-right:1px solid var(--ds-border);padding-right:12px}
+    #defensys-overview-concept .ds-step:last-child{border-right:0}
+    #defensys-overview-concept .ds-step-name{font-weight:500;margin-bottom:5px}
+    #defensys-overview-concept .ds-step-state{font-size:12px;color:var(--ds-muted);display:flex;align-items:center;gap:6px}
+    #defensys-overview-concept .ds-dot{width:6px;height:6px;background:var(--ds-muted);border-radius:50%;display:inline-block;flex-shrink:0}
+    #defensys-overview-concept .ds-needs{color:var(--ds-brand-text)}
+    #defensys-overview-concept .ds-needs .ds-dot{background:var(--ds-brand-text)}
+    #defensys-overview-concept .ds-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr);gap:var(--ds-gap);align-items:stretch}
+    #defensys-overview-concept .ds-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    #defensys-overview-concept .ds-status{background:var(--ds-soft);color:var(--ds-muted);border-radius:5px;font-size:11px;font-weight:500;padding:3px 7px}
+    #defensys-overview-concept .ds-ready-number{font-size:40px;font-weight:600;letter-spacing:-1px;line-height:1.2;margin-top:19px;font-variant-numeric:tabular-nums}
+    #defensys-overview-concept .ds-ready-caption{font-size:13px;margin-top:3px}
+    #defensys-overview-concept .ds-readiness-note{margin-top:17px;padding-top:14px;border-top:1px solid var(--ds-border)}
+    #defensys-overview-concept .ds-readiness-note p{margin-bottom:12px}
+    #defensys-overview-concept .ds-link{border:0;background:none;padding:0;color:var(--ds-brand-text);font-weight:500;display:inline-flex;align-items:center;gap:6px;min-height:28px}
+    #defensys-overview-concept .ds-calendar-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:17px}
+    #defensys-overview-concept .ds-tabs{display:flex;gap:3px;background:var(--ds-soft);padding:3px;border-radius:6px}
+    #defensys-overview-concept .ds-tab{border:0;border-radius:4px;background:none;padding:4px 9px;font-size:12px}
+    #defensys-overview-concept .ds-tab[aria-pressed=true]{background:var(--ds-panel);box-shadow:0 1px 2px #0000000d;font-weight:500}
+    #defensys-overview-concept .ds-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin-top:12px}
+    #defensys-overview-concept .ds-day{text-align:center;min-width:0}
+    #defensys-overview-concept .ds-day-name{font-size:11px;color:var(--ds-muted);padding-bottom:5px}
+    #defensys-overview-concept .ds-date{background:none;border:1px solid var(--ds-border);border-radius:6px;display:block;width:100%;padding:10px 0;font-size:12px;min-height:38px}
+    #defensys-overview-concept .ds-date[aria-pressed=true]{border-color:var(--ds-brand-text);background:var(--ds-brand-soft);color:var(--ds-brand-text);font-weight:600}
+    #defensys-overview-concept .ds-calendar-empty{margin-top:13px;padding-top:12px;border-top:1px solid var(--ds-border)}
+    #defensys-overview-concept .ds-calendar-empty p:first-child{font-size:13px;font-weight:500;margin-bottom:3px}
+    #defensys-overview-concept .ds-totals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:13px}
+    #defensys-overview-concept .ds-total{border-right:1px solid var(--ds-border);padding-right:12px}
+    #defensys-overview-concept .ds-total:last-child{border:0}
+    #defensys-overview-concept .ds-total-number{font-size:25px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums;margin-bottom:2px}
+    #defensys-overview-concept .ds-total-label{font-size:12px;color:var(--ds-muted)}
+    #defensys-overview-concept .ds-total-context{font-size:11px;color:var(--ds-muted);margin-top:3px}
+    #defensys-overview-concept .ds-history{padding:15px 20px}
+    #defensys-overview-concept .ds-history summary{font-size:13px;font-weight:500;cursor:pointer}
+    #defensys-overview-concept .ds-history ul{list-style:none;margin:12px 0 0;padding:0}
+    #defensys-overview-concept .ds-history li{padding:9px 0;border-top:1px solid var(--ds-border);font-size:13px}
+    #defensys-overview-concept .ds-destination{font-size:12px;color:var(--ds-muted);padding:12px 16px;background:var(--ds-soft);border-radius:6px}
+    #defensys-overview-concept [hidden]{display:none!important}
+    #defensys-overview-concept svg{width:15px;height:15px}
+    @media(max-width:720px){#defensys-overview-concept{padding:18px}#defensys-overview-concept .ds-main{grid-template-columns:1fr}#defensys-overview-concept .ds-workflow{grid-template-columns:repeat(3,minmax(0,1fr))}#defensys-overview-concept .ds-step{border:0}#defensys-overview-concept .ds-header{padding-right:0;align-items:flex-start}#defensys-overview-concept .ds-panel{padding:16px}}
+    @media(max-width:450px){#defensys-overview-concept{padding:14px}#defensys-overview-concept .ds-header{flex-direction:column;gap:12px}#defensys-overview-concept .ds-attention{align-items:flex-start;flex-direction:column;gap:12px}#defensys-overview-concept .ds-workflow{grid-template-columns:repeat(2,minmax(0,1fr))}#defensys-overview-concept .ds-totals{grid-template-columns:repeat(2,minmax(0,1fr))}#defensys-overview-concept .ds-total{border:0}#defensys-overview-concept .ds-day-name{font-size:11px}#defensys-overview-concept .ds-calendar-grid{gap:3px}}
+    @media(pointer:coarse){#defensys-overview-concept .ds-button,#defensys-overview-concept .ds-tab,#defensys-overview-concept .ds-link,#defensys-overview-concept .ds-date{min-height:44px}}
+  </style>
+  <header class="ds-header">
+    <div><h2>Overview</h2><div class="ds-context"><span>1st Semester, A.Y. 2026–2027</span><span>·</span><span>All programs</span></div></div>
+    <button type="button" class="ds-button" data-destination="Overview refreshed"><i data-lucide="refresh-cw" aria-hidden="true"></i>Refresh</button>
+  </header>
+  <main class="ds-stack">
+    <section class="ds-panel ds-attention" aria-label="Needs your attention">
+      <div><div class="ds-eyebrow">Needs your attention · 1</div><div class="ds-task-title">fsdfsdf needs scoring rubrics</div><p class="ds-muted">Panel, adviser and peer evaluation rubrics are missing.</p></div>
+      <button type="button" class="ds-button ds-primary" data-destination="Defense stages → fsdfsdf → Grading &amp; Rubrics">Fix rubric<i data-lucide="arrow-up-right" aria-hidden="true"></i></button>
+    </section>
+    <section class="ds-panel" aria-label="Semester workflow">
+      <h3>Semester workflow</h3>
+      <div class="ds-workflow">
+        <div class="ds-step"><div class="ds-step-name">Period &amp; stages</div><div class="ds-step-state"><span class="ds-dot"></span>Active period</div></div>
+        <div class="ds-step"><div class="ds-step-name">Scoring setup</div><div class="ds-step-state ds-needs"><span class="ds-dot"></span>1 needs setup</div></div>
+        <div class="ds-step"><div class="ds-step-name">Teams</div><div class="ds-step-state"><span class="ds-dot"></span>1 active team</div></div>
+        <div class="ds-step"><div class="ds-step-name">Scheduling</div><div class="ds-step-state"><span class="ds-dot"></span>Waiting for teams</div></div>
+        <div class="ds-step"><div class="ds-step-name">Grade release</div><div class="ds-step-state"><span class="ds-dot"></span>No grades to review</div></div>
+      </div>
+    </section>
+    <div class="ds-main">
+      <section class="ds-panel">
+        <div class="ds-panel-head"><h3>Team readiness</h3><span class="ds-status">Capstone · Waiting</span></div>
+        <div class="ds-ready-number">0</div><p class="ds-ready-caption">teams ready to schedule</p>
+        <div class="ds-readiness-note"><p class="ds-muted">Check team requirements and endorsements.</p><button type="button" class="ds-link" data-destination="Defense Operations → Team readiness">View readiness<i data-lucide="arrow-right" aria-hidden="true"></i></button></div>
+      </section>
+      <section class="ds-panel">
+        <div class="ds-panel-head"><h3>Defense schedule</h3><button type="button" class="ds-link" data-destination="Defense Schedule">Open schedule<i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div>
+        <div class="ds-calendar-toolbar"><strong class="ds-muted" data-range>November 16–22</strong><div class="ds-tabs" aria-label="Calendar view"><button class="ds-tab" type="button" data-view="week" aria-pressed="true">Week</button><button class="ds-tab" type="button" data-view="month" aria-pressed="false">Month</button></div></div>
+        <div class="ds-calendar-grid" data-calendar aria-label="November 2026"></div>
+        <div class="ds-calendar-empty" aria-live="polite"><p data-selected-day>Tuesday, November 17</p><p class="ds-muted">No sessions scheduled for this day.</p></div>
+      </section>
+    </div>
+    <section class="ds-panel">
+      <h3>Semester at a glance</h3>
+      <div class="ds-totals">
+        <div class="ds-total"><div class="ds-total-number">64</div><div class="ds-total-label">Enrolled students</div><div class="ds-total-context">All programs</div></div>
+        <div class="ds-total"><div class="ds-total-number">1</div><div class="ds-total-label">Active teams</div></div>
+        <div class="ds-total"><div class="ds-total-number">0</div><div class="ds-total-label">Scheduled defenses</div></div>
+        <div class="ds-total"><div class="ds-total-number">11</div><div class="ds-total-label">Staff members</div><div class="ds-total-context">Department-wide</div></div>
+      </div>
+    </section>
+    <details class="ds-panel ds-history"><summary>Recent activity</summary><ul><li>Defense stage created</li><li>Capstone sections reconciled</li><li>Active semester changed</li></ul></details>
+    <p class="ds-destination" data-route hidden aria-live="polite"></p>
+  </main>
+  <script>
+    (()=>{
+      const root=document.getElementById('defensys-overview-concept');
+      const state={spacing:16,view:'week',day:17};
+      const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      function calendar(){
+        const grid=root.querySelector('[data-calendar]');
+        grid.replaceChildren();
+        root.querySelector('[data-range]').textContent=state.view==='week'?'November 16–22':'November 2026';
+        const dates=state.view==='week'?Array.from({length:7},(_,i)=>i+16):Array.from({length:30},(_,i)=>i+1);
+        if(state.view==='month'){
+          for(const name of ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']){const label=document.createElement('div');label.className='ds-day-name';label.style.textAlign='center';label.textContent=name;grid.append(label);}
+          for(let i=0;i<6;i++){const blank=document.createElement('span');blank.setAttribute('aria-hidden','true');grid.append(blank);}
+        }
+        for(const day of dates){
+          const wrapper=document.createElement('div');wrapper.className='ds-day';
+          if(state.view==='week'){const label=document.createElement('div');label.className='ds-day-name';label.textContent=days[new Date(2026,10,day).getDay()];wrapper.append(label);}
+          const button=document.createElement('button');button.type='button';button.className='ds-date';button.textContent=String(day);button.setAttribute('aria-label',`November ${day}, 2026`);button.setAttribute('aria-pressed',String(day===state.day));
+          button.addEventListener('click',()=>{state.day=day;calendar();});wrapper.append(button);grid.append(wrapper);
+        }
+        root.querySelector('[data-selected-day]').textContent=new Date(2026,10,state.day).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+        for(const button of root.querySelectorAll('[data-view]'))button.setAttribute('aria-pressed',String(button.dataset.view===state.view));
+      }
+      root.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{state.view=button.dataset.view;calendar();}));
+      root.querySelectorAll('[data-destination]').forEach(button=>button.addEventListener('click',()=>{const route=root.querySelector('[data-route]');route.textContent='Preview: '+button.dataset.destination;route.hidden=false;}));
+      function render(){root.style.setProperty('--ds-gap',`${state.spacing}px`);}
+      calendar();render();
+      if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:render});tweak.addSlider(state,'spacing',{label:'Section spacing',min:12,max:24,step:4,unit:'px'});}
+    })();
+  </script>
+</div>

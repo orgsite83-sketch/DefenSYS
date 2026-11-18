@@ -414,7 +414,7 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
         section_round_id=current.section_round_id, concepts=next_concepts, review_required=True,
         title_workflow_version=current.title_workflow_version,
         policy_snapshot=snapshot)
-    refresh_files(grade.team, stage)
+    # The draft round is private; dissemination activates its existing file slots.
     if grade.team.ready_for_stage == stage.label:
         grade.team.ready_for_stage = None
         grade.team.save(update_fields=['ready_for_stage', 'updated_at'])
@@ -422,8 +422,10 @@ def record_outcome(grade, decisions, *, replacement_required=False, outcome=None
 
 @transaction.atomic
 def save_titles(team, stage, concepts, *, actor=None, draft=False, confirm_key=None):
+    from grading.grades.student_visibility import require_student_release
     from student_teams.models import StudentTeam
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
+    require_student_release(actor, team, stage)
     if actor and getattr(actor, 'role', '') == 'student' and team.leader_id != actor.pk:
         raise PermissionError('Only this team’s leader can edit its concept titles.')
     if draft and not title_context_is_open(team, stage):
@@ -586,6 +588,11 @@ def payload(team, stage, *, history=True, actor=None):
     rounds = list(ConceptRound.objects.filter(team=team, **context_fields(stage),
         project_version=team.project_version).order_by('-number', '-pk'))
     current = rounds[0] if rounds else None
+    if getattr(actor, 'role', None) == 'student':
+        from grading.grades.dissemination import pending_for
+        pending = pending_for(team, stage)
+        if pending:
+            current = next((r for r in rounds if r.schedule_id == pending.schedule_id), current)
     from repository.section_concepts.models import SharedModuleRedefenseDecision
     directions = {d.source_round_id: {
         'direction': d.direction,
@@ -649,6 +656,9 @@ def payload(team, stage, *, history=True, actor=None):
         status = 'shared_setup_pending'
     from .pit_decisions import decision_payload
     data = {'enabled': True, 'config': policy, 'round': current.number if current else 1,
+        'schedule_id': current.schedule_id if current else None,
+        'instruction_schedule_id': next((r.schedule_id for r in rounds if r.schedule_id and r.number < current.number), None)
+            if current and not current.schedule_id else None,
         'selection_mode': 'shared_module' if shared_policy else 'team_concept',
         'shared_selection': ({'selected_key': shared_round.selected_key,
             'system_title': next((c.get('system_title', '') for c in concepts
@@ -700,7 +710,7 @@ def payload(team, stage, *, history=True, actor=None):
             'remarks': r.remarks, 'concepts': r.concepts, 'documents': r.documents_snapshot,
             'override_reason': r.override_reason} for r in rounds if r.schedule_id or r.verdict] if history else []}
     from grading.grades.student_visibility import student_assessment_payload
-    return student_assessment_payload(data, actor)
+    return student_assessment_payload(data, actor, team=team, stage=stage)
 
 
 

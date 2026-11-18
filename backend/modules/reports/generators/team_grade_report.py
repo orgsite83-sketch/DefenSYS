@@ -125,7 +125,7 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
             if not name:
                 name = f"Panelist {len(distinct_panelists) + 1}"
 
-            scores = list(sub.criterion_scores.all())
+            scores = list(sub.score_rows)
             from grading.grades.services import panelist_percentage_from_criterion_scores
             pct = panelist_percentage_from_criterion_scores(scores)
 
@@ -201,7 +201,7 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
                 scores = [score for submission in submissions
                           if (submission.panelist_id, submission.guest_code_id) == pan['pan_key']
                           and submission.student_id in (None, student.id)
-                          for score in submission.criterion_scores.all()]
+                          for score in submission.score_rows]
                 from grading.grades.services import panelist_percentage_from_criterion_scores
                 p_score = panelist_percentage_from_criterion_scores(scores)
             else:
@@ -276,8 +276,8 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
     criteria_map = {}
     for sub in submissions:
         pan_key = (sub.panelist_id, sub.guest_code_id)
-        for score in sub.criterion_scores.all():
-            c_name = score.criterion_name_snapshot
+        for score in sub.score_rows:
+            c_name = f'{score.section_snapshot}: {score.criterion_name_snapshot}' if score.section_snapshot else score.criterion_name_snapshot
             if c_name not in criteria_map:
                 criteria_map[c_name] = {
                     'max_pts': score.max_score_snapshot,
@@ -301,7 +301,7 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
 
         for c_name, c_data in criteria_map.items():
             row = [
-                Paragraph(c_name, styles['TableCell']),
+                Paragraph(escape(c_name), styles['TableCell']),
                 Paragraph(f"{c_data['max_pts']:.1f}", styles['TableCellCenter']),
             ]
             tot_normal = Decimal('0.00')

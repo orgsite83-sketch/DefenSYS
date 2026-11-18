@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../../../utils/rubric_scoring.dart';
 import '../../../models/team_workflow_status.dart';
 
 class TeamMember {
@@ -58,7 +60,9 @@ class TeamData {
   final String scheduleStatus;
   List<Map<String, dynamic>> draftSubmissions;
   String? draftSavedAt;
+  String? draftVersion;
   bool hasUnsavedChanges = false;
+  bool hasSubmissionMismatch = false;
   bool isPosted;
   List<Map<String, dynamic>> submittedSubmissions;
   final List<Map<String, dynamic>> defenseMaterials;
@@ -124,6 +128,7 @@ class TeamData {
     this.scheduleStatus = 'scheduled',
     this.draftSubmissions = const [],
     this.draftSavedAt,
+    this.draftVersion,
     this.isChair = false,
     this.verdict,
     this.verdictRemarks,
@@ -432,6 +437,7 @@ class TeamData {
   String get pitDecisionReviewToken =>
       conceptWorkflow?['decision_review_token']?.toString() ?? '';
   bool get panelWorkFinished {
+    if (hasSubmissionMismatch) return false;
     if (isCompleted) return true;
     if (needsChairDecision) return false;
     if (!isPosted) return false;
@@ -485,6 +491,7 @@ class TeamData {
             (previous.draftSavedAt != null && draftSavedAt == null))) {
       draftSubmissions = previous.draftSubmissions;
       draftSavedAt = previous.draftSavedAt;
+      draftVersion = previous.draftVersion;
       hasUnsavedChanges = previous.hasUnsavedChanges;
     }
   }
@@ -492,9 +499,11 @@ class TeamData {
   bool get hasDraft => draftSubmissions.any(
     (s) =>
         (s['criteria_scores'] as List? ?? []).isNotEmpty ||
+        (s['section_scores'] as List? ?? []).isNotEmpty ||
         (s['remarks']?.toString().trim() ?? '').isNotEmpty,
   );
   String get evaluationStatus {
+    if (hasSubmissionMismatch) return 'Incomplete';
     if (isCompleted) return 'Completed';
     if (isPosted) return 'Submitted';
     if (isLockedByDate && scheduledDate != null) return 'Upcoming';
@@ -519,7 +528,11 @@ class TeamData {
 
   /// Counts valid answers for the configured target, including deliberate zero.
   /// Team criteria are counted once; individual criteria once per member.
-  EvaluationProgress progressFor(String? studentId, {String? conceptKey}) {
+  EvaluationProgress progressFor(
+    String? studentId, {
+    String? conceptKey,
+    List<Map<String, dynamic>>? answers,
+  }) {
     final definitions = (panelRubric?['criteria'] as List? ?? [])
         .whereType<Map>()
         .where((criterion) {
@@ -531,17 +544,22 @@ class TeamData {
         .toList();
     if (assessmentConcepts.isNotEmpty && conceptKey == null) {
       final results = assessmentConcepts.map(
-        (c) => progressFor(studentId, conceptKey: c['key'].toString()),
+        (c) => progressFor(
+          studentId,
+          conceptKey: c['key'].toString(),
+          answers: answers,
+        ),
       );
       return EvaluationProgress(
         results.fold(0, (n, r) => n + r.entered),
         results.fold(0, (n, r) => n + r.required),
       );
     }
-    final answers = isPosted
+    answers ??= isPosted
         ? submittedSubmissions
         : [...draftSubmissions, ...submittedSubmissions];
     final scores = <String, num>{};
+    final sectionScores = <String, double>{};
     for (final submission in answers) {
       if (submission['student_id']?.toString() != studentId) continue;
       if (conceptKey != null && submission['concept_key'] != conceptKey) {
@@ -552,6 +570,58 @@ class TeamData {
         final score = item['score'];
         if (score is num) scores[item['criterion_id'].toString()] = score;
       }
+      for (final item
+          in (submission['section_scores'] as List? ?? []).whereType<Map>()) {
+        final score = double.tryParse(item['score'].toString());
+        if (score != null) {
+          sectionScores[item['section_key'].toString()] = score;
+        }
+      }
+    }
+    final sections = (panelRubric?['scoring_sections'] as List? ?? [])
+        .whereType<Map>()
+        .where(
+          (s) =>
+              s['target_type'] == (studentId == null ? 'team' : 'individual'),
+        )
+        .toList();
+    if (sections.isNotEmpty) {
+      final covered = <String>{};
+      var entered = 0;
+      for (final section in sections) {
+        final ids = (section['criterion_ids'] as List)
+            .map((id) => id.toString())
+            .toSet();
+        covered.addAll(ids);
+        final score = sectionScores[section['section_key']];
+        final maximum = double.parse(section['max_score'].toString());
+        final validOverall =
+            score != null && score.isFinite && score >= 0 && score <= maximum;
+        final sectionCriteria = definitions
+            .where((c) => ids.contains(c['id'].toString()))
+            .toList();
+        final completeCriteria =
+            sectionCriteria.isNotEmpty &&
+            sectionCriteria.every((c) {
+              final mark = scores[c['id'].toString()];
+              return mark != null &&
+                  mark.isFinite &&
+                  mark >= 0 &&
+                  mark <= (c['max_score'] as num);
+            });
+        if (validOverall || completeCriteria) entered++;
+      }
+      final remaining = definitions
+          .where((c) => !covered.contains(c['id'].toString()))
+          .toList();
+      entered += remaining.where((c) {
+        final score = scores[c['id'].toString()];
+        return score != null &&
+            score.isFinite &&
+            score >= 0 &&
+            score <= (c['max_score'] as num);
+      }).length;
+      return EvaluationProgress(entered, sections.length + remaining.length);
     }
     final entered = definitions.where((criterion) {
       final score = scores[criterion['id'].toString()];
@@ -561,17 +631,37 @@ class TeamData {
     return EvaluationProgress(entered, definitions.length);
   }
 
-  EvaluationProgress get evaluationProgress {
-    final team = progressFor(null);
+  EvaluationProgress get evaluationProgress => _evaluationProgress();
+
+  EvaluationProgress _evaluationProgress([
+    List<Map<String, dynamic>>? answers,
+  ]) {
+    final team = progressFor(null, answers: answers);
     final individuals = targetType == 'team'
         ? <EvaluationProgress>[]
-        : memberDetails.map((member) => progressFor(member.id));
+        : memberDetails.map(
+            (member) => progressFor(member.id, answers: answers),
+          );
     return EvaluationProgress(
       team.entered +
           individuals.fold(0, (sum, progress) => sum + progress.entered),
       team.required +
           individuals.fold(0, (sum, progress) => sum + progress.required),
     );
+  }
+
+  bool submissionIsComplete(List<Map<String, dynamic>> submissions) =>
+      (targetType == 'team' || memberDetails.isNotEmpty) &&
+      _evaluationProgress(submissions).complete;
+
+  /// A submitted flag cannot hide members missing from the persisted payload.
+  void reconcileServerSubmission() {
+    if (isPosted &&
+        panelRubric != null &&
+        !submissionIsComplete(submittedSubmissions)) {
+      isPosted = false;
+      hasSubmissionMismatch = true;
+    }
   }
 
   EvaluationProgress progressForConcept(String key) {
@@ -657,6 +747,104 @@ class TeamData {
   }
 }
 
+/// Compare a request with its server acknowledgement independently of JSON key
+/// order, optional empty fields, and integer versus decimal score encoding.
+String evaluationSnapshot(List<Map<String, dynamic>> submissions) {
+  final rows =
+      submissions.map((row) {
+        final criteria =
+            (row['criteria_scores'] as List? ?? [])
+                .whereType<Map>()
+                .map(
+                  (score) => <String, dynamic>{
+                    'criterion_id': score['criterion_id'].toString(),
+                    'score': double.tryParse(score['score'].toString()),
+                  },
+                )
+                .toList()
+              ..sort(
+                (a, b) => a['criterion_id'].toString().compareTo(
+                  b['criterion_id'].toString(),
+                ),
+              );
+        final sections =
+            (row['section_scores'] as List? ?? [])
+                .whereType<Map>()
+                .map(
+                  (score) => <String, dynamic>{
+                    'section_key': score['section_key'].toString(),
+                    'score': double.tryParse(score['score'].toString()),
+                  },
+                )
+                .toList()
+              ..sort(
+                (a, b) => a['section_key'].toString().compareTo(
+                  b['section_key'].toString(),
+                ),
+              );
+        return <String, dynamic>{
+          'student_id': row['student_id']?.toString(),
+          'concept_key': row['concept_key'] ?? '',
+          'criteria_scores': criteria,
+          'section_scores': sections,
+          'remarks': row['remarks'] ?? '',
+        };
+      }).toList()..sort(
+        (a, b) => '${a['concept_key']}:${a['student_id']}'.compareTo(
+          '${b['concept_key']}:${b['student_id']}',
+        ),
+      );
+  return jsonEncode(rows);
+}
+
+class SectionScore {
+  SectionScore(this.key, this.name, this.maximum, this.weight);
+  final String key, name;
+  final double maximum, weight;
+  double? score;
+  bool usingOverall = false;
+  bool get isScored =>
+      score != null && score!.isFinite && score! >= 0 && score! <= maximum;
+}
+
+bool criterionCovered(Criterion criterion) =>
+    criterion.sectionScore?.usingOverall == true
+    ? criterion.sectionScore!.isScored
+    : criterion.isScored;
+
+List<RubricScore> criterionScoreRows(List<Criterion> criteria) => [
+  for (final c in criteria.where((c) => c.sectionScore?.usingOverall != true))
+    RubricScore(c.score ?? 0, c.maxScore, c.weight),
+  for (final s
+      in criteria
+          .map((c) => c.sectionScore)
+          .whereType<SectionScore>()
+          .toSet()
+          .where((s) => s.usingOverall))
+    RubricScore(s.score ?? 0, s.maximum, s.weight),
+];
+
+EvaluationProgress criteriaProgress(List<Criterion> criteria) {
+  final sections = criteria
+      .map((c) => c.sectionScore)
+      .whereType<SectionScore>()
+      .toSet();
+  final unsectioned = criteria.where((c) => c.sectionScore == null).toList();
+  final entered = sections
+      .where(
+        (s) => s.usingOverall
+            ? s.isScored
+            : criteria
+                  .where((c) => identical(c.sectionScore, s))
+                  .every((c) => c.isScored),
+      )
+      .length;
+  return EvaluationProgress(
+    entered + unsectioned.where((c) => c.isScored).length,
+    sections.length + unsectioned.length,
+  );
+}
+
 class Criterion {
   final int? id;
   final String section;
@@ -665,6 +853,7 @@ class Criterion {
   final double? weight;
   final String description;
   double? score;
+  SectionScore? sectionScore;
   Criterion(
     this.name,
     this.maxScore, {

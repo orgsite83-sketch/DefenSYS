@@ -55,7 +55,8 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
       : {
           for (final key in ['panel_score', 'adviser_score', 'peer_score'])
             if (_grade[key] != null &&
-                (_grade['panel_only_evaluation'] != true || key == 'panel_score') &&
+                (_grade['panel_only_evaluation'] != true ||
+                    key == 'panel_score') &&
                 (key != 'adviser_score' ||
                     _grade['adviser_grading_enabled'] == true) &&
                 (key != 'panel_score' || _maps(_details?['scores']).isEmpty))
@@ -180,7 +181,10 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
       };
     }
     return {
-      'criterion': {'id': _row!['id'], 'score': _score.text.trim()},
+      _row!['score_kind'] == 'section' ? 'section' : 'criterion': {
+        'id': _row!['score_id'] ?? _row!['id'],
+        'score': _score.text.trim(),
+      },
     };
   }
 
@@ -440,7 +444,7 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
                   items: [
                     if (!_hasPanelOverride)
                       DefensysMenuItem(
-                        label: 'Correct a criterion score',
+                        label: 'Correct a recorded score',
                         icon: LucideIcons.pencil,
                         onPressed: () => setState(() => _setMode('criterion')),
                       ),
@@ -505,7 +509,7 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
                   ? 'Choose a panelist first'
                   : _student == null
                   ? 'Choose a student first'
-                  : 'Choose the criterion to correct',
+                  : 'Choose the score to correct',
               enabled: !_busy && _studentRows.isNotEmpty,
               onChanged: (value) => setState(() {
                 _rowId = value;

@@ -48,7 +48,7 @@ def assessment_panel_submissions(grade, *, official=True):
             if key is None:
                 return rows.none()
             rows = rows.filter(concept_key=key)
-    return rows.select_related('panelist', 'student').prefetch_related('criterion_scores')
+    return rows.select_related('panelist', 'student').prefetch_related('criterion_scores', 'section_scores')
 
 
 def summarize_grade_records(grade_records):

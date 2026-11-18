@@ -15,6 +15,12 @@ class DefenseSummaryStatus {
     Map? titleReview,
     bool titleAccepted = false,
   }) {
+    if (progress == 'awaiting_release') {
+      return const DefenseSummaryStatus(
+        'Awaiting official release',
+        WorkflowStatusTone.neutral,
+      );
+    }
     if (verdict == 'approved') {
       return DefenseSummaryStatus(
         concept ? 'Concept approved' : 'Approved',

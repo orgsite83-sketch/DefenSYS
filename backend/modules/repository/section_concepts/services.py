@@ -638,6 +638,10 @@ def confirm_system_title(project, actor, key, title=None):
 def upload(project, actor, key, file, *, purpose='proposal'):
     require_active(project)
     round = locked_round(project)
+    if getattr(actor, 'role', None) == 'student':
+        from grading.grades.student_visibility import require_student_release
+        for link in active_links(project).filter(team__memberships__student=actor):
+            require_student_release(actor, link.team, project.context)
     if purpose not in ('proposal', 'final'):
         raise ValidationError('Choose a proposal or approved concept paper.')
     if purpose == 'final':
@@ -1302,6 +1306,7 @@ def payload(project, actor):
             'module_assessment_reason': assessment_reason,
             'module_outcome_review_token': module_token(current),
             'verdict': current.verdict if current else '',
+            'schedule_id': current.schedule_id if current else None,
             'can_issue_verdict': bool(not automatic and not project.pit_event_config_id and can_write and round.selected_key and current and current.schedule_id and not current.verdict and (
                 admin(actor) or (getattr(actor, 'role', '') == 'faculty' and current.schedule.panel_assignments.filter(panelist=actor, is_chair=True).exists()))),
             **pit_flags,
@@ -1403,4 +1408,7 @@ def payload(project, actor):
         'history': [{'id': r.pk, 'round': r.number, 'verdict': r.verdict, 'selected_key': r.selected_key,
             'remarks': r.remarks, 'snapshot': r.decision_snapshot} for r in project.rounds.exclude(pk=round.pk)]}
     from grading.grades.student_visibility import student_assessment_payload
+    if getattr(actor, 'role', None) == 'student':
+        own_link = active_links(project).filter(team__memberships__student=actor).first()
+        return student_assessment_payload(data, actor, team=own_link.team if own_link else None, stage=project.context)
     return student_assessment_payload(data, actor)

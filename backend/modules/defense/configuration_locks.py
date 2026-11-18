@@ -82,13 +82,14 @@ def grade_configuration_lock(context, semester=None):
     for relation in ('breakdowns', 'peer_evaluation_submissions', 'attempt_history'):
         scored |= Q(**{f'{relation}__isnull': False})
     scored |= Q(panelist_submissions__criterion_scores__isnull=False)
+    scored |= Q(panelist_submissions__section_scores__isnull=False)
     if grades.filter(scored).exists():
         return True, 'Configuration is locked because this stage has saved evaluation scores or grade history.'
     drafts = PanelistEvaluationDraft.objects.filter(schedule__in=schedules).values_list('submissions', flat=True)
     for submissions in drafts:
         if any(score.get('score') not in (None, '')
                for item in submissions if isinstance(item, dict)
-               for score in item.get('criteria_scores', []) if isinstance(score, dict)):
+               for score in [*item.get('criteria_scores', []), *item.get('section_scores', [])] if isinstance(score, dict)):
             return True, 'Configuration is locked because an evaluator has saved draft scores.'
     return False, None
 

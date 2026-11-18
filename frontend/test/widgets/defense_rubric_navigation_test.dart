@@ -286,7 +286,7 @@ void main() {
           expect(find.byType(RubricEngineScreen), findsOneWidget);
           expect(find.byType(Dialog), findsNothing);
 
-          await tester.tap(find.text('Defense Stages Setup'));
+          await tester.tap(find.text('Defense Stages'));
           await tester.pumpAndSettle();
           expect(find.byType(DefenseStagesScreen), findsOneWidget);
           expect(find.byType(RubricEngineScreen), findsNothing);
@@ -335,7 +335,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(RubricEngineScreen), findsOneWidget);
 
-        await tester.tap(find.text('Defense Stages Setup'));
+        await tester.tap(find.text('Defense Stages'));
         await tester.pumpAndSettle();
         expect(find.byType(DefenseStageEditorScreen), findsOneWidget);
         expect(
@@ -432,7 +432,7 @@ void main() {
     stages.gradingConfig = newAssignments;
     container.read(dataRefreshProvider.notifier).markChanged([DataArea.defenseStages,]);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Defense Stages Setup'));
+    await tester.tap(find.text('Defense Stages'));
     await tester.pumpAndSettle();
     for (final role in ['panel', 'adviser', 'peer']) {
       final id = newAssignments['${role}_rubric_id'];

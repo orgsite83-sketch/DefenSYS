@@ -578,7 +578,13 @@ class AdminDefenseStageEditorRoute extends ConsumerWidget {
           GoRouterState.of(context).uri.queryParameters['read_only'] == 'true',
       onBack: () {
         ref.read(unsavedChangesProvider.notifier).setDirty(false);
-        context.pop();
+        if (GoRouterState.of(context).uri.queryParameters['fromOverview'] == '1') {
+          context.go(AdminRoutes.overview);
+        } else if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(AdminRoutes.defenseStages);
+        }
       },
     );
   }

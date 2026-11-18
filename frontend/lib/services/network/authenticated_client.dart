@@ -28,6 +28,7 @@ final authenticatedHttpClientProvider = Provider<AuthenticatedHttpClient>((
   ref.listen(dataRefreshProvider, (previous, next) {
     if (const [
       DataArea.repository,
+      DataArea.grades,
       DataArea.deliverables,
       DataArea.weeklyReports,
       DataArea.documenter,

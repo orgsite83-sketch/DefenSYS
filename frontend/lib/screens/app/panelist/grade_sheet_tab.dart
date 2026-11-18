@@ -57,6 +57,10 @@ class GradeSheetTab extends ConsumerStatefulWidget {
 }
 
 class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
+  static const draftRequestTimeout = Duration(seconds: 20);
+  static const submissionRequestTimeout = Duration(seconds: 30);
+  static const _statusRequestTimeout = Duration(seconds: 10);
+  final _draftAttempts = <String, Set<String>>{};
   List<Criterion> _criteria = [];
   TeamData? _lastTeam;
   int _formGeneration = 0;
@@ -68,6 +72,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   bool _showIndividualCriteria = false;
   String? _verifiedTeamIdentity;
   String? _draftSaveError;
+  String? _submissionError;
   Timer? _autoSaveTimer;
   Future<bool>? _draftSaveFuture;
   final _scrollController = ScrollController();
@@ -78,6 +83,101 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   final _evaluationKey = GlobalKey();
   final _criterionKeys = <Criterion, GlobalKey>{};
   final _scoreInputKeys = <Criterion, GlobalKey<EvaluationScoreInputState>>{};
+  final _sectionInputKeys =
+      <SectionScore, GlobalKey<EvaluationScoreInputState>>{};
+
+  Future<bool> _commitSectionInputs() async {
+    for (final key in _sectionInputKeys.values.toList()) {
+      if (key.currentState != null && !await key.currentState!.commit()) {
+        return false;
+      }
+    }
+    return mounted;
+  }
+
+  Future<bool> _replaceSectionScore(
+    SectionScore section,
+    List<Criterion> criteria,
+    double? value, {
+    bool byCriteria = false,
+  }) async {
+    if (!mounted || _lastTeam?.gradingAvailable != true) return false;
+    final team = _lastTeam!;
+    final identity = _identity(team);
+    final generation = _formGeneration;
+    final hasCriteria = criteria.any(
+      (c) =>
+          c.score != null ||
+          _scoreInputKeys[c]?.currentState?.hasEnteredText == true,
+    );
+    if (value == null && !section.usingOverall && !byCriteria) {
+      _sectionInputKeys[section]?.currentState?.restoreValue();
+      return true;
+    }
+    final deleting = byCriteria
+        ? section.score != null
+        : !section.usingOverall && hasCriteria;
+    if (deleting) {
+      final student =
+          _showingStudents && _selectedStudentIndex < team.memberDetails.length
+          ? ' for ${team.memberDetails[_selectedStudentIndex].name}'
+          : '';
+      final score = formatEvaluationScore(byCriteria ? section.score! : value!);
+      final maximum = formatEvaluationScore(section.maximum);
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => DefensysShadcnScope(
+          child: ShadDialog(
+            title: Text(
+              byCriteria ? 'Score by criteria?' : 'Use overall section score?',
+            ),
+            description: Text(
+              byCriteria
+                  ? 'This will clear the overall score of $score/$maximum for ${section.name}$student. Enter a score for each criterion to complete this section.'
+                  : 'This will clear the criterion scores you entered for ${section.name}$student and use $score/$maximum as the section score.',
+            ),
+            actions: [
+              ShadButton.outline(
+                autofocus: true,
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(
+                  byCriteria ? 'Keep overall score' : 'Keep criterion scores',
+                ),
+              ),
+              ShadButton(
+                backgroundColor: DefensysTokens.maroonOf(context),
+                foregroundColor: Colors.white,
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(
+                  byCriteria ? 'Score by criteria' : 'Use overall score',
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (accepted != true) {
+        if (mounted) _scheduleAutoSave(team);
+        return false;
+      }
+    }
+    if (!mounted ||
+        _lastTeam == null ||
+        _identity(_lastTeam!) != identity ||
+        generation != _formGeneration) {
+      return false;
+    }
+    setState(() {
+      for (final criterion in criteria) {
+        criterion.score = null;
+        _scoreInputKeys.remove(criterion);
+      }
+      section.usingOverall = !byCriteria;
+      section.score = byCriteria ? null : value;
+    });
+    _rememberDraft();
+    return true;
+  }
 
   final Map<String, List<Criterion>> _studentCriteria = {};
   final Map<String, TextEditingController> _studentRemarksControllers = {};
@@ -144,6 +244,19 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     String? filterTargetType,
   }) {
     final list = rubric['criteria'] as List? ?? [];
+    final sections = <String, SectionScore>{};
+    for (final definition
+        in (rubric['scoring_sections'] as List? ?? []).whereType<Map>()) {
+      final section = SectionScore(
+        definition['section_key'].toString(),
+        definition['name'].toString(),
+        rubricWeight(definition['max_score'])!,
+        rubricWeight(definition['weight'])!,
+      );
+      for (final id in definition['criterion_ids'] as List) {
+        sections[id.toString()] = section;
+      }
+    }
     return list
         .where((c) {
           if (filterTargetType == null) return true;
@@ -151,7 +264,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           return t == filterTargetType;
         })
         .map((c) {
-          return Criterion(
+          final criterion = Criterion(
             (c['name'] ?? 'Criterion').toString(),
             ((c['max_score'] as num?) ?? 10).toDouble(),
             id: int.tryParse(c['id']?.toString() ?? ''),
@@ -159,6 +272,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             weight: rubricWeight(c['weight']),
             description: (c['description'] ?? '').toString(),
           );
+          criterion.sectionScore = sections[c['id'].toString()];
+          return criterion;
         })
         .toList();
   }
@@ -202,11 +317,13 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           ? 0
           : refreshedMemberIndex;
       _draftSaveError = null;
+      _submissionError = null;
       if (!retainTarget) _showIndividualCriteria = team.isIndividualTarget;
 
       _criteria = [];
       _criterionKeys.clear();
       _scoreInputKeys.clear();
+      _sectionInputKeys.clear();
       _studentCriteria.clear();
       for (var controller in _studentRemarksControllers.values) {
         controller.dispose();
@@ -295,6 +412,24 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       final rawStudentId = sub['student_id']?.toString();
       final remarks = (sub['remarks'] ?? '').toString();
       final scoresList = sub['criteria_scores'] as List? ?? [];
+      final sectionValues = {
+        for (final s in (sub['section_scores'] as List? ?? []).whereType<Map>())
+          s['section_key'].toString(): rubricWeight(s['score']),
+      };
+      final targetCriteria =
+          rawStudentId == null || rawStudentId == 'null' || rawStudentId.isEmpty
+          ? _criteria
+          : _studentCriteria[rawStudentId] ?? <Criterion>[];
+      for (final section
+          in targetCriteria
+              .map((c) => c.sectionScore)
+              .whereType<SectionScore>()
+              .toSet()) {
+        if (sectionValues.containsKey(section.key)) {
+          section.usingOverall = true;
+          section.score = sectionValues[section.key];
+        }
+      }
       final scoreMap = <int, double>{};
       for (final s in scoresList) {
         if (s is Map) {
@@ -345,26 +480,44 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       return team.evaluationProgress.complete;
     }
     final criteria = _requiredCriteria(team);
-    return criteria.isNotEmpty && criteria.every((c) => c.isScored);
+    return criteria.isNotEmpty && criteria.every(criterionCovered);
   }
 
   double _panelSubmissionPercentage(List<Criterion> criteria) {
-    return rubricPercentage(
-          criteria.map(
-            (criterion) => RubricScore(
-              criterion.score ?? 0,
-              criterion.maxScore,
-              criterion.weight,
-            ),
-          ),
-        ) ??
+    return rubricPercentage([
+          ...criteria
+              .where((c) => c.sectionScore?.usingOverall != true)
+              .map(
+                (criterion) => RubricScore(
+                  criterion.score ?? 0,
+                  criterion.maxScore,
+                  criterion.weight,
+                ),
+              ),
+          ...criteria
+              .map((c) => c.sectionScore)
+              .whereType<SectionScore>()
+              .toSet()
+              .where((s) => s.usingOverall)
+              .map((s) => RubricScore(s.score ?? 0, s.maximum, s.weight)),
+        ]) ??
         0;
   }
 
   List<Map<String, dynamic>> _evaluationSubmissions(TeamData team) {
     List<Map<String, dynamic>> scores(List<Criterion> criteria) => [
       for (final c in criteria)
-        if (c.isScored) {'criterion_id': c.id, 'score': c.score},
+        if (c.sectionScore?.usingOverall != true && c.isScored)
+          {'criterion_id': c.id, 'score': c.score},
+    ];
+    List<Map<String, dynamic>> sections(List<Criterion> criteria) => [
+      for (final s
+          in criteria
+              .map((c) => c.sectionScore)
+              .whereType<SectionScore>()
+              .toSet())
+        if (s.usingOverall && s.isScored)
+          {'section_key': s.key, 'score': s.score},
     ];
     return [
       if (team.assessmentConcepts.isNotEmpty)
@@ -376,6 +529,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           if (team.assessmentConcepts.isNotEmpty)
             'concept_key': _activeConceptKey,
           'criteria_scores': scores(_criteria),
+          'section_scores': sections(_criteria),
           'remarks': _teamRemarksController.text,
         },
       if (team.targetType != 'team')
@@ -386,6 +540,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               if (team.assessmentConcepts.isNotEmpty)
                 'concept_key': _activeConceptKey,
               'criteria_scores': scores(_studentCriteria[member.id]!),
+              'section_scores': sections(_studentCriteria[member.id]!),
               'remarks': _studentRemarksControllers[member.id]?.text ?? '',
             },
     ];
@@ -397,6 +552,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     team.draftSubmissions = _evaluationSubmissions(team);
     team.hasUnsavedChanges = true;
     _draftSaveError = null;
+    _submissionError = null;
     _scheduleAutoSave(team);
     widget.onEvaluationChanged?.call();
   }
@@ -422,13 +578,26 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   /// Used by both the chooser and dashboard navigation. A failed save keeps the
   /// current sheet open; edits made during an in-flight save require another ACK.
   bool get hasPendingChanges =>
-      _draftSaveFuture != null || _lastTeam?.hasUnsavedChanges == true;
+      _draftSaveFuture != null ||
+      _lastTeam?.hasUnsavedChanges == true ||
+      _sectionInputKeys.values.any(
+        (key) => key.currentState?.hasPendingEdit == true,
+      );
 
-  bool get _hasInvalidScores => _scoreInputKeys.values.any(
-    (key) => key.currentState?.hasInvalidValue == true,
-  );
+  bool get _hasInvalidScores =>
+      _scoreInputKeys.values.any(
+        (key) => key.currentState?.hasInvalidValue == true,
+      ) ||
+      _sectionInputKeys.values.any(
+        (key) =>
+            key.currentState?.hasInvalidValue == true ||
+            key.currentState?.hasPendingEdit == true,
+      );
 
   bool _validateScoreInputs() {
+    for (final key in _sectionInputKeys.values) {
+      if (key.currentState?.validate(requestFocus: true) == false) return false;
+    }
     for (final key in _scoreInputKeys.values) {
       if (key.currentState?.validate(requestFocus: true) == false) return false;
     }
@@ -437,10 +606,13 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Future<bool> savePendingChanges() async {
     _footerActions.hide();
+    final original = _lastTeam;
+    final generation = _formGeneration;
+    if (!await _commitSectionInputs()) return false;
     if (!_validateScoreInputs()) return false;
+    if (original != _lastTeam || generation != _formGeneration) return false;
     _autoSaveTimer?.cancel();
     if (_isSubmittingGrades || _isSubmittingVerdict) return false;
-    final original = _lastTeam;
     if (original == null) return true;
     if (_draftSaveFuture != null && !await _draftSaveFuture!) return false;
     while (mounted && _liveTeam(original).hasUnsavedChanges) {
@@ -457,8 +629,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     }
     if (!team.hasDraft && !team.hasUnsavedChanges) return true;
     // Snapshot the draft owned by this schedule, not the currently displayed form.
-    final submissions = json.decode(json.encode(team.draftSubmissions));
-    final snapshot = json.encode(submissions);
+    final submissions = _submissionRows(
+      json.decode(json.encode(team.draftSubmissions)),
+    );
+    final snapshot = evaluationSnapshot(submissions);
     setState(() {
       _isSavingDraft = true;
       _draftSaveError = null;
@@ -470,7 +644,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Future<bool> _persistDraft(
     TeamData team,
-    dynamic submissions,
+    List<Map<String, dynamic>> submissions,
     String snapshot,
     bool feedback,
   ) async {
@@ -479,35 +653,74 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     try {
       final isGuest = ref.read(authProvider).user?['role'] == 'guest_panelist';
       final path = isGuest ? 'guest-grade-draft/' : 'grade-draft/';
-      final response = await ref
-          .read(authenticatedHttpClientProvider)
-          .post(
-            Uri.parse('${ApiConfig.defenseSchedulesUrl}/$path'),
-            body: json.encode({
-              'schedule_id': team.scheduleId,
-              'evaluation_context': team.evaluationContext,
-              'submissions': submissions,
-            }),
+      final attempts = _draftAttempts.putIfAbsent(_identity(team), () => {});
+      attempts.add(snapshot);
+      for (var retry = 0; retry < 2; retry++) {
+        final response = await ref
+            .read(authenticatedHttpClientProvider)
+            .post(
+              Uri.parse('${ApiConfig.defenseSchedulesUrl}/$path'),
+              body: json.encode({
+                'schedule_id': team.scheduleId,
+                'evaluation_context': team.evaluationContext,
+                'draft_version': _liveTeam(team).draftVersion ?? '',
+                'section_scoring_version': 1,
+                'submissions': submissions,
+              }),
+            )
+            .timeout(draftRequestTimeout);
+        if (!mounted) return false;
+        final data = json.decode(response.body) as Map;
+        final draft = data['draft'] as Map?;
+        if (response.statusCode == 409 &&
+            draft != null &&
+            draft['version'] is String) {
+          final serverSnapshot = evaluationSnapshot(
+            _submissionRows(draft['submissions']),
           );
-      if (!mounted) return false;
-      if (response.statusCode == 200) {
-        final draft = json.decode(response.body)['draft'] as Map;
+          if (attempts.contains(serverSnapshot)) {
+            // Recover our own lost acknowledgement, never overwrite another
+            // tab's different work with a refreshed version token.
+            _liveTeam(team).draftVersion = draft['version'] as String;
+            if (serverSnapshot != snapshot) continue;
+          } else {
+            error = data['detail']?.toString();
+            break;
+          }
+        } else if (response.statusCode != 200) {
+          error = friendlyHttpErrorMessage(response.statusCode, response.body);
+          break;
+        }
+        if (draft == null ||
+            (draft['submissions'] != null &&
+                evaluationSnapshot(_submissionRows(draft['submissions'])) !=
+                    snapshot)) {
+          error =
+              'The saved draft could not be verified. Your changes are still here.';
+          break;
+        }
         final current = _liveTeam(team);
         if (!current.isPosted) {
           setState(() {
             current.draftSavedAt = draft['saved_at']?.toString();
+            current.draftVersion = draft['version']?.toString();
             current.hasUnsavedChanges =
-                json.encode(current.draftSubmissions) != snapshot;
+                evaluationSnapshot(current.draftSubmissions) != snapshot;
           });
         }
         saved = true;
+        _draftAttempts.remove(_identity(team));
         widget.onEvaluationChanged?.call();
         if (feedback) {
           showSuccessToast(context, 'Draft saved. You can continue later.');
         }
-      } else {
-        error = friendlyHttpErrorMessage(response.statusCode, response.body);
+        break;
       }
+      error ??= saved
+          ? null
+          : 'Draft changed while saving. Your changes are still here. Retry save.';
+    } on TimeoutException {
+      error = 'Saving timed out. Your changes are still here. Retry save.';
     } on SessionExpiredException {
       error = 'Sign in again to save your draft. Your changes are still here.';
     } catch (_) {
@@ -527,6 +740,111 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       }
     }
     return saved;
+  }
+
+  List<Map<String, dynamic>> _submissionRows(dynamic value) =>
+      (value as List? ?? [])
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+
+  Future<Map<String, dynamic>> _readEvaluationState(TeamData team) async {
+    final guest = ref.read(authProvider).user?['role'] == 'guest_panelist';
+    final path = guest ? 'guest-grade-draft/' : 'grade-draft/';
+    final client = ref.read(authenticatedHttpClientProvider);
+    final response = await client
+        .get(
+          Uri.parse(
+            '${ApiConfig.defenseSchedulesUrl}/$path',
+          ).replace(queryParameters: {'schedule_id': team.scheduleId}),
+        )
+        .timeout(
+          _statusRequestTimeout,
+          onTimeout: () {
+            client.discardPendingReads();
+            throw TimeoutException('Evaluation status unavailable');
+          },
+        );
+    if (response.statusCode != 200) {
+      throw StateError('Evaluation status unavailable');
+    }
+    return Map<String, dynamic>.from(json.decode(response.body) as Map);
+  }
+
+  bool _applySubmittedState(TeamData original, Map evaluation) {
+    final team = _liveTeam(original);
+    if (evaluation['schedule_id']?.toString() != team.scheduleId ||
+        evaluation['team_id']?.toString() != team.teamId ||
+        evaluation['evaluation_context'] != team.evaluationContext ||
+        evaluation['is_submitted'] != true) {
+      return false;
+    }
+    final rows = _submissionRows(evaluation['submissions']);
+    if (!team.submissionIsComplete(rows)) return false;
+    setState(() {
+      team.isPosted = true;
+      team.hasSubmissionMismatch = false;
+      team.submittedSubmissions = rows;
+      final requiredKeys = team.assessmentConcepts.map((c) => c['key']).toSet();
+      team.draftSubmissions = team.draftSubmissions
+          .where(
+            (row) =>
+                requiredKeys.isNotEmpty &&
+                !requiredKeys.contains(row['concept_key']),
+          )
+          .toList();
+      team.draftSavedAt = null;
+      team.draftVersion = null;
+      team.hasUnsavedChanges = false;
+      _submissionError = null;
+      _draftAttempts.remove(_identity(team));
+      if (_lastTeam != null && _identity(_lastTeam!) == _identity(team)) {
+        final memberIndex = _selectedStudentIndex;
+        _lastTeam = null;
+        _syncRubricForCurrentTeam();
+        _selectedStudentIndex = memberIndex.clamp(
+          0,
+          team.memberDetails.isEmpty ? 0 : team.memberDetails.length - 1,
+        );
+        if (team.usesConceptWorkspace) {
+          _workspaceView = GradingWorkspaceView.outcome;
+        }
+      }
+    });
+    return true;
+  }
+
+  Future<void> _checkSubmissionStatus(TeamData team) async {
+    if (_isSubmittingGrades ||
+        _isNavigatingEvaluation ||
+        _isReviewingGrades ||
+        _isChoosingTeam ||
+        _isSavingDraft) {
+      return;
+    }
+    setState(() => _isSubmittingGrades = true);
+    try {
+      final evaluation = await _readEvaluationState(team);
+      if (!mounted) return;
+      if (_applySubmittedState(team, evaluation)) {
+        widget.onEvaluationChanged?.call();
+        widget.onGradesSubmitted?.call();
+      } else {
+        setState(
+          () => _submissionError =
+              'Submission is not confirmed. Your scores are still here. Review and submit when ready.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _submissionError =
+              'Couldn’t check submission status. Your scores are still here. Try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmittingGrades = false);
+    }
   }
 
   /// Assignments uses this same verification flow rather than directly changing
@@ -561,7 +879,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         widget.teams.isEmpty) {
       return false;
     }
-    if (!_validateScoreInputs()) return false;
+    if (!await _commitSectionInputs() || !_validateScoreInputs()) return false;
+    if (!mounted) return false;
     final current = widget.teams[widget.selectedTeamIndex];
     setState(() => _isChoosingTeam = true);
     try {
@@ -1208,10 +1527,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   Widget _buildEvaluationFooter(TeamData team) {
     final required = _requiredCriteria(team);
     final entered = team.assessmentConcepts.isEmpty
-        ? required.where((criterion) => criterion.isScored).length
+        ? criteriaProgress(required).entered
         : team.evaluationProgress.entered;
     final requiredCount = team.assessmentConcepts.isEmpty
-        ? required.length
+        ? criteriaProgress(required).required
         : team.evaluationProgress.required;
     final complete = _isComplete(team);
     final panelPct = !complete
@@ -1451,13 +1770,34 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               Semantics(
                 liveRegion: true,
                 child: Text(
-                  saveLabel,
+                  '$saveLabel ${_draftSaveError!}',
                   key: const ValueKey('draft-save-state'),
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.error,
                   ),
                 ),
+              ),
+            ],
+            if (_submissionError != null) ...[
+              const SizedBox(height: 6),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  _submissionError!,
+                  key: const ValueKey('evaluation-submit-error'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ),
+              ShadButton.ghost(
+                key: const ValueKey('check-evaluation-submission'),
+                enabled: !busy && !_isSavingDraft,
+                onPressed: () => _checkSubmissionStatus(team),
+                child: const Text('Check submission status'),
               ),
             ],
           ],
@@ -1479,11 +1819,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         _isSubmittingVerdict) {
       return;
     }
-    if (!_validateScoreInputs()) return;
     final identity = _identity(team);
     final generation = _formGeneration;
     setState(() => _isNavigatingEvaluation = true);
     try {
+      if (!await _commitSectionInputs() || !_validateScoreInputs()) return;
       if (!team.isPosted && !await savePendingChanges()) return;
       if (!mounted ||
           _lastTeam == null ||
@@ -1518,7 +1858,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         if (!_showingStudents) {
           final next = team.memberDetails.indexWhere(
             (member) => (_studentCriteria[member.id] ?? []).any(
-              (criterion) => !criterion.isScored,
+              (criterion) => !criterionCovered(criterion),
             ),
           );
           _selectedStudentIndex = next < 0 ? 0 : next;
@@ -1541,7 +1881,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     Criterion? next;
     return _navigateEvaluation(team, () {
       if (team.assessmentConcepts.isNotEmpty &&
-          _requiredCriteria(team).every((c) => c.isScored)) {
+          _requiredCriteria(team).every(criterionCovered)) {
         final missing = team.assessmentConcepts.where((concept) {
           final key = concept['key'].toString();
           if (!team.progressFor(null, conceptKey: key).complete &&
@@ -1559,20 +1899,22 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           _syncRubricForCurrentTeam();
         }
       }
-      if (_criteria.any((criterion) => !criterion.isScored)) {
+      if (_criteria.any((criterion) => !criterionCovered(criterion))) {
         _showIndividualCriteria = false;
-        next = _criteria.where((criterion) => !criterion.isScored).first;
+        next = _criteria
+            .where((criterion) => !criterionCovered(criterion))
+            .first;
       } else {
         final index = team.memberDetails.indexWhere(
           (member) => (_studentCriteria[member.id] ?? []).any(
-            (criterion) => !criterion.isScored,
+            (criterion) => !criterionCovered(criterion),
           ),
         );
         if (index >= 0) {
           _showIndividualCriteria = true;
           _selectedStudentIndex = index;
           next = _studentCriteria[team.memberDetails[index].id]!
-              .where((criterion) => !criterion.isScored)
+              .where((criterion) => !criterionCovered(criterion))
               .first;
         }
       }
@@ -1581,12 +1923,16 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Widget _buildAvailabilityNotice(TeamData team) {
     final upcoming = team.isLockedByDate && team.scheduledDate != null;
-    final title = upcoming
+    final title = team.hasSubmissionMismatch
+        ? 'Evaluation incomplete'
+        : upcoming
         ? 'Upcoming defense'
         : team.gradingAvailable
         ? (team.isToday ? 'Today · Grading available' : 'Grading available')
         : 'Grading unavailable';
-    final message = upcoming
+    final message = team.hasSubmissionMismatch
+        ? 'Some submitted scores are missing. Refresh this evaluation to verify its saved status.'
+        : upcoming
         ? 'Grading opens on ${DateFormat('MMMM d, yyyy').format(team.scheduledDate!)}. Review the materials and rubric below to prepare.'
         : team.gradingAvailable
         ? 'Evaluate when this team presents. The allotted time does not limit grading.'
@@ -1661,7 +2007,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final visible = showStudents && member != null
         ? _studentCriteria[member.id] ?? <Criterion>[]
         : _criteria;
-    final entered = visible.where((criterion) => criterion.isScored).length;
+    final progress = criteriaProgress(visible);
+    final entered = progress.entered;
+    final unit = visible.any((c) => c.sectionScore != null)
+        ? 'sections'
+        : 'criteria';
     final hasSections = visible.any((c) => c.section.trim().isNotEmpty);
     final sectionGroups = _groupCriteriaBySection(visible);
     return ShadCard(
@@ -1734,10 +2084,13 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             EvaluationTargetTabs(
               key: const ValueKey('evaluation-target-tabs'),
               individuals: showStudents,
-              teamEntered: _criteria.where((c) => c.isScored).length,
-              teamRequired: _criteria.length,
+              teamEntered: criteriaProgress(_criteria).entered,
+              teamRequired: criteriaProgress(_criteria).required,
+              unit: _criteria.any((c) => c.sectionScore != null)
+                  ? 'sections'
+                  : 'criteria',
               membersComplete: _studentCriteria.values
-                  .where((cs) => cs.isNotEmpty && cs.every((c) => c.isScored))
+                  .where((cs) => cs.isNotEmpty && cs.every(criterionCovered))
                   .length,
               membersRequired: team.memberDetails.length,
               enabled:
@@ -1756,7 +2109,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           if (showStudents) ...[
             if (_criteria.isEmpty)
               Text(
-                '${_studentCriteria.values.where((cs) => cs.isNotEmpty && cs.every((c) => c.isScored)).length} of ${team.memberDetails.length} members complete',
+                '${_studentCriteria.values.where((cs) => cs.isNotEmpty && cs.every(criterionCovered)).length} of ${team.memberDetails.length} members complete',
                 style: TextStyle(
                   fontSize: 12,
                   color: DefensysTokens.textSecondaryOf(context),
@@ -1792,8 +2145,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             const SizedBox(height: 4),
             Text(
               showStudents && member != null
-                  ? '${member.isLeader ? 'Team leader' : 'Team member'} · $entered of ${visible.length} criteria scored'
-                  : '$entered/${visible.length} scored${visible.isNotEmpty && entered == visible.length ? ' · Scores complete' : ''}',
+                  ? '${member.isLeader ? 'Team leader' : 'Team member'} · $entered of ${progress.required} $unit scored'
+                  : '$entered/${progress.required} scored${progress.complete ? ' · Scores complete' : ''}',
               style: TextStyle(
                 fontSize: 12,
                 color: DefensysTokens.textSecondaryOf(context),
@@ -1810,15 +2163,18 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
               const SizedBox(height: 4),
               Text(
-                '${member.isLeader ? 'Team leader' : 'Team member'} · $entered of ${visible.length} criteria scored · ${sectionGroups.length} ${sectionGroups.length == 1 ? 'section' : 'sections'}',
+                '${member.isLeader ? 'Team leader' : 'Team member'} · $entered of ${progress.required} $unit scored · ${sectionGroups.length} ${sectionGroups.length == 1 ? 'section' : 'sections'}',
                 style: TextStyle(
                   fontSize: 12,
                   color: DefensysTokens.textSecondaryOf(context),
                 ),
               ),
             ] else ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 4,
                 children: [
                   Text(
                     'Team Evaluation',
@@ -1829,11 +2185,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     ),
                   ),
                   Text(
-                    '${sectionGroups.length} ${sectionGroups.length == 1 ? 'section' : 'sections'} · $entered/${visible.length} scored${visible.isNotEmpty && entered == visible.length ? ' · Complete' : ''}',
+                    '${sectionGroups.length} ${sectionGroups.length == 1 ? 'section' : 'sections'} · $entered/${progress.required} scored${progress.complete ? ' · Complete' : ''}',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
-                      color: entered == visible.length && visible.isNotEmpty
+                      color: progress.complete
                           ? const Color(0xFF16A34A)
                           : DefensysTokens.textSecondaryOf(context),
                     ),
@@ -1850,23 +2206,36 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
             ),
           if (hasSections)
-            for (var groupIndex = 0; groupIndex < sectionGroups.length; groupIndex++) ...[
+            for (
+              var groupIndex = 0;
+              groupIndex < sectionGroups.length;
+              groupIndex++
+            ) ...[
               if (sectionGroups[groupIndex].sectionTitle.isNotEmpty)
                 _buildSectionBlock(
                   sectionIndex: groupIndex,
                   sectionTitle: sectionGroups[groupIndex].sectionTitle,
-                  sectionWeight: _sectionWeight(visible, sectionGroups[groupIndex].sectionTitle),
+                  sectionWeight: _sectionWeight(
+                    visible,
+                    sectionGroups[groupIndex].sectionTitle,
+                  ),
                   sectionCriteria: sectionGroups[groupIndex].criteria,
                   locked: locked,
                   allVisibleCriteria: visible,
                 )
               else
-                for (var index = 0; index < sectionGroups[groupIndex].criteria.length; index++)
+                for (
+                  var index = 0;
+                  index < sectionGroups[groupIndex].criteria.length;
+                  index++
+                )
                   _criterionRow(
                     sectionGroups[groupIndex].criteria[index],
                     locked,
                     next: () {
-                      final globalIdx = visible.indexOf(sectionGroups[groupIndex].criteria[index]);
+                      final globalIdx = visible.indexOf(
+                        sectionGroups[groupIndex].criteria[index],
+                      );
                       if (globalIdx >= 0 && globalIdx + 1 < visible.length) {
                         return visible[globalIdx + 1];
                       }
@@ -1931,10 +2300,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         (!team.isPosted && (!team.gradingAvailable || !_isVerified(team)))) {
       return;
     }
-    if (!_validateScoreInputs()) return;
     final identity = _identity(team);
     setState(() => _isReviewingGrades = true);
     try {
+      if (!await _commitSectionInputs() || !_validateScoreInputs()) return;
       if (!team.isPosted && !await savePendingChanges()) return;
       if (!mounted || _lastTeam == null || _identity(_lastTeam!) != identity) {
         return;
@@ -1994,7 +2363,13 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     if (!team.gradingAvailable || !_isComplete(team) || _isSubmittingGrades) {
       return;
     }
-    setState(() => _isSubmittingGrades = true);
+    setState(() {
+      _isSubmittingGrades = true;
+      _submissionError = null;
+    });
+    var confirmed = false;
+    var error =
+        'Submission could not be confirmed. Your scores are still here. Retry or refresh the status.';
     try {
       final isGuest = ref.read(authProvider).user?['role'] == 'guest_panelist';
       final path = isGuest ? 'guest-submit-grades/' : 'submit-grades/';
@@ -2006,50 +2381,49 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               'team_id': int.tryParse(team.teamId) ?? team.teamId,
               'schedule_id': int.tryParse(team.scheduleId) ?? team.scheduleId,
               'evaluation_context': team.evaluationContext,
+              'draft_version': _liveTeam(team).draftVersion ?? '',
+              'section_scoring_version': 1,
               'submissions': submissions,
             }),
-          );
+          )
+          .timeout(submissionRequestTimeout);
       if (!mounted) return;
       if (response.statusCode == 201) {
-        setState(() {
-          team.isPosted = true;
-          team.submittedSubmissions = submissions;
-          final requiredKeys = team.assessmentConcepts
-              .map((c) => c['key'])
-              .toSet();
-          team.draftSubmissions = team.draftSubmissions
-              .where(
-                (row) =>
-                    requiredKeys.isNotEmpty &&
-                    !requiredKeys.contains(row['concept_key']),
-              )
-              .toList();
-          team.draftSavedAt = null;
-          team.hasUnsavedChanges = false;
-          if (team.usesConceptWorkspace) {
-            _workspaceView = GradingWorkspaceView.outcome;
-          }
-        });
-        widget.onEvaluationChanged?.call();
-        widget.onGradesSubmitted?.call();
-        showSuccessToast(context, 'Your grades are submitted and locked.');
+        final evaluation = (json.decode(response.body) as Map)['evaluation'];
+        if (evaluation is Map) {
+          confirmed = _applySubmittedState(team, evaluation);
+        }
       } else {
-        showErrorToast(
-          context,
-          friendlyHttpErrorMessage(response.statusCode, response.body),
-        );
+        error = friendlyHttpErrorMessage(response.statusCode, response.body);
       }
     } on SessionExpiredException {
       // Entered scores remain available if submission did not complete.
-    } catch (e) {
-      if (mounted) {
-        showErrorToast(
-          context,
-          'Grades could not be submitted. Your changes are still here.',
-        );
-      }
+      return;
+    } on TimeoutException {
+      error =
+          'Submission could not be confirmed after a timeout. Your scores are still here. Retry or refresh the status.';
+    } catch (_) {
+      // A connection can fail after the database committed the complete batch.
+      // Recover by reading status; never automatically repeat a final POST.
     } finally {
+      if (mounted && !confirmed) {
+        try {
+          final evaluation = await _readEvaluationState(team);
+          if (mounted) confirmed = _applySubmittedState(team, evaluation);
+        } catch (_) {
+          // Keep the entered form available when status cannot be verified.
+        }
+      }
       if (mounted) setState(() => _isSubmittingGrades = false);
+    }
+    if (!mounted) return;
+    if (confirmed) {
+      widget.onEvaluationChanged?.call();
+      widget.onGradesSubmitted?.call();
+      showSuccessToast(context, 'Your grades are submitted and locked.');
+    } else {
+      setState(() => _submissionError = error);
+      showErrorToast(context, error);
     }
   }
 
@@ -2083,22 +2457,31 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     required bool locked,
     required List<Criterion> allVisibleCriteria,
   }) {
+    final section = sectionCriteria.firstOrNull?.sectionScore;
+    final overall = section?.usingOverall == true;
     final totalCount = sectionCriteria.length;
     final scoredCount = sectionCriteria.where((c) => c.isScored).length;
-    final totalMax =
-        sectionCriteria.fold<double>(0, (sum, c) => sum + c.maxScore);
-    final totalEarned =
-        sectionCriteria.fold<double>(0, (sum, c) => sum + (c.score ?? 0));
-    final isAllScored = sectionCriteria.every((c) => c.isScored);
+    final totalMax = sectionCriteria.fold<double>(
+      0,
+      (sum, c) => sum + c.maxScore,
+    );
+    final totalEarned = overall
+        ? section!.score ?? 0
+        : sectionCriteria.fold<double>(0, (sum, c) => sum + (c.score ?? 0));
+    final isAllScored = sectionCriteria.every(criterionCovered);
 
     // Weights are rubric percentages. Renormalizing the visible target would
     // inflate mixed-rubric contributions beyond the displayed section weight.
-    final contribution = sectionCriteria.fold<double>(
-      0.0,
-      (sum, c) =>
-          sum +
-          (c.maxScore > 0 ? ((c.score ?? 0) / c.maxScore) * (c.weight ?? 0) : 0.0),
-    );
+    final contribution = overall
+        ? totalEarned / totalMax * sectionWeight
+        : sectionCriteria.fold<double>(
+            0.0,
+            (sum, c) =>
+                sum +
+                (c.maxScore > 0
+                    ? ((c.score ?? 0) / c.maxScore) * (c.weight ?? 0)
+                    : 0.0),
+          );
     final rawPercentage = totalMax > 0 ? (totalEarned / totalMax * 100) : 0.0;
 
     return Container(
@@ -2121,9 +2504,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   color: DefensysTokens.maroonOf(context),
                   width: 3.5,
                 ),
-                bottom: BorderSide(
-                  color: DefensysTokens.borderOf(context),
-                ),
+                bottom: BorderSide(color: DefensysTokens.borderOf(context)),
               ),
             ),
             child: Row(
@@ -2138,13 +2519,16 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: DefensysTokens.maroonOf(context)
-                              .withValues(alpha: 0.1),
-                          borderRadius:
-                              BorderRadius.circular(DefensysTokens.radiusSm),
+                          color: DefensysTokens.maroonOf(
+                            context,
+                          ).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(
+                            DefensysTokens.radiusSm,
+                          ),
                           border: Border.all(
-                            color: DefensysTokens.maroonOf(context)
-                                .withValues(alpha: 0.25),
+                            color: DefensysTokens.maroonOf(
+                              context,
+                            ).withValues(alpha: 0.25),
                             width: 1,
                           ),
                         ),
@@ -2162,6 +2546,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                       Flexible(
                         child: Text(
                           sectionTitle,
+                          maxLines: 2,
                           style: DefensysTokens.tableCell.copyWith(
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.2,
@@ -2174,7 +2559,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Row(
+                Flex(
+                  direction: MediaQuery.sizeOf(context).width < 480
+                      ? Axis.vertical
+                      : Axis.horizontal,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (sectionWeight > 0) ...[
@@ -2187,7 +2576,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      SizedBox(
+                        width: 6,
+                        height: MediaQuery.sizeOf(context).width < 480 ? 6 : 0,
+                      ),
                     ],
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -2220,7 +2612,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                             const SizedBox(width: 4),
                           ],
                           Text(
-                            '$scoredCount/$totalCount',
+                            overall
+                                ? (isAllScored ? 'Scored' : 'Unscored')
+                                : '$scoredCount/$totalCount',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
@@ -2242,76 +2636,141 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Column(
               children: [
-                for (var i = 0; i < sectionCriteria.length; i++)
-                  _criterionRow(
-                    sectionCriteria[i],
-                    locked,
-                    showDivider: i < sectionCriteria.length - 1,
-                    next: () {
-                      final globalIdx =
-                          allVisibleCriteria.indexOf(sectionCriteria[i]);
-                      if (globalIdx >= 0 &&
-                          globalIdx + 1 < allVisibleCriteria.length) {
-                        return allVisibleCriteria[globalIdx + 1];
-                      }
-                      return null;
-                    }(),
-                  ),
+                if (overall)
+                  for (final criterion in sectionCriteria)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              criterion.name,
+                              style: DefensysTokens.body.copyWith(
+                                color: DefensysTokens.textPrimaryOf(context),
+                              ),
+                            ),
+                            if (criterion.description.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                criterion.description,
+                                style: DefensysTokens.caption.copyWith(
+                                  color: DefensysTokens.textSecondaryOf(
+                                    context,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    )
+                else
+                  for (var i = 0; i < sectionCriteria.length; i++)
+                    _criterionRow(
+                      sectionCriteria[i],
+                      locked,
+                      showDivider: i < sectionCriteria.length - 1,
+                      next: () {
+                        final globalIdx = allVisibleCriteria.indexOf(
+                          sectionCriteria[i],
+                        );
+                        if (globalIdx >= 0 &&
+                            globalIdx + 1 < allVisibleCriteria.length) {
+                          return allVisibleCriteria[globalIdx + 1];
+                        }
+                        return null;
+                      }(),
+                    ),
               ],
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: DefensysTokens.surfaceHigherOf(context).withValues(alpha: 0.4),
+              color: DefensysTokens.surfaceHigherOf(
+                context,
+              ).withValues(alpha: .4),
               border: Border(
-                top: BorderSide(
-                  color: DefensysTokens.borderOf(context),
-                ),
+                top: BorderSide(color: DefensysTokens.borderOf(context)),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+                if (section != null)
+                  EvaluationScoreInput(
+                    key: _sectionInputKeys.putIfAbsent(
+                      section,
+                      GlobalKey<EvaluationScoreInputState>.new,
+                    ),
+                    label: 'Overall section score',
+                    maximum: totalMax,
+                    value: overall
+                        ? section.score
+                        : isAllScored
+                        ? totalEarned
+                        : null,
+                    enabled: !locked,
+                    onChanged: (_) {},
+                    onCommitted: (value) =>
+                        _replaceSectionScore(section, sectionCriteria, value),
+                  )
+                else
+                  Wrap(
+                    children: [
+                      Text(
+                        'Subtotal: ',
+                        style: DefensysTokens.caption.copyWith(
+                          color: DefensysTokens.textSecondaryOf(context),
+                        ),
+                      ),
+                      Text(
+                        '${formatEvaluationScore(totalEarned)} / ${formatEvaluationScore(totalMax)} pts (${rawPercentage.toStringAsFixed(1)}%)',
+                        style: DefensysTokens.caption.copyWith(
+                          color: DefensysTokens.textPrimaryOf(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 6),
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 6,
                   children: [
-                    Icon(
-                      isAllScored
-                          ? LucideIcons.checkCircle2
-                          : LucideIcons.circleDashed,
-                      size: 14,
-                      color: isAllScored
-                          ? const Color(0xFF16A34A)
-                          : DefensysTokens.textSecondaryOf(context),
-                    ),
-                    const SizedBox(width: 7),
-                    Text(
-                      'Subtotal: ',
-                      style: DefensysTokens.caption.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: DefensysTokens.textSecondaryOf(context),
+                    if (overall)
+                      Text(
+                        'Overall score used',
+                        style: DefensysTokens.caption.copyWith(
+                          color: DefensysTokens.textSecondaryOf(context),
+                        ),
                       ),
-                    ),
-                    Text(
-                      '${formatEvaluationScore(totalEarned)} / ${formatEvaluationScore(totalMax)} pts (${rawPercentage.toStringAsFixed(1)}%)',
-                      style: DefensysTokens.body.copyWith(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: DefensysTokens.textPrimaryOf(context),
+                    if (sectionWeight > 0)
+                      Text(
+                        'Contribution: ${contribution.toStringAsFixed(2)}% / ${sectionWeight.toStringAsFixed(1)}%',
+                        style: DefensysTokens.caption.copyWith(
+                          color: DefensysTokens.maroonTextOf(context),
+                        ),
                       ),
-                    ),
+                    if (overall && !locked)
+                      ShadButton.ghost(
+                        onPressed: () async {
+                          if (await _commitSectionInputs()) {
+                            await _replaceSectionScore(
+                              section!,
+                              sectionCriteria,
+                              null,
+                              byCriteria: true,
+                            );
+                          }
+                        },
+                        child: const Text('Score by criteria'),
+                      ),
                   ],
                 ),
-                if (sectionWeight > 0)
-                  Text(
-                    'Contribution: ${contribution.toStringAsFixed(2)}% / ${sectionWeight.toStringAsFixed(1)}%',
-                    style: DefensysTokens.caption.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11,
-                      color: DefensysTokens.maroonTextOf(context),
-                    ),
-                  ),
               ],
             ),
           ),

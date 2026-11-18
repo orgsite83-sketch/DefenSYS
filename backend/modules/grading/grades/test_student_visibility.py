@@ -23,10 +23,9 @@ class StudentAssessmentVisibilityTests(SimpleTestCase):
         self.assertNotIn('final_grade', public)
         self.assertNotIn('peer_per_student', public)
         self.assertNotIn('peerScore', public)
-        self.assertEqual(public['outcome_metadata']['concepts'], [{'key': 'c1'}])
-        self.assertEqual(public['history'], [{'concepts': [
-            {'title': 'Earlier module', 'decision': 'not_selected'}]}])
-        self.assertEqual(public['verdict'], 'approved')
+        self.assertEqual(public['outcome_metadata'], {})
+        self.assertEqual(public['history'][0]['concepts'][0]['decision'], '')
+        self.assertEqual(public['verdict'], '')
         self.assertEqual(evidence, before)
 
     def test_authorized_staff_assessment_keeps_scores(self):

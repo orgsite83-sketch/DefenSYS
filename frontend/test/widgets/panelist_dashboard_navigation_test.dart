@@ -68,6 +68,71 @@ void main() {
   setUpAll(() => registerFallbackValue(Uri.parse('https://example.test')));
   setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets(
+    'refresh cannot show submitted when individual scores are missing',
+    (tester) async {
+      final assignment = _assignment(20, 'Team Incomplete')
+        ..addAll({
+          'is_submitted': true,
+          'grading_available': false,
+          'members': [
+            {'id': 1, 'name': 'Alice'},
+            {'id': 2, 'name': 'Bob'},
+            {'id': 3, 'name': 'Carol'},
+            {'id': 4, 'name': 'Dan'},
+          ],
+          'panel_rubric': {
+            'target_type': 'individual',
+            'criteria': [
+              {'id': 1, 'name': 'Clarity', 'max_score': 10},
+            ],
+          },
+          'submissions': [
+            for (final id in [1, 2])
+              {
+                'student_id': id,
+                'criteria_scores': [
+                  {'criterion_id': 1, 'score': 8},
+                ],
+              },
+          ],
+        });
+      final client = _Client();
+      when(() => client.get(any())).thenAnswer(
+        (call) async => http.Response(
+          jsonEncode(
+            (call.positionalArguments.first as Uri).path.contains(
+                  'guest-assignments',
+                )
+                ? {
+                    'teams': [assignment],
+                  }
+                : {'results': []},
+          ),
+          200,
+        ),
+      );
+      await pumpDefensysWidget(
+        tester,
+        const PanelistDashboard(),
+        overrides: [
+          authProvider.overrideWith(_Guest.new),
+          connectivityProvider.overrideWith(_Online.new),
+          authenticatedHttpClientProvider.overrideWithValue(client),
+        ],
+      );
+      final team = tester
+          .widget<AssignmentsTab>(find.byType(AssignmentsTab))
+          .teams
+          .single;
+      expect(team.isPosted, isFalse);
+      expect(team.panelWorkFinished, isFalse);
+      expect(team.evaluationStatus, 'Incomplete');
+      expect(team.evaluationProgress.entered, 2);
+      expect(team.evaluationProgress.required, 4);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
     'repaired sessions preserve the panel layout and saved afternoon selection',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
@@ -422,7 +487,9 @@ void main() {
         1,
       );
       expect(
-        find.text('Couldn’t save draft. Your changes are still here.'),
+        find.textContaining(
+          'Couldn’t save draft. Your changes are still here.',
+        ),
         findsOneWidget,
       );
       await _tap(tester, find.byKey(const ValueKey('open-panel-workspace')));

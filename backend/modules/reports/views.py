@@ -51,6 +51,10 @@ User = get_user_model()
 class ReportAPIView(APIView):
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
+        if getattr(request.user, 'role', None) == 'student' and self.__class__.__name__ in (
+                'TeamGradeReportView', 'IndividualGradeReportView', 'SemesterGradesReportView'):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Numeric assessment reports are available to authorized staff only.')
         from reports.catalog_reports import validate_filters
         validate_filters(request.query_params)
 

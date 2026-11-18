@@ -104,7 +104,12 @@ void main() {
     expect(find.text('Scheduled PIT Events'), findsOneWidget);
     expect(find.text('Pending Grades'), findsOneWidget);
 
-    // Verify Quick Actions
+    // Verify Checklist & Quick Actions
+    expect(find.text('PIT Event Checklist'), findsOneWidget);
+    expect(find.text('3 of 5 Complete'), findsOneWidget);
+    expect(find.text('NEXT STEP'), findsOneWidget);
+    expect(find.text('Next: Defense Schedule'), findsOneWidget);
+
     expect(find.text('Quick Actions'), findsOneWidget);
     expect(find.text('Manage PIT Teams'), findsOneWidget);
     expect(find.text('Schedule PIT Event'), findsOneWidget);
@@ -112,11 +117,12 @@ void main() {
     expect(find.text('PIT Events Setup'), findsOneWidget);
 
     // The shared calendar includes current bookings and schedule history.
-    expect(find.text('Defense Schedule'), findsOneWidget);
+    expect(find.text('Defense Schedule'), findsWidgets);
     expect(find.textContaining('Concept Proposal has 3 teams scheduled'), findsOneWidget);
 
     // Verify Pipeline
     expect(find.text('PIT Pipeline & Readiness'), findsOneWidget);
+    expect(find.text('EVENT FUNNEL'), findsOneWidget);
     expect(find.text('Total Teams'), findsOneWidget);
     expect(find.text('Stage Ready'), findsOneWidget);
     expect(find.text('With Instructor'), findsOneWidget);

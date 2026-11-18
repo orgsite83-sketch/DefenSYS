@@ -27,10 +27,29 @@ class _Auth extends AuthNotifier {
 
 http.Response _saved() => http.Response(
   json.encode({
-    'draft': {'saved_at': '2026-10-20T08:00:00+08:00'},
+    'draft': {'saved_at': '2026-10-20T08:00:00+08:00', 'version': 'v1'},
   }),
   200,
 );
+
+Map<String, dynamic> _evaluationState(
+  TeamData team,
+  List<Map<String, dynamic>> rows, {
+  bool complete = true,
+}) => {
+  'schedule_id': int.parse(team.scheduleId),
+  'team_id': int.parse(team.teamId),
+  'evaluation_context': team.evaluationContext,
+  'is_submitted': complete,
+  'submissions': rows,
+  'draft': null,
+};
+
+http.Response _submitted(TeamData team, List<Map<String, dynamic>> rows) =>
+    http.Response(
+      jsonEncode({'success': true, 'evaluation': _evaluationState(team, rows)}),
+      201,
+    );
 
 TeamData _team({
   DateTime? date,
@@ -200,6 +219,490 @@ Future<_HttpClient> _showSheet(
 }
 
 void main() {
+  test('submitted flag requires persisted scores for every member', () {
+    final rows = <Map<String, dynamic>>[
+      {
+        'student_id': null,
+        'criteria_scores': [
+          {'criterion_id': 1, 'score': 8},
+        ],
+      },
+      {
+        'student_id': 1,
+        'criteria_scores': [
+          {'criterion_id': 2, 'score': 0},
+        ],
+      },
+    ];
+    final team = _team(
+      target: 'both',
+      submitted: rows,
+      drafts: [
+        {
+          'student_id': 2,
+          'criteria_scores': [
+            {'criterion_id': 2, 'score': 9},
+          ],
+        },
+      ],
+    )..isPosted = true;
+    team.reconcileServerSubmission();
+    expect(team.isPosted, isFalse);
+    expect(team.panelWorkFinished, isFalse);
+    expect(team.evaluationStatus, 'Incomplete');
+    expect(team.submissionIsComplete(rows), isFalse);
+    expect(
+      team.submissionIsComplete([...rows, ...team.draftSubmissions]),
+      isTrue,
+    );
+  });
+
+  testWidgets(
+    'rapid Next clicks wait for one save and advance exactly one member',
+    (tester) async {
+      final team = _team(
+        target: 'individual',
+        roster: const [
+          TeamMember(id: '1', name: 'Alice'),
+          TeamMember(id: '2', name: 'Bob'),
+          TeamMember(id: '3', name: 'Carol'),
+          TeamMember(id: '4', name: 'Dan'),
+        ],
+      );
+      final client = await _showSheet(tester, [team]);
+      final pending = Completer<http.Response>();
+      when(
+        () => client.post(any(), body: any(named: 'body')),
+      ).thenAnswer((_) => pending.future);
+      await _tapScore(tester, 'Clarity', '0');
+      final button = tester.widget<ShadButton>(
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      for (var i = 0; i < 8; i++) {
+        button.onPressed!();
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('Scoring Alice'), findsOneWidget);
+      expect(
+        tester
+            .widget<ShadButton>(
+              find.byKey(const ValueKey('next-evaluation-member')),
+            )
+            .enabled,
+        isFalse,
+      );
+      verify(() => client.post(any(), body: any(named: 'body'))).called(1);
+      pending.complete(_saved());
+      await tester.pumpAndSettle();
+      expect(find.text('Scoring Bob'), findsOneWidget);
+      expect(_value(tester, 'Clarity'), isNull);
+      expect(team.evaluationProgress.entered, 1);
+      expect(team.evaluationProgress.required, 4);
+      expect(team.isPosted, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'timed out draft keeps the member and ignores its late acknowledgement',
+    (tester) async {
+      final team = _team(target: 'individual');
+      final client = await _showSheet(tester, [team]);
+      final pending = Completer<http.Response>();
+      when(
+        () => client.post(any(), body: any(named: 'body')),
+      ).thenAnswer((_) => pending.future);
+      await _tapScore(tester, 'Clarity', '0');
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      await tester.pump(GradeSheetTabState.draftRequestTimeout);
+      await tester.pumpAndSettle();
+      expect(find.text('Scoring Alice'), findsOneWidget);
+      expect(find.textContaining('Saving timed out'), findsOneWidget);
+      expect(team.hasUnsavedChanges, isTrue);
+      pending.complete(_saved());
+      await tester.pumpAndSettle();
+      expect(team.draftSavedAt, isNull);
+      expect(team.hasUnsavedChanges, isTrue);
+      when(
+        () => client.post(any(), body: any(named: 'body')),
+      ).thenAnswer((_) async => _saved());
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('next-evaluation-member')),
+      );
+      expect(find.text('Scoring Bob'), findsOneWidget);
+      expect(team.hasUnsavedChanges, isFalse);
+      expect(team.isPosted, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'lost draft ACK rebases only our own saved request before saving new edits',
+    (tester) async {
+      final team = _team();
+      final client = await _showSheet(tester, [team]);
+      final pending = Completer<http.Response>();
+      List<Map<String, dynamic>>? first;
+      when(() => client.post(any(), body: any(named: 'body'))).thenAnswer((
+        call,
+      ) {
+        first =
+            (jsonDecode(call.namedArguments[#body] as String)['submissions']
+                    as List)
+                .cast<Map<String, dynamic>>();
+        return pending.future;
+      });
+      await _tapScore(tester, 'Clarity', '0');
+      await tester.pump(const Duration(milliseconds: 850));
+      await tester.pump(GradeSheetTabState.draftRequestTimeout);
+      await tester.pumpAndSettle();
+      var retries = 0;
+      when(() => client.post(any(), body: any(named: 'body'))).thenAnswer((
+        call,
+      ) async {
+        final body = jsonDecode(call.namedArguments[#body] as String) as Map;
+        retries++;
+        if (retries == 1) {
+          expect(body['draft_version'], '');
+          return http.Response(
+            jsonEncode({
+              'detail': 'Draft changed',
+              'draft': {
+                'version': 'v1',
+                'saved_at': 'first',
+                'submissions': first,
+              },
+            }),
+            409,
+          );
+        }
+        expect(body['draft_version'], 'v1');
+        return http.Response(
+          jsonEncode({
+            'draft': {
+              'version': 'v2',
+              'saved_at': 'second',
+              'submissions': body['submissions'],
+            },
+          }),
+          200,
+        );
+      });
+      await _tapScore(tester, 'Clarity', '9');
+      await tester.pump(const Duration(milliseconds: 850));
+      await tester.pumpAndSettle();
+      expect(retries, 2);
+      expect(team.draftVersion, 'v2');
+      expect(team.hasUnsavedChanges, isFalse);
+      pending.complete(_saved());
+      await tester.pumpAndSettle();
+      expect(team.draftVersion, 'v2');
+      expect(_value(tester, 'Clarity'), 9);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'another tab draft conflict retains scores without automatically overwriting it',
+    (tester) async {
+      final team = _team();
+      final client = await _showSheet(tester, [team]);
+      when(() => client.post(any(), body: any(named: 'body'))).thenAnswer(
+        (_) async => http.Response(
+          jsonEncode({
+            'detail': 'Draft changed in another tab',
+            'draft': {
+              'version': 'other',
+              'saved_at': 'other',
+              'submissions': [
+                {
+                  'student_id': null,
+                  'criteria_scores': [
+                    {'criterion_id': 1, 'score': 3},
+                  ],
+                },
+              ],
+            },
+          }),
+          409,
+        ),
+      );
+      await _tapScore(tester, 'Clarity', '9');
+      await tester.pump(const Duration(milliseconds: 850));
+      await tester.pumpAndSettle();
+      expect(team.hasUnsavedChanges, isTrue);
+      expect(team.draftVersion, isNull);
+      expect(_value(tester, 'Clarity'), 9);
+      verify(() => client.post(any(), body: any(named: 'body'))).called(1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final recovered in [false, true]) {
+    testWidgets(
+      'final submit timeout checks persisted completion: $recovered',
+      (tester) async {
+        final rows = <Map<String, dynamic>>[
+          {
+            'student_id': null,
+            'criteria_scores': [
+              {'criterion_id': 1, 'score': 8},
+            ],
+          },
+          {
+            'student_id': 1,
+            'criteria_scores': [
+              {'criterion_id': 2, 'score': 0},
+            ],
+          },
+          {
+            'student_id': 2,
+            'criteria_scores': [
+              {'criterion_id': 2, 'score': 9},
+            ],
+          },
+        ];
+        final team = _team(target: 'both', drafts: rows);
+        final client = await _showSheet(tester, [team]);
+        final pending = Completer<http.Response>();
+        when(() => client.post(any(), body: any(named: 'body'))).thenAnswer(
+          (call) =>
+              (call.positionalArguments.first as Uri).path.contains(
+                'submit-grades',
+              )
+              ? pending.future
+              : Future.value(_saved()),
+        );
+        when(() => client.get(any())).thenAnswer(
+          (_) async => http.Response(
+            jsonEncode(
+              _evaluationState(
+                team,
+                recovered ? rows : rows.take(2).toList(),
+                complete: recovered,
+              ),
+            ),
+            200,
+          ),
+        );
+        await _tapVisible(
+          tester,
+          find.byKey(const ValueKey('review-evaluation')),
+        );
+        await _tapVisible(
+          tester,
+          find.byKey(const ValueKey('submit-reviewed-grades')),
+        );
+        await tester.pump(GradeSheetTabState.submissionRequestTimeout);
+        await tester.pumpAndSettle();
+        expect(team.isPosted, recovered);
+        if (!recovered) expect(team.draftSubmissions, rows);
+        verify(() => client.post(any(), body: any(named: 'body'))).called(1);
+        verify(() => client.get(any())).called(1);
+        pending.complete(_submitted(team, rows));
+        await tester.pumpAndSettle();
+        expect(team.isPosted, recovered);
+        expect(tester.takeException(), isNull);
+        await tester.pump(const Duration(seconds: 7));
+        await tester.pumpAndSettle();
+      },
+    );
+  }
+
+  testWidgets(
+    '201 with incomplete persisted member rows cannot mark the team submitted',
+    (tester) async {
+      final rows = <Map<String, dynamic>>[
+        {
+          'student_id': null,
+          'criteria_scores': [
+            {'criterion_id': 1, 'score': 8},
+          ],
+        },
+        {
+          'student_id': 1,
+          'criteria_scores': [
+            {'criterion_id': 2, 'score': 0},
+          ],
+        },
+        {
+          'student_id': 2,
+          'criteria_scores': [
+            {'criterion_id': 2, 'score': 9},
+          ],
+        },
+      ];
+      final team = _team(target: 'both', drafts: rows);
+      final client = await _showSheet(tester, [team]);
+      final partial = rows.take(2).toList();
+      when(
+        () => client.post(any(), body: any(named: 'body')),
+      ).thenAnswer((_) async => _submitted(team, partial));
+      when(() => client.get(any())).thenAnswer(
+        (_) async =>
+            http.Response(jsonEncode(_evaluationState(team, partial)), 200),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('review-evaluation')),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('submit-reviewed-grades')),
+      );
+      expect(team.isPosted, isFalse);
+      expect(team.draftSubmissions, rows);
+      expect(
+        find.textContaining('Submission could not be confirmed'),
+        findsWidgets,
+      );
+      when(() => client.get(any())).thenAnswer(
+        (_) async =>
+            http.Response(jsonEncode(_evaluationState(team, rows)), 200),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('check-evaluation-submission')),
+      );
+      expect(team.isPosted, isTrue);
+      verify(() => client.post(any(), body: any(named: 'body'))).called(1);
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 7));
+      await tester.pumpAndSettle();
+    },
+  );
+
+  TeamData weightedTeam() {
+    final team = _team();
+    team.panelRubric!.addAll({
+      'scale': 'Points-Based (Sections)',
+      'criteria': [
+        for (var i = 0; i < 3; i++)
+          {
+            'id': i + 1,
+            'name': 'Oral guide ${i + 1}',
+            'section': 'Oral Examination',
+            'max_score': i == 2 ? 20 : 40,
+            'weight': i == 2 ? 20 : 40,
+            'target_type': 'team',
+          },
+      ],
+      'scoring_sections': [
+        {
+          'section_key': 'oral',
+          'name': 'Oral Examination',
+          'criterion_ids': [1, 2, 3],
+          'max_score': 100,
+          'weight': 100,
+          'target_type': 'team',
+        },
+      ],
+    });
+    return team;
+  }
+
+  for (final width in [320.0, 736.0]) {
+    for (final dark in [false, true]) {
+      testWidgets(
+        'overall confirmation preserves or replaces the source at $width dark=$dark',
+        (tester) async {
+          final team = weightedTeam();
+          await _showSheet(tester, [team], width: width, dark: dark);
+          await _tapScore(tester, 'Oral guide 1', '0');
+          await _tapScore(tester, 'Oral guide 2', '35');
+          await _tapScore(tester, 'Overall section score', '90');
+          expect(find.text('Use overall section score?'), findsOneWidget);
+          await capturePreview(
+            tester,
+            find.byType(ShadDialog),
+            'section-confirm-${width.toInt()}-$dark',
+            viewport: true,
+          );
+          await _tapVisible(tester, find.text('Keep criterion scores'));
+          expect(_value(tester, 'Oral guide 1'), 0);
+          expect(_value(tester, 'Oral guide 2'), 35);
+          expect(_value(tester, 'Overall section score'), isNull);
+          await _tapScore(tester, 'Overall section score', '90');
+          await _tapVisible(tester, find.text('Use overall score'));
+          expect(_picker('Oral guide 1'), findsNothing);
+          expect(find.text('Oral guide 1'), findsOneWidget);
+          expect(find.text('Overall score used'), findsOneWidget);
+          expect(team.draftSubmissions.single['criteria_scores'], isEmpty);
+          expect(team.draftSubmissions.single['section_scores'], [
+            {'section_key': 'oral', 'score': 90.0},
+          ]);
+          expect(team.evaluationProgress.complete, isTrue);
+          await _tapVisible(tester, find.text('Score by criteria'));
+          expect(find.text('Score by criteria?'), findsOneWidget);
+          await _tapVisible(tester, find.text('Keep overall score'));
+          expect(_value(tester, 'Overall section score'), 90);
+          await _tapVisible(tester, find.text('Score by criteria'));
+          await _tapVisible(
+            tester,
+            find.widgetWithText(ShadButton, 'Score by criteria').last,
+          );
+          expect(_value(tester, 'Oral guide 1'), isNull);
+          expect(_value(tester, 'Oral guide 2'), isNull);
+          expect(team.draftSubmissions.single['section_scores'], isEmpty);
+          expect(team.evaluationProgress.complete, isFalse);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  for (final width in [320.0, 390.0, 1280.0]) {
+    for (final dark in [false, true]) {
+      testWidgets(
+        'blank section accepts zero overall and reviews its source at $width dark=$dark',
+        (tester) async {
+          final team = weightedTeam();
+          await _showSheet(tester, [team], width: width, dark: dark);
+          await _tapScore(tester, 'Overall section score', '0');
+          expect(find.text('Use overall section score?'), findsNothing);
+          expect(team.evaluationProgress.complete, isTrue);
+          await capturePreview(
+            tester,
+            find.byKey(const ValueKey('grading-preview')),
+            'overall-section-${width.toInt()}-$dark',
+          );
+          await _tapVisible(
+            tester,
+            find.byKey(const ValueKey('review-evaluation')),
+          );
+          expect(find.text('Overall section score: 0 / 100'), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('submit-reviewed-grades')),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets('overall entry confirms replacing invalid criterion text', (
+    tester,
+  ) async {
+    final team = weightedTeam();
+    await _showSheet(tester, [team], width: 390);
+    await _tapScore(tester, 'Oral guide 1', '55');
+    await _tapScore(tester, 'Overall section score', '95');
+    expect(find.text('Use overall section score?'), findsOneWidget);
+    await _tapVisible(tester, find.text('Use overall score'));
+    expect(_picker('Oral guide 1'), findsNothing);
+    expect(team.draftSubmissions.single['criteria_scores'], isEmpty);
+    expect(team.draftSubmissions.single['section_scores'], [
+      {'section_key': 'oral', 'score': 95.0},
+    ]);
+    expect(team.evaluationProgress.complete, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'corrected module retains submitted targets and allows missing members',
     (tester) async {
@@ -411,7 +914,10 @@ void main() {
           submitted =
               jsonDecode(invocation.namedArguments[#body] as String)
                   as Map<String, dynamic>;
-          return http.Response('{"success":true}', 201);
+          return _submitted(
+            team,
+            (submitted!['submissions'] as List).cast<Map<String, dynamic>>(),
+          );
         }
         return _saved();
       });
@@ -826,7 +1332,12 @@ void main() {
             (call.positionalArguments.first as Uri).path.contains(
               'submit-grades',
             )
-            ? http.Response('{}', 201)
+            ? _submitted(
+                team,
+                (jsonDecode(call.namedArguments[#body] as String)['submissions']
+                        as List)
+                    .cast<Map<String, dynamic>>(),
+              )
             : _saved(),
       );
       await _tapScore(tester, 'Clarity', '9');

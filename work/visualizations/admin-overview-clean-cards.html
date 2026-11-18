@@ -1,0 +1,269 @@
+<div id="ds-admin-clean">
+  <style>
+    #ds-admin-clean{--ac-bg:light-dark(#f7f7f7,#171717);--ac-panel:light-dark(#fff,#222);--ac-soft:light-dark(#f0f0f0,#2b2b2b);--ac-text:light-dark(#242424,#ededed);--ac-muted:light-dark(#626262,#bdbdbd);--ac-line:light-dark(#ddd,#414141);--ac-strong-line:light-dark(#aaa,#777);--ac-solid:light-dark(#333,#dedede);--ac-solid-text:light-dark(#fff,#202020);font:14px/1.45 Inter,Arial,sans-serif;color:var(--ac-text);color-scheme:light dark;width:100%}
+    #ds-admin-clean *{box-sizing:border-box}
+    #ds-admin-clean [hidden]{display:none!important}
+    #ds-admin-clean h2,#ds-admin-clean h3,#ds-admin-clean p{margin:0}
+    #ds-admin-clean h2{font-size:23px;font-weight:650;letter-spacing:-.4px;line-height:1.3}
+    #ds-admin-clean h3{font-size:14px;font-weight:600}
+    #ds-admin-clean button{font:inherit;color:inherit;cursor:pointer}
+    #ds-admin-clean button:focus-visible,#ds-admin-clean summary:focus-visible{outline:2px solid var(--ac-text);outline-offset:3px}
+    #ds-admin-clean svg,#ds-admin-clean [data-lucide]{display:inline-block;width:16px;height:16px;vertical-align:middle;flex-shrink:0}
+    #ds-admin-clean .ac-icon-fallback{font-style:normal;line-height:16px;text-align:center;filter:grayscale(1);font-size:16px}
+    #ds-admin-clean .ac-muted{color:var(--ac-muted);font-size:12px}
+    #ds-admin-clean .ac-preview{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:0 96px 14px 0;font-size:12px}
+    #ds-admin-clean .ac-example{background:var(--ac-panel);border:1px solid var(--ac-line);border-radius:4px;min-height:30px;padding:4px 9px}
+    #ds-admin-clean .ac-example[aria-pressed="true"]{background:var(--ac-solid);color:var(--ac-solid-text);border-color:var(--ac-solid)}
+    #ds-admin-clean .ac-product{background:var(--ac-bg);min-width:0}
+    #ds-admin-clean .ac-top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;background:var(--ac-panel);border-bottom:1px solid var(--ac-line)}
+    #ds-admin-clean .ac-brand{display:flex;gap:10px;align-items:center;min-width:0}
+    #ds-admin-clean .ac-brand-mark{width:31px;height:31px;border:1px solid var(--ac-strong-line);border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:650;flex-shrink:0}
+    #ds-admin-clean .ac-brand-name{font-size:13px;font-weight:600}
+    #ds-admin-clean .ac-top-right{display:flex;align-items:center;gap:12px;flex-shrink:0}
+    #ds-admin-clean .ac-icon-button{display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;min-width:28px;min-height:28px;padding:4px;border-radius:4px}
+    #ds-admin-clean .ac-icon-button:hover{background:var(--ac-soft)}
+    #ds-admin-clean .ac-shell{display:grid;grid-template-columns:54px minmax(0,1fr)}
+    #ds-admin-clean .ac-nav{display:flex;flex-direction:column;gap:12px;align-items:center;background:var(--ac-panel);border-right:1px solid var(--ac-line);padding:22px 5px}
+    #ds-admin-clean .ac-nav button{width:36px;min-height:36px}
+    #ds-admin-clean .ac-nav-active{background:var(--ac-soft);outline:1px solid var(--ac-line)}
+    #ds-admin-clean .ac-main{min-width:0;padding:24px;display:grid;gap:20px;align-content:start}
+    #ds-admin-clean .ac-header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+    #ds-admin-clean .ac-header p{margin-top:4px}
+    #ds-admin-clean .ac-header-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    #ds-admin-clean .ac-tabs{display:flex;padding:3px;border-radius:6px;background:var(--ac-soft);border:1px solid var(--ac-line)}
+    #ds-admin-clean .ac-tab{border:0;background:none;border-radius:4px;min-height:32px;padding:5px 13px;font-size:12px;display:flex;align-items:center;gap:6px}
+    #ds-admin-clean .ac-tab[aria-selected="true"]{background:var(--ac-panel);font-weight:600;outline:1px solid var(--ac-line)}
+    #ds-admin-clean .ac-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--ac-panel);border:1px solid var(--ac-strong-line);border-radius:5px;padding:6px 10px;min-height:34px;font-size:12px;white-space:nowrap}
+    #ds-admin-clean .ac-button:hover{background:var(--ac-soft)}
+    #ds-admin-clean .ac-link{display:inline-flex;align-items:center;justify-content:flex-start;gap:5px;border:0;background:none;padding:2px 0;min-height:26px;font-size:12px}
+    #ds-admin-clean .ac-link:hover{text-decoration:underline;text-underline-offset:3px}
+    #ds-admin-clean .ac-panel{min-width:0;background:var(--ac-panel);border:1px solid var(--ac-line);border-radius:8px}
+    #ds-admin-clean .ac-panel-padding{padding:18px}
+    #ds-admin-clean .ac-panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+    #ds-admin-clean .ac-heading{display:flex;align-items:center;gap:8px}
+    #ds-admin-clean .ac-count{font-size:11px;min-width:21px;text-align:center;background:var(--ac-soft);padding:2px 6px;border-radius:4px;font-variant-numeric:tabular-nums}
+    #ds-admin-clean .ac-attention-head{padding:13px 16px;border-bottom:1px solid var(--ac-line)}
+    #ds-admin-clean .ac-action-row{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:11px;align-items:center;padding:11px 16px;border-bottom:1px solid var(--ac-line)}
+    #ds-admin-clean .ac-action-row:last-child{border-bottom:0}
+    #ds-admin-clean .ac-action-name{font-size:13px;font-weight:600}
+    #ds-admin-clean .ac-action-reason{color:var(--ac-muted);font-size:12px;margin-top:1px}
+    #ds-admin-clean .ac-more{padding:8px 16px;border-top:1px solid var(--ac-line);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+    #ds-admin-clean .ac-workflow-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+    #ds-admin-clean .ac-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+    #ds-admin-clean .ac-flow-card{background:var(--ac-panel);border:1px solid var(--ac-line);border-radius:7px;min-width:0;width:100%;padding:14px;display:flex;flex-direction:column;text-align:left;appearance:none}
+    #ds-admin-clean .ac-flow-card:hover{border-color:var(--ac-strong-line)}
+    #ds-admin-clean .ac-flow-card:active{background:var(--ac-soft)}
+    #ds-admin-clean .ac-card-top{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:15px}
+    #ds-admin-clean .ac-card-name{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;font-weight:600}
+    #ds-admin-clean .ac-card-icon{width:27px;height:27px;flex-shrink:0;display:grid;place-items:center;border-radius:5px;background:var(--ac-soft)}
+    #ds-admin-clean .ac-card-number{font-size:28px;font-weight:600;line-height:1.2;letter-spacing:-.6px;font-variant-numeric:tabular-nums}
+    #ds-admin-clean .ac-card-label{font-size:12px;color:var(--ac-muted);margin-top:3px}
+    #ds-admin-clean .ac-card-detail{font-size:11px;color:var(--ac-muted);margin:10px 0 12px;min-height:32px;line-height:1.45;overflow-wrap:anywhere}
+    #ds-admin-clean .ac-card-state{display:flex;align-items:center;gap:5px;min-height:24px;margin-top:auto;font-size:11px}
+    #ds-admin-clean .ac-card-state[data-action="true"]{font-weight:600}
+    #ds-admin-clean .ac-card-state svg,#ds-admin-clean .ac-card-state [data-lucide]{width:13px;height:13px;font-size:13px;line-height:13px}
+    #ds-admin-clean .ac-card-state[data-action="false"]{color:var(--ac-muted)}
+    #ds-admin-clean .ac-card-owner{font-size:11px;color:var(--ac-muted);padding-top:7px}
+    #ds-admin-clean .ac-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.55fr);gap:16px;align-items:start}
+    #ds-admin-clean .ac-ready-hero{display:flex;align-items:baseline;gap:8px;margin-top:16px}
+    #ds-admin-clean .ac-ready-number{font-size:34px;line-height:1.1;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.7px}
+    #ds-admin-clean .ac-ready-caption{font-size:12px;color:var(--ac-muted)}
+    #ds-admin-clean .ac-ready-summary{font-size:12px;color:var(--ac-muted);margin-top:8px;padding-bottom:13px;border-bottom:1px solid var(--ac-line)}
+    #ds-admin-clean .ac-readiness-reasons{display:grid;margin-top:3px}
+    #ds-admin-clean .ac-readiness-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:none;border:0;border-bottom:1px solid var(--ac-line);padding:10px 0;text-align:left;font-size:12px}
+    #ds-admin-clean .ac-readiness-row:last-child{border-bottom:0;padding-bottom:0}
+    #ds-admin-clean .ac-reason-label{display:flex;align-items:center;gap:7px}
+    #ds-admin-clean .ac-calendar-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0 12px}
+    #ds-admin-clean .ac-calendar-tools strong{font-size:12px;font-weight:600}
+    #ds-admin-clean .ac-calendar-controls{display:flex;gap:5px;flex-wrap:wrap}
+    #ds-admin-clean .ac-calendar-controls .ac-button{min-height:28px;padding:4px 8px;font-size:11px}
+    #ds-admin-clean .ac-calendar-controls [aria-pressed="true"]{background:var(--ac-soft)}
+    #ds-admin-clean .ac-weekdays,#ds-admin-clean .ac-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+    #ds-admin-clean .ac-weekdays{font-size:11px;text-align:center;color:var(--ac-muted);margin-bottom:5px}
+    #ds-admin-clean .ac-day{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:43px;border:1px solid var(--ac-line);background:var(--ac-panel);border-radius:5px;padding:5px 2px;font-size:12px;font-variant-numeric:tabular-nums}
+    #ds-admin-clean .ac-day[aria-pressed="true"]{border-color:var(--ac-strong-line);background:var(--ac-soft);font-weight:600}
+    #ds-admin-clean .ac-day-outside{color:var(--ac-muted);opacity:.45}
+    #ds-admin-clean .ac-date-dot{width:4px;height:4px;border-radius:50%;background:var(--ac-text)}
+    #ds-admin-clean .ac-day-no-dot{height:4px}
+    #ds-admin-clean .ac-calendar-detail{font-size:12px;border-top:1px solid var(--ac-line);margin-top:12px;padding-top:11px;display:grid;gap:5px}
+    #ds-admin-clean .ac-upcoming{margin-top:12px;border-top:1px solid var(--ac-line);padding-top:10px;display:grid;gap:8px}
+    #ds-admin-clean .ac-upcoming-label{color:var(--ac-muted);font-size:11px}
+    #ds-admin-clean .ac-upcoming-row{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:start;font-size:12px}
+    #ds-admin-clean .ac-upcoming-date{font-size:11px;color:var(--ac-muted)}
+    #ds-admin-clean .ac-upcoming-date strong{display:block;font-size:15px;font-weight:600;color:var(--ac-text);line-height:1.2}
+    #ds-admin-clean .ac-upcoming-place{font-size:11px;color:var(--ac-muted);text-align:right}
+    #ds-admin-clean .ac-stat-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:12px}
+    #ds-admin-clean .ac-stat{min-width:0;border-right:1px solid var(--ac-line);padding-right:12px}
+    #ds-admin-clean .ac-stat:last-child{border:0;padding:0}
+    #ds-admin-clean .ac-stat-number{font-size:23px;line-height:1.2;font-weight:600;letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+    #ds-admin-clean .ac-stat p{font-size:11px;color:var(--ac-muted);margin-top:4px}
+    #ds-admin-clean .ac-activity{padding:12px 18px;font-size:12px}
+    #ds-admin-clean summary{cursor:pointer;min-height:28px;padding:3px 0;font-weight:500}
+    #ds-admin-clean .ac-activity-list{display:grid;gap:10px;border-top:1px solid var(--ac-line);padding-top:12px;margin-top:7px}
+    #ds-admin-clean .ac-activity-entry{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    #ds-admin-clean .ac-pit-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}
+    #ds-admin-clean .ac-pit-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:16px;padding:14px 0;border-top:1px solid var(--ac-line);font-size:12px}
+    #ds-admin-clean .ac-pit-row strong{display:block;font-weight:600;margin-bottom:3px}
+    #ds-admin-clean .ac-pit-title{padding-bottom:13px}
+    #ds-admin-clean .ac-stack{display:grid;gap:18px;min-width:0}
+    #ds-admin-clean .ac-destination{border:1px dashed var(--ac-strong-line);border-radius:6px;background:var(--ac-soft);padding:12px 15px;display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;font-size:12px}
+    #ds-admin-clean .ac-destination p{color:var(--ac-muted);margin-top:4px}
+    #ds-admin-clean .ac-footnote{font-size:11px;color:var(--ac-muted)}
+    #ds-admin-clean .ac-panel-readonly{display:inline-flex;gap:5px;align-items:center;font-size:11px;color:var(--ac-muted)}
+    @media(min-width:1350px){#ds-admin-clean .ac-main{padding:28px 32px}#ds-admin-clean .ac-cards{gap:14px}#ds-admin-clean .ac-flow-card{padding:18px}#ds-admin-clean .ac-card-detail{min-height:17px}}
+    @media(max-width:950px){#ds-admin-clean .ac-cards{grid-template-columns:repeat(3,minmax(0,1fr))}#ds-admin-clean .ac-grid{grid-template-columns:minmax(0,1fr)}#ds-admin-clean .ac-card-detail{min-height:17px}#ds-admin-clean .ac-main{padding:20px}#ds-admin-clean .ac-school-department{display:none}}
+    @media(max-width:600px){#ds-admin-clean .ac-shell{grid-template-columns:minmax(0,1fr)}#ds-admin-clean .ac-nav{display:none}#ds-admin-clean .ac-main{padding:16px;gap:18px}#ds-admin-clean .ac-top{padding:13px 16px}#ds-admin-clean .ac-top-term{display:none}#ds-admin-clean .ac-header-tools{width:100%;justify-content:space-between}#ds-admin-clean .ac-cards{grid-template-columns:repeat(2,minmax(0,1fr))}#ds-admin-clean .ac-flow-card{padding:12px}#ds-admin-clean .ac-card-number{font-size:26px}#ds-admin-clean .ac-card-name{font-size:12px;gap:6px}#ds-admin-clean .ac-card-top{gap:4px;margin-bottom:13px}#ds-admin-clean .ac-card-icon{width:24px;height:24px}#ds-admin-clean .ac-card-detail{min-height:32px}#ds-admin-clean .ac-action-row{grid-template-columns:17px minmax(0,1fr);gap:8px 10px;padding:11px 13px}#ds-admin-clean .ac-action-row>.ac-button{grid-column:2;justify-self:start}#ds-admin-clean .ac-stat-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 12px}#ds-admin-clean .ac-stat:nth-child(2){border:0}#ds-admin-clean .ac-pit-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 12px}#ds-admin-clean .ac-pit-row>div:last-child{grid-column:1/-1}#ds-admin-clean .ac-preview{max-width:calc(100% - 90px);padding-right:0}#ds-admin-clean .ac-top-right{gap:5px}#ds-admin-clean .ac-calendar-tools{align-items:flex-start}#ds-admin-clean .ac-upcoming-row{grid-template-columns:38px minmax(0,1fr)}#ds-admin-clean .ac-upcoming-place{grid-column:2;text-align:left;margin-top:-6px}}
+    @media(pointer:coarse){#ds-admin-clean button,#ds-admin-clean summary{min-height:44px}#ds-admin-clean .ac-calendar-controls .ac-button{min-height:44px}}
+  </style>
+
+  <div class="ac-preview" aria-label="Preview action-count examples"><span class="ac-muted">Preview:</span><button class="ac-example" type="button" data-example="1" aria-pressed="false">1 action</button><button class="ac-example" type="button" data-example="3" aria-pressed="true">3 actions</button><button class="ac-example" type="button" data-example="6" aria-pressed="false">6 actions</button></div>
+
+  <div class="ac-product">
+    <header class="ac-top">
+      <div class="ac-brand"><span class="ac-brand-mark">DS</span><div><div class="ac-brand-name">USTP Oroquieta</div><p class="ac-muted ac-school-department">Department of Information Technology</p></div></div>
+      <div class="ac-top-right"><span class="ac-muted ac-top-term">Active semester: 2026–2027</span><button type="button" class="ac-icon-button" aria-label="Open notifications" data-nav="Notifications → Admin inbox"><i data-lucide="bell" aria-hidden="true"></i></button><button type="button" class="ac-icon-button" aria-label="Open admin profile" data-nav="Admin profile"><i data-lucide="circle-user-round" aria-hidden="true"></i></button></div>
+    </header>
+    <div class="ac-shell">
+      <nav class="ac-nav" aria-label="Admin navigation">
+        <button type="button" class="ac-icon-button ac-nav-active" aria-current="page" aria-label="Overview" data-nav="Overview"><i data-lucide="layout-dashboard" aria-hidden="true"></i></button>
+        <button type="button" class="ac-icon-button" aria-label="Student Teams" data-nav="Student Teams"><i data-lucide="users" aria-hidden="true"></i></button>
+        <button type="button" class="ac-icon-button" aria-label="Defense Operations" data-nav="Defense Operations"><i data-lucide="calendar-days" aria-hidden="true"></i></button>
+        <button type="button" class="ac-icon-button" aria-label="Defense Stages" data-nav="Defense Stages"><i data-lucide="settings-2" aria-hidden="true"></i></button>
+        <button type="button" class="ac-icon-button" aria-label="Evaluation and Grades" data-nav="Evaluation & Grades"><i data-lucide="file-check-2" aria-hidden="true"></i></button>
+        <button type="button" class="ac-icon-button" aria-label="Academic Periods" data-nav="Academic Periods"><i data-lucide="calendar-range" aria-hidden="true"></i></button>
+        <button type="button" class="ac-icon-button" aria-label="Audit Trail" data-nav="Audit Trail"><i data-lucide="history" aria-hidden="true"></i></button>
+      </nav>
+
+      <main class="ac-main">
+        <header class="ac-header"><div><h2>Overview</h2><p class="ac-muted">1st Semester · A.Y. 2026–2027</p></div><div class="ac-header-tools"><div class="ac-tabs" role="tablist" aria-label="Overview program"><button id="ac-capstone-tab" class="ac-tab" type="button" role="tab" aria-controls="ac-capstone-panel" aria-selected="true" data-program="capstone"><i data-lucide="graduation-cap" aria-hidden="true"></i>Capstone</button><button id="ac-pit-tab" class="ac-tab" type="button" role="tab" aria-controls="ac-pit-panel" aria-selected="false" data-program="pit"><i data-lucide="layers" aria-hidden="true"></i>PIT</button></div><button type="button" id="ac-refresh" class="ac-button"><i data-lucide="refresh-cw" aria-hidden="true"></i><span id="ac-refresh-label">Refresh</span></button></div></header>
+
+        <section id="ac-attention" class="ac-panel" aria-label="Administrative actions">
+          <div class="ac-panel-head ac-attention-head"><div class="ac-heading"><h3>Needs attention</h3><span class="ac-count" id="ac-action-count">3</span></div></div>
+          <div id="ac-action-rows" aria-live="polite"></div>
+          <div id="ac-more" class="ac-more" hidden><span class="ac-muted" id="ac-visible-count"></span><button id="ac-expand" class="ac-link" type="button">View all actions</button></div>
+        </section>
+
+        <section id="ac-capstone-panel" class="ac-stack" role="tabpanel" aria-labelledby="ac-capstone-tab">
+          <section aria-label="Capstone semester workflow"><div class="ac-workflow-head"><h3>Semester workflow</h3><span class="ac-muted">Capstone · Active semester</span></div><div class="ac-cards" id="ac-workflow-cards"></div></section>
+
+          <div class="ac-grid">
+            <section class="ac-panel ac-panel-padding">
+              <div class="ac-panel-head"><div class="ac-heading"><i data-lucide="list-checks" aria-hidden="true"></i><h3>Team readiness</h3></div><button type="button" class="ac-link" data-nav="Defense Operations → Readiness → Capstone">View all</button></div>
+              <div class="ac-ready-hero"><span id="ac-ready-number" class="ac-ready-number">3</span><span class="ac-ready-caption">teams ready to schedule</span></div>
+              <p class="ac-ready-summary" id="ac-ready-summary">5 preparing · 4 already scheduled</p>
+              <div id="ac-readiness-reasons" class="ac-readiness-reasons"></div>
+            </section>
+
+            <section class="ac-panel ac-panel-padding" aria-label="Defense calendar">
+              <div class="ac-panel-head"><div class="ac-heading"><i data-lucide="calendar-days" aria-hidden="true"></i><h3>Defense schedule</h3></div><button class="ac-link" type="button" data-nav="Defense Operations → Schedules">Open schedule</button></div>
+              <div class="ac-calendar-tools"><strong id="ac-calendar-range">November 16–22</strong><div class="ac-calendar-controls"><button type="button" class="ac-button" data-calendar-view="week" aria-pressed="true">Week</button><button type="button" class="ac-button" data-calendar-view="month" aria-pressed="false">Month</button><button type="button" class="ac-button" id="ac-calendar-today">Today</button></div></div>
+              <div class="ac-weekdays" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="ac-days" id="ac-calendar-days"></div>
+              <div class="ac-calendar-detail" id="ac-calendar-detail" aria-live="polite"></div>
+              <div class="ac-upcoming"><p class="ac-upcoming-label">Upcoming Capstone sessions</p><div class="ac-upcoming-row"><div class="ac-upcoming-date">Nov<strong>19</strong></div><div>Proposal defense<p class="ac-muted">9:00–10:00 AM · 2 teams</p></div><div class="ac-upcoming-place">Lab 1</div></div><div class="ac-upcoming-row"><div class="ac-upcoming-date">Nov<strong>20</strong></div><div>Proposal defense<p class="ac-muted">1:00–2:00 PM · 2 teams</p></div><div class="ac-upcoming-place">Lab 1</div></div></div>
+            </section>
+          </div>
+
+          <section class="ac-panel ac-panel-padding"><div class="ac-panel-head"><h3>Semester at a glance</h3><span class="ac-muted">Capstone unless labeled</span></div><div class="ac-stat-strip"><div class="ac-stat"><div class="ac-stat-number">48</div><p>Enrolled students</p></div><div class="ac-stat"><div class="ac-stat-number">12</div><p>Active teams</p></div><div class="ac-stat"><div class="ac-stat-number">4</div><p>Teams scheduled</p></div><div class="ac-stat"><div class="ac-stat-number">11</div><p>Staff · Department-wide</p></div></div></section>
+        </section>
+
+        <section id="ac-pit-panel" role="tabpanel" aria-labelledby="ac-pit-tab" class="ac-stack" hidden>
+          <section class="ac-panel ac-panel-padding"><div class="ac-panel-head"><div class="ac-heading"><i data-lucide="layers" aria-hidden="true"></i><h3>PIT overview</h3></div><span class="ac-panel-readonly"><i data-lucide="eye" aria-hidden="true"></i>Read-only oversight</span></div><p class="ac-muted" style="margin-top:7px">Routine setup and coordination are managed by the assigned PIT Leads.</p><div class="ac-pit-summary"><div><div class="ac-stat-number">3</div><p class="ac-muted">Year levels</p></div><div><div class="ac-stat-number">12</div><p class="ac-muted">Active teams</p></div><div><div class="ac-stat-number">4</div><p class="ac-muted">Configured events</p></div></div></section>
+          <section class="ac-panel ac-panel-padding"><div class="ac-panel-head ac-pit-title"><h3>By year level</h3><span class="ac-muted">PIT Lead · Events · Progress</span></div><article class="ac-pit-row"><div><strong>First year</strong><p class="ac-muted">[Assigned PIT Lead]</p></div><div><strong>4 teams · 1 event</strong><p class="ac-muted">Next defense: November 20</p></div><div><strong>Scheduled</strong><p class="ac-muted">4 teams scheduled</p></div></article><article class="ac-pit-row"><div><strong>Second year</strong><p class="ac-muted">[Assigned PIT Lead]</p></div><div><strong>5 teams · 2 events</strong><p class="ac-muted">No defense scheduled</p></div><div><strong>Setup pending</strong><p class="ac-muted">PIT Lead · Event configuration</p></div></article><article class="ac-pit-row"><div><strong>Third year</strong><p class="ac-muted">[Assigned PIT Lead]</p></div><div><strong>3 teams · 1 event</strong><p class="ac-muted">Next defense: November 21</p></div><div><strong>In progress</strong><p class="ac-muted">2 assessed · 1 scheduled</p></div></article></section>
+          <details class="ac-panel ac-activity"><summary>PIT event details</summary><div class="ac-activity-list"><div class="ac-activity-entry"><span>First year · Event 1</span><span class="ac-muted">November 20 · 9:00 AM</span></div><div class="ac-activity-entry"><span>Second year · Events 1 and 2</span><span class="ac-muted">Configuration in progress</span></div><div class="ac-activity-entry"><span>Third year · Event 1</span><span class="ac-muted">November 21 · 1:00 PM</span></div></div></details>
+        </section>
+
+        <details class="ac-panel ac-activity"><summary>Recent activity</summary><div class="ac-activity-list"><div class="ac-activity-entry"><span>Stage settings updated · Admin</span><span class="ac-muted">Today, 9:00 AM</span></div><div class="ac-activity-entry"><span>Capstone roster imported · Admin</span><span class="ac-muted">November 17, 3:20 PM</span></div><button type="button" class="ac-link" data-nav="Audit Trail">View audit trail</button></div></details>
+        <section id="ac-destination" class="ac-destination" hidden aria-live="polite"><div><strong id="ac-destination-title">Destination preview</strong><p id="ac-destination-path"></p></div><button id="ac-close-destination" class="ac-link" type="button">Close preview</button></section>
+        <p class="ac-footnote">Admin overview concept · Illustrative records and counts</p>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const root=document.getElementById('ds-admin-clean');
+      const state={scenario:3,program:'capstone',expanded:false,calendarView:'week',day:18,owners:false};
+      const tasks={
+        proposal:{name:'Proposal defense',reason:'Missing evaluation rubrics',button:'Fix rubrics',destination:'Defense Stages → Proposal defense → Grading & Rubrics',scope:'capstone'},
+        final:{name:'Final defense',reason:'Missing evaluation rubrics',button:'Fix rubrics',destination:'Defense Stages → Final defense → Grading & Rubrics',scope:'capstone'},
+        adviserA:{name:'Team C-07',reason:'No adviser assigned',button:'Assign adviser',destination:'Student Teams → Team C-07 → Adviser assignment',scope:'capstone'},
+        adviserB:{name:'Team C-10',reason:'No adviser assigned',button:'Assign adviser',destination:'Student Teams → Team C-10 → Adviser assignment',scope:'capstone'},
+        panelist:{name:'Department · Panelist request',reason:'1 request awaiting your decision',button:'Review request',destination:'Faculty directory → Panelist requests → Pending request',scope:'department'},
+        scheduling:{name:'3 teams ready for defense',reason:'Requirements met · No schedule yet',button:'Schedule teams',destination:'Defense Operations → Readiness → Ready Capstone teams',scope:'capstone'}
+      };
+      function icons(){
+        const fallback={'calendar-range':'▦','settings-2':'⚙','users':'👥︎','calendar-days':'▦','file-check-2':'☑','triangle-alert':'⚠︎','clock-3':'◷','circle-check':'✓','minus':'−','calendar-plus':'⊞','inbox':'▤','bell':'🔔︎','circle-user-round':'◉','layout-dashboard':'⊞','history':'↶','graduation-cap':'🎓︎','layers':'▱','refresh-cw':'↻','arrow-up-right':'↗','chevron-right':'›','list-checks':'☷','upload':'↑','user-check':'✓','user-plus':'+' ,'eye':'◉'};
+        root.querySelectorAll('i[data-lucide]').forEach(node=>{node.textContent=fallback[node.dataset.lucide]||'•';node.classList.add('ac-icon-fallback');});
+        if(globalThis.lucide)globalThis.lucide.createIcons({attrs:{width:16,height:16}});
+      }
+      function selectedTasks(){const keys=state.scenario===1?['proposal']:state.scenario===3?['proposal','adviserA','scheduling']:['proposal','final','adviserA','adviserB','panelist','scheduling'];return keys.filter(key=>state.program==='capstone'||tasks[key].scope==='department');}
+      function numbers(){return{stageIssues:state.scenario===6?2:1,missingAdvisers:state.scenario===1?0:state.scenario===3?1:2,ready:state.scenario===1?0:3};}
+      function renderActions(){
+        const keys=selectedTasks();const visible=state.expanded?keys:keys.slice(0,3);
+        root.querySelector('#ac-attention').hidden=keys.length===0;
+        root.querySelector('#ac-action-count').textContent=keys.length;root.querySelector('#ac-action-count').setAttribute('aria-label',`${keys.length} ${keys.length===1?'action':'actions'}`);
+        root.querySelector('#ac-action-rows').innerHTML=visible.map(key=>`<article class="ac-action-row"><i data-lucide="${key==='scheduling'?'calendar-plus':key==='panelist'?'inbox':'triangle-alert'}" aria-hidden="true"></i><div><div class="ac-action-name">${tasks[key].name}</div><p class="ac-action-reason">${tasks[key].reason}</p></div><button type="button" class="ac-button" data-task="${key}">${tasks[key].button}</button></article>`).join('');
+        root.querySelector('#ac-more').hidden=keys.length<=3;root.querySelector('#ac-visible-count').textContent=`Showing ${visible.length} of ${keys.length}`;const toggle=root.querySelector('#ac-expand');toggle.textContent=state.expanded?'Show fewer':`View all ${keys.length} actions`;toggle.setAttribute('aria-expanded',String(state.expanded));
+      }
+      function renderCards(){
+        const n=numbers();const cards=[
+          {title:'Users',icon:'users',value:'64',label:'Enrolled students',detail:'All years · Active semester',status:'Manage enrollment',symbol:'users',action:false,destination:'User Management → Students',owner:'Admin'},
+          {title:'Stage setup',icon:'settings-2',value:`${3-n.stageIssues} / 3`,label:'Stages configured',detail:`${n.stageIssues} ${n.stageIssues===1?'stage missing':'stages missing'} rubrics`,status:`${n.stageIssues} ${n.stageIssues===1?'setup action':'setup actions'}`,symbol:'triangle-alert',action:true,destination:'Defense Stages → Active semester',owner:'Admin'},
+          {title:'Teams',icon:'users',value:'12',label:'Active teams',detail:`Advisers: ${12-n.missingAdvisers} assigned · ${n.missingAdvisers} unassigned`,status:n.missingAdvisers?`${n.missingAdvisers} ${n.missingAdvisers===1?'assignment action':'assignment actions'}`:'Advisers assigned',symbol:n.missingAdvisers?'triangle-alert':'circle-check',action:n.missingAdvisers>0,destination:'Student Teams → Active Capstone teams',owner:'Admin'},
+          {title:'Scheduling',icon:'calendar-days',value:'4',label:'Teams scheduled',detail:`${n.ready} ready · ${8-n.ready} preparing`,status:n.ready?'1 scheduling action':'Waiting on teams',symbol:n.ready?'triangle-alert':'clock-3',action:n.ready>0,destination:'Defense Operations → Schedules',owner:'Admin, once ready'},
+          {title:'Results',icon:'file-check-2',value:'0',label:'Ready for release',detail:'0 assessed · 0 released',status:'Not started',symbol:'minus',action:false,destination:'Evaluation & Grades → Capstone results',owner:'Admin, once assessed'}
+        ];
+        root.querySelector('#ac-workflow-cards').innerHTML=cards.map(card=>`<button type="button" class="ac-flow-card" data-nav="${card.destination}" data-nav-label="${card.title}" aria-label="Open ${card.title.toLowerCase()}. ${card.value} ${card.label.toLowerCase()}. ${card.detail}. ${card.status}."><span class="ac-card-top"><span class="ac-card-name"><span class="ac-card-icon"><i data-lucide="${card.icon}" aria-hidden="true"></i></span><span>${card.title}</span></span></span><span class="ac-card-number">${card.value}</span><span class="ac-card-label">${card.label}</span><span class="ac-card-detail">${card.detail}</span><span class="ac-card-state" data-action="${card.action}"><i data-lucide="${card.symbol}" aria-hidden="true"></i><span>${card.status}</span></span><span class="ac-card-owner" ${state.owners?'':'hidden'}>${card.owner}</span></button>`).join('');
+      }
+      function renderReadiness(){
+        const n=numbers();const preparing=8-n.ready;const uploads=preparing-n.missingAdvisers-2;
+        root.querySelector('#ac-ready-number').textContent=n.ready;root.querySelector('#ac-ready-summary').textContent=`${preparing} preparing · 4 already scheduled`;
+        const rows=[{icon:'upload',label:'Awaiting student uploads',count:uploads,destination:'Readiness → Awaiting required student uploads'},{icon:'user-check',label:'Awaiting adviser endorsement',count:2,destination:'Readiness → Awaiting adviser endorsement'},{icon:'user-plus',label:'Needs adviser assignment',count:n.missingAdvisers,destination:'Student Teams → Unassigned Capstone advisers'}].filter(row=>row.count>0);
+        root.querySelector('#ac-readiness-reasons').innerHTML=rows.map(row=>`<button type="button" class="ac-readiness-row" data-nav="${row.destination}"><span class="ac-reason-label"><i data-lucide="${row.icon}" aria-hidden="true"></i>${row.label}</span><span class="ac-count">${row.count}</span></button>`).join('');
+      }
+      function renderCalendar(){
+        root.querySelector('#ac-calendar-range').textContent=state.calendarView==='week'?'November 16–22':'November 2026';
+        root.querySelectorAll('[data-calendar-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.calendarView===state.calendarView)));
+        const days=state.calendarView==='week'?Array.from({length:7},(_,i)=>i+16):Array.from({length:42},(_,i)=>i-5);
+        root.querySelector('#ac-calendar-days').innerHTML=days.map(day=>day>0&&day<=30?`<button type="button" class="ac-day" data-day="${day}" aria-label="November ${day}, 2026${[19,20].includes(day)?', Capstone session scheduled':''}" aria-pressed="${day===state.day}"><span>${day}</span><span class="${[19,20].includes(day)?'ac-date-dot':'ac-day-no-dot'}" aria-hidden="true"></span></button>`:`<span class="ac-day ac-day-outside" aria-hidden="true">${day<1?day+31:day-30}</span>`).join('');
+        const session=state.day===19?'<p><strong>November 19 · Proposal defense</strong></p><p>9:00–10:00 AM · Lab 1 · 2 Capstone teams</p><p class="ac-muted">PIT booking · Lab 2 · 10:00–11:00 AM</p>':state.day===20?'<p><strong>November 20 · Proposal defense</strong></p><p>1:00–2:00 PM · Lab 1 · 2 Capstone teams</p>':`<p>November ${state.day} · No Capstone sessions scheduled</p>`;
+        root.querySelector('#ac-calendar-detail').innerHTML=session+'<p class="ac-muted">Shared calendar · Check room and time before scheduling.</p>';
+      }
+      function render(){
+        root.querySelectorAll('[data-example]').forEach(button=>button.setAttribute('aria-pressed',String(Number(button.dataset.example)===state.scenario)));
+        root.querySelectorAll('[data-program]').forEach(button=>button.setAttribute('aria-selected',String(button.dataset.program===state.program)));
+        root.querySelector('#ac-capstone-panel').hidden=state.program!=='capstone';root.querySelector('#ac-pit-panel').hidden=state.program!=='pit';root.querySelector('#ac-destination').hidden=true;
+        renderActions();renderCards();renderReadiness();renderCalendar();icons();
+      }
+      function save(){if(window.openai?.setWidgetState)window.openai.setWidgetState({modelContent:{adminOverviewScenario:state.scenario,program:state.program,showCardResponsibility:state.owners},privateContent:{expanded:state.expanded,calendarView:state.calendarView,day:state.day}}).catch(()=>{});}
+      function restore(saved){
+        if([1,3,6].includes(saved?.modelContent?.adminOverviewScenario))state.scenario=saved.modelContent.adminOverviewScenario;
+        if(['capstone','pit'].includes(saved?.modelContent?.program))state.program=saved.modelContent.program;
+        if(typeof saved?.modelContent?.showCardResponsibility==='boolean')state.owners=saved.modelContent.showCardResponsibility;
+        if(typeof saved?.privateContent?.expanded==='boolean')state.expanded=saved.privateContent.expanded;
+        if(['week','month'].includes(saved?.privateContent?.calendarView))state.calendarView=saved.privateContent.calendarView;
+        if(Number.isInteger(saved?.privateContent?.day)&&saved.privateContent.day>0&&saved.privateContent.day<=30)state.day=saved.privateContent.day;
+      }
+      function showDestination(label,path){root.querySelector('#ac-destination-title').textContent='Destination preview · '+label;root.querySelector('#ac-destination-path').textContent=path;root.querySelector('#ac-destination').hidden=false;}
+      root.addEventListener('click',event=>{
+        const example=event.target.closest('[data-example]');const program=event.target.closest('[data-program]');const task=event.target.closest('[data-task]');const nav=event.target.closest('[data-nav]');const view=event.target.closest('[data-calendar-view]');const day=event.target.closest('[data-day]');
+        if(example){state.scenario=Number(example.dataset.example);state.expanded=false;render();save();}
+        if(program){state.program=program.dataset.program;state.expanded=false;render();save();}
+        if(task){const item=tasks[task.dataset.task];showDestination(item.button,item.destination);}
+        if(nav){if(nav.dataset.nav==='Overview'){root.querySelector('#ac-destination').hidden=true;}else showDestination(nav.dataset.navLabel||nav.getAttribute('aria-label')||nav.textContent.trim()||nav.dataset.nav,nav.dataset.nav);}
+        if(event.target.closest('#ac-expand')){state.expanded=!state.expanded;renderActions();icons();save();}
+        if(event.target.closest('#ac-close-destination'))root.querySelector('#ac-destination').hidden=true;
+        if(view){state.calendarView=view.dataset.calendarView;renderCalendar();save();}
+        if(day){state.day=Number(day.dataset.day);renderCalendar();save();}
+        if(event.target.closest('#ac-calendar-today')){state.day=18;if(state.calendarView!=='month')state.calendarView='week';renderCalendar();save();}
+        if(event.target.closest('#ac-refresh')){render();root.querySelector('#ac-refresh-label').textContent='Preview refreshed';}
+      });
+      root.querySelector('[role="tablist"]').addEventListener('keydown',event=>{
+        if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const tabs=[...root.querySelectorAll('[data-program]')];const index=tabs.indexOf(document.activeElement);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next].focus();tabs[next].click();
+      });
+      restore(window.openai?.widgetState);render();
+      window.addEventListener('openai:set_globals',event=>{if(event.detail?.globals?.widgetState){restore(event.detail.globals.widgetState);render();}});
+      if(globalThis.Tweak){const tweak=new Tweak({container:root.querySelector('[aria-label="Capstone semester workflow"]'),onChange:()=>{renderCards();icons();save();}});tweak.addToggle(state,'owners',{label:'Show responsibility under each card'});}
+    })();
+  </script>
+</div>

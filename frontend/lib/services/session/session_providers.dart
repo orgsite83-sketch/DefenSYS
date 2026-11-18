@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../admin_overview_scope_provider.dart';
 
 import '../../screens/web/admin/admin_shell.dart';
 import '../academic/academic_period_provider.dart';
@@ -28,6 +29,7 @@ import '../app/unsaved_changes_provider.dart';
 
 /// Clears cached API state when the session ends so disposed screens do not rebuild.
 void invalidateSessionProviders(Ref ref) {
+  ref.invalidate(adminOverviewScopeProvider);
   ref.invalidate(unsavedChangesProvider);
   ref.invalidate(activeAdminSectionProvider);
   ref.invalidate(dataRefreshProvider);

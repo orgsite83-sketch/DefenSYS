@@ -20,6 +20,7 @@ class PanelistEvaluationDraft(models.Model):
     )
     guest_code_id = models.CharField(max_length=64, null=True, blank=True)
     context_signature = models.CharField(max_length=64)
+    versioned = models.BooleanField(default=False)
     submissions = models.JSONField(default=list)
     updated_at = models.DateTimeField(auto_now=True)
 

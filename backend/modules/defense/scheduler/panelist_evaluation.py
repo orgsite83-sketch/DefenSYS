@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -102,7 +102,57 @@ def evaluation_context(schedule, grade=None, *, include_scope=True):
 def draft_payload(draft, context):
     if draft is None or draft.context_signature != context:
         return None
-    return {'submissions': draft.submissions, 'saved_at': draft.updated_at.isoformat()}
+    # The schedule lock makes this token a compare-and-swap version. A timed-out
+    # HTTP request may still finish; it must not overwrite a newer retry.
+    version = hashlib.sha256(json.dumps([
+        draft.context_signature, draft.updated_at.isoformat(), draft.submissions,
+    ], sort_keys=True, default=str).encode()).hexdigest()
+    return {'submissions': draft.submissions, 'saved_at': draft.updated_at.isoformat(), 'version': version}
+
+
+class EvaluationDraftConflict(ValidationError):
+    def __init__(self, draft, message=None):
+        self.draft = draft
+        super().__init__(message or 'This draft changed in another request. Your changes are still here. Refresh before saving again.')
+
+
+def require_draft_version(schedule, payload, **owner):
+    """Call while holding the schedule lock, including before final submission."""
+    grade = schedule.grade_records.first()
+    draft = PanelistEvaluationDraft.objects.filter(schedule=schedule, **owner).first()
+    current = draft_payload(draft, evaluation_context(schedule, grade, include_scope=False))
+    if 'draft_version' not in payload:
+        if current and draft.versioned:
+            raise EvaluationDraftConflict(current, 'Update or refresh the application before changing this protected draft.')
+        return  # Older clients can still complete their own legacy drafts.
+    if payload['draft_version'] != (current['version'] if current else ''):
+        raise EvaluationDraftConflict(current)
+
+
+def submission_payload(row):
+    return {'student_id': row.student_id, 'concept_key': row.concept_key,
+            'remarks': row.remarks or '',
+            'criteria_scores': [{'criterion_id': score.criterion_id, 'score': float(score.score),
+                                'max_score': float(score.max_score_snapshot)}
+                               for score in row.criterion_scores.all()],
+            'section_scores': [{'section_key': score.section_key, 'score': float(score.score)}
+                               for score in row.section_scores.all()]}
+
+
+def owner_evaluation_state(schedule, **owner):
+    """Small, private, read-only recovery response; never infer submission from a draft."""
+    grade = schedule.grade_records.first()
+    submissions = list(schedule.panelist_grade_submissions.filter(
+        is_void=False, **owner).prefetch_related('criterion_scores', 'section_scores'))
+    complete = evaluation_complete(schedule, submissions)
+    context = evaluation_context(schedule, grade)
+    draft_context = evaluation_context(schedule, grade, include_scope=False)
+    draft = PanelistEvaluationDraft.objects.filter(schedule=schedule, **owner).first()
+    return {'schedule_id': schedule.pk, 'team_id': schedule.team_id,
+            'evaluation_context': context, 'draft_context': draft_context,
+            'is_submitted': complete,
+            'submissions': [submission_payload(row) for row in submissions],
+            'draft': None if complete else draft_payload(draft, draft_context)}
 
 
 def evaluation_complete(schedule, submissions):
@@ -117,7 +167,8 @@ def evaluation_complete(schedule, submissions):
         elif not row.is_void and row.concept_key in keys:
             rows.append({'student_id': row.student_id, 'concept_key': row.concept_key,
                 'remarks': row.remarks or '', 'criteria_scores': [
-                    {'criterion_id': score.criterion_id, 'score': str(score.score)} for score in row.criterion_scores.all()]})
+                    {'criterion_id': score.criterion_id, 'score': str(score.score)} for score in row.criterion_scores.all()],
+                'section_scores': [{'section_key': score.section_key, 'score': float(score.score)} for score in row.section_scores.all()]})
     try:
         validate_evaluation_submissions(schedule, rows)
         return True
@@ -127,7 +178,7 @@ def evaluation_complete(schedule, submissions):
 
 def owner_evaluation_complete(schedule, **owner):
     return evaluation_complete(schedule, schedule.panelist_grade_submissions.filter(
-        is_void=False, **owner).prefetch_related('criterion_scores'))
+        is_void=False, **owner).prefetch_related('criterion_scores', 'section_scores'))
 
 
 def existing_submission_matches(schedule, item, **owner):
@@ -139,7 +190,9 @@ def existing_submission_matches(schedule, item, **owner):
         return False
     recorded = {s.criterion_id: s.score for s in existing.criterion_scores.all()}
     incoming = {s['criterion_id']: Decimal(str(s['score'])) for s in item['criteria_scores']}
-    if recorded != incoming or (existing.remarks or '').strip() != item.get('remarks', '').strip():
+    recorded_sections = {s.section_key: s.score for s in existing.section_scores.all()}
+    incoming_sections = {s['section_key']: Decimal(str(s['score'])) for s in item.get('section_scores', [])}
+    if recorded != incoming or recorded_sections != incoming_sections or (existing.remarks or '').strip() != item.get('remarks', '').strip():
         raise ValidationError('A submitted assessment cannot be edited. Refresh its recorded scores or request a correction.')
     return True
 
@@ -216,28 +269,14 @@ def validate_evaluation_submissions(schedule, submissions, *, partial=False):
             isinstance(s, dict) and s.get('criterion_id', s.get('id')) is None for s in scores
         ):
             scores = [dict(s, criterion_id=c.pk) for s, c in zip(scores, expected[identity])]
-        scored = set()
-        clean_scores = []
-        for item in scores:
-            if not isinstance(item, dict):
-                raise ValidationError('Each criterion score must be an object.')
-            try:
-                criterion_id = int(item.get('criterion_id', item.get('id')))
-                score = Decimal(str(item.get('score')))
-            except (TypeError, ValueError, InvalidOperation) as exc:
-                raise ValidationError('Each score must have a valid criterion ID and numeric score.') from exc
-            if criterion_id not in allowed or criterion_id in scored:
-                raise ValidationError('Submitted criteria must exactly match the assigned panel rubric.')
-            if not score.is_finite() or score < 0 or score > allowed[criterion_id].max_score:
-                raise ValidationError('Score must be between 0 and max score.')
-            scored.add(criterion_id)
-            clean_scores.append({'criterion_id': criterion_id, 'score': float(score)})
-        if not partial and scored != set(allowed):
-            raise ValidationError('Score every required criterion before submitting.')
+        from grading.grades.section_scoring import validate_scores
+        clean_scores, clean_sections = validate_scores(rubric, expected[identity], scores,
+            submission.get('section_scores', []), partial=partial)
         remarks = submission.get('remarks', '')
         if not isinstance(remarks, str):
             raise ValidationError('Remarks must be text.')
-        result.append({'student_id': student_id, 'concept_key': concept_key, 'criteria_scores': clean_scores, 'remarks': remarks})
+        result.append({'student_id': student_id, 'concept_key': concept_key, 'criteria_scores': clean_scores,
+                       'section_scores': clean_sections, 'remarks': remarks})
     if not partial and seen != set(expected):
         raise ValidationError('Complete the evaluation for every team member before submitting.')
     return result
@@ -262,6 +301,8 @@ def save_evaluation_draft(schedule, payload, *, panelist=None, guest=None):
 
 def _save_evaluation_draft(schedule, payload, *, panelist=None, guest=None):
     owner = {'panelist': panelist} if panelist else {'guest_code_id': str(guest.guest_code_id)}
+    from grading.grades.section_scoring import require_section_client
+    require_section_client(schedule, payload, **owner)
     grade = schedule.grade_records.first()
     reason = grading_unavailable_reason(schedule, grade)
     if reason:
@@ -272,8 +313,23 @@ def _save_evaluation_draft(schedule, payload, *, panelist=None, guest=None):
     if payload.get('evaluation_context') != context:
         raise ValidationError('This evaluation has changed. Refresh the assignment before saving.')
     submissions = validate_evaluation_submissions(schedule, payload.get('submissions'), partial=True)
+    draft_context = evaluation_context(schedule, grade, include_scope=False)
+    current = PanelistEvaluationDraft.objects.filter(schedule=schedule, **owner).first()
+    current_payload = draft_payload(current, draft_context)
+    if current_payload and current.versioned and 'draft_version' not in payload:
+        raise EvaluationDraftConflict(current_payload, 'Update or refresh the application before changing this protected draft.')
+    if 'draft_version' in payload and payload['draft_version'] != (
+            current_payload['version'] if current_payload else ''):
+        # An identical retry is safe even if the first response was lost.
+        if current_payload and current.submissions == submissions:
+            if not current.versioned:
+                current.versioned = True
+                current.save(update_fields=['versioned'])
+            return current_payload
+        raise EvaluationDraftConflict(current_payload)
     draft, _ = PanelistEvaluationDraft.objects.update_or_create(
         schedule=schedule, **owner,
-        defaults={'context_signature': evaluation_context(schedule, grade, include_scope=False), 'submissions': submissions},
+        defaults={'context_signature': draft_context, 'submissions': submissions,
+                  'versioned': 'draft_version' in payload},
     )
-    return draft_payload(draft, evaluation_context(schedule, grade, include_scope=False))
+    return draft_payload(draft, draft_context)

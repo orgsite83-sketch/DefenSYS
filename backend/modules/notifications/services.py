@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def notify_team_students(team, *, title, message, category=NotificationCategory.GENERAL,
                          sender=None, stage_label=None, deliverables=False,
-                         action_payload=None, event_key=None, priority=NotificationPriority.NORMAL):
+                         action_payload=None, event_key=None, priority=NotificationPriority.NORMAL, recipient_ids=None):
     """Persist student alerts with the domain write so failures roll back together.
 
     The caller owns the transaction/team lock. Stable event keys prevent panel
@@ -24,6 +24,8 @@ def notify_team_students(team, *, title, message, category=NotificationCategory.
     student_ids = set(team.memberships.values_list('student_id', flat=True))
     if team.leader_id:
         student_ids.add(team.leader_id)
+    if recipient_ids is not None:
+        student_ids = set(recipient_ids)
     query = {'stage': stage_label} if stage_label else {}
     if deliverables:
         query['subtab'] = 'deliverables'

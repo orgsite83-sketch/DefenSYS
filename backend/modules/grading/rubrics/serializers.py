@@ -59,6 +59,12 @@ def validate_criterion_weights(weights):
 
 
 class RubricSerializer(serializers.ModelSerializer):
+    scoring_sections = serializers.SerializerMethodField()
+
+    def get_scoring_sections(self, obj):
+        from grading.grades.section_scoring import section_definitions
+        return section_definitions(obj) if obj.evaluation_type == 'panel' else []
+
     semester_id = serializers.IntegerField(source='semester.id', read_only=True)
     semester = serializers.CharField(source='semester.label', read_only=True)
     school_year = serializers.CharField(source='semester.school_year.label', read_only=True)
@@ -96,6 +102,7 @@ class RubricSerializer(serializers.ModelSerializer):
             'peer_weight',
             'weights',
             'criteria_count',
+            'scoring_sections',
             'criteria',
             'created_by_name',
             'created_at',

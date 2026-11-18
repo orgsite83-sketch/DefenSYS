@@ -14,6 +14,7 @@ import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../../widgets/table/table.dart';
 import 'grade_center_team_detail_screen.dart';
 import 'grade_table_values.dart';
+import 'outcome_dissemination_dialog.dart';
 export 'grade_table_values.dart';
 
 /// The masterlist has one continuous row per entity; all evidence is on details.
@@ -53,6 +54,40 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
   bool _overflow = false;
   GradeRow? _lastData;
   String? _lastActor;
+  final Set<int> _releaseSelection = {};
+  bool _releaseBusy = false;
+  String? _releaseNotice;
+  bool get _canDisseminate =>
+      gradeMap(_lastData?['dissemination'])['can_manage'] == true;
+
+  Future<void> _disseminate({
+    List<int>? gradeIds,
+    GradeRow? statusCell,
+    bool history = false,
+  }) async {
+    if (_releaseBusy) return;
+    setState(() => _releaseBusy = true);
+    try {
+      final changed = await showOutcomeDisseminationDialog(
+        context,
+        filters: Map<String, String>.from(_params),
+        gradeIds: gradeIds,
+        statusCell: statusCell,
+        history: history,
+      );
+      if (!mounted) return;
+      if (changed == true) {
+        setState(() {
+          _releaseSelection.clear();
+          _releaseNotice = 'Outcome dissemination updated.';
+        });
+        ref.invalidate(gradeMasterlistDataProvider);
+        widget.onRefresh?.call();
+      }
+    } finally {
+      if (mounted) setState(() => _releaseBusy = false);
+    }
+  }
 
   String get _session =>
       '${ref.read(authProvider).user?['id']}|${widget.scope}|${widget.groupKey}|${widget.initialSemesterId}|${widget.initialAssessmentId}${widget.workspaceParameters.isEmpty ? '' : '|${widget.workspaceParameters['batch_id']}'}';
@@ -81,6 +116,8 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
         'search',
         'section',
         'status',
+        'dissemination_status',
+        'session_id',
         '_scroll',
       ])
         if (saved[key] != null) key: saved[key]!,
@@ -125,6 +162,12 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
   void _set(Map<String, String> changes, {bool resetPage = true}) {
     _debounce?.cancel();
     setState(() {
+      if (changes.keys.any(
+        (key) =>
+            !['page', 'page_size', 'ordering', 'detail_level'].contains(key),
+      )) {
+        _releaseSelection.clear();
+      }
       _params = {..._params, 'search': _search.text, ...changes};
       if (resetPage) _params['page'] = '1';
     });
@@ -355,6 +398,62 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
       cellBuilder: (_, row, _) => builder(row),
     );
     final columns = <DefensysTableColumn<GradeRow>>[
+      if (!_students && _canDisseminate)
+        DefensysTableColumn<GradeRow>(
+          title: '',
+          minWidth: 54,
+          flex: .4,
+          headerBuilder: (_) {
+            final eligible = rows
+                .map(first)
+                .where(
+                  (cell) =>
+                      gradeMap(cell['dissemination'])['can_release'] == true,
+                )
+                .map((cell) => gradeNumber(cell['grade_id'])!.toInt())
+                .toSet();
+            return Semantics(
+              label: 'Select ready teams on this page',
+              child: ShadCheckbox(
+                value:
+                    eligible.isNotEmpty &&
+                    eligible.every(_releaseSelection.contains),
+                enabled: eligible.isNotEmpty && !_releaseBusy,
+                onChanged: (checked) => setState(() {
+                  if (checked) {
+                    _releaseSelection.addAll(eligible);
+                  } else {
+                    _releaseSelection.removeAll(eligible);
+                  }
+                }),
+              ),
+            );
+          },
+          cellBuilder: (_, row, index) {
+            final cell = first(row),
+                metadata = gradeMap(first(row)['dissemination']);
+            final id = gradeNumber(cell['grade_id'])?.toInt();
+            return Semantics(
+              label: 'Select ${row['name']} for dissemination',
+              child: ShadCheckbox(
+                value: id != null && _releaseSelection.contains(id),
+                enabled:
+                    id != null &&
+                    metadata['can_release'] == true &&
+                    !_releaseBusy,
+                onChanged: (checked) => setState(() {
+                  if (id != null) {
+                    if (checked) {
+                      _releaseSelection.add(id);
+                    } else {
+                      _releaseSelection.remove(id);
+                    }
+                  }
+                }),
+              ),
+            );
+          },
+        ),
       column(
         _students ? 'Student / ID' : 'Team / Project',
         'name',
@@ -461,6 +560,43 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
         width: 170,
       ),
     );
+    if (rows.any((row) => first(row)['dissemination'] != null)) {
+      columns.add(
+        column(
+          'Dissemination',
+          '',
+          (row) {
+            final cell = first(row),
+                info = gradeMap(first(row)['dissemination']);
+            final id = gradeNumber(cell['grade_id'])?.toInt();
+            return _canDisseminate && id != null
+                ? LayoutBuilder(
+                    builder: (_, constraints) => ShadButton.link(
+                      padding: EdgeInsets.zero,
+                      height: null,
+                      enabled: !_releaseBusy,
+                      onPressed: () => _disseminate(
+                        gradeIds: info['can_release'] == true ? [id] : null,
+                        statusCell: info['can_release'] == true ? null : cell,
+                      ),
+                      child: SizedBox(
+                        width: constraints.maxWidth,
+                        child: Text(
+                          '${info['label'] ?? 'No recorded outcome'}',
+                          style: const TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : _text(info['label']);
+          },
+          width: 205,
+          sortable: false,
+        ),
+      );
+    }
     return columns;
   }
 
@@ -610,6 +746,30 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
           );
     final actions = [
       ...widget.headerActions,
+      if (_canDisseminate)
+        ShadButton(
+          backgroundColor: DefensysTokens.maroonOf(context),
+          foregroundColor: Colors.white,
+          enabled:
+              ready &&
+              !_releaseBusy &&
+              (_releaseSelection.isNotEmpty ||
+                  (gradeNumber(
+                            gradeMap(_lastData?['dissemination'])['ready'],
+                          ) ??
+                          0) >
+                      0),
+          onPressed: () => _disseminate(
+            gradeIds: _releaseSelection.isEmpty
+                ? null
+                : _releaseSelection.toList(),
+          ),
+          child: Text(
+            _releaseSelection.isNotEmpty
+                ? 'Disseminate selected (${_releaseSelection.length})'
+                : 'Disseminate outcomes (${gradeMap(_lastData?['dissemination'])['ready'] ?? 0})',
+          ),
+        ),
       ReportExportMenu(
         reportId: _students
             ? 'student-grade-masterlist'
@@ -694,6 +854,8 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
       _search.text.isNotEmpty ||
       (_params['search'] ?? '').isNotEmpty ||
       (_params['section'] ?? '').isNotEmpty ||
+      (_params['dissemination_status'] ?? '').isNotEmpty ||
+      (_params['session_id'] ?? '').isNotEmpty ||
       (_params['status'] ?? '').isNotEmpty;
 
   Widget _filters(GradeRow options) => LayoutBuilder(
@@ -724,7 +886,13 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
           ? ShadButton.ghost(
               onPressed: () {
                 _search.clear();
-                _set({'search': '', 'section': '', 'status': ''});
+                _set({
+                  'search': '',
+                  'section': '',
+                  'status': '',
+                  'dissemination_status': '',
+                  'session_id': '',
+                });
               },
               child: const Text('Clear filters'),
             )
@@ -805,6 +973,63 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
                 ),
                 const SizedBox(height: 16),
                 _filters(gradeMap(data['options'])),
+                if (data['dissemination'] != null) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.end,
+                    children: [
+                      _select(
+                        'Dissemination',
+                        _params['dissemination_status'] ?? '',
+                        {
+                          '': 'All release statuses',
+                          for (final option in gradeMaps(
+                            gradeMap(data['options'])['dissemination_statuses'],
+                          ))
+                            '${option['value']}': '${option['label']}',
+                        },
+                        (value) => _set({'dissemination_status': value}),
+                        width: 235,
+                      ),
+                      if (gradeMaps(
+                        gradeMap(data['options'])['sessions'],
+                      ).isNotEmpty)
+                        _select(
+                          'Session (optional)',
+                          _params['session_id'] ?? '',
+                          {
+                            '': 'All sessions',
+                            for (final option in gradeMaps(
+                              gradeMap(data['options'])['sessions'],
+                            ))
+                              '${option['value']}': '${option['label']}',
+                          },
+                          (value) => _set({'session_id': value}),
+                          width: 240,
+                        ),
+                      if (_canDisseminate)
+                        ShadButton.link(
+                          onPressed: _releaseBusy
+                              ? null
+                              : () => _disseminate(history: true),
+                          child: const Text('Dissemination history'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _students
+                        ? 'Outcomes release once per team to all members. Numeric grades stay private.'
+                        : '${_releaseSelection.length} teams selected · ${gradeMap(data['dissemination'])['ready']} ready for release',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Text(
                   '${data['total']} ${_students ? 'students' : 'teams'}',
@@ -856,6 +1081,7 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
         '${actor?['id']}|${actor?['role']}|${actor?['is_pit_lead']}|${actor?['pit_lead_year']}';
     if (_lastActor != actorKey) {
       _lastData = null;
+      _releaseSelection.clear();
       _lastActor = actorKey;
     }
     if (result.asData != null) _lastData = result.asData!.value;
@@ -872,6 +1098,10 @@ class _GradeMasterlistState extends ConsumerState<GradeMasterlist> {
             ready: !result.isLoading && !result.hasError,
           ),
           const SizedBox(height: 20),
+          if (_releaseNotice != null) ...[
+            Text(_releaseNotice!),
+            const SizedBox(height: 12),
+          ],
           displayed.when(
             loading: () => const Padding(
               padding: EdgeInsets.all(32),

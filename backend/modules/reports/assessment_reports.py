@@ -16,6 +16,8 @@ from reports.generators.individual_grade_report import generate_individual_grade
 
 def assessment_candidates(request):
     """Return selection contexts from assessments, including previous academic periods."""
+    if getattr(request.user, 'role', None) == 'student':
+        raise PermissionDenied('Numeric assessment reports are available to authorized staff only.')
     queryset = grade_records_for(request.user).prefetch_related(None).prefetch_related('team__memberships__student')
     scope = request.query_params.get('scope', '')
     if scope in ('capstone', 'pit'):
@@ -190,6 +192,8 @@ def _individual_rows(grade, student):
 
 
 def export_assessment_report(request, *, team_id=None, student_id=None, include_signatures=False, signatories=None):
+    if getattr(request.user, 'role', None) == 'student':
+        raise PermissionDenied('Numeric assessment reports are available to authorized staff only.')
     student = get_object_or_404(get_user_model(), pk=student_id, role='student') if student_id is not None else None
     visible = grade_records_for(request.user)
     if student is not None:

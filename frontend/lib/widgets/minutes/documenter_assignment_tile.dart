@@ -245,9 +245,9 @@ class DocumenterAssignmentTile extends StatelessWidget {
           if (hasAction) const SizedBox(width: 6),
           Tooltip(
             message: 'Preview saved minutes PDF',
-            child: ShadButton.ghost(
+            child: ShadButton.outline(
               width: 40,
-              height: 44,
+              height: 44 * MediaQuery.textScalerOf(context).scale(1),
               padding: EdgeInsets.zero,
               onPressed: onPreview,
               child: const Icon(LucideIcons.fileText, size: 18),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -11,6 +12,7 @@ from channels.layers import get_channel_layer
 from .groups import broadcast_groups_for_capstone_semester, broadcast_groups_for_pit_event, user_group_name
 
 logger = logging.getLogger(__name__)
+BROADCAST_TIMEOUT_SECONDS = 2
 
 
 def _base_payload(
@@ -44,14 +46,17 @@ def _send_to_groups(groups: list[str], payload: dict[str, Any]) -> None:
         'type': 'grading.flags_changed',
         'payload': payload,
     }
-    for group in groups:
-        try:
-            async_to_sync(channel_layer.group_send)(group, message)
-        except Exception as e:
-            logger.warning(
-                f"Failed to broadcast real-time sync notification to group {group}: {e}",
-                exc_info=True,
-            )
+    async def publish():
+        # One budget for the whole notification, rather than one Redis timeout
+        # per recipient while the committed grading request waits for its ACK.
+        async with asyncio.timeout(BROADCAST_TIMEOUT_SECONDS):
+            for group in groups:
+                await channel_layer.group_send(group, message)
+
+    try:
+        async_to_sync(publish)()
+    except Exception:
+        logger.warning('Live grading update unavailable; saved grades are unchanged.', exc_info=True)
 
 
 def notify_team_peer_open(*, semester_id, team_id, stage_label, student_ids, scope='capstone'):

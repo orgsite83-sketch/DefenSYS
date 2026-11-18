@@ -110,7 +110,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navUsers => 'Users';
 
   @override
-  String get navUserManagement => 'User Management';
+  String get navUserManagement => 'Users & Roles';
 
   @override
   String get navStudentTeams => 'Student Teams';
@@ -134,10 +134,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navDefenseScheduler => 'Defense Scheduler';
 
   @override
-  String get navDefenseBoard => 'Defense Operations';
+  String get navDefenseBoard => 'Defense Schedule';
 
   @override
-  String get navDefenseStages => 'Defense Stages Setup';
+  String get navDefenseStages => 'Defense Stages';
 
   @override
   String get navScheduling => 'Scheduling';

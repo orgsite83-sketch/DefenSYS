@@ -1005,7 +1005,10 @@ def can_submit_files(user, team):
         return False
     if is_admin_user(user):
         return True
-    return getattr(user, 'role', '') == 'student' and team.memberships.filter(student=user).exists()
+    if getattr(user, 'role', '') == 'student':
+        from grading.grades.dissemination import pending_for
+        return team.memberships.filter(student=user).exists() and not pending_for(team)
+    return False
 
 
 def stage_payload(team, stage_label, evaluator=None):
@@ -1343,7 +1346,7 @@ def stage_payload(team, stage_label, evaluator=None):
     from .endorsement import endorsement_review
     from .redefense import hearing_history
     review = endorsement_review(team, stage_label, definitions=definitions, submitted=submitted)
-    return {
+    return student_assessment_payload({
         'stage_label': stage_label,
         'semester_id': team.semester_id,
         'display_semester': team.semester.display_name,
@@ -1411,7 +1414,7 @@ def stage_payload(team, stage_label, evaluator=None):
         'my_peer_submissions': stage_peer_submissions,
         'peer_eval_complete': stage_peer_complete,
         'peer_eval_allowed': stage_peer_allowed,
-    }
+    }, evaluator, team=team, stage=concept_context)
 
 
 @read_memoize(copy=True)
@@ -1562,7 +1565,8 @@ def team_payload(team, selected_stage=None, evaluator=None):
         event = PitEventGradingConfig.objects.filter(semester_id=team.semester_id,
             year_level=team.year_level, event_name__iexact=selected).first()
         roster_display = display_for(team, event)
-    return {
+    from grading.grades.student_visibility import student_team_payload
+    return student_team_payload({
         'id': team.id,
         **roster_display,
         'setup_pending': team.setup_pending,
@@ -1586,7 +1590,7 @@ def team_payload(team, selected_stage=None, evaluator=None):
         'counts': team_counts_payload(team, selected_payload),
         'members': members,
         'grade': student_assessment_payload(grade_payload, evaluator),
-    }
+    }, evaluator, team)
 
 
 def team_counts_payload(team, stage):
@@ -1665,6 +1669,8 @@ def counts_payload(teams, selected_stage=None, *, serialized_teams=None):
 @transaction.atomic
 def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, user, file=None, file_id=None, slot_key=''):
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
+    from grading.grades.student_visibility import require_student_release
+    require_student_release(user, team)
     deliverable_id = (deliverable_id or '').strip()
     if not team.is_capstone and not team.is_pit:
         raise PermissionError('Only Capstone or PIT teams can submit deliverables.')

@@ -1,0 +1,263 @@
+<div id="ds-admin-plan" aria-label="Proposed DefenSYS admin dashboard">
+  <style>
+    #ds-admin-plan{--ds-bg:light-dark(#f8fafc,#161618);--ds-panel:light-dark(#fff,#212024);--ds-text:light-dark(#0f172a,#f4f4f5);--ds-muted:light-dark(#475569,#b4b3ba);--ds-border:light-dark(#e2e8f0,#35343a);--ds-soft:light-dark(#f1f5f9,#28272d);--ds-brand:light-dark(#7a110a,#c0392b);--ds-brand-text:light-dark(#7a110a,#f4a69c);--ds-brand-soft:light-dark(#f7eeed,#332321);--ds-positive:light-dark(#166534,#86efac);font-family:Inter,Arial,sans-serif;font-size:14px;line-height:1.5;color:var(--ds-text);color-scheme:light dark;background:var(--ds-bg);width:100%}
+    #ds-admin-plan *{box-sizing:border-box}
+    #ds-admin-plan [hidden]{display:none!important}
+    #ds-admin-plan h2,#ds-admin-plan h3,#ds-admin-plan p{margin:0}
+    #ds-admin-plan h2{font-size:24px;letter-spacing:-.5px;line-height:1.25;font-weight:650}
+    #ds-admin-plan h3{font-size:14px;font-weight:600}
+    #ds-admin-plan button{font:inherit;color:inherit;cursor:pointer}
+    #ds-admin-plan button:focus-visible,#ds-admin-plan summary:focus-visible{outline:2px solid var(--ds-brand-text);outline-offset:3px}
+    #ds-admin-plan .ds-muted{font-size:12px;color:var(--ds-muted)}
+    #ds-admin-plan .ds-top{display:flex;align-items:center;gap:12px;padding:15px 112px 15px 20px;background:var(--ds-panel);border-bottom:1px solid var(--ds-border)}
+    #ds-admin-plan .ds-mark{height:31px;width:31px;display:grid;place-items:center;background:var(--ds-brand);color:#fff;border-radius:7px;flex-shrink:0}
+    #ds-admin-plan .ds-school{font-size:13px;font-weight:600}
+    #ds-admin-plan .ds-shell{display:grid;grid-template-columns:51px minmax(0,1fr)}
+    #ds-admin-plan .ds-nav{border-right:1px solid var(--ds-border);background:var(--ds-panel);display:flex;align-items:center;flex-direction:column;gap:24px;padding-top:26px;color:var(--ds-muted)}
+    #ds-admin-plan .ds-nav-active{color:var(--ds-brand-text);background:var(--ds-brand-soft);padding:8px;border-radius:6px;display:flex}
+    #ds-admin-plan .ds-main{padding:24px;min-width:0;display:grid;gap:16px;align-content:start}
+    #ds-admin-plan .ds-header{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    #ds-admin-plan .ds-tabs{display:flex;gap:4px;padding:4px;border-radius:8px;background:var(--ds-soft)}
+    #ds-admin-plan .ds-tab{display:flex;align-items:center;justify-content:center;gap:7px;min-height:36px;border:0;background:transparent;border-radius:5px;padding:7px 14px;color:var(--ds-muted)}
+    #ds-admin-plan .ds-tab[aria-selected="true"]{background:var(--ds-panel);color:var(--ds-brand-text);box-shadow:0 1px 3px color-mix(in srgb,var(--ds-text) 6%,transparent);font-weight:600}
+    #ds-admin-plan .ds-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    #ds-admin-plan .ds-between{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    #ds-admin-plan .ds-owner-line{color:var(--ds-muted);font-size:11px;margin-top:5px}
+    #ds-admin-plan .ds-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--ds-border);border-radius:6px;min-height:36px;background:var(--ds-panel);padding:7px 12px;white-space:nowrap}
+    #ds-admin-plan .ds-button:hover{background:var(--ds-soft)}
+    #ds-admin-plan .ds-primary{background:var(--ds-brand);color:#fff;border-color:var(--ds-brand)}
+    #ds-admin-plan .ds-primary:hover{background:var(--ds-brand);filter:brightness(1.1)}
+    #ds-admin-plan .ds-link{display:inline-flex;gap:6px;align-items:center;background:none;border:0;padding:3px 0;color:var(--ds-brand-text);font-size:12px}
+    #ds-admin-plan .ds-admin-queue{display:flex;gap:8px 16px;justify-content:space-between;align-items:center;flex-wrap:wrap;font-size:12px;padding:0 1px}
+    #ds-admin-plan .ds-panel{border:1px solid var(--ds-border);border-radius:10px;padding:18px 20px;background:var(--ds-panel);min-width:0}
+    #ds-admin-plan .ds-stack{display:grid;gap:16px}
+    #ds-admin-plan .ds-task{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:center}
+    #ds-admin-plan .ds-task-symbol{display:grid;place-items:center;background:var(--ds-brand-soft);color:var(--ds-brand-text);border-radius:7px;width:32px;height:32px}
+    #ds-admin-plan .ds-eyebrow{color:var(--ds-brand-text);font-size:12px;font-weight:600;margin-bottom:4px}
+    #ds-admin-plan .ds-task-title{font-size:15px;font-weight:600;margin-bottom:3px}
+    #ds-admin-plan .ds-status{display:inline-flex;gap:5px;align-items:center;font-size:11px;padding:3px 7px;border-radius:5px;background:var(--ds-soft);color:var(--ds-muted);white-space:nowrap}
+    #ds-admin-plan .ds-workflow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-top:15px}
+    #ds-admin-plan .ds-workflow-step{min-width:0;padding:0 10px 0 0;border-right:1px solid var(--ds-border)}
+    #ds-admin-plan .ds-workflow-step:last-child{border:0;padding:0}
+    #ds-admin-plan .ds-step-heading{display:flex;align-items:center;gap:7px;font-weight:500;font-size:12px;margin-bottom:8px}
+    #ds-admin-plan .ds-step-heading svg{color:var(--ds-muted);flex-shrink:0}
+    #ds-admin-plan .ds-step-status{font-size:12px;display:flex;gap:6px;align-items:flex-start;overflow-wrap:anywhere}
+    #ds-admin-plan .ds-step-status svg{margin-top:2px;flex-shrink:0}
+    #ds-admin-plan .ds-step-count{font-size:11px;color:var(--ds-muted);margin-top:4px}
+    #ds-admin-plan .ds-needs{color:var(--ds-brand-text)}
+    #ds-admin-plan .ds-ready{color:var(--ds-positive)}
+    #ds-admin-plan .ds-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px;align-items:start}
+    #ds-admin-plan .ds-number{font-size:36px;font-weight:600;letter-spacing:-1px;line-height:1.2;font-variant-numeric:tabular-nums;margin-top:14px}
+    #ds-admin-plan .ds-readiness{margin-top:17px;border-top:1px solid var(--ds-border)}
+    #ds-admin-plan .ds-bucket{display:flex;gap:9px;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--ds-border);font-size:12px}
+    #ds-admin-plan .ds-bucket:last-child{border:0}
+    #ds-admin-plan .ds-bucket-value{font-variant-numeric:tabular-nums;font-weight:600}
+    #ds-admin-plan .ds-caption{margin-top:13px}
+    #ds-admin-plan .ds-calendar-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:17px 0 12px;flex-wrap:wrap}
+    #ds-admin-plan .ds-calendar-toggle{display:flex;gap:5px}
+    #ds-admin-plan .ds-calendar-toggle button{padding:5px 9px;min-height:30px;font-size:12px}
+    #ds-admin-plan .ds-calendar-toggle button[aria-pressed="true"]{background:var(--ds-soft)}
+    #ds-admin-plan .ds-weekdays,#ds-admin-plan .ds-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+    #ds-admin-plan .ds-weekdays{text-align:center;font-size:11px;color:var(--ds-muted);margin-bottom:5px}
+    #ds-admin-plan .ds-day{display:flex;justify-content:center;align-items:center;min-height:39px;border:1px solid var(--ds-border);border-radius:6px;background:var(--ds-panel);font-size:12px;padding:4px;font-variant-numeric:tabular-nums}
+    #ds-admin-plan .ds-day[aria-pressed="true"]{border-color:var(--ds-muted);background:var(--ds-soft);font-weight:600}
+    #ds-admin-plan .ds-outside{opacity:.45}
+    #ds-admin-plan .ds-calendar-empty{padding-top:12px;border-top:1px solid var(--ds-border);margin-top:12px;font-size:12px}
+    #ds-admin-plan .ds-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:12px}
+    #ds-admin-plan .ds-total{border-right:1px solid var(--ds-border)}
+    #ds-admin-plan .ds-total:last-child{border:0}
+    #ds-admin-plan .ds-total-value{font-size:23px;font-weight:600;line-height:1.3;font-variant-numeric:tabular-nums}
+    #ds-admin-plan .ds-preview{padding:14px 16px;background:var(--ds-soft);border-radius:7px;font-size:12px;display:grid;gap:5px}
+    #ds-admin-plan .ds-preview-head{display:flex;justify-content:space-between;gap:12px;align-items:center}
+    #ds-admin-plan .ds-preview-head .ds-link{min-width:28px;min-height:28px}
+    #ds-admin-plan .ds-cohorts{display:grid;margin-top:13px}
+    #ds-admin-plan .ds-cohort{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr);gap:14px;padding:14px 0;border-top:1px solid var(--ds-border);font-size:12px;align-items:start}
+    #ds-admin-plan .ds-cohort-name{font-weight:600;margin-bottom:3px}
+    #ds-admin-plan .ds-cohort-state{display:flex;align-items:center;gap:6px}
+    #ds-admin-plan .ds-pit-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:15px 0 3px}
+    #ds-admin-plan .ds-pit-overview .ds-total-value{font-size:26px}
+    #ds-admin-plan .ds-activity{font-size:12px;color:var(--ds-muted)}
+    #ds-admin-plan summary{cursor:pointer;min-height:26px;padding:2px 0}
+    #ds-admin-plan .ds-activity p{padding:8px 0 2px}
+    #ds-admin-plan .ds-sample{font-size:11px;color:var(--ds-muted);margin-left:auto;white-space:nowrap}
+    #ds-admin-plan svg,#ds-admin-plan [data-lucide]{width:16px;height:16px;vertical-align:middle;display:inline-block;flex-shrink:0}
+    @media(min-width:1250px){#ds-admin-plan .ds-main{padding:28px 32px}}
+    @media(max-width:820px){#ds-admin-plan .ds-workflow{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}#ds-admin-plan .ds-workflow-step{border:0}#ds-admin-plan .ds-columns{grid-template-columns:minmax(0,1fr)}#ds-admin-plan .ds-school-sub{display:none}}
+    @media(max-width:520px){#ds-admin-plan .ds-shell{grid-template-columns:minmax(0,1fr)}#ds-admin-plan .ds-nav{display:none}#ds-admin-plan .ds-main{padding:16px;gap:14px}#ds-admin-plan .ds-top{padding:14px 100px 14px 16px;gap:8px}#ds-admin-plan .ds-sample{display:none}#ds-admin-plan .ds-school{font-size:12px}#ds-admin-plan .ds-panel{padding:16px}#ds-admin-plan .ds-header{gap:12px}#ds-admin-plan .ds-tabs{width:100%}#ds-admin-plan .ds-tab{flex:1}#ds-admin-plan .ds-workflow{grid-template-columns:repeat(2,minmax(0,1fr))}#ds-admin-plan .ds-task{grid-template-columns:28px minmax(0,1fr);gap:10px}#ds-admin-plan .ds-task>.ds-button{grid-column:2;justify-self:start}#ds-admin-plan .ds-cohort{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 14px}#ds-admin-plan .ds-cohort>div:last-child{grid-column:1/-1}#ds-admin-plan .ds-totals{gap:10px}#ds-admin-plan .ds-total-value{font-size:22px}#ds-admin-plan .ds-total{padding-right:4px}#ds-admin-plan .ds-day{min-height:34px}#ds-admin-plan .ds-step-heading{font-size:12px}}
+    @media(pointer:coarse){#ds-admin-plan button,#ds-admin-plan summary{min-height:44px}#ds-admin-plan .ds-day{min-height:38px}}
+  </style>
+
+  <header class="ds-top">
+    <span class="ds-mark"><i data-lucide="graduation-cap" aria-hidden="true"></i></span>
+    <div><div class="ds-school">USTP Oroquieta</div><div class="ds-muted ds-school-sub">Department of Information Technology</div></div>
+    <span class="ds-sample">Proposed layout · sample data</span>
+  </header>
+  <div class="ds-shell">
+    <aside class="ds-nav" aria-label="Current navigation, shown for layout context">
+      <span class="ds-nav-active" aria-label="Overview"><i data-lucide="layout-dashboard" aria-hidden="true"></i></span>
+      <span aria-label="Teams"><i data-lucide="users" aria-hidden="true"></i></span>
+      <span aria-label="Defense operations"><i data-lucide="calendar-days" aria-hidden="true"></i></span>
+      <span aria-label="Evaluation and grades"><i data-lucide="file-check-2" aria-hidden="true"></i></span>
+      <span aria-label="Settings"><i data-lucide="settings-2" aria-hidden="true"></i></span>
+    </aside>
+    <main class="ds-main">
+      <div class="ds-header">
+        <div><h2>Overview</h2><p class="ds-muted">1st Semester, A.Y. 2026–2027</p></div>
+        <div class="ds-tabs" role="tablist" aria-label="Dashboard program">
+          <button id="ds-capstone-tab" class="ds-tab" type="button" role="tab" aria-selected="true" aria-controls="ds-capstone-panel" data-program="capstone"><i data-lucide="graduation-cap" aria-hidden="true"></i>Capstone</button>
+          <button id="ds-pit-tab" class="ds-tab" type="button" role="tab" aria-selected="false" aria-controls="ds-pit-panel" data-program="pit"><i data-lucide="layers" aria-hidden="true"></i>PIT</button>
+        </div>
+      </div>
+
+      <div class="ds-admin-queue">
+        <span class="ds-row"><i data-lucide="inbox" aria-hidden="true"></i><span>Department approvals <span class="ds-muted">· 1 panelist request</span></span></span>
+        <button class="ds-link" type="button" data-preview="approval">Review request<i data-lucide="arrow-up-right" aria-hidden="true"></i></button>
+      </div>
+
+      <div id="ds-plan-preview" class="ds-preview" hidden aria-live="polite">
+        <div class="ds-preview-head"><strong id="ds-plan-preview-title"></strong><button class="ds-link" type="button" aria-label="Close navigation preview" data-close-preview><i data-lucide="x" aria-hidden="true"></i></button></div>
+        <p id="ds-plan-preview-detail"></p>
+      </div>
+
+      <section id="ds-capstone-panel" class="ds-stack" role="tabpanel" aria-labelledby="ds-capstone-tab">
+        <div class="ds-panel ds-task">
+          <span class="ds-task-symbol"><i data-lucide="triangle-alert" aria-hidden="true"></i></span>
+          <div><div class="ds-eyebrow">Needs your attention · 1</div><div class="ds-task-title">A Capstone stage needs scoring setup</div><p class="ds-muted">Required evaluation rubrics are not attached.</p><p class="ds-owner-line">Admin · Stage settings</p></div>
+          <button class="ds-button ds-primary" type="button" data-preview="rubric">Fix rubric<i data-lucide="arrow-up-right" aria-hidden="true"></i></button>
+        </div>
+
+        <section class="ds-panel" aria-label="Capstone semester workflow">
+          <div class="ds-between"><h3>Capstone workflow</h3><span class="ds-muted">Status and next responsibility</span></div>
+          <div class="ds-workflow" id="ds-plan-workflow"></div>
+        </section>
+
+        <div class="ds-columns">
+          <section class="ds-panel">
+            <div class="ds-between"><h3>Team readiness</h3><span class="ds-status"><i data-lucide="clock-3" aria-hidden="true"></i>Preparing</span></div>
+            <div class="ds-number">0</div><p class="ds-muted">Capstone teams ready to schedule</p>
+            <div class="ds-readiness">
+              <div class="ds-bucket"><span class="ds-row"><i data-lucide="circle-check" aria-hidden="true"></i>Ready to schedule</span><span class="ds-bucket-value">0</span></div>
+              <div class="ds-bucket"><span class="ds-row"><i data-lucide="upload" aria-hidden="true"></i>Awaiting student uploads</span><span class="ds-bucket-value">1</span></div>
+              <div class="ds-bucket"><span class="ds-row"><i data-lucide="calendar-check" aria-hidden="true"></i>Scheduled</span><span class="ds-bucket-value">0</span></div>
+            </div>
+            <div class="ds-caption"><p class="ds-muted">Next responsibility: Students</p><button class="ds-link" type="button" data-preview="readiness">View team details<i data-lucide="arrow-right" aria-hidden="true"></i></button></div>
+          </section>
+          <section class="ds-panel" aria-label="Defense schedule preview">
+            <div class="ds-between"><h3>Defense schedule</h3><button class="ds-link" type="button" data-preview="schedule">Open schedule<i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div>
+            <div class="ds-calendar-head"><strong id="ds-calendar-range" class="ds-muted">November 16–22</strong><div class="ds-calendar-toggle"><button class="ds-button" type="button" data-calendar-view="week" aria-pressed="true">Week</button><button class="ds-button" type="button" data-calendar-view="month" aria-pressed="false">Month</button></div></div>
+            <div class="ds-weekdays" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+            <div class="ds-days" id="ds-calendar-days"></div>
+            <div class="ds-calendar-empty" aria-live="polite"><p id="ds-calendar-message">November 18 · No Capstone sessions scheduled</p><p class="ds-muted" style="margin-top:5px">Shared room bookings remain visible when scheduling.</p></div>
+          </section>
+        </div>
+
+        <section class="ds-panel"><h3>Capstone this semester</h3><div class="ds-totals"><div class="ds-total"><div class="ds-total-value">1</div><p class="ds-muted">Active team</p></div><div class="ds-total"><div class="ds-total-value">0</div><p class="ds-muted">Scheduled defenses</p></div><div class="ds-total"><div class="ds-total-value">0</div><p class="ds-muted">Results ready for release</p></div></div></section>
+      </section>
+
+      <section id="ds-pit-panel" class="ds-stack" role="tabpanel" aria-labelledby="ds-pit-tab" hidden>
+        <section class="ds-panel">
+          <div class="ds-between"><div class="ds-row"><i data-lucide="layers" aria-hidden="true"></i><h3>PIT overview</h3></div><span class="ds-status"><i data-lucide="eye" aria-hidden="true"></i>Read-only oversight</span></div>
+          <p class="ds-muted" style="margin-top:7px">Event setup, team coordination and scheduling are managed by the assigned PIT Leads.</p>
+          <div class="ds-pit-overview"><div><div class="ds-total-value">3</div><p class="ds-muted">Year levels</p></div><div><div class="ds-total-value">12</div><p class="ds-muted">Active teams</p></div><div><div class="ds-total-value">4</div><p class="ds-muted">Configured events</p></div></div>
+        </section>
+        <section class="ds-panel">
+          <div class="ds-between"><h3>By year level</h3><span class="ds-muted">Assigned lead · Current events · Progress</span></div>
+          <div class="ds-cohorts">
+            <article class="ds-cohort"><div><div class="ds-cohort-name">First year</div><p class="ds-muted">PIT Lead assigned</p></div><div><p>4 teams · 1 event</p><p class="ds-muted">Next defense: November 20</p></div><div><div class="ds-cohort-state"><i data-lucide="calendar-check" aria-hidden="true"></i>Scheduled</div><p class="ds-muted">4 teams scheduled</p></div></article>
+            <article class="ds-cohort"><div><div class="ds-cohort-name">Second year</div><p class="ds-muted">PIT Lead assigned</p></div><div><p>5 teams · 2 events</p><p class="ds-muted">Next defense: Not scheduled</p></div><div><div class="ds-cohort-state"><i data-lucide="settings-2" aria-hidden="true"></i>Setup pending</div><p class="ds-muted">PIT Lead · Event configuration</p></div></article>
+            <article class="ds-cohort"><div><div class="ds-cohort-name">Third year</div><p class="ds-muted">PIT Lead assigned</p></div><div><p>3 teams · 1 event</p><p class="ds-muted">Next defense: November 21</p></div><div><div class="ds-cohort-state"><i data-lucide="clock-3" aria-hidden="true"></i>In progress</div><p class="ds-muted">2 assessed · 1 scheduled</p></div></article>
+          </div>
+        </section>
+        <details class="ds-panel ds-activity"><summary>PIT event details</summary><div class="ds-cohorts"><div class="ds-cohort"><div>First year · Event 1</div><div>November 20 · 9:00 AM</div><div>4 teams scheduled</div></div><div class="ds-cohort"><div>Second year · Events 1 and 2</div><div>Configuration in progress</div><div>Managed by PIT Lead</div></div><div class="ds-cohort"><div>Third year · Event 1</div><div>November 21 · 1:00 PM</div><div>1 team scheduled</div></div></div></details>
+      </section>
+
+      <details class="ds-panel ds-activity"><summary>Recent activity</summary><p>Stage settings updated · Admin · November 18, 2026, 9:00 AM</p><button class="ds-link" type="button" data-preview="audit">View audit trail<i data-lucide="arrow-up-right" aria-hidden="true"></i></button></details>
+      <p class="ds-muted">Planning preview · All records and counts are illustrative</p>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const root = document.getElementById('ds-admin-plan');
+      const state = { program: 'capstone', owners: true, calendarView: 'week', day: 18 };
+      const workflow = [
+        { icon: 'calendar-range', title: 'Period', symbol: 'circle-check', status: 'Active', count: '1st semester', owner: 'Admin', tone: 'ds-ready' },
+        { icon: 'settings-2', title: 'Stage setup', symbol: 'triangle-alert', status: 'Needs setup', count: '1 stage missing rubrics', owner: 'Admin', tone: 'ds-needs' },
+        { icon: 'users', title: 'Teams', symbol: 'users', status: 'Preparing', count: '1 active team', owner: 'Students / Adviser', tone: '' },
+        { icon: 'calendar-days', title: 'Scheduling', symbol: 'clock-3', status: 'Waiting', count: '0 ready · 0 scheduled', owner: 'Admin, once ready', tone: '' },
+        { icon: 'file-check-2', title: 'Results', symbol: 'minus', status: 'Not started', count: '0 ready for release', owner: 'Admin, once assessed', tone: '' }
+      ];
+      const previews = {
+        rubric: ['Stage setup · Navigation preview', 'Opens the affected stage in Defense Stages → Grading & Rubrics. Save there, return to Overview, and refresh the authoritative status.'],
+        readiness: ['Team readiness · Navigation preview', 'Opens Defense Operations → Readiness with the Capstone team context. Requirement names, review state and responsible person come from the existing readiness rules.'],
+        schedule: ['Defense schedule · Navigation preview', 'Opens Defense Operations → Schedules. Capstone is the primary view; PIT room and time bookings remain available for conflict checking.'],
+        approval: ['Department approval · Navigation preview', 'Opens the exact pending panelist request. Admin-only approvals remain accessible from both program tabs.'],
+        audit: ['Recent activity · Navigation preview', 'Opens the existing Audit Trail. Historical activity does not count as unfinished administrative work.']
+      };
+      function icons() {
+        if (globalThis.lucide) globalThis.lucide.createIcons({attrs:{width:16,height:16}});
+      }
+      function renderWorkflow() {
+        root.querySelector('#ds-plan-workflow').innerHTML = workflow.map(step => `<div class="ds-workflow-step"><div class="ds-step-heading"><i data-lucide="${step.icon}" aria-hidden="true"></i>${step.title}</div><div class="ds-step-status ${step.tone}"><i data-lucide="${step.symbol}" aria-hidden="true"></i><span>${step.status}</span></div><p class="ds-step-count">${step.count}</p><p class="ds-owner-line" ${state.owners ? '' : 'hidden'}>${step.owner}</p></div>`).join('');
+        icons();
+      }
+      function renderCalendar() {
+        root.querySelector('#ds-calendar-range').textContent = state.calendarView === 'week' ? 'November 16–22' : 'November 2026';
+        const dates = state.calendarView === 'week' ? Array.from({length:7},(_,i)=>i+16) : Array.from({length:42},(_,i)=>i-5);
+        root.querySelector('#ds-calendar-days').innerHTML = dates.map(day => day > 0 && day <= 30 ? `<button class="ds-day" type="button" data-day="${day}" aria-label="November ${day}, 2026" aria-pressed="${day === state.day}">${day}</button>` : `<span class="ds-day ds-outside" aria-hidden="true">${day < 1 ? day+31 : day-30}</span>`).join('');
+        root.querySelector('#ds-calendar-message').textContent = `November ${state.day} · No Capstone sessions scheduled`;
+        root.querySelectorAll('[data-calendar-view]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.calendarView === state.calendarView)));
+      }
+      function renderProgram() {
+        root.querySelectorAll('[data-program]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.program === state.program)));
+        root.querySelector('#ds-capstone-panel').hidden = state.program !== 'capstone';
+        root.querySelector('#ds-pit-panel').hidden = state.program !== 'pit';
+        root.querySelector('#ds-plan-preview').hidden = true;
+      }
+      function saveState() {
+        if (window.openai?.setWidgetState) window.openai.setWidgetState({modelContent:{program:state.program,workflowResponsibility:state.owners},privateContent:{calendarView:state.calendarView,day:state.day}}).catch(()=>{});
+      }
+      function restoreState(saved) {
+        if (!saved) return;
+        if (['capstone','pit'].includes(saved.modelContent?.program)) state.program = saved.modelContent.program;
+        if (typeof saved.modelContent?.workflowResponsibility === 'boolean') state.owners = saved.modelContent.workflowResponsibility;
+        if (['week','month'].includes(saved.privateContent?.calendarView)) state.calendarView = saved.privateContent.calendarView;
+        if (Number.isInteger(saved.privateContent?.day) && saved.privateContent.day > 0 && saved.privateContent.day <= 30) state.day = saved.privateContent.day;
+      }
+      root.addEventListener('click', event => {
+        const program = event.target.closest('[data-program]');
+        const preview = event.target.closest('[data-preview]');
+        const calendarView = event.target.closest('[data-calendar-view]');
+        const day = event.target.closest('[data-day]');
+        if (program) {state.program = program.dataset.program;renderProgram();saveState();}
+        if (preview) {
+          const content = previews[preview.dataset.preview];
+          root.querySelector('#ds-plan-preview-title').textContent = content[0];
+          root.querySelector('#ds-plan-preview-detail').textContent = content[1];
+          root.querySelector('#ds-plan-preview').hidden = false;
+        }
+        if (event.target.closest('[data-close-preview]')) root.querySelector('#ds-plan-preview').hidden = true;
+        if (calendarView) {state.calendarView = calendarView.dataset.calendarView;renderCalendar();saveState();}
+        if (day) {state.day = Number(day.dataset.day);renderCalendar();saveState();}
+      });
+      root.querySelector('[role="tablist"]').addEventListener('keydown',event=>{
+        if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+        event.preventDefault();
+        const options = [...root.querySelectorAll('[data-program]')];
+        const index = options.indexOf(document.activeElement);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length-1 : (index+(event.key==='ArrowRight'?1:-1)+options.length)%options.length;
+        options[next].focus();options[next].click();
+      });
+      restoreState(window.openai?.widgetState);
+      renderWorkflow();renderCalendar();renderProgram();
+      window.addEventListener('openai:set_globals',event=>{
+        if (!event.detail?.globals?.widgetState) return;
+        restoreState(event.detail.globals.widgetState);renderWorkflow();renderCalendar();renderProgram();
+      });
+      if (globalThis.Tweak) {
+        const tweak = new Tweak({container:root.querySelector('[aria-label="Capstone semester workflow"]'),onChange:()=>{renderWorkflow();saveState();}});
+        tweak.addToggle(state,'owners',{label:'Show responsibility'});
+      }
+    })();
+  </script>
+</div>

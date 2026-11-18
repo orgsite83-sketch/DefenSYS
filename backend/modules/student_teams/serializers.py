@@ -131,7 +131,9 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             context = result['defense_context']
             result['current_defense_stage'] = context['current_stage']
             result['ready_for_stage'] = context['ready_for_stage']
-        return result
+        from grading.grades.student_visibility import student_team_payload
+        actor = getattr(self.context.get('request'), 'user', None)
+        return student_team_payload(result, actor, instance)
 
     leader_id = serializers.IntegerField(source='leader.id', read_only=True)
     leader_username = serializers.CharField(source='leader.username', read_only=True)

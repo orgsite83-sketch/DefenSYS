@@ -2,6 +2,7 @@ from django.urls import path
 
 from .adviser_views import AdviserGradeListView, AdviserSubmitGradeView
 from .peer_views import StudentPeerEvaluationSubmitView
+from .dissemination_views import OutcomePreviewView, OutcomeConfirmView, OutcomeHoldView, OutcomeHistoryView
 from .views import (
     CapstoneEvaluationSettingsView,
     GradeCenterDetailView,
@@ -18,6 +19,10 @@ from .views import (
 
 
 urlpatterns = [
+    path('outcome-dissemination/preview/', OutcomePreviewView.as_view()),
+    path('outcome-dissemination/confirm/', OutcomeConfirmView.as_view()),
+    path('outcome-dissemination/history/', OutcomeHistoryView.as_view()),
+    path('<int:grade_id>/outcome-dissemination/hold/', OutcomeHoldView.as_view()),
     path('', GradeCenterListView.as_view(), name='grade_center'),
     path('masterlist/', GradeMasterlistView.as_view(), name='grade_masterlist'),
     path('sync/', GradeCenterSyncView.as_view(), name='grade_center_sync'),

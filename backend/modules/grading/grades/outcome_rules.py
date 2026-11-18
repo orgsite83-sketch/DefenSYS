@@ -108,7 +108,7 @@ def panel_assessments(grade):
     policy = policy_for(schedule)
     target = policy.get('target_type') or (schedule.rubric.target_type if schedule.rubric_id else 'team')
     members = list(grade.team.memberships.values_list('student_id', flat=True))
-    rows = list(grade.panelist_submissions.filter(schedule=schedule, is_void=False).prefetch_related('criterion_scores'))
+    rows = list(grade.panelist_submissions.filter(schedule=schedule, is_void=False).prefetch_related('criterion_scores', 'section_scores'))
     from .scoring import evaluation_percentage
     def panelist_percentage_from_criterion_scores(scores):
         return evaluation_percentage(((s.score, s.max_score_snapshot, s.weight_snapshot) for s in scores), rounded=False)
@@ -118,7 +118,7 @@ def panel_assessments(grade):
         identities = {(s.panelist_id, s.guest_code_id) for s in group}
         students = {}
         if target == 'team':
-            values = [panelist_percentage_from_criterion_scores(s.criterion_scores.all())
+            values = [panelist_percentage_from_criterion_scores(s.score_rows)
                       for s in group if s.student_id is None]
             score = _mean([v for v in values if v is not None])
             students = {sid: score for sid in members}
@@ -129,7 +129,7 @@ def panel_assessments(grade):
                     relevant = [s for s in group if (s.panelist_id, s.guest_code_id) == (pid, gid)
                                 and (s.student_id == sid or (target == 'both' and s.student_id is None))]
                     pct = panelist_percentage_from_criterion_scores(
-                        [c for s in relevant for c in s.criterion_scores.all()])
+                        [c for s in relevant for c in s.score_rows])
                     if pct is not None:
                         values.append(pct)
                 students[sid] = _mean(values)

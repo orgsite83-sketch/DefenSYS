@@ -129,9 +129,15 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+                _buildPitChecklistBanner(
+                  overview,
+                  pitYear,
+                  widget.data?['active_semester']?.toString() ?? '',
+                ),
+                const SizedBox(height: 20),
                 if (stacked) ...[
-                  _quickActionsCard(compact: true),
+                  _quickActionsCard(overview, compact: true),
                   const SizedBox(height: 20),
                   _dashboardCard(
                     title: 'Defense Schedule',
@@ -145,7 +151,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: _quickActionsCard()),
+                      Expanded(child: _quickActionsCard(overview)),
                       const SizedBox(width: 20),
                       Expanded(child: _dashboardCard(
                         title: 'Defense Schedule',
@@ -240,51 +246,509 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     );
   }
 
-  Widget _quickActionsCard({bool compact = false}) {
-    return _dashboardCard(
-      height: compact ? null : _cardHeight,
-      title: 'Quick Actions',
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+  Widget _buildPitChecklistBanner(
+    Map<String, dynamic> overview,
+    String pitYear,
+    String topActiveSem,
+  ) {
+    final actionItems = _actionItemsFrom(overview);
+    final actionIds = actionItems
+        .map((e) => e['id']?.toString() ?? '')
+        .toSet();
+    final stats = _statsFrom(overview['stats']);
+    final pipeline = _pipelineFrom(overview['team_pipeline']);
+    final stages = (pipeline['stage_distribution'] as List?)?.cast<Map>() ?? [];
+    final activeSem =
+        overview['active_semester']?.toString().trim() ?? topActiveSem.trim();
+    final periodConfigured =
+        activeSem.isNotEmpty && activeSem != 'Not configured';
+    final totalTeams =
+        pipeline['total_teams'] as int? ??
+        (int.tryParse(stats['pit_teams']?.toString() ?? '0') ?? 0);
+    final withInstructor =
+        pipeline['teams_with_instructor'] as int? ??
+        pipeline['teams_with_adviser'] as int? ??
+        0;
+    final readyForDefense =
+        pipeline['ready_for_defense'] as int? ??
+        (int.tryParse(stats['ready_pit_teams']?.toString() ?? '0') ?? 0);
+    final scheduledEvents =
+        int.tryParse(stats['scheduled_events']?.toString() ?? '0') ?? 0;
+    final pendingGrades =
+        int.tryParse(stats['pending_grades']?.toString() ?? '0') ?? 0;
+    final publishedGrades =
+        int.tryParse(stats['published_grades']?.toString() ?? '0') ?? 0;
+
+    final steps = <_PitChecklistStepData>[
+      _PitChecklistStepData(
+        stepNumber: 1,
+        title: 'PIT Events',
+        subtitle: !periodConfigured
+            ? 'Waiting for active term'
+            : (stages.isEmpty
+                  ? 'Set up PIT event stages'
+                  : '${stages.length} PIT ${stages.length == 1 ? 'event' : 'events'} active'),
+        isDone: periodConfigured && stages.isNotEmpty,
+        needsAction: !periodConfigured || stages.isEmpty,
+        onTap: widget.onOpenPitEvents,
+      ),
+      _PitChecklistStepData(
+        stepNumber: 2,
+        title: 'Scoring Rubrics',
+        subtitle: actionIds.contains('stages_without_rubrics')
+            ? 'Attach rubrics to events'
+            : (actionIds.contains('draft_rubrics')
+                  ? 'Publish draft rubrics'
+                  : (stages.isNotEmpty
+                        ? 'Rubrics ready for scoring'
+                        : 'Configure after PIT events')),
+        isDone:
+            stages.isNotEmpty &&
+            !actionIds.contains('stages_without_rubrics') &&
+            !actionIds.contains('draft_rubrics'),
+        needsAction:
+            actionIds.contains('stages_without_rubrics') ||
+            actionIds.contains('draft_rubrics'),
+        onTap: widget.onOpenRubrics,
+      ),
+      _PitChecklistStepData(
+        stepNumber: 3,
+        title: 'Cohort & Teams',
+        subtitle: totalTeams == 0
+            ? 'Import students & form teams'
+            : (actionIds.contains('unassigned_instructors') ||
+                      withInstructor < totalTeams
+                  ? 'Assign section instructors'
+                  : (actionIds.contains('unassigned_students')
+                        ? 'Assign remaining students'
+                        : '$totalTeams PIT teams ready')),
+        isDone:
+            totalTeams > 0 &&
+            withInstructor >= totalTeams &&
+            !actionIds.contains('unassigned_students') &&
+            !actionIds.contains('unassigned_instructors'),
+        needsAction:
+            totalTeams == 0 ||
+            withInstructor < totalTeams ||
+            actionIds.contains('unassigned_students') ||
+            actionIds.contains('unassigned_instructors'),
+        onTap: totalTeams == 0 ? widget.onOpenCohort : widget.onOpenStudentTeams,
+      ),
+      _PitChecklistStepData(
+        stepNumber: 4,
+        title: 'Defense Schedule',
+        subtitle: readyForDefense > 0
+            ? '$readyForDefense teams ready to schedule'
+            : (scheduledEvents > 0
+                  ? '$scheduledEvents events scheduled'
+                  : 'Schedule when teams are ready'),
+        isDone:
+            totalTeams > 0 &&
+            readyForDefense == 0 &&
+            (scheduledEvents > 0 || pendingGrades > 0 || publishedGrades > 0),
+        needsAction:
+            readyForDefense > 0 ||
+            actionIds.contains('unscheduled_ready_teams') ||
+            actionIds.contains('ready'),
+        onTap: widget.onOpenScheduler,
+      ),
+      _PitChecklistStepData(
+        stepNumber: 5,
+        title: 'Grade Release',
+        subtitle: pendingGrades > 0
+            ? '$pendingGrades pending grades to review'
+            : (publishedGrades > 0
+                  ? '$publishedGrades grades published'
+                  : 'Review & publish after event'),
+        isDone: pendingGrades == 0 && publishedGrades > 0,
+        needsAction: pendingGrades > 0 || actionIds.contains('pending_grades'),
+        onTap: widget.onOpenGradeCenter,
+      ),
+    ];
+
+    var nextIndex = steps.indexWhere((step) => step.needsAction);
+    if (nextIndex == -1) {
+      nextIndex = steps.indexWhere((step) => !step.isDone);
+    }
+    final doneCount = steps.where((step) => step.isDone).length;
+
+    return Container(
+      decoration: DefensysUi.cardDecoration(),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) => Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.route_rounded,
+                        size: 18,
+                        color: _brandAccent,
+                      ),
+                      const SizedBox(width: 8),
+                      const Flexible(
+                        child: Text(
+                          'PIT Event Checklist',
+                          style: TextStyle(
+                            color: _ink,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: doneCount == steps.length
+                            ? const Color(0xFFECFDF5)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: doneCount == steps.length
+                              ? const Color(0xFFA7F3D0)
+                              : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Text(
+                        '$doneCount of 5 Complete',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: doneCount == steps.length
+                              ? const Color(0xFF047857)
+                              : _muted,
+                        ),
+                      ),
+                    ),
+                    if (nextIndex != -1)
+                      InkWell(
+                        onTap: steps[nextIndex].onTap,
+                        borderRadius: BorderRadius.circular(999),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _brandAccent.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: _brandAccent.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Text(
+                            'Next: ${steps[nextIndex].title}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _brandAccent,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth >= 980) {
+                return Row(
+                  children: [
+                    for (var i = 0; i < steps.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 10),
+                      Expanded(
+                        child: _checklistStepTile(
+                          steps[i],
+                          isNext: i == nextIndex,
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              }
+              final columns = constraints.maxWidth >= 600 ? 2 : 1;
+              final tileWidth =
+                  (constraints.maxWidth - 10 * (columns - 1)) / columns;
+              return Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (var i = 0; i < steps.length; i++)
+                    SizedBox(
+                      width: tileWidth,
+                      child: _checklistStepTile(
+                        steps[i],
+                        isNext: i == nextIndex,
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _checklistStepTile(
+    _PitChecklistStepData step, {
+    required bool isNext,
+  }) {
+    final Color bg;
+    final Color border;
+    final Color circleBg;
+    final Color circleFg;
+    if (isNext) {
+      bg = _brandAccent.withValues(alpha: 0.04);
+      border = _brandAccent.withValues(alpha: 0.35);
+      circleBg = _brandAccent;
+      circleFg = Colors.white;
+    } else if (step.isDone) {
+      bg = const Color(0xFFF0FDF4);
+      border = const Color(0xFFBBF7D0);
+      circleBg = const Color(0xFF16A34A);
+      circleFg = Colors.white;
+    } else {
+      bg = const Color(0xFFF8FAFC);
+      border = const Color(0xFFE2E8F0);
+      circleBg = const Color(0xFFE2E8F0);
+      circleFg = _muted;
+    }
+
+    return InkWell(
+      onTap: step.onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: border, width: isNext ? 1.5 : 1),
+        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _quickAction(
-              icon: Icons.groups_rounded,
-              iconColor: const Color(0xFF7C3AED),
-              iconBackground: const Color(0xFFEDE3FF),
-              title: 'Manage PIT Teams',
-              subtitle: 'Create or update teams for your year level',
-              onTap: widget.onOpenStudentTeams,
+            Row(
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: circleBg,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: step.isDone
+                        ? Icon(Icons.check_rounded, size: 13, color: circleFg)
+                        : Text(
+                            '${step.stepNumber}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: circleFg,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (isNext)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _brandAccent,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'NEXT STEP',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                else if (step.isDone)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'DONE',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: Color(0xFF15803D),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            _quickAction(
-              icon: Icons.auto_fix_high_rounded,
-              iconColor: const Color(0xFF047857),
-              iconBackground: const Color(0xFFCFFAE7),
-              title: 'Schedule PIT Event',
-              subtitle: 'Plan presentations in Defense Scheduler',
-              onTap: widget.onOpenScheduler,
+            const SizedBox(height: 8),
+            Text(
+              step.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-            _quickAction(
-              icon: Icons.format_list_bulleted_rounded,
-              iconColor: const Color(0xFF92400E),
-              iconBackground: const Color(0xFFFFEDB8),
-              title: 'Configure Rubrics',
-              subtitle: 'Build or configure grading rubrics',
-              onTap: widget.onOpenRubrics,
-            ),
-            _quickAction(
-              icon: Icons.layers_rounded,
-              iconColor: const Color(0xFF2563EB),
-              iconBackground: const Color(0xFFDCEBFF),
-              title: 'PIT Events Setup',
-              subtitle: 'Manage PIT stages & event milestones',
-              onTap: widget.onOpenPitEvents,
-              isLast: true,
+            const SizedBox(height: 2),
+            Text(
+              step.subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _muted,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _quickActionsCard(
+    Map<String, dynamic> overview, {
+    bool compact = false,
+  }) {
+    final actionIds = _actionItemsFrom(
+      overview,
+    ).map((e) => e['id']?.toString() ?? '').toSet();
+    final stats = _statsFrom(overview['stats']);
+    final pipeline = _pipelineFrom(overview['team_pipeline']);
+    final stages = (pipeline['stage_distribution'] as List?)?.cast<Map>() ?? [];
+    final totalTeams =
+        pipeline['total_teams'] as int? ??
+        (int.tryParse(stats['pit_teams']?.toString() ?? '0') ?? 0);
+    final withInstructor =
+        pipeline['teams_with_instructor'] as int? ??
+        pipeline['teams_with_adviser'] as int? ??
+        0;
+    final readyForDefense =
+        pipeline['ready_for_defense'] as int? ??
+        (int.tryParse(stats['ready_pit_teams']?.toString() ?? '0') ?? 0);
+    final scheduledEvents =
+        int.tryParse(stats['scheduled_events']?.toString() ?? '0') ?? 0;
+
+    final eventsDone = stages.isNotEmpty;
+    final rubricsDone =
+        eventsDone &&
+        !actionIds.contains('stages_without_rubrics') &&
+        !actionIds.contains('draft_rubrics');
+    final teamsDone =
+        totalTeams > 0 &&
+        withInstructor >= totalTeams &&
+        !actionIds.contains('unassigned_students') &&
+        !actionIds.contains('unassigned_instructors');
+
+    return _dashboardCard(
+      height: compact ? null : _cardHeight,
+      title: 'Quick Actions',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final showPills = constraints.maxWidth >= 380;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _quickAction(
+                  icon: Icons.layers_rounded,
+                  iconColor: const Color(0xFF2563EB),
+                  iconBackground: const Color(0xFFDCEBFF),
+                  title: 'PIT Events Setup',
+                  subtitle: 'Manage PIT stages & event milestones',
+                  statusLabel: showPills
+                      ? (eventsDone ? 'Ready' : 'Setup')
+                      : null,
+                  statusDone: eventsDone,
+                  onTap: widget.onOpenPitEvents,
+                ),
+                _quickAction(
+                  icon: Icons.format_list_bulleted_rounded,
+                  iconColor: const Color(0xFF92400E),
+                  iconBackground: const Color(0xFFFFEDB8),
+                  title: 'Configure Rubrics',
+                  subtitle: 'Build or configure grading rubrics',
+                  statusLabel: showPills
+                      ? (rubricsDone ? 'Ready' : 'Action Needed')
+                      : null,
+                  statusDone: rubricsDone,
+                  onTap: widget.onOpenRubrics,
+                ),
+                _quickAction(
+                  icon: Icons.groups_rounded,
+                  iconColor: const Color(0xFF7C3AED),
+                  iconBackground: const Color(0xFFEDE3FF),
+                  title: 'Manage PIT Teams',
+                  subtitle: 'Create or update teams for your year level',
+                  statusLabel: showPills
+                      ? (totalTeams > 0 ? '$totalTeams Teams' : 'Setup')
+                      : null,
+                  statusDone: teamsDone,
+                  onTap: widget.onOpenStudentTeams,
+                ),
+                _quickAction(
+                  icon: Icons.auto_fix_high_rounded,
+                  iconColor: const Color(0xFF047857),
+                  iconBackground: const Color(0xFFCFFAE7),
+                  title: 'Schedule PIT Event',
+                  subtitle: 'Plan presentations in Defense Scheduler',
+                  statusLabel: showPills
+                      ? (readyForDefense > 0
+                            ? '$readyForDefense Ready'
+                            : (scheduledEvents > 0
+                                  ? '$scheduledEvents Scheduled'
+                                  : 'Queue'))
+                      : null,
+                  statusDone: readyForDefense == 0 && scheduledEvents > 0,
+                  onTap: widget.onOpenScheduler,
+                  isLast: true,
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -307,6 +771,14 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
         pipeline['teams_with_instructor'] as int? ??
         pipeline['teams_with_adviser'] as int? ??
         0;
+    final scheduledEvents =
+        int.tryParse(stats['scheduled_events']?.toString() ?? '0') ?? 0;
+    final pendingGrades =
+        int.tryParse(stats['pending_grades']?.toString() ?? '0') ?? 0;
+    final publishedGrades =
+        int.tryParse(stats['published_grades']?.toString() ?? '0') ?? 0;
+    final preparingCount =
+        (totalTeams - readyForDefense - scheduledEvents).clamp(0, totalTeams);
     final stages = (pipeline['stage_distribution'] as List?)?.cast<Map>() ?? [];
 
     return _dashboardCard(
@@ -470,13 +942,50 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                         ],
                       ),
                     ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
+
+                  // Event Completion Funnel Bar
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        const Text(
+                          'EVENT FUNNEL',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                        _funnelMetric('Preparing', preparingCount),
+                        _funnelMetric('Ready', readyForDefense),
+                        _funnelMetric('Scheduled', scheduledEvents),
+                        _funnelMetric(
+                          pendingGrades > 0 ? 'Pending Release' : 'Published',
+                          pendingGrades > 0 ? pendingGrades : publishedGrades,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
 
                   // Adviser Assignment & Track Breakdown Bar
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
-                      vertical: 9,
+                      vertical: 8,
                     ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFAFAFA),
@@ -503,6 +1012,8 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                               fontWeight: FontWeight.w600,
                               color: Color(0xFF334155),
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Container(
@@ -529,6 +1040,30 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _funnelMetric(String label, int count) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label: ',
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF64748B),
+          ),
+        ),
+        Text(
+          '$count',
+          style: const TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w800,
+            color: _ink,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1233,6 +1768,8 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    String? statusLabel,
+    bool statusDone = false,
     bool isLast = false,
   }) {
     return InkWell(
@@ -1262,6 +1799,8 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                 children: [
                   Text(
                     title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: _ink,
                       fontSize: 14,
@@ -1271,11 +1810,39 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: _muted, fontSize: 12),
                   ),
                 ],
               ),
             ),
+            if (statusLabel != null) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statusDone
+                      ? const Color(0xFFECFDF5)
+                      : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: statusDone
+                        ? const Color(0xFFA7F3D0)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: statusDone ? const Color(0xFF047857) : _muted,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(width: 4),
             const Icon(
               Icons.chevron_right_rounded,
               color: Color(0xFFCDD2DB),
@@ -1389,4 +1956,22 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     }
     return value.toString();
   }
+}
+
+class _PitChecklistStepData {
+  final int stepNumber;
+  final String title;
+  final String subtitle;
+  final bool isDone;
+  final bool needsAction;
+  final VoidCallback onTap;
+
+  const _PitChecklistStepData({
+    required this.stepNumber,
+    required this.title,
+    required this.subtitle,
+    required this.isDone,
+    required this.needsAction,
+    required this.onTap,
+  });
 }

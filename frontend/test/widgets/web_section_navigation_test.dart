@@ -629,7 +629,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(router.state.uri.path, '/faculty/pit-events');
         expect(find.text('PIT Event Operations & Setup'), findsOneWidget);
-        await tester.tap(find.text('Defense Operations').first);
+        await tester.tap(find.text('Defense Schedule').first);
         await tester.pumpAndSettle();
         expect(router.state.uri.path, '/faculty/defense-board');
         expect(find.text('Schedule details'), findsWidgets);
@@ -638,7 +638,7 @@ void main() {
       await tester.tap(find.text('Configure event rubrics'));
       await tester.pumpAndSettle();
       scheduler.configured = true;
-      await tester.tap(find.text('Defense Operations').first);
+      await tester.tap(find.text('Defense Schedule').first);
       await tester.pumpAndSettle();
       expect(router.state.uri.path, '/faculty/defense-board');
       expect(find.text('Schedule details'), findsWidgets);
@@ -694,7 +694,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(router.state.uri.queryParameters['tab'], 'instructors');
         expect(find.text('Batch Enrollment'), findsNothing);
-        await tester.tap(find.text('Student Teams').first);
+        await tester.tap(find.text('PIT Teams').first);
         await tester.pumpAndSettle();
         expect(router.state.uri.path, '/faculty/student-teams/roster');
         expect(tester.state(find.byType(TeamRosterScreen)), same(rosterState));
@@ -703,7 +703,7 @@ void main() {
       roster.sectionsAvailable = true;
       await tester.tap(find.text('Assign instructors'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Student Teams').first);
+      await tester.tap(find.text('PIT Teams').first);
       await tester.pumpAndSettle();
       expect(find.text('Import teams or assign instructors'), findsNothing);
       expect(find.text('BSIT-3A · 3rd Year'), findsOneWidget);
@@ -1081,7 +1081,7 @@ void main() {
         );
 
         await tester.tap(
-          find.text(faculty ? 'Dashboard' : 'Academic Periods').first,
+          find.text(faculty ? 'Overview' : 'Academic Periods').first,
         );
         await tester.pumpAndSettle();
         expect(find.byType(GradeCenterTeamDetailScreen), findsNothing);
@@ -1266,14 +1266,14 @@ void main() {
         expect(find.text('Master Student Grade Sheet'), findsNothing);
 
         await tester.tap(
-          find.text(faculty ? 'Dashboard' : 'Academic Periods').first,
+          find.text(faculty ? 'Overview' : 'Academic Periods').first,
         );
         await tester.pumpAndSettle();
         expect(
           router.state.uri.path,
           faculty ? '/faculty/dashboard' : '/admin/academic-periods',
         );
-        await tester.tap(find.text('Student Teams').first);
+        await tester.tap(find.text(faculty ? 'PIT Teams' : 'Student Teams').first);
         await tester.pumpAndSettle();
         expect(router.state.uri.path, '$prefix/student-teams/1');
         expect(tester.state(find.byType(TeamDetailPage)), same(teamState));
@@ -1395,7 +1395,7 @@ void main() {
         expect(find.text('Master Student Grade Sheet'), findsNothing);
         expect(container.read(unsavedChangesProvider), isFalse);
 
-        await tester.tap(find.text('Student Teams').first);
+        await tester.tap(find.text(faculty ? 'PIT Teams' : 'Student Teams').first);
         await tester.pumpAndSettle();
         expect(router.state.uri.path, '$prefix/student-teams');
         expect(find.byType(TeamDetailPage), findsNothing);
@@ -1425,10 +1425,10 @@ void main() {
         );
 
         await tester.tap(
-          find.text(faculty ? 'Dashboard' : 'Academic Periods').first,
+          find.text(faculty ? 'Overview' : 'Academic Periods').first,
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Defense Operations').first);
+        await tester.tap(find.text('Defense Schedule').first);
         await tester.pumpAndSettle();
         expect(router.state.uri.path, '$prefix/defense-board/import');
         expect(
@@ -1474,7 +1474,7 @@ void main() {
         await tester.pumpAndSettle();
 
         if (faculty) {
-          await tester.tap(find.text('Dashboard').first);
+          await tester.tap(find.text('Overview').first);
         } else {
           await tester.tap(find.text('Academic Periods'));
         }

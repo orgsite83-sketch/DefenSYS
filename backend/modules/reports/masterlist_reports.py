@@ -83,7 +83,7 @@ def detail_sheets(payload):
     grades = TeamGrade.all_objects.filter(pk__in=subjects).select_related(
         'schedule', 'team', 'semester', 'pit_event_config').prefetch_related(
         'panelist_submissions__panelist', 'panelist_submissions__student',
-        'panelist_submissions__criterion_scores', 'peer_evaluation_submissions__evaluator',
+        'panelist_submissions__criterion_scores', 'panelist_submissions__section_scores', 'peer_evaluation_submissions__evaluator',
         'peer_evaluation_submissions__evaluatee', 'student_grades__student', 'breakdowns')
     sheets = {name: [] for name in ('Grade calculation', 'Panel criteria', 'Peer ratings', 'Feedback', 'Member grades')}
     for grade in grades:
@@ -108,10 +108,10 @@ def detail_sheets(payload):
                 if row['student_id'] and submission.student_id not in (None, row['student_id']):
                     continue
                 evaluator = display_name(submission.panelist) if submission.panelist_id else public_guest_name(submission.guest_name)
-                for criterion in submission.criterion_scores.all():
+                for criterion in submission.score_rows:
                     sheets['Panel criteria'].append({**identity, 'evaluator': evaluator, 'component': 'Panel',
                         'recipient': display_name(submission.student) if submission.student_id else 'Team',
-                        'criterion': criterion.criterion_name_snapshot, 'score': criterion.score,
+                        'criterion': f'{criterion.section_snapshot}: {criterion.criterion_name_snapshot}' if criterion.section_snapshot else criterion.criterion_name_snapshot, 'score': criterion.score,
                         'max': criterion.max_score_snapshot, 'criterion_weight': criterion.weight_snapshot})
                 sheets['Feedback'].append({**identity, 'evaluator': evaluator, 'component': 'Panel', 'feedback': public_evaluation_text(submission.remarks)})
             for breakdown in grade.breakdowns.all():

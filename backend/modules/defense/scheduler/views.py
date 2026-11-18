@@ -8,6 +8,7 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from defensys_backend.read_projection import ReadAPIView as APIView, read_projection
 
+from grading.grades.section_scoring import section_payload, require_section_client
 from grading.grades.models import GradeBreakdown, TeamGrade, PanelistGradeSubmission
 from grading.rubrics.models import Rubric
 from grading.grades.services import (
@@ -36,7 +37,7 @@ from .models import DefenseSchedule, SchedulePanelist, PitEventGradingConfig, Pa
 from .panelist_evaluation import (
     draft_payload, evaluation_context, grading_unavailable_reason,
     save_evaluation_draft, validate_evaluation_submissions,
-    verdict_unavailable_reason,
+    verdict_unavailable_reason, owner_evaluation_state, EvaluationDraftConflict, require_draft_version,
 )
 from academic_period_management.models import Semester
 from student_teams.models import StudentTeam
@@ -473,6 +474,7 @@ def _grade_weights_payload(schedule, raw_weights):
 
 
 def _panel_rubric_payload(rubric, grade_weights):
+    from grading.grades.section_scoring import section_definitions
     if rubric is None:
         return None
     return {
@@ -485,6 +487,7 @@ def _panel_rubric_payload(rubric, grade_weights):
         'context_label': rubric.context_label,
         'display_semester': rubric.semester.display_name,
         'target_type': rubric.target_type,
+        'scoring_sections': section_definitions(rubric),
         'criteria': [
             {
                 'id': criterion.id,
@@ -560,7 +563,7 @@ class PanelistAssignmentsView(APIView):
         submitted_subs = (
             PanelistGradeSubmission.objects.filter(panelist_id=panelist_id, is_void=False)
             .select_related('schedule')
-            .prefetch_related('criterion_scores')
+            .prefetch_related('criterion_scores', 'section_scores')
         )
         sub_map = {}
         for sub in submitted_subs:
@@ -601,6 +604,7 @@ class PanelistAssignmentsView(APIView):
                     'student_id': sub.student_id,
                     'concept_key': sub.concept_key,
                     'remarks': sub.remarks or '',
+                    'section_scores': section_payload(sub),
                     'criteria_scores': [
                         {
                             'criterion_id': cs.criterion_id,
@@ -678,7 +682,7 @@ class PanelistResultsView(APIView):
             schedule__status__in=PANELIST_ASSIGNMENT_STATUSES, is_void=False,
         ).exclude(schedule_id=F('team_grade__schedule_id')).select_related(
             'schedule__team', 'schedule__semester__school_year', 'schedule__defense_stage', 'student',
-        ).prefetch_related('criterion_scores').distinct()
+        ).prefetch_related('criterion_scores', 'section_scores').distinct()
         results.extend(previous_panel_attempt_results(previous))
         results.sort(
             key=lambda row: (
@@ -785,6 +789,7 @@ class PanelistGradeSubmissionView(APIView):
                 return Response({'detail': reason}, status=400)
             if request.data.get('evaluation_context') and request.data['evaluation_context'] != evaluation_context(schedule, schedule.grade_records.first()):
                 return Response({'detail': 'This evaluation has changed. Refresh the assignment before submitting.'}, status=400)
+            require_section_client(schedule, request.data, panelist=panelist)
             submissions_payload = validate_evaluation_submissions(schedule, submissions_payload)
 
             from .panelist_evaluation import owner_evaluation_complete, existing_submission_matches
@@ -832,7 +837,9 @@ class PanelistGradeSubmissionView(APIView):
             from django.db import transaction
             with transaction.atomic():
                 StudentTeam.objects.select_for_update().get(pk=team.pk)
-                DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
+                schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
+                submissions_payload = validate_evaluation_submissions(schedule, submissions_payload)
+                require_draft_version(schedule, request.data, panelist=panelist)
                 for item in submissions_payload:
                     if existing_submission_matches(schedule, item, panelist=panelist):
                         continue
@@ -885,6 +892,7 @@ class PanelistGradeSubmissionView(APIView):
                         remarks=item_remarks,
                         student=student,
                         concept_key=item.get('concept_key', ''),
+                        section_scores=item.get('section_scores', []),
                     )
 
             from .panelist_evaluation import retire_submitted_draft
@@ -893,6 +901,7 @@ class PanelistGradeSubmissionView(APIView):
             return Response({
                 'success': True,
                 'message': 'Grades submitted successfully',
+                'evaluation': owner_evaluation_state(schedule, panelist=panelist),
                 'team_grade_id': team_grade.id,
                 'panel_score': float(team_grade.panel_score) if team_grade.panel_score is not None else None,
             }, status=status.HTTP_201_CREATED)
@@ -1119,7 +1128,7 @@ class GuestPanelistResultsView(APIView):
 
         previous = submissions.filter(is_void=False).exclude(schedule_id=F('team_grade__schedule_id')).select_related(
             'schedule__team', 'schedule__semester__school_year', 'schedule__defense_stage', 'student',
-        ).prefetch_related('criterion_scores')
+        ).prefetch_related('criterion_scores', 'section_scores')
         results.extend(previous_panel_attempt_results(previous))
         return Response({'results': results})
 
@@ -1151,7 +1160,7 @@ class GuestPanelistAssignmentsView(APIView):
                 schedule=schedule,
                 guest_code_id=principal.guest_code_id,
                 is_void=False,
-            ).prefetch_related('criterion_scores')
+            ).prefetch_related('criterion_scores', 'section_scores')
         )
         from .panelist_evaluation import evaluation_complete
         is_posted = evaluation_complete(schedule, subs)
@@ -1163,7 +1172,8 @@ class GuestPanelistAssignmentsView(APIView):
                 'student_id': sub.student_id,
                     'concept_key': sub.concept_key,
                 'remarks': sub.remarks or '',
-                'criteria_scores': [
+                'section_scores': section_payload(sub),
+                    'criteria_scores': [
                     {
                         'criterion_id': cs.criterion_id,
                         'score': float(cs.score),
@@ -1261,6 +1271,7 @@ class GuestPanelistGradeSubmissionView(APIView):
                 return Response({'detail': reason}, status=400)
             if request.data.get('evaluation_context') and request.data['evaluation_context'] != evaluation_context(schedule, schedule.grade_records.first()):
                 return Response({'detail': 'This evaluation has changed. Refresh the assignment before submitting.'}, status=400)
+            require_section_client(schedule, request.data, guest_code_id=str(principal.guest_code_id))
             submissions_payload = validate_evaluation_submissions(schedule, submissions_payload)
 
             from .panelist_evaluation import owner_evaluation_complete, existing_submission_matches
@@ -1303,7 +1314,9 @@ class GuestPanelistGradeSubmissionView(APIView):
             from django.db import transaction
             with transaction.atomic():
                 StudentTeam.objects.select_for_update().get(pk=team.pk)
-                DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
+                schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
+                submissions_payload = validate_evaluation_submissions(schedule, submissions_payload)
+                require_draft_version(schedule, request.data, guest_code_id=str(principal.guest_code_id))
                 for item in submissions_payload:
                     if existing_submission_matches(schedule, item, guest_code_id=principal.guest_code_id):
                         continue
@@ -1356,6 +1369,7 @@ class GuestPanelistGradeSubmissionView(APIView):
                         remarks=item_remarks,
                         student=student,
                         concept_key=item.get('concept_key', ''),
+                        section_scores=item.get('section_scores', []),
                     )
 
             from .panelist_evaluation import retire_submitted_draft
@@ -1364,6 +1378,7 @@ class GuestPanelistGradeSubmissionView(APIView):
             return Response({
                 'success': True,
                 'message': 'Grades submitted successfully',
+                'evaluation': owner_evaluation_state(schedule, guest_code_id=str(principal.guest_code_id)),
                 'team_grade_id': team_grade.id,
                 'panel_score': float(team_grade.panel_score) if team_grade.panel_score is not None else None,
             }, status=status.HTTP_201_CREATED)
@@ -1383,6 +1398,17 @@ class GuestPanelistGradeSubmissionView(APIView):
 class PanelistEvaluationDraftView(APIView):
     permission_classes = [IsAuthenticated, IsPanelist]
 
+    def get(self, request):
+        try:
+            schedule_id = int(request.query_params.get('schedule_id'))
+        except (ValueError, TypeError):
+            return Response({'detail': 'A valid schedule_id is required.'}, status=400)
+        schedule = get_object_or_404(
+            schedule_queryset().filter(panel_assignments__panelist=request.user),
+            pk=schedule_id,
+        )
+        return Response(owner_evaluation_state(schedule, panelist=request.user))
+
     def post(self, request):
         try:
             schedule_id = int(request.data.get('schedule_id'))
@@ -1394,6 +1420,8 @@ class PanelistEvaluationDraftView(APIView):
         )
         try:
             draft = save_evaluation_draft(schedule, request.data, panelist=request.user)
+        except EvaluationDraftConflict as exc:
+            return Response({'detail': ' '.join(exc.messages), 'draft': exc.draft}, status=409)
         except ValidationError as exc:
             return Response({'detail': ' '.join(exc.messages)}, status=400)
         return Response({'draft': draft})
@@ -1403,6 +1431,14 @@ class GuestPanelistEvaluationDraftView(APIView):
     authentication_classes = [GuestJWTAuthentication]
     permission_classes = [IsGuestPanelist]
 
+    def get(self, request):
+        principal = request.user
+        schedule_id = request.query_params.get('schedule_id')
+        if str(schedule_id) not in {str(i) for i in principal.schedule_ids}:
+            return Response({'detail': 'You are not assigned to this defense.'}, status=403)
+        schedule = get_object_or_404(schedule_queryset(), pk=schedule_id)
+        return Response(owner_evaluation_state(schedule, guest_code_id=str(principal.guest_code_id)))
+
     def post(self, request):
         principal = request.user
         schedule_id = request.data.get('schedule_id')
@@ -1411,6 +1447,8 @@ class GuestPanelistEvaluationDraftView(APIView):
         schedule = get_object_or_404(schedule_queryset(), pk=schedule_id, status=DefenseSchedule.STATUS_SCHEDULED)
         try:
             draft = save_evaluation_draft(schedule, request.data, guest=principal)
+        except EvaluationDraftConflict as exc:
+            return Response({'detail': ' '.join(exc.messages), 'draft': exc.draft}, status=409)
         except ValidationError as exc:
             return Response({'detail': ' '.join(exc.messages)}, status=400)
         return Response({'draft': draft})

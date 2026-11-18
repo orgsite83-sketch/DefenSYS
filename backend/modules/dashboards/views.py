@@ -1291,7 +1291,11 @@ class AdminDashboardView(APIView):
             for log in recent_logs
         ]
 
+        from .overview import admin_overview
+        overview = admin_overview(active_sem, active_stages, action_items, ready_capstone_count)
+
         return Response({
+            'overview': overview,
             'stats': {
                 'total_students': student_count,
                 'total_faculty': faculty_count,

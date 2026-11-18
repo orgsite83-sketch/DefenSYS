@@ -118,6 +118,9 @@ def _context(request):
         'status': _choice(params, 'status', 'all', ('all', *STATUSES)),
         'student_id': _integer(params, 'student_id'),
         'team_id': _integer(params, 'team_id'),
+        'dissemination_status': _choice(params, 'dissemination_status', 'all',
+            ('all', 'ready', 'updated', 'held', 'released', 'awaiting_evaluation', 'awaiting_decision', 'unavailable')),
+        'session_id': params.get('session_id', '').strip(),
     }
 
 
@@ -347,9 +350,9 @@ def _evaluator_data(grades, rows, context, *, include_scores=True):
     from grading.grades.models import TeamGrade, PanelistGradeSubmission
     from grading.grades.scoring import panelist_overall_percentage
     from grading.grades.outcome_rules import policy_for, selected_key
-    submission_query = PanelistGradeSubmission.objects.select_related('panelist').annotate(criterion_count=Count('criterion_scores'))
+    submission_query = PanelistGradeSubmission.objects.select_related('panelist').annotate(criterion_count=Count('criterion_scores', distinct=True) + Count('section_scores', distinct=True))
     if include_scores:
-        submission_query = submission_query.prefetch_related('criterion_scores')
+        submission_query = submission_query.prefetch_related('criterion_scores', 'section_scores')
     hydrated = TeamGrade.all_objects.filter(pk__in=grades).select_related('schedule__rubric').prefetch_related(
         'schedule__panel_assignments__panelist', 'schedule__guest_invitations__evaluator', 'schedule__guest_panelist_codes__evaluator',
         'student_grades', Prefetch('panelist_submissions', queryset=submission_query))
@@ -390,7 +393,7 @@ def _evaluator_data(grades, rows, context, *, include_scores=True):
                 complete = bool(required_subjects) and required_subjects.issubset(submitted_subjects)
                 complete_evaluators += int(complete)
                 if include_scores:
-                    criteria = [c for s in selected for c in s.criterion_scores.all()]
+                    criteria = [c for s in selected for c in s.score_rows]
                     total = panelist_overall_percentage(criteria, maximum_attr='max_score_snapshot') if criteria else None
                     cell['evaluators'].append({'key': f'{pid or "guest"}:{gid}', 'name': name, 'score': total})
             required = len(expected)
@@ -461,6 +464,38 @@ def build_masterlist(request, *, paginate=True):
     _evaluator_data({c['grade_id'] for r in rows for c in r['assessments'] if c['grade_id']}, rows, context, include_scores=False)
     if context['status'] != 'all':
         rows = [r for r in rows if any(c['status'] == context['status'] for c in r['assessments'])]
+    from . import dissemination
+    dissemination.hydrate(all_grades.values())
+    sessions = {str(g.schedule.session_id): {'value': str(g.schedule.session_id),
+        'label': f'{g.schedule.scheduled_date} · {g.schedule.room} · {g.schedule.start_time:%H:%M}'}
+        for g in all_grades.values() if g.schedule_id}
+    if context['session_id'] and context['session_id'] not in sessions:
+        raise ValidationError({'session_id': 'Choose a session in this assessment.'})
+    release_metadata = {}
+    for row in rows:
+        for cell in row['assessments']:
+            grade = all_grades.get(cell['grade_id'])
+            if grade and grade.pk not in release_metadata:
+                panel_complete = bool(cell.get('panel_required') and cell.get('panel_submitted') == cell.get('panel_required'))
+                if grade.schedule_id and (grade.schedule.assessment_policy or {}).get('per_concept'):
+                    from .outcome_rules import outcome_payload
+                    rule = outcome_payload(grade)
+                    if rule:
+                        panel_complete = rule['panel_complete']
+                release_metadata[grade.pk] = dissemination.metadata(grade,
+                    panel_complete=panel_complete)
+            cell['dissemination'] = release_metadata.get(cell['grade_id'], {
+                'status': 'unavailable', 'label': 'No recorded outcome', 'can_release': False})
+    if context['session_id']:
+        rows = [r for r in rows if any(c['grade_id'] in all_grades and all_grades[c['grade_id']].schedule_id
+            and str(all_grades[c['grade_id']].schedule.session_id) == context['session_id'] for c in r['assessments'])]
+    if context['dissemination_status'] != 'all':
+        rows = [r for r in rows if any(c['dissemination']['status'] == context['dissemination_status'] for c in r['assessments'])]
+    matching_releases = {c['grade_id']: c['dissemination'] for r in rows for c in r['assessments'] if c['grade_id']}
+    dissemination_summary = {'can_manage': is_admin_user(request.user),
+        'ready': sum(info['can_release'] for info in matching_releases.values()),
+        'team_count': len(matching_releases),
+        'released': sum(info['status'] == 'released' for info in matching_releases.values())}
     ordering = request.query_params.get('ordering') or 'name'
     key = ordering.lstrip('-')
     if key not in ('name', 'student_number', 'section', 'team_name', 'final_grade', 'panel', 'adviser', 'peer', 'status'):
@@ -489,9 +524,11 @@ def build_masterlist(request, *, paginate=True):
         request.user, context['scope'], context['year_level'])
     clean_assessment = lambda a: {k: v for k, v in a.items() if k != 'config'}
     return {'context': serialized_context, 'rows': rows, 'total': total, 'page': page, 'page_size': page_size,
+            'dissemination': dissemination_summary,
             'assessments': [clean_assessment(a) for a in assessments],
             'options': {'assessments': [clean_assessment(a) for a in choices],
-                        'sections': sections,
+                        'sections': sections, 'sessions': list(sessions.values()),
+                        'dissemination_statuses': [{'value': key, 'label': label} for key, label in dissemination.STATUSES.items()],
                         'semesters': [{'id': s.pk, 'label': s.display_name} for s in Semester.objects.select_related('school_year').order_by('-school_year__label', 'label')],
                         'statuses': [{'value': s, 'label': s.replace('_', ' ').capitalize()} for s in STATUSES]},
             'generated_at': timezone.now().isoformat()}

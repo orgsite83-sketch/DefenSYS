@@ -23,6 +23,7 @@ class DashboardSchedulePlanner extends ConsumerStatefulWidget {
     this.errorMessage,
     this.onRetry,
     this.onOpenTeam,
+    this.padding = const EdgeInsets.fromLTRB(16, 14, 16, 18),
     this.description =
         'Shared calendar · Check room and time before scheduling.',
   });
@@ -35,6 +36,7 @@ class DashboardSchedulePlanner extends ConsumerStatefulWidget {
   final VoidCallback? onRetry;
   final void Function(int teamId, String stageLabel)? onOpenTeam;
   final String description;
+  final EdgeInsetsGeometry padding;
 
   bool get isPersonal => providedSessions != null;
 
@@ -431,7 +433,7 @@ class _DashboardSchedulePlannerState
     final noun = widget.isPersonal ? 'defense' : 'session';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+      padding: widget.padding,
       child: DefensysShadcnScope(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

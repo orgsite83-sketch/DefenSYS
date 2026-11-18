@@ -175,6 +175,8 @@ def team_action(team, stage, actor, action, key, title=None, reason=''):
     from student_teams.models import StudentTeam
     from repository.deliverables import concepts
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
+    from grading.grades.student_visibility import require_student_release
+    require_student_release(actor, team, stage)
     current = concepts.latest_round(team, stage)
     if action in ('submit_title', 'draft_title') and actor.role == 'student' and team.leader_id == actor.pk:
         current = current or concepts.get_round(team, stage)

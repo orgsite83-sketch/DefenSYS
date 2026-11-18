@@ -62,6 +62,8 @@ import 'e_signature_upload_dialog.dart';
 import 'documenter_dashboard_content.dart';
 import 'minutes_form_screen.dart';
 import 'capstone_instructor_info_section.dart';
+import '../admin/widgets/defensys_admin_shell.dart'
+    show DefensysSemesterPill, DefensysUniversityHeaderBrand;
 import '../../../config/api_config.dart';
 
 enum FacultyWorkspace { faculty, pitLead, adviser, pitInstructor, documenter }
@@ -634,14 +636,37 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       if (!mounted) return;
     }
     FocusManager.instance.primaryFocus?.unfocus();
+    final currentRoles =
+        (ref.read(dashboardProvider('faculty')).data?['roles'] as Map?)
+            ?.cast<String, dynamic>() ??
+        {};
+    final option = workspace ?? _resolvedWorkspace(currentRoles);
+    final switchingWorkspace =
+        _activeWorkspaceOption != null && option != _activeWorkspaceOption;
     if (workspace != null) {
-      if (workspace != _activeWorkspaceOption) _clearWorkspaceData();
+      if (switchingWorkspace) {
+        _clearWorkspaceData();
+        _navigationEpoch++;
+        _workspaceSections.clear();
+      }
       setState(() => _activeWorkspaceOption = workspace);
     }
-    final option = workspace ?? _resolvedWorkspace(
-      (ref.read(dashboardProvider('faculty')).data?['roles'] as Map?)?.cast<String, dynamic>() ?? {});
-    context.go(_workspaceLocation(FacultyRoutes.pathForSection(section), option,
-      parameters: queryParameters ?? {}));
+    final path = FacultyRoutes.pathForSection(section);
+    final reselectingGrades =
+        section == 'grade_center' && _activeSection == section;
+    if ((queryParameters == null || queryParameters.isEmpty) &&
+        !switchingWorkspace &&
+        resumeWebSection(
+          widget.navigationShell,
+          path,
+          initialLocation:
+              !_workspaceSections.contains(section) || reselectingGrades,
+        )) {
+      return;
+    }
+    context.go(
+      _workspaceLocation(path, option, parameters: queryParameters ?? {}),
+    );
   }
 
   void _afterSidebarAction(bool isWide, VoidCallback action) {
@@ -651,10 +676,37 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     action();
   }
 
+  String? _topSemesterLabel(
+    Map<String, dynamic>? activePeriod,
+    dynamic dashboardLabel,
+  ) {
+    if (activePeriod != null) {
+      return 'Active Sem: ${activePeriod['school_year'] ?? 'Configured'}';
+    }
+
+    final label = dashboardLabel?.toString().trim() ?? '';
+    if (label.isEmpty || label == 'Not configured' || label == 'Loading...') {
+      return null;
+    }
+
+    final schoolYear = RegExp(r'\d{4}-\d{4}').firstMatch(label)?.group(0);
+    return 'Active Sem: ${schoolYear ?? label}';
+  }
+
   Widget _buildTopBar({
     required bool showMenuButton,
     bool showWorkspaceBack = false,
   }) {
+    final activeSemester = ref.watch(
+      academicPeriodProvider.select((s) => s.activeSemester),
+    );
+    final dashboardActiveSemester = ref.watch(
+      dashboardProvider('faculty').select((s) => s.data?['active_semester']),
+    );
+    final semesterLabel = _topSemesterLabel(
+      activeSemester,
+      dashboardActiveSemester,
+    );
     final roles =
         (ref.watch(dashboardProvider('faculty')).data?['roles'] as Map?)
             ?.cast<String, dynamic>() ??
@@ -696,7 +748,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             const SizedBox(width: 8),
           ],
-          const Spacer(),
+          const Expanded(child: DefensysUniversityHeaderBrand()),
           if (WorkspaceAccess.canDocument(
             ref.watch(authProvider).user ?? widget.userData ?? {},
           ))
@@ -717,6 +769,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               tooltip: 'Panelist evaluations',
               onPressed: () => context.push(AppRoutes.panelist),
             ),
+          if (semesterLabel != null) ...[
+            DefensysSemesterPill(label: semesterLabel),
+            const SizedBox(width: 16),
+          ],
           NotificationsBell(
             workspace: inbox,
             workspaceLabel: inbox == 'uploader'
@@ -754,14 +810,17 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     final workspaceOption = _resolvedWorkspace(roles);
     if (_activeWorkspaceOption != workspaceOption) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          if (_activeWorkspaceOption != null) _clearWorkspaceData();
+        if (mounted && _activeWorkspaceOption != workspaceOption) {
+          final wasInitialized = _activeWorkspaceOption != null;
+          if (wasInitialized) _clearWorkspaceData();
           setState(() {
             _activeWorkspaceOption = workspaceOption;
-            _navigationEpoch++;
-            _workspaceSections.clear();
-            _selectedMinutesScheduleId = null;
-            _selectedMinutesSection = null;
+            if (wasInitialized) {
+              _navigationEpoch++;
+              _workspaceSections.clear();
+              _selectedMinutesScheduleId = null;
+              _selectedMinutesSection = null;
+            }
           });
         }
       });
@@ -873,7 +932,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Academic Portal',
+                          workspaceOption.type == FacultyWorkspace.pitLead &&
+                                  workspaceOption.yearLevel != null
+                              ? 'PIT Sub-Admin · ${workspaceOption.yearLevel}'
+                              : 'Academic Portal',
                           style: TextStyle(
                             fontFamily: DefensysTokens.fontFamily,
                             color: isDark
@@ -926,12 +988,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               children: [
                 for (int i = 0; i < groups.length; i++) ...[
                   if (i > 0) SizedBox(height: isCollapsed ? 8 : 20),
-                  _FacultySectionHeader(
-                    title: groups[i].title,
-                    isCollapsed: isCollapsed,
-                    isFirst: i == 0,
-                  ),
-                  const SizedBox(height: 4),
+                  if (groups[i].title.isNotEmpty || isCollapsed) ...[
+                    _FacultySectionHeader(
+                      title: groups[i].title,
+                      isCollapsed: isCollapsed,
+                      isFirst: i == 0,
+                    ),
+                    const SizedBox(height: 4),
+                  ],
                   for (final e in groups[i].entries)
                     _FacultyNavItem(
                       icon: e.icon,
@@ -1287,12 +1351,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case FacultyWorkspace.pitLead:
         groups = [
           _FacultyNavGroup(
-            title: 'Dashboard',
+            title: '',
             entries: [
               _FacultyNavEntry(
                 section: 'dashboard',
                 icon: Icons.show_chart_rounded,
-                label: 'Dashboard',
+                label: 'Overview',
                 isActive: _activeSection == 'dashboard',
                 onTap: () => _afterSidebarAction(
                   isWide,
@@ -1302,12 +1366,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ],
           ),
           _FacultyNavGroup(
-            title: 'Setup & Configuration',
+            title: 'Semester Setup',
             entries: [
               _FacultyNavEntry(
                 section: 'pit_events',
                 icon: Icons.event_note_rounded,
-                label: 'PIT Events Setup',
+                label: 'PIT Events',
                 isActive: _activeSection == 'pit_events',
                 onTap: () => _afterSidebarAction(
                   isWide,
@@ -1325,12 +1389,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ],
           ),
           _FacultyNavGroup(
-            title: 'People & Teams',
+            title: 'Roster & Teams',
             entries: [
               _FacultyNavEntry(
                 section: 'cohort',
                 icon: Icons.manage_accounts_rounded,
-                label: 'User Management',
+                label: 'Cohort & Instructors',
                 isActive:
                     _activeSection == 'cohort' ||
                     _activeSection == 'pit_student_import' ||
@@ -1341,7 +1405,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               _FacultyNavEntry(
                 section: 'student_teams',
                 icon: Icons.groups_rounded,
-                label: 'Student Teams',
+                label: 'PIT Teams',
                 isActive: _activeSection == 'student_teams',
                 onTap: () => _afterSidebarAction(
                   isWide,
@@ -1351,12 +1415,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ],
           ),
           _FacultyNavGroup(
-            title: 'Defense Operations',
+            title: 'Defense & Grading',
             entries: [
               _FacultyNavEntry(
                 section: 'defense_board',
                 icon: Icons.view_agenda_rounded,
-                label: 'Defense Operations',
+                label: 'Defense Schedule',
                 isActive:
                     _activeSection == 'defense_board' ||
                     _activeSection == 'defense_scheduler',
@@ -1378,7 +1442,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ],
           ),
           _FacultyNavGroup(
-            title: 'Analytics & Audit',
+            title: 'Archive & Reports',
             entries: [
               _FacultyNavEntry(
                 section: 'project_archive',
@@ -1420,12 +1484,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case FacultyWorkspace.adviser:
         groups = [
           _FacultyNavGroup(
-            title: 'Dashboard',
+            title: '',
             entries: [
               _FacultyNavEntry(
                 section: 'dashboard',
                 icon: Icons.show_chart_rounded,
-                label: 'Dashboard',
+                label: 'Overview',
                 isActive: _activeSection == 'dashboard',
                 onTap: () => _afterSidebarAction(
                   isWide,
@@ -1461,12 +1525,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case FacultyWorkspace.pitInstructor:
         groups = [
           _FacultyNavGroup(
-            title: 'Dashboard',
+            title: '',
             entries: [
               _FacultyNavEntry(
                 section: 'dashboard',
                 icon: Icons.show_chart_rounded,
-                label: 'Dashboard',
+                label: 'Overview',
                 isActive: _activeSection == 'dashboard',
                 onTap: () => _afterSidebarAction(
                   isWide,

@@ -347,12 +347,20 @@ class DefenseRecordCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final assessment = (schedule['assessment'] as Map?) ?? const {};
-    final status =
-        schedule['display_status']?.toString() ??
-        schedule['status']?.toString() ??
-        'scheduled';
+    final release =
+        (assessment['dissemination'] as Map?) ??
+        (grade?['dissemination'] as Map?) ??
+        const {};
+    final awaitingRelease = release['status'] == 'awaiting_release';
+    final status = awaitingRelease
+        ? 'awaiting_release'
+        : schedule['display_status']?.toString() ??
+              schedule['status']?.toString() ??
+              'scheduled';
     final minutes = schedule['minutes_status']?.toString();
-    final verdict = (assessment['verdict'] ?? grade?['verdict'])?.toString();
+    final verdict = awaitingRelease
+        ? ''
+        : (assessment['verdict'] ?? grade?['verdict'])?.toString();
     final hasVerdict =
         verdict != null && verdict.isNotEmpty && verdict != 'pending';
     final approvedTitle =
@@ -564,6 +572,17 @@ class DefenseRecordCard extends StatelessWidget {
               DeliverableStatusBadge(label: summary.label, tone: summary.tone),
             ],
           ),
+          if (awaitingRelease) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Your outcome and panel feedback will appear once released by the administrator.',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 13,
+                color: secondary,
+              ),
+            ),
+          ],
           if (approvedTitle.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(

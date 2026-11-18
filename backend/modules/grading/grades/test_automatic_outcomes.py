@@ -34,9 +34,7 @@ class AutomaticConceptOutcomeTests(APITestCase):
         self.assertEqual(ConceptRound.objects.get(schedule=self.capstone_schedule).concepts[1]['decision'], 'approved')
         from notifications.models import Notification
         alerts = Notification.objects.filter(workspace='student', title='Defense outcome recorded')
-        self.assertEqual(set(alerts.values_list('recipient_id', flat=True)),
-                         set(self.capstone_team.memberships.values_list('student_id', flat=True)))
-        self.assertTrue(all('Approved' in alert.message for alert in alerts))
+        self.assertFalse(alerts.exists())  # Explicit dissemination owns student notification.
         self.assertFalse(Notification.objects.filter(category='PEER_EVAL').exists())
 
     def test_multiple_qualifying_concepts_require_current_chair_selection(self):
@@ -417,6 +415,13 @@ class AutomaticConceptOutcomeTests(APITestCase):
         self.assertEqual(following.title_workflow_version, 2)
         self.assertTrue(all(c['title_review']['state'] == 'draft' for c in following.concepts))
         from repository.title_workflow import team_action
+        from types import SimpleNamespace
+        from uuid import uuid4
+        from .dissemination import preview, confirm
+        request = SimpleNamespace(user=self.admin)
+        reviewed = preview(request, {'filters': {'scope': 'capstone', 'entity': 'teams',
+            'semester_id': self.semester.pk, 'defense_stage_id': self.stage.pk}, 'grade_ids': [self.grade.pk]})
+        confirm(request, {'review_token': reviewed['review_token'], 'batch_id': str(uuid4())})
         team_action(self.capstone_team, self.stage, self.capstone_team.leader, 'submit_title', 'c1', title='Revised concept scope')
         team_action(self.capstone_team, self.stage, self.adviser, 'accept_title', 'c1')
         following.refresh_from_db()

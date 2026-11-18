@@ -1,0 +1,191 @@
+<div id="ds-flow-wireframe">
+  <style>
+    #ds-flow-wireframe{--wf-bg:light-dark(#fafafa,#171717);--wf-surface:light-dark(#fff,#222);--wf-soft:light-dark(#f0f0f0,#2d2d2d);--wf-line:light-dark(#c8c8c8,#555);--wf-text:light-dark(#202020,#eee);--wf-muted:light-dark(#5e5e5e,#bcbcbc);--wf-solid:light-dark(#333,#e1e1e1);--wf-on-solid:light-dark(#fff,#222);font:14px/1.45 Inter,Arial,sans-serif;color:var(--wf-text);color-scheme:light dark;width:100%}
+    #ds-flow-wireframe *{box-sizing:border-box}
+    #ds-flow-wireframe [hidden]{display:none!important}
+    #ds-flow-wireframe h2,#ds-flow-wireframe h3,#ds-flow-wireframe p{margin:0}
+    #ds-flow-wireframe button{font:inherit;cursor:pointer;color:inherit}
+    #ds-flow-wireframe button:focus-visible,#ds-flow-wireframe summary:focus-visible{outline:2px solid var(--wf-text);outline-offset:3px}
+    #ds-flow-wireframe svg,#ds-flow-wireframe [data-lucide]{width:17px;height:17px;display:inline-block;vertical-align:middle;flex-shrink:0}
+    #ds-flow-wireframe .wf-icon-fallback{font-style:normal;line-height:17px;text-align:center;filter:grayscale(1)}
+    #ds-flow-wireframe .wf-preview-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 96px 14px 0;font-size:12px}
+    #ds-flow-wireframe .wf-muted{color:var(--wf-muted);font-size:12px}
+    #ds-flow-wireframe .wf-scenario{border:1px solid var(--wf-line);background:var(--wf-surface);padding:5px 10px;min-height:31px}
+    #ds-flow-wireframe .wf-scenario[aria-pressed="true"]{background:var(--wf-solid);color:var(--wf-on-solid);border-color:var(--wf-solid)}
+    #ds-flow-wireframe .wf-product{background:var(--wf-bg);padding:24px;border:1px solid var(--wf-line);display:grid;gap:22px;min-width:0}
+    #ds-flow-wireframe .wf-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+    #ds-flow-wireframe h2{font-size:23px;font-weight:600;letter-spacing:-.4px}
+    #ds-flow-wireframe h3{font-size:14px;font-weight:600}
+    #ds-flow-wireframe .wf-header p{margin-top:3px}
+    #ds-flow-wireframe .wf-tabs{display:flex;gap:0}
+    #ds-flow-wireframe .wf-tab{border:1px solid var(--wf-line);background:var(--wf-surface);padding:7px 18px;min-height:36px}
+    #ds-flow-wireframe .wf-tab+.wf-tab{border-left:0}
+    #ds-flow-wireframe .wf-tab[aria-selected="true"]{background:var(--wf-soft);font-weight:600;box-shadow:inset 0 -2px var(--wf-text)}
+    #ds-flow-wireframe .wf-attention{background:var(--wf-surface);border:1px solid var(--wf-line)}
+    #ds-flow-wireframe .wf-section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--wf-line)}
+    #ds-flow-wireframe .wf-heading-title{display:flex;align-items:center;gap:8px}
+    #ds-flow-wireframe .wf-count{display:inline-block;min-width:22px;text-align:center;background:var(--wf-soft);padding:1px 6px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+    #ds-flow-wireframe .wf-action-row{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--wf-line)}
+    #ds-flow-wireframe .wf-action-row:last-child{border-bottom:0}
+    #ds-flow-wireframe .wf-action-name{font-size:13px;font-weight:600}
+    #ds-flow-wireframe .wf-action-reason{color:var(--wf-muted);font-size:12px;margin-top:2px}
+    #ds-flow-wireframe .wf-button{border:1px solid var(--wf-line);background:var(--wf-surface);padding:6px 11px;min-height:34px;white-space:nowrap;font-size:12px}
+    #ds-flow-wireframe .wf-button:hover{background:var(--wf-soft)}
+    #ds-flow-wireframe .wf-attention-footer{padding:9px 16px;display:flex;justify-content:space-between;gap:12px;align-items:center;border-top:1px solid var(--wf-line);flex-wrap:wrap}
+    #ds-flow-wireframe .wf-text-button{border:0;background:none;text-decoration:underline;text-underline-offset:3px;padding:3px 0;font-size:12px;min-height:28px}
+    #ds-flow-wireframe .wf-stack{display:grid;gap:18px;min-width:0}
+    #ds-flow-wireframe .wf-flow-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+    #ds-flow-wireframe .wf-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;min-width:0}
+    #ds-flow-wireframe .wf-flow-card{background:var(--wf-surface);border:1px solid var(--wf-line);padding:14px 12px 10px;display:flex;flex-direction:column;gap:0;min-width:0}
+    #ds-flow-wireframe .wf-card-header{display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:13px;font-weight:600}
+    #ds-flow-wireframe .wf-card-value{font-size:25px;line-height:1.25;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+    #ds-flow-wireframe .wf-card-label{font-size:12px;color:var(--wf-muted);margin-top:3px}
+    #ds-flow-wireframe .wf-card-breakdown{font-size:12px;display:grid;gap:5px;margin:14px 0 13px}
+    #ds-flow-wireframe .wf-card-state{display:flex;align-items:center;gap:5px;font-size:11px;padding:5px 0;margin-top:auto;min-height:30px}
+    #ds-flow-wireframe .wf-card-state[data-action="true"]{font-weight:600;border-top:1px dashed var(--wf-line)}
+    #ds-flow-wireframe .wf-card-state[data-action="true"] svg{width:14px;height:14px}
+    #ds-flow-wireframe .wf-card-state[data-action="false"]{color:var(--wf-muted);border-top:1px solid var(--wf-line)}
+    #ds-flow-wireframe .wf-flow-card[data-has-action="true"] .wf-card-header{font-weight:650}
+    #ds-flow-wireframe .wf-card-link{align-self:flex-start;margin-top:4px}
+    #ds-flow-wireframe .wf-card-owner{font-size:11px;color:var(--wf-muted);margin-top:5px}
+    #ds-flow-wireframe .wf-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--wf-muted);margin-top:11px}
+    #ds-flow-wireframe .wf-legend span{display:inline-flex;align-items:center;gap:6px}
+    #ds-flow-wireframe .wf-legend svg{width:13px;height:13px}
+    #ds-flow-wireframe .wf-navigation{border:1px dashed var(--wf-line);padding:12px 14px;background:var(--wf-soft);display:flex;justify-content:space-between;gap:16px;align-items:center;font-size:12px;flex-wrap:wrap}
+    #ds-flow-wireframe .wf-navigation p{margin-top:3px;color:var(--wf-muted)}
+    #ds-flow-wireframe .wf-pit{border:1px solid var(--wf-line);background:var(--wf-surface);padding:16px}
+    #ds-flow-wireframe .wf-pit-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-bottom:14px}
+    #ds-flow-wireframe .wf-pit-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:14px;padding:15px 0;border-top:1px solid var(--wf-line);font-size:12px}
+    #ds-flow-wireframe .wf-pit-row strong{display:block;margin-bottom:4px;font-weight:600}
+    #ds-flow-wireframe .wf-footnote{font-size:11px;color:var(--wf-muted)}
+    @media(max-width:850px){#ds-flow-wireframe .wf-cards{grid-template-columns:repeat(3,minmax(0,1fr))}#ds-flow-wireframe .wf-product{padding:20px}}
+    @media(max-width:550px){#ds-flow-wireframe .wf-cards{grid-template-columns:repeat(2,minmax(0,1fr))}#ds-flow-wireframe .wf-product{padding:14px;gap:18px}#ds-flow-wireframe .wf-action-row{grid-template-columns:17px minmax(0,1fr);gap:9px;padding:12px}#ds-flow-wireframe .wf-action-row>.wf-button{grid-column:2;justify-self:start}#ds-flow-wireframe .wf-flow-card{padding:12px 10px 9px}#ds-flow-wireframe .wf-card-value{font-size:23px}#ds-flow-wireframe .wf-card-header{font-size:12px;gap:6px}#ds-flow-wireframe .wf-preview-controls{padding-right:0;max-width:calc(100% - 90px)}#ds-flow-wireframe .wf-header{align-items:flex-start}#ds-flow-wireframe .wf-tabs{width:100%}#ds-flow-wireframe .wf-tab{flex:1}#ds-flow-wireframe .wf-pit-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#ds-flow-wireframe .wf-pit-row>div:last-child{grid-column:1/-1}}
+    @media(pointer:coarse){#ds-flow-wireframe button{min-height:44px}}
+  </style>
+
+  <div class="wf-preview-controls" aria-label="Example action counts">
+    <span class="wf-muted">Example:</span>
+    <button class="wf-scenario" type="button" data-scenario="1" aria-pressed="false">1 action</button>
+    <button class="wf-scenario" type="button" data-scenario="3" aria-pressed="true">3 actions</button>
+    <button class="wf-scenario" type="button" data-scenario="6" aria-pressed="false">6 actions</button>
+  </div>
+
+  <main class="wf-product" aria-label="Low fidelity admin overview">
+    <header class="wf-header">
+      <div><h2>Overview</h2><p class="wf-muted">1st Semester · A.Y. 2026–2027</p></div>
+      <div class="wf-tabs" role="tablist" aria-label="Program overview">
+        <button id="wf-capstone-tab" class="wf-tab" role="tab" type="button" aria-selected="true" aria-controls="wf-capstone-panel" data-program="capstone">Capstone</button>
+        <button id="wf-pit-tab" class="wf-tab" role="tab" type="button" aria-selected="false" aria-controls="wf-pit-panel" data-program="pit">PIT</button>
+      </div>
+    </header>
+
+    <section class="wf-attention" id="wf-attention" aria-label="Administrative actions">
+      <div class="wf-section-heading"><div class="wf-heading-title"><h3>Needs attention</h3><span id="wf-action-count" class="wf-count" aria-label="3 actions">3</span></div></div>
+      <div id="wf-action-rows" aria-live="polite"></div>
+      <div id="wf-more" class="wf-attention-footer" hidden><span class="wf-muted" id="wf-visible-count">Showing 3 of 6</span><button class="wf-text-button" type="button" id="wf-toggle-all">View all 6 actions</button></div>
+    </section>
+
+    <section id="wf-capstone-panel" role="tabpanel" aria-labelledby="wf-capstone-tab" class="wf-stack">
+      <section aria-label="Semester workflow summaries">
+        <div class="wf-flow-heading"><h3>Semester workflow</h3><span class="wf-muted">Capstone · Active semester</span></div>
+        <div id="wf-flow-cards" class="wf-cards"></div>
+        <div class="wf-legend"><span><i data-lucide="triangle-alert" aria-hidden="true"></i>Admin action needed</span><span><i data-lucide="clock-3" aria-hidden="true"></i>Waiting on others</span><span><i data-lucide="circle-check" aria-hidden="true"></i>Configured</span></div>
+      </section>
+    </section>
+
+    <section id="wf-pit-panel" role="tabpanel" aria-labelledby="wf-pit-tab" class="wf-pit" hidden>
+      <div class="wf-pit-head"><h3>PIT oversight</h3><span class="wf-muted">Read-only · Managed by PIT Leads</span></div>
+      <article class="wf-pit-row"><div><strong>First year</strong><span class="wf-muted">[PIT Lead name]</span></div><div><strong>4 teams · 1 event</strong><span class="wf-muted">4 scheduled</span></div><div><strong>Scheduled</strong><span class="wf-muted">Next defense: [date]</span></div></article>
+      <article class="wf-pit-row"><div><strong>Second year</strong><span class="wf-muted">[PIT Lead name]</span></div><div><strong>5 teams · 2 events</strong><span class="wf-muted">Setup pending</span></div><div><strong>Waiting on PIT Lead</strong><span class="wf-muted">Event configuration</span></div></article>
+      <article class="wf-pit-row"><div><strong>Third year</strong><span class="wf-muted">[PIT Lead name]</span></div><div><strong>3 teams · 1 event</strong><span class="wf-muted">2 assessed · 1 scheduled</span></div><div><strong>In progress</strong><span class="wf-muted">Next defense: [date]</span></div></article>
+    </section>
+
+    <section id="wf-destination" class="wf-navigation" hidden aria-live="polite"><div><strong id="wf-destination-title">Destination preview</strong><p id="wf-destination-description"></p></div><button type="button" id="wf-close-destination" class="wf-text-button">Close preview</button></section>
+    <p class="wf-footnote">Low-fidelity wireframe · Illustrative records and totals</p>
+  </main>
+
+  <script>
+    (() => {
+      const root = document.getElementById('ds-flow-wireframe');
+      const state = { scenario: 3, program: 'capstone', expanded: false, owners: false };
+      const actions = {
+        proposal: { name:'Proposal defense', reason:'Missing evaluation rubrics', button:'Fix rubrics', destination:'Defense Stages → Proposal defense → Grading & Rubrics', scope:'capstone' },
+        final: { name:'Final defense', reason:'Missing evaluation rubrics', button:'Fix rubrics', destination:'Defense Stages → Final defense → Grading & Rubrics', scope:'capstone' },
+        adviserA: { name:'Team C-07', reason:'No adviser assigned', button:'Assign adviser', destination:'Student Teams → Team C-07 → Adviser assignment', scope:'capstone' },
+        adviserB: { name:'Team C-10', reason:'No adviser assigned', button:'Assign adviser', destination:'Student Teams → Team C-10 → Adviser assignment', scope:'capstone' },
+        panelist: { name:'Department · Panelist request', reason:'1 request awaiting your decision', button:'Review request', destination:'Faculty directory → Panelist requests → Pending request', scope:'department' },
+        scheduling: { name:'3 teams ready for defense', reason:'Requirements met · No schedule yet', button:'Schedule teams', destination:'Defense Operations → Readiness → Ready Capstone teams', scope:'capstone' }
+      };
+      function currentActions() {
+        const keys = state.scenario === 1 ? ['proposal'] : state.scenario === 3 ? ['proposal','adviserA','scheduling'] : ['proposal','final','adviserA','adviserB','panelist','scheduling'];
+        return keys.filter(key=>state.program === 'capstone' || actions[key].scope === 'department');
+      }
+      function icons() {
+        const fallback = {'calendar-range':'▦','settings-2':'⚙','users':'👥︎','calendar-days':'▦','file-check-2':'☑','triangle-alert':'⚠︎','clock-3':'◷','circle-check':'✓','minus':'−','calendar-plus':'⊞','inbox':'▤'};
+        root.querySelectorAll('i[data-lucide]').forEach(node=>{node.textContent=fallback[node.dataset.lucide]||'';node.classList.add('wf-icon-fallback');});
+        if (globalThis.lucide) globalThis.lucide.createIcons({attrs:{width:16,height:16}});
+      }
+      function renderActions() {
+        const keys = currentActions();
+        root.querySelector('#wf-attention').hidden = keys.length === 0;
+        const count = root.querySelector('#wf-action-count');
+        count.textContent = keys.length;count.setAttribute('aria-label',`${keys.length} ${keys.length===1?'action':'actions'}`);
+        const visible = state.expanded ? keys : keys.slice(0,3);
+        root.querySelector('#wf-action-rows').innerHTML = visible.map(key=>`<article class="wf-action-row"><i data-lucide="${key==='scheduling'?'calendar-plus':key==='panelist'?'inbox':'triangle-alert'}" aria-hidden="true"></i><div><div class="wf-action-name">${actions[key].name}</div><p class="wf-action-reason">${actions[key].reason}</p></div><button class="wf-button" type="button" data-action="${key}">${actions[key].button}</button></article>`).join('');
+        root.querySelector('#wf-more').hidden = keys.length <= 3;
+        root.querySelector('#wf-visible-count').textContent = `Showing ${visible.length} of ${keys.length}`;
+        const toggle = root.querySelector('#wf-toggle-all');toggle.textContent = state.expanded ? 'Show fewer' : `View all ${keys.length} actions`;toggle.setAttribute('aria-expanded',String(state.expanded));
+      }
+      function renderCards() {
+        const stageIssues = state.scenario === 6 ? 2 : 1;
+        const advisers = state.scenario === 1 ? 0 : state.scenario === 3 ? 1 : 2;
+        const ready = state.scenario === 1 ? 0 : 3;
+        const cards = [
+          {icon:'calendar-range',title:'Period',value:'1',label:'Active term',lines:['1st Semester','A.Y. 2026–2027'],symbol:'circle-check',status:'Active',action:false,link:'View term',target:'Academic Periods → Active semester',owner:'Admin'},
+          {icon:'settings-2',title:'Stage setup',value:`${3-stageIssues} / 3`,label:'Stages configured',lines:[`${3-stageIssues} ready`,`${stageIssues} missing rubrics`],symbol:'triangle-alert',status:`${stageIssues} ${stageIssues===1?'setup action':'setup actions'}`,action:true,link:'View stages',target:'Defense Stages → Current semester',owner:'Admin'},
+          {icon:'users',title:'Teams',value:'12',label:'Active teams',lines:[`${12-advisers} advisers assigned`,`${advisers} ${advisers===1?'team needs':'teams need'} adviser`],symbol:advisers?'triangle-alert':'circle-check',status:advisers?`${advisers} ${advisers===1?'assignment action':'assignment actions'}`:'Advisers assigned',action:advisers>0,link:'View teams',target:'Student Teams → Active Capstone teams',owner:'Admin'},
+          {icon:'calendar-days',title:'Scheduling',value:'4',label:'Teams scheduled',lines:[`${ready} ready to schedule`,`${12-ready-4} preparing · Students / Adviser`],symbol:ready?'triangle-alert':'clock-3',status:ready?'1 scheduling action':'Waiting on team readiness',action:ready>0,link:'View schedule',target:'Defense Operations → Schedules and readiness',owner:'Admin, once ready'},
+          {icon:'file-check-2',title:'Results',value:'0',label:'Ready for release',lines:['0 attempts assessed','0 results released'],symbol:'minus',status:'No release action yet',action:false,link:'View results',target:'Evaluation & Grades → Capstone results',owner:'Admin, once assessed'}
+        ];
+        root.querySelector('#wf-flow-cards').innerHTML = cards.map(card=>`<article class="wf-flow-card" data-has-action="${card.action}"><div class="wf-card-header"><i data-lucide="${card.icon}" aria-hidden="true"></i><span>${card.title}</span></div><div class="wf-card-value">${card.value}</div><p class="wf-card-label">${card.label}</p><div class="wf-card-breakdown">${card.lines.map(line=>`<p>${line}</p>`).join('')}</div><div class="wf-card-state" data-action="${card.action}"><i data-lucide="${card.symbol}" aria-hidden="true"></i><span>${card.status}</span></div><p class="wf-card-owner" ${state.owners?'':'hidden'}>${card.owner}</p><button class="wf-text-button wf-card-link" type="button" data-destination="${card.target}">${card.link}</button></article>`).join('');
+      }
+      function render() {
+        root.querySelectorAll('[data-scenario]').forEach(button=>button.setAttribute('aria-pressed',String(Number(button.dataset.scenario)===state.scenario)));
+        root.querySelectorAll('[data-program]').forEach(button=>button.setAttribute('aria-selected',String(button.dataset.program===state.program)));
+        root.querySelector('#wf-capstone-panel').hidden = state.program !== 'capstone';root.querySelector('#wf-pit-panel').hidden = state.program !== 'pit';
+        root.querySelector('#wf-destination').hidden = true;
+        renderActions();renderCards();icons();
+      }
+      function save() {
+        if (window.openai?.setWidgetState) window.openai.setWidgetState({modelContent:{wireframeScenario:state.scenario,program:state.program,showResponsibility:state.owners},privateContent:{expanded:state.expanded}}).catch(()=>{});
+      }
+      function restore(saved) {
+        if ([1,3,6].includes(saved?.modelContent?.wireframeScenario)) state.scenario=saved.modelContent.wireframeScenario;
+        if (['capstone','pit'].includes(saved?.modelContent?.program)) state.program=saved.modelContent.program;
+        if (typeof saved?.modelContent?.showResponsibility==='boolean') state.owners=saved.modelContent.showResponsibility;
+        if (typeof saved?.privateContent?.expanded==='boolean') state.expanded=saved.privateContent.expanded;
+      }
+      function showDestination(title,destination) {
+        root.querySelector('#wf-destination-title').textContent=title;
+        root.querySelector('#wf-destination-description').textContent=destination;
+        root.querySelector('#wf-destination').hidden=false;
+      }
+      root.addEventListener('click',event=>{
+        const scenario=event.target.closest('[data-scenario]');const program=event.target.closest('[data-program]');const action=event.target.closest('[data-action]');const destination=event.target.closest('[data-destination]');
+        if(scenario){state.scenario=Number(scenario.dataset.scenario);state.expanded=false;render();save();}
+        if(program){state.program=program.dataset.program;state.expanded=false;render();save();}
+        if(action){const item=actions[action.dataset.action];showDestination('Destination preview · '+item.button,item.destination);}
+        if(destination)showDestination('Destination preview · '+destination.textContent,destination.dataset.destination);
+        if(event.target.closest('#wf-toggle-all')){state.expanded=!state.expanded;renderActions();icons();save();}
+        if(event.target.closest('#wf-close-destination'))root.querySelector('#wf-destination').hidden=true;
+      });
+      root.querySelector('[role="tablist"]').addEventListener('keydown',event=>{
+        if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+        event.preventDefault();const tabs=[...root.querySelectorAll('[data-program]')];const index=tabs.indexOf(document.activeElement);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next].focus();tabs[next].click();
+      });
+      restore(window.openai?.widgetState);render();
+      window.addEventListener('openai:set_globals',event=>{if(event.detail?.globals?.widgetState){restore(event.detail.globals.widgetState);render();}});
+      if(globalThis.Tweak){const tweak=new Tweak({container:root.querySelector('[aria-label="Semester workflow summaries"]'),onChange:()=>{renderCards();icons();save();}});tweak.addToggle(state,'owners',{label:'Show responsibility on every card'});}
+    })();
+  </script>
+</div>
