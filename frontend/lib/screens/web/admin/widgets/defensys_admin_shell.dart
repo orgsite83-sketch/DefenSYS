@@ -1,9 +1,11 @@
 import '../../../../services/admin_overview_scope_provider.dart';
 import '../../../../services/dashboard_provider.dart';
+import '../../../../services/academic_period_provider.dart';
 import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' show ShadBadge;
 
 import '../../../../l10n/l10n_ext.dart';
 import '../../../../theme/defensys_tokens.dart';
@@ -17,7 +19,9 @@ import '../../../../widgets/buttons/defensys_theme_toggle.dart';
 import '../../../../services/theme_provider.dart';
 import '../../../../navigation/admin_route_paths.dart';
 import '../../../../navigation/workspace_access.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../../widgets/minutes/staff_workspace_switcher.dart';
+import 'admin_active_semester_control.dart';
 
 export '../../../../widgets/status_badge.dart';
 
@@ -183,6 +187,8 @@ class _DefensysAdminShellState extends State<DefensysAdminShell> {
               _TopNav(
                 activeSemesterLabel: widget.activeSemesterLabel,
                 showMenuButton: !isWide,
+                onOpenAcademicPeriods: () =>
+                    widget.onNavigate(DefensysAdminSection.academicPeriods),
               ),
               Expanded(
                 child: OfflineBanner(
@@ -320,9 +326,11 @@ class DefensysCard extends StatelessWidget {
 class _TopNav extends ConsumerWidget {
   final String activeSemesterLabel;
   final bool showMenuButton;
+  final VoidCallback onOpenAcademicPeriods;
 
   const _TopNav({
     required this.activeSemesterLabel,
+    required this.onOpenAcademicPeriods,
     this.showMenuButton = false,
   });
 
@@ -331,55 +339,82 @@ class _TopNav extends ConsumerWidget {
     final user = ref.watch(authProvider).user ?? {};
     final canEval = WorkspaceAccess.canEvaluate(user);
     final canDoc = WorkspaceAccess.canDocument(user);
-    return Container(
-      height: DefensysUi.topNavHeight,
-      padding: EdgeInsets.only(
-        left: showMenuButton ? 8 : 32,
-        right: 40,
-      ),
-      decoration: BoxDecoration(
-        color: DefensysTokens.panelOf(context),
-        border: Border(
-          bottom: BorderSide(
-            color: DefensysTokens.borderOf(context),
-            width: 1,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 600;
+        final semester = AdminActiveSemesterControl(
+          label: activeSemesterLabel,
+          onPressed: onOpenAcademicPeriods,
+        );
+        return Container(
+          constraints: BoxConstraints(minHeight: DefensysUi.topNavHeight),
+          padding: EdgeInsets.only(
+            left: showMenuButton ? 8 : 32,
+            right: compact ? 12 : 24,
+            top: compact ? 4 : 12,
+            bottom: 12,
           ),
-        ),
-      ),
-      child: Row(
-        children: [
-          if (showMenuButton) ...[
-            IconButton(
-              icon: const Icon(Icons.menu),
-              tooltip: 'Open menu',
-              onPressed: () => Scaffold.of(context).openDrawer(),
+          decoration: BoxDecoration(
+            color: DefensysTokens.panelOf(context),
+            border: Border(
+              bottom: BorderSide(color: DefensysTokens.borderOf(context)),
             ),
-            const SizedBox(width: 8),
-          ],
-          const Expanded(child: DefensysUniversityHeaderBrand()),
-          if (canDoc) ...[
-            IconButton(
-              icon: const Icon(Icons.edit_note_rounded),
-              tooltip: 'Documenter workspace',
-              onPressed: () => switchStaffWorkspace(context, ref, AppRoutes.documenter),
-            ),
-            const SizedBox(width: 4),
-          ],
-          if (canEval) ...[
-            IconButton(
-              icon: const Icon(Icons.rate_review_outlined),
-              tooltip: 'Panelist evaluations',
-              onPressed: () => switchStaffWorkspace(context, ref, AppRoutes.panelist),
-            ),
-            const SizedBox(width: 4),
-          ],
-          DefensysSemesterPill(label: activeSemesterLabel),
-          const SizedBox(width: 16),
-          const NotificationsBell(workspace: 'admin', workspaceLabel: 'Administrator'),
-          const SizedBox(width: 10),
-          const DefensysThemeToggle(),
-        ],
-      ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  if (showMenuButton) ...[
+                    IconButton(
+                      icon: const Icon(Icons.menu),
+                      tooltip: 'Open menu',
+                      onPressed: () => Scaffold.of(context).openDrawer(),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  const Expanded(child: DefensysUniversityHeaderBrand()),
+                  if (canDoc) ...[
+                    IconButton(
+                      icon: const Icon(Icons.edit_note_rounded),
+                      tooltip: 'Documenter workspace',
+                      onPressed: () => switchStaffWorkspace(
+                        context, ref, AppRoutes.documenter,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  if (canEval) ...[
+                    IconButton(
+                      icon: const Icon(Icons.rate_review_outlined),
+                      tooltip: 'Panelist evaluations',
+                      onPressed: () => switchStaffWorkspace(
+                        context, ref, AppRoutes.panelist,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  if (!compact) ...[
+                    SizedBox(width: 310, child: semester),
+                    const SizedBox(width: 16),
+                  ],
+                  const NotificationsBell(
+                    workspace: 'admin', workspaceLabel: 'Administrator',
+                  ),
+                  const SizedBox(width: 10),
+                  const DefensysThemeToggle(),
+                ],
+              ),
+              if (compact) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4), child: semester,
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -1388,27 +1423,26 @@ class DefensysSemesterPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF064E3B).withValues(alpha: 0.45)
-            : DefensysUi.successBg,
-        border: isDark
-            ? Border.all(
-                color: const Color(0xFF059669).withValues(alpha: 0.4),
-                width: 1)
-            : null,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: DefensysUi.fontFamily,
-          color: isDark ? const Color(0xFF6EE7B7) : DefensysUi.successText,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
+    final background = DefensysTokens.panelOf(context);
+    final foreground = DefensysTokens.textSecondaryOf(context);
+    return DefensysShadcnScope(
+      child: ShadBadge.secondary(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        backgroundColor: background,
+        hoverBackgroundColor: background,
+        foregroundColor: foreground,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+          side: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            color: foreground,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ),
     );
@@ -1500,8 +1534,13 @@ class _OverviewTaskBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data = ref.watch(dashboardProvider('admin')).data;
+    final periods = ref.watch(academicPeriodProvider);
+    final active = periods.activeSemester;
+    final overview = data?['overview'] as Map?;
+    if ((active != null || periods.schoolYears.isNotEmpty) && overview?['semester_id'] != active?['id']) return const SizedBox.shrink();
     final counts = (data?['overview'] as Map?)?['action_counts'] as Map? ?? {};
     final key = switch (section) {
+      DefensysAdminSection.academicPeriods => 'academicPeriods',
       DefensysAdminSection.defenseStages => 'defenseStages',
       DefensysAdminSection.studentTeams => 'studentTeams',
       DefensysAdminSection.userManagement => 'userManagement',
@@ -1514,7 +1553,12 @@ class _OverviewTaskBadge extends ConsumerWidget {
     final count = tasks == null ? (counts[key] as int? ?? 0) : tasks.whereType<Map>().where((item) => item['target_section'] == key && (scope == 'all' || item['scope'] == null || item['scope'] == scope)).length;
     if (count == 0) return const SizedBox.shrink();
     final foreground = color ?? DefensysTokens.textPrimaryOf(context);
-    return Semantics(label: '$count administrative tasks', child: Container(
+    final enrollmentOnly = key == 'userManagement' && count == 1 &&
+        (tasks ?? []).whereType<Map>().any((item) => (item['id'] ?? '').toString().startsWith('enrollment:'));
+    final label = enrollmentOnly
+        ? '1 enrollment task needs attention'
+        : '$count administrative ${count == 1 ? 'task' : 'tasks'}';
+    return Tooltip(message: label, child: Semantics(label: label, child: Container(
       constraints: const BoxConstraints(minWidth: 22),
       margin: const EdgeInsets.symmetric(horizontal: 4),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -1523,6 +1567,6 @@ class _OverviewTaskBadge extends ConsumerWidget {
         inherit: false, color: foreground, fontFamily: DefensysTokens.fontFamilyInter,
         fontSize: 11, height: 1, fontWeight: FontWeight.w600, letterSpacing: 0,
       )),
-    ));
+    )));
   }
 }

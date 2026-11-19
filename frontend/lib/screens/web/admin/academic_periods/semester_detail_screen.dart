@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'widgets/semester_transition_dialog.dart';
 import 'widgets/semester_calendar_fields.dart';
+import 'widgets/semester_status_badge.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' show ShadButton, ShadButtonSize;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -144,7 +147,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
               description:
                   'The requested academic term does not exist or has been deleted.',
               primaryAction: DefensysEmptyAction(
-                label: 'Back to Academic Cycles',
+                label: 'Back to academic periods',
                 icon: Icons.arrow_back_rounded,
                 onPressed: () {
                   if (widget.onBack != null) {
@@ -187,7 +190,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                   context.go(AdminRoutes.academicPeriods);
                 }
               },
-              backLabel: 'Back to Academic Cycles',
+              backLabel: 'Back to academic periods',
               items: [
                 DefensysBreadcrumbItem(
                   label: 'A.Y. $yearLabel',
@@ -208,7 +211,9 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
             const SizedBox(height: 18),
 
             // Header Banner
-            _buildTermHeader(semester, yearLabel, termName, isActive),
+            _buildTermHeader(
+              semester, yearLabel, termName, isActive, state.isSaving,
+            ),
             const SizedBox(height: 20),
             SemesterCalendarSummary(
               semester: semester,
@@ -256,204 +261,87 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     String yearLabel,
     String termName,
     bool isActive,
-  ) {
-    return Container(
+    bool isSaving,
+  ) => DefensysShadcnScope(
+    maroonActions: true,
+    child: Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _surfaceColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isActive
-              ? (_isDark ? const Color(0xFF059669) : const Color(0xFF10B981))
-              : _borderColor,
-          width: isActive ? 1.5 : 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _borderColor),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: isActive
-                  ? (_isDark
-                        ? const Color(0xFF064E3B)
-                        : const Color(0xFFECFDF5))
-                  : (_isDark
-                        ? const Color(0xFF27272A)
-                        : const Color(0xFFF1F5F9)),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isActive
-                    ? (_isDark
-                          ? const Color(0xFF059669)
-                          : const Color(0xFFA7F3D0))
-                    : _borderColor,
-              ),
-            ),
-            child: Icon(
-              isActive ? Icons.verified_rounded : Icons.calendar_month_rounded,
-              color: isActive
-                  ? (_isDark
-                        ? const Color(0xFF34D399)
-                        : const Color(0xFF059669))
-                  : _mutedColor,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      '$termName (A.Y. $yearLabel)',
-                      style: TextStyle(
-                        color: _inkColor,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 3.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isActive
-                            ? (_isDark
-                                  ? const Color(0xFF064E3B)
-                                  : const Color(0xFFECFDF5))
-                            : (_isDark
-                                  ? const Color(0xFF27272A)
-                                  : const Color(0xFFF1F5F9)),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: isActive
-                              ? const Color(0xFF10B981)
-                              : _borderColor,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? const Color(0xFF10B981)
-                                  : _mutedColor,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            isActive
-                                ? 'ACTIVE (WRITE-ENABLED)'
-                                : 'INACTIVE / UPCOMING',
-                            style: TextStyle(
-                              color: isActive
-                                  ? (_isDark
-                                        ? const Color(0xFF34D399)
-                                        : const Color(0xFF047857))
-                                  : _mutedColor,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isActive
-                      ? 'Live Institutional Term: All schedules, submissions, and grade entries currently route to this period.'
-                      : 'Upcoming / Non-active term: You can configure defense stages, PIT events, and evaluation policies before activating.',
-                  style: TextStyle(
-                    color: _mutedColor,
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          if (!isActive)
-            ElevatedButton.icon(
-              onPressed: () => _activateThisSemester(semester),
-              icon: const Icon(Icons.flash_on_rounded, size: 16),
-              label: const Text('Set as Active Semester'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _maroon,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                textStyle: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            )
-          else
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: _isDark
-                    ? const Color(0xFF064E3B).withValues(alpha: 0.3)
-                    : const Color(0xFFECFDF5),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _isDark
-                      ? const Color(0xFF059669)
-                      : const Color(0xFFA7F3D0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final identity = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'A.Y. $yearLabel',
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  color: _mutedColor,
+                  fontSize: 12,
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Icon(
-                    Icons.lock_clock_rounded,
-                    size: 15,
-                    color: Color(0xFF10B981),
-                  ),
-                  const SizedBox(width: 6),
                   Text(
-                    'Current Live Period',
+                    termName,
                     style: TextStyle(
-                      color: _isDark
-                          ? const Color(0xFF34D399)
-                          : const Color(0xFF047857),
-                      fontSize: 12,
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      color: _inkColor,
+                      fontSize: 22,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  SemesterStatusBadge(isActive: isActive),
                 ],
               ),
-            ),
-        ],
+              const SizedBox(height: 8),
+              Text(
+                isActive
+                    ? 'Schedules, submissions, and grades use this semester.'
+                    : 'Review the semester setup before activating it.',
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  color: _mutedColor,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          );
+          if (isActive) return identity;
+          final activate = ShadButton(
+            enabled: !isSaving,
+            size: ShadButtonSize.sm,
+            leading: const Icon(Icons.power_settings_new_rounded, size: 15),
+            onPressed: () => _activateThisSemester(semester),
+            child: const Text('Set as Active Semester'),
+          );
+          if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1) <
+              700) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [identity, const SizedBox(height: 16), activate],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: identity),
+              const SizedBox(width: 24),
+              activate,
+            ],
+          );
+        },
       ),
-    );
-  }
+    ),
+  );
 
   Widget _buildKpiOverviewRow(Map<String, dynamic> semester, bool isActive) {
     final phase = semester['capstone_program_phase']?.toString();
@@ -583,17 +471,17 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
         items: const [
           DefensysSegmentItem(
             value: 0,
-            label: 'Capstone Program (4th Year)',
+            label: 'Capstone',
             icon: Icons.school_outlined,
           ),
           DefensysSegmentItem(
             value: 1,
-            label: 'PIT Program (1st–3rd Year)',
+            label: 'PIT',
             icon: Icons.rocket_launch_outlined,
           ),
           DefensysSegmentItem(
             value: 2,
-            label: 'Master Controls & Logs',
+            label: 'Semester settings',
             icon: Icons.settings_outlined,
           ),
         ],

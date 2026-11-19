@@ -268,6 +268,29 @@ class _ActionClient implements AuthenticatedHttpClient {
     Object? body,
   }) async {
     calls.add(uri);
+    if (uri.path.endsWith('/import-reference-preview/')) {
+      final payload = jsonDecode(body as String) as Map<String, dynamic>;
+      return http.Response(
+        jsonEncode({
+          'revision': payload['revision'],
+          'references': [
+            for (final raw in payload['references'] as List)
+              {
+                ...Map<String, dynamic>.from(raw as Map),
+                'reference_key': '${raw['text']}'.toLowerCase(),
+                'account': {
+                  'id': raw['text'] == 'Requested Faculty' ? 1 : 2,
+                  'name': raw['text'],
+                  'is_panelist': raw['text'] != 'Requested Faculty' || eligible,
+                },
+                'review_state': 'matched',
+                'reason': '',
+              },
+          ],
+        }),
+        200,
+      );
+    }
     nominations++;
     requested = true;
     return http.Response('{"request":{"id":42}}', 201);
@@ -1273,7 +1296,9 @@ void main() {
           router.state.uri.path,
           faculty ? '/faculty/dashboard' : '/admin/academic-periods',
         );
-        await tester.tap(find.text(faculty ? 'PIT Teams' : 'Student Teams').first);
+        await tester.tap(
+          find.text(faculty ? 'PIT Teams' : 'Student Teams').first,
+        );
         await tester.pumpAndSettle();
         expect(router.state.uri.path, '$prefix/student-teams/1');
         expect(tester.state(find.byType(TeamDetailPage)), same(teamState));
@@ -1395,7 +1420,9 @@ void main() {
         expect(find.text('Master Student Grade Sheet'), findsNothing);
         expect(container.read(unsavedChangesProvider), isFalse);
 
-        await tester.tap(find.text(faculty ? 'PIT Teams' : 'Student Teams').first);
+        await tester.tap(
+          find.text(faculty ? 'PIT Teams' : 'Student Teams').first,
+        );
         await tester.pumpAndSettle();
         expect(router.state.uri.path, '$prefix/student-teams');
         expect(find.byType(TeamDetailPage), findsNothing);

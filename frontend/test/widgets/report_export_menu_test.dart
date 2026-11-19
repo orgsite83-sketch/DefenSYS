@@ -92,7 +92,9 @@ class _Options extends AuthenticatedHttpClient {
           ],
           'teams': [],
           'students': [],
-          'stages': [],
+          'stages': [
+            {'id': 2, 'label': 'Final defense', 'scope': 'capstone'},
+          ],
           'pit_events': [
             {
               'id': 8,
@@ -108,6 +110,57 @@ class _Options extends AuthenticatedHttpClient {
 }
 
 void main() {
+  testWidgets(
+    'Rubric workspace exports preview the explicit stage before downloading',
+    (tester) async {
+      tester.view.physicalSize = const Size(1440, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final reports = _Reports();
+      await pumpDefensysWidget(
+        tester,
+        const ReportExportMenu(
+          reportId: 'rubrics',
+          configureExport: true,
+          configureBeforeDownload: true,
+          params: {
+            'assignment_scope': 'configured',
+            'scope': 'capstone',
+            'semester_id': '3',
+            'stage_id': '2',
+            'evaluation_type': 'panel',
+            'term_context': '',
+            'search': '',
+            'status': '',
+          },
+        ),
+        overrides: [
+          authProvider.overrideWith(() => FakeAuthNotifier({'role': 'admin'})),
+          academicPeriodProvider.overrideWith(FakeAcademicPeriodNotifier.new),
+          rubricEngineProvider.overrideWith(_Rubrics.new),
+          reportsProvider.overrideWith(() => reports),
+          authenticatedHttpClientProvider.overrideWith((ref) => _Options(ref)),
+        ],
+      );
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Export Excel'));
+      await tester.pumpAndSettle();
+      expect(reports.format, isNull);
+      expect(reports.params?['stage_id'], '2');
+      expect(reports.params?['evaluation_type'], 'panel');
+      expect(reports.params?.containsKey('search'), isFalse);
+      expect(reports.params?.containsKey('term_context'), isFalse);
+      expect(find.text('Final defense'), findsOneWidget);
+      await tester.tap(find.text('Download XLSX Export'));
+      await tester.pumpAndSettle();
+      expect(reports.format, 'xlsx');
+      expect(reports.params?['stage_id'], '2');
+      expect(reports.params?['evaluation_type'], 'panel');
+      expect(reports.endpoint, 'rubrics/');
+    },
+  );
   testWidgets(
     'event masterlist configures exports locally with current filters',
     (tester) async {

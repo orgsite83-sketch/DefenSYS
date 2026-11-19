@@ -12,6 +12,8 @@ def phase_for(team, semester=None):
     from .participation import intake_for
     from .capstone_lifecycle import transition_kind
     term = semester or team.semester
+    if team.capstone_registration_semester_id == term.pk:
+        return 'capstone_2'
     intake = intake_for(team)
     if intake and intake.pk == term.pk:
         return 'capstone_1'
@@ -29,6 +31,10 @@ def inherited_stage_ids(team):
     from .models import TeamStageProgress
     from grading.grades.models import TeamGrade
     from .capstone_lifecycle import term_key
+    # An explicitly prefetched empty history is authoritative for this GET.
+    # Initial teams must not issue three history queries per Overview row.
+    if getattr(team, '_overview_term_participations', None) == []:
+        return []
     row = team.term_participations.filter(semester=team.semester).first()
     if row and 'inherited_stage_ids' in row.snapshot:
         return row.snapshot['inherited_stage_ids']

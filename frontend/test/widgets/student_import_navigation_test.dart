@@ -26,8 +26,9 @@ class _Users extends FakeUserManagementNotifier {
   @override
   Future<List<Map<String, dynamic>>> previewEnrollmentSections(
     List<Map<String, dynamic>> students,
-    int semesterId,
-  ) async => [
+    int semesterId, {
+    bool unifiedEnrollment = false,
+  }) async => [
     for (final s in students)
       {
         'id_number': s['id_number'],
@@ -136,7 +137,7 @@ void main() {
     );
     await tester.tap(find.text('Students & Enrollment'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Batch Enrollment'));
+    await tester.tap(find.text('Enroll students'));
     await tester.pumpAndSettle();
     return container;
   }
@@ -149,7 +150,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Student enrollment'), findsNothing);
       expect(find.text('User & Team Management'), findsOneWidget);
-      expect(find.text('Batch Enrollment'), findsOneWidget);
+      expect(find.text('Enroll students'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -185,7 +186,7 @@ void main() {
                 },
               ),
             );
-        await tester.tap(find.text('Batch Enrollment'));
+        await tester.tap(find.text('Enroll students'));
         await tester.pumpAndSettle();
         final confirm = find.text('Confirm enrollment (256)');
         await tester.ensureVisible(confirm);
@@ -203,7 +204,7 @@ void main() {
         await tester.pumpAndSettle();
         if (success) {
           expect(find.text('Student enrollment'), findsNothing);
-          expect(find.text('Batch Enrollment'), findsOneWidget);
+          expect(find.text('Enroll students'), findsOneWidget);
           expect(
             container.read(studentBatchDraftProvider).hasFreshDraft,
             isFalse,
@@ -219,7 +220,7 @@ void main() {
           await tester.ensureVisible(find.text('Back to Students'));
           await tester.tap(find.text('Back to Students'));
           await tester.pumpAndSettle();
-          expect(find.text('Batch Enrollment'), findsOneWidget);
+          expect(find.text('Enroll students'), findsOneWidget);
         }
         records.refresh.complete();
         await tester.pump(const Duration(seconds: 7));

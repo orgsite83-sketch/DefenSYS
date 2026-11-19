@@ -1,0 +1,236 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  #ds-stage-preview {
+    --ds-bg: light-dark(#ffffff, #212024);
+    --ds-panel: light-dark(#f8fafc, #28272d);
+    --ds-text: light-dark(#0f172a, #f4f4f5);
+    --ds-muted: light-dark(#475569, #b4b4be);
+    --ds-line: light-dark(#e2e8f0, #45434b);
+    --ds-action: light-dark(#7a110a, #c0392b);
+    --ds-brand: light-dark(#7a110a, #f4a69c);
+    --ds-warn: light-dark(#92400e, #fcd68a);
+    --ds-warn-bg: light-dark(#fffbeb, #342b1d);
+    --ds-error: light-dark(#b91c1c, #fca5a5);
+    --ds-success: light-dark(#047857, #6ee7b7);
+    color: var(--ds-text); font-family: Inter, sans-serif;
+    font-size: 13px; line-height: 1.5;
+  }
+  #ds-stage-preview * { box-sizing: border-box; }
+  #ds-stage-preview [hidden] { display: none !important; }
+  #ds-stage-preview .ds-window { background: var(--ds-bg); border: 1px solid var(--ds-line); border-radius: 14px; overflow: hidden; }
+  #ds-stage-preview .ds-title { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 20px 22px 12px; }
+  #ds-stage-preview h2 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -.35px; }
+  #ds-stage-preview h3 { font-size: 14px; font-weight: 600; margin: 0; }
+  #ds-stage-preview p { margin: 0; }
+  #ds-stage-preview .ds-state { font-size: 12px; font-weight: 600; background: var(--ds-panel); padding: 3px 9px; border-radius: 5px; }
+  #ds-stage-preview .ds-muted { color: var(--ds-muted); font-size: 12px; }
+  #ds-stage-preview .ds-publish { padding: 0 22px 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  #ds-stage-preview button, #ds-stage-preview input, #ds-stage-preview select { font: inherit; }
+  #ds-stage-preview button { border: 1px solid var(--ds-line); background: var(--ds-bg); color: var(--ds-text); padding: 8px 12px; border-radius: 7px; cursor: pointer; font-weight: 500; }
+  #ds-stage-preview button:hover { background: var(--ds-panel); }
+  #ds-stage-preview button:focus-visible, #ds-stage-preview input:focus-visible, #ds-stage-preview select:focus-visible, #ds-stage-preview summary:focus-visible { outline: 2px solid var(--ds-brand); outline-offset: 3px; }
+  #ds-stage-preview .ds-primary { background: var(--ds-action); border-color: var(--ds-action); color: #fff; }
+  #ds-stage-preview .ds-primary:hover { filter: brightness(.94); background: var(--ds-action); }
+  #ds-stage-preview .ds-plain { border-color: transparent; color: var(--ds-brand); background: transparent; }
+  #ds-stage-preview .ds-check { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
+  #ds-stage-preview input[type=checkbox], #ds-stage-preview input[type=radio] { accent-color: var(--ds-action); width: 17px; height: 17px; margin: 0; flex-shrink: 0; }
+  #ds-stage-preview .ds-readiness { padding: 10px 22px; background: var(--ds-warn-bg); color: var(--ds-warn); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--ds-line); }
+  #ds-stage-preview .ds-readiness[data-ready=true] { background: var(--ds-panel); color: var(--ds-success); }
+  #ds-stage-preview .ds-readiness button { color: inherit; background: transparent; padding: 3px 8px; border-color: currentColor; }
+  #ds-stage-preview .ds-tabs { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); padding: 12px 16px; gap: 6px; border-bottom: 1px solid var(--ds-line); }
+  #ds-stage-preview .ds-tab { text-align: left; border-color: transparent; padding: 9px 10px; background: var(--ds-panel); }
+  #ds-stage-preview .ds-tab[aria-selected=true] { background: var(--ds-action); color: #fff; }
+  #ds-stage-preview .ds-tab strong { display: block; font-weight: 600; }
+  #ds-stage-preview .ds-tab span { display: block; font-size: 11px; margin-top: 2px; }
+  #ds-stage-preview .ds-content { padding: 20px 22px 24px; min-height: 298px; }
+  #ds-stage-preview .ds-section { display: flex; flex-direction: column; gap: 18px; }
+  #ds-stage-preview .ds-fields { display: grid; grid-template-columns: 3fr 2fr; gap: 14px; }
+  #ds-stage-preview .ds-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  #ds-stage-preview .ds-label { font-weight: 500; }
+  #ds-stage-preview .ds-required { color: var(--ds-muted); font-size: 11px; margin-left: 6px; font-weight: 400; }
+  #ds-stage-preview input[type=text], #ds-stage-preview input[type=number], #ds-stage-preview select { min-width: 0; width: 100%; padding: 9px 11px; color: var(--ds-text); background: var(--ds-bg); border: 1px solid var(--ds-line); border-radius: 6px; }
+  #ds-stage-preview input[readonly] { background: var(--ds-panel); color: var(--ds-muted); }
+  #ds-stage-preview input[aria-invalid=true] { border-color: var(--ds-error); }
+  #ds-stage-preview .ds-error { color: var(--ds-error); font-size: 12px; }
+  #ds-stage-preview .ds-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 9px; }
+  #ds-stage-preview .ds-choice { display: flex; align-items: center; gap: 9px; border: 1px solid var(--ds-line); padding: 12px; border-radius: 8px; }
+  #ds-stage-preview .ds-choice:has(input:checked) { border-color: var(--ds-brand); }
+  #ds-stage-preview .ds-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; border-top: 1px solid var(--ds-line); padding-top: 12px; }
+  #ds-stage-preview .ds-row > div { min-width: 0; }
+  #ds-stage-preview .ds-weights { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+  #ds-stage-preview .ds-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--ds-line); background: var(--ds-panel); }
+  #ds-stage-preview .ds-spacer { flex: 1; }
+  #ds-stage-preview .ds-save-note { flex-basis: 100%; font-size: 12px; color: var(--ds-muted); }
+  #ds-stage-preview details summary { color: var(--ds-muted); cursor: pointer; }
+  #ds-stage-preview .ds-description { padding-top: 8px; color: var(--ds-muted); }
+  @media(max-width:520px) {
+    #ds-stage-preview .ds-title { padding: 17px 14px 10px; }
+    #ds-stage-preview .ds-publish { padding: 0 14px 12px; }
+    #ds-stage-preview .ds-readiness { padding: 10px 14px; }
+    #ds-stage-preview .ds-tabs { padding: 10px; gap: 4px; }
+    #ds-stage-preview .ds-tab { padding: 8px 6px; font-size: 12px; }
+    #ds-stage-preview .ds-tab span { font-size: 11px; }
+    #ds-stage-preview .ds-content { padding: 18px 14px; min-height: 350px; }
+    #ds-stage-preview .ds-fields, #ds-stage-preview .ds-choices { grid-template-columns: 1fr; }
+    #ds-stage-preview .ds-footer { padding: 12px 14px; }
+    #ds-stage-preview .ds-spacer { display: none; }
+  }
+  @media(pointer:coarse) {
+    #ds-stage-preview button, #ds-stage-preview .ds-check, #ds-stage-preview summary { min-height: 44px; }
+    #ds-stage-preview input[type=text], #ds-stage-preview input[type=number], #ds-stage-preview select { font-size: 16px; }
+  }
+</style>
+<div id="ds-stage-preview" class="viz-dotted-background">
+  <section class="ds-window" aria-label="Proposed defense stage setup">
+    <header>
+      <div class="ds-title"><h2>Add defense stage</h2><span class="ds-state" id="ds-status">Draft</span></div>
+      <div class="ds-publish">
+        <span class="ds-muted" id="ds-saved">Not yet saved to Defense Stages</span>
+        <label class="ds-check"><input id="ds-publish-choice" type="checkbox">Publish on save</label>
+      </div>
+      <div class="ds-readiness" id="ds-readiness" data-ready="false">
+        <span id="ds-readiness-label" aria-live="polite">1 item left to publish</span>
+        <button type="button" id="ds-review">Review issue →</button>
+      </div>
+    </header>
+    <div class="ds-tabs" role="tablist" aria-label="Stage setup steps">
+      <button type="button" class="ds-tab" id="ds-tab-0" role="tab" aria-controls="ds-panel-0" aria-selected="true"><strong>1. Stage details</strong><span id="ds-step-0">✓ Complete</span></button>
+      <button type="button" class="ds-tab" id="ds-tab-1" role="tab" aria-controls="ds-panel-1" aria-selected="false"><strong>2. Grading</strong><span id="ds-step-1">✓ Complete</span></button>
+      <button type="button" class="ds-tab" id="ds-tab-2" role="tab" aria-controls="ds-panel-2" aria-selected="false"><strong>3. Deliverables</strong><span id="ds-step-2">! Needs setup</span></button>
+    </div>
+    <main class="ds-content">
+      <section id="ds-panel-0" role="tabpanel" aria-labelledby="ds-tab-0" class="ds-section">
+        <div class="ds-fields">
+          <label class="ds-field"><span class="ds-label">Stage name<span class="ds-required">Required</span></span><input id="ds-name" type="text" value="Colloquium" required aria-describedby="ds-name-error"><span class="ds-error" id="ds-name-error" hidden>Enter a stage name.</span></label>
+          <label class="ds-field"><span class="ds-label">Stage code</span><input type="text" value="colloquium" readonly aria-label="Example stage code"></label>
+        </div>
+        <div><h3>How will this stage work?</h3><div class="ds-choices">
+          <label class="ds-choice"><input type="radio" name="ds-workflow" value="concept"><span>Concept selection</span></label>
+          <label class="ds-choice"><input type="radio" name="ds-workflow" value="standard" checked><span>Standard defense</span></label>
+        </div></div>
+        <div class="ds-row"><div><h3>Session documentation</h3><p class="ds-muted">Signed minutes are configured in Deliverables.</p></div><span>Enabled</span></div>
+        <details><summary>Additional stage information</summary><p class="ds-description">Position 2 of 2 · No description added</p></details>
+      </section>
+      <section id="ds-panel-1" role="tabpanel" aria-labelledby="ds-tab-1" class="ds-section" hidden>
+        <h3>Grade composition</h3>
+        <div class="ds-weights">
+          <label class="ds-field"><span class="ds-label">Panel %</span><input id="ds-panel-weight" type="number" value="50" min="0" max="100"></label>
+          <label class="ds-field"><span class="ds-label">Adviser %</span><input id="ds-adviser-weight" type="number" value="30" min="0" max="100"></label>
+          <label class="ds-field"><span class="ds-label">Peer %</span><input id="ds-peer-weight" type="number" value="20" min="0" max="100"></label>
+        </div>
+        <p id="ds-total" aria-live="polite">Total: 100%</p>
+        <p id="ds-weight-error" class="ds-error" hidden>Grade weights must total 100%.</p>
+        <label class="ds-field"><span class="ds-label">Evaluation rubrics</span><select id="ds-rubrics"><option value="attached">Published rubrics attached</option><option value="later">Select later</option></select></label>
+        <p class="ds-muted" id="ds-rubric-note" hidden>Allowed for publication. Attach applicable rubrics before scheduling.</p>
+      </section>
+      <section id="ds-panel-2" role="tabpanel" aria-labelledby="ds-tab-2" class="ds-section" hidden>
+        <div><h3>Student submissions</h3><p class="ds-muted">Before endorsement</p></div>
+        <label class="ds-field"><span class="ds-label">Document name<span class="ds-required">Required</span></span><input id="ds-document" type="text" placeholder="e.g. Colloquium manuscript" required aria-describedby="ds-document-error"><span id="ds-document-error" class="ds-error" hidden>Enter a name for this deliverable.</span></label>
+        <div class="ds-row"><div><h3>Signed minutes</h3><p class="ds-muted">Documenter submission · After defense</p></div><span>Enabled</span></div>
+        <p class="ds-muted">Signed minutes are separate from student submissions.</p>
+      </section>
+    </main>
+    <footer class="ds-footer">
+      <button type="button" id="ds-draft">Save browser draft</button>
+      <span class="ds-spacer"></span>
+      <button type="button" id="ds-back" hidden>Back</button>
+      <button type="button" id="ds-next" class="ds-primary">Next: Grading →</button>
+      <span class="ds-save-note" id="ds-save-note" aria-live="polite"></span>
+    </footer>
+  </section>
+</div>
+<script>
+(() => {
+  const root = document.getElementById('ds-stage-preview');
+  const byId = id => root.querySelector('#' + id);
+  const weights = ['ds-panel-weight', 'ds-adviser-weight', 'ds-peer-weight'];
+  const savedState = window.openai?.widgetState?.privateContent;
+  let step = [0, 1, 2].includes(savedState?.step) ? savedState.step : 0;
+  let revealErrors = false;
+  let savedPublication = null;
+  if (typeof savedState?.publishOnSave === 'boolean') byId('ds-publish-choice').checked = savedState.publishOnSave;
+  const touched = () => {
+    byId('ds-save-note').textContent = '';
+    byId('ds-saved').textContent = 'Unsaved changes';
+    render();
+  };
+  function issues() {
+    const out = [];
+    if (!byId('ds-name').value.trim()) out.push({step: 0, id: 'ds-name', text: 'Enter a stage name.'});
+    const values = weights.map(id => Number(byId(id).value));
+    if (values.some((v, i) => !byId(weights[i]).value.trim() || !Number.isFinite(v) || v < 0 || v > 100) || values.reduce((a,b) => a+b,0) !== 100) out.push({step: 1, id: weights[0], text: 'Grade weights must total 100%.'});
+    if (!byId('ds-document').value.trim()) out.push({step: 2, id: 'ds-document', text: 'Enter a name for this deliverable.'});
+    return out;
+  }
+  function persist() {
+    if (window.openai?.setWidgetState) window.openai.setWidgetState({modelContent: {concept: 'Stage setup with shared publication header', step: step + 1}, privateContent: {step, publishOnSave: byId('ds-publish-choice').checked}}).catch(() => {});
+  }
+  function render() {
+    const remaining = issues();
+    const publish = byId('ds-publish-choice').checked;
+    for (let i = 0; i < 3; i++) {
+      byId('ds-panel-' + i).hidden = i !== step;
+      byId('ds-tab-' + i).setAttribute('aria-selected', String(i === step));
+      byId('ds-step-' + i).textContent = remaining.some(issue => issue.step === i) ? '! Needs setup' : '✓ Complete';
+    }
+    byId('ds-readiness').dataset.ready = String(!remaining.length);
+    byId('ds-readiness-label').textContent = remaining.length ? `${remaining.length} ${remaining.length === 1 ? 'item' : 'items'} left to publish` : 'Ready to publish';
+    byId('ds-review').hidden = !remaining.length;
+    byId('ds-back').hidden = step === 0;
+    byId('ds-next').textContent = step === 0 ? 'Next: Grading →' : step === 1 ? 'Next: Deliverables →' : publish ? 'Publish stage' : 'Save stage as draft';
+    byId('ds-rubric-note').hidden = byId('ds-rubrics').value !== 'later';
+    byId('ds-total').textContent = 'Total: ' + weights.reduce((n, id) => n + Number(byId(id).value), 0) + '%';
+    for (const [field, error] of [['ds-name','ds-name-error'],['ds-document','ds-document-error']]) {
+      const invalid = revealErrors && remaining.some(issue => issue.id === field);
+      byId(field).setAttribute('aria-invalid', String(invalid));
+      byId(error).hidden = !invalid;
+    }
+    const badWeight = revealErrors && remaining.some(issue => issue.step === 1);
+    byId('ds-weight-error').hidden = !badWeight;
+    weights.forEach(id => byId(id).setAttribute('aria-invalid', String(badWeight)));
+    byId('ds-status').textContent = savedPublication === true ? 'Published' : 'Draft';
+  }
+  function reviewFirst() {
+    const issue = issues()[0];
+    if (!issue) return;
+    step = issue.step;
+    revealErrors = true;
+    render();
+    byId(issue.id).focus();
+    byId('ds-save-note').textContent = issue.text;
+    persist();
+  }
+  for (let i = 0; i < 3; i++) byId('ds-tab-' + i).addEventListener('click', () => {step = i; render(); persist();});
+  ['ds-name','ds-document', ...weights].forEach(id => byId(id).addEventListener('input', touched));
+  byId('ds-rubrics').addEventListener('change', touched);
+  byId('ds-publish-choice').addEventListener('change', () => {touched(); persist();});
+  root.querySelectorAll('input[name=ds-workflow]').forEach(radio => radio.addEventListener('change', () => {
+    const concept = radio.value === 'concept';
+    weights.forEach((id, index) => {byId(id).value = concept ? [100,0,0][index] : [50,30,20][index]; byId(id).readOnly = concept;});
+    touched();
+  }));
+  byId('ds-review').addEventListener('click', reviewFirst);
+  byId('ds-back').addEventListener('click', () => {step = Math.max(0, step - 1); render(); persist();});
+  byId('ds-next').addEventListener('click', () => {
+    if (step < 2) {
+      const currentIssue = issues().find(issue => issue.step === step);
+      if (currentIssue) {revealErrors = true; render(); byId(currentIssue.id).focus(); return;}
+      step++; render(); persist(); return;
+    }
+    if (issues().length) {reviewFirst(); return;}
+    savedPublication = byId('ds-publish-choice').checked;
+    render();
+    byId('ds-saved').textContent = 'Saved in this preview';
+    byId('ds-save-note').textContent = savedPublication ? 'Preview: stage published.' : 'Preview: stage saved as draft.';
+  });
+  byId('ds-draft').addEventListener('click', () => {byId('ds-save-note').textContent = 'Preview: browser draft saved. Stage publication is unchanged.'; persist();});
+  window.addEventListener('openai:set_globals', event => {
+    const restored = event.detail?.globals?.widgetState?.privateContent;
+    if (!restored) return;
+    if ([0,1,2].includes(restored.step)) step = restored.step;
+    if (typeof restored.publishOnSave === 'boolean') byId('ds-publish-choice').checked = restored.publishOnSave;
+    render();
+  });
+  render();
+})();
+</script>

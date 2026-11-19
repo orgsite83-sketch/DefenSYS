@@ -15,21 +15,19 @@ import 'package:defensys/toasts/feedback_toast.dart';
 
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/import/student_bulk_import_csv.dart';
-import 'package:defensys/utils/import/student_rollover_action.dart';
 import 'package:defensys/utils/import/user_bulk_import_draft.dart';
 import 'access_control/access_control_view.dart';
 import 'access_control/panelist_eligibility_view.dart';
 import 'bulk_import/bulk_import_view.dart';
-import 'bulk_import/official_class_list_parser.dart';
 import 'bulk_import/student_batch_enrollment_hub_view.dart';
 import 'components/faculty_staff_view.dart';
 import 'external_evaluators/external_evaluator_views.dart';
 import 'package:defensys/services/admin/external_evaluator_provider.dart';
 import 'components/students_enrollment_view.dart';
+import '../../../../navigation/admin_attention_context.dart';
 import 'dialogs/add_student_dialog.dart';
 import 'dialogs/download_sample_csv_dialog.dart';
 import 'dialogs/user_create_edit_dialog.dart';
-import '../widgets/student_records_rollover_modal.dart';
 
 enum UserManagementTab { students, faculty, guests }
 
@@ -46,6 +44,8 @@ class UserManagementScreen extends ConsumerStatefulWidget {
   const UserManagementScreen({
     super.key,
     this.initialBulkImport = false,
+    this.initialEnrollment = false,
+    this.attentionContext,
     this.initialUserTab = UserManagementTab.students,
     this.initialPanelistAccess = false,
     this.initialPanelistTab = 'faculty',
@@ -54,6 +54,8 @@ class UserManagementScreen extends ConsumerStatefulWidget {
   });
 
   final bool initialBulkImport;
+  final bool initialEnrollment;
+  final AdminAttentionContext? attentionContext;
   final UserManagementTab initialUserTab;
   final bool initialPanelistAccess;
   final String initialPanelistTab;
@@ -68,7 +70,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   late UserManagementTab _currentTab;
   _SubView _subView = _SubView.none;
   String _bulkImportType = 'student';
-  StudentHubMode _studentHubInitialMode = StudentHubMode.freshIntake;
 
   Map<String, dynamic>? _accessControlUser;
   bool _accessLoading = false;
@@ -80,6 +81,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   void initState() {
     super.initState();
     _currentTab = widget.initialUserTab;
+    if (widget.initialEnrollment) _subView = _SubView.studentBatchHub;
     if (widget.initialPanelistAccess) _subView = _SubView.panelistEligibility;
     if (widget.initialAccessUserId != null) {
       _subView = _SubView.accessControl;
@@ -116,9 +118,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialPanelistAccess != widget.initialPanelistAccess ||
         oldWidget.initialAccessUserId != widget.initialAccessUserId ||
-        oldWidget.initialUserTab != widget.initialUserTab) {
+        oldWidget.initialUserTab != widget.initialUserTab ||
+        oldWidget.initialEnrollment != widget.initialEnrollment ||
+        oldWidget.attentionContext?.identity !=
+            widget.attentionContext?.identity) {
       _currentTab = widget.initialUserTab;
-      _subView = widget.initialPanelistAccess
+      _subView = widget.initialEnrollment
+          ? _SubView.studentBatchHub
+          : widget.initialPanelistAccess
           ? _SubView.panelistEligibility
           : widget.initialAccessUserId != null
           ? _SubView.accessControl
@@ -198,11 +205,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
   }
 
-  void _openStudentBatchHub([
-    StudentHubMode mode = StudentHubMode.freshIntake,
-  ]) {
+  void _openStudentBatchHub() {
     setState(() {
-      _studentHubInitialMode = mode;
       _subView = _SubView.studentBatchHub;
     });
   }
@@ -351,180 +355,29 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
   }
 
-  Future<void> _showRolloverDialog() async {
-    final rolloverSearchCtrl = TextEditingController();
-    final actions = <String, String>{};
-    bool hasCsv = false;
-
-    await ref
-        .read(studentAcademicRecordsProvider.notifier)
-        .fetchRolloverPreview(students: []);
-
-    if (!mounted) return;
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (context, setModalState) {
-          final state = ref.watch(studentAcademicRecordsProvider);
-          final activeSem =
-              ref.watch(academicPeriodProvider).activeSemester ??
-              state.activeSemester;
-
-          final filtered = state.rolloverRows.where((row) {
-            final q = rolloverSearchCtrl.text.trim().toLowerCase();
-            if (q.isEmpty) return true;
-            final rec = row['record'] as Map? ?? {};
-            final name = rec['student_name']?.toString().toLowerCase() ?? '';
-            final user =
-                rec['student_username']?.toString().toLowerCase() ?? '';
-            return name.contains(q) || user.contains(q);
-          }).toList();
-
-          int nonDropCount = 0;
-          for (final row in state.rolloverRows) {
-            final rec = row['record'] as Map? ?? {};
-            final key = rec['id'] != null
-                ? rec['id'].toString()
-                : rec['student_username']?.toString() ?? '';
-            final act = actions[key] ?? row['action_default'] ?? 'promote';
-            if (act != 'drop') nonDropCount++;
-          }
-
-          return StudentRecordsRolloverModal(
-            useWarningChrome: false,
-            activeLabel:
-                activeSem?['display_name'] ??
-                '${activeSem?['school_year']} ${activeSem?['label']}',
-            totalCount: state.rolloverRows.length,
-            missingCount: 0,
-            searchQuery: rolloverSearchCtrl.text,
-            filtered: filtered,
-            rolloverSearchCtrl: rolloverSearchCtrl,
-            actions: actions,
-            onPromoteAll: () {
-              setModalState(() {
-                for (final row in state.rolloverRows) {
-                  final rec = row['record'] as Map? ?? {};
-                  final key = rec['id'] != null
-                      ? rec['id'].toString()
-                      : rec['student_username']?.toString() ?? '';
-                  actions[key] = 'promote';
-                }
-              });
-            },
-            onRetainAll: () {
-              setModalState(() {
-                for (final row in state.rolloverRows) {
-                  final rec = row['record'] as Map? ?? {};
-                  final key = rec['id'] != null
-                      ? rec['id'].toString()
-                      : rec['student_username']?.toString() ?? '';
-                  actions[key] = 'retain';
-                }
-              });
-            },
-            onSearchChanged: (_) => setModalState(() {}),
-            onSearchClear: () {
-              rolloverSearchCtrl.clear();
-              setModalState(() {});
-            },
-            onActionChanged: (key, val) {
-              if (val != null) setModalState(() => actions[key] = val);
-            },
-            onClose: () => Navigator.of(dialogCtx).pop(),
-            onConfirm: () async {
-              final confirmActions = <Map<String, dynamic>>[];
-              for (final row in state.rolloverRows) {
-                final rec = row['record'] as Map? ?? {};
-                final key = rec['id'] != null
-                    ? rec['id'].toString()
-                    : rec['student_username']?.toString() ?? '';
-                final act = actions[key] ?? row['action_default'] ?? 'promote';
-
-                confirmActions.add(buildStudentRolloverAction(row, act));
-              }
-
-              final ok = await ref
-                  .read(studentAcademicRecordsProvider.notifier)
-                  .confirmRollover(confirmActions);
-
-              if (ok && mounted) {
-                Navigator.of(dialogCtx).pop();
-                showSuccessToast(context, 'Rollover completed successfully.');
-              }
-            },
-            nonDropCount: nonDropCount,
-            rolloverHasTarget: (row, act) => true,
-            rolloverResult: (row, act) {
-              if (act == 'drop')
-                return 'Excluded from new term (LOA / Dropped)';
-              if (act == 'retain') return 'Retained in same year level';
-              final pr = row['promote_result'] as Map? ?? {};
-              return 'Enrolled in ${pr['year_level'] ?? 'Next Level'} (${pr['section'] ?? 'Class Section'})';
-            },
-            asInt: (v) => v is int
-                ? v
-                : (v != null ? int.tryParse(v.toString()) ?? 0 : 0),
-            hasCsvUploaded: hasCsv,
-            onUploadCsv: () async {
-              final csv = await pickCsvTextFile();
-              if (csv == null) return;
-              final parsed = parseOfficialClassListCsv(csv);
-              if (parsed.students.isEmpty) {
-                if (mounted) {
-                  showErrorToast(
-                    context,
-                    'No valid student rows found in CSV file.',
-                  );
-                }
-                return;
-              }
-
-              hasCsv = true;
-              await ref
-                  .read(studentAcademicRecordsProvider.notifier)
-                  .fetchRolloverPreview(students: parsed.students);
-              setModalState(() {});
-            },
-            onClearCsv: () async {
-              hasCsv = false;
-              await ref
-                  .read(studentAcademicRecordsProvider.notifier)
-                  .fetchRolloverPreview(students: []);
-              setModalState(() {});
-            },
-            hasValidationErrors: false,
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildHeaderActions(UserManagementState state) {
     if (_currentTab == UserManagementTab.students) {
       final studentState = ref.watch(studentAcademicRecordsProvider);
-      return Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        alignment: WrapAlignment.end,
-        children: [
-          OutlinedButton.icon(
-            onPressed: studentState.isSaving ? null : _showAddStudentDialog,
-            icon: const Icon(Icons.person_add_rounded),
-            label: const Text('Add Single Student'),
-            style: DefensysButtonStyles.secondary(context),
-          ),
-          ElevatedButton.icon(
-            onPressed: studentState.isSaving
-                ? null
-                : () => _openStudentBatchHub(StudentHubMode.freshIntake),
-            icon: const Icon(Icons.dynamic_feed_rounded),
-            label: const Text('Batch Enrollment'),
-            style: DefensysButtonStyles.primary(context),
-          ),
-        ],
+      return DefensysShadcnScope(
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          alignment: WrapAlignment.end,
+          children: [
+            ShadButton.outline(
+              onPressed: studentState.isSaving ? null : _showAddStudentDialog,
+              leading: const Icon(Icons.person_add_rounded, size: 16),
+              child: const Text('Add Single Student'),
+            ),
+            ShadButton(
+              onPressed: studentState.isSaving
+                  ? null
+                  : () => _openStudentBatchHub(),
+              leading: const Icon(Icons.dynamic_feed_rounded, size: 16),
+              child: const Text('Enroll students'),
+            ),
+          ],
+        ),
       );
     }
 
@@ -578,7 +431,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
     if (_subView == _SubView.studentBatchHub) {
       return StudentBatchEnrollmentHubView(
-        initialMode: _studentHubInitialMode,
+        key: ValueKey(
+          widget.attentionContext?.identity ?? 'student-enrollment',
+        ),
+        attentionContext: widget.attentionContext,
+        unifiedEnrollment: true,
         userState: state,
         academicState: academicState,
         onBack: _closeSubView,
@@ -724,9 +581,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       );
     }
 
-    final studentCount = studentState.records.isNotEmpty
-        ? studentState.records.length
-        : studentState.students.length;
+    final enrollment = studentState.counts['enrollment'] as Map?;
+    final activeId =
+        academicState.activeSemester?['id'] ??
+        (academicState.schoolYears.isEmpty
+            ? (studentState.activeSemester?['id'])
+            : null);
+    final studentCount = enrollment?['semester_id'] == activeId
+        ? (enrollment?['enrolled']?.toString())
+        : null;
     final facultyCount = state.users.where((u) {
       final r = u['role']?.toString().toLowerCase() ?? '';
       return r == 'faculty' || r == 'admin';
@@ -754,7 +617,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               DefensysSegmentItem(
                 value: UserManagementTab.students,
                 label: 'Students & Enrollment',
-                badgeLabel: '$studentCount',
+                badgeLabel: studentCount,
                 icon: Icons.school_rounded,
               ),
               DefensysSegmentItem(
@@ -778,8 +641,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           // Active Tab Content
           switch (_currentTab) {
             UserManagementTab.students => StudentsEnrollmentView(
-              onOpenBulkImport: () =>
-                  _openStudentBatchHub(StudentHubMode.freshIntake),
+              onOpenBulkImport: () => _openStudentBatchHub(),
             ),
             UserManagementTab.faculty => FacultyStaffView(
               onOpenBulkImport: () => _openBulkImport('faculty'),

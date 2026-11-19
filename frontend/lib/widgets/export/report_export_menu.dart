@@ -32,6 +32,7 @@ class ReportExportMenu extends ConsumerStatefulWidget {
     this.params = const {},
     this.enabled = true,
     this.configureExport = false,
+    this.configureBeforeDownload = false,
   });
   final String reportId;
   final Map<String, String> params;
@@ -39,6 +40,9 @@ class ReportExportMenu extends ConsumerStatefulWidget {
 
   /// Open advanced export settings here instead of navigating to Report Center.
   final bool configureExport;
+
+  /// Review scope and preview before downloading a contextual export.
+  final bool configureBeforeDownload;
 
   @override
   ConsumerState<ReportExportMenu> createState() => _ReportExportMenuState();
@@ -89,7 +93,8 @@ class _ReportExportMenuState extends ConsumerState<ReportExportMenu> {
       );
       return;
     }
-    if (report.missingSelection(params) != null) {
+    if (widget.configureBeforeDownload ||
+        report.missingSelection(params) != null) {
       await showReportExportConfiguration(
         context: context,
         ref: ref,

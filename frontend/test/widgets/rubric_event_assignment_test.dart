@@ -644,7 +644,7 @@ void main() {
       expect(notifier.savedPayload?['status'], 'draft');
       expect(notifier.savedPayload?['pit_event_id'], isNull);
       expect(notifier.savedPayload?['defense_stage_id'], isNull);
-      expect(notifier.savedPayload?['name'], 'Historical panel rubric (Copy)');
+      expect(notifier.savedPayload?['name'], '2nd Year PIT — Panel Rubric');
       expect(
         (notifier.savedPayload?['criteria'] as List).first['name'],
         'Implementation',

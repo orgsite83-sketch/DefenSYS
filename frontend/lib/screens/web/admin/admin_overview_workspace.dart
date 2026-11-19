@@ -9,6 +9,7 @@ import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../shared/dashboard_schedule_planner.dart';
 import 'audit_compliance/components/audit_format_utils.dart';
 import 'widgets/overview_panel_row.dart';
+import 'widgets/admin_pit_overview.dart';
 
 /// Overview presents administrative work separately from academic readiness.
 class AdminOverviewWorkspace extends ConsumerStatefulWidget {
@@ -117,55 +118,80 @@ class _AdminOverviewWorkspaceState
 
   Widget actionItem(Map<String, dynamic> item) => LayoutBuilder(
     builder: (context, constraints) {
-      final details = InkWell(
+      final summary = InkWell(
         canRequestFocus: false,
         onTap: () => widget.onAction(item),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Department-wide approvals keep their context in every scope.
-            if (item['scope'] == null && item['category_label'] != null) ...[
-              secondary(item['category_label'].toString()),
-              const SizedBox(height: 4),
-            ],
-            Text(
-              item['title']?.toString() ?? 'Action needed',
-              style: DefensysTokens.sectionTitle.copyWith(
-                color: DefensysTokens.textPrimaryOf(context),
-                fontWeight: FontWeight.w600,
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: DefensysTokens.surfaceHigherOf(context),
+                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+              ),
+              child: Icon(
+                item['target_section'] == 'defenseBoardReadiness'
+                    ? Icons.event_available_outlined
+                    : Icons.error_outline_rounded,
+                size: 20,
+                color: DefensysTokens.maroonTextOf(context),
               ),
             ),
-            if (item['description'] != null) ...[
-              const SizedBox(height: 4),
-              secondary(item['description'].toString()),
-            ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Preserve unscoped context, without repeating period setup.
+                  if (item['scope'] == null &&
+                      item['category_label'] != null &&
+                      item['id'] != 'no_active_period') ...[
+                    secondary(item['category_label'].toString()),
+                    const SizedBox(height: 4),
+                  ],
+                  Text(
+                    item['title']?.toString() ?? 'Action needed',
+                    style: DefensysTokens.sectionTitle.copyWith(
+                      color: DefensysTokens.textPrimaryOf(context),
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                  if (item['description'] != null) ...[
+                    const SizedBox(height: 4),
+                    secondary(item['description'].toString()),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       );
-      final summary = Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            item['target_section'] == 'defenseBoardReadiness'
-                ? Icons.event_available_outlined
-                : Icons.error_outline,
-            size: 18,
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: details),
-        ],
-      );
       final action = ShadButton(
+        height: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         onPressed: () => widget.onAction(item),
         child: Flexible(
-          child: Text(item['button_label']?.toString() ?? 'Review'),
+          child: Text(
+            item['button_label']?.toString() ?? 'Review',
+            textAlign: TextAlign.center,
+          ),
         ),
       );
       return constraints.maxWidth < 600
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [summary, const SizedBox(height: 12), action],
+              children: [
+                summary,
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.only(left: 48),
+                  child: action,
+                ),
+              ],
             )
           : Row(
               children: [
@@ -180,28 +206,75 @@ class _AdminOverviewWorkspaceState
   Widget attention(
     List<Map<String, dynamic>> items, {
     bool partial = false,
-  }) => Container(
+  }) => ShadCard(
+    key: const ValueKey('overview-attention'),
     width: double.infinity,
-    padding: const EdgeInsets.all(20),
-    decoration: DefensysTokens.cardDecoration(context).copyWith(boxShadow: []),
+    padding: EdgeInsets.zero,
+    backgroundColor: DefensysTokens.surfaceOf(context),
+    radius: BorderRadius.circular(DefensysTokens.radiusLg),
+    shadows: const [],
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Needs your attention · ${items.length}',
-          style: DefensysTokens.caption.copyWith(
-            color: items.isEmpty
-                ? DefensysTokens.textSecondaryOf(context)
-                : DefensysTokens.maroonTextOf(context),
-            fontWeight: FontWeight.w600,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Row(
+            children: [
+              Flexible(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    'Needs your attention',
+                    style: DefensysTokens.body.copyWith(
+                      color: DefensysTokens.textPrimaryOf(context),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              if (items.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Semantics(
+                  label:
+                      '${items.length} pending ${items.length == 1 ? 'action' : 'actions'}',
+                  excludeSemantics: true,
+                  child: ShadBadge.secondary(
+                    backgroundColor: DefensysTokens.surfaceHigherOf(context),
+                    hoverBackgroundColor: DefensysTokens.surfaceHigherOf(
+                      context,
+                    ),
+                    foregroundColor: DefensysTokens.textSecondaryOf(context),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(
+                        DefensysTokens.radiusSm,
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    child: Text(
+                      '${items.length}',
+                      style: DefensysTokens.caption.copyWith(
+                        color: DefensysTokens.textSecondaryOf(context),
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
-        const SizedBox(height: 8),
         if (items.isEmpty)
-          secondary(
-            partial
-                ? 'Some release counts are unavailable. Open Evaluation & Grades to review.'
-                : 'No admin actions pending',
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: secondary(
+              partial
+                  ? 'Some release counts are unavailable. Open Evaluation & Grades to review.'
+                  : 'No admin actions pending',
+            ),
           )
         else
           for (
@@ -209,22 +282,33 @@ class _AdminOverviewWorkspaceState
             index < (expandedActions ? items.length : items.length.clamp(0, 3));
             index++
           ) ...[
-            if (index > 0) ...[
-              const SizedBox(height: 16),
-              Divider(height: 1, color: DefensysTokens.borderOf(context)),
-              const SizedBox(height: 16),
-            ],
-            actionItem(items[index]),
+            Divider(height: 1, color: DefensysTokens.borderOf(context)),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: actionItem(items[index]),
+            ),
           ],
-        if (items.length > 3)
-          ShadButton.link(
-            onPressed: () => setState(() => expandedActions = !expandedActions),
-            child: Text(
-              expandedActions
-                  ? 'Show fewer'
-                  : 'View all ${items.length} actions',
+        if (items.length > 3) ...[
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: ShadButton.ghost(
+              onPressed: () =>
+                  setState(() => expandedActions = !expandedActions),
+              trailing: Icon(
+                expandedActions
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+                size: 18,
+              ),
+              child: Text(
+                expandedActions
+                    ? 'Show fewer'
+                    : 'View all ${items.length} actions',
+              ),
             ),
           ),
+        ],
       ],
     ),
   );
@@ -321,48 +405,6 @@ class _AdminOverviewWorkspaceState
         },
       ),
     ],
-  );
-
-  Widget pitOverview(Map<String, dynamic> overview) => panel(
-    'PIT overview',
-    Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        secondary('Read-only oversight · Managed by PIT Leads'),
-        const SizedBox(height: 12),
-        if (overview['pit_cohorts'] == null)
-          secondary('PIT cohort information unavailable.'),
-        for (final cohort
-            in (overview['pit_cohorts'] as List? ?? []).whereType<Map>())
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                copy(cohort['year'].toString()),
-                secondary(
-                  (cohort['leads'] as List? ?? []).isEmpty
-                      ? 'PIT Lead unassigned'
-                      : (cohort['leads'] as List).join(', '),
-                ),
-                secondary(
-                  "${cohort['teams']} teams · ${cohort['event_count'] ?? (cohort['events'] as List? ?? []).length} events",
-                ),
-                secondary(
-                  cohort['next_defense'] == null
-                      ? 'No upcoming defense'
-                      : "Next defense: ${cohort['next_defense']}",
-                ),
-                for (final event
-                    in (cohort['events'] as List? ?? []).whereType<Map>())
-                  secondary(
-                    "${event['event_name']} · ${event['is_officially_complete'] == true ? 'Officially complete' : 'Open'}",
-                  ),
-              ],
-            ),
-          ),
-      ],
-    ),
   );
 
   Widget readinessRow(
@@ -680,7 +722,12 @@ class _AdminOverviewWorkspaceState
                           overview['partial'] == true || widget.error != null,
                     ),
                     const SizedBox(height: 16),
-                    if (scope == 'pit') pitOverview(overview),
+                    if (scope == 'pit') ...[
+                      AdminPitOverview(
+                        cohorts: overview['pit_cohorts'] as List?,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     if (scope == 'capstone') ...[
                       workflowCards(workflow),
                       const SizedBox(height: 16),
@@ -735,25 +782,43 @@ class _AdminOverviewWorkspaceState
         leading: const Icon(Icons.refresh_rounded, size: 16),
         child: Text(widget.refreshing ? 'Refreshing…' : 'Refresh'),
       );
-      final filters = Wrap(
-        spacing: 6,
-        runSpacing: 8,
-        children: [
-          for (final option in [('capstone', 'Capstone'), ('pit', 'PIT')])
-            Semantics(
-              selected: scope == option.$1,
-              child:
-                  (scope == option.$1
-                  ? ShadButton.secondary
-                  : ShadButton.outline)(
-                    size: ShadButtonSize.sm,
-                    onPressed: () => ref
-                        .read(adminOverviewScopeProvider.notifier)
-                        .select(option.$1),
-                    child: Text(option.$2),
-                  ),
-            ),
-        ],
+      final filters = Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: DefensysTokens.surfaceHigherOf(context),
+          borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+          border: Border.all(color: DefensysTokens.borderOf(context)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final option in [('capstone', 'Capstone'), ('pit', 'PIT')])
+              Semantics(
+                selected: scope == option.$1,
+                child: ShadButton.ghost(
+                  size: ShadButtonSize.sm,
+                  width: 94 * MediaQuery.textScalerOf(context).scale(1),
+                  height: 36 * MediaQuery.textScalerOf(context).scale(1),
+                  backgroundColor: scope == option.$1
+                      ? DefensysTokens.maroonOf(context)
+                      : Colors.transparent,
+                  hoverBackgroundColor: scope == option.$1
+                      ? DefensysTokens.maroonOf(context)
+                      : DefensysTokens.surfaceOf(context),
+                  foregroundColor: scope == option.$1
+                      ? Colors.white
+                      : DefensysTokens.textSecondaryOf(context),
+                  hoverForegroundColor: scope == option.$1
+                      ? Colors.white
+                      : DefensysTokens.textPrimaryOf(context),
+                  onPressed: () => ref
+                      .read(adminOverviewScopeProvider.notifier)
+                      .select(option.$1),
+                  child: Text(option.$2),
+                ),
+              ),
+          ],
+        ),
       );
       if (constraints.maxWidth >= 1000) {
         return Row(

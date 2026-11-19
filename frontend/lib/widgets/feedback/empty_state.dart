@@ -49,6 +49,9 @@ class DefensysEmptyState extends StatelessWidget {
   /// Secondary action button (e.g. "Reset Filters").
   final DefensysEmptyAction? secondaryAction;
 
+  /// Custom scoped controls, used in place of the standard action buttons.
+  final Widget? actions;
+
   /// Size preset determining padding, badge dimensions, and font sizes.
   final DefensysEmptyStateSize size;
 
@@ -74,6 +77,7 @@ class DefensysEmptyState extends StatelessWidget {
     this.description,
     this.primaryAction,
     this.secondaryAction,
+    this.actions,
     this.size = DefensysEmptyStateSize.standard,
     this.iconColor,
     this.iconBackgroundColor,
@@ -125,7 +129,8 @@ class DefensysEmptyState extends StatelessWidget {
       primaryAction: primaryAction,
       secondaryAction: secondaryAction,
       size: size,
-      padding: padding ??
+      padding:
+          padding ??
           (size == DefensysEmptyStateSize.compact
               ? const EdgeInsets.symmetric(horizontal: 16, vertical: 28)
               : const EdgeInsets.symmetric(horizontal: 24, vertical: 40)),
@@ -141,7 +146,8 @@ class DefensysEmptyState extends StatelessWidget {
     VoidCallback? onReset,
     String resetLabel = 'Reset Filters',
   }) {
-    final effectiveDesc = description ??
+    final effectiveDesc =
+        description ??
         (query != null && query.isNotEmpty
             ? 'No matches found for "$query". Check for typos or reset your active filters.'
             : 'No records match your active search criteria or filter parameters.');
@@ -178,16 +184,18 @@ class DefensysEmptyState extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _buildIconBadge(badgeSize, resolvedIconSize),
+              _buildIconBadge(context, badgeSize, resolvedIconSize),
               SizedBox(height: _spacingAfterIcon(size)),
               _buildTitle(context),
               if (description != null && description!.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 _buildDescription(context),
               ],
-              if (primaryAction != null || secondaryAction != null) ...[
+              if (actions != null ||
+                  primaryAction != null ||
+                  secondaryAction != null) ...[
                 SizedBox(height: _spacingBeforeActions(size)),
-                _buildActionButtons(context),
+                actions ?? _buildActionButtons(context),
               ],
             ],
           ),
@@ -196,21 +204,22 @@ class DefensysEmptyState extends StatelessWidget {
     );
   }
 
-  Widget _buildIconBadge(double badgeSize, double resolvedIconSize) {
+  Widget _buildIconBadge(
+    BuildContext context,
+    double badgeSize,
+    double resolvedIconSize,
+  ) {
     return Container(
       width: badgeSize,
       height: badgeSize,
       decoration: BoxDecoration(
-        color: iconBackgroundColor ?? DefensysTokens.neutralBg,
+        color: iconBackgroundColor ?? DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(
           size == DefensysEmptyStateSize.compact
               ? DefensysTokens.radiusLg
               : DefensysTokens.radiusXl,
         ),
-        border: Border.all(
-          color: DefensysTokens.border,
-          width: 1.0,
-        ),
+        border: Border.all(color: DefensysTokens.borderOf(context), width: 1.0),
         boxShadow: const [
           BoxShadow(
             color: Color(0x06000000),
@@ -223,7 +232,11 @@ class DefensysEmptyState extends StatelessWidget {
         child: Icon(
           icon,
           size: iconSize ?? resolvedIconSize,
-          color: iconColor ?? DefensysTokens.steelGrey,
+          color:
+              iconColor ??
+              (DefensysTokens.isDark(context)
+                  ? DefensysTokens.textSecondaryOf(context)
+                  : DefensysTokens.steelGrey),
         ),
       ),
     );
@@ -307,7 +320,11 @@ class DefensysEmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (action.icon != null) ...[
-              Icon(action.icon, size: isCompact ? 14 : 16, color: DefensysTokens.steelGrey),
+              Icon(
+                action.icon,
+                size: isCompact ? 14 : 16,
+                color: DefensysTokens.steelGrey,
+              ),
               const SizedBox(width: 6),
             ],
             Text(
@@ -358,7 +375,9 @@ class DefensysEmptyState extends StatelessWidget {
     );
   }
 
-  static EdgeInsetsGeometry _defaultPaddingForSize(DefensysEmptyStateSize size) {
+  static EdgeInsetsGeometry _defaultPaddingForSize(
+    DefensysEmptyStateSize size,
+  ) {
     switch (size) {
       case DefensysEmptyStateSize.standard:
         return const EdgeInsets.symmetric(
@@ -451,10 +470,7 @@ class EmptyState extends StatelessWidget {
       title: message,
       iconSize: iconSize,
       primaryAction: actionLabel != null && onAction != null
-          ? DefensysEmptyAction(
-              label: actionLabel!,
-              onPressed: onAction!,
-            )
+          ? DefensysEmptyAction(label: actionLabel!, onPressed: onAction!)
           : null,
     );
   }

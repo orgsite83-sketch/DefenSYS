@@ -21,6 +21,7 @@ from academic_period_management.calendar import validate_defense_date
 from academic_period_management.services import active_semester
 from defense.stages.models import DefenseStage, StageGradingConfig
 from student_teams.models import StudentTeam
+from student_teams.manual_capstone import batch_id, batch_term
 from student_teams.capstone_lifecycle import requirements_for
 from user_management.external_evaluators import resolve_evaluators, create_invitations
 from .models import (CapstonePeopleAssignment, CapstoneAssignmentMember,
@@ -54,10 +55,10 @@ def current_term(actor, term_id=None):
 
 
 def current_assignment(team):
-    if not team.intake_semester_id:
+    if not batch_id(team):
         return None
     return CapstonePeopleAssignment.objects.filter(team=team, project_version=team.project_version,
-        intake_semester_id=team.intake_semester_id).prefetch_related('members').first()
+        intake_semester_id=batch_id(team)).prefetch_related('members').first()
 
 
 def roster_payload(assignment):
@@ -211,8 +212,8 @@ def workspace(actor, term_id=None):
         readiness = {str(item['id']): team_stage_readiness(team, stage_map[item['id']])
             for item in requirements[team.pk] if item['id'] in stage_map}
         rows.append({'id': team.pk, 'name': team.name, 'project_version': team.project_version,
-            'intake_semester_id': team.intake_semester_id,
-            'intake_label': team.intake_semester.display_name if team.intake_semester_id else 'Roster confirmation required',
+            'intake_semester_id': batch_id(team), 'batch_kind': 'registration' if team.capstone_registration_semester_id else 'intake',
+            'intake_label': batch_term(team).display_name + (' (verified registration)' if team.capstone_registration_semester_id else '') if batch_id(team) else 'Roster confirmation required',
             'adviser_id': team.adviser_id,
             'adviser_name': (team.adviser.get_full_name() or team.adviser.username) if team.adviser_id else 'Unassigned adviser',
             'applicable_stage_ids': [item['id'] for item in requirements[team.pk]],
@@ -284,7 +285,7 @@ def save_assignments(actor, payload):
     if len(teams) != len(set(data['team_ids'])):
         raise ValidationError({'team_ids': 'Refresh the current roster selection.'})
     for team in teams:
-        if not team.is_capstone or not team.intake_semester_id:
+        if not team.is_capstone or not batch_id(team):
             raise ValidationError({'team_ids': 'Confirm the Capstone intake roster before assigning people.'})
         requirements = requirements_for(team)
         old = current_assignment(team)
@@ -312,7 +313,7 @@ def save_assignments(actor, payload):
             assignment.members.all().delete()
         else:
             assignment = CapstonePeopleAssignment(team=team, project_version=team.project_version,
-                intake_semester_id=team.intake_semester_id, source_semester=term,
+                intake_semester_id=batch_id(team), source_semester=term,
                 initial_stage_id=requirements[0]['id'] if requirements else data['defense_stage_id'])
         assignment.adviser_id = team.adviser_id
         assignment.documenter = doc
@@ -469,7 +470,7 @@ def build_plan(actor, payload):
     queue, revisions, serializers_by_team, assignments_by_team = [], [], {}, {}
     for pk in data['team_ids']:
         team = teams[pk]
-        group = (team.adviser_id, team.intake_semester_id)
+        group = (team.adviser_id, batch_id(team))
         if group != last and group in seen:
             raise ValidationError({'team_ids': 'Keep each adviser’s teams together in the queue.'})
         seen.add(group)
@@ -498,7 +499,7 @@ def build_plan(actor, payload):
         serializers_by_team[pk] = serializer
         queue.append({'team_id': pk, 'room': data['room'], 'people': {p.pk for p in people} | ({doc.pk} if doc else set()),
             'externals': {p.pk for p in externals}})
-        revisions.append([pk, team.project_version, team.intake_semester_id, team.adviser_id,
+        revisions.append([pk, team.project_version, batch_id(team), team.adviser_id,
             team.updated_at, applicable, assignment.pk, assignment.revision, roster])
     reservations = []
     for schedule in DefenseSchedule.objects.filter(scheduled_date__gte=data['start_date'] - timedelta(days=1),
@@ -515,7 +516,7 @@ def build_plan(actor, payload):
         team = teams[slot['team_id']]
         assignment = assignments_by_team[team.pk]
         slot.update({'team_name': team.name, 'adviser_id': team.adviser_id,
-            'intake_semester_id': team.intake_semester_id, 'assignment_id': assignment.pk,
+            'intake_semester_id': batch_id(team), 'batch_kind': 'registration' if team.capstone_registration_semester_id else 'intake', 'assignment_id': assignment.pk,
             'roster': {k: serializers_by_team[team.pk].validated_data.get(k) for k in
                 ('chair_panelist_id', 'panelist_ids', 'external_evaluator_ids', 'documenter_id')}})
     config = config_for(stage, term)

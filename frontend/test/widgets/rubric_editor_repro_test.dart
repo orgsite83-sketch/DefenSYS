@@ -602,6 +602,7 @@ void main() {
       await tester.enterText(input('section-name-0'), 'Oral presentation');
       await tester.pumpAndSettle();
       expect(await save(), isTrue);
+      await tester.pumpAndSettle(const Duration(seconds: 5));
       final notifier =
           container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
       notifier.savedPayload = null;
@@ -815,7 +816,7 @@ void main() {
     },
   );
 
-  testWidgets('Clicking Create Standard Rubric opens editor without crash', (
+  testWidgets('Creating a template stays in the workspace and guards sidebar navigation', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 900);
@@ -865,7 +866,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(RubricEngineScreen), findsOneWidget);
-    final createBtn = find.text('Create Standard Rubric').first;
+    final createBtn = find.text('Create reusable template').first;
     expect(createBtn, findsOneWidget);
 
     await tester.tap(createBtn);

@@ -12,6 +12,7 @@ import '../shadcn/defensys_shadcn_scope.dart';
 import 'defensys_export_dialog.dart';
 import 'defensys_export_models.dart';
 import 'report_catalog.dart';
+import 'rubric_export_filters.dart';
 
 Future<bool?> showReportExportConfiguration({
   required BuildContext context,
@@ -132,10 +133,15 @@ class _ReportConfigurationState extends ConsumerState<_ReportConfiguration> {
   @override
   Widget build(BuildContext context) {
     final report = widget.report;
+    final assignedRubrics =
+        report.id == 'rubrics' &&
+        widget.params['assignment_scope'] == 'configured';
     return DefensysExportDialog(
       config: DefensysExportConfig(
-        title: report.title,
-        subtitle: report.description,
+        title: assignedRubrics ? 'Export rubrics' : report.title,
+        subtitle: assignedRubrics
+            ? 'Saved rubric criteria for the selected stages and evaluation types.'
+            : report.description,
         tag: report.category,
         icon: report.icon,
         defaultFilename:
@@ -148,20 +154,30 @@ class _ReportConfigurationState extends ConsumerState<_ReportConfiguration> {
             : null,
         initialParams: _scoped(widget.params),
         leftPaneWidth: 380,
-        leftPaneBuilder: (_, params, update, refresh) => _ReportFilters(
-          report: report,
-          params: params,
-          options: _options,
-          loading: _loadingOptions,
-          error: _optionsError,
-          onChanged: update,
-          onReset: () => update(_scoped({})),
-          onRetry: _loadOptions,
-          pitLead:
-              ref.read(authProvider).user?['is_pit_lead'] == true &&
-              ref.read(authProvider).user?['role'] != 'admin' &&
-              ref.read(authProvider).user?['is_superuser'] != true,
-        ),
+        leftPaneBuilder: (_, params, update, refresh) =>
+            report.id == 'rubrics' && params['assignment_scope'] == 'configured'
+            ? RubricExportFilters(
+                params: params,
+                options: _options,
+                loading: _loadingOptions,
+                error: _optionsError,
+                onChanged: update,
+                onRetry: _loadOptions,
+              )
+            : _ReportFilters(
+                report: report,
+                params: params,
+                options: _options,
+                loading: _loadingOptions,
+                error: _optionsError,
+                onChanged: update,
+                onReset: () => update(_scoped({})),
+                onRetry: _loadOptions,
+                pitLead:
+                    ref.read(authProvider).user?['is_pit_lead'] == true &&
+                    ref.read(authProvider).user?['role'] != 'admin' &&
+                    ref.read(authProvider).user?['is_superuser'] != true,
+              ),
         onFetchPreview: (values) async {
           final params = _scoped(values);
           if (report.missingSelection(params) != null) return null;

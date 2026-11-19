@@ -35,7 +35,6 @@ class _StudentsEnrollmentViewState
   static const _muted = DefensysUi.steelGrey;
   static const _ink = DefensysUi.textDark;
   static const _line = Color(0xFFE5E7EB);
-  static const _gold = Color(0xFFF59E0B);
 
   final TextEditingController _searchCtrl = TextEditingController();
   int _page = 0;
@@ -50,20 +49,6 @@ class _StudentsEnrollmentViewState
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
-  }
-
-  int _count(StudentAcademicRecordsState state, String key) {
-    final value = state.counts[key];
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value != null) {
-      final parsed = int.tryParse(value.toString());
-      if (parsed != null) return parsed;
-    }
-    if (key == 'all') return state.records.length;
-    if (key == 'filtered') return state.records.length;
-    if (key == 'students_with_records') return state.students.length;
-    return 0;
   }
 
   List<Map<String, dynamic>> _filteredRecords(
@@ -116,247 +101,318 @@ class _StudentsEnrollmentViewState
     );
   }
 
+  String? _enrollmentWarning(Map? enrollment) {
+    if (enrollment == null) return null;
+    final enrolled = enrollment['enrolled'] as num?;
+    final pending = enrollment['pending_continuations'] as num? ?? 0;
+    final emptyYears = (enrollment['by_year'] as List? ?? [])
+        .whereType<Map>()
+        .where((row) => row['enrolled'] == 0)
+        .map((row) => row['year_level'])
+        .whereType<String>()
+        .toList();
+    final messages = <String>[];
+    if (enrolled == 0) {
+      messages.add('This semester is active. No students are enrolled yet.');
+    } else if (emptyYears.isNotEmpty) {
+      final years = emptyYears.length == 1
+          ? emptyYears.single
+          : emptyYears.length == 2
+          ? emptyYears.join(' and ')
+          : '${emptyYears.take(emptyYears.length - 1).join(', ')}, and ${emptyYears.last}';
+      messages.add('No students are enrolled in $years this semester.');
+    }
+    if (pending > 0) {
+      messages.add(
+        '$pending continuing ${pending == 1 ? 'student still needs' : 'students still need'} enrollment.',
+      );
+    }
+    return messages.isEmpty ? null : messages.join(' ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(studentAcademicRecordsProvider);
+    final periods = ref.watch(academicPeriodProvider);
     final activeSem =
-        ref.watch(academicPeriodProvider).activeSemester ??
-        state.activeSemester;
-    final allFiltered = _filteredRecords(state.records);
+        periods.activeSemester ??
+        (periods.schoolYears.isEmpty ? state.activeSemester : null);
+    final enrollment = state.counts['enrollment'] as Map?;
+    final summaryIsCurrent =
+        activeSem != null && enrollment?['semester_id'] == activeSem['id'];
+    final enrolled = summaryIsCurrent
+        ? (enrollment?['enrolled'] as num?)?.toInt()
+        : null;
+    final enrollmentWarning = _enrollmentWarning(
+      summaryIsCurrent ? enrollment : null,
+    );
+    final period =
+        activeSem?['display_name']?.toString() ??
+        '${activeSem?['label'] ?? 'No active semester'}${activeSem == null ? '' : ', A.Y. ${activeSem['school_year'] ?? ''}'}';
+    final current = state.termContext == 'current';
+    final responseIsCurrent = state.activeSemester?['id'] == activeSem?['id'];
+    final records = current && !responseIsCurrent
+        ? <Map<String, dynamic>>[]
+        : state.records;
+    final allFiltered = _filteredRecords(records);
+    final totalPages = (allFiltered.length / _rowsPerPage).ceil();
+    _page = _page.clamp(0, totalPages > 0 ? totalPages - 1 : 0);
     final visibleRows = _visibleRows(allFiltered);
+    final emptyTerm =
+        current &&
+        enrolled == 0 &&
+        state.search.isEmpty &&
+        _yearLevelFilter == 'ALL' &&
+        _sectionFilter == 'ALL' &&
+        !_returningCapstoneOnly;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Align(
-          alignment: Alignment.centerRight,
-          child: ReportExportMenu(
-            reportId: 'student-enrollment',
-            params: {'year_level': _yearLevelFilter, 'section': _sectionFilter},
+    return DefensysShadcnScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: ReportExportMenu(
+              reportId: 'student-enrollment',
+              params: {
+                'term_context': state.termContext,
+                'year_level': _yearLevelFilter,
+                'section': _sectionFilter,
+                'school_year': state.schoolYear,
+                'semester': state.semester,
+              },
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        // Stat Cards
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricCard(
-                title: 'All Records',
-                value: '${_count(state, 'all')}',
-                subtitle: 'Total academic records',
-                icon: Icons.badge_outlined,
-                iconColor: _maroon,
-                iconBg: const Color(0xFFFDF2F2),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: _buildMetricCard(
-                title: 'Filtered',
-                value: '${allFiltered.length}',
-                subtitle: 'Current table results',
-                icon: Icons.filter_alt_outlined,
-                iconColor: _blue,
-                iconBg: const Color(0xFFEFF6FF),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: _buildMetricCard(
-                title: 'Students',
-                value:
-                    '${state.records.isNotEmpty ? _count(state, 'students_with_records') : state.students.length}',
-                subtitle: state.records.isEmpty && state.students.isNotEmpty
-                    ? 'Unenrolled student accounts'
-                    : 'Distinct student accounts',
-                icon: Icons.school_outlined,
-                iconColor: const Color(0xFF059669),
-                iconBg: const Color(0xFFECFDF5),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: _buildMetricCard(
-                title: 'Active Term',
-                value: activeSem?['label']?.toString() ?? 'None Active',
-                subtitle:
-                    activeSem?['school_year']?.toString() ??
-                    'Setup in Academic Periods',
-                icon: Icons.calendar_today_rounded,
-                iconColor: activeSem != null ? _gold : const Color(0xFFD97706),
-                iconBg: const Color(0xFFFEF3C7),
-              ),
-            ),
-          ],
-        ),
-
-        if (activeSem == null && state.students.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          DefensysActionBanner(
-            title: 'Active Academic Semester Required',
-            description:
-                '${state.students.length} student account(s) have been imported, but no academic semester is active. Create and activate a school year and semester in Academic Periods to enroll them.',
-            actionLabel: 'Open Academic Periods',
-            onAction: () => context.go(AdminRoutes.academicPeriods),
-          ),
-        ],
-
-        const SizedBox(height: 22),
-
-        // Table Card
-        DefensysCard(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: DefensysShadcnScope(
-                  child: ShadCheckbox(
-                    value: _returningCapstoneOnly,
-                    onChanged: (value) => setState(() {
-                      _returningCapstoneOnly = value;
-                      _page = 0;
-                    }),
-                    label: const Text(
-                      'Returning Capstone students awaiting a new roster',
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Row(
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth >= 700
+                  ? (constraints.maxWidth - 14) / 2
+                  : constraints.maxWidth;
+              return Wrap(
+                spacing: 14,
+                runSpacing: 14,
                 children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 42,
-                      child: TextField(
-                        controller: _searchCtrl,
-                        onSubmitted: (val) {
-                          setState(() => _page = 0);
-                          ref
-                              .read(studentAcademicRecordsProvider.notifier)
-                              .fetchRecords(search: val);
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Search by student name, ID, or email...',
-                          hintStyle: const TextStyle(
-                            fontSize: 13,
-                            color: _muted,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.search_rounded,
-                            size: 18,
-                            color: _muted,
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF9FAFB),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: _line),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: _line),
-                          ),
-                        ),
-                      ),
+                  SizedBox(
+                    width: width,
+                    child: _buildMetricCard(
+                      title: 'Enrolled this semester',
+                      value: enrolled?.toString() ?? '—',
+                      subtitle: period,
+                      icon: Icons.school_outlined,
+                      iconColor: _maroon,
+                      iconBg: const Color(0xFFFDF2F2),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  _yearLevelDropdown(),
-                  const SizedBox(width: 12),
-                  _sectionDropdown(state.records),
-                  const SizedBox(width: 12),
-                  _schoolYearDropdown(state),
-                  const SizedBox(width: 12),
-                  _semesterDropdown(state),
-                  const SizedBox(width: 12),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      _searchCtrl.clear();
-                      setState(() {
-                        _page = 0;
-                        _yearLevelFilter = 'ALL';
-                        _sectionFilter = 'ALL';
-                        _returningCapstoneOnly = false;
-                      });
-                      ref
-                          .read(studentAcademicRecordsProvider.notifier)
-                          .fetchRecords(
-                            search: '',
-                            schoolYear: '',
-                            semester: '',
-                          );
-                    },
-                    icon: const Icon(Icons.clear_rounded, size: 16),
-                    label: const Text('Clear'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _muted,
-                      side: const BorderSide(color: _line),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                  SizedBox(
+                    width: width,
+                    child: _buildMetricCard(
+                      title: 'Student accounts',
+                      value:
+                          '${state.counts['student_accounts'] ?? state.students.length}',
+                      subtitle: 'Active accounts across all semesters',
+                      icon: Icons.people_outline_rounded,
+                      iconColor: _blue,
+                      iconBg: const Color(0xFFEFF6FF),
                     ),
                   ),
                 ],
-              ),
-
-              const SizedBox(height: 20),
-
-              if (state.isLoading && state.records.isEmpty)
-                DefensysSkeleton.list(count: 6, rowHeight: 52)
-              else if (visibleRows.isEmpty)
-                DefensysEmptyState.table(
-                  icon: (activeSem == null && state.students.isNotEmpty)
-                      ? Icons.info_outline_rounded
-                      : Icons.person_off_outlined,
-                  title: (activeSem == null && state.students.isNotEmpty)
-                      ? 'No Active Semester Configured'
-                      : (state.students.isNotEmpty && state.records.isEmpty)
-                      ? 'Unenrolled Student Accounts Found'
-                      : 'No Student Records Found',
-                  description: (activeSem == null && state.students.isNotEmpty)
-                      ? '${state.students.length} student account(s) are registered in the system, but no semester is currently active. Please set up and activate an academic semester in Setup & Configuration > Academic Periods to enroll students.'
-                      : (state.students.isNotEmpty && state.records.isEmpty)
-                      ? '${state.students.length} student account(s) exist in the system but have not been enrolled in an academic term yet. Use "Batch Enrollment" or "Add Single Student" to enroll them.'
-                      : 'No student records match your active search criteria or filter parameters.',
-                  size: DefensysEmptyStateSize.standard,
-                  primaryAction: activeSem == null && state.students.isNotEmpty
-                      ? DefensysEmptyAction(
-                          label: 'Open Academic Periods',
-                          icon: Icons.arrow_forward_rounded,
-                          onPressed: () =>
-                              context.go(AdminRoutes.academicPeriods),
-                        )
-                      : state.students.isNotEmpty &&
-                            state.records.isEmpty &&
-                            widget.onOpenBulkImport != null
-                      ? DefensysEmptyAction(
-                          label: 'Open Batch Enrollment',
-                          icon: Icons.arrow_forward_rounded,
-                          onPressed: widget.onOpenBulkImport!,
-                        )
-                      : null,
-                )
-              else
-                _buildTable(visibleRows),
-
-              const SizedBox(height: 18),
-              const Divider(height: 1, color: _line),
-              const SizedBox(height: 14),
-              _buildPagination(allFiltered.length),
-            ],
+              );
+            },
           ),
-        ),
-      ],
+          if (activeSem == null) ...[
+            const SizedBox(height: 16),
+            DefensysActionBanner(
+              title: 'Active Academic Semester Required',
+              description:
+                  'Activate a semester in Academic Periods to enroll students.',
+              actionLabel: 'Open Academic Periods',
+              onAction: () => context.go(AdminRoutes.academicPeriods),
+            ),
+          ] else if (enrollmentWarning != null) ...[
+            const SizedBox(height: 16),
+            DefensysActionBanner(
+              title: 'Enrollment required',
+              description: enrollmentWarning,
+              actionLabel: 'Start enrollment',
+              onAction: widget.onOpenBulkImport ?? () {},
+            ),
+          ],
+          if (state.error != null) ...[
+            const SizedBox(height: 16),
+            DefensysActionBanner(
+              title: 'Enrollment could not be loaded',
+              description: state.error!,
+              actionLabel: 'Retry',
+              onAction: () => ref
+                  .read(studentAcademicRecordsProvider.notifier)
+                  .fetchRecords(),
+              isBlocking: true,
+            ),
+          ],
+          const SizedBox(height: 22),
+          DefensysCard(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    Text(
+                      'Students',
+                      style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
+                    ),
+                    _selectFilter(
+                      label: 'Enrollment records',
+                      value: state.termContext,
+                      options: const {
+                        'current': 'Active semester',
+                        'history': 'All academic records',
+                      },
+                      onChanged: (value) {
+                        setState(() {
+                          _page = 0;
+                          _yearLevelFilter = 'ALL';
+                          _sectionFilter = 'ALL';
+                        });
+                        ref
+                            .read(studentAcademicRecordsProvider.notifier)
+                            .selectTermContext(value);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                ShadCheckbox(
+                  value: _returningCapstoneOnly,
+                  onChanged: (value) => setState(() {
+                    _returningCapstoneOnly = value;
+                    _page = 0;
+                  }),
+                  label: const Text(
+                    'Returning Capstone students awaiting a new roster',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                LayoutBuilder(
+                  builder: (context, constraints) => Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: constraints.maxWidth > 540
+                            ? 400
+                            : constraints.maxWidth,
+                        child: ShadInput(
+                          controller: _searchCtrl,
+                          placeholder: const Text(
+                            'Search by student name, ID, or email...',
+                          ),
+                          leading: const Icon(LucideIcons.search, size: 16),
+                          onSubmitted: (value) {
+                            setState(() => _page = 0);
+                            ref
+                                .read(studentAcademicRecordsProvider.notifier)
+                                .fetchRecords(search: value);
+                          },
+                        ),
+                      ),
+                      _yearLevelDropdown(),
+                      _sectionDropdown(records),
+                      if (!current) ...[
+                        _schoolYearDropdown(state),
+                        _semesterDropdown(state),
+                      ],
+                      ShadButton.outline(
+                        leading: const Icon(LucideIcons.x, size: 16),
+                        child: const Text('Clear'),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() {
+                            _page = 0;
+                            _yearLevelFilter = 'ALL';
+                            _sectionFilter = 'ALL';
+                            _returningCapstoneOnly = false;
+                          });
+                          ref
+                              .read(studentAcademicRecordsProvider.notifier)
+                              .fetchRecords(
+                                search: '',
+                                schoolYear: '',
+                                semester: '',
+                              );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                if (state.isLoading ||
+                    (current && !responseIsCurrent && state.error == null))
+                  DefensysSkeleton.list(count: 6, rowHeight: 52)
+                else if (visibleRows.isEmpty)
+                  DefensysEmptyState.table(
+                    padding: const EdgeInsets.symmetric(vertical: 32),
+                    icon: Icons.school_outlined,
+                    title: activeSem == null && current
+                        ? 'No Active Semester Configured'
+                        : emptyTerm
+                        ? 'No enrollments for this semester'
+                        : 'No matching student records',
+                    description: activeSem == null && current
+                        ? 'Activate a semester to begin enrollment.'
+                        : emptyTerm
+                        ? 'Upload the current university class lists to enroll new and existing students together.'
+                        : 'Adjust the search or filters to see other records.',
+                    size: DefensysEmptyStateSize.standard,
+                    primaryAction: activeSem == null && current
+                        ? DefensysEmptyAction(
+                            label: 'Open Academic Periods',
+                            icon: Icons.arrow_forward_rounded,
+                            onPressed: () =>
+                                context.go(AdminRoutes.academicPeriods),
+                          )
+                        : emptyTerm && widget.onOpenBulkImport != null
+                        ? DefensysEmptyAction(
+                            label: 'Upload class lists',
+                            icon: Icons.upload_file_outlined,
+                            onPressed: widget.onOpenBulkImport!,
+                          )
+                        : null,
+                  )
+                else
+                  LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: constraints.maxWidth < 900
+                            ? 900
+                            : constraints.maxWidth,
+                        child: _buildTable(visibleRows),
+                      ),
+                    ),
+                  ),
+                if (allFiltered.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  Divider(height: 1, color: DefensysTokens.borderOf(context)),
+                  const SizedBox(height: 14),
+                  _buildPagination(allFiltered.length),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -419,8 +475,8 @@ class _StudentsEnrollmentViewState
                 Text(
                   value,
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
                     color: textValue,
                   ),
                 ),
@@ -438,203 +494,101 @@ class _StudentsEnrollmentViewState
     );
   }
 
-  Widget _yearLevelDropdown() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fillBg = isDark
-        ? DefensysTokens.mistInputFill
-        : const Color(0xFFF9FAFB);
-    final borderColor = isDark ? DefensysTokens.mistBorder : _line;
-    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : _ink;
-
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: fillBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _yearLevelFilter,
-          dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
-          style: TextStyle(
-            fontSize: 13,
-            color: textPrimary,
-            fontFamily: DefensysUi.fontFamily,
-          ),
-          items: const [
-            DropdownMenuItem(value: 'ALL', child: Text('All Year Levels')),
-            DropdownMenuItem(value: '1st Year', child: Text('1st Year')),
-            DropdownMenuItem(value: '2nd Year', child: Text('2nd Year')),
-            DropdownMenuItem(value: '3rd Year', child: Text('3rd Year')),
-            DropdownMenuItem(value: '4th Year', child: Text('4th Year')),
-          ],
-          onChanged: (val) {
-            if (val != null) {
-              setState(() {
-                _yearLevelFilter = val;
-                _page = 0;
-              });
-            }
-          },
-        ),
+  Widget _selectFilter({
+    required String label,
+    required String value,
+    required Map<String, String> options,
+    required ValueChanged<String> onChanged,
+  }) {
+    return Semantics(
+      label: label,
+      child: ShadSelect<String>(
+        key: ValueKey('$label-$value'),
+        initialValue: options.containsKey(value) ? value : options.keys.first,
+        options: [
+          for (final option in options.entries)
+            ShadOption(value: option.key, child: Text(option.value)),
+        ],
+        selectedOptionBuilder: (_, value) => Text(options[value] ?? value),
+        onChanged: (value) {
+          if (value != null) onChanged(value);
+        },
       ),
     );
   }
+
+  Widget _yearLevelDropdown() => _selectFilter(
+    label: 'Year level',
+    value: _yearLevelFilter,
+    options: const {
+      'ALL': 'All year levels',
+      '1st Year': '1st Year',
+      '2nd Year': '2nd Year',
+      '3rd Year': '3rd Year',
+      '4th Year': '4th Year',
+    },
+    onChanged: (value) => setState(() {
+      _yearLevelFilter = value;
+      _page = 0;
+    }),
+  );
 
   Widget _sectionDropdown(List<Map<String, dynamic>> records) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fillBg = isDark
-        ? DefensysTokens.mistInputFill
-        : const Color(0xFFF9FAFB);
-    final borderColor = isDark ? DefensysTokens.mistBorder : _line;
-    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : _ink;
-
-    final sections = <String>{};
-    for (final r in records) {
-      final sec = r['section']?.toString().trim() ?? '';
-      if (sec.isNotEmpty && sec.toUpperCase() != 'BSIT') {
-        sections.add(sec);
-      }
-    }
-    final sortedSections = sections.toList()..sort();
-
-    final validValues = {'ALL', 'UNASSIGNED', ...sortedSections};
-    final effectiveValue = validValues.contains(_sectionFilter)
-        ? _sectionFilter
-        : 'ALL';
-
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: fillBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: effectiveValue,
-          dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
-          style: TextStyle(
-            fontSize: 13,
-            color: textPrimary,
-            fontFamily: DefensysUi.fontFamily,
-          ),
-          items: [
-            const DropdownMenuItem(value: 'ALL', child: Text('All Sections')),
-            const DropdownMenuItem(
-              value: 'UNASSIGNED',
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.pending_actions_rounded,
-                    size: 14,
-                    color: Color(0xFFD97706),
-                  ),
-                  SizedBox(width: 6),
-                  Text(
-                    'Unassigned Section',
-                    style: TextStyle(
-                      color: Color(0xFFB45309),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ...sortedSections.map(
-              (sec) => DropdownMenuItem(value: sec, child: Text(sec)),
-            ),
-          ],
-          onChanged: (val) {
-            if (val != null) {
-              setState(() {
-                _sectionFilter = val;
-                _page = 0;
-              });
-            }
-          },
-        ),
-      ),
+    final sections =
+        records
+            .map((row) => row['section']?.toString().trim() ?? '')
+            .where((s) => s.isNotEmpty && s.toUpperCase() != 'BSIT')
+            .toSet()
+            .toList()
+          ..sort();
+    return _selectFilter(
+      label: 'Section',
+      value: _sectionFilter,
+      options: {
+        'ALL': 'All sections',
+        'UNASSIGNED': 'Unassigned section',
+        for (final section in sections) section: section,
+      },
+      onChanged: (value) => setState(() {
+        _sectionFilter = value;
+        _page = 0;
+      }),
     );
   }
 
-  Widget _schoolYearDropdown(StudentAcademicRecordsState state) {
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _line),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: state.schoolYear.isEmpty ? '' : state.schoolYear,
-          style: const TextStyle(
-            fontSize: 13,
-            color: _ink,
-            fontFamily: DefensysUi.fontFamily,
-          ),
-          items: [
-            const DropdownMenuItem(value: '', child: Text('All School Years')),
-            ...state.schoolYears.map((sy) {
-              final label = sy['label']?.toString() ?? '';
-              return DropdownMenuItem(value: label, child: Text(label));
-            }),
-          ],
-          onChanged: (val) {
-            setState(() => _page = 0);
-            ref
-                .read(studentAcademicRecordsProvider.notifier)
-                .fetchRecords(schoolYear: val ?? '');
-          },
-        ),
-      ),
-    );
-  }
+  Widget _schoolYearDropdown(StudentAcademicRecordsState state) =>
+      _selectFilter(
+        label: 'School year',
+        value: state.schoolYear,
+        options: {
+          '': 'All school years',
+          for (final year in state.schoolYears)
+            '${year['label']}': '${year['label']}',
+        },
+        onChanged: (value) {
+          setState(() => _page = 0);
+          ref
+              .read(studentAcademicRecordsProvider.notifier)
+              .fetchRecords(schoolYear: value);
+        },
+      );
 
-  Widget _semesterDropdown(StudentAcademicRecordsState state) {
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _line),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: state.semester.isEmpty ? '' : state.semester,
-          style: const TextStyle(
-            fontSize: 13,
-            color: _ink,
-            fontFamily: DefensysUi.fontFamily,
-          ),
-          items: const [
-            DropdownMenuItem(value: '', child: Text('All Semesters')),
-            DropdownMenuItem(
-              value: '1st Semester',
-              child: Text('1st Semester'),
-            ),
-            DropdownMenuItem(
-              value: '2nd Semester',
-              child: Text('2nd Semester'),
-            ),
-          ],
-          onChanged: (val) {
-            setState(() => _page = 0);
-            ref
-                .read(studentAcademicRecordsProvider.notifier)
-                .fetchRecords(semester: val ?? '');
-          },
-        ),
-      ),
-    );
-  }
+  Widget _semesterDropdown(StudentAcademicRecordsState state) => _selectFilter(
+    label: 'Semester',
+    value: state.semester,
+    options: const {
+      '': 'All semesters',
+      '1st Semester': '1st Semester',
+      '2nd Semester': '2nd Semester',
+      'Summer': 'Summer',
+    },
+    onChanged: (value) {
+      setState(() => _page = 0);
+      ref
+          .read(studentAcademicRecordsProvider.notifier)
+          .fetchRecords(semester: value);
+    },
+  );
 
   static const List<_StudentColumnSpec> _columns = [
     _StudentColumnSpec('Student', 2.8),
@@ -921,66 +875,69 @@ class _StudentsEnrollmentViewState
 
   Widget _buildPagination(int totalCount) {
     final totalPages = (totalCount / _rowsPerPage).ceil();
-    final startItem = totalCount == 0 ? 0 : _page * _rowsPerPage + 1;
+    final startItem = _page * _rowsPerPage + 1;
     final endItem = ((_page + 1) * _rowsPerPage).clamp(0, totalCount);
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Row(
-          children: [
-            const Text(
-              'Rows per page: ',
-              style: TextStyle(fontSize: 12.5, color: _muted),
+    return LayoutBuilder(
+      builder: (context, constraints) => Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          SizedBox(
+            width: constraints.maxWidth < 320 ? constraints.maxWidth : 320,
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text('Rows per page:', style: TextStyle(fontSize: 12)),
+                ShadSelect<int>(
+                  initialValue: _rowsPerPage,
+                  options: [
+                    for (final n in _rowsPerPageOptions)
+                      ShadOption(value: n, child: Text('$n')),
+                  ],
+                  selectedOptionBuilder: (_, n) => Text('$n'),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _rowsPerPage = value;
+                        _page = 0;
+                      });
+                    }
+                  },
+                ),
+                Text(
+                  '$startItem–$endItem of $totalCount',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
             ),
-            DropdownButtonHideUnderline(
-              child: DropdownButton<int>(
-                value: _rowsPerPage,
-                items: _rowsPerPageOptions.map((n) {
-                  return DropdownMenuItem(
-                    value: n,
-                    child: Text('$n', style: const TextStyle(fontSize: 12.5)),
-                  );
-                }).toList(),
-                onChanged: (n) {
-                  if (n != null) {
-                    setState(() {
-                      _rowsPerPage = n;
-                      _page = 0;
-                    });
-                  }
-                },
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ShadButton.ghost(
+                size: ShadButtonSize.sm,
+                onPressed: _page > 0 ? () => setState(() => _page--) : null,
+                child: const Icon(LucideIcons.chevronLeft, size: 16),
               ),
-            ),
-            const SizedBox(width: 16),
-            Text(
-              '$startItem - $endItem of $totalCount',
-              style: const TextStyle(fontSize: 12.5, color: _muted),
-            ),
-          ],
-        ),
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.chevron_left_rounded),
-              onPressed: _page > 0 ? () => setState(() => _page--) : null,
-            ),
-            Text(
-              '${_page + 1} / ${totalPages == 0 ? 1 : totalPages}',
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
+              Text(
+                '${_page + 1} / $totalPages',
+                style: const TextStyle(fontSize: 12),
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.chevron_right_rounded),
-              onPressed: _page < totalPages - 1
-                  ? () => setState(() => _page++)
-                  : null,
-            ),
-          ],
-        ),
-      ],
+              ShadButton.ghost(
+                size: ShadButtonSize.sm,
+                onPressed: _page < totalPages - 1
+                    ? () => setState(() => _page++)
+                    : null,
+                child: const Icon(LucideIcons.chevronRight, size: 16),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

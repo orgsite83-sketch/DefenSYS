@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 
 import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/academic_period_provider.dart';
@@ -25,24 +28,17 @@ class AcademicPeriodsScreen extends ConsumerStatefulWidget {
 class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   final Set<int> _expandedYearIds = {};
   bool _hasInitializedExpansion = false;
+  int? _lastActiveYearId;
   static const _line = DefensysTokens.border;
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
-  static const _maroon = DefensysUi.primaryMaroon;
-  static const _green = Color(0xFF10B981);
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _borderColor => _isDark ? DefensysTokens.mistBorder : _line;
-  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _surfaceColor =>
+      _isDark ? DefensysTokens.mistSurface : Colors.white;
   Color get _inkColor => _isDark ? const Color(0xFFF4F4F5) : _ink;
   Color get _mutedColor => _isDark ? const Color(0xFFA1A1AA) : _muted;
-  Color get _headerBgColor => _isDark ? const Color(0xFF18191E) : const Color(0xFFF8FAFC);
-  Color get _headerTextColor => _isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B);
-
-  static const _rowHeight = 48.0;
-  static const _emptyBodyMinHeight = 80.0;
-  static const _schoolYearsScrollThreshold = 6;
-  static const _schoolYearsScrollMaxHeight = 288.0;
 
   @override
   void initState() {
@@ -77,218 +73,62 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   Widget _buildContent(
     AcademicPeriodState state,
     Map<String, dynamic>? selectedYear,
-  ) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          DefensysPageHeader(
-            icon: Icons.calendar_month_rounded,
-            title: 'Academic Period Management',
-            subtitle:
-                'Configure academic cycles, terms, and drill into semester program tracks.',
+  ) => DefensysShadcnScope(
+    maroonActions: true,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 640;
+        final addYear = ShadButton.outline(
+          enabled: !state.isSaving,
+          leading: const Icon(LucideIcons.plus, size: 15),
+          onPressed: _showAddYearDialog,
+          child: const Text('Add school year'),
+        );
+        return SingleChildScrollView(
+          key: const PageStorageKey('academic-periods-scroll'),
+          padding: EdgeInsets.fromLTRB(
+            compact ? 16 : 24,
+            20,
+            compact ? 16 : 24,
+            36,
           ),
-          const SizedBox(height: 22),
-          _statusBanner(state),
-          if (state.error != null) ...[
-            const SizedBox(height: 12),
-            _notice(state.error!, warning: true),
-          ],
-          if (state.message != null) ...[
-            const SizedBox(height: 12),
-            _notice(state.message!),
-          ],
-          const SizedBox(height: 20),
-          if (state.isLoading)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(48),
-                child: CircularProgressIndicator(
-                  color: DefensysUi.primaryMaroon,
-                ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DefensysPageHeader(
+                title: 'Academic periods',
+                subtitle: 'Manage school years and semesters.',
+                actions: compact ? null : addYear,
               ),
-            )
-          else
-            _academicCyclesSection(state, selectedYear),
-        ],
-      ),
-    );
-  }
-
-  Widget _statusBanner(AcademicPeriodState state) {
-    final active = state.activeSemester;
-    final isActive = active != null;
-    final isDark = _isDark;
-
-    final base = isActive
-        ? (isDark ? const Color(0xFF2E1014) : DefensysUi.primaryMaroon)
-        : (isDark ? const Color(0xFF1C1D22) : Colors.white);
-    final borderColor = isDark
-        ? (isActive ? const Color(0xFF7F1D1D) : DefensysTokens.mistBorder)
-        : (isActive ? const Color(0xFF991B1B) : _borderColor);
-
-    final titleColor = isActive ? Colors.white : _inkColor;
-    final subtitleColor = isActive
-        ? Colors.white.withValues(alpha: 0.88)
-        : _mutedColor;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: base,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: isActive
-                  ? Colors.white.withValues(alpha: 0.15)
-                  : (isDark ? const Color(0xFF27272A) : const Color(0xFFF1F5F9)),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isActive
-                    ? Colors.white.withValues(alpha: 0.2)
-                    : (isDark ? const Color(0xFF3F3F46) : const Color(0xFFE2E8F0)),
-              ),
-            ),
-            child: Icon(
-              isActive ? Icons.verified_rounded : Icons.calendar_today_outlined,
-              size: 20,
-              color: isActive
-                  ? Colors.white
-                  : (isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B)),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+              if (compact) ...[const SizedBox(height: 16), addYear],
+              if (state.error != null) ...[
+                const SizedBox(height: 16),
+                _notice(state.error!, warning: true),
+              ],
+              if (!state.isLoading &&
+                  state.schoolYears.isNotEmpty &&
+                  state.activeSemester == null) ...[
+                const SizedBox(height: 16),
                 Text(
-                  isActive
-                      ? 'Currently Active: ${active['display_name']}'
-                      : 'No Active Semester',
+                  'No active semester. Open a semester to activate it.',
                   style: TextStyle(
-                    color: titleColor,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    height: 1.25,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isActive
-                      ? _activeBannerSubtitle(active)
-                      : 'Add a school year and activate a semester to begin.',
-                  style: TextStyle(
-                    color: subtitleColor,
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    color: _mutedColor,
                     fontSize: 13,
-                    height: 1.4,
-                    fontWeight: FontWeight.w400,
                   ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? (isDark ? const Color(0xFF064E3B) : const Color(0xFF10B981))
-                      : (isDark ? const Color(0xFF27272A) : const Color(0xFFF1F5F9)),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: isActive
-                        ? (isDark ? const Color(0xFF059669) : const Color(0xFF059669))
-                        : (isDark ? const Color(0xFF3F3F46) : const Color(0xFFE2E8F0)),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: isActive
-                            ? (isDark ? const Color(0xFF34D399) : Colors.white)
-                            : (isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      isActive ? 'LIVE' : 'INACTIVE',
-                      style: TextStyle(
-                        color: isActive
-                            ? (isDark ? const Color(0xFF34D399) : Colors.white)
-                            : (isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569)),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (isActive)
-                ElevatedButton.icon(
-                  onPressed: () => _navigateToSemesterDetail(active),
-                  icon: const Icon(Icons.tune_rounded, size: 14),
-                  label: const Text('Manage Active Term \u2197'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isDark
-                        ? const Color(0xFF3B181F)
-                        : Colors.white,
-                    foregroundColor: isDark
-                        ? const Color(0xFFFCA5A5)
-                        : _maroon,
-                    side: BorderSide(
-                      color: isDark
-                          ? const Color(0xFF7F1D1D)
-                          : Colors.white.withValues(alpha: 0.4),
-                    ),
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 13, vertical: 8),
-                    minimumSize: const Size(0, 32),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+              const SizedBox(height: 24),
+              if (state.isLoading)
+                const AcademicCycleSkeleton()
+              else
+                _academicCyclesSection(state, selectedYear),
             ],
           ),
-        ],
-      ),
-    );
-  }
+        );
+      },
+    ),
+  );
 
   Widget _academicCyclesSection(
     AcademicPeriodState state,
@@ -296,86 +136,96 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   ) {
     if (state.schoolYears.isEmpty) {
       _hasInitializedExpansion = false;
-      return _card(
-        title: 'School Years',
-        description:
-            'Define and manage institutional academic cycles & semester terms',
-        actionLabel: '+ Add Year',
-        onActionTap: state.isSaving ? null : _showAddYearDialog,
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: DefensysEmptyState.table(
-            icon: Icons.calendar_today_outlined,
-            title: 'No School Years Configured',
-            description:
-                'Add an academic year to start configuring terms and active semesters.',
-            size: DefensysEmptyStateSize.compact,
-            primaryAction: DefensysEmptyAction(
-              label: 'Add School Year',
-              icon: Icons.add_rounded,
-              onPressed: state.isSaving ? () {} : _showAddYearDialog,
-            ),
+      _lastActiveYearId = null;
+      return ShadCard(
+        width: double.infinity,
+        padding: EdgeInsets.zero,
+        radius: BorderRadius.circular(DefensysTokens.radiusLg),
+        backgroundColor: DefensysTokens.surfaceOf(context),
+        border: ShadBorder.all(
+          color: DefensysTokens.borderOf(context),
+          width: 1,
+        ),
+        child: DefensysEmptyState(
+          icon: Icons.calendar_today_outlined,
+          title: 'No school years yet',
+          description: 'Add a school year, then create its semesters.',
+          actions: ShadButton(
+            enabled: !state.isSaving,
+            backgroundColor: DefensysTokens.maroonOf(context),
+            hoverBackgroundColor: _isDark
+                ? DefensysTokens.maroonLight
+                : DefensysTokens.maroonDark,
+            foregroundColor: Colors.white,
+            leading: const Icon(LucideIcons.plus, size: 16),
+            onPressed: _showAddYearDialog,
+            child: const Text('Add school year'),
           ),
         ),
       );
     }
 
     final activeYearId = _activeYearId(state);
-    final defaultExpandId = activeYearId ??
+    final defaultExpandId =
+        activeYearId ??
         (selectedYear != null ? _asInt(selectedYear['id']) : null) ??
         _asInt(state.schoolYears.first['id']);
     if (!_hasInitializedExpansion && defaultExpandId != null) {
       _hasInitializedExpansion = true;
       _expandedYearIds.add(defaultExpandId);
+    } else if (activeYearId != null && activeYearId != _lastActiveYearId) {
+      _expandedYearIds.add(activeYearId);
     }
+    _lastActiveYearId = activeYearId;
+    // Keep the current year first without changing the order of other years.
+    final years = [
+      ...state.schoolYears.where((year) => _asInt(year['id']) == activeYearId),
+      ...state.schoolYears.where((year) => _asInt(year['id']) != activeYearId),
+    ];
+    return Column(
+      children: [
+        for (var index = 0; index < years.length; index++) ...[
+          if (index > 0) const SizedBox(height: 14),
+          _academicYear(state, years[index]),
+        ],
+      ],
+    );
+  }
 
-    return _card(
-      title: 'School Years',
-      description:
-          'Define and manage institutional academic cycles & semester terms',
-      actionLabel: '+ Add Year',
-      onActionTap: state.isSaving ? null : _showAddYearDialog,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-        child: Column(
-          children: state.schoolYears.map((year) {
-            final yearId = _asInt(year['id']) ?? 0;
-            final isExpanded = _expandedYearIds.contains(yearId);
-
-            return Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: AcademicCycleCard(
-                year: year,
-                isExpanded: isExpanded,
-                isSaving: state.isSaving,
-                onToggleExpand: () {
-                  setState(() {
-                    if (isExpanded) {
-                      _expandedYearIds.remove(yearId);
-                    } else {
-                      _expandedYearIds.add(yearId);
-                    }
-                  });
-                },
-                onAddSemester: () => _showAddSemesterDialog(year),
-                onEditYear: () => _showEditYearDialog(year),
-                onDeleteYear: () => _showDeleteYearDialog(year),
-                onManageSemester: (sem) => _navigateToSemesterDetail(sem),
-                onToggleSemesterActive: (sem, active) =>
-                    _handleSemesterSwitch(sem, active),
-                onDeleteSemester: (sem) => _showDeleteSemesterDialog(sem),
-              ),
-            );
-          }).toList(),
-        ),
-      ),
+  Widget _academicYear(AcademicPeriodState state, Map<String, dynamic> year) {
+    final yearId = _asInt(year['id']) ?? 0;
+    final expanded = _expandedYearIds.contains(yearId);
+    return AcademicCycleCard(
+      year: year,
+      isExpanded: expanded,
+      isSaving: state.isSaving,
+      onToggleExpand: () => setState(() {
+        if (expanded) {
+          _expandedYearIds.remove(yearId);
+        } else {
+          _expandedYearIds.add(yearId);
+        }
+      }),
+      onAddSemester: () => _showAddSemesterDialog(year),
+      onEditYear: () => _showEditYearDialog(year),
+      onDeleteYear: () => _showDeleteYearDialog(year),
+      onManageSemester: _navigateToSemesterDetail,
+      onToggleSemesterActive: _handleSemesterSwitch,
+      onDeleteSemester: _showDeleteSemesterDialog,
     );
   }
 
   int? _activeYearId(AcademicPeriodState state) {
-    final active = state.activeSemester;
-    if (active == null) return null;
-    return _asInt(active['school_year_id']);
+    for (final year in state.schoolYears) {
+      final semesters = year['semesters'];
+      if (semesters is List &&
+          semesters.whereType<Map>().any(
+            (semester) => semester['is_active'] == true,
+          )) {
+        return _asInt(year['id']);
+      }
+    }
+    return _asInt(state.activeSemester?['school_year_id']);
   }
 
   void _navigateToSemesterDetail(Map<String, dynamic> semester) {
@@ -395,676 +245,17 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     }
   }
 
-  Widget _schoolYearsCard(AcademicPeriodState state) {
-    return _card(
-      title: 'School Years',
-      description: 'Define and manage institutional academic cycles',
-      actionLabel: '+ Add Year',
-      onActionTap: state.isSaving ? null : _showAddYearDialog,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _tableHeader(
-            columns: const [
-              _ColumnSpec('Academic Year', 1.8),
-              _ColumnSpec('Semesters Created', 1.4),
-              _ColumnSpec('Action', 1.8),
-            ],
-          ),
-          _schoolYearsBody(state),
-        ],
-      ),
-    );
-  }
-
-  Widget _schoolYearsBody(AcademicPeriodState state) {
-    if (state.schoolYears.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(20),
-        child: DefensysEmptyState.table(
-          icon: Icons.calendar_today_outlined,
-          title: 'No School Years Configured',
-          description:
-              'Add an academic year to start configuring terms and active semesters.',
-          size: DefensysEmptyStateSize.compact,
-          primaryAction: DefensysEmptyAction(
-            label: 'Add School Year',
-            icon: Icons.add_rounded,
-            onPressed: state.isSaving ? () {} : _showAddYearDialog,
-          ),
-        ),
-      );
-    }
-
-    final rows = state.schoolYears
-        .map((year) => _schoolYearRow(state, year))
-        .toList();
-
-    if (state.schoolYears.length > _schoolYearsScrollThreshold) {
-      return ConstrainedBox(
-        constraints: const BoxConstraints(
-          maxHeight: _schoolYearsScrollMaxHeight,
-        ),
-        child: ListView(shrinkWrap: true, children: rows),
-      );
-    }
-
-    return Column(mainAxisSize: MainAxisSize.min, children: rows);
-  }
-
-  Widget _semestersCard(
-    AcademicPeriodState state,
-    Map<String, dynamic>? selectedYear,
-  ) {
-    final selectedLabel = selectedYear?['label']?.toString();
-    final semesters = _semesterList(selectedYear?['semesters']);
-
-    return _card(
-      title: selectedLabel == null
-          ? 'Semesters'
-          : 'Semesters (A.Y. $selectedLabel)',
-      description: 'Active terms, status control, and workflow triggers',
-      actionLabel: '+ Add Semester',
-      onActionTap: selectedYear == null || state.isSaving
-          ? null
-          : () => _showAddSemesterDialog(selectedYear),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _tableHeader(
-            columns: const [
-              _ColumnSpec('Term', 1.3),
-              _ColumnSpec('System Status', 2.2),
-              _ColumnSpec('Action', 1.2),
-            ],
-          ),
-          if (selectedYear == null)
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: DefensysEmptyState.table(
-                icon: Icons.touch_app_outlined,
-                title: 'Select a School Year',
-                description:
-                    'Select an academic year on the left to view and manage its semesters.',
-                size: DefensysEmptyStateSize.compact,
-              ),
-            )
-          else if (semesters.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: DefensysEmptyState.table(
-                icon: Icons.date_range_outlined,
-                title: 'No Semesters Created',
-                description:
-                    'Add a semester to activate terms for A.Y. ${selectedLabel ?? ""}, or remove this school year if created by mistake.',
-                size: DefensysEmptyStateSize.compact,
-                primaryAction: DefensysEmptyAction(
-                  label: 'Add Semester',
-                  icon: Icons.add_rounded,
-                  onPressed: state.isSaving
-                      ? () {}
-                      : () => _showAddSemesterDialog(selectedYear),
-                ),
-                secondaryAction: DefensysEmptyAction(
-                  label: 'Delete School Year',
-                  icon: Icons.delete_outline_rounded,
-                  isOutlined: true,
-                  onPressed: state.isSaving
-                      ? () {}
-                      : () => _showDeleteYearDialog(selectedYear),
-                ),
-              ),
-            )
-          else
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: semesters
-                  .map((semester) => _semesterRow(state, semester))
-                  .toList(),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _card({
-    required String title,
-    required Widget child,
-    String? actionLabel,
-    VoidCallback? onActionTap,
-    String? description,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: _inkColor,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.2,
-                          height: 1.2,
-                        ),
-                      ),
-                      if (description != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          description,
-                          style: TextStyle(
-                            color: _mutedColor,
-                            fontSize: 12.5,
-                            height: 1.3,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (actionLabel case final label?)
-                  OutlinedButton.icon(
-                    onPressed: onActionTap,
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: Text(label.replaceFirst(RegExp(r'^\+\s*'), '')),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _inkColor,
-                      side: BorderSide(color: _borderColor),
-                      backgroundColor: _isDark
-                          ? const Color(0xFF27272A)
-                          : const Color(0xFFF8FAFC),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 13,
-                        vertical: 8,
-                      ),
-                      minimumSize: const Size(0, 36),
-                      textStyle: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _emptyTableMessage(String message) {
-    return DefensysEmptyState.table(
-      icon: Icons.inbox_outlined,
-      title: message,
-      size: DefensysEmptyStateSize.compact,
-    );
-  }
-
-  Widget _tableHeader({required List<_ColumnSpec> columns}) {
-    return Container(
-      height: 40,
-      decoration: BoxDecoration(
-        color: _headerBgColor,
-        border: Border(
-          top: BorderSide(color: _borderColor),
-          bottom: BorderSide(color: _borderColor),
-        ),
-      ),
-      child: Row(
-        children: columns
-            .map(
-              (column) => Expanded(
-                flex: (column.flex * 100).round(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      column.label.toUpperCase(),
-                      style: TextStyle(
-                        color: _headerTextColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            )
-            .toList(),
-      ),
-    );
-  }
-
-  Widget _schoolYearRow(AcademicPeriodState state, Map<String, dynamic> year) {
-    final yearId = _asInt(year['id']);
-    final semesters = _semesterList(year['semesters']);
-    final hasActive = semesters.any(
-      (semester) => semester['is_active'] == true,
-    );
-    final selected = yearId != null && yearId == state.selectedSchoolYearId;
-
-    return InkWell(
-      onTap: yearId == null
-          ? null
-          : () => ref
-                .read(academicPeriodProvider.notifier)
-                .selectSchoolYear(yearId),
-      child: Container(
-        height: _rowHeight,
-        decoration: BoxDecoration(
-          color: selected
-              ? (_isDark ? const Color(0xFF28181A) : const Color(0xFFFFF5F5))
-              : _surfaceColor,
-          border: Border(
-            bottom: BorderSide(color: _borderColor),
-            left: BorderSide(
-              color: selected
-                  ? (_isDark ? DefensysTokens.mistMaroon : _maroon)
-                  : Colors.transparent,
-              width: selected ? 3 : 0,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 180,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        year['label']?.toString() ?? 'Unknown',
-                        style: TextStyle(
-                          color: _inkColor,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (hasActive) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _isDark
-                              ? const Color(0xFF064E3B).withValues(alpha: 0.4)
-                              : const Color(0xFFECFDF5),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: _isDark
-                                ? const Color(0xFF059669).withValues(alpha: 0.5)
-                                : const Color(0xFFA7F3D0),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 5,
-                              height: 5,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF10B981),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Active',
-                              style: TextStyle(
-                                color: _isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              flex: 140,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  semesters.length.toString(),
-                  style: TextStyle(
-                    color: _mutedColor,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              flex: 180,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: yearId == null
-                          ? null
-                          : () => ref
-                              .read(academicPeriodProvider.notifier)
-                              .selectSchoolYear(yearId),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? (_isDark ? const Color(0xFF3C181D) : const Color(0xFFFEE2E2))
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: selected
-                                ? (_isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFECACA))
-                                : Colors.transparent,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              selected ? Icons.check_circle_rounded : Icons.tune_rounded,
-                              size: 13,
-                              color: selected
-                                  ? (_isDark ? const Color(0xFFFCA5A5) : _maroon)
-                                  : _mutedColor,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              selected ? 'Managing' : 'Manage',
-                              style: TextStyle(
-                                color: selected
-                                    ? (_isDark ? const Color(0xFFFCA5A5) : _maroon)
-                                    : _inkColor,
-                                fontSize: 12,
-                                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Tooltip(
-                      message: 'Edit school year',
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: state.isSaving
-                            ? null
-                            : () => _showEditYearDialog(year),
-                        child: Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Icon(
-                            Icons.edit_outlined,
-                            size: 15,
-                            color: _mutedColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Tooltip(
-                      message: semesters.isEmpty
-                          ? 'Delete school year'
-                          : 'Delete all semesters first',
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: semesters.isEmpty && !state.isSaving
-                            ? () => _showDeleteYearDialog(year)
-                            : null,
-                        child: Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Icon(
-                            Icons.delete_outline_rounded,
-                            size: 15,
-                            color: semesters.isEmpty
-                                ? (_isDark
-                                    ? const Color(0xFFF87171)
-                                    : const Color(0xFFDC2626))
-                                : (_isDark
-                                    ? const Color(0xFF52525B)
-                                    : const Color(0xFFCBD5E1)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _semesterRow(
-    AcademicPeriodState state,
-    Map<String, dynamic> semester,
-  ) {
-    final semesterId = _asInt(semester['id']);
-    final isActive = semester['is_active'] == true;
-
-    return Container(
-      height: _rowHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        border: Border(bottom: BorderSide(color: _borderColor)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            flex: 130,
-            child: Text(
-              semester['label']?.toString() ?? 'Unknown semester',
-              style: TextStyle(
-                color: _inkColor,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Expanded(
-            flex: 220,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: isActive
-                  ? Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: _isDark
-                            ? const Color(0xFF064E3B).withValues(alpha: 0.4)
-                            : const Color(0xFFECFDF5),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: _isDark
-                              ? const Color(0xFF059669).withValues(alpha: 0.5)
-                              : const Color(0xFFA7F3D0),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF10B981),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Active (Write-Enabled)',
-                            style: TextStyle(
-                              color: _isDark
-                                  ? const Color(0xFF34D399)
-                                  : const Color(0xFF047857),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: _isDark
-                            ? const Color(0xFF27272A)
-                            : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: _isDark
-                              ? const Color(0xFF3F3F46)
-                              : const Color(0xFFE2E8F0),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: _isDark
-                                  ? const Color(0xFF71717A)
-                                  : const Color(0xFF94A3B8),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Inactive',
-                            style: TextStyle(
-                              color: _isDark
-                                  ? const Color(0xFFA1A1AA)
-                                  : const Color(0xFF64748B),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-            ),
-          ),
-          Expanded(
-            flex: 120,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Tooltip(
-                  message: isActive
-                      ? 'Active semester (activate another semester to switch)'
-                      : 'Activate semester',
-                  child: DefensysUi.flatSwitch(
-                    value: isActive,
-                    scale: 0.85,
-                    activeTrackColor: _isDark ? const Color(0xFFE11D48) : _maroon,
-                    onChanged: state.isSaving || semesterId == null
-                        ? null
-                        : (value) => _handleSemesterSwitch(semester, value),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Tooltip(
-                  message: isActive
-                      ? 'Cannot delete active semester'
-                      : 'Delete semester',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: !isActive && !state.isSaving
-                        ? () => _showDeleteSemesterDialog(semester)
-                        : null,
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Icon(
-                        Icons.delete_outline_rounded,
-                        size: 16,
-                        color: !isActive
-                            ? (_isDark
-                                ? const Color(0xFFF87171)
-                                : const Color(0xFFDC2626))
-                            : (_isDark
-                                ? const Color(0xFF52525B)
-                                : const Color(0xFFCBD5E1)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _activeBannerSubtitle(Map<String, dynamic> active) {
-    final mode = active['capstone_mode']?.toString();
-    if (mode == 'capstone_1_intake') {
-      return 'Capstone 1 Intake & PIT term: peer evaluation and adviser grading apply to this term.';
-    }
-    if (mode == 'capstone_2_continue') {
-      return 'Capstone 2 & PIT term: manage existing teams and active PIT workflows.';
-    }
-    return 'All uploads, evaluations, and peer rubrics are routing to this period.';
-  }
-
   Widget _notice(String message, {bool warning = false}) {
     final color = warning
         ? (_isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309))
         : (_isDark ? const Color(0xFF34D399) : const Color(0xFF047857));
     final background = warning
         ? (_isDark
-            ? const Color(0xFF451A03).withValues(alpha: 0.4)
-            : const Color(0xFFFFFBEB))
+              ? const Color(0xFF451A03).withValues(alpha: 0.4)
+              : const Color(0xFFFFFBEB))
         : (_isDark
-            ? const Color(0xFF064E3B).withValues(alpha: 0.3)
-            : const Color(0xFFECFDF5));
+              ? const Color(0xFF064E3B).withValues(alpha: 0.3)
+              : const Color(0xFFECFDF5));
     final border = warning
         ? (_isDark ? const Color(0xFF78350F) : const Color(0xFFFDE68A))
         : (_isDark ? const Color(0xFF065F46) : const Color(0xFFA7F3D0));
@@ -1080,7 +271,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       child: Row(
         children: [
           Icon(
-            warning ? Icons.warning_amber_rounded : Icons.check_circle_outline_rounded,
+            warning
+                ? Icons.warning_amber_rounded
+                : Icons.check_circle_outline_rounded,
             size: 18,
             color: color,
           ),
@@ -1104,9 +297,10 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     final label = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AddSchoolYearDialog(
-        existingLabels: ref.read(academicPeriodProvider).schoolYears.map(
-          (year) => year['label']?.toString() ?? '',
-        ),
+        existingLabels: ref
+            .read(academicPeriodProvider)
+            .schoolYears
+            .map((year) => year['label']?.toString() ?? ''),
       ),
     );
 
@@ -1192,11 +386,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
           ),
           content: Text(
             'Are you sure you want to delete Academic Year $label? This will remove the academic year from the system. This action cannot be undone.',
-            style: TextStyle(
-              color: _mutedColor,
-              fontSize: 13,
-              height: 1.45,
-            ),
+            style: TextStyle(color: _mutedColor, fontSize: 13, height: 1.45),
           ),
           actions: [
             OutlinedButton(
@@ -1204,8 +394,13 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: _inkColor,
                 side: BorderSide(color: _borderColor),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
               ),
               child: const Text('Cancel'),
             ),
@@ -1281,11 +476,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
           ),
           content: Text(
             'Are you sure you want to delete $label? This will remove the semester configuration from this academic year.',
-            style: TextStyle(
-              color: _mutedColor,
-              fontSize: 13,
-              height: 1.45,
-            ),
+            style: TextStyle(color: _mutedColor, fontSize: 13, height: 1.45),
           ),
           actions: [
             OutlinedButton(
@@ -1293,8 +484,13 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: _inkColor,
                 side: BorderSide(color: _borderColor),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
               ),
               child: const Text('Cancel'),
             ),
@@ -1328,8 +524,11 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
 
   Future<void> _showAddSemesterDialog(Map<String, dynamic> year) async {
     if (_asInt(year['id']) == null) return;
-    await showDialog<bool>(context: context, barrierDismissible: false,
-      builder: (_) => AddSemesterDialog(year: year));
+    await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AddSemesterDialog(year: year),
+    );
   }
 
   Future<void> _handleSemesterSwitch(
@@ -1347,7 +546,11 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       return;
     }
 
-    final changed = await showSemesterTransitionReview(context, ref, semesterId);
+    final changed = await showSemesterTransitionReview(
+      context,
+      ref,
+      semesterId,
+    );
     if (mounted && changed == true) context.go('/admin/student-teams');
   }
 
@@ -1364,21 +567,6 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     return state.schoolYears.first;
   }
 
-  List<Map<String, dynamic>> _semesterList(dynamic value) {
-    return _mapList(value);
-  }
-
-  List<Map<String, dynamic>> _mapList(dynamic value) {
-    if (value is! List) {
-      return [];
-    }
-
-    return value
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-  }
-
   int? _asInt(dynamic value) {
     if (value is int) {
       return value;
@@ -1388,13 +576,6 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     }
     return int.tryParse(value?.toString() ?? '');
   }
-}
-
-class _ColumnSpec {
-  final String label;
-  final double flex;
-
-  const _ColumnSpec(this.label, this.flex);
 }
 
 class _EditSchoolYearDialog extends StatefulWidget {
@@ -1429,7 +610,9 @@ class _EditSchoolYearDialogState extends State<_EditSchoolYearDialog> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final surfaceColor = isDark ? DefensysTokens.mistSurface : Colors.white;
-    final borderColor = isDark ? DefensysTokens.mistBorder : DefensysTokens.border;
+    final borderColor = isDark
+        ? DefensysTokens.mistBorder
+        : DefensysTokens.border;
     final inkColor = isDark ? const Color(0xFFF4F4F5) : DefensysUi.textDark;
     final mutedColor = isDark ? const Color(0xFFA1A1AA) : DefensysUi.steelGrey;
     final panelBg = isDark ? const Color(0xFF28272D) : const Color(0xFFF8FAFC);
@@ -1455,7 +638,9 @@ class _EditSchoolYearDialogState extends State<_EditSchoolYearDialog> {
             child: Icon(
               Icons.edit_calendar_outlined,
               size: 18,
-              color: isDark ? DefensysTokens.mistMaroon : DefensysUi.primaryMaroon,
+              color: isDark
+                  ? DefensysTokens.mistMaroon
+                  : DefensysUi.primaryMaroon,
             ),
           ),
           const SizedBox(width: 12),
@@ -1478,11 +663,7 @@ class _EditSchoolYearDialogState extends State<_EditSchoolYearDialog> {
             Text(
               'Correct the academic year label before adding semesters. '
               'The label is locked once terms are added.',
-              style: TextStyle(
-                color: mutedColor,
-                fontSize: 12.5,
-                height: 1.35,
-              ),
+              style: TextStyle(color: mutedColor, fontSize: 12.5, height: 1.35),
             ),
             const SizedBox(height: 14),
             TextField(
@@ -1494,7 +675,10 @@ class _EditSchoolYearDialogState extends State<_EditSchoolYearDialog> {
                 hintText: '2026-2027',
                 filled: true,
                 fillColor: panelBg,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: borderColor),
@@ -1505,7 +689,10 @@ class _EditSchoolYearDialogState extends State<_EditSchoolYearDialog> {
                 ),
                 focusedBorder: const OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(8)),
-                  borderSide: BorderSide(color: DefensysUi.primaryMaroon, width: 1.5),
+                  borderSide: BorderSide(
+                    color: DefensysUi.primaryMaroon,
+                    width: 1.5,
+                  ),
                 ),
               ),
               textInputAction: TextInputAction.done,
@@ -1520,7 +707,9 @@ class _EditSchoolYearDialogState extends State<_EditSchoolYearDialog> {
           style: OutlinedButton.styleFrom(
             foregroundColor: inkColor,
             side: BorderSide(color: borderColor),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           ),
           child: const Text('Cancel'),
@@ -1530,7 +719,9 @@ class _EditSchoolYearDialogState extends State<_EditSchoolYearDialog> {
           style: ElevatedButton.styleFrom(
             backgroundColor: DefensysUi.primaryMaroon,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             textStyle: const TextStyle(fontWeight: FontWeight.w600),
           ),

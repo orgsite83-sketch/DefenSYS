@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../theme/defensys_tokens.dart';
+import '../shadcn/defensys_shadcn_scope.dart';
 
 /// A reminder with an explicit action supplied by the screen that owns it.
 class DefensysActionBanner extends StatelessWidget {
@@ -39,6 +41,7 @@ class DefensysActionBanner extends StatelessWidget {
               Text(
                 title,
                 style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
                   color: color,
@@ -47,22 +50,24 @@ class DefensysActionBanner extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 description,
-                style: TextStyle(fontSize: 12.5, color: color, height: 1.35),
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 12.5,
+                  color: color,
+                  height: 1.35,
+                ),
               ),
             ],
           ),
         ),
       ],
     );
-    final action = OutlinedButton.icon(
-      onPressed: onAction,
-      icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-      label: Text(actionLabel),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: color,
-        side: BorderSide(color: color.withValues(alpha: 0.4)),
+    final action = DefensysShadcnScope(
+      child: ShadButton.outline(
+        onPressed: onAction,
+        height: 0,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: Flexible(child: Text(actionLabel, textAlign: TextAlign.center)),
       ),
     );
 

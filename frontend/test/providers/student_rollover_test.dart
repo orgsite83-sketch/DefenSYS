@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/student_academic_records_provider.dart';
@@ -13,6 +14,68 @@ import '../helpers/auth_test_overrides.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   tearDown(resetApiHttpClientForTesting);
+
+  test(
+    'enrollment defaults to the current term and history is explicit',
+    () async {
+      final contexts = <String?>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          contexts.add(request.url.queryParameters['term_context']);
+          return http.Response(
+            '{"records":[],"active_semester":{"id":2},'
+            '"counts":{"enrollment":{"semester_id":2,"enrolled":0}}}',
+            200,
+          );
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final notifier = container.read(studentAcademicRecordsProvider.notifier);
+      await notifier.fetchRecords();
+      await notifier.selectTermContext('history');
+      expect(contexts, ['current', 'history']);
+      expect(
+        (container.read(studentAcademicRecordsProvider).counts['enrollment']
+            as Map)['enrolled'],
+        0,
+      );
+    },
+  );
+
+  test(
+    'a late current-term response cannot replace the selected history',
+    () async {
+      final firstResponse = Completer<http.Response>();
+      final firstStarted = Completer<void>();
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          if (request.url.queryParameters['term_context'] == 'current') {
+            firstStarted.complete();
+            return firstResponse.future;
+          }
+          return http.Response(
+            '{"records":[{"id":99}],"active_semester":{"id":2}}',
+            200,
+          );
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final notifier = container.read(studentAcademicRecordsProvider.notifier);
+      final stale = notifier.fetchRecords();
+      await firstStarted.future;
+      await notifier.selectTermContext('history');
+      firstResponse.complete(
+        http.Response('{"records":[{"id":1}],"active_semester":{"id":1}}', 200),
+      );
+      await stale;
+      final state = container.read(studentAcademicRecordsProvider);
+      expect(state.termContext, 'history');
+      expect(state.records.single['id'], 99);
+      expect(state.activeSemester?['id'], 2);
+    },
+  );
 
   const row = <String, dynamic>{
     'record': {

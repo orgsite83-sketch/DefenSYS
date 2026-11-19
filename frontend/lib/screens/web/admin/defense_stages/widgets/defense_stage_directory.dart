@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -71,6 +73,104 @@ class DefenseStageDirectory extends StatefulWidget {
 class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   bool _refreshing = false, _adding = false;
   final Set<Object> _expanded = {};
+  final Map<Object, GlobalKey> _stageAnchors = {};
+  final Map<Object, FocusNode> _stageFocusNodes = {};
+  Object? _reviewedStage, _highlightedStage;
+  Timer? _highlightTimer;
+  int _reviewRequest = 0;
+
+  List<Map<String, dynamic>> get _visibleStages =>
+      widget.state.phaseGroups.isEmpty
+      ? widget.state.stages
+      : widget.state.phaseGroups.expand((g) => _rows(g['stages'])).toList();
+  List<Map<String, dynamic>> get _attentionStages => _visibleStages
+      .where((stage) => stageSetupIssues(stage).isNotEmpty)
+      .toList();
+  Object _stageIdentity(Map<String, dynamic> stage) =>
+      (stage['semester_id'], stage['id'] ?? stage['code'] ?? stage['label']);
+
+  @override
+  void didUpdateWidget(covariant DefenseStageDirectory oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final identities = _visibleStages.map(_stageIdentity).toSet();
+    _expanded.retainAll(identities);
+    _stageAnchors.removeWhere((key, _) => !identities.contains(key));
+    for (final key in _stageFocusNodes.keys.toList()) {
+      if (!identities.contains(key)) _stageFocusNodes.remove(key)!.dispose();
+    }
+    final previous = oldWidget.state;
+    final current = widget.state;
+    final scopeChanged =
+        (
+          previous.historyScope,
+          previous.historyIntake,
+          previous.historyPhase,
+          previous.historyStage,
+        ) !=
+        (
+          current.historyScope,
+          current.historyIntake,
+          current.historyPhase,
+          current.historyStage,
+        );
+    if (scopeChanged ||
+        !_attentionStages.any(
+          (stage) => _stageIdentity(stage) == _reviewedStage,
+        )) {
+      _reviewRequest++;
+      _highlightTimer?.cancel();
+      _reviewedStage = _highlightedStage = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _highlightTimer?.cancel();
+    for (final node in _stageFocusNodes.values) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  void _reviewNextIssue({Object? after}) {
+    if (_busy) return;
+    final stages = _attentionStages;
+    if (stages.isEmpty) return;
+    final previous = stages.indexWhere(
+      (stage) => _stageIdentity(stage) == (after ?? _reviewedStage),
+    );
+    final identity = _stageIdentity(stages[(previous + 1) % stages.length]);
+    final request = ++_reviewRequest;
+    _highlightTimer?.cancel();
+    setState(() {
+      _reviewedStage = identity;
+      _highlightedStage = null;
+      _expanded.add(identity);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || request != _reviewRequest) return;
+      final target = _stageAnchors[identity]?.currentContext;
+      if (target == null) return;
+      _stageFocusNodes[identity]?.requestFocus();
+      final reduceMotion =
+          MediaQuery.disableAnimationsOf(context) ||
+          MediaQuery.accessibleNavigationOf(context);
+      await Scrollable.ensureVisible(
+        target,
+        alignment: 0,
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+      );
+      if (!mounted || request != _reviewRequest) return;
+      setState(() => _highlightedStage = identity);
+      _highlightTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _highlightedStage = null);
+      });
+    });
+  }
+
   bool get _busy =>
       widget.state.isSaving || widget.state.isLoading || _refreshing || _adding;
   Color get _muted => DefensysTokens.textSecondaryOf(context);
@@ -82,7 +182,12 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   Color get _success =>
       _dark ? DefensysTokens.success : DefensysTokens.successText;
   Color get _warning => DefensysTokens.goldOf(context);
-  TextStyle get _small => TextStyle(fontSize: 13, height: 1.5, color: _muted);
+  TextStyle get _small => TextStyle(
+    fontFamily: DefensysTokens.fontFamilyInter,
+    fontSize: 13,
+    height: 1.5,
+    color: _muted,
+  );
 
   Future<void> _refresh() async {
     if (_refreshing) return;
@@ -283,12 +388,40 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   }
 
   Widget _summary(bool compact) {
-    final stages = widget.state.phaseGroups.isEmpty
-        ? widget.state.stages
-        : widget.state.phaseGroups.expand((g) => _rows(g['stages'])).toList();
-    final attention = stages
-        .where((stage) => stageSetupIssues(stage).isNotEmpty)
-        .length;
+    final stages = _visibleStages;
+    final attention = _attentionStages.length;
+    final attentionMetric = _metric(
+      'Needs attention',
+      attention,
+      stages.isEmpty
+          ? 'Add a stage to get started'
+          : attention == 0
+          ? 'All stage setups are ready'
+          : 'Review the requirements below',
+      warning: attention > 0,
+      action: attention == 0
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _reviewedStage == null || attention == 1
+                      ? 'Review issue'
+                      : 'Next issue',
+                  style: _small.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: DefensysTokens.maroonTextOf(context),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  LucideIcons.arrowDown,
+                  size: 14,
+                  color: DefensysTokens.maroonTextOf(context),
+                ),
+              ],
+            ),
+    );
     final items = [
       _metric('Total stages', stages.length, 'Configured milestones'),
       _metric(
@@ -296,16 +429,18 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
         stages.where(stagePublished).length,
         'Available in defense scheduling',
       ),
-      _metric(
-        'Needs attention',
-        attention,
-        stages.isEmpty
-            ? 'Add a stage to get started'
-            : attention == 0
-            ? 'All stage setups are ready'
-            : 'Review the requirements below',
-        warning: attention > 0,
-      ),
+      if (attention == 0)
+        attentionMetric
+      else
+        ShadButton.ghost(
+          key: const ValueKey('stage-review-issues'),
+          height: 0,
+          expands: true,
+          padding: EdgeInsets.zero,
+          enabled: !_busy,
+          onPressed: _reviewNextIssue,
+          child: attentionMetric,
+        ),
     ];
     return ShadCard(
       width: double.infinity,
@@ -322,6 +457,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
               ],
             )
           : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (var i = 0; i < items.length; i++) ...[
                   Expanded(
@@ -343,6 +479,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     int value,
     String hint, {
     bool warning = false,
+    Widget? action,
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -351,6 +488,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
       Text(
         '$value',
         style: TextStyle(
+          fontFamily: DefensysTokens.fontFamilyInter,
           fontSize: 26,
           height: 1.1,
           fontWeight: FontWeight.w700,
@@ -359,6 +497,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
       ),
       const SizedBox(height: 6),
       Text(hint, style: _small.copyWith(fontSize: 12)),
+      if (action != null) ...[const SizedBox(height: 4), action],
     ],
   );
 
@@ -714,10 +853,18 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     bool showInlineNode = false,
   }) {
     final key = stage['id'] ?? index;
-    final expanded = _expanded.contains(key);
+    final identity = _stageIdentity(stage);
+    final expanded = _expanded.contains(identity);
+    final highlighted = _highlightedStage == identity;
+    final issues = stageSetupIssues(stage);
     final managed = _rows(stage['system_deliverables']);
-    final deliverables = [..._rows(stage['deliverables']), ...managed.where((row) => row['source'] == 'weekly_reports')];
-    final system = managed.where((row) => row['source'] != 'weekly_reports').toList();
+    final deliverables = [
+      ..._rows(stage['deliverables']),
+      ...managed.where((row) => row['source'] == 'weekly_reports'),
+    ];
+    final system = managed
+        .where((row) => row['source'] != 'weekly_reports')
+        .toList();
     final pre = deliverables
         .where((d) => (d['deliverable_type'] ?? d['type']) == 'pre')
         .length;
@@ -761,15 +908,18 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
             ],
           ),
         ),
-        if (!compact) ...[
-        const SizedBox(width: 12),
-        _readiness(stage)],
+        if (!compact) ...[const SizedBox(width: 12), _readiness(stage)],
       ],
     );
-    return ShadCard(
+    final card = ShadCard(
       key: ValueKey('stage-card-$key'),
       width: double.infinity,
-      backgroundColor: _surface,
+      backgroundColor: highlighted
+          ? (_dark
+                ? _warning.withValues(alpha: 0.08)
+                : DefensysTokens.warningBg)
+          : _surface,
+      border: ShadBorder.all(color: highlighted ? _warning : _border, width: 1),
       padding: EdgeInsets.all(compact ? 16 : 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -831,22 +981,65 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
                   size: 15,
                 ),
                 onPressed: () => setState(
-                  () => expanded ? _expanded.remove(key) : _expanded.add(key),
+                  () => expanded
+                      ? _expanded.remove(identity)
+                      : _expanded.add(identity),
                 ),
-                child: Flexible(child: Text(
-                  expanded ? 'Hide requirements' : 'View requirements',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                )),
+                child: Flexible(
+                  child: Text(
+                    expanded ? 'Hide requirements' : 'View requirements',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ),
+              if (expanded && issues.isNotEmpty && _attentionStages.length > 1)
+                ShadButton.ghost(
+                  key: ValueKey('stage-next-issue-$key'),
+                  size: ShadButtonSize.sm,
+                  enabled: !_busy,
+                  trailing: const Icon(LucideIcons.arrowDown, size: 14),
+                  onPressed: () => _reviewNextIssue(after: identity),
+                  child: const Text('Next issue'),
+                ),
               if (compact) _actions(stage, index),
             ],
           ),
           if (expanded) ...[
             const SizedBox(height: 16),
+            if (issues.isNotEmpty) ...[
+              for (final issue in issues)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(LucideIcons.circleAlert, size: 15, color: _warning),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          issue,
+                          style: _small.copyWith(fontSize: 12, color: _warning),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 10),
+            ],
             _details(stage, compact),
           ],
         ],
       ),
+    );
+    return Focus(
+      key: _stageAnchors.putIfAbsent(identity, () => GlobalKey()),
+      focusNode: _stageFocusNodes.putIfAbsent(
+        identity,
+        () => FocusNode(debugLabel: 'Stage setup: ${stage['label']}'),
+      ),
+      skipTraversal: true,
+      child: card,
     );
   }
 
@@ -949,26 +1142,6 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
             isRequired: roles.contains(role),
             isReady: readiness['ready'] == true,
           ),
-        if (stageSetupIssues(stage).isNotEmpty) ...[
-          const SizedBox(height: 4),
-          for (final issue in stageSetupIssues(stage))
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(LucideIcons.circleAlert, size: 13, color: _warning),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      issue,
-                      style: _small.copyWith(fontSize: 12, color: _warning),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
       ],
     );
     final managed = _rows(stage['system_deliverables']);
@@ -1166,82 +1339,99 @@ class _StageActionsMenuState extends State<_StageActionsMenu> {
     final ready = stageSetupIssues(widget.stage).isEmpty;
     return ShadPopover(
       controller: _controller,
+      anchor: const ShadAnchorAuto(
+        targetAnchor: Alignment.bottomRight,
+        followerAnchor: Alignment.bottomLeft,
+        offset: Offset(0, 4),
+        fallback: ShadAnchorAuto(
+          targetAnchor: Alignment.topRight,
+          followerAnchor: Alignment.topLeft,
+          offset: Offset(0, -4),
+        ),
+      ),
       padding: const EdgeInsets.all(6),
-      popover: (context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              'Stage actions',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: DefensysTokens.textSecondaryOf(context),
-              ),
-            ),
-          ),
-          if (!stagePublished(widget.stage))
-            _item(
-              'Publish stage',
-              LucideIcons.send,
-              widget.onPublish,
-              enabled: !locked && ready,
-              hint: locked
-                  ? 'Publication is locked for this stage.'
-                  : ready
-                  ? 'Make this stage available in defense scheduling.'
-                  : 'Configure the missing requirements before publishing.',
-            ),
-          _item(
-            'Move earlier',
-            LucideIcons.arrowUp,
-            widget.onMoveUp,
-            enabled: widget.canMoveUp,
-            hint: locked
-                ? 'Stages with scheduled defenses or recorded grades cannot be reordered.'
-                : widget.canMoveUp
-                ? 'Move one position earlier.'
-                : 'Already first, or the preceding stage is locked.',
-          ),
-          _item(
-            'Move later',
-            LucideIcons.arrowDown,
-            widget.onMoveDown,
-            enabled: widget.canMoveDown,
-            hint: locked
-                ? 'Stages with scheduled defenses or recorded grades cannot be reordered.'
-                : widget.canMoveDown
-                ? 'Move one position later.'
-                : 'Already last, or the next stage is locked.',
-          ),
-          Divider(color: DefensysTokens.borderOf(context)),
-          _item(
-            'Delete stage',
-            LucideIcons.trash2,
-            widget.onDelete,
-            enabled: !locked && widget.stage['can_delete'] != false,
-            destructive: true,
-            hint: locked || widget.stage['can_delete'] == false
-                ? 'Stages with submissions, schedules, grades or team history cannot be deleted.'
-                : 'Delete this stage after confirmation.',
-          ),
-          if ((widget.stage['code'] ?? '').toString().isNotEmpty)
+      popover: (context) => SizedBox(
+        // The divider otherwise expands the menu to the overlay's full width.
+        width: 240,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Padding(
               padding: const EdgeInsets.all(8),
-              child: SizedBox(
-                width: 224,
-                child: Text(
-                  'Stage code: ${widget.stage['code']}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: DefensysTokens.textSecondaryOf(context),
-                  ),
+              child: Text(
+                'Stage actions',
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.textSecondaryOf(context),
                 ),
               ),
             ),
-        ],
+            if (!stagePublished(widget.stage))
+              _item(
+                'Publish stage',
+                LucideIcons.send,
+                widget.onPublish,
+                enabled: !locked && ready,
+                hint: locked
+                    ? 'Publication is locked for this stage.'
+                    : ready
+                    ? 'Make this stage available in defense scheduling.'
+                    : 'Configure the missing requirements before publishing.',
+              ),
+            _item(
+              'Move earlier',
+              LucideIcons.arrowUp,
+              widget.onMoveUp,
+              enabled: widget.canMoveUp,
+              hint: locked
+                  ? 'Stages with scheduled defenses or recorded grades cannot be reordered.'
+                  : widget.canMoveUp
+                  ? 'Move one position earlier.'
+                  : 'Already first, or the preceding stage is locked.',
+            ),
+            _item(
+              'Move later',
+              LucideIcons.arrowDown,
+              widget.onMoveDown,
+              enabled: widget.canMoveDown,
+              hint: locked
+                  ? 'Stages with scheduled defenses or recorded grades cannot be reordered.'
+                  : widget.canMoveDown
+                  ? 'Move one position later.'
+                  : 'Already last, or the next stage is locked.',
+            ),
+            Divider(color: DefensysTokens.borderOf(context)),
+            _item(
+              'Delete stage',
+              LucideIcons.trash2,
+              widget.onDelete,
+              enabled: !locked && widget.stage['can_delete'] != false,
+              destructive: true,
+              hint: locked || widget.stage['can_delete'] == false
+                  ? 'Stages with submissions, schedules, grades or team history cannot be deleted.'
+                  : 'Delete this stage after confirmation.',
+            ),
+            if ((widget.stage['code'] ?? '').toString().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: SizedBox(
+                  width: 224,
+                  child: Text(
+                    'Stage code: ${widget.stage['code']}',
+                    textAlign: TextAlign.start,
+                    style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      fontSize: 11,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
       child: Tooltip(
         message: 'More actions for ${widget.stage['label'] ?? 'stage'}',

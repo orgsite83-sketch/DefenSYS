@@ -36,6 +36,7 @@ import 'dialogs/adviser_limits_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/services/auth/auth_provider.dart';
 import 'dialogs/create_team_modal.dart';
+import '../../../../navigation/admin_attention_context.dart';
 import 'dialogs/manage_sections_dialog.dart';
 import '../../shared/team_deliverables/team_deliverables_screen.dart';
 import '../../faculty/team_roster_screen.dart';
@@ -50,6 +51,7 @@ class StudentTeamsScreen extends ConsumerStatefulWidget {
     this.initialBulkImport = false,
     this.pitYearLevel,
     this.pitSection,
+    this.attentionContext,
   });
 
   final TeamListMode mode;
@@ -57,6 +59,7 @@ class StudentTeamsScreen extends ConsumerStatefulWidget {
   final bool initialBulkImport;
   final String? pitYearLevel;
   final String? pitSection;
+  final AdminAttentionContext? attentionContext;
 
   @override
   ConsumerState<StudentTeamsScreen> createState() => _StudentTeamsScreenState();
@@ -306,7 +309,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   void _onCreateTeamPressed(StudentTeamsState state) {
-    if (_shouldBlockCapstoneCreate(state)) {
+    if (_shouldBlockCapstoneCreate(state) && !state.canAddCapstone2Team) {
       showCapstoneCreationBlockedDialog(
         context: context,
         state: state,
@@ -314,7 +317,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       );
       return;
     }
-    if (!_canManageTeams(state) || state.isSaving) return;
+    if ((!_canManageTeams(state) && !state.canAddCapstone2Team) ||
+        state.isSaving) {
+      return;
+    }
     showManualCreateTeamModal(
       context: context,
       ref: ref,
@@ -1130,6 +1136,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
       final activeSemester = ref.watch(academicPeriodProvider).activeSemester;
       return StudentTeamsBulkImportView(
+        attentionContext: widget.attentionContext,
         state: state,
         isPitInstructor: _isPitInstructor,
         isCapstoneAdmin: _isCapstoneAdmin,

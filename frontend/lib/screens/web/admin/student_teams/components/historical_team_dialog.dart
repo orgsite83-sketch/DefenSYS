@@ -85,6 +85,10 @@ Future<void> showHistoricalTeam(
                               Consumer(
                                 builder: (context, ref, _) =>
                                     StudentCapstoneParticipationButton(
+                                      verifiedPriorCompletion:
+                                          (member['capstone_participation']
+                                              as Map?)?['origin'] ==
+                                          'external_continuation',
                                       studentId:
                                           (member['student_id'] ?? member['id'])
                                               as int,

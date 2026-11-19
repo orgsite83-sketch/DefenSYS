@@ -140,6 +140,7 @@ class RepositoryArchiveNamingPanel extends StatefulWidget {
   final List<Map<String, dynamic>> siblingDeliverables;
   final int currentIndex;
   final VoidCallback onChanged;
+  final int revealSettings;
 
   const RepositoryArchiveNamingPanel({
     super.key,
@@ -153,6 +154,7 @@ class RepositoryArchiveNamingPanel extends StatefulWidget {
     required this.siblingDeliverables,
     required this.currentIndex,
     required this.onChanged,
+    this.revealSettings = 0,
   });
 
   @override
@@ -281,11 +283,15 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
   void initState() {
     super.initState();
     _checkCustomBuilderStatus();
+    _isExpanded = widget.revealSettings > 0;
   }
 
   @override
   void didUpdateWidget(covariant RepositoryArchiveNamingPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.revealSettings != oldWidget.revealSettings) {
+      _isExpanded = true;
+    }
     if (oldWidget.templateController.text != widget.templateController.text) {
       _checkCustomBuilderStatus();
     }

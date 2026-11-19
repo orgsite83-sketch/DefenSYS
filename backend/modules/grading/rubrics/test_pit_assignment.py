@@ -61,6 +61,18 @@ class PitRubricAssignmentTests(APITestCase):
         self.assertEqual(log.new_values['pit_event_id'], self.event.pk)
         self.assertTrue(SystemAuditLog.objects.filter(action='pit_event.update').exists())
 
+    def test_workspace_slots_follow_event_policy_and_exact_assignments(self):
+        rubric, _ = self.create(evaluation_type='panel')
+        response = self.client.get('/api/grading/rubrics/')
+        event = next(row for row in response.data['pit_events'] if row['id'] == self.event.pk)
+        self.assertEqual(event['rubric_slots']['panel']['rubric_id'], rubric.pk)
+        self.assertTrue(event['rubric_slots']['peer']['required'])
+        self.event.peer_grading_enabled = False
+        self.event.save(update_fields=['peer_grading_enabled'])
+        response = self.client.get('/api/grading/rubrics/')
+        event = next(row for row in response.data['pit_events'] if row['id'] == self.event.pk)
+        self.assertFalse(event['rubric_slots']['peer']['required'])
+
     def test_update_assigns_existing_template_and_preserves_other_slot(self):
         peer, _ = self.create(evaluation_type='peer')
         panel, _ = self.create(pit_event_id=None)

@@ -25,6 +25,8 @@ import 'package:flutter/services.dart';
 
 import 'package:defensys/screens/web/admin/widgets/template_blueprint_models.dart';
 import 'official_class_list_parser.dart';
+import '../../../../../navigation/admin_attention_context.dart';
+import '../../../../../widgets/academic/admin_attention_students.dart';
 
 enum StudentHubMode { freshIntake, semesterRollover }
 
@@ -49,6 +51,8 @@ class StudentBatchEnrollmentHubView extends ConsumerStatefulWidget {
     required this.academicState,
     required this.onBack,
     this.initialMode = StudentHubMode.freshIntake,
+    this.unifiedEnrollment = false,
+    this.attentionContext,
     required this.onDownloadSample,
     required this.onConfirmFreshImport,
     this.onPickFreshFiles,
@@ -59,6 +63,8 @@ class StudentBatchEnrollmentHubView extends ConsumerStatefulWidget {
   final AcademicPeriodState academicState;
   final VoidCallback onBack;
   final StudentHubMode initialMode;
+  final bool unifiedEnrollment;
+  final AdminAttentionContext? attentionContext;
   final VoidCallback? onDownloadSample;
   // Platform picker overrides keep file actions testable without changing staging.
   final Future<List<PickedTabularFile>> Function()? onPickFreshFiles;
@@ -117,22 +123,54 @@ class _StudentBatchEnrollmentHubViewState
 
   String _freshSection(Map<String, dynamic> student) =>
       ((student['_section_resolution'] as Map?)?['section'] ??
-              student['section'] ?? '')
-          .toString().trim();
+              student['section'] ??
+              '')
+          .toString()
+          .trim();
 
-  Future<void> _resolveFreshSections(List<Map<String, dynamic>> students) async {
-    final active = ref.read(academicPeriodProvider).activeSemester ??
+  Map<String, dynamic>? _activeEnrollmentSemester({bool watch = false}) {
+    final periods = watch
+        ? ref.watch(academicPeriodProvider)
+        : ref.read(academicPeriodProvider);
+    // Once periods have loaded, an absent active semester is authoritative.
+    if (widget.unifiedEnrollment && periods.schoolYears.isNotEmpty) {
+      return periods.activeSemester;
+    }
+    final records = watch
+        ? ref.watch(studentAcademicRecordsProvider)
+        : ref.read(studentAcademicRecordsProvider);
+    return periods.activeSemester ??
         widget.academicState.activeSemester ??
-        ref.read(studentAcademicRecordsProvider).activeSemester;
+        records.activeSemester;
+  }
+
+  Future<void> _resolveFreshSections(
+    List<Map<String, dynamic>> students,
+  ) async {
+    final active = _activeEnrollmentSemester();
     if (active == null || students.isEmpty) return;
-    final resolutions = await ref.read(userManagementProvider.notifier)
-        .previewEnrollmentSections(students, active['id'] as int);
+    final resolutions = await ref
+        .read(userManagementProvider.notifier)
+        .previewEnrollmentSections(
+          students,
+          active['id'] as int,
+          unifiedEnrollment: widget.unifiedEnrollment,
+        );
+    final current = _activeEnrollmentSemester();
+    if (widget.unifiedEnrollment && current?['id'] != active['id']) {
+      throw StateError(
+        'The active semester changed. Review the enrollment preview again.',
+      );
+    }
     final byId = {
       for (final row in resolutions)
         (row['id_number'] ?? '').toString().trim(): row,
     };
     for (var i = 0; i < students.length; i++) {
       final student = students[i];
+      if (widget.unifiedEnrollment) {
+        student['_enrollment_semester_id'] = active['id'];
+      }
       final trimmedId = (student['id_number'] ?? '').toString().trim();
       if (i < resolutions.length &&
           (resolutions[i]['id_number'] ?? '').toString().trim() == trimmedId) {
@@ -145,24 +183,40 @@ class _StudentBatchEnrollmentHubViewState
 
   Future<void> _editFreshSection(Map<String, dynamic> student) async {
     final controller = TextEditingController(text: _freshSection(student));
-    final section = await showDialog<String>(context: context, builder: (context) =>
-      AlertDialog(
+    final section = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
         title: const Text('Enrollment section'),
-        content: TextField(controller: controller, autofocus: true, maxLength: 80,
-          decoration: const InputDecoration(labelText: 'Official section',
-            hintText: 'BSIT-4A', helperText: 'Leave blank to use an available continuation default.')),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 80,
+          decoration: const InputDecoration(
+            labelText: 'Official section',
+            hintText: 'BSIT-4A',
+            helperText: 'Leave blank to use an available continuation default.',
+          ),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Apply')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Apply'),
+          ),
         ],
-      ));
+      ),
+    );
     // The closing route may still reference its TextField during animation.
     await Future<void>.delayed(const Duration(milliseconds: 250));
     controller.dispose();
     if (section == null || !mounted) return;
     final targetId = (student['id_number'] ?? '').toString().trim();
-    final revised = _parsedFreshStudents.map((s) => Map<String, dynamic>.from(s)).toList();
+    final revised = _parsedFreshStudents
+        .map((s) => Map<String, dynamic>.from(s))
+        .toList();
     for (final row in revised) {
       if ((row['id_number'] ?? '').toString().trim() == targetId) {
         row['section'] = section;
@@ -173,9 +227,13 @@ class _StudentBatchEnrollmentHubViewState
       await _resolveFreshSections(revised);
       if (!mounted) return;
       setState(() => _parsedFreshStudents = revised);
-      ref.read(studentBatchDraftProvider.notifier).saveFreshDraft(
-        stagedFiles: _stagedFreshFiles, parsedStudents: revised,
-        sectionFilter: _selectedFreshSectionFilter);
+      ref
+          .read(studentBatchDraftProvider.notifier)
+          .saveFreshDraft(
+            stagedFiles: _stagedFreshFiles,
+            parsedStudents: revised,
+            sectionFilter: _selectedFreshSectionFilter,
+          );
     } catch (e) {
       if (mounted) showErrorToast(context, 'Could not review sections: $e');
     }
@@ -185,7 +243,9 @@ class _StudentBatchEnrollmentHubViewState
     final targetId = (student['id_number'] ?? '').toString().trim();
     setState(() {
       _parsedFreshStudents.removeWhere(
-        (s) => identical(s, student) || (s['id_number'] ?? '').toString().trim() == targetId,
+        (s) =>
+            identical(s, student) ||
+            (s['id_number'] ?? '').toString().trim() == targetId,
       );
       if (_parsedFreshStudents.isEmpty) {
         _stagedFreshFiles.clear();
@@ -195,17 +255,21 @@ class _StudentBatchEnrollmentHubViewState
     if (_parsedFreshStudents.isEmpty) {
       ref.read(studentBatchDraftProvider.notifier).clearFreshDraft();
     } else {
-      ref.read(studentBatchDraftProvider.notifier).saveFreshDraft(
-        stagedFiles: _stagedFreshFiles,
-        parsedStudents: _parsedFreshStudents,
-        sectionFilter: _selectedFreshSectionFilter,
-      );
+      ref
+          .read(studentBatchDraftProvider.notifier)
+          .saveFreshDraft(
+            stagedFiles: _stagedFreshFiles,
+            parsedStudents: _parsedFreshStudents,
+            sectionFilter: _selectedFreshSectionFilter,
+          );
     }
   }
 
   void _removeAllBlockedFreshRows([Map<String, dynamic>? activeSem]) {
     setState(() {
-      _parsedFreshStudents.removeWhere((s) => _isFreshRowBlocking(s, activeSem));
+      _parsedFreshStudents.removeWhere(
+        (s) => _isFreshRowBlocking(s, activeSem),
+      );
       if (_parsedFreshStudents.isEmpty) {
         _stagedFreshFiles.clear();
         _selectedFreshSectionFilter = 'ALL';
@@ -214,18 +278,22 @@ class _StudentBatchEnrollmentHubViewState
     if (_parsedFreshStudents.isEmpty) {
       ref.read(studentBatchDraftProvider.notifier).clearFreshDraft();
     } else {
-      ref.read(studentBatchDraftProvider.notifier).saveFreshDraft(
-        stagedFiles: _stagedFreshFiles,
-        parsedStudents: _parsedFreshStudents,
-        sectionFilter: _selectedFreshSectionFilter,
-      );
+      ref
+          .read(studentBatchDraftProvider.notifier)
+          .saveFreshDraft(
+            stagedFiles: _stagedFreshFiles,
+            parsedStudents: _parsedFreshStudents,
+            sectionFilter: _selectedFreshSectionFilter,
+          );
     }
   }
 
   @override
   void initState() {
     super.initState();
-    _currentMode = widget.initialMode;
+    _currentMode = widget.unifiedEnrollment
+        ? StudentHubMode.freshIntake
+        : widget.initialMode;
 
     _dropSubscription = setupDropzoneListener(
       _handleFilesDropped,
@@ -252,10 +320,18 @@ class _StudentBatchEnrollmentHubViewState
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.unifiedEnrollment &&
+          !draft.hasFreshDraft &&
+          draft.rolloverStagedFiles.isNotEmpty) {
+        // Reparse official files; old rollover selections never authorize enrollment.
+        _processFreshFiles(draft.rolloverStagedFiles);
+      }
       if (_parsedFreshStudents.isNotEmpty) {
-        _resolveFreshSections(_parsedFreshStudents).then((_) {
-          if (mounted) setState(() {});
-        }).catchError((_) {});
+        _resolveFreshSections(_parsedFreshStudents)
+            .then((_) {
+              if (mounted) setState(() {});
+            })
+            .catchError((_) {});
       }
       if (_currentMode == StudentHubMode.semesterRollover) {
         if (_stagedRolloverFiles.isNotEmpty) {
@@ -282,7 +358,9 @@ class _StudentBatchEnrollmentHubViewState
         final merged = List<PickedTabularFile>.from(_stagedFreshFiles);
         for (final file in files) {
           final exists = merged.any(
-            (existing) => existing.name == file.name && existing.bytes.length == file.bytes.length,
+            (existing) =>
+                existing.name == file.name &&
+                existing.bytes.length == file.bytes.length,
           );
           if (!exists) {
             merged.add(file);
@@ -293,7 +371,9 @@ class _StudentBatchEnrollmentHubViewState
         final merged = List<PickedTabularFile>.from(_stagedRolloverFiles);
         for (final file in files) {
           final exists = merged.any(
-            (existing) => existing.name == file.name && existing.bytes.length == file.bytes.length,
+            (existing) =>
+                existing.name == file.name &&
+                existing.bytes.length == file.bytes.length,
           );
           if (!exists) {
             merged.add(file);
@@ -308,16 +388,63 @@ class _StudentBatchEnrollmentHubViewState
     }
   }
 
+  Future<void> _reviewAttentionStudents(List<Map<String, dynamic>> rows) async {
+    final active = _activeEnrollmentSemester();
+    if (active?['id'] != widget.attentionContext?.semesterId) {
+      throw StateError('The active semester changed.');
+    }
+    final existingRows = {
+      for (final row in _parsedFreshStudents) row['id_number']?.toString(): row,
+    };
+    for (final row in rows) {
+      final previous = existingRows[row['username']?.toString()];
+      if (previous != null && previous['year_level'] != row['year_level']) {
+        throw StateError(
+          'A student in this task already has a different year in your draft. Review the draft before adding this page.',
+        );
+      }
+    }
+    final existing = existingRows.keys.toSet();
+    final additions = [
+      for (final row in rows)
+        if (!existing.contains(row['username']?.toString()))
+          {
+            'id_number': row['username'],
+            'first_name': row['first_name'],
+            'last_name': row['last_name'],
+            'year_level': row['year_level'],
+            'section': row['section'],
+            'role': 'student',
+          },
+    ];
+    await _resolveFreshSections(additions);
+    if (!mounted || _activeEnrollmentSemester()?['id'] != active?['id']) return;
+    setState(() {
+      _parsedFreshStudents = [..._parsedFreshStudents, ...additions];
+      _selectedFreshYearFilter = widget.attentionContext!.year;
+      _selectedFreshSectionFilter = 'ALL';
+      _selectedFreshStatusFilter = 'ALL';
+      _freshPage = 0;
+    });
+    ref
+        .read(studentBatchDraftProvider.notifier)
+        .saveFreshDraft(
+          stagedFiles: _stagedFreshFiles,
+          parsedStudents: _parsedFreshStudents,
+          sectionFilter: _selectedFreshSectionFilter,
+        );
+  }
+
   Future<void> _loadInitialRolloverData() async {
     await ref
         .read(studentAcademicRecordsProvider.notifier)
         .fetchRolloverPreview(students: []);
   }
 
-  Future<void> _reprocessStagedRolloverDraft(List<PickedTabularFile> files) async {
-    final activeSem = ref.read(academicPeriodProvider).activeSemester ??
-        widget.academicState.activeSemester ??
-        ref.read(studentAcademicRecordsProvider).activeSemester;
+  Future<void> _reprocessStagedRolloverDraft(
+    List<PickedTabularFile> files,
+  ) async {
+    final activeSem = _activeEnrollmentSemester();
     final allStudents = <Map<String, dynamic>>[];
     final byStudentId = <String, Map<String, dynamic>>{};
     for (final file in files) {
@@ -328,7 +455,10 @@ class _StudentBatchEnrollmentHubViewState
         continue;
       }
       for (final s in official.students) {
-        final idKey = (s['id_number'] ?? s['student_number'] ?? '').toString().trim().toLowerCase();
+        final idKey = (s['id_number'] ?? s['student_number'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
         if (idKey.isNotEmpty && byStudentId.containsKey(idKey)) continue;
         if (idKey.isNotEmpty) byStudentId[idKey] = s;
         allStudents.add(s);
@@ -345,10 +475,33 @@ class _StudentBatchEnrollmentHubViewState
 
   @override
   Widget build(BuildContext context) {
-    final activeSem =
-        ref.watch(academicPeriodProvider).activeSemester ??
-        widget.academicState.activeSemester ??
-        ref.watch(studentAcademicRecordsProvider).activeSemester;
+    final task = widget.attentionContext;
+    final activeTaskSemester = _activeEnrollmentSemester(watch: true);
+    final periods = ref.watch(academicPeriodProvider);
+    if (task != null &&
+        (!task.valid ||
+            (activeTaskSemester != null &&
+                activeTaskSemester['id'] != task.semesterId) ||
+            (periods.schoolYears.isNotEmpty &&
+                periods.activeSemester == null))) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DefensysShadcnScope(
+              child: ShadButton.outline(
+                onPressed: widget.onBack,
+                child: const Text('Back to Students'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            AdminAttentionStudents(context: task),
+          ],
+        ),
+      );
+    }
+    final activeSem = _activeEnrollmentSemester(watch: true);
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
       child: Column(
@@ -382,6 +535,14 @@ class _StudentBatchEnrollmentHubViewState
             },
           ),
           const SizedBox(height: 20),
+
+          if (widget.attentionContext != null) ...[
+            AdminAttentionStudents(
+              context: widget.attentionContext!,
+              onReview: _reviewAttentionStudents,
+            ),
+            const SizedBox(height: 20),
+          ],
 
           // Active drag-and-drop indicator banner
           if (_isDraggingFile) ...[
@@ -446,57 +607,58 @@ class _StudentBatchEnrollmentHubViewState
             ),
           ],
 
-          // Top Mode Switcher (Segmented Control)
-          LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth < 420) {
-                return DefensysShadcnScope(
-                  maroonActions: true,
-                  neutralActionText: true,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final mode in StudentHubMode.values)
-                        Semantics(
-                          selected: _currentMode == mode,
-                          child: ShadButton.raw(
-                            variant: _currentMode == mode
-                                ? ShadButtonVariant.primary
-                                : ShadButtonVariant.outline,
-                            onPressed: () => _changeMode(mode),
-                            child: Text(
-                              mode == StudentHubMode.freshIntake
-                                  ? 'Import class lists'
-                                  : 'Semester rollover',
+          // Legacy callers retain their modes; admin enrollment is one flow.
+          if (!widget.unifiedEnrollment)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 420) {
+                  return DefensysShadcnScope(
+                    maroonActions: true,
+                    neutralActionText: true,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final mode in StudentHubMode.values)
+                          Semantics(
+                            selected: _currentMode == mode,
+                            child: ShadButton.raw(
+                              variant: _currentMode == mode
+                                  ? ShadButtonVariant.primary
+                                  : ShadButtonVariant.outline,
+                              onPressed: () => _changeMode(mode),
+                              child: Text(
+                                mode == StudentHubMode.freshIntake
+                                    ? 'Import class lists'
+                                    : 'Semester rollover',
+                              ),
                             ),
                           ),
-                        ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  );
+                }
+                return DefensysSegmentedControl<StudentHubMode>(
+                  value: _currentMode,
+                  height: 50,
+                  items: const [
+                    DefensysSegmentItem(
+                      value: StudentHubMode.freshIntake,
+                      label: 'Import class lists',
+                      icon: Icons.file_upload_outlined,
+                    ),
+                    DefensysSegmentItem(
+                      value: StudentHubMode.semesterRollover,
+                      label: 'Semester rollover',
+                      icon: Icons.rotate_right_rounded,
+                    ),
+                  ],
+                  onChanged: _changeMode,
                 );
-              }
-              return DefensysSegmentedControl<StudentHubMode>(
-                value: _currentMode,
-                height: 50,
-                items: const [
-                  DefensysSegmentItem(
-                    value: StudentHubMode.freshIntake,
-                    label: 'Import class lists',
-                    icon: Icons.file_upload_outlined,
-                  ),
-                  DefensysSegmentItem(
-                    value: StudentHubMode.semesterRollover,
-                    label: 'Semester rollover',
-                    icon: Icons.rotate_right_rounded,
-                  ),
-                ],
-                onChanged: _changeMode,
-              );
-            },
-          ),
+              },
+            ),
 
-          const SizedBox(height: 24),
+          if (!widget.unifiedEnrollment) const SizedBox(height: 24),
 
           if (activeSem == null) ...[
             DefensysActionBanner(
@@ -560,10 +722,7 @@ class _StudentBatchEnrollmentHubViewState
   // Mode 1: Fresh Student Intake View (Zero-Fillup 2-Column + Preflight)
   // -------------------------------------------------------------
   Widget _buildFreshIntakeView() {
-    final activeSem =
-        ref.watch(academicPeriodProvider).activeSemester ??
-        widget.academicState.activeSemester ??
-        ref.watch(studentAcademicRecordsProvider).activeSemester;
+    final activeSem = _activeEnrollmentSemester(watch: true);
     final activeSemLabel =
         activeSem?['display_name'] ??
         '${activeSem?['school_year'] ?? 'Current Year'} - ${activeSem?['label'] ?? 'Active Term'}';
@@ -647,10 +806,18 @@ class _StudentBatchEnrollmentHubViewState
 
             return Dialog(
               backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 32,
+              ),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 880, maxHeight: 740),
+                constraints: const BoxConstraints(
+                  maxWidth: 880,
+                  maxHeight: 740,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -666,7 +833,11 @@ class _StudentBatchEnrollmentHubViewState
                               color: _maroon.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Icon(Icons.grid_on_rounded, color: _maroon, size: 20),
+                            child: const Icon(
+                              Icons.grid_on_rounded,
+                              color: _maroon,
+                              size: 20,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -686,14 +857,21 @@ class _StudentBatchEnrollmentHubViewState
                                 const SizedBox(height: 2),
                                 Text(
                                   'Target Term: $activeSemLabel • Interactive guide for supported intake layouts',
-                                  style: const TextStyle(fontSize: 12, color: _muted),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: _muted,
+                                  ),
                                 ),
                               ],
                             ),
                           ),
                           IconButton(
                             onPressed: () => Navigator.of(ctx).pop(),
-                            icon: const Icon(Icons.close_rounded, size: 20, color: _muted),
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              size: 20,
+                              color: _muted,
+                            ),
                             splashRadius: 18,
                           ),
                         ],
@@ -703,24 +881,39 @@ class _StudentBatchEnrollmentHubViewState
 
                     // Interactive Tab Switcher
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
                       color: const Color(0xFFF8FAFC),
                       child: Row(
                         children: [
-                          for (int i = 0; i < studentIntakeBlueprints.length; i++) ...[
+                          for (
+                            int i = 0;
+                            i < studentIntakeBlueprints.length;
+                            i++
+                          ) ...[
                             if (i > 0) const SizedBox(width: 10),
                             Expanded(
                               child: InkWell(
-                                onTap: () => setModalState(() => selectedTab = i),
+                                onTap: () =>
+                                    setModalState(() => selectedTab = i),
                                 borderRadius: BorderRadius.circular(8),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 180),
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: selectedTab == i ? Colors.white : Colors.transparent,
+                                    color: selectedTab == i
+                                        ? Colors.white
+                                        : Colors.transparent,
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                      color: selectedTab == i ? _maroon : const Color(0xFFCBD5E1),
+                                      color: selectedTab == i
+                                          ? _maroon
+                                          : const Color(0xFFCBD5E1),
                                       width: selectedTab == i ? 1.5 : 1,
                                     ),
                                     boxShadow: selectedTab == i
@@ -739,7 +932,9 @@ class _StudentBatchEnrollmentHubViewState
                                       Icon(
                                         studentIntakeBlueprints[i].icon,
                                         size: 16,
-                                        color: selectedTab == i ? _maroon : const Color(0xFF64748B),
+                                        color: selectedTab == i
+                                            ? _maroon
+                                            : const Color(0xFF64748B),
                                       ),
                                       const SizedBox(width: 8),
                                       Flexible(
@@ -749,24 +944,35 @@ class _StudentBatchEnrollmentHubViewState
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontSize: 12.5,
-                                            fontWeight: selectedTab == i ? FontWeight.w800 : FontWeight.w600,
-                                            color: selectedTab == i ? _ink : const Color(0xFF475569),
+                                            fontWeight: selectedTab == i
+                                                ? FontWeight.w800
+                                                : FontWeight.w600,
+                                            color: selectedTab == i
+                                                ? _ink
+                                                : const Color(0xFF475569),
                                           ),
                                         ),
                                       ),
                                       const SizedBox(width: 6),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: studentIntakeBlueprints[i].badgeBg,
-                                          borderRadius: BorderRadius.circular(4),
+                                          color: studentIntakeBlueprints[i]
+                                              .badgeBg,
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
                                         ),
                                         child: Text(
                                           studentIntakeBlueprints[i].badgeText,
                                           style: TextStyle(
                                             fontSize: 9.5,
                                             fontWeight: FontWeight.w700,
-                                            color: studentIntakeBlueprints[i].badgeFg,
+                                            color: studentIntakeBlueprints[i]
+                                                .badgeFg,
                                           ),
                                         ),
                                       ),
@@ -790,15 +996,24 @@ class _StudentBatchEnrollmentHubViewState
                           children: [
                             // Compact, Minimal Guidance Bar
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF8FAFC),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF64748B)),
+                                  const Icon(
+                                    Icons.info_outline_rounded,
+                                    size: 16,
+                                    color: Color(0xFF64748B),
+                                  ),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
@@ -813,11 +1028,16 @@ class _StudentBatchEnrollmentHubViewState
                                     ),
                                   ),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2.5,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                                      border: Border.all(
+                                        color: const Color(0xFFCBD5E1),
+                                      ),
                                     ),
                                     child: const Text(
                                       'Auto-Detected',
@@ -846,7 +1066,10 @@ class _StudentBatchEnrollmentHubViewState
                     const Divider(height: 1, color: _line),
                     // Modal Footer
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 14,
+                      ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -860,22 +1083,38 @@ class _StudentBatchEnrollmentHubViewState
                                     content: bp.rawCsv,
                                   );
                                   if (context.mounted) {
-                                    showSuccessToast(context, 'Sample ${bp.shortLabel} template downloaded.');
+                                    showSuccessToast(
+                                      context,
+                                      'Sample ${bp.shortLabel} template downloaded.',
+                                    );
                                   }
                                 },
-                                icon: const Icon(Icons.download_rounded, size: 15),
-                                label: Text('Download ${bp.shortLabel} Template (.csv)'),
+                                icon: const Icon(
+                                  Icons.download_rounded,
+                                  size: 15,
+                                ),
+                                label: Text(
+                                  'Download ${bp.shortLabel} Template (.csv)',
+                                ),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: _ink,
                                   side: const BorderSide(color: _line),
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
                                 ),
                               ),
                               OutlinedButton.icon(
                                 onPressed: () async {
-                                  await Clipboard.setData(ClipboardData(text: bp.rawCsv));
+                                  await Clipboard.setData(
+                                    ClipboardData(text: bp.rawCsv),
+                                  );
                                   if (context.mounted) {
-                                    showSuccessToast(context, 'Copied ${bp.shortLabel} sample CSV to clipboard!');
+                                    showSuccessToast(
+                                      context,
+                                      'Copied ${bp.shortLabel} sample CSV to clipboard!',
+                                    );
                                   }
                                 },
                                 icon: const Icon(Icons.copy_rounded, size: 14),
@@ -883,7 +1122,10 @@ class _StudentBatchEnrollmentHubViewState
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: _ink,
                                   side: const BorderSide(color: _line),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
                                 ),
                               ),
                             ],
@@ -893,7 +1135,10 @@ class _StudentBatchEnrollmentHubViewState
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _maroon,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 10,
+                              ),
                             ),
                             child: const Text('Close'),
                           ),
@@ -947,7 +1192,10 @@ class _StudentBatchEnrollmentHubViewState
               runSpacing: 6,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(5),
@@ -956,7 +1204,11 @@ class _StudentBatchEnrollmentHubViewState
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.insert_drive_file_outlined, size: 12, color: Color(0xFF475569)),
+                      const Icon(
+                        Icons.insert_drive_file_outlined,
+                        size: 12,
+                        color: Color(0xFF475569),
+                      ),
                       const SizedBox(width: 5),
                       Text(
                         bp.filename,
@@ -1044,7 +1296,11 @@ class _StudentBatchEnrollmentHubViewState
                 children: [
                   _buildGutterCell('10', isHeader: true),
                   _buildColumnHeaderCell('#', flex: 1),
-                  _buildColumnHeaderCell('Student No', flex: 3, isRequired: true),
+                  _buildColumnHeaderCell(
+                    'Student No',
+                    flex: 3,
+                    isRequired: true,
+                  ),
                   _buildColumnHeaderCell('Name', flex: 4, isRequired: true),
                   _buildColumnHeaderCell('Program', flex: 2),
                   _buildColumnHeaderCell('Major', flex: 2),
@@ -1161,7 +1417,9 @@ class _StudentBatchEnrollmentHubViewState
               keyName: 'Subject Code',
               valueText: isRollover ? 'CAP402' : 'IT111',
               secondaryKey: 'Subject Title',
-              secondaryValue: isRollover ? 'Capstone Project 2' : 'Introduction to Computing',
+              secondaryValue: isRollover
+                  ? 'Capstone Project 2'
+                  : 'Introduction to Computing',
               isRequired: false,
             ),
             const Divider(height: 1, color: Color(0xFFE2E8F0)),
@@ -1181,8 +1439,12 @@ class _StudentBatchEnrollmentHubViewState
             _buildOfficialHeaderRow(
               rowNumber: '9',
               keyName: isRollover ? 'Adviser / Faculty' : 'Instructor',
-              valueText: isRollover ? 'Prof. Alex Santos' : 'Prof. Maria Santos',
-              badgeText: isRollover ? 'Optional for Capstone' : 'Auto-Detected Instructor',
+              valueText: isRollover
+                  ? 'Prof. Alex Santos'
+                  : 'Prof. Maria Santos',
+              badgeText: isRollover
+                  ? 'Optional for Capstone'
+                  : 'Auto-Detected Instructor',
               badgeBg: const Color(0xFFF1F5F9),
               badgeFg: const Color(0xFF334155),
               isRequired: !isRollover,
@@ -1229,8 +1491,16 @@ class _StudentBatchEnrollmentHubViewState
                 children: [
                   _buildGutterCell('14', isHeader: true),
                   _buildColumnHeaderCell('#', flex: 1),
-                  _buildColumnHeaderCell('Student Number', flex: 3, isRequired: true),
-                  _buildColumnHeaderCell('Full Name', flex: 4, isRequired: true),
+                  _buildColumnHeaderCell(
+                    'Student Number',
+                    flex: 3,
+                    isRequired: true,
+                  ),
+                  _buildColumnHeaderCell(
+                    'Full Name',
+                    flex: 4,
+                    isRequired: true,
+                  ),
                   _buildColumnHeaderCell('Program', flex: 2),
                   _buildColumnHeaderCell('Gender', flex: 2),
                   _buildColumnHeaderCell('Level', flex: 2),
@@ -1300,7 +1570,9 @@ class _StudentBatchEnrollmentHubViewState
                     valueText.isEmpty ? keyName : '$keyName: ',
                     style: TextStyle(
                       fontSize: 10.5,
-                      fontWeight: isRequired ? FontWeight.w800 : FontWeight.w600,
+                      fontWeight: isRequired
+                          ? FontWeight.w800
+                          : FontWeight.w600,
                       color: isRequired ? _ink : const Color(0xFF64748B),
                     ),
                   ),
@@ -1309,19 +1581,34 @@ class _StudentBatchEnrollmentHubViewState
                       valueText,
                       style: TextStyle(
                         fontSize: 10.5,
-                        fontWeight: isRequired ? FontWeight.w800 : FontWeight.w600,
-                        color: isRequired ? const Color(0xFF1E293B) : const Color(0xFF475569),
+                        fontWeight: isRequired
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: isRequired
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFF475569),
                       ),
                     ),
                   if (secondaryKey != null && secondaryValue != null) ...[
-                    const Text('   |   ', style: TextStyle(fontSize: 10, color: Color(0xFFCBD5E1))),
+                    const Text(
+                      '   |   ',
+                      style: TextStyle(fontSize: 10, color: Color(0xFFCBD5E1)),
+                    ),
                     Text(
                       '$secondaryKey: ',
-                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
+                      ),
                     ),
                     Text(
                       secondaryValue,
-                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF475569),
+                      ),
                     ),
                   ],
                 ],
@@ -1338,7 +1625,11 @@ class _StudentBatchEnrollmentHubViewState
     );
   }
 
-  Widget _buildColumnHeaderCell(String title, {required int flex, bool isRequired = false}) {
+  Widget _buildColumnHeaderCell(
+    String title, {
+    required int flex,
+    bool isRequired = false,
+  }) {
     return Expanded(
       flex: flex,
       child: Padding(
@@ -1362,7 +1653,11 @@ class _StudentBatchEnrollmentHubViewState
               const SizedBox(width: 2),
               const Text(
                 '*',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: _maroon),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: _maroon,
+                ),
               ),
             ],
           ],
@@ -1388,14 +1683,96 @@ class _StudentBatchEnrollmentHubViewState
       child: Row(
         children: [
           _buildGutterCell(rowNumber),
-          Expanded(flex: 1, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(index, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
-          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(id, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
-          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(name, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(prog, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(gen, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(level, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
-          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(email, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: _muted)))),
-          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(contact, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(
+            flex: 1,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                index,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                id,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: _ink,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: _ink,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                prog,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                gen,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                level,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                email,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 10, color: _muted),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                contact,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1419,15 +1796,114 @@ class _StudentBatchEnrollmentHubViewState
       child: Row(
         children: [
           _buildGutterCell(rowNumber),
-          Expanded(flex: 1, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(index, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
-          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(id, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
-          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(name, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(prog, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(major, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(level, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF334155))))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(gen, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
-          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF047857), fontWeight: FontWeight.w600)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(date, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(
+            flex: 1,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                index,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                id,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: _ink,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: _ink,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                prog,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                major,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                level,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF334155),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                gen,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                status,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: Color(0xFF047857),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+              child: Text(
+                date,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1500,11 +1976,7 @@ class _StudentBatchEnrollmentHubViewState
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 9,
-          fontWeight: FontWeight.w700,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: fg),
       ),
     );
   }
@@ -1709,7 +2181,10 @@ class _StudentBatchEnrollmentHubViewState
     );
   }
 
-  String? _validateParsedFileTerm(Map<String, dynamic> metadata, Map<String, dynamic>? activeSem) {
+  String? _validateParsedFileTerm(
+    Map<String, dynamic> metadata,
+    Map<String, dynamic>? activeSem,
+  ) {
     if (activeSem == null) return null;
     final targetSy = (activeSem['school_year'] ?? '').toString().trim();
     final targetSem = (activeSem['label'] ?? '').toString().trim();
@@ -1717,30 +2192,53 @@ class _StudentBatchEnrollmentHubViewState
 
     final fileSy = (metadata['school_year'] ?? '').toString().trim();
     final fileSem = (metadata['semester'] ?? '').toString().trim();
-    if (fileSy.isEmpty && fileSem.isEmpty) return null; // Custom CSV without preamble is allowed
+    if (fileSy.isEmpty && fileSem.isEmpty) {
+      return null; // Custom CSV without preamble is allowed
+    }
 
-    final syMismatch = fileSy.isNotEmpty && targetSy.isNotEmpty && fileSy != targetSy;
-    final semMismatch = fileSem.isNotEmpty && targetSem.isNotEmpty && fileSem.toLowerCase() != targetSem.toLowerCase();
+    final syMismatch =
+        fileSy.isNotEmpty && targetSy.isNotEmpty && fileSy != targetSy;
+    final semMismatch =
+        fileSem.isNotEmpty &&
+        targetSem.isNotEmpty &&
+        fileSem.toLowerCase() != targetSem.toLowerCase();
 
     if (syMismatch || semMismatch) {
-      final fileTerm = [if (fileSem.isNotEmpty) fileSem, if (fileSy.isNotEmpty) 'A.Y. $fileSy'].join(', ');
-      final targetTerm = [if (targetSem.isNotEmpty) targetSem, if (targetSy.isNotEmpty) 'A.Y. $targetSy'].join(', ');
+      final fileTerm = [
+        if (fileSem.isNotEmpty) fileSem,
+        if (fileSy.isNotEmpty) 'A.Y. $fileSy',
+      ].join(', ');
+      final targetTerm = [
+        if (targetSem.isNotEmpty) targetSem,
+        if (targetSy.isNotEmpty) 'A.Y. $targetSy',
+      ].join(', ');
       return 'Academic term mismatch: Staged file is for $fileTerm, but the active semester is $targetTerm.';
     }
     return null;
   }
 
-  String? _freshRowTermMismatchError(Map<String, dynamic> s, [Map<String, dynamic>? activeSem]) {
+  String? _freshRowTermMismatchError(
+    Map<String, dynamic> s, [
+    Map<String, dynamic>? activeSem,
+  ]) {
     final meta = s['_fileMetadata'];
     if (meta is Map) {
-      return _validateParsedFileTerm(Map<String, dynamic>.from(meta), activeSem);
+      return _validateParsedFileTerm(
+        Map<String, dynamic>.from(meta),
+        activeSem,
+      );
     }
     return null;
   }
 
-  bool _isFreshRowBlocking(Map<String, dynamic> s, [Map<String, dynamic>? activeSem]) {
+  bool _isFreshRowBlocking(
+    Map<String, dynamic> s, [
+    Map<String, dynamic>? activeSem,
+  ]) {
     if (_freshRowTermMismatchError(s, activeSem) != null) return true;
-    if ((s['_client_validation_error'] ?? '').toString().trim().isNotEmpty) return true;
+    if ((s['_client_validation_error'] ?? '').toString().trim().isNotEmpty) {
+      return true;
+    }
     final res = s['_section_resolution'] as Map?;
     if (res == null) return false;
     if (res['blocking'] == true) return true;
@@ -2237,6 +2735,10 @@ class _StudentBatchEnrollmentHubViewState
       );
     }
     final attentionCount = statusCounts[_FreshReviewStatus.needsAttention] ?? 0;
+    final alreadyCount = widget.unifiedEnrollment
+        ? statusCounts[_FreshReviewStatus.alreadyEnrolled] ?? 0
+        : 0;
+    final applyCount = totalStudents - alreadyCount;
     final totalPages = (filtered.length / _freshRowsPerPage).ceil();
     _freshPage = _freshPage.clamp(0, totalPages > 0 ? totalPages - 1 : 0);
     final pageRows = filtered
@@ -2291,7 +2793,7 @@ class _StudentBatchEnrollmentHubViewState
                       ),
                     ),
                     Text(
-                      '${totalStudents - attentionCount} ready',
+                      '${totalStudents - attentionCount - alreadyCount} ready',
                       style: TextStyle(
                         fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 12,
@@ -2310,6 +2812,25 @@ class _StudentBatchEnrollmentHubViewState
                             : secondary,
                       ),
                     ),
+                    if (widget.unifiedEnrollment && totalStudents > 0) ...[
+                      Text(
+                        '${statusCounts[_FreshReviewStatus.ready] ?? 0} new · ${statusCounts[_FreshReviewStatus.existingStudent] ?? 0} existing',
+                        style: TextStyle(
+                          fontFamily: DefensysTokens.fontFamilyInter,
+                          fontSize: 12,
+                          color: secondary,
+                        ),
+                      ),
+                      if (alreadyCount > 0)
+                        Text(
+                          '$alreadyCount already enrolled',
+                          style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                            fontSize: 12,
+                            color: secondary,
+                          ),
+                        ),
+                    ],
                     if (blockingCount > 0 && blockingCount < totalStudents)
                       ShadButton.ghost(
                         size: ShadButtonSize.sm,
@@ -2437,12 +2958,12 @@ class _StudentBatchEnrollmentHubViewState
                 ShadButton(
                   key: const ValueKey('confirm-student-enrollment'),
                   enabled:
-                      totalStudents > 0 &&
+                      applyCount > 0 &&
                       !_freshControlsBusy &&
                       activeSem != null &&
                       blockingCount == 0,
                   onPressed:
-                      totalStudents == 0 ||
+                      applyCount == 0 ||
                           _freshControlsBusy ||
                           activeSem == null ||
                           blockingCount > 0
@@ -2465,7 +2986,9 @@ class _StudentBatchEnrollmentHubViewState
                         ? 'Resolve $blockingCount ${blockingCount == 1 ? 'issue' : 'issues'}'
                         : _freshImportPending || widget.userState.isSaving
                         ? 'Importing $totalStudents ${totalStudents == 1 ? 'student' : 'students'}...'
-                        : 'Confirm enrollment ($totalStudents)',
+                        : totalStudents > 0 && applyCount == 0
+                        ? 'Already enrolled'
+                        : 'Confirm enrollment ($applyCount)',
                   ),
                 ),
               ],
@@ -2633,10 +3156,7 @@ class _StudentBatchEnrollmentHubViewState
     if (!mounted || _freshControlsBusy) return;
     setState(() => _freshFilesPending = true);
     try {
-      final activeSem =
-          ref.read(academicPeriodProvider).activeSemester ??
-          widget.academicState.activeSemester ??
-          ref.read(studentAcademicRecordsProvider).activeSemester;
+      final activeSem = _activeEnrollmentSemester();
       final result = await showFileImportStagingModal(
         context,
         initialFiles: List<PickedTabularFile>.from(initialFiles),
@@ -2665,10 +3185,7 @@ class _StudentBatchEnrollmentHubViewState
       final prepared = await prepareTabularFiles(context, files);
       if (prepared == null || !mounted) return;
       files = prepared;
-      final activeSem =
-          ref.read(academicPeriodProvider).activeSemester ??
-          widget.academicState.activeSemester ??
-          ref.read(studentAcademicRecordsProvider).activeSemester;
+      final activeSem = _activeEnrollmentSemester();
 
       final allStudents = <Map<String, dynamic>>[];
       final validFiles = <PickedTabularFile>[];
@@ -2678,9 +3195,7 @@ class _StudentBatchEnrollmentHubViewState
       for (final file in files) {
         final official = file.isXlsx
             ? parseOfficialClassListXlsx(file.bytes)
-            : parseOfficialClassListCsv(
-                file.decodedText,
-              );
+            : parseOfficialClassListCsv(file.decodedText);
 
         final termError = _validateParsedFileTerm(official.metadata, activeSem);
         if (termError != null) {
@@ -2717,11 +3232,21 @@ class _StudentBatchEnrollmentHubViewState
                   .toString()
                   .trim()
                   .toLowerCase();
-              if (existingYr == newYr && existingSec == newSec) {
+              String nameKey(Map<String, dynamic> row) =>
+                  '${row['first_name'] ?? ''} ${row['last_name'] ?? ''}'
+                      .replaceAll(RegExp(r'\s+'), ' ')
+                      .trim()
+                      .toLowerCase();
+              final nameConflict =
+                  widget.unifiedEnrollment && nameKey(existing) != nameKey(s);
+              if (existingYr == newYr &&
+                  existingSec == newSec &&
+                  !nameConflict) {
                 continue; // Identical duplicate row deduplicated
               } else {
-                existing['_client_validation_error'] =
-                    'Conflicting year level or section across staged files.';
+                existing['_client_validation_error'] = nameConflict
+                    ? 'Conflicting names for the same student ID across staged files.'
+                    : 'Conflicting year level or section across staged files.';
                 continue;
               }
             }
@@ -2789,9 +3314,7 @@ class _StudentBatchEnrollmentHubViewState
         widget.userState.isSaving) {
       return;
     }
-    final activeSem = ref.read(academicPeriodProvider).activeSemester ??
-        widget.academicState.activeSemester ??
-        ref.read(studentAcademicRecordsProvider).activeSemester;
+    final activeSem = _activeEnrollmentSemester();
     if (activeSem == null) {
       showErrorToast(
         context,
@@ -2802,36 +3325,68 @@ class _StudentBatchEnrollmentHubViewState
     final draft = ref.read(studentBatchDraftProvider.notifier);
     setState(() => _freshImportPending = true);
     try {
-      final reviewed = _parsedFreshStudents.map((s) => Map<String, dynamic>.from(s)).toList();
+      final reviewed = _parsedFreshStudents
+          .map((s) => Map<String, dynamic>.from(s))
+          .toList();
+      final termChanged =
+          widget.unifiedEnrollment &&
+          reviewed.any(
+            (s) =>
+                s['_enrollment_semester_id'] != null &&
+                s['_enrollment_semester_id'] != activeSem['id'],
+          );
       await _resolveFreshSections(reviewed);
       if (!mounted) return;
-      if (reviewed.any((s) => _isFreshRowBlocking(s, activeSem))) {
+      if (termChanged) {
         setState(() => _parsedFreshStudents = reviewed);
-        showErrorToast(context, 'Cannot import: One or more student rows have blocking validation issues.');
+        ToastService.warning(
+          context,
+          'The active semester changed. Review the updated batch before confirming enrollment.',
+        );
         return;
       }
-      List<Object> sectionSummary(List<Map<String, dynamic>> rows) => rows.map((s) => [
-        _freshSection(s), (s['_section_resolution'] as Map?)?['source'] == 'review',
-      ]).toList();
+      if (reviewed.any((s) => _isFreshRowBlocking(s, activeSem))) {
+        setState(() => _parsedFreshStudents = reviewed);
+        showErrorToast(
+          context,
+          'Cannot import: One or more student rows have blocking validation issues.',
+        );
+        return;
+      }
+      List<Object> sectionSummary(List<Map<String, dynamic>> rows) => rows
+          .map(
+            (s) => [
+              _freshSection(s),
+              (s['_section_resolution'] as Map?)?['source'] == 'review',
+            ],
+          )
+          .toList();
       final before = sectionSummary(_parsedFreshStudents);
       final after = sectionSummary(reviewed);
       if (jsonEncode(before) != jsonEncode(after)) {
         setState(() => _parsedFreshStudents = reviewed);
-        ToastService.warning(context, 'Section assignments updated. Review the preview, then confirm enrollment.');
+        ToastService.warning(
+          context,
+          'Section assignments updated. Review the preview, then confirm enrollment.',
+        );
         return;
       }
       final firstMeta = reviewed.first['_fileMetadata'] as Map?;
-      final success = await widget.onConfirmFreshImport(
-        reviewed,
-        {
-          'semester_id': activeSem['id'],
-          if (firstMeta?['school_year'] != null) 'school_year': firstMeta!['school_year'],
-          if (firstMeta?['semester'] != null) 'semester': firstMeta!['semester'],
-        },
-      );
-      if (success) draft.clearFreshDraft();
+      final success = await widget.onConfirmFreshImport(reviewed, {
+        'semester_id': activeSem['id'],
+        if (widget.unifiedEnrollment) 'unified_enrollment': true,
+        if (firstMeta?['school_year'] != null)
+          'school_year': firstMeta!['school_year'],
+        if (firstMeta?['semester'] != null) 'semester': firstMeta!['semester'],
+      });
+      if (success) {
+        draft.clearFreshDraft();
+        if (widget.unifiedEnrollment) draft.clearRolloverDraft();
+      }
     } catch (e) {
-      if (mounted) showErrorToast(context, 'Could not verify enrollment sections: $e');
+      if (mounted) {
+        showErrorToast(context, 'Could not verify enrollment sections: $e');
+      }
     } finally {
       if (mounted) setState(() => _freshImportPending = false);
     }
@@ -2842,10 +3397,12 @@ class _StudentBatchEnrollmentHubViewState
   // -------------------------------------------------------------
   Widget _buildSemesterRolloverView() {
     final state = ref.watch(studentAcademicRecordsProvider);
-    final activeSem = ref.watch(academicPeriodProvider).activeSemester ??
+    final activeSem =
+        ref.watch(academicPeriodProvider).activeSemester ??
         widget.academicState.activeSemester ??
         state.activeSemester;
-    final activeSemLabel = activeSem?['display_name'] ??
+    final activeSemLabel =
+        activeSem?['display_name'] ??
         '${activeSem?['school_year'] ?? 'Current Year'} - ${activeSem?['label'] ?? 'Active Term'}';
 
     final filtered = state.rolloverRows.where((row) {
@@ -2882,7 +3439,10 @@ class _StudentBatchEnrollmentHubViewState
       final key = rec['id'] != null
           ? rec['id'].toString()
           : rec['student_username']?.toString() ?? '';
-      final act = _rolloverActions[key] ?? row['action_default'] ?? (isNew ? 'create' : 'promote');
+      final act =
+          _rolloverActions[key] ??
+          row['action_default'] ??
+          (isNew ? 'create' : 'promote');
       if (act == 'promote') promoteCount++;
       if (act == 'retain') retainCount++;
       if (act == 'drop') dropCount++;
@@ -2914,10 +3474,7 @@ class _StudentBatchEnrollmentHubViewState
                   child: _buildRolloverRulesCard(activeSemLabel),
                 ),
                 const SizedBox(width: 20),
-                Expanded(
-                  flex: 6,
-                  child: _buildRolloverSourceCard(state),
-                ),
+                Expanded(flex: 6, child: _buildRolloverSourceCard(state)),
               ],
             );
           },
@@ -2955,7 +3512,11 @@ class _StudentBatchEnrollmentHubViewState
                     color: _maroon.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.swap_horiz_rounded, color: _maroon, size: 20),
+                  child: const Icon(
+                    Icons.swap_horiz_rounded,
+                    color: _maroon,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -3003,7 +3564,11 @@ class _StudentBatchEnrollmentHubViewState
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const Icon(Icons.trending_up_rounded, size: 14, color: Color(0xFF475569)),
+                      const Icon(
+                        Icons.trending_up_rounded,
+                        size: 14,
+                        color: Color(0xFF475569),
+                      ),
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
@@ -3017,7 +3582,10 @@ class _StudentBatchEnrollmentHubViewState
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(4),
@@ -3052,7 +3620,11 @@ class _StudentBatchEnrollmentHubViewState
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const Icon(Icons.school_outlined, size: 14, color: _maroon),
+                      const Icon(
+                        Icons.school_outlined,
+                        size: 14,
+                        color: _maroon,
+                      ),
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
@@ -3074,8 +3646,15 @@ class _StudentBatchEnrollmentHubViewState
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       _buildMilestoneTag('3rd Yr (2nd Sem)', 'Capstone 1'),
-                      const Icon(Icons.arrow_forward_rounded, size: 12, color: _muted),
-                      _buildMilestoneTag('4th Yr (1st Sem)', 'Capstone 2 (Final)'),
+                      const Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 12,
+                        color: _muted,
+                      ),
+                      _buildMilestoneTag(
+                        '4th Yr (1st Sem)',
+                        'Capstone 2 (Final)',
+                      ),
                     ],
                   ),
                 ],
@@ -3090,7 +3669,11 @@ class _StudentBatchEnrollmentHubViewState
                 Expanded(
                   child: Text(
                     'Best for continuing cohorts. Auto-advances students, detects repeaters, and manages dropouts.',
-                    style: TextStyle(fontSize: 11, color: _muted, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _muted,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ],
@@ -3113,11 +3696,17 @@ class _StudentBatchEnrollmentHubViewState
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _ink,
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                    textStyle: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 OutlinedButton.icon(
@@ -3127,11 +3716,17 @@ class _StudentBatchEnrollmentHubViewState
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _ink,
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                    textStyle: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
@@ -3201,16 +3796,16 @@ class _StudentBatchEnrollmentHubViewState
                     color: _isDraggingFile
                         ? _maroon.withValues(alpha: 0.15)
                         : (hasFiles
-                            ? const Color(0xFFDCFCE7)
-                            : _maroon.withValues(alpha: 0.08)),
+                              ? const Color(0xFFDCFCE7)
+                              : _maroon.withValues(alpha: 0.08)),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     _isDraggingFile
                         ? Icons.file_download_rounded
                         : (hasFiles
-                            ? Icons.task_alt_rounded
-                            : Icons.cloud_upload_outlined),
+                              ? Icons.task_alt_rounded
+                              : Icons.cloud_upload_outlined),
                     color: _isDraggingFile
                         ? _maroon
                         : (hasFiles ? _green : _maroon),
@@ -3226,8 +3821,8 @@ class _StudentBatchEnrollmentHubViewState
                         _isDraggingFile
                             ? 'Drop Rollover Class List Files'
                             : (hasFiles
-                                ? 'Staged Class List Source Files'
-                                : 'Cohort Source & Class List Matching'),
+                                  ? 'Staged Class List Source Files'
+                                  : 'Cohort Source & Class List Matching'),
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -3240,12 +3835,14 @@ class _StudentBatchEnrollmentHubViewState
                         _isDraggingFile
                             ? 'Release files to stage into rollover cohort review'
                             : (hasFiles
-                                ? '${_stagedRolloverFiles.length} file(s) staged • Matches active student IDs'
-                                : 'Matches active student IDs & skips non-enrolled'),
+                                  ? '${_stagedRolloverFiles.length} file(s) staged • Matches active student IDs'
+                                  : 'Matches active student IDs & skips non-enrolled'),
                         style: TextStyle(
                           fontSize: 12,
                           color: _isDraggingFile ? _maroon : _muted,
-                          fontWeight: _isDraggingFile ? FontWeight.w700 : FontWeight.normal,
+                          fontWeight: _isDraggingFile
+                              ? FontWeight.w700
+                              : FontWeight.normal,
                         ),
                       ),
                     ],
@@ -3261,11 +3858,17 @@ class _StudentBatchEnrollmentHubViewState
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _maroon,
                       side: const BorderSide(color: _maroon),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                      textStyle: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
@@ -3286,16 +3889,23 @@ class _StudentBatchEnrollmentHubViewState
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 26,
+                  horizontal: 16,
+                ),
                 decoration: BoxDecoration(
                   color: _isDraggingFile
                       ? const Color(0xFFFEF2F2)
-                      : (hasFiles ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC)),
+                      : (hasFiles
+                            ? const Color(0xFFF0FDF4)
+                            : const Color(0xFFF8FAFC)),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: _isDraggingFile
                         ? _maroon
-                        : (hasFiles ? const Color(0xFF16A34A) : const Color(0xFFCBD5E1)),
+                        : (hasFiles
+                              ? const Color(0xFF16A34A)
+                              : const Color(0xFFCBD5E1)),
                     width: _isDraggingFile ? 2.0 : (hasFiles ? 1.5 : 1),
                   ),
                   boxShadow: _isDraggingFile
@@ -3315,8 +3925,8 @@ class _StudentBatchEnrollmentHubViewState
                       _isDraggingFile
                           ? Icons.file_download_rounded
                           : (hasFiles
-                              ? Icons.inventory_2_outlined
-                              : Icons.cloud_upload_outlined),
+                                ? Icons.inventory_2_outlined
+                                : Icons.cloud_upload_outlined),
                       size: _isDraggingFile ? 36 : 30,
                       color: _isDraggingFile
                           ? _maroon
@@ -3327,8 +3937,8 @@ class _StudentBatchEnrollmentHubViewState
                       _isDraggingFile
                           ? 'Drop official class list (.csv / .xlsx) here'
                           : (hasFiles
-                              ? '${_stagedRolloverFiles.length} Class List File(s) Staged (Click or Drop to Add)'
-                              : 'Drag & drop or click to choose official class list (.csv / .xlsx)'),
+                                ? '${_stagedRolloverFiles.length} Class List File(s) Staged (Click or Drop to Add)'
+                                : 'Drag & drop or click to choose official class list (.csv / .xlsx)'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
@@ -3343,8 +3953,8 @@ class _StudentBatchEnrollmentHubViewState
                       _isDraggingFile
                           ? 'Release to automatically stage multiple class section files at once'
                           : (hasFiles
-                              ? 'Review sections, replace, or drop more class section files'
-                              : 'Supports staging multiple class section files simultaneously'),
+                                ? 'Review sections, replace, or drop more class section files'
+                                : 'Supports staging multiple class section files simultaneously'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 11.5,
@@ -3379,16 +3989,23 @@ class _StudentBatchEnrollmentHubViewState
                           _stagedRolloverFiles.clear();
                           _rolloverActions.clear();
                         });
-                        ref.read(studentBatchDraftProvider.notifier).clearRolloverDraft();
+                        ref
+                            .read(studentBatchDraftProvider.notifier)
+                            .clearRolloverDraft();
                         await ref
                             .read(studentAcademicRecordsProvider.notifier)
                             .fetchRolloverPreview(students: []);
                       },
                 icon: const Icon(Icons.refresh_rounded, size: 15),
-                label: const Text('Or load active students from previous term without file'),
+                label: const Text(
+                  'Or load active students from previous term without file',
+                ),
                 style: TextButton.styleFrom(
                   foregroundColor: _muted,
-                  textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                  textStyle: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -3480,7 +4097,10 @@ class _StudentBatchEnrollmentHubViewState
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 9,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(7),
@@ -3488,7 +4108,11 @@ class _StudentBatchEnrollmentHubViewState
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.analytics_outlined, size: 15, color: Color(0xFF475569)),
+                    const Icon(
+                      Icons.analytics_outlined,
+                      size: 15,
+                      color: Color(0xFF475569),
+                    ),
                     const SizedBox(width: 8),
                     const Text(
                       'Transition Snapshot:',
@@ -3499,14 +4123,30 @@ class _StudentBatchEnrollmentHubViewState
                       ),
                     ),
                     const SizedBox(width: 14),
-                    _buildCohortStatItem('Promote', promoteCount, const Color(0xFF16A34A)),
+                    _buildCohortStatItem(
+                      'Promote',
+                      promoteCount,
+                      const Color(0xFF16A34A),
+                    ),
                     _buildCohortStatDivider(),
-                    _buildCohortStatItem('Retain', retainCount, const Color(0xFFD97706)),
+                    _buildCohortStatItem(
+                      'Retain',
+                      retainCount,
+                      const Color(0xFFD97706),
+                    ),
                     _buildCohortStatDivider(),
-                    _buildCohortStatItem('Skip / Drop', dropCount, const Color(0xFF64748B)),
+                    _buildCohortStatItem(
+                      'Skip / Drop',
+                      dropCount,
+                      const Color(0xFF64748B),
+                    ),
                     if (createCount > 0) ...[
                       _buildCohortStatDivider(),
-                      _buildCohortStatItem('New Intake', createCount, const Color(0xFF4F46E5)),
+                      _buildCohortStatItem(
+                        'New Intake',
+                        createCount,
+                        const Color(0xFF4F46E5),
+                      ),
                     ],
                   ],
                 ),
@@ -3525,19 +4165,32 @@ class _StudentBatchEnrollmentHubViewState
                       controller: _rolloverSearchCtrl,
                       style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.search_rounded, size: 18, color: _muted),
+                        prefixIcon: const Icon(
+                          Icons.search_rounded,
+                          size: 18,
+                          color: _muted,
+                        ),
                         hintText: 'Search by student ID or name...',
-                        hintStyle: const TextStyle(fontSize: 12.5, color: _muted),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                        hintStyle: const TextStyle(
+                          fontSize: 12.5,
+                          color: _muted,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                        ),
                         filled: true,
                         fillColor: const Color(0xFFF9FAFB),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(7),
-                          borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFD1D5DB),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(7),
-                          borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFD1D5DB),
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(7),
@@ -3562,24 +4215,32 @@ class _StudentBatchEnrollmentHubViewState
                         _rolloverActions[key] = 'promote';
                       }
                     });
-                    ref.read(studentBatchDraftProvider.notifier).saveRolloverDraft(
-                      stagedFiles: _stagedRolloverFiles,
-                      actions: _rolloverActions,
-                      sectionFilter: _selectedSectionFilter,
-                      yearFilter: _selectedYearFilter,
-                      hasRolloverCsv: _hasCsvUploaded,
-                    );
+                    ref
+                        .read(studentBatchDraftProvider.notifier)
+                        .saveRolloverDraft(
+                          stagedFiles: _stagedRolloverFiles,
+                          actions: _rolloverActions,
+                          sectionFilter: _selectedSectionFilter,
+                          yearFilter: _selectedYearFilter,
+                          hasRolloverCsv: _hasCsvUploaded,
+                        );
                   },
                   icon: const Icon(Icons.arrow_upward_rounded, size: 14),
                   label: const Text('Promote All'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _maroon,
                     side: BorderSide(color: _maroon.withValues(alpha: 0.35)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(7),
                     ),
-                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -3594,24 +4255,32 @@ class _StudentBatchEnrollmentHubViewState
                         _rolloverActions[key] = 'retain';
                       }
                     });
-                    ref.read(studentBatchDraftProvider.notifier).saveRolloverDraft(
-                      stagedFiles: _stagedRolloverFiles,
-                      actions: _rolloverActions,
-                      sectionFilter: _selectedSectionFilter,
-                      yearFilter: _selectedYearFilter,
-                      hasRolloverCsv: _hasCsvUploaded,
-                    );
+                    ref
+                        .read(studentBatchDraftProvider.notifier)
+                        .saveRolloverDraft(
+                          stagedFiles: _stagedRolloverFiles,
+                          actions: _rolloverActions,
+                          sectionFilter: _selectedSectionFilter,
+                          yearFilter: _selectedYearFilter,
+                          hasRolloverCsv: _hasCsvUploaded,
+                        );
                   },
                   icon: const Icon(Icons.replay_rounded, size: 14),
                   label: const Text('Retain All'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF475569),
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(7),
                     ),
-                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
@@ -3644,11 +4313,19 @@ class _StudentBatchEnrollmentHubViewState
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.people_outline_rounded, size: 38, color: Color(0xFF98A2B3)),
+                    Icon(
+                      Icons.people_outline_rounded,
+                      size: 38,
+                      color: Color(0xFF98A2B3),
+                    ),
                     SizedBox(height: 10),
                     Text(
                       'No student records found for rollover review.',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _ink),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _ink,
+                      ),
                     ),
                     SizedBox(height: 4),
                     Text(
@@ -3664,7 +4341,8 @@ class _StudentBatchEnrollmentHubViewState
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: pageRows.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: _line),
+              separatorBuilder: (_, __) =>
+                  const Divider(height: 1, color: _line),
               itemBuilder: (context, index) {
                 final row = pageRows[index];
                 final rec = row['record'] as Map? ?? {};
@@ -3673,7 +4351,9 @@ class _StudentBatchEnrollmentHubViewState
                     ? rec['id'].toString()
                     : rec['student_username']?.toString() ?? '';
                 final rawAction =
-                    _rolloverActions[key] ?? row['action_default'] ?? (isNew ? 'create' : 'promote');
+                    _rolloverActions[key] ??
+                    row['action_default'] ??
+                    (isNew ? 'create' : 'promote');
                 final pr = row['promote_result'] as Map? ?? {};
 
                 final currentAction = rawAction.toString().toLowerCase();
@@ -3705,7 +4385,10 @@ class _StudentBatchEnrollmentHubViewState
                     : (isNew ? 'create' : 'promote');
 
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                   color: index.isEven ? Colors.white : const Color(0xFFF9FAFB),
                   child: Row(
                     children: [
@@ -3716,7 +4399,8 @@ class _StudentBatchEnrollmentHubViewState
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              rec['student_name']?.toString() ?? 'Unnamed Student',
+                              rec['student_name']?.toString() ??
+                                  'Unnamed Student',
                               style: const TextStyle(
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w700,
@@ -3726,7 +4410,10 @@ class _StudentBatchEnrollmentHubViewState
                             const SizedBox(height: 2),
                             Text(
                               'ID: ${rec['student_username'] ?? ''} • ${rec['student_email'] ?? ''}',
-                              style: const TextStyle(fontSize: 12, color: _muted),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: _muted,
+                              ),
                             ),
                           ],
                         ),
@@ -3748,7 +4435,10 @@ class _StudentBatchEnrollmentHubViewState
                             ),
                             Text(
                               'Section: ${rec['section']?.toString().isEmpty ?? true ? 'None' : rec['section']}',
-                              style: const TextStyle(fontSize: 11.5, color: _muted),
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: _muted,
+                              ),
                             ),
                           ],
                         ),
@@ -3778,13 +4468,15 @@ class _StudentBatchEnrollmentHubViewState
                               onChanged: (val) {
                                 if (val != null) {
                                   setState(() => _rolloverActions[key] = val);
-                                  ref.read(studentBatchDraftProvider.notifier).saveRolloverDraft(
-                                    stagedFiles: _stagedRolloverFiles,
-                                    actions: _rolloverActions,
-                                    sectionFilter: _selectedSectionFilter,
-                                    yearFilter: _selectedYearFilter,
-                                    hasRolloverCsv: _hasCsvUploaded,
-                                  );
+                                  ref
+                                      .read(studentBatchDraftProvider.notifier)
+                                      .saveRolloverDraft(
+                                        stagedFiles: _stagedRolloverFiles,
+                                        actions: _rolloverActions,
+                                        sectionFilter: _selectedSectionFilter,
+                                        yearFilter: _selectedYearFilter,
+                                        hasRolloverCsv: _hasCsvUploaded,
+                                      );
                                 }
                               },
                             ),
@@ -3813,7 +4505,8 @@ class _StudentBatchEnrollmentHubViewState
                 totalCount: filtered.length,
                 currentPage: _rolloverPage,
                 rowsPerPage: _rolloverRowsPerPage,
-                onPageChanged: (newPage) => setState(() => _rolloverPage = newPage),
+                onPageChanged: (newPage) =>
+                    setState(() => _rolloverPage = newPage),
                 onRowsPerPageChanged: (newRpp) => setState(() {
                   _rolloverRowsPerPage = newRpp;
                   _rolloverPage = 0;
@@ -3828,7 +4521,11 @@ class _StudentBatchEnrollmentHubViewState
             padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
             child: Row(
               children: [
-                const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF667085)),
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 14,
+                  color: Color(0xFF667085),
+                ),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
@@ -3848,11 +4545,17 @@ class _StudentBatchEnrollmentHubViewState
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _ink,
                     side: const BorderSide(color: Color(0xFFD0D5DD)),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 10,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
                   ),
                   child: const Text('Cancel'),
                 ),
@@ -3870,18 +4573,29 @@ class _StudentBatchEnrollmentHubViewState
                             color: Colors.white,
                           ),
                         )
-                      : const Icon(Icons.check_circle_outline_rounded, size: 16),
+                      : const Icon(
+                          Icons.check_circle_outline_rounded,
+                          size: 16,
+                        ),
                   label: Text(
-                    state.isSaving ? 'Processing Rollover...' : 'Confirm Semester Rollover',
+                    state.isSaving
+                        ? 'Processing Rollover...'
+                        : 'Confirm Semester Rollover',
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _maroon,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 11,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ],
@@ -3930,10 +4644,7 @@ class _StudentBatchEnrollmentHubViewState
                     color: _ink,
                   ),
                   items: _rowsPerPageOptions.map((n) {
-                    return DropdownMenuItem(
-                      value: n,
-                      child: Text('$n'),
-                    );
+                    return DropdownMenuItem(value: n, child: Text('$n'));
                   }).toList(),
                   onChanged: (n) {
                     if (n != null) {
@@ -3946,7 +4657,11 @@ class _StudentBatchEnrollmentHubViewState
             const SizedBox(width: 14),
             Text(
               '$startItem - $endItem of $totalCount',
-              style: const TextStyle(fontSize: 12.5, color: _muted, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: _muted,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -3962,7 +4677,11 @@ class _StudentBatchEnrollmentHubViewState
             ),
             Text(
               '${currentPage + 1} / ${totalPages == 0 ? 1 : totalPages}',
-              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: _ink),
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: _ink,
+              ),
             ),
             IconButton(
               icon: const Icon(Icons.chevron_right_rounded, size: 20),
@@ -3985,10 +4704,7 @@ class _StudentBatchEnrollmentHubViewState
         Container(
           width: 7,
           height: 7,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
         Text(
@@ -4036,14 +4752,24 @@ class _StudentBatchEnrollmentHubViewState
         ),
         child: const Text(
           'Excluded from Term',
-          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF64748B),
+          ),
         ),
       );
     }
 
     if (action == 'create') {
-      final targetYear = pr['year_level']?.toString() ?? rec['year_level']?.toString() ?? 'Enrolled Level';
-      final targetSection = pr['section']?.toString() ?? rec['section']?.toString() ?? 'Assigned Section';
+      final targetYear =
+          pr['year_level']?.toString() ??
+          rec['year_level']?.toString() ??
+          'Enrolled Level';
+      final targetSection =
+          pr['section']?.toString() ??
+          rec['section']?.toString() ??
+          'Assigned Section';
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
         decoration: BoxDecoration(
@@ -4114,12 +4840,12 @@ class _StudentBatchEnrollmentHubViewState
     }
   }
 
-  Future<void> _openRolloverStagingModal(List<PickedTabularFile> initialFiles) async {
+  Future<void> _openRolloverStagingModal(
+    List<PickedTabularFile> initialFiles,
+  ) async {
     if (!mounted) return;
     try {
-      final activeSem = ref.read(academicPeriodProvider).activeSemester ??
-          widget.academicState.activeSemester ??
-          ref.read(studentAcademicRecordsProvider).activeSemester;
+      final activeSem = _activeEnrollmentSemester();
       final result = await showFileImportStagingModal(
         context,
         initialFiles: initialFiles,
@@ -4155,9 +4881,7 @@ class _StudentBatchEnrollmentHubViewState
       final prepared = await prepareTabularFiles(context, files);
       if (prepared == null || !mounted) return;
       files = prepared;
-      final activeSem = ref.read(academicPeriodProvider).activeSemester ??
-          widget.academicState.activeSemester ??
-          ref.read(studentAcademicRecordsProvider).activeSemester;
+      final activeSem = _activeEnrollmentSemester();
 
       final allStudents = <Map<String, dynamic>>[];
       final validFiles = <PickedTabularFile>[];
@@ -4178,21 +4902,37 @@ class _StudentBatchEnrollmentHubViewState
         if (official.students.isNotEmpty) {
           validFiles.add(file);
           for (final s in official.students) {
-            final idKey = (s['id_number'] ?? s['student_number'] ?? '').toString().trim().toLowerCase();
+            final idKey = (s['id_number'] ?? s['student_number'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
             if (idKey.isEmpty) {
               allStudents.add(s);
               continue;
             }
             if (byStudentId.containsKey(idKey)) {
               final existing = byStudentId[idKey]!;
-              final existingYr = (existing['year_level'] ?? '').toString().trim().toLowerCase();
-              final newYr = (s['year_level'] ?? '').toString().trim().toLowerCase();
-              final existingSec = (existing['section'] ?? '').toString().trim().toLowerCase();
-              final newSec = (s['section'] ?? '').toString().trim().toLowerCase();
+              final existingYr = (existing['year_level'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+              final newYr = (s['year_level'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+              final existingSec = (existing['section'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+              final newSec = (s['section'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
               if (existingYr == newYr && existingSec == newSec) {
                 continue;
               } else {
-                existing['_client_validation_error'] = 'Conflicting year level or section across staged files.';
+                existing['_client_validation_error'] =
+                    'Conflicting year level or section across staged files.';
                 continue;
               }
             }
@@ -4206,7 +4946,8 @@ class _StudentBatchEnrollmentHubViewState
         if (mounted) {
           showErrorToast(
             context,
-            lastTermMismatchError ?? 'No valid student rows found in staged file(s).',
+            lastTermMismatchError ??
+                'No valid student rows found in staged file(s).',
           );
         }
         return;
@@ -4219,13 +4960,15 @@ class _StudentBatchEnrollmentHubViewState
         _hasCsvUploaded = true;
       });
 
-      ref.read(studentBatchDraftProvider.notifier).saveRolloverDraft(
-        stagedFiles: validFiles,
-        actions: _rolloverActions,
-        sectionFilter: _selectedSectionFilter,
-        yearFilter: _selectedYearFilter,
-        hasRolloverCsv: true,
-      );
+      ref
+          .read(studentBatchDraftProvider.notifier)
+          .saveRolloverDraft(
+            stagedFiles: validFiles,
+            actions: _rolloverActions,
+            sectionFilter: _selectedSectionFilter,
+            yearFilter: _selectedYearFilter,
+            hasRolloverCsv: true,
+          );
 
       await ref
           .read(studentAcademicRecordsProvider.notifier)

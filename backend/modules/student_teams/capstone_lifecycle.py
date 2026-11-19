@@ -55,6 +55,8 @@ def requirements_for(team):
     recorded = getattr(team, '_recorded_term', None)
     if recorded:
         return recorded.requirements
+    if getattr(team, '_overview_term_participations', None) == []:
+        return configured_requirements(team.semester)
     participation = team.term_participations.filter(project_version=team.project_version).order_by('-semester__school_year__label', '-id').first()
     captured = participation.requirements if participation else []
     if captured and participation.closed_at:
@@ -111,6 +113,11 @@ def latest_stage_assessment(team, stage_id):
     from grading.grades.models import TeamGrade
     grades = list(TeamGrade.all_objects.filter(team=team, project_version=team.project_version,
         scope='capstone', defense_stage_id=stage_id).select_related('semester__school_year', 'schedule', 'team', 'defense_stage'))
+    return latest_assessment_from(grades)
+
+
+def latest_assessment_from(grades):
+    """Select the authoritative attempt from already-batched grade evidence."""
     # A new term's unscheduled empty row is a placeholder, not another attempt.
     substantive = [g for g in grades if g.verdict or g.status == 'published'
         or any(value is not None for value in (g.panel_score, g.adviser_score, g.peer_score))

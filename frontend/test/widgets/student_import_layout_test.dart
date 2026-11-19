@@ -55,8 +55,9 @@ class _Users extends UserManagementNotifier {
   @override
   Future<List<Map<String, dynamic>>> previewEnrollmentSections(
     List<Map<String, dynamic>> students,
-    int semesterId,
-  ) async => [
+    int semesterId, {
+    bool unifiedEnrollment = false,
+  }) async => [
     for (final row in students)
       {
         'id_number': row['id_number'],
@@ -120,6 +121,7 @@ Future<ProviderContainer> _open(
   bool dark = false,
   bool saving = false,
   bool activeSemester = true,
+  bool unifiedEnrollment = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -139,6 +141,7 @@ Future<ProviderContainer> _open(
         theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
         home: Scaffold(
           body: StudentBatchEnrollmentHubView(
+            unifiedEnrollment: unifiedEnrollment,
             userState: UserManagementState(isSaving: saving),
             academicState: const AcademicPeriodState(),
             onBack: () {},
@@ -817,6 +820,22 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('unified enrollment retains a conflicting-name duplicate for review', (tester) async {
+    final a = _file('a.csv', ['101']);
+    final raw = _file('b.csv', ['101']);
+    final text = raw.text!.replaceAll('RIVERA, Student101', 'SANTOS, Different');
+    final b = PickedTabularFile(name: raw.name, extension: 'csv',
+      bytes: Uint8List.fromList(utf8.encode(text)), text: text);
+    final container = await _open(tester, draft: _draft([a]),
+      unifiedEnrollment: true, pickFiles: () async => [b]);
+    await _tap(tester, find.text('Add files'));
+    await _tap(tester, find.text('Generate Preview Table (2 rows)'));
+    final row = container.read(studentBatchDraftProvider).freshParsedStudents.single;
+    expect(row['_client_validation_error'], contains('Conflicting names'));
+    expect(_confirmation(tester).enabled, isFalse);
+    await tester.pump(const Duration(seconds: 7));
+  });
 
   testWidgets('conflicting sections across added files remain blocking', (
     tester,

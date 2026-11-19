@@ -78,6 +78,46 @@ class RubricEngineApiTests(APITestCase):
         self.assertEqual(response.data['rubric']['criteria_count'], 2)
         self.assertEqual(Rubric.objects.get().criteria.count(), 2)
 
+    def test_workspace_reads_exact_assignment_after_replacing_a_rubric(self):
+        first = self.client.post('/api/grading/rubrics/', self.rubric_payload(name='Old'), format='json')
+        second = self.client.post('/api/grading/rubrics/', self.rubric_payload(name='Current'), format='json')
+        self.assertEqual(second.status_code, 201, second.data)
+        response = self.client.get('/api/grading/rubrics/')
+        stage = next(row for row in response.data['defense_stages'] if row['id'] == self.stage.pk)
+        slot = stage['rubric_slots']['panel']
+        self.assertEqual(slot['rubric_id'], second.data['rubric']['id'])
+        self.assertNotEqual(slot['rubric_id'], first.data['rubric']['id'])
+        self.assertEqual(slot['status'], 'draft')
+        self.assertTrue(slot['required'])
+
+    def test_workspace_options_do_not_create_grading_configuration(self):
+        before = StageGradingConfig.objects.count()
+        response = self.client.get('/api/grading/rubrics/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(StageGradingConfig.objects.count(), before)
+
+    def test_workspace_role_requirements_follow_concept_policy_and_term_flags(self):
+        config = StageGradingConfig.objects.create(defense_stage=self.stage, semester=self.semester)
+        self.semester.capstone_peer_evaluation_enabled = False
+        self.semester.capstone_adviser_grading_enabled = False
+        self.semester.save(update_fields=['capstone_peer_evaluation_enabled', 'capstone_adviser_grading_enabled'])
+        response = self.client.get('/api/grading/rubrics/')
+        stage = next(row for row in response.data['defense_stages'] if row['id'] == self.stage.pk)
+        self.assertFalse(stage['rubric_slots']['peer']['required'])
+        self.assertFalse(stage['rubric_slots']['adviser']['required'])
+        self.semester.capstone_peer_evaluation_enabled = True
+        self.semester.capstone_adviser_grading_enabled = True
+        self.semester.save(update_fields=['capstone_peer_evaluation_enabled', 'capstone_adviser_grading_enabled'])
+        self.stage.concept_config = {'enabled': True}
+        self.stage.save(update_fields=['concept_config'])
+        response = self.client.get('/api/grading/rubrics/')
+        stage = next(row for row in response.data['defense_stages'] if row['id'] == self.stage.pk)
+        self.assertTrue(stage['rubric_slots']['panel']['required'])
+        self.assertFalse(stage['rubric_slots']['peer']['required'])
+        self.assertFalse(stage['rubric_slots']['adviser']['required'])
+        config.refresh_from_db()
+        self.assertEqual(config.peer_weight, 20)
+
     def test_thousand_character_criterion_name_round_trips_on_create_and_update(self):
         payload = self.rubric_payload(defense_stage_id=None)
         long_name = 'Evaluate the delivered modules against the agreed project objectives. '

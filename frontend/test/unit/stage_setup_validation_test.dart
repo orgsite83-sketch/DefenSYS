@@ -22,14 +22,18 @@ StageSetupValidation review({
     },
   ],
   Map<String, dynamic> weekly = const {'enabled': false},
+  Map<String, int>? weights,
+  bool structureLocked = false,
 }) => StageSetupValidation(
   name: 'Concept Proposal',
   semesterId: 3,
   semester: semester,
   qualifyingScore: '75',
-  weights: concept
-      ? {'panel_weight': 100, 'adviser_weight': 0, 'peer_weight': 0}
-      : {'panel_weight': 50, 'adviser_weight': 30, 'peer_weight': 20},
+  weights:
+      weights ??
+      (concept
+          ? {'panel_weight': 100, 'adviser_weight': 0, 'peer_weight': 0}
+          : {'panel_weight': 50, 'adviser_weight': 30, 'peer_weight': 20}),
   conceptSelection: concept,
   rubricIds: rubricIds,
   rubrics: rubrics,
@@ -38,6 +42,7 @@ StageSetupValidation review({
   weeklyTemplate: {},
   minutesRequired: true,
   minutesNumber: 'MINUTES',
+  structureLocked: structureLocked,
 );
 
 void main() {
@@ -52,7 +57,38 @@ void main() {
       final result = review(concept: concept, rubricIds: {}, rubrics: []);
       expect(result.ready, isTrue);
       expect(result.issues[1], isEmpty);
+      expect(result.stepComplete(1), isFalse);
+      expect(
+        result.deferredRubricRoles,
+        concept ? ['panel'] : ['panel', 'adviser', 'peer'],
+      );
     }
+  });
+
+  test('grading completion counts only applicable rubric roles', () {
+    expect(review().stepComplete(1), isTrue);
+    expect(review(concept: false).stepComplete(1), isFalse);
+    expect(
+      review(
+        concept: false,
+        semester: {
+          'capstone_adviser_grading_enabled': false,
+          'capstone_peer_evaluation_enabled': false,
+        },
+      ).stepComplete(1),
+      isTrue,
+    );
+    expect(
+      review(
+        concept: false,
+        weights: {'panel_weight': 100, 'adviser_weight': 0, 'peer_weight': 0},
+      ).stepComplete(1),
+      isTrue,
+    );
+    expect(
+      review(structureLocked: true, rubricIds: {}).stepComplete(1),
+      isFalse,
+    );
   });
 
   test('only applicable selected rubrics are validated', () {

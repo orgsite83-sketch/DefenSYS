@@ -33,9 +33,9 @@ Future<bool?> openTeamCreation(
   final base = current.startsWith('/admin/')
       ? '/admin/student-teams'
       : (current.startsWith('/faculty/deliverables') ||
-              (current.isEmpty && section != null && section.isNotEmpty))
-          ? '/faculty/deliverables'
-          : '/faculty/student-teams';
+            (current.isEmpty && section != null && section.isNotEmpty))
+      ? '/faculty/deliverables'
+      : '/faculty/student-teams';
   final targetUri = Uri(
     path: '$base/creation',
     queryParameters: {
@@ -58,10 +58,12 @@ Future<bool?> openTeamCreation(
                   mode: base == '/faculty/deliverables'
                       ? TeamListMode.pitInstructor
                       : (base.startsWith('/admin')
-                          ? TeamListMode.capstoneAdmin
-                          : TeamListMode.pitLead),
+                            ? TeamListMode.capstoneAdmin
+                            : TeamListMode.pitLead),
                   initialBulkImport: true,
-                  pitYearLevel: level?.replaceAll(' PIT', '').trim(),
+                  pitYearLevel: level
+                      ?.replaceAll(RegExp(r'\s+(PIT|Capstone)$'), '')
+                      .trim(),
                   pitSection: section,
                 ),
               )
@@ -809,10 +811,7 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            rosterTitle,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text(rosterTitle, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(rosterDesc),
           const SizedBox(height: 12),
@@ -906,7 +905,9 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
             const SizedBox(height: 8),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Review changes to existing section assignments'),
+              title: const Text(
+                'Review changes to existing section assignments',
+              ),
               subtitle: const Text(
                 'Section changes appear in the preview before you import. Historical records are preserved.',
               ),
@@ -959,9 +960,7 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
                 isCapstoneAdmin: !pit,
                 pitLeadYear: pit ? widget.level.replaceFirst(' PIT', '') : null,
                 showIssuesOnly: false,
-                sectionOptions: [
-                  if (widget.section != null) widget.section!,
-                ],
+                sectionOptions: [if (widget.section != null) widget.section!],
                 onRowChanged: (_) => changed(),
                 onDeleteRow: (index) {
                   rows.removeAt(index);

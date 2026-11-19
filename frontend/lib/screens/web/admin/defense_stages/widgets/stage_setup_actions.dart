@@ -12,6 +12,7 @@ class StageSetupActions extends StatelessWidget {
         ? Row(children: children)
         : Wrap(
             alignment: WrapAlignment.end,
+            spacing: 8,
             runSpacing: 10,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: children.where((child) => child is! Spacer).toList(),

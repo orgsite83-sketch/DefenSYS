@@ -442,6 +442,9 @@ class BulkImportUsersMixin:
             return Response({'detail': 'users must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
 
         student_context = request.data.get('student_context') or {}
+        if not isinstance(student_context, dict):
+            return Response({'detail': 'student_context must be an object.'}, status=400)
+        unified = student_context.get('unified_enrollment') is True and not self.force_pit_lead_context
         is_student_import = self.force_student_only or bool(request.data.get('student_context'))
         if self.force_pit_lead_context:
             context_semester = _active_semester()
@@ -460,6 +463,9 @@ class BulkImportUsersMixin:
                 {'detail': 'An active academic semester is required to import and enroll students. Please configure an active semester first.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if unified and (not context_semester.is_active or student_context.get('semester_id') != context_semester.pk):
+            return Response({'detail': 'The active semester changed. Refresh the enrollment preview.'}, status=400)
 
         if is_student_import and context_semester is not None:
             meta_candidates = [student_context] + [
@@ -528,9 +534,13 @@ class BulkImportUsersMixin:
         validated_rows = []
         usernames_to_check = set()
         seen_in_batch = {}
+        seen_enrollment_names = {}
         conflicting_usernames = set()
 
         for index, row in enumerate(rows, start=1):
+            if unified and isinstance(row, dict) and row.get('_client_validation_error'):
+                errors.append({'row': index, 'errors': {'detail': [str(row['_client_validation_error'])]}})
+                continue
             serializer = BulkUserRowSerializer(data=row)
             if not serializer.is_valid():
                 errors.append({'row': index, 'errors': serializer.errors})
@@ -576,7 +586,9 @@ class BulkImportUsersMixin:
             section = ' '.join((data.get('section') or context_section or '').strip().split())
 
             if username in seen_in_batch:
-                if seen_in_batch[username] != (year_level, section):
+                from user_management.academic_records.enrollment import enrollment_names_agree
+                identity_conflict = unified and not enrollment_names_agree(data, seen_enrollment_names[username])
+                if seen_in_batch[username] != (year_level, section) or identity_conflict:
                     conflicting_usernames.add(username)
                     errors.append({
                         'row': index,
@@ -587,6 +599,7 @@ class BulkImportUsersMixin:
                 else:
                     continue
             seen_in_batch[username] = (year_level, section)
+            seen_enrollment_names[username] = data
 
             from student_teams.section_years import enrollment_section_issue
             section_issue = enrollment_section_issue(section, year_level, context_semester) if role == 'student' else ''
@@ -614,6 +627,10 @@ class BulkImportUsersMixin:
                 item for item in validated_rows if item[1] not in conflicting_usernames
             ]
             usernames_to_check -= conflicting_usernames
+
+        if unified and errors:
+            return Response({'detail': 'Resolve the enrollment issues before confirming.',
+                             'errors': errors, 'error_count': len(errors)}, status=400)
 
         # Batch lookup all existing users in a single query
         existing_users_map = {
@@ -644,6 +661,8 @@ class BulkImportUsersMixin:
             list(Semester.objects.select_for_update().order_by('pk'))
             if context_semester:
                 context_semester.refresh_from_db()
+            if unified and not context_semester.is_active:
+                return Response({'detail': 'The active semester changed. Refresh the enrollment preview.'}, status=400)
             locked_users = User.objects.select_for_update().filter(
                 username__in=usernames_to_check).order_by('pk')
             existing_users_map = {u.username: u for u in locked_users}
@@ -684,6 +703,12 @@ class BulkImportUsersMixin:
                         continue
 
                 if existing_user:
+                    if unified:
+                        from user_management.academic_records.enrollment import existing_student_issue
+                        issue = existing_student_issue(existing_user, data)
+                        if issue:
+                            errors.append({'row': index, 'id_number': username, 'errors': {'student': [issue]}})
+                            continue
                     if (is_student_import or role == 'student') and existing_user.role != 'student':
                         errors.append({
                             'row': index,
@@ -719,6 +744,8 @@ class BulkImportUsersMixin:
                                 continue
                             expected_year, _ = next_academic_step(latest_rec.year_level, latest_rec.semester.label)
                             if (
+                                not unified
+                                and
                                 latest_rec.semester.label == Semester.SECOND
                                 and context_semester.label == Semester.FIRST
                                 and year_level == latest_rec.year_level
@@ -739,6 +766,9 @@ class BulkImportUsersMixin:
                             errors.append({'row': index, 'id_number': username,
                                 'errors': {'section': [section_issue]}})
                             continue
+                        if unified and active_rec is not None and (not section or section == active_rec.section):
+                            skipped.append({'row': index, 'id_number': username, 'reason': 'already_enrolled'})
+                            continue
                         update_defaults = {'year_level': year_level}
                         if section:
                             update_defaults['section'] = section
@@ -748,6 +778,16 @@ class BulkImportUsersMixin:
                             defaults=update_defaults,
                         )
                         records_created.append(record)
+                        if unified:
+                            if active_rec is None and latest_rec is not None:
+                                record.rolled_from = latest_rec
+                                record.action = (StudentAcademicRecord.ACTION_RETAIN
+                                    if latest_rec.semester.label == Semester.SECOND
+                                    and context_semester.label == Semester.FIRST
+                                    and latest_rec.year_level == year_level
+                                    else StudentAcademicRecord.ACTION_PROMOTE)
+                                record.save(update_fields=['rolled_from', 'action'])
+                            continue
                         updated_fields = []
                         if data.get('first_name') and existing_user.first_name != data['first_name']:
                             existing_user.first_name = data['first_name']
@@ -837,6 +877,11 @@ class BulkImportUsersMixin:
                         year_level=year_level,
                         section=section,
                     ))
+
+            if unified and errors:
+                transaction.set_rollback(True)
+                return Response({'detail': 'Resolve the enrollment issues before confirming. No students were enrolled.',
+                                 'errors': errors, 'error_count': len(errors)}, status=400)
 
             if context_semester and not self.force_pit_lead_context:
                 reconcile_sections(context_semester, {r.student_id for r in records_created}, actor=request.user,

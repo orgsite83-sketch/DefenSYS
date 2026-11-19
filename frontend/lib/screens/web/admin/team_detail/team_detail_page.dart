@@ -1,4 +1,6 @@
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'dart:convert';
+import 'package:defensys/widgets/academic/capstone2_confirmation_fields.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -61,6 +63,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   final _nameController = TextEditingController();
   final _projectTitleController = TextEditingController();
   final _sectionController = TextEditingController();
+  final _capstoneReference = TextEditingController();
+  bool _capstoneConfirmed = false;
+  String _capstoneRequestId = '', _capstoneRequestStamp = '';
 
   String _status = 'Pending';
   int? _adviserId;
@@ -139,10 +144,12 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     _nameController.dispose();
     _projectTitleController.dispose();
     _sectionController.dispose();
+    _capstoneReference.dispose();
     super.dispose();
   }
 
   void _syncFormFromTeam(Map<String, dynamic> team, List<String> statuses) {
+    _capstoneConfirmed = false;
     _nameController.text = team['name']?.toString() ?? '';
     _projectTitleController.text = team['project_title']?.toString() ?? '';
     _sectionController.text = team['section']?.toString() ?? '';
@@ -983,6 +990,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                           children: [
                             if (isCapstone && studentId != null)
                               StudentCapstoneParticipationButton(
+                                verifiedPriorCompletion:
+                                    (student['capstone_participation']
+                                        as Map?)?['origin'] ==
+                                    'external_continuation',
                                 studentId: studentId,
                                 name: name,
                                 number: _asInt(
@@ -1426,9 +1437,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                                     return;
                                   }
                                   _selectedMembers.add(studentId);
+                                  _capstoneConfirmed = false;
                                   _leaderId ??= studentId;
                                 } else {
                                   _selectedMembers.remove(studentId);
+                                  _capstoneConfirmed = false;
                                   if (_leaderId == studentId) {
                                     _leaderId = _selectedMembers.isEmpty
                                         ? null
@@ -1484,6 +1497,31 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 style: TextStyle(color: _muted, fontSize: 12),
               ),
               if (!widget.isPitLead && isCapstone) ...[
+                if ((detailState.team?['defense_context'] as Map?)?['phase'] ==
+                        'capstone_2' &&
+                    _selectedMembers
+                        .difference(
+                          _readIntList(detailState.team?['member_ids']).toSet(),
+                        )
+                        .isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  DefensysShadcnScope(
+                    maroonActions: true,
+                    child: Capstone2ConfirmationFields(
+                      confirmed: _capstoneConfirmed,
+                      onChanged: (v) => setState(() => _capstoneConfirmed = v),
+                      reference: _capstoneReference,
+                      needsReference: detailState.students.any(
+                        (s) =>
+                            _selectedMembers.contains(_asInt(s['id'])) &&
+                            !_readIntList(
+                              detailState.team?['member_ids'],
+                            ).contains(_asInt(s['id'])) &&
+                            s['requires_capstone2_reference'] != false,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 Divider(color: _line),
                 const SizedBox(height: 12),
@@ -1712,6 +1750,29 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
       if (adviserChangeReason != null && adviserChangeReason.isNotEmpty)
         'adviser_change_reason': adviserChangeReason,
     };
+
+    if ((team['defense_context'] as Map?)?['phase'] == 'capstone_2' &&
+        _selectedMembers
+            .difference(_readIntList(team['member_ids']).toSet())
+            .isNotEmpty) {
+      if (!_capstoneConfirmed) {
+        showValidationToast(
+          context,
+          'Confirm Capstone 1 eligibility for the updated roster.',
+        );
+        return;
+      }
+      final stamp = jsonEncode([payload, _capstoneReference.text.trim()]);
+      if (_capstoneRequestStamp != stamp) {
+        _capstoneRequestId = newCapstoneRequestId();
+        _capstoneRequestStamp = stamp;
+      }
+      payload['capstone2_confirmation'] = {
+        'confirmed': true,
+        'reference': _capstoneReference.text.trim(),
+        'request_id': _capstoneRequestId,
+      };
+    }
 
     final ok = await ref
         .read(teamDetailProvider(widget.teamId).notifier)

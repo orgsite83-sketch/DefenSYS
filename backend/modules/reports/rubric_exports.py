@@ -5,7 +5,44 @@ from xml.sax.saxutils import escape
 from django.db.models import Q
 
 
-def rubric_assignments(rubrics):
+def configured_rubric_selection(request, semester):
+    """Resolve saved slots by stable destination IDs, never rubric names/order."""
+    from django.shortcuts import get_object_or_404
+    from rest_framework.exceptions import ValidationError
+    from defense.stages.context import stages_for_semester
+    from defense.stages.models import StageGradingConfig
+    from defense.scheduler.event_scope import pit_events_for_user
+
+    scope = request.query_params.get('scope')
+    role = request.query_params.get('evaluation_type', '')
+    stage_id = request.query_params.get('stage_id')
+    event_id = request.query_params.get('pit_event_config_id')
+    if scope not in ('capstone', 'pit') or semester is None:
+        raise ValidationError('Choose a program and academic period for stage rubric exports.')
+    if role and role not in ('panel', 'adviser', 'peer'):
+        raise ValidationError({'evaluation_type': 'Choose a valid evaluation type.'})
+    if (scope == 'capstone' and event_id) or (scope == 'pit' and stage_id):
+        raise ValidationError('Choose a stage or event belonging to the selected program.')
+    if scope == 'capstone':
+        stages = stages_for_semester(semester).filter(is_active=True)
+        if stage_id:
+            stages = stages.filter(pk=get_object_or_404(stages, pk=stage_id).pk)
+        configs = StageGradingConfig.objects.filter(semester=semester, defense_stage__in=stages)
+        destinations = {'stage_ids': list(stages.values_list('pk', flat=True))}
+        slots = ('panel', 'adviser', 'peer')
+    else:
+        configs = pit_events_for_user(request.user, semester=semester)
+        if event_id:
+            configs = configs.filter(pk=get_object_or_404(configs, pk=event_id).pk)
+        destinations = {'event_ids': list(configs.values_list('pk', flat=True))}
+        slots = ('panel', 'peer')
+    slots = [slot for slot in slots if not role or slot == role]
+    ids = {rubric_id for row in configs.values_list(*[f'{slot}_rubric_id' for slot in slots])
+           for rubric_id in row if rubric_id} if slots else set()
+    return ids, {'semester': semester, 'evaluation_type': role, **destinations}
+
+
+def rubric_assignments(rubrics, *, semester=None, stage_ids=None, event_ids=None, evaluation_type=None):
     """A stage association or publication alone is not a grading selection.
 
     Read all configuration references in two queries, including reuse across
@@ -21,6 +58,11 @@ def rubric_assignments(rubrics):
         ('capstone', StageGradingConfig, ('panel', 'adviser', 'peer')),
         ('pit', PitEventGradingConfig, ('panel', 'peer')),
     ):
+        if (stage_ids is not None and scope != 'capstone') or (event_ids is not None and scope != 'pit'):
+            continue
+        slots = [slot for slot in slots if not evaluation_type or slot == evaluation_type]
+        if not slots:
+            continue
         ids = [key for key, rubric in by_id.items() if rubric.scope == scope]
         if not ids:
             continue
@@ -28,9 +70,17 @@ def rubric_assignments(rubrics):
         for slot in slots:
             query |= Q(**{f'{slot}_rubric_id__in': ids})
         related = ['semester__school_year'] + (['defense_stage'] if scope == 'capstone' else [])
-        configs = model.objects.filter(query).select_related(*related).order_by('semester_id', 'pk')
+        configs = model.objects.filter(query)
+        if semester is not None:
+            configs = configs.filter(semester=semester)
+        if stage_ids is not None:
+            configs = configs.filter(defense_stage_id__in=stage_ids)
+        if event_ids is not None:
+            configs = configs.filter(pk__in=event_ids)
+        configs = configs.select_related(*related).order_by('semester_id', 'pk')
         for config in configs:
-            distribution = ', '.join(f'{slot.title()}: {getattr(config, slot + "_weight")}%' for slot in slots)
+            distribution_slots = ('panel', 'adviser', 'peer') if scope == 'capstone' else ('panel', 'peer')
+            distribution = ', '.join(f'{slot.title()}: {getattr(config, slot + "_weight")}%' for slot in distribution_slots)
             for slot in slots:
                 rubric_id = getattr(config, f'{slot}_rubric_id')
                 if rubric_id not in ids:
@@ -46,9 +96,9 @@ def rubric_assignments(rubrics):
     return assignments
 
 
-def build_rubric_spec(rubrics, *, individual=False):
+def build_rubric_spec(rubrics, *, individual=False, assignment_filters=None):
     from reports.catalog_reports import column, dataset
-    assignments = rubric_assignments(rubrics)
+    assignments = rubric_assignments(rubrics, **(assignment_filters or {}))
     rows, criteria_rows, assignment_rows, details = [], [], [], []
     for number, rubric in enumerate(rubrics, 1):
         selected = assignments[rubric.pk]
@@ -57,6 +107,8 @@ def build_rubric_spec(rubrics, *, individual=False):
         stage = rubric.defense_stage.label if rubric.defense_stage_id else (
             ', '.join(contexts) if contexts else 'No event assigned' if rubric.scope == 'pit' else 'No fixed stage'
         )
+        if assignment_filters is not None:
+            stage = ', '.join(contexts)
         assigned_to = '\n'.join(f'{item["stage"]} - {item["evaluation_type"]} - {item["semester"]}' for item in selected)
         distributions = list(dict.fromkeys(item['weights'] for item in selected))
         row = {

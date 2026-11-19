@@ -39,11 +39,13 @@ class StudentCapstoneParticipationButton extends StatelessWidget {
     required this.name,
     required this.number,
     this.canOpenHistory = true,
+    this.verifiedPriorCompletion = false,
   });
   final int studentId;
   final String name;
   final int? number;
   final bool canOpenHistory;
+  final bool verifiedPriorCompletion;
 
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(
@@ -52,7 +54,9 @@ class StudentCapstoneParticipationButton extends StatelessWidget {
           ? () => showStudentCapstoneHistory(context, studentId, name)
           : null,
       child: Text(
-        capstoneParticipationLabel(number),
+        number == null && verifiedPriorCompletion
+            ? 'Prior completion verified'
+            : capstoneParticipationLabel(number),
         style: TextStyle(
           fontSize: 12,
           color: DefensysTokens.textSecondaryOf(context),
@@ -172,9 +176,14 @@ class _StudentCapstoneHistoryState
                                     spacing: 12,
                                     children: [
                                       Text(
-                                        capstoneParticipationLabel(
-                                          (row['number'] as num?)?.toInt(),
-                                        ),
+                                        row['origin'] ==
+                                                    'external_continuation' &&
+                                                row['number'] == null
+                                            ? 'Prior completion verified'
+                                            : capstoneParticipationLabel(
+                                                (row['number'] as num?)
+                                                    ?.toInt(),
+                                              ),
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -195,6 +204,27 @@ class _StudentCapstoneHistoryState
                                     ],
                                   ),
                                   const SizedBox(height: 4),
+                                  if (row['verification'] is Map) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Verified by ${(row['verification'] as Map)['actor']} · ${(row['verification'] as Map)['at']}',
+                                      style: const TextStyle(
+                                        fontFamily:
+                                            DefensysTokens.fontFamilyInter,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    if ('${(row['verification'] as Map)['reference'] ?? ''}'
+                                        .isNotEmpty)
+                                      Text(
+                                        'School record: ${(row['verification'] as Map)['reference']}',
+                                        style: const TextStyle(
+                                          fontFamily:
+                                              DefensysTokens.fontFamilyInter,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                  ],
                                   Text(
                                     row['intake']?.toString() ?? '',
                                     style: TextStyle(

@@ -11,12 +11,14 @@ import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/network/authenticated_client.dart';
 import 'package:defensys/services/reports_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/export/defensys_export_format_bar.dart';
 import 'package:defensys/widgets/export/defensys_live_data_preview_pane.dart';
 import 'package:defensys/widgets/export/defensys_report_dialog_shell.dart';
 import 'package:defensys/widgets/export/report_catalog.dart';
 import 'package:defensys/widgets/export/report_export_configuration.dart';
 import 'audit_compliance_redesign_test.dart' show FakeAuthNotifier;
+import '../helpers/capture_preview.dart';
 
 class _Options extends AuthenticatedHttpClient {
   _Options(super.ref);
@@ -123,6 +125,7 @@ Future<GlobalKey> _open(
   ReportDefinition report,
   _Reports reports, {
   Map<String, String> params = const {},
+  bool dark = false,
   Map<String, dynamic> user = const {'role': 'admin'},
 }) async {
   final boundary = GlobalKey();
@@ -136,7 +139,7 @@ Future<GlobalKey> _open(
       child: RepaintBoundary(
         key: boundary,
         child: MaterialApp(
-          theme: AppTheme.theme,
+          theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
           home: Scaffold(
             body: Consumer(
               builder: (context, ref, _) => TextButton(
@@ -177,6 +180,81 @@ Future<void> _capture(WidgetTester tester, GlobalKey key, String name) async {
 }
 
 void main() {
+  setUpAll(
+    () => loadPreviewFonts(
+      force: const bool.fromEnvironment('DEFENSYS_EXPORT_QA'),
+    ),
+  );
+  for (final width in [390.0, 1440.0]) {
+    for (final dark in [false, true]) {
+      testWidgets('Rubric export scope at $width dark=$dark', (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final reports = _Reports();
+        final boundary = await _open(
+          tester,
+          ReportCatalog.find('rubrics')!,
+          reports,
+          dark: dark,
+          params: {
+            'assignment_scope': 'configured',
+            'scope': 'capstone',
+            'semester_id': '3',
+            'stage_id': '2',
+            'evaluation_type': 'panel',
+          },
+        );
+        expect(reports.previews.last['stage_id'], '2');
+        expect(reports.previews.last['evaluation_type'], 'panel');
+        expect(find.text('Project Proposal'), findsOneWidget);
+        expect(
+          tester.widget<Text>(find.text('Rubric selection')).style?.color,
+          dark ? DefensysTokens.textPrimaryDark : DefensysTokens.textPrimary,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('rubric-export-stage_id:2:false')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('All stages').last);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(
+            const ValueKey('rubric-export-evaluation_type:panel:false'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Peer only').last);
+        await tester.pumpAndSettle();
+        expect(reports.previews.last.containsKey('stage_id'), isFalse);
+        expect(reports.previews.last['evaluation_type'], 'peer');
+        if (dark) {
+          await tester.tap(
+            find.byKey(
+              const ValueKey('rubric-export-evaluation_type:peer:false'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('All evaluation types').last);
+          await tester.pumpAndSettle();
+          expect(reports.previews.last.containsKey('evaluation_type'), isFalse);
+        }
+        await _capture(
+          tester,
+          boundary,
+          'rubric-export-${width.toInt()}-${dark ? 'dark' : 'light'}',
+        );
+        await tester.tap(find.text('Download PDF Export'));
+        await tester.pumpAndSettle();
+        expect(reports.download?['evaluation_type'], dark ? isNull : 'peer');
+        expect(reports.download?.containsKey('stage_id'), isFalse);
+        expect(reports.download?['semester_id'], '3');
+        expect(reports.format, 'pdf');
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
   testWidgets(
     'Roster layout selects Excel and exports through the concept report',
     (tester) async {

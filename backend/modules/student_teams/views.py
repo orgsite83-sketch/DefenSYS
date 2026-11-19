@@ -118,6 +118,7 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
     active = active_semester()
     role_levels = levels_for_user(user) if user else [choice[0] for choice in StudentTeam.LEVEL_CHOICES]
     capstone_window = capstone_mode_payload(active)
+    capstone_window['can_add_capstone2_team'] = bool(user_is_admin(user) and active and active.label == Semester.FIRST)
     pit_events = []
     if active:
         from defense.scheduler.models import PitEventGradingConfig
@@ -218,6 +219,13 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
     if user:
         # term_scope_payload must not redefine active_semester (SemesterSerializer dict above).
         payload.update(term_scope_payload(user))
+    if capstone_window['can_add_capstone2_team']:
+        from .models import StudentCapstoneParticipation
+        recorded = set(StudentCapstoneParticipation.objects.filter(state='active', student_id__in=[p['id'] for p in payload['students']],
+            placements__isnull=False).values_list('student_id', flat=True))
+        for person in payload['students']:
+            # A form hint only: authoritative source evidence is checked on save.
+            person['requires_capstone2_reference'] = person['id'] not in recorded
     return payload
 
 
@@ -395,10 +403,18 @@ class StudentTeamListCreateView(APIView):
             **({'statuses': [choice[0] for choice in StudentTeam.STATUS_CHOICES] + ['Completed', 'Needs review']} if scope == 'history' else {}),
         })
 
+    @transaction.atomic
     def post(self, request):
+        # Serialize idempotency and roster confirmation with existing term locks.
+        list(Semester.objects.select_for_update().order_by('pk'))
+        from .manual_capstone import replay
+        existing = replay(request.user, request.data)
+        if existing:
+            return Response({'team': StudentTeamSerializer(existing, context={'user': request.user}).data,
+                             'counts': counts_payload(user=request.user)}, status=status.HTTP_201_CREATED)
         serializer = StudentTeamWriteSerializer(
             data=request.data,
-            context={'assigned_by': request.user, 'user': request.user},
+            context={'assigned_by': request.user, 'user': request.user, 'manual_team_entry': True},
         )
         serializer.is_valid(raise_exception=True)
         if 'PIT' in serializer.validated_data['level'] and not serializer.validated_data.get('current_defense_stage'):
@@ -447,13 +463,21 @@ class StudentTeamDetailView(APIView):
                               include_roster_options=request.query_params.get('workspace', '') in ('', 'operations', 'pit_lead')),
         })
 
+    @transaction.atomic
     def patch(self, request, team_id):
         team = self.get_object(team_id)
         from .term_scope import assert_team_writable
         assert_team_writable(request.user, team)
+        list(Semester.objects.select_for_update().order_by('pk'))
+        from .manual_capstone import replay
+        existing = replay(request.user, request.data)
+        if existing:
+            if existing.pk != team.pk:
+                raise drf_serializers.ValidationError('This confirmation belongs to another team.')
+            return Response({'team': StudentTeamSerializer(existing, context={'user': request.user}).data})
         
         # Prevent overriding a grade-derived team status
-        if 'status' in request.data:
+        if 'status' in request.data and request.data['status'] != team.status:
             from grading.grades.models import TeamGrade
             published_grade = TeamGrade.objects.filter(
                 team=team, status=TeamGrade.STATUS_PUBLISHED
@@ -468,7 +492,7 @@ class StudentTeamDetailView(APIView):
         serializer = StudentTeamWriteSerializer(
             team,
             data=request.data,
-            context={'team_id': team.id, 'assigned_by': request.user, 'user': request.user},
+            context={'team_id': team.id, 'assigned_by': request.user, 'user': request.user, 'manual_team_entry': True},
         )
         serializer.is_valid(raise_exception=True)
         team = serializer.save()

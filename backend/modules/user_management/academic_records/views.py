@@ -50,14 +50,71 @@ def options_payload():
 
 def counts_payload(queryset=None):
     all_records = records_queryset()
+    from .enrollment import enrollment_summary
+    active = active_semester()
+    enrollment = enrollment_summary(active)
+    from student_teams.attention import assignment_summary
     return {
         'all': all_records.count(),
         'filtered': queryset.count() if queryset is not None else all_records.count(),
         'students_with_records': all_records.values('student_id').distinct().count(),
+        'student_accounts': User.objects.filter(role='student', is_active=True).count(),
+        'enrollment': enrollment,
+        'year_summary': assignment_summary(active, enrollment),
     }
 
 
+class EnrollmentAttentionView(APIView):
+    """Paged evidence behind the shared task counts. No writes on navigation."""
+    permission_classes = [IsSystemAdmin]
+
+    def get(self, request):
+        from .enrollment import pending_enrollment_students
+        from student_teams.attention import assignment_students
+        params, active = request.query_params, active_semester()
+        try:
+            semester_id = int(params.get('semester_id', ''))
+            page = max(1, int(params.get('page', '1')))
+        except (TypeError, ValueError):
+            return Response({'detail': 'Select a valid semester and page.'}, status=400)
+        if not active or active.pk != semester_id:
+            return Response({'detail': 'The active semester changed. Return to Overview and refresh.'}, status=409)
+        year, kind = params.get('year_level', ''), params.get('attention', '')
+        years = dict(StudentAcademicRecord.YEAR_LEVEL_CHOICES)
+        if year not in years and year != 'unclassified':
+            return Response({'detail': 'Select a valid year level.'}, status=400)
+        size, start = 25, (page - 1) * 25
+        if kind == 'enrollment':
+            students, targets = pending_enrollment_students(active)
+            ids = [sid for sid, target in targets.items() if target == (None if year == 'unclassified' else year)]
+            students = students.filter(pk__in=ids).order_by('last_name', 'first_name', 'username', 'pk')
+            count = students.count()
+            page = min(page, max(1, (count + size - 1) // size))
+            start = (page - 1) * size
+            selected = list(students[start:start + size])
+            from student_teams.continuation_sections import section_decisions
+            sections = section_decisions(active, {s.pk: targets[s.pk] for s in selected if targets[s.pk]})
+            rows = [{'id': s.pk, 'username': s.username, 'name': s.get_full_name() or s.username,
+                     'first_name': s.first_name, 'last_name': s.last_name,
+                     'year_level': targets[s.pk], 'section': sections.get(s.pk, {}).get('section', '')}
+                    for s in selected]
+            state = 'available'
+        elif kind == 'team_assignment' and year in years:
+            rows, state = assignment_students(active, year=year)
+            count = len(rows)
+            page = min(page, max(1, (count + size - 1) // size))
+            start = (page - 1) * size
+            rows = rows[start:start + size]
+        else:
+            return Response({'detail': 'Select a supported attention task.'}, status=400)
+        return Response({'semester_id': active.pk, 'year_level': year, 'attention': kind,
+                         'state': state, 'count': count, 'page': page, 'page_size': size, 'students': rows})
+
+
 def filter_academic_records(queryset, params):
+    if params.get('term_context') == 'current':
+        active = active_semester()
+        queryset = queryset.filter(semester=active) if active else queryset.none()
     search = params.get('search', '').strip()
     school_year = params.get('school_year', '').strip()
     semester = params.get('semester', '').strip()
@@ -142,6 +199,9 @@ class EnrollmentSectionPreviewView(APIView):
         if not isinstance(semester_id, int) or isinstance(semester_id, bool):
             return Response({'detail': 'semester_id must be an integer.'}, status=400)
         semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
+        unified = request.data.get('unified_enrollment') is True
+        if unified and not semester.is_active:
+            return Response({'detail': 'The active semester changed. Refresh the enrollment preview.'}, status=400)
         students = request.data.get('students')
         if not isinstance(students, list) or len(students) > 1000:
             return Response({'detail': 'Provide up to 1000 student rows.'}, status=400)
@@ -181,6 +241,7 @@ class EnrollmentSectionPreviewView(APIView):
 
         results = []
         seen_in_request = {}
+        seen_names = {}
         for idx, (name, s) in enumerate(zip(names, validated_students)):
             raw_student_dict = students[idx] if idx < len(students) else {}
             client_error = _clean_spaces(str(raw_student_dict.get('_client_validation_error') or ''))
@@ -202,16 +263,21 @@ class EnrollmentSectionPreviewView(APIView):
             blocking = False
             status_code = 'ready'
             status_label = 'Ready to Enroll'
+            if unified:
+                status_label = 'Create account & enroll'
 
             # 1. Cross-file / within-batch conflict
             prev_pair = seen_in_request.get(name)
-            if prev_pair is not None and prev_pair != (norm_year, supplied_sec):
+            from .enrollment import enrollment_names_agree
+            identity_conflict = unified and name in seen_names and not enrollment_names_agree(raw_student_dict, seen_names[name])
+            if prev_pair is not None and (prev_pair != (norm_year, supplied_sec) or identity_conflict):
                 blocking = True
                 status_code = 'duplicate_conflict'
                 status_label = 'Blocked (Conflicting Duplicate)'
                 base['source'] = 'review'
                 base['message'] = f"Conflicting rows for student '{name}' across staged files."
             seen_in_request[name] = (norm_year, supplied_sec)
+            seen_names[name] = raw_student_dict
 
             if client_error and not blocking:
                 blocking = True
@@ -239,6 +305,14 @@ class EnrollmentSectionPreviewView(APIView):
 
             # 4. Existing student progression & active-term checks
             student_user = student_users.get(name)
+            if unified and not blocking and student_user is not None:
+                from .enrollment import existing_student_issue
+                issue = existing_student_issue(student_user, raw_student_dict)
+                if issue:
+                    blocking = True
+                    status_code = 'identity_conflict'
+                    status_label = 'Needs review'
+                    base.update(source='review', message=issue)
             if not blocking and student_user is not None:
                 active_rec = active_records.get(student_user.pk)
                 latest_rec = latest_records.get(student_user.pk)
@@ -282,6 +356,8 @@ class EnrollmentSectionPreviewView(APIView):
                             latest_rec.year_level, latest_rec.semester.label
                         )
                         if (
+                            not unified
+                            and
                             latest_rec.semester.label == Semester.SECOND
                             and semester.label == Semester.FIRST
                             and norm_year == latest_rec.year_level
@@ -297,7 +373,7 @@ class EnrollmentSectionPreviewView(APIView):
                             )
                         else:
                             status_code = 'existing_student'
-                            status_label = 'Existing Student — Ready'
+                            status_label = 'Enroll existing student' if unified else 'Existing Student — Ready'
 
             # 5. Section / Capstone continuation review flag from section_decisions
             if not blocking and base.get('source') == 'review':

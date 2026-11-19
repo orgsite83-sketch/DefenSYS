@@ -13,12 +13,14 @@ class StageOutcomeSettings extends StatelessWidget {
     required this.onChanged,
     this.conceptSelection = false,
     this.enabled = true,
+    this.showValidationErrors = true,
   });
   final TextEditingController scoreController;
   final String scoreCarryover;
   final ValueChanged<String> onCarryoverChanged;
   final VoidCallback onChanged;
   final bool conceptSelection, enabled;
+  final bool showValidationErrors;
 
   static String? validateScore(String? text) {
     final value = double.tryParse(text?.trim() ?? '');
@@ -87,11 +89,13 @@ class StageOutcomeSettings extends StatelessWidget {
                 return Semantics(
                   liveRegion: true,
                   child: Text(
-                    error ??
-                        (conceptSelection
-                            ? 'Concepts need ${value.text.trim()}% to qualify for panel selection.'
-                            : 'Below ${value.text.trim()}% requires re-defense.'),
-                    style: error == null
+                    (error != null && !showValidationErrors)
+                        ? 'Required · Enter a score from 0 to 100%.'
+                        : error ??
+                              (conceptSelection
+                                  ? 'Concepts need ${value.text.trim()}% to qualify for panel selection.'
+                                  : 'Below ${value.text.trim()}% requires re-defense.'),
+                    style: error == null || !showValidationErrors
                         ? muted
                         : muted.copyWith(
                             color: DefensysTokens.isDark(context)

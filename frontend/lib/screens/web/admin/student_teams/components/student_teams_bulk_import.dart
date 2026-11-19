@@ -11,6 +11,8 @@ import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/utils/team_bulk_import_draft.dart';
 
 import 'student_teams_toolbar.dart';
+import '../../../../../navigation/admin_attention_context.dart';
+import '../../../../../widgets/academic/admin_attention_students.dart';
 
 class DraftResumeBanner extends StatelessWidget {
   const DraftResumeBanner({
@@ -113,9 +115,11 @@ class StudentTeamsBulkImportView extends StatefulWidget {
     this.onRetryPreview,
     this.onEventChanged,
     this.onOpenExistingTeam,
+    this.attentionContext,
   });
 
   final StudentTeamsState state;
+  final AdminAttentionContext? attentionContext;
   final bool isPitInstructor;
   final bool isCapstoneAdmin;
   final String? pitLeadYear;
@@ -215,8 +219,34 @@ class _StudentTeamsBulkImportViewState
   }
 
   @override
-  Widget build(BuildContext context) =>
-      DefensysShadcnScope(child: Builder(builder: _buildImport));
+  Widget build(BuildContext context) {
+    final task = widget.attentionContext;
+    if (task != null &&
+        (!task.valid ||
+            (widget.isCapstoneAdmin &&
+                !widget.state.isLoading &&
+                !widget.state.canCreateCapstoneTeams) ||
+            (widget.activeSemester != null &&
+                widget.activeSemester!['id'] != task.semesterId))) {
+      return DefensysShadcnScope(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ShadButton.outline(
+                onPressed: widget.onRequestClose,
+                child: const Text('Back to Student Teams'),
+              ),
+              const SizedBox(height: 16),
+              AdminAttentionStudents(context: task),
+            ],
+          ),
+        ),
+      );
+    }
+    return DefensysShadcnScope(child: Builder(builder: _buildImport));
+  }
 
   Widget _reviewToolbar() => TeamImportValidationToolbar(
     rows: widget.parsedBulkRows,
@@ -371,6 +401,10 @@ class _StudentTeamsBulkImportViewState
               ],
 
               // Top 2-Column Section: Left is Smart Format Guide, Right is Primary Upload Action
+              if (widget.attentionContext != null) ...[
+                AdminAttentionStudents(context: widget.attentionContext!),
+                const SizedBox(height: 20),
+              ],
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isWide = constraints.maxWidth >= 960;

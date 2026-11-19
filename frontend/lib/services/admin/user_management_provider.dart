@@ -237,7 +237,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     if (response.statusCode != 200) {
       throw Exception(_errorFromResponse(response));
     }
-    return Map<String, dynamic>.from(jsonDecode(utf8.decode(response.bodyBytes)));
+    return Map<String, dynamic>.from(
+      jsonDecode(utf8.decode(response.bodyBytes)),
+    );
   }
 
   Future<void> applyNameRepair(String token) async {
@@ -336,11 +338,16 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
 
   Future<List<Map<String, dynamic>>> previewEnrollmentSections(
     List<Map<String, dynamic>> students,
-    int semesterId,
-  ) async {
+    int semesterId, {
+    bool unifiedEnrollment = false,
+  }) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/academic-records/section-preview/'),
-      body: jsonEncode({'students': students, 'semester_id': semesterId}),
+      body: jsonEncode({
+        'students': students,
+        'semester_id': semesterId,
+        if (unifiedEnrollment) 'unified_enrollment': true,
+      }),
     );
     if (response.statusCode != 200) {
       throw Exception(_errorFromResponse(response));
@@ -388,7 +395,10 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
             : (payload['instructor_assignment'] != null
                   ? ' PIT Instructor assigned.'
                   : '');
-        if (created == 0 && records == 0) {
+        final unified = studentContext?['unified_enrollment'] == true;
+        if (created == 0 &&
+            records == 0 &&
+            !(unified && skipped > 0 && errors == 0)) {
           final reason = skipped > 0 && errors == 0
               ? '$skipped row${skipped == 1 ? '' : 's'} skipped. They likely already exist or do not match the selected import mode.'
               : errors > 0
@@ -400,8 +410,10 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
           );
           return false;
         }
-        final message =
-            '$created users imported.$recordsMessage $skipped skipped. $errors errors.$assignmentMessage';
+        final message = unified
+            ? '$records ${records == 1 ? 'student enrollment' : 'student enrollments'} saved.'
+                  '${skipped > 0 ? ' $skipped already enrolled.' : ''}'
+            : '$created users imported.$recordsMessage $skipped skipped. $errors errors.$assignmentMessage';
         state = state.copyWith(
           isSaving: false,
           message: message,
@@ -689,6 +701,10 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
       final data = jsonDecode(response.body);
       if (data is Map) {
         if (data['detail'] != null) {
+          final errors = data['errors'];
+          if (errors is List && errors.isNotEmpty) {
+            return '${data['detail']}\n${errors.map((e) => 'Row ${e['row']}${e['id_number'] == null ? '' : ' (${e['id_number']})'}: ${e['errors']}').join('\n')}';
+          }
           return data['detail'].toString();
         }
         if (data.isNotEmpty) {

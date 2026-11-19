@@ -82,6 +82,7 @@ def roster(semester, level, year, event, user=None, *, generation=True):
     return [{
         'id': record.student_id, 'name': record.student.get_full_name() or record.student.username,
         'username': record.student.username, 'section': record.section,
+        'year_level': record.year_level,
         'assigned': record.student_id in assigned_ids,
         'eligible': record.student_id not in excluded,
     } for record in records]

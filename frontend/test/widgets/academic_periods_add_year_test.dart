@@ -6,6 +6,7 @@ import 'package:defensys/screens/web/admin/academic_periods/widgets/add_school_y
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/web/admin/academic_periods/academic_periods_screen.dart';
 import 'package:defensys/services/academic_period_provider.dart';
+import 'package:defensys/widgets/feedback/empty_state.dart';
 import '../helpers/pump_app.dart';
 import '../helpers/capture_preview.dart';
 
@@ -41,34 +42,64 @@ class _FakeEmptyAcademicPeriodNotifier extends AcademicPeriodNotifier {
 }
 
 void main() {
-  testWidgets('Year dropdown fits light, dark, and phone layouts', (
-    tester,
-  ) async {
-    await loadPreviewFonts(force: true);
-    for (final config in [(900.0, false), (900.0, true), (360.0, false)]) {
-      tester.view.physicalSize = Size(config.$1, 850);
-      tester.view.devicePixelRatio = 1;
-      await pumpDefensysWidget(
-        tester,
-        const AddSchoolYearDialog(existingLabels: []),
-        theme: config.$2 ? AppTheme.mistDarkTheme : AppTheme.theme,
-      );
-      await tester.tap(find.byType(ShadSelect<int>));
-      await tester.pumpAndSettle();
-      expect(find.text('Add another'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await capturePreview(
-        tester,
-        find.byType(ShadDialog),
-        'school-year-${config.$1.toInt()}-${config.$2 ? 'dark' : 'light'}',
-        viewport: true,
-      );
-      await tester.pumpWidget(const SizedBox());
-      await tester.pumpAndSettle();
-    }
-    tester.view.resetPhysicalSize();
-    tester.view.resetDevicePixelRatio();
-  });
+  testWidgets(
+    'Empty-state action and year dropdown fit light, dark, and phone layouts',
+    (tester) async {
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await loadPreviewFonts(force: true);
+      for (final config in [
+        (1280.0, false),
+        (1280.0, true),
+        (390.0, false),
+        (390.0, true),
+        (320.0, false),
+        (320.0, true),
+      ]) {
+        tester.view.physicalSize = Size(config.$1, 850);
+        tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = config.$1 == 320
+            ? 1.3
+            : 1;
+        await pumpDefensysWidget(
+          tester,
+          const AcademicPeriodsScreen(),
+          overrides: [
+            academicPeriodProvider.overrideWith(
+              _FakeEmptyAcademicPeriodNotifier.new,
+            ),
+          ],
+          theme: config.$2 ? AppTheme.mistDarkTheme : AppTheme.theme,
+        );
+        await capturePreview(
+          tester,
+          find.byType(AcademicPeriodsScreen),
+          'academic-periods-empty-${config.$1.toInt()}-${config.$2 ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        final action = find.descendant(
+          of: find.byType(DefensysEmptyState),
+          matching: find.widgetWithText(ShadButton, 'Add school year'),
+        );
+        expect(action.hitTestable(), findsOneWidget);
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(ShadSelect<int>));
+        await tester.pumpAndSettle();
+        expect(find.text('Add another'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byType(ShadDialog),
+          'school-year-${config.$1.toInt()}-${config.$2 ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpAndSettle();
+      }
+    },
+  );
 
   testWidgets(
     'Add school year dialog does not throw disposed controller error during dismissal',
@@ -94,10 +125,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify empty state is present
-      expect(find.text('No School Years Configured'), findsOneWidget);
+      expect(find.text('No school years yet'), findsOneWidget);
 
       // Tap "+ Add Year"
-      await tester.tap(find.text('Add Year').first);
+      await tester.tap(find.text('Add school year').first);
       await tester.pumpAndSettle();
 
       // The dialog should be open

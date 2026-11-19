@@ -1079,7 +1079,10 @@ class AdminDashboardView(APIView):
         )
         capstone_teams = StudentTeam.objects.filter(level__icontains='Capstone')
         schedulable_teams = capstone_teams.filter(semester=active_sem) if active_sem else capstone_teams.none()
-        current_teams = list(schedulable_teams.select_related('semester__school_year'))
+        from student_teams.models import TeamTermParticipation
+        current_teams = list(schedulable_teams.select_related('semester__school_year').prefetch_related(
+            Prefetch('term_participations', queryset=TeamTermParticipation.objects.all(),
+                     to_attr='_overview_term_participations')))
         if current_teams:
             from student_teams.capstone_context import phase_requirements
             # Global publication survives rollover; inherited source stages are

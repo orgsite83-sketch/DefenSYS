@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/theme/app_theme.dart';
@@ -87,10 +88,10 @@ void main() {
     await tester.tap(find.byTooltip('School year options'));
     await tester.pumpAndSettle();
     expect(find.text('Locked after terms are added'), findsOneWidget);
-    final item = tester.widget<PopupMenuItem<String>>(
+    final item = tester.widget<ShadContextMenuItem>(
       find.ancestor(
         of: find.text('Edit School Year'),
-        matching: find.byType(PopupMenuItem<String>),
+        matching: find.byType(ShadContextMenuItem),
       ),
     );
     expect(item.enabled, isFalse);

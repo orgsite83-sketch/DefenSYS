@@ -682,11 +682,13 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
               final editor = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildCommentsSection(
-                    minutes,
-                    status,
-                    isDocumenter,
-                    isCancelled,
+                  DefensysShadcnScope(
+                    child: _buildCommentsSection(
+                      minutes,
+                      status,
+                      isDocumenter,
+                      isCancelled,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   _buildActionButtons(
@@ -1085,20 +1087,10 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
               ),
               const SizedBox(height: 10),
               if (editable && _controllers[comment['id']] != null)
-                TextField(
+                _MinutesCommentInput(
                   key: ValueKey('minutes-comment-${comment['id']}'),
-                  controller: _controllers[comment['id']],
+                  controller: _controllers[comment['id']]!,
                   enabled: !_isSubmitting && !_isSavingDraft && !_isReviewing,
-                  minLines: 5,
-                  maxLines: 10,
-                  textCapitalization: TextCapitalization.sentences,
-                  style: const TextStyle(fontSize: 14, height: 1.5),
-                  decoration: const InputDecoration(
-                    hintText:
-                        'Record this panelist’s comments, questions and recommendations…',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.all(14),
-                  ),
                 )
               else
                 Text(
@@ -1201,4 +1193,81 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
     } catch (_) {}
     return timeStr;
   }
+}
+
+class _MinutesCommentInput extends StatefulWidget {
+  const _MinutesCommentInput({
+    super.key,
+    required this.controller,
+    required this.enabled,
+  });
+
+  final TextEditingController controller;
+  final bool enabled;
+
+  @override
+  State<_MinutesCommentInput> createState() => _MinutesCommentInputState();
+}
+
+class _MinutesCommentInputState extends State<_MinutesCommentInput>
+    with WidgetsBindingObserver {
+  final _focusNode = FocusNode();
+  bool _revealScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _focusNode.addListener(_revealInput);
+  }
+
+  @override
+  void didChangeMetrics() => _revealInput();
+
+  void _revealInput() {
+    if (!_focusNode.hasFocus || _revealScheduled) return;
+    _revealScheduled = true;
+    // Wait for the keyboard to resize the viewport before revealing the field.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _revealScheduled = false;
+      if (!mounted || !_focusNode.hasFocus) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 200),
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        ),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ShadInput(
+    controller: widget.controller,
+    focusNode: _focusNode,
+    enabled: widget.enabled,
+    minLines: 5,
+    maxLines: 10,
+    textCapitalization: TextCapitalization.sentences,
+    scrollPadding: const EdgeInsets.all(24),
+    padding: const EdgeInsets.all(14),
+    style: TextStyle(
+      fontFamily: DefensysTokens.fontFamilyInter,
+      color: DefensysTokens.textPrimaryOf(context),
+      fontSize: 14,
+      height: 1.5,
+    ),
+    placeholder: const Text(
+      'Record this panelist’s comments, questions and recommendations…',
+    ),
+    onPressed: _revealInput,
+    onPressedAlwaysCalled: true,
+  );
 }

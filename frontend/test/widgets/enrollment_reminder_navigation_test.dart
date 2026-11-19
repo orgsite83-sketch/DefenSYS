@@ -30,6 +30,21 @@ class _Periods extends AcademicPeriodNotifier {
 }
 
 class _Records extends StudentAcademicRecordsNotifier {
+  void activate() => state = state.copyWith(
+    activeSemester: {
+      'id': 1,
+      'label': '1st Semester',
+      'school_year': '2026-2027',
+    },
+    counts: {
+      'student_accounts': 1,
+      'enrollment': {
+        'semester_id': 1,
+        'enrolled': 0,
+        'pending_continuations': 0,
+      },
+    },
+  );
   @override
   StudentAcademicRecordsState build() => const StudentAcademicRecordsState(
     students: [
@@ -66,8 +81,9 @@ class _Users extends UserManagementNotifier {
   @override
   Future<List<Map<String, dynamic>>> previewEnrollmentSections(
     List<Map<String, dynamic>> students,
-    int semesterId,
-  ) async => [
+    int semesterId, {
+    bool unifiedEnrollment = false,
+  }) async => [
     for (final student in students)
       {
         'id_number': student['id_number'],
@@ -160,6 +176,8 @@ void main() {
 
         (container.read(academicPeriodProvider.notifier) as _Periods)
             .activate();
+        (container.read(studentAcademicRecordsProvider.notifier) as _Records)
+            .activate();
         router.go(AdminRoutes.users);
         await tester.pumpAndSettle();
         expect(find.byType(DefensysActionBanner), findsNothing);
@@ -205,9 +223,11 @@ void main() {
       onOpenBulkImport: () => opened = true,
     );
     (container.read(academicPeriodProvider.notifier) as _Periods).activate();
+    (container.read(studentAcademicRecordsProvider.notifier) as _Records)
+        .activate();
     await tester.pumpAndSettle();
     expect(find.text('Open Academic Periods'), findsNothing);
-    final action = find.text('Open Batch Enrollment');
+    final action = find.text('Start enrollment');
     await tester.ensureVisible(action);
     await tester.tap(action);
     expect(opened, isTrue);

@@ -73,7 +73,8 @@ def history_payload(visible, params, *, user=None, include_details=True):
     intakes = {}
     by_intake = {}
     for team in teams:
-        intake = intake_for(team)
+        from .manual_capstone import batch_term
+        intake = batch_term(team) or intake_for(team)
         if intake:
             intakes[intake.pk] = intake
             by_intake.setdefault(intake.pk, []).append(team)
@@ -81,7 +82,8 @@ def history_payload(visible, params, *, user=None, include_details=True):
     selected = serializers.IntegerField(min_value=1).run_validation(params['intake_id']) if params.get('intake_id') else (choices[0].pk if choices else None)
     phase = params.get('phase', '')
     stage_key = params.get('stage_key', '')
-    options = {'intakes': [{'id': t.pk, 'label': f'Intake: {t.display_name}'} for t in choices],
+    registration_ids = {t.capstone_registration_semester_id for t in teams if not t.intake_semester_id}
+    options = {'intakes': [{'id': t.pk, 'label': f'{"Verified registration" if t.pk in registration_ids else "Intake"}: {t.display_name}'} for t in choices],
         'selected_intake_id': selected, 'phases': [], 'stages': []}
     records, stages, phases = [], {}, {}
     for team in by_intake.get(selected, []):

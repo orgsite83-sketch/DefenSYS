@@ -24,6 +24,7 @@ class StudentAcademicRecordsState {
   final String search;
   final String schoolYear;
   final String semester;
+  final String termContext;
   final String? error;
   final String? message;
 
@@ -39,6 +40,7 @@ class StudentAcademicRecordsState {
     this.search = '',
     this.schoolYear = '',
     this.semester = '',
+    this.termContext = 'current',
     this.error,
     this.message,
   });
@@ -55,6 +57,7 @@ class StudentAcademicRecordsState {
     String? search,
     String? schoolYear,
     String? semester,
+    String? termContext,
     String? error,
     String? message,
     bool clearError = false,
@@ -75,6 +78,7 @@ class StudentAcademicRecordsState {
       search: search ?? this.search,
       schoolYear: schoolYear ?? this.schoolYear,
       semester: semester ?? this.semester,
+      termContext: termContext ?? this.termContext,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -83,6 +87,7 @@ class StudentAcademicRecordsState {
 
 class StudentAcademicRecordsNotifier
     extends Notifier<StudentAcademicRecordsState> {
+  int _requestRevision = 0;
   static final String baseUrl = ApiConfig.studentRecordsUrl;
 
   @override
@@ -96,6 +101,7 @@ class StudentAcademicRecordsNotifier
     String? semester,
     String? successMessage,
   }) async {
+    final revision = ++_requestRevision;
     final nextSearch = search ?? state.search;
     final nextSchoolYear = schoolYear ?? state.schoolYear;
     final nextSemester = semester ?? state.semester;
@@ -113,12 +119,14 @@ class StudentAcademicRecordsNotifier
     try {
       final uri = Uri.parse(baseUrl).replace(
         queryParameters: {
+          'term_context': state.termContext,
           if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
           if (nextSchoolYear.isNotEmpty) 'school_year': nextSchoolYear,
           if (nextSemester.isNotEmpty) 'semester': nextSemester,
         },
       );
       final response = await _client.get(uri);
+      if (!ref.mounted || revision != _requestRevision) return;
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -132,6 +140,7 @@ class StudentAcademicRecordsNotifier
         error: _errorFromResponse(response),
       );
     } catch (e) {
+      if (!ref.mounted || revision != _requestRevision) return;
       state = state.copyWith(
         isLoading: false,
         isSaving: false,
@@ -140,13 +149,24 @@ class StudentAcademicRecordsNotifier
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchStudentHistory(String username) async {
+  Future<void> selectTermContext(String context) async {
+    state = state.copyWith(
+      termContext: context == 'history' ? 'history' : 'current',
+      schoolYear: '',
+      semester: '',
+      records: [],
+      isLoading: true,
+    );
+    await fetchRecords();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchStudentHistory(
+    String username,
+  ) async {
     try {
-      final uri = Uri.parse(baseUrl).replace(
-        queryParameters: {
-          'search': username,
-        },
-      );
+      final uri = Uri.parse(
+        baseUrl,
+      ).replace(queryParameters: {'search': username});
       final response = await _client.get(uri);
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -157,7 +177,6 @@ class StudentAcademicRecordsNotifier
   }
 
   Future<bool> addRecord(Map<String, dynamic> payload) async {
-
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -167,7 +186,7 @@ class StudentAcademicRecordsNotifier
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -198,7 +217,7 @@ class StudentAcademicRecordsNotifier
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$recordId/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -227,10 +246,7 @@ class StudentAcademicRecordsNotifier
     );
 
     try {
-      final response = await _client.delete(
-        Uri.parse('$baseUrl/$recordId/'),
-        
-      );
+      final response = await _client.delete(Uri.parse('$baseUrl/$recordId/'));
 
       if (response.statusCode == 200) {
         await fetchRecords(successMessage: 'Academic record deleted.');
@@ -249,7 +265,9 @@ class StudentAcademicRecordsNotifier
     }
   }
 
-  Future<bool> fetchRolloverPreview({List<Map<String, dynamic>>? students}) async {
+  Future<bool> fetchRolloverPreview({
+    List<Map<String, dynamic>>? students,
+  }) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -264,9 +282,7 @@ class StudentAcademicRecordsNotifier
           body: jsonEncode({'students': students}),
         );
       } else {
-        response = await _client.get(
-          Uri.parse('$baseUrl/rollover-preview/'),
-        );
+        response = await _client.get(Uri.parse('$baseUrl/rollover-preview/'));
       }
 
       if (response.statusCode == 200) {
@@ -303,7 +319,7 @@ class StudentAcademicRecordsNotifier
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/rollover/'),
-        
+
         body: jsonEncode({'actions': actions}),
       );
 
@@ -331,8 +347,8 @@ class StudentAcademicRecordsNotifier
     }
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   void _markDependentDataChanged() {
     ref.read(dataRefreshProvider.notifier).markChanged(const [

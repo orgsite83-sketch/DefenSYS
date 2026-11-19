@@ -24,6 +24,7 @@ class StudentTeamsState {
   final Map<String, dynamic>? activeSemester;
   final String capstoneMode;
   final bool canCreateCapstoneTeams;
+  final bool canAddCapstone2Team;
   final String? capstoneModeMessage;
   final String operatingMode;
   final String? operatingMessage;
@@ -53,6 +54,7 @@ class StudentTeamsState {
     this.activeSemester,
     this.capstoneMode = 'off',
     this.canCreateCapstoneTeams = false,
+    this.canAddCapstone2Team = false,
     this.capstoneModeMessage,
     this.operatingMode = 'active',
     this.operatingMessage,
@@ -85,6 +87,7 @@ class StudentTeamsState {
     Map<String, dynamic>? activeSemester,
     String? capstoneMode,
     bool? canCreateCapstoneTeams,
+    bool? canAddCapstone2Team,
     String? capstoneModeMessage,
     String? operatingMode,
     String? operatingMessage,
@@ -124,6 +127,7 @@ class StudentTeamsState {
       capstoneMode: capstoneMode ?? this.capstoneMode,
       canCreateCapstoneTeams:
           canCreateCapstoneTeams ?? this.canCreateCapstoneTeams,
+      canAddCapstone2Team: canAddCapstone2Team ?? this.canAddCapstone2Team,
       capstoneModeMessage: capstoneModeMessage ?? this.capstoneModeMessage,
       operatingMode: operatingMode ?? this.operatingMode,
       operatingMessage: operatingMessage ?? this.operatingMessage,
@@ -648,6 +652,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       clearActiveSemester: payload['active_semester'] == null,
       capstoneMode: payload['capstone_mode']?.toString() ?? state.capstoneMode,
       canCreateCapstoneTeams: payload['can_create_capstone_teams'] == true,
+      canAddCapstone2Team: payload['can_add_capstone2_team'] == true,
       capstoneModeMessage: payload['capstone_mode_message']?.toString(),
       operatingMode: payload['operating_mode']?.toString() ?? 'active',
       operatingMessage: payload['operating_message']?.toString(),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../navigation/admin_route_paths.dart';
+import '../../../navigation/admin_attention_context.dart';
 import '../../../navigation/app_router.dart';
 import '../../../navigation/web_section_navigation.dart';
 import '../../../services/academic_period_provider.dart';
@@ -145,6 +146,12 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     // Indexed branches stay mounted. Consume local writes while this section
     // is visible as well as on navigation, without rebuilding its forms.
     ref.listen(dataRefreshProvider, (previous, next) {
+      if (activeSection != DefensysAdminSection.overview &&
+          (previous?[DataArea.dashboard] ?? 0) != (next[DataArea.dashboard] ?? 0)) {
+        Future.microtask(() {
+          if (mounted) ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+        });
+      }
       if (activeSection == null) return;
       final area = _dataAreaForSection(activeSection);
       final revision = next[area] ?? 0;
@@ -283,6 +290,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const AcademicPeriodsScreen();
       case DefensysAdminSection.userManagement:
         return UserManagementScreen(
+          initialEnrollment: userQuery['view'] == 'enrollment',
+          attentionContext: AdminAttentionContext.fromQuery(userQuery),
           initialUserTab: userQuery['tab'] == 'faculty' ? UserManagementTab.faculty : UserManagementTab.students,
           initialPanelistAccess: userQuery['view'] == 'panelists',
           initialPanelistTab: const ['faculty', 'requests', 'history'].contains(userQuery['section']) ? userQuery['section']! : 'faculty',
@@ -298,7 +307,11 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       case DefensysAdminSection.gradeCenter:
         return const GradeCenterScreen();
       case DefensysAdminSection.rubrics:
-        return const RubricEngineScreen();
+        return RubricEngineScreen(
+          initialStageId: int.tryParse(userQuery['stage'] ?? ''),
+          initialEvaluationType: userQuery['evaluation'],
+          initialLibrary: userQuery['view'] == 'library',
+        );
       case DefensysAdminSection.repositoryAudit:
         return const ProjectArchiveScreen();
       case DefensysAdminSection.curriculumAnalytics:
@@ -356,7 +369,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     dynamic dashboardLabel,
   ) {
     if (activePeriod != null) {
-      return 'Active Sem: ${activePeriod['school_year'] ?? 'Configured'}';
+      final term = activePeriod['label'] ?? 'Semester';
+      return 'Active: $term · ${activePeriod['school_year'] ?? 'Configured'}';
     }
 
     final label = dashboardLabel?.toString().trim() ?? '';
@@ -364,8 +378,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       return 'No Active Semester';
     }
 
-    final schoolYear = RegExp(r'\d{4}-\d{4}').firstMatch(label)?.group(0);
-    return 'Active Sem: ${schoolYear ?? label}';
+    return 'Active: $label';
   }
 }
 

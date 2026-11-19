@@ -143,6 +143,19 @@ class FakeStudentAcademicRecordsNotifier
         },
       ],
       students: [],
+      activeSemester: {
+        'id': 1,
+        'label': '1st Semester',
+        'school_year': '2026-2027',
+      },
+      counts: {
+        'student_accounts': 1,
+        'enrollment': {
+          'semester_id': 1,
+          'enrolled': 1,
+          'pending_continuations': 0,
+        },
+      },
       schoolYears: [],
     );
   }
@@ -265,7 +278,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('User & Team Management'), findsOneWidget);
-    expect(find.text('Batch Enrollment'), findsOneWidget);
+    expect(find.text('Enroll students'), findsOneWidget);
     expect(find.text('Add Single Student'), findsOneWidget);
     expect(find.text('Juan Dela Cruz'), findsOneWidget);
   });
@@ -527,7 +540,7 @@ Student Number,Full Name,Email,Year Level
       await tester.pumpAndSettle();
 
       // Verify Students view rendered with stats and table
-      expect(find.text('Batch Enrollment'), findsOneWidget);
+      expect(find.text('Enroll students'), findsOneWidget);
       expect(find.text('Add Single Student'), findsOneWidget);
       expect(find.text('Juan Dela Cruz'), findsOneWidget);
 
@@ -560,18 +573,14 @@ Student Number,Full Name,Email,Year Level
       await tester.pumpAndSettle();
 
       // Open Batch Enrollment
-      await tester.tap(find.text('Batch Enrollment'));
+      await tester.tap(find.text('Enroll students'));
       await tester.pumpAndSettle();
 
       // Verify Hub Elements
       expect(find.text('Student enrollment'), findsOneWidget);
-      expect(find.text('Import class lists'), findsOneWidget);
-      expect(find.text('Semester rollover'), findsOneWidget);
+      expect(find.text('Import class lists'), findsNothing);
+      expect(find.text('Semester rollover'), findsNothing);
       expect(find.text('Back to Students'), findsOneWidget);
-
-      // Switch to Semester Rollover & Promotion mode
-      await tester.tap(find.text('Semester rollover'));
-      await tester.pumpAndSettle();
 
       // Click Back to Students
       await tester.tap(find.text('Back to Students'));
@@ -614,7 +623,7 @@ Student Number,Full Name,Email,Year Level
       await tester.pumpAndSettle();
 
       // Open Batch Enrollment
-      await tester.tap(find.text('Batch Enrollment'));
+      await tester.tap(find.text('Enroll students'));
       await tester.pumpAndSettle();
 
       // Verify no "Active Academic Semester Required" warning banner
@@ -629,15 +638,8 @@ Student Number,Full Name,Email,Year Level
         findsOneWidget,
       );
 
-      // Switch to Rollover mode
-      await tester.tap(find.text('Semester rollover'));
-      await tester.pumpAndSettle();
-
-      // Verify Target Term in rollover rules card
-      expect(
-        find.textContaining('Target Term: 1st Semester, A.Y. 2026-2027'),
-        findsOneWidget,
-      );
+      expect(find.text('Semester rollover'), findsNothing);
+      expect(find.text('Upload university class lists'), findsOneWidget);
     },
   );
 }

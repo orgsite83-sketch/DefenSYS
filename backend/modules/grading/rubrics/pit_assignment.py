@@ -21,8 +21,11 @@ def managed_pit_events(user):
 
 
 def pit_event_options(user):
+    from .workspace_options import rubric_slot
     options = []
-    for config in managed_pit_events(user).select_related('semester').order_by('event_name', 'pk'):
+    for config in managed_pit_events(user).select_related(
+        'semester', 'panel_rubric', 'peer_rubric',
+    ).order_by('event_name', 'pk'):
         locked, reason = check_pit_event_locked(config)
         options.append({
             'id': config.pk,
@@ -33,6 +36,13 @@ def pit_event_options(user):
             'peer_rubric_id': config.peer_rubric_id,
             'is_locked': locked,
             'lock_reason': reason,
+            'rubric_slots': {
+                'panel': rubric_slot(config.panel_rubric, required=True),
+                'peer': rubric_slot(config.peer_rubric, required=(
+                    config.peer_grading_enabled and config.peer_weight > 0
+                    and not config.concept_config.get('enabled', False)
+                )),
+            },
         })
     return options
 

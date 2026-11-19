@@ -171,7 +171,7 @@ void main() {
     }
     expect(tester.takeException(), isNull);
   });
-  for (final width in [320.0, 390.0, 1280.0, 1920.0]) {
+  for (final width in [320.0, 390.0, 800.0, 1280.0, 1920.0]) {
     for (final dark in [false, true]) {
       testWidgets('Overview actions and scope at $width dark=$dark', (
         tester,
@@ -246,6 +246,41 @@ void main() {
                 },
             ],
             'students': 64,
+            'pit_cohorts': [
+              {
+                'year': '1st Year',
+                'leads': ['Ricardo Fontanilla'],
+                'teams': 8,
+                'event_count': 2,
+                'events': [
+                  {
+                    'event_name': 'Concept presentation',
+                    'is_officially_complete': true,
+                  },
+                  {
+                    'event_name': 'Project demonstration',
+                    'is_officially_complete': false,
+                  },
+                ],
+                'next_defense': '2026-12-03',
+              },
+              {
+                'year': '2nd Year',
+                'leads': [],
+                'teams': 0,
+                'event_count': 0,
+                'events': [],
+                'next_defense': null,
+              },
+              {
+                'year': '3rd Year',
+                'leads': [],
+                'teams': null,
+                'event_count': null,
+                'events': null,
+                'next_defense': null,
+              },
+            ],
             'totals': {
               'all': {'teams': 1, 'scheduled': 0, 'ready': 0},
               'capstone': {'teams': 1, 'scheduled': 0, 'ready': 0},
@@ -260,7 +295,7 @@ void main() {
                 'target_section': 'defenseStages',
                 'target_route':
                     '/admin/defense-stages/7/edit?tab=1&semester_id=1&fromOverview=1',
-                'button_label': 'Fix rubric',
+                'button_label': 'Create rubrics',
               },
             ],
           },
@@ -284,7 +319,7 @@ void main() {
         );
         expect(find.text('Waiting for teams'), findsOneWidget);
         expect(find.textContaining('Complete'), findsNothing);
-        await tester.tap(find.text('Fix rubric'));
+        await tester.tap(find.text('Create rubrics'));
         expect(selected?['target_route'], contains('/7/edit?tab=1'));
         await capturePreview(
           tester,
@@ -299,6 +334,84 @@ void main() {
         expect(
           find.text('Read-only oversight · Managed by PIT Leads'),
           findsOneWidget,
+        );
+        expect(find.text('Dec 3, 2026'), findsOneWidget);
+        expect(find.text('Unassigned'), findsNWidgets(2));
+        expect(find.text('Unavailable'), findsNWidgets(2));
+        expect(find.text('View details'), findsNWidgets(3));
+        final firstCard = find.byKey(const ValueKey('pit-cohort-1st Year'));
+        final secondCard = find.byKey(const ValueKey('pit-cohort-2nd Year'));
+        final thirdCard = find.byKey(const ValueKey('pit-cohort-3rd Year'));
+        final first = tester.getRect(firstCard);
+        final second = tester.getRect(secondCard);
+        final third = tester.getRect(thirdCard);
+        if (width >= 1280) {
+          expect(first.top, second.top);
+          expect(second.top, third.top);
+          expect(first.right, lessThan(second.left));
+          expect(second.right, lessThan(third.left));
+        } else if (width == 800) {
+          expect(first.top, second.top);
+          expect(first.right, lessThan(second.left));
+          expect(third.top, greaterThan(first.bottom));
+        } else {
+          expect(first.left, second.left);
+          expect(second.top, greaterThan(first.bottom));
+          expect(third.top, greaterThan(second.bottom));
+        }
+        selected = null;
+        expect(find.text('Concept presentation'), findsNothing);
+        final details = find.byKey(const ValueKey('pit-details-1st Year'));
+        await tester.ensureVisible(details);
+        await tester.tap(details);
+        await tester.pumpAndSettle();
+        expect(find.text('Concept presentation'), findsOneWidget);
+        expect(find.text('Officially complete'), findsOneWidget);
+        expect(find.text('Open'), findsOneWidget);
+        await capturePreview(
+          tester,
+          find.byType(AdminOverviewWorkspace),
+          'admin-pit-details-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+        Focus.of(tester.element(find.text('Hide details'))).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(find.text('Concept presentation'), findsNothing);
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.pumpAndSettle();
+        expect(find.text('Concept presentation'), findsOneWidget);
+        await tester.tap(details);
+        await tester.pumpAndSettle();
+        final emptyDetails = find.byKey(const ValueKey('pit-details-2nd Year'));
+        await tester.ensureVisible(emptyDetails);
+        await tester.tap(emptyDetails);
+        await tester.pumpAndSettle();
+        expect(find.text('No events configured.'), findsOneWidget);
+        expect(find.text('Event details unavailable.'), findsNothing);
+        await tester.tap(emptyDetails);
+        await tester.pumpAndSettle();
+        final unavailableDetails = find.byKey(
+          const ValueKey('pit-details-3rd Year'),
+        );
+        await tester.ensureVisible(unavailableDetails);
+        await tester.tap(unavailableDetails);
+        await tester.pumpAndSettle();
+        expect(find.text('Event details unavailable.'), findsOneWidget);
+        expect(find.text('No events configured.'), findsNothing);
+        await tester.tap(unavailableDetails);
+        await tester.pumpAndSettle();
+        expect(selected, isNull);
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pump();
+        await tester.ensureVisible(find.text('PIT overview'));
+        await tester.pumpAndSettle();
+        await capturePreview(
+          tester,
+          find.byType(AdminOverviewWorkspace),
+          'admin-pit-overview-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
         );
         expect(tester.takeException(), isNull);
       });

@@ -165,6 +165,7 @@ class _Notifications extends NotificationsNotifier {
 }
 
 void main() {
+  setUpAll(() => loadPreviewFonts(force: true));
   Future<GoRouter> pumpWorkspace(
     WidgetTester tester, {
     bool resetStorage = true,
@@ -366,6 +367,53 @@ void main() {
     'adviser_rubric_id': 15, 'adviser_rubric_name': 'Published adviser rubric',
     'peer_rubric_id': 20, 'peer_rubric_name': 'Published peer rubric',
   };
+
+  for (final step in [0, 1]) {
+    testWidgets('existing stage saves directly from setup step $step', (tester) async {
+      final router = await pumpWorkspace(tester,
+        initialLocation: AdminRoutes.defenseStageEdit(7),
+        gradingConfig: step == 0 ? assignedRubrics : const {},
+      );
+      final container = ProviderScope.containerOf(tester.element(find.byType(DefenseStageEditorScreen)));
+      final stages = container.read(defenseStagesProvider.notifier) as _Stages;
+      await tester.enterText(find.byType(TextField).first, 'Updated stage details $step');
+      if (step == 1) {
+        await tester.tap(find.text('2. Grading & Rubrics'));
+        await tester.pumpAndSettle();
+      }
+      final save = find.text('Save changes');
+      final next = find.text(step == 0 ? 'Next: Grading & Rubrics' : 'Next: Deliverables');
+      expect(save.hitTestable(), findsOneWidget);
+      expect(next.hitTestable(), findsOneWidget);
+      expect(tester.getCenter(save).dx, greaterThan(tester.getCenter(next).dx));
+      await capturePreview(tester, find.byType(DefenseStageEditorScreen),
+        'stage-quick-save-${step == 0 ? 'details' : 'grading'}', viewport: true);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      expect(stages.savedStageId, 7);
+      expect(stages.savedUpdate?['label'], 'Updated stage details $step');
+      expect(stages.adds, 0);
+      for (final role in ['panel', 'adviser', 'peer']) {
+        expect(stages.savedGrading!.containsKey('${role}_rubric_id'), isFalse);
+        if (step == 0) {
+          expect(stages.gradingConfig['${role}_rubric_id'], assignedRubrics['${role}_rubric_id']);
+        }
+      }
+      expect(router.routeInformationProvider.value.uri.path, AdminRoutes.defenseStages);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('saving from details still validates the stage name', (tester) async {
+    await pumpWorkspace(tester, initialLocation: AdminRoutes.defenseStageEdit(7));
+    final container = ProviderScope.containerOf(tester.element(find.byType(DefenseStageEditorScreen)));
+    await tester.enterText(find.byType(TextField).first, '');
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect((container.read(defenseStagesProvider.notifier) as _Stages).savedUpdate, isNull);
+    expect(find.text('Enter a stage name.'), findsWidgets);
+    expect(find.byType(DefenseStageEditorScreen), findsOneWidget);
+  });
 
   for (final creating in [false, true]) {
     testWidgets('Capstone ${creating ? 'creation' : 'editing'} excludes rubrics assigned elsewhere', (tester) async {
@@ -840,6 +888,7 @@ void main() {
     final usedDelete = find.widgetWithIcon(IconButton, Icons.delete_outline_rounded,);
     expect(tester.widget<IconButton>(usedDelete).onPressed, isNull);
     expect(find.text('Submission history is protected.'), findsOneWidget);
+    expect(tester.widget<ShadCheckbox>(find.byKey(const ValueKey('stage-deliverable-restricted'))).enabled, isFalse);
     await capturePreview(tester, find.byType(DefenseStageEditorScreen), 'stage-deliverable-integrity', viewport: true,);
     await tester.ensureVisible(find.text('Unused presentation'));
     await tester.tap(find.text('Unused presentation'));

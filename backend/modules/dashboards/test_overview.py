@@ -50,6 +50,7 @@ class AdminOverviewTests(performance.DashboardReadPerformanceTests):
         stage_tasks = [item for item in tasks if item['id'].startswith('stage_setup:')]
         self.assertTrue(stage_tasks)
         for task in stage_tasks:
+            self.assertEqual(task['button_label'], 'Create rubrics')
             self.assertIn('/edit?tab=', task['target_route'])
             self.assertIn(f'semester_id={self.semester.pk}', task['target_route'])
             self.assertIn('fromOverview=1', task['target_route'])

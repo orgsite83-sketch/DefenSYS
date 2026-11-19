@@ -25,6 +25,7 @@ import '../screens/web/faculty/faculty_dashboard.dart';
 import '../services/app_navigator.dart';
 import '../services/auth_provider.dart';
 import 'admin_route_paths.dart';
+import 'admin_attention_context.dart';
 import 'panelist_routes.dart';
 import 'route_pages.dart';
 import 'workspace_access.dart';
@@ -87,7 +88,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     }
     if ((location == AppRoutes.login || location == '/') &&
-        (WorkspaceAccess.hasStaffWorkspace(auth.user!) || WorkspaceAccess.canEvaluate(auth.user!) ||
+        (WorkspaceAccess.hasStaffWorkspace(auth.user!) ||
+            WorkspaceAccess.canEvaluate(auth.user!) ||
             WorkspaceAccess.canDocument(auth.user!)) &&
         ref.read(workspacePreferenceProvider).isLoading) {
       return null;
@@ -193,7 +195,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     ? 'library'
                     : state.uri.queryParameters['tab'],
                 initialStage: state.uri.queryParameters['stage'],
-                openDeliverables: state.uri.queryParameters['subtab'] == 'deliverables',
+                openDeliverables:
+                    state.uri.queryParameters['subtab'] == 'deliverables',
               );
             },
           );
@@ -427,7 +430,8 @@ List<GoRoute> _adminSectionRoutes() {
           builder: (_, state) {
             final id = int.parse(state.pathParameters['teamId']!);
             return AdminTeamDetailRoute(
-              key: ValueKey('team-detail-$id'), teamId: id,
+              key: ValueKey('team-detail-$id'),
+              teamId: id,
               initialDeliverableStage: state.uri.queryParameters['stage'],
               initialTab: state.uri.queryParameters['tab'],
               initialEvent: state.uri.queryParameters['event_name'],
@@ -441,7 +445,10 @@ List<GoRoute> _adminSectionRoutes() {
       path: 'grade-center',
       pageBuilder: _adminSectionPage,
       routes: [
-        GoRoute(path: 'pending', builder: (_, _) => const GradeMasterlistPendingRoute()),
+        GoRoute(
+          path: 'pending',
+          builder: (_, _) => const GradeMasterlistPendingRoute(),
+        ),
         GoRoute(
           path: 'grades/:gradeId',
           builder: (_, state) {
@@ -476,7 +483,11 @@ List<GoRoute> _adminSectionRoutes() {
     GoRoute(path: 'curriculum-analytics', pageBuilder: _adminSectionPage),
     GoRoute(path: 'audit-compliance', pageBuilder: _adminSectionPage),
     GoRoute(path: 'defense-scheduler', pageBuilder: _adminSectionPage),
-    GoRoute(path: 'defense-board', pageBuilder: _adminSectionPage, routes: _notificationActionRoutes('admin')),
+    GoRoute(
+      path: 'defense-board',
+      pageBuilder: _adminSectionPage,
+      routes: _notificationActionRoutes('admin'),
+    ),
     GoRoute(
       path: 'defense-stages',
       pageBuilder: _adminSectionPage,
@@ -533,9 +544,8 @@ List<GoRoute> _facultySectionRoutes() {
     GoRoute(path: 'documenter-records', pageBuilder: _facultySectionPage),
     GoRoute(
       path: 'profile',
-      pageBuilder: (_, __) => const NoTransitionPage(
-        child: ProfileScreen(showAppBar: false),
-      ),
+      pageBuilder: (_, __) =>
+          const NoTransitionPage(child: ProfileScreen(showAppBar: false)),
     ),
     GoRoute(
       path: 'cohort',
@@ -561,11 +571,14 @@ List<GoRoute> _facultySectionRoutes() {
           path: ':teamId',
           builder: (_, state) {
             final id = int.parse(state.pathParameters['teamId']!);
-            return AdminTeamDetailRoute(key: ValueKey('team-detail-$id'),
-              teamId: id, pitLeadMode: true,
+            return AdminTeamDetailRoute(
+              key: ValueKey('team-detail-$id'),
+              teamId: id,
+              pitLeadMode: true,
               initialTab: state.uri.queryParameters['tab'],
               initialDeliverableStage: state.uri.queryParameters['stage'],
-              initialEvent: state.uri.queryParameters['event_name']);
+              initialEvent: state.uri.queryParameters['event_name'],
+            );
           },
         ),
       ],
@@ -579,7 +592,9 @@ List<GoRoute> _facultySectionRoutes() {
         final id = int.tryParse(
           state.uri.queryParameters['panelistRequest'] ?? '',
         );
-        if (id == null || id < 1 || _routeUser(context)?['is_pit_lead'] != true) {
+        if (id == null ||
+            id < 1 ||
+            _routeUser(context)?['is_pit_lead'] != true) {
           return null;
         }
         return PanelistRoutes.directory(
@@ -594,7 +609,10 @@ List<GoRoute> _facultySectionRoutes() {
       path: 'grade-center',
       pageBuilder: _facultySectionPage,
       routes: [
-        GoRoute(path: 'pending', builder: (_, _) => const GradeMasterlistPendingRoute()),
+        GoRoute(
+          path: 'pending',
+          builder: (_, _) => const GradeMasterlistPendingRoute(),
+        ),
         GoRoute(
           path: 'grades/:gradeId',
           builder: (_, state) {
@@ -615,18 +633,25 @@ List<GoRoute> _facultySectionRoutes() {
     GoRoute(path: 'project-archive', pageBuilder: _facultySectionPage),
     GoRoute(path: 'repository-audit', pageBuilder: _facultySectionPage),
     GoRoute(path: 'audit-compliance', pageBuilder: _facultySectionPage),
-    GoRoute(path: 'deliverables', pageBuilder: _facultySectionPage, routes: [
-      _teamCreationRoute(instructor: true),
-      _teamRosterRoute(instructor: true),
-      GoRoute(path: 'teams/:teamId', builder: (_, state) => TeamDeliverablesScreen(
-        key: ValueKey(state.uri.toString()),
-        initialTeamId: int.parse(state.pathParameters['teamId']!),
-        initialStage: state.uri.queryParameters['stage'],
-        initialScope: state.uri.queryParameters['scope'],
-        isAdviser: state.uri.queryParameters['scope'] != 'pit',
-        initialTab: state.uri.queryParameters['tab'] == 'defense' ? 3 : 0,
-      )),
-    ]),
+    GoRoute(
+      path: 'deliverables',
+      pageBuilder: _facultySectionPage,
+      routes: [
+        _teamCreationRoute(instructor: true),
+        _teamRosterRoute(instructor: true),
+        GoRoute(
+          path: 'teams/:teamId',
+          builder: (_, state) => TeamDeliverablesScreen(
+            key: ValueKey(state.uri.toString()),
+            initialTeamId: int.parse(state.pathParameters['teamId']!),
+            initialStage: state.uri.queryParameters['stage'],
+            initialScope: state.uri.queryParameters['scope'],
+            isAdviser: state.uri.queryParameters['scope'] != 'pit',
+            initialTab: state.uri.queryParameters['tab'] == 'defense' ? 3 : 0,
+          ),
+        ),
+      ],
+    ),
     GoRoute(path: 'weekly-reports', pageBuilder: _facultySectionPage),
     GoRoute(path: 'adviser-grading', pageBuilder: _facultySectionPage),
     GoRoute(path: 'uploader', pageBuilder: _facultySectionPage),
@@ -652,15 +677,21 @@ GoRoute _teamCreationRoute({bool instructor = false}) => GoRoute(
     if (state.uri.queryParameters['tab'] == 'import') {
       final base = state.uri.path.replaceFirst('/creation', '');
       final levelParam = state.uri.queryParameters['level'];
-      final normalizedLevel = levelParam?.replaceAll(' PIT', '').trim();
+      final normalizedLevel = levelParam
+          ?.replaceAll(RegExp(r'\s+(PIT|Capstone)$'), '')
+          .trim();
       return Scaffold(
         backgroundColor: const Color(0xFFF8FAFC),
         body: StudentTeamsScreen(
+          key: ValueKey(state.uri.toString()),
+          attentionContext: AdminAttentionContext.fromQuery(
+            state.uri.queryParameters,
+          ),
           mode: instructor
               ? TeamListMode.pitInstructor
               : (base.startsWith('/admin')
-                  ? TeamListMode.capstoneAdmin
-                  : TeamListMode.pitLead),
+                    ? TeamListMode.capstoneAdmin
+                    : TeamListMode.pitLead),
           initialBulkImport: true,
           pitYearLevel: normalizedLevel ?? levelParam,
           pitSection: state.uri.queryParameters['section'],

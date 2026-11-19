@@ -42,11 +42,7 @@ class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
           'id': 2,
           'label': '2025-2026',
           'semesters': [
-            {
-              'id': 9,
-              'label': '1st Semester',
-              'is_active': false
-            },
+            {'id': 9, 'label': '1st Semester', 'is_active': false},
           ],
         },
       ],
@@ -96,11 +92,13 @@ class _FakeDefenseStagesNotifier extends DefenseStagesNotifier {
   }
 
   @override
-  Future<void> fetchStages({String? scope,
+  Future<void> fetchStages({
+    String? scope,
     String? intake,
     String? phase,
     String? stage,
-    String? successMessage,}) async {}
+    String? successMessage,
+  }) async {}
 }
 
 class _FakeUserManagementNotifier extends UserManagementNotifier {
@@ -121,7 +119,11 @@ class _FakeUserManagementNotifier extends UserManagementNotifier {
   }
 
   @override
-  Future<void> fetchUsers({String? search, String? role, String? successMessage,}) async {}
+  Future<void> fetchUsers({
+    String? search,
+    String? role,
+    String? successMessage,
+  }) async {}
 }
 
 class _FakeDefenseSchedulerNotifier extends DefenseSchedulerNotifier {
@@ -151,9 +153,10 @@ class _FakeDefenseSchedulerNotifier extends DefenseSchedulerNotifier {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> fetchPitEventConfigs(
-      {int? semesterId,
-    void Function(List<Map<String, dynamic>>)? onHistorySemesters,}) async {
+  Future<List<Map<String, dynamic>>> fetchPitEventConfigs({
+    int? semesterId,
+    void Function(List<Map<String, dynamic>>)? onHistorySemesters,
+  }) async {
     return _configs;
   }
 
@@ -165,157 +168,190 @@ class _FakeDefenseSchedulerNotifier extends DefenseSchedulerNotifier {
 
 void main() {
   testWidgets(
-      'AcademicPeriod Redesign: Accordion renders and drill-down into SemesterDetailScreen shows Capstone and PIT tabs',
-      (tester) async {
-    tester.view.physicalSize = const Size(1400, 1000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(() => tester.view.resetPhysicalSize());
+    'AcademicPeriod Redesign: Accordion renders and drill-down into SemesterDetailScreen shows Capstone and PIT tabs',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          academicPeriodProvider
-              .overrideWith(_FakeAcademicPeriodNotifier.new,),
-          defenseStagesProvider
-              .overrideWith(_FakeDefenseStagesNotifier.new),
-          userManagementProvider
-              .overrideWith(_FakeUserManagementNotifier.new,),
-          defenseSchedulerProvider
-              .overrideWith(_FakeDefenseSchedulerNotifier.new,),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.mistDarkTheme,
-          home: const Scaffold(
-            body: AcademicPeriodsScreen()
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            academicPeriodProvider.overrideWith(
+              _FakeAcademicPeriodNotifier.new,
+            ),
+            defenseStagesProvider.overrideWith(_FakeDefenseStagesNotifier.new),
+            userManagementProvider.overrideWith(
+              _FakeUserManagementNotifier.new,
+            ),
+            defenseSchedulerProvider.overrideWith(
+              _FakeDefenseSchedulerNotifier.new,
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.mistDarkTheme,
+            home: const Scaffold(body: AcademicPeriodsScreen()),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    // 1. Verify Level 1 Hub: Accordion School Years are present
-    expect(find.text('A.Y. 2026-2027'), findsOneWidget);
-    expect(find.text('A.Y. 2025-2026'), findsOneWidget);
-    expect(find.text('Currently active'), findsOneWidget);
+      // 1. Verify Level 1 Hub: Accordion School Years are present
+      expect(find.text('A.Y. 2026-2027'), findsOneWidget);
+      expect(find.text('A.Y. 2025-2026'), findsOneWidget);
+      expect(find.textContaining('Current school year'), findsOneWidget);
 
-    // 2. Verify that active A.Y. 2026-2027 is expanded and shows its terms
-    expect(find.text('1st Semester'), findsWidgets);
-    expect(find.text('2nd Semester'), findsWidgets);
-    expect(find.text('Active'), findsWidgets);
-    expect(find.text('Capstone 2 Continue'), findsOneWidget);
-    expect(find.text('PIT Active'), findsWidgets);
+      // 2. Verify that active A.Y. 2026-2027 is expanded and shows its terms
+      expect(find.text('1st Semester'), findsWidgets);
+      expect(find.text('2nd Semester'), findsWidgets);
 
-    // 3. Tap "Manage" button on 1st Semester to open SemesterDetailScreen
-    final manageButtons = find.text('Manage');
-    expect(manageButtons, findsWidgets);
-    await tester.tap(manageButtons.first);
-    await tester.pumpAndSettle();
+      // Inactive semesters use the same destination without claiming to be upcoming.
+      await tester.tap(find.text('Open semester').at(1));
+      await tester.pumpAndSettle();
+      expect(find.text('Inactive'), findsOneWidget);
+      expect(find.text('Upcoming'), findsNothing);
+      expect(find.text('Set as Active Semester'), findsOneWidget);
+      await tester.tap(find.text('Back to academic periods'));
+      await tester.pumpAndSettle();
+      expect(find.text('Open semester'), findsNWidgets(2));
+      expect(find.text('Active'), findsWidgets);
+      expect(find.text('Capstone 2 · Continuation'), findsOneWidget);
+      expect(find.text('PIT'), findsWidgets);
 
-    // 4. Verify SemesterDetailScreen Command Center is loaded
-    expect(find.text('Back to Academic Cycles'), findsOneWidget);
-    expect(find.text('Capstone Program (4th Year)'), findsOneWidget);
-    expect(find.text('PIT Program (1st–3rd Year)'), findsOneWidget);
-    expect(find.text('Master Controls & Logs'), findsOneWidget);
+      // Keep manually expanded years when opening a semester and returning.
+      await tester.tap(find.text('A.Y. 2025-2026'));
+      await tester.pumpAndSettle();
+      expect(find.text('Open semester'), findsNWidgets(3));
 
-    // 5. In Capstone Tab (default selected): verify policies and defense stages pipeline
-    expect(find.text('⚙️ Capstone Cohort Policies'), findsOneWidget);
-    expect(find.text('📝 Term-Wide Evaluation Master Toggles'), findsOneWidget,);
-    expect(find.text('🛡️ Capstone Defense Stages Pipeline'), findsOneWidget);
-    expect(find.text('Title Proposal'), findsOneWidget);
-    expect(find.text('Outline Defense'), findsOneWidget);
-    expect(find.text('Final Defense'), findsOneWidget);
+      // 3. Tap "Open semester" button on 1st Semester to open SemesterDetailScreen
+      final manageButtons = find.text('Open semester');
+      expect(manageButtons, findsWidgets);
+      await tester.tap(manageButtons.first);
+      await tester.pumpAndSettle();
 
-    // 6. Switch to Tab 2: PIT Program (1st–3rd Year)
-    await tester.tap(find.text('PIT Program (1st–3rd Year)'));
-    await tester.pumpAndSettle();
+      // 4. Verify SemesterDetailScreen Command Center is loaded
+      expect(find.text('Back to academic periods'), findsOneWidget);
+      expect(find.text('Capstone'), findsOneWidget);
+      expect(find.text('PIT'), findsOneWidget);
+      expect(find.text('Semester settings'), findsOneWidget);
 
-    // Verify PIT Governance Banner
-    expect(find.text('Faculty Lead Ownership & Admin Oversight'),
-        findsOneWidget,);
-    expect(find.text('Governance Model'), findsOneWidget);
-    expect(find.text('PIT Coordinator (Faculty Lead)'), findsOneWidget);
-    expect(
-        find.text('Administrator (Institutional Oversight)'), findsOneWidget,);
+      // 5. In Capstone Tab (default selected): verify policies and defense stages pipeline
+      expect(find.text('⚙️ Capstone Cohort Policies'), findsOneWidget);
+      expect(
+        find.text('📝 Term-Wide Evaluation Master Toggles'),
+        findsOneWidget,
+      );
+      expect(find.text('🛡️ Capstone Defense Stages Pipeline'), findsOneWidget);
+      expect(find.text('Title Proposal'), findsOneWidget);
+      expect(find.text('Outline Defense'), findsOneWidget);
+      expect(find.text('Final Defense'), findsOneWidget);
 
-    // Verify PIT-specific rules: 80% Panelist, 20% Peer, and NO adviser note
-    expect(find.text('📌 PIT Cohort Structure (1st–3rd Year)'), findsOneWidget,);
-    expect(find.text('80%'), findsOneWidget);
-    expect(find.text('20%'), findsOneWidget);
-    expect(
+      // 6. Switch to the PIT tab
+      await tester.tap(find.text('PIT'));
+      await tester.pumpAndSettle();
+
+      // Verify PIT Governance Banner
+      expect(
+        find.text('Faculty Lead Ownership & Admin Oversight'),
+        findsOneWidget,
+      );
+      expect(find.text('Governance Model'), findsOneWidget);
+      expect(find.text('PIT Coordinator (Faculty Lead)'), findsOneWidget);
+      expect(
+        find.text('Administrator (Institutional Oversight)'),
+        findsOneWidget,
+      );
+
+      // Verify PIT-specific rules: 80% Panelist, 20% Peer, and NO adviser note
+      expect(
+        find.text('📌 PIT Cohort Structure (1st–3rd Year)'),
+        findsOneWidget,
+      );
+      expect(find.text('80%'), findsOneWidget);
+      expect(find.text('20%'), findsOneWidget);
+      expect(
         find.textContaining(
-            'Note: PIT does NOT have assigned faculty advisers.',),
-        findsOneWidget,);
+          'Note: PIT does NOT have assigned faculty advisers.',
+        ),
+        findsOneWidget,
+      );
 
-    // Verify 3 Cohort breakdown cards
-    expect(find.text('1st Year Cohort — CS 101'), findsOneWidget);
-    expect(find.text('2nd Year Cohort — CS 201'), findsOneWidget);
-    expect(find.text('3rd Year Cohort — CS 301'), findsOneWidget);
+      // Verify 3 Cohort breakdown cards
+      expect(find.text('1st Year Cohort — CS 101'), findsOneWidget);
+      expect(find.text('2nd Year Cohort — CS 201'), findsOneWidget);
+      expect(find.text('3rd Year Cohort — CS 301'), findsOneWidget);
 
-    // Verify Assigned Coordinator for 1st Year (Prof. Alan Turing)
-    expect(find.text('Prof. Alan Turing'), findsOneWidget);
+      // Verify Assigned Coordinator for 1st Year (Prof. Alan Turing)
+      expect(find.text('Prof. Alan Turing'), findsOneWidget);
 
-    // Verify Unassigned Coordinator prompt for cohorts without assigned lead
-    expect(find.text('Assign Lead ↗'), findsWidgets);
+      // Verify Unassigned Coordinator prompt for cohorts without assigned lead
+      expect(find.text('Assign Lead ↗'), findsWidgets);
 
-    // Verify Configured PIT Events for cohorts
-    expect(find.text('CS 101 Concept Pitch'), findsOneWidget);
-    expect(find.text('CS 201 Architecture Demo'), findsOneWidget);
-    expect(find.text('Defenses Scheduled (Locked)'), findsOneWidget);
+      // Verify Configured PIT Events for cohorts
+      expect(find.text('CS 101 Concept Pitch'), findsOneWidget);
+      expect(find.text('CS 201 Architecture Demo'), findsOneWidget);
+      expect(find.text('Defenses Scheduled (Locked)'), findsOneWidget);
 
-    // Verify interactive Peer Evaluation switches
-    final switches = find.byType(Switch);
-    expect(switches, findsWidgets);
+      // Verify interactive Peer Evaluation switches
+      final switches = find.byType(Switch);
+      expect(switches, findsWidgets);
 
-    // Tap peer evaluation toggle on 1st event
-    await tester.ensureVisible(switches.first);
-    await tester.tap(switches.first);
-    await tester.pumpAndSettle();
+      // Tap peer evaluation toggle on 1st event
+      await tester.ensureVisible(switches.first);
+      await tester.tap(switches.first);
+      await tester.pumpAndSettle();
 
-    // 7. Switch to Tab 3: Master Controls & Logs
-    await tester.ensureVisible(find.text('Master Controls & Logs'));
-    await tester.tap(find.text('Master Controls & Logs'));
-    await tester.pumpAndSettle();
+      // 7. Switch to Semester settings
+      await tester.ensureVisible(find.text('Semester settings'));
+      await tester.tap(find.text('Semester settings'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('⚙️ Semester Lifecycle & Status'), findsOneWidget);
-    expect(find.text('⚠️ Danger Zone'), findsOneWidget);
+      expect(find.text('⚙️ Semester Lifecycle & Status'), findsOneWidget);
+      expect(find.text('⚠️ Danger Zone'), findsOneWidget);
 
-    // 8. Test Back Button returns to Academic Cycles Hub
-    await tester.tap(find.text('Back to Academic Cycles'));
-    await tester.pumpAndSettle();
+      // 8. Test Back Button returns to Academic Cycles Hub
+      await tester.tap(find.text('Back to academic periods'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('A.Y. 2026-2027'), findsOneWidget);
-    expect(find.text('Manage Active Term ↗'), findsOneWidget);
+      expect(find.text('A.Y. 2026-2027'), findsOneWidget);
+      expect(find.text('Academic periods'), findsOneWidget);
+      expect(find.text('Open semester'), findsNWidgets(3));
 
-    // 9. Verify [ ··· ] More Options popup menu on semester rows
-    final moreOptionsButtons = find.byTooltip('More options');
-    expect(moreOptionsButtons, findsWidgets);
+      // Restore the older year's collapsed state for the row-action checks.
+      await tester.tap(find.text('A.Y. 2025-2026'));
+      await tester.pumpAndSettle();
 
-    // Tap more options on the 2nd Semester (inactive term, index 1)
-    await tester.tap(moreOptionsButtons.at(1));
-    await tester.pumpAndSettle();
+      // 9. Verify [ ··· ] More Options popup menu on semester rows
+      final moreOptionsButtons = find.byTooltip('More options');
+      expect(moreOptionsButtons, findsWidgets);
 
-    expect(find.text('Set as Active Semester'), findsOneWidget);
-    expect(find.text('Delete Semester'), findsOneWidget);
+      // Tap more options on the 2nd Semester (inactive term, index 1)
+      await tester.tap(moreOptionsButtons.at(1));
+      await tester.pumpAndSettle();
 
-    // Dismiss menu
-    await tester.tapAt(const Offset(50, 50));
-    await tester.pumpAndSettle();
+      expect(find.text('Set as Active Semester'), findsOneWidget);
+      expect(find.text('Delete Semester'), findsOneWidget);
 
-    // 10. Test Collapsing (Minimizing) the School Year Card
-    // Tap on the header of A.Y. 2026-2027 to collapse it
-    await tester.tap(find.text('A.Y. 2026-2027'));
-    await tester.pumpAndSettle();
+      // Dismiss menu
+      await tester.tapAt(const Offset(50, 50));
+      await tester.pumpAndSettle();
 
-    // The terms table under A.Y. 2026-2027 should now be collapsed/minimized
-    expect(find.text('1st Semester'), findsNothing);
-    expect(find.text('2nd Semester'), findsNothing);
+      // 10. Test Collapsing (Minimizing) the School Year Card
+      // Tap on the header of A.Y. 2026-2027 to collapse it
+      await tester.tap(find.text('A.Y. 2026-2027'));
+      await tester.pumpAndSettle();
 
-    // Tap on the header again to expand it back
-    await tester.tap(find.text('A.Y. 2026-2027'));
-    await tester.pumpAndSettle();
+      // The terms table under A.Y. 2026-2027 should now be collapsed/minimized
+      expect(find.text('1st Semester'), findsNothing);
+      expect(find.text('2nd Semester'), findsNothing);
 
-    // The terms table should be visible again
-    expect(find.text('1st Semester'), findsWidgets);
-    expect(find.text('2nd Semester'), findsWidgets);
-  },);
+      // Tap on the header again to expand it back
+      await tester.tap(find.text('A.Y. 2026-2027'));
+      await tester.pumpAndSettle();
+
+      // The terms table should be visible again
+      expect(find.text('1st Semester'), findsWidgets);
+      expect(find.text('2nd Semester'), findsWidgets);
+    },
+  );
 }

@@ -15,6 +15,8 @@ def deletion_blockers(team):
     from repository.deliverables.models import DeliverableSubmission
 
     blockers = []
+    if team.capstone_confirmations.exists():
+        blockers.append('This team has verified academic eligibility records that must be preserved.')
     if (team.term_participations.filter(
             Q(closed_at__isnull=False) | ~Q(outcome='open') | ~Q(semester_id=team.semester_id)).exists()
             or team.historical_recovery_records.exists()

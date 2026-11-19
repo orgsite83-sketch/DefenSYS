@@ -31,11 +31,14 @@ class RubricDetailsFields extends StatelessWidget {
     this.showValidation = false,
     this.nameFieldKey,
     this.pointsFieldKey,
+    this.showContextFields = true,
+    this.compactScoring = false,
   });
 
   final String semesterLabel, evaluationType, scale, standardScale, target;
   final bool semesterActive, hasSemester, customName, isPit, enabled;
   final bool showValidation;
+  final bool showContextFields, compactScoring;
   final TextEditingController nameController, customPoints;
   final List<String> scales;
   final ValueChanged<String> onNameChanged,
@@ -195,6 +198,66 @@ class RubricDetailsFields extends StatelessWidget {
     );
   }
 
+  Widget _scoringFields(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _choices(
+        context,
+        'Scoring setup',
+        _sectioned ? 'sections' : 'standard',
+        const {
+          'standard': 'Standard criteria',
+          'sections': 'Weighted sections',
+        },
+        (value) => onScaleChanged(
+          value == 'sections' ? 'Points-Based (Sections)' : standardScale,
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        _sectioned
+            ? 'Set section weights; criterion points divide each section’s weight.'
+            : 'Give each criterion a percentage of the rubric.',
+        style: _caption(context),
+      ),
+      const SizedBox(height: 16),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final fields = [
+            if (showContextFields)
+              _choices(context, 'Evaluation type', evaluationType, {
+                'panel': 'Panel',
+                if (!isPit) 'adviser': 'Adviser',
+                'peer': 'Peer',
+              }, onEvaluationChanged),
+            if (!_sectioned) _scale(context),
+            _recipient(context),
+          ];
+          if (constraints.maxWidth < 900) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < fields.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 14),
+                  fields[i],
+                ],
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < fields.length; i++) ...[
+                if (i > 0) const SizedBox(width: 16),
+                Expanded(child: fields[i]),
+              ],
+            ],
+          );
+        },
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     final name = RubricEditorField(
@@ -254,83 +317,69 @@ class RubricDetailsFields extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth < 760) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [name, const SizedBox(height: 14), semester],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 3, child: name),
-                const SizedBox(width: 16),
-                Expanded(flex: 2, child: semester),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        _choices(
-          context,
-          'Scoring setup',
-          _sectioned ? 'sections' : 'standard',
-          const {
-            'standard': 'Standard criteria',
-            'sections': 'Weighted sections',
-          },
-          (value) => onScaleChanged(
-            value == 'sections' ? 'Points-Based (Sections)' : standardScale,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          _sectioned
-              ? 'Set section weights; criterion points divide each section’s weight.'
-              : 'Give each criterion a percentage of the rubric.',
-          style: _caption(context),
-        ),
-        const SizedBox(height: 16),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final fields = [
-              _choices(context, 'Evaluation type', evaluationType, {
-                'panel': 'Panel',
-                if (!isPit) 'adviser': 'Adviser',
-                'peer': 'Peer',
-              }, onEvaluationChanged),
-              if (!_sectioned) _scale(context),
-              _recipient(context),
-            ];
-            if (constraints.maxWidth < 900) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        if (!showContextFields)
+          name
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 760) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [name, const SizedBox(height: 14), semester],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (var i = 0; i < fields.length; i++) ...[
-                    if (i > 0) const SizedBox(height: 14),
-                    fields[i],
-                  ],
+                  Expanded(flex: 3, child: name),
+                  const SizedBox(width: 16),
+                  Expanded(flex: 2, child: semester),
                 ],
               );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var i = 0; i < fields.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 16),
-                  Expanded(
-                    flex: !_sectioned && i == 1 ? 4 : 3,
-                    child: fields[i],
-                  ),
-                ],
-              ],
-            );
-          },
-        ),
+            },
+          ),
         const SizedBox(height: 16),
-        assignment,
+        if (compactScoring)
+          ShadAccordion<String>(
+            key: ValueKey('rubric-scoring-$showValidation'),
+            initialValue: 'scoring',
+            maintainState: true,
+            children: [
+              ShadAccordionItem(
+                value: 'scoring',
+                underlineTitleOnHover: false,
+                separator: const SizedBox.shrink(),
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _label(context, 'Scoring settings'),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_sectioned ? 'Weighted sections' : 'Standard criteria'} · '
+                      '${_sectioned
+                          ? ''
+                          : scale == 'Custom Scale'
+                          ? '${customPoints.text}-point · '
+                          : '${scale.split('-').first}-point · '}'
+                      '${evaluationType == 'peer' || target == 'individual'
+                          ? 'Individual'
+                          : target == 'both'
+                          ? 'Team + individual'
+                          : 'Team'}',
+                      style: _caption(context),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _scoringFields(context),
+                ),
+              ),
+            ],
+          )
+        else
+          _scoringFields(context),
+        if (showContextFields) ...[const SizedBox(height: 16), assignment],
       ],
     );
   }

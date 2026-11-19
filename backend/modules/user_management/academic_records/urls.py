@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     EnrollmentSectionPreviewView,
+    EnrollmentAttentionView,
     RolloverConfirmView,
     RolloverPreviewView,
     StudentAcademicRecordDetailView,
@@ -10,6 +11,7 @@ from .views import (
 
 
 urlpatterns = [
+    path('attention/', EnrollmentAttentionView.as_view(), name='enrollment_attention'),
     path('', StudentAcademicRecordListCreateView.as_view(), name='student_academic_records'),
     path('section-preview/', EnrollmentSectionPreviewView.as_view(), name='enrollment_section_preview'),
     path('rollover-preview/', RolloverPreviewView.as_view(), name='student_academic_records_rollover_preview'),

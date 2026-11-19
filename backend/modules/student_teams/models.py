@@ -135,6 +135,10 @@ class StudentTeam(models.Model):
         related_name='capstone_intake_teams', on_delete=models.PROTECT,
     )
     participation_review_reason = models.TextField(blank=True, default='')
+    capstone_registration_semester = models.ForeignKey(
+        'academic_period_management.Semester', null=True, blank=True,
+        related_name='verified_capstone_teams', on_delete=models.PROTECT,
+    )
     leader = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name='led_teams',
@@ -461,9 +465,14 @@ class StudentCapstoneParticipation(models.Model):
     NEEDS_REVIEW = 'needs_review'
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
         related_name='capstone_participations')
-    intake_semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT,
+    intake_semester = models.ForeignKey('academic_period_management.Semester', null=True, blank=True, on_delete=models.PROTECT,
         related_name='student_capstone_participations')
     number = models.PositiveIntegerField()
+    # number orders recorded entries; never display it as a lifetime count when
+    # externally recognized earlier participation has an unknown history.
+    history_complete = models.BooleanField(default=True)
+    origin = models.CharField(max_length=30, default='intake', choices=[
+        ('intake', 'Recorded intake'), ('external_continuation', 'Verified prior completion')])
     state = models.CharField(max_length=20, default=ACTIVE, choices=[
         (ACTIVE, 'Active'), (FAILED, 'Failed'), (COMPLETED, 'Completed'), (NEEDS_REVIEW, 'Needs review')])
     previous = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT,
@@ -478,6 +487,8 @@ class StudentCapstoneParticipation(models.Model):
             models.UniqueConstraint(fields=['student', 'intake_semester'], name='unique_student_capstone_intake'),
             models.UniqueConstraint(fields=['student', 'number'], name='unique_student_capstone_number'),
             models.CheckConstraint(condition=models.Q(number__gte=1), name='positive_capstone_participation'),
+            models.CheckConstraint(condition=models.Q(intake_semester__isnull=False) |
+                models.Q(origin='external_continuation'), name='capstone_participation_source_required'),
         ]
 
 
@@ -493,6 +504,18 @@ class StudentCapstonePlacement(models.Model):
         ordering = ['placed_at', 'id']
         constraints = [models.UniqueConstraint(fields=['participation'],
             condition=models.Q(ended_at__isnull=True), name='one_active_capstone_placement')]
+
+
+class CapstoneRosterConfirmation(models.Model):
+    """Immutable, roster-bound recognition and idempotent manual request receipt."""
+    request_id = models.UUIDField(unique=True)
+    fingerprint = models.CharField(max_length=64)
+    team = models.ForeignKey(StudentTeam, on_delete=models.PROTECT, related_name='capstone_confirmations')
+    semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    reference = models.CharField(max_length=500, blank=True)
+    member_evidence = models.JSONField(default=list)
+    confirmed_at = models.DateTimeField(auto_now_add=True)
 
 
 class TeamTermParticipation(models.Model):

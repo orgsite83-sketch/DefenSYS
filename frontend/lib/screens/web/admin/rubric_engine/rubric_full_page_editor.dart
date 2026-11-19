@@ -83,6 +83,12 @@ class RubricFullPageEditor extends ConsumerStatefulWidget {
     this.readOnly = false,
     required this.onBack,
     this.onDelete,
+    this.workspaceHeader,
+    this.workspaceStageHeader,
+    this.lockDestination = false,
+    this.initialDefenseStageId,
+    this.initialPitEventId,
+    this.onSaved,
   });
 
   final Map<String, dynamic>? rubric;
@@ -91,6 +97,11 @@ class RubricFullPageEditor extends ConsumerStatefulWidget {
   final bool readOnly;
   final VoidCallback onBack;
   final Future<void> Function()? onDelete;
+  final Widget? workspaceHeader;
+  final Widget? workspaceStageHeader;
+  final bool lockDestination;
+  final int? initialDefenseStageId, initialPitEventId;
+  final VoidCallback? onSaved;
 
   @override
   ConsumerState<RubricFullPageEditor> createState() =>
@@ -127,6 +138,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   bool _isCustomName = false;
   bool _isInitializing = true;
   bool _loadingCopySources = false;
+  String? _copiedFromName;
   final bool _checking = false;
   UnsavedChangesNotifier? _unsavedNotifier;
   UnsavedChangesSaveDraftNotifier? _unsavedDraftNotifier;
@@ -307,8 +319,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     }
     _semesterId =
         _asInt(r?['semester_id']) ?? _asInt(state.activeSemester?['id']);
-    _defenseStageId = _asInt(r?['defense_stage_id']);
-    _pitEventId = _asInt(r?['pit_event_id']);
+    _defenseStageId =
+        _asInt(r?['defense_stage_id']) ?? widget.initialDefenseStageId;
+    _pitEventId = _asInt(r?['pit_event_id']) ?? widget.initialPitEventId;
     _eventName = r?['event_name']?.toString();
     try {
       for (final s in _sections) {
@@ -366,7 +379,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final s = ref.read(rubricEngineProvider);
-      if (s.rubrics.isEmpty) {
+      if (s.rubrics.isEmpty && widget.workspaceHeader == null) {
         ref.read(rubricEngineProvider.notifier).fetchRubrics();
       }
       if (mounted) {
@@ -421,10 +434,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
 
   void _cloneFromRubric(Map<String, dynamic> sourceRubric) {
     setState(() {
-      _name.text = '${sourceRubric['name']} (Copy)';
-      _isCustomName = true;
-      _scope = sourceRubric['scope'] ?? _scope;
-      _evaluationType = sourceRubric['evaluation_type'] ?? _evaluationType;
+      _copiedFromName = sourceRubric['name']?.toString();
       _targetType = sourceRubric['target_type'] ?? _targetType;
       if (_evaluationType == 'peer') {
         _targetType = 'individual';
@@ -436,15 +446,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       _showValidation = false;
       _customMaxScore.text = (_asInt(sourceRubric['custom_max_score']) ?? 20)
           .toString();
-      _defenseStageId = null;
-      _pitEventId = null;
 
       for (final s in _sections) {
         s.dispose();
       }
       _disposeCriteriaList(_criteria);
       final clonedCriteria = sourceRubric['criteria'];
-      if (clonedCriteria is List) {
+      if (clonedCriteria is List && clonedCriteria.isNotEmpty) {
         _criteria = clonedCriteria
             .whereType<Map>()
             .map((item) => RubricCriterionDraft.fromMap(item, _scales))
@@ -454,13 +462,27 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
           RubricCriterionDraft(scales: _scales, scale: _rubricScale),
         ];
       }
+      if (_evaluationType == 'peer') {
+        for (final criterion in _criteria) {
+          criterion.targetType = 'individual';
+        }
+      }
       if (_rubricScale == 'Points-Based (Sections)') {
         _syncSectionsFromCriteria();
       }
       _attachCriteriaListeners();
+      _syncDefaultRubricNameIfAuto(
+        defenseStages: ref.read(rubricEngineProvider).defenseStages,
+        pitYear:
+            ref
+                .read(dashboardProvider('faculty'))
+                .data?['pit_lead_year']
+                ?.toString() ??
+            '2nd Year',
+      );
     });
     _markDirty();
-    showSuccessToast(context, 'Rubric criteria and details cloned.');
+    showSuccessToast(context, 'Criteria and scoring copied.');
   }
 
   Future<void> _showCloneRubricDialog(BuildContext context) async {
@@ -476,7 +498,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         builder: (dialogContext) {
           return DefensysShadcnScope(
             child: _CloneRubricDialog(
-              availableRubrics: availableRubrics,
+              availableRubrics: availableRubrics
+                  .where((rubric) => rubric['scope'] == _scope)
+                  .toList(),
+              evaluationType: _evaluationType,
               onClone: (sourceRubric) {
                 _cloneFromRubric(sourceRubric);
                 Navigator.pop(dialogContext);
@@ -714,6 +739,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       pointsFieldKey: _customPointsFieldKey,
       standardScale: _standardScale,
       showValidation: _showValidation,
+      showContextFields: !widget.lockDestination,
+      compactScoring: widget.workspaceHeader != null,
       semesterLabel: _semesterLabel(state),
       semesterActive:
           _semesterId != null &&
@@ -819,6 +846,24 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       ),
     ),
   );
+
+  Widget _stageSurface(Widget child) {
+    if (widget.workspaceStageHeader == null) return child;
+    return LayoutBuilder(
+      builder: (context, constraints) => ShadCard(
+        key: const ValueKey('rubric-stage-container'),
+        padding: EdgeInsets.all(constraints.maxWidth < 600 ? 12 : 24),
+        backgroundColor: _surfaceColor,
+        radius: BorderRadius.circular(12),
+        border: ShadBorder.all(color: _borderColor),
+        shadows: const [],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [widget.workspaceStageHeader!, child],
+        ),
+      ),
+    );
+  }
 
   Widget _buildScopeHeaderWidget({
     required bool canSwitchScope,
@@ -2073,7 +2118,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
             ? 'Rubric published successfully.'
             : 'Rubric draft saved.',
       );
-      if (showConfirmation) {
+      if (widget.onSaved != null) {
+        widget.onSaved!();
+      } else if (showConfirmation) {
         widget.onBack();
       }
     } else {
@@ -2230,12 +2277,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       _semesterId = activeSemId;
     }
 
-    final actions = Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        if (widget.rubric?['id'] != null)
-          ReportExportMenu(
+    final detailsExport = widget.rubric?['id'] == null
+        ? null
+        : ReportExportMenu(
             reportId: 'rubric-details',
             params: {
               'rubric_id': widget.rubric!['id'].toString(),
@@ -2245,7 +2289,12 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
               'status': '',
               'evaluation_type': '',
             },
-          ),
+          );
+    final actions = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (detailsExport != null) detailsExport,
         ShadButton.outline(
           enabled: !saving,
           onPressed: saving ? null : _handleBack,
@@ -2284,214 +2333,269 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        if (constraints.maxWidth < 720) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              actions,
-                              const SizedBox(height: 20),
-                              header,
-                            ],
-                          );
-                        }
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: header),
-                            const SizedBox(width: 24),
-                            actions,
-                          ],
-                        );
-                      },
-                    ),
-                    if (widget.readOnly ||
-                        widget.rubric?['is_locked'] == true) ...[
-                      const SizedBox(height: 24),
-                      _lockedBanner(),
-                    ] else if (widget.rubric?['is_soft_locked'] == true ||
-                        widget.rubric?['is_assigned'] == true) ...[
-                      const SizedBox(height: 24),
-                      _softLockedBanner(),
-                    ],
-                    const SizedBox(height: 28),
-                    _sectionCard(
-                      icon: LucideIcons.fileText,
-                      title: 'Rubric details',
-                      trailing: Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          _buildScopeHeaderWidget(
-                            canSwitchScope: canSwitchScope,
-                            state: state,
-                            pitYear: pitYear,
-                          ),
-                          _buildCloneDropdown(state),
-                        ],
-                      ),
-                      child: _detailsFields(state, pitYear, canEdit),
-                    ),
-                    const SizedBox(height: 24),
-                    _sectionCard(
-                      icon: LucideIcons.listChecks,
-                      title: _rubricScale == 'Points-Based (Sections)'
-                          ? 'Weighted sections (${_sections.length})'
-                          : 'Evaluation criteria (${_criteria.length})',
-                      child: _rubricScale == 'Points-Based (Sections)'
-                          ? _buildSectionedCriteriaEditor(canEdit)
-                          : Column(
+                    if (widget.workspaceHeader != null)
+                      widget.workspaceHeader!
+                    else
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          if (constraints.maxWidth < 720) {
+                            return Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                _buildWeightAssistantBar(enabled: canEdit),
-                                RubricCriterionHeader(
-                                  showTarget: _targetType == 'both',
+                                actions,
+                                const SizedBox(height: 20),
+                                header,
+                              ],
+                            );
+                          }
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: header),
+                              const SizedBox(width: 24),
+                              actions,
+                            ],
+                          );
+                        },
+                      ),
+                    if (widget.workspaceStageHeader != null)
+                      const SizedBox(height: 20),
+                    _stageSurface(
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (widget.readOnly ||
+                              widget.rubric?['is_locked'] == true) ...[
+                            const SizedBox(height: 24),
+                            _lockedBanner(),
+                          ] else if (widget.workspaceHeader == null &&
+                              (widget.rubric?['is_soft_locked'] == true ||
+                                  widget.rubric?['is_assigned'] == true)) ...[
+                            const SizedBox(height: 24),
+                            _softLockedBanner(),
+                          ],
+                          const SizedBox(height: 28),
+                          _sectionCard(
+                            icon: LucideIcons.fileText,
+                            title: 'Rubric details',
+                            trailing: Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                _buildScopeHeaderWidget(
+                                  canSwitchScope: canSwitchScope,
+                                  state: state,
+                                  pitYear: pitYear,
                                 ),
-                                ..._criteria.asMap().entries.map((entry) {
-                                  final i = entry.key;
-                                  final draft = entry.value;
-                                  return _criterionCard(
-                                    draft,
-                                    i,
-                                    enabled: canEdit,
-                                    onRemove: !canEdit || _criteria.length == 1
-                                        ? null
-                                        : () {
-                                            setState(() {
-                                              draft.dispose();
-                                              _criteria.removeAt(i);
-                                              _reassignDisplayOrders();
-                                            });
-                                            _attachCriteriaListeners();
+                                if (widget.workspaceHeader != null &&
+                                    detailsExport != null)
+                                  detailsExport,
+                                _buildCloneDropdown(state),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (_copiedFromName != null) ...[
+                                  Text(
+                                    'Copied from $_copiedFromName',
+                                    style: DefensysTokens.caption.copyWith(
+                                      color: _textSecondaryColor,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                _detailsFields(state, pitYear, canEdit),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          _sectionCard(
+                            icon: LucideIcons.listChecks,
+                            title: _rubricScale == 'Points-Based (Sections)'
+                                ? 'Weighted sections (${_sections.length})'
+                                : 'Evaluation criteria (${_criteria.length})',
+                            child: _rubricScale == 'Points-Based (Sections)'
+                                ? _buildSectionedCriteriaEditor(canEdit)
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _buildWeightAssistantBar(
+                                        enabled: canEdit,
+                                      ),
+                                      RubricCriterionHeader(
+                                        showTarget: _targetType == 'both',
+                                      ),
+                                      ..._criteria.asMap().entries.map((entry) {
+                                        final i = entry.key;
+                                        final draft = entry.value;
+                                        return _criterionCard(
+                                          draft,
+                                          i,
+                                          enabled: canEdit,
+                                          onRemove:
+                                              !canEdit || _criteria.length == 1
+                                              ? null
+                                              : () {
+                                                  setState(() {
+                                                    draft.dispose();
+                                                    _criteria.removeAt(i);
+                                                    _reassignDisplayOrders();
+                                                  });
+                                                  _attachCriteriaListeners();
+                                                  _markDirty();
+                                                },
+                                          onChanged: () {
+                                            setState(() {});
                                             _markDirty();
                                           },
-                                    onChanged: () {
-                                      setState(() {});
-                                      _markDirty();
-                                    },
-                                  );
-                                }),
-                                Wrap(
-                                  alignment: WrapAlignment.spaceBetween,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  spacing: 16,
-                                  runSpacing: 12,
-                                  children: [
-                                    if (canEdit)
-                                      ShadButton.outline(
-                                        onPressed: () {
-                                          var defaultTarget =
-                                              _targetType == 'individual'
-                                              ? 'individual'
-                                              : 'team';
-                                          if (_targetType == 'both' &&
-                                              _criteria.any(
-                                                (c) => c.targetType == 'team',
-                                              ) &&
-                                              !_criteria.any(
-                                                (c) =>
-                                                    c.targetType ==
-                                                    'individual',
-                                              )) {
-                                            defaultTarget = 'individual';
-                                          }
-                                          setState(
-                                            () => _criteria.add(
-                                              RubricCriterionDraft(
-                                                scales: _scales,
-                                                name: '',
-                                                scale: _rubricScale,
-                                                maxScore: _rubricMaxScore,
-                                                weight: 10,
-                                                displayOrder: _criteria.length,
-                                                targetType: defaultTarget,
+                                        );
+                                      }),
+                                      Wrap(
+                                        alignment: WrapAlignment.spaceBetween,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        spacing: 16,
+                                        runSpacing: 12,
+                                        children: [
+                                          if (canEdit)
+                                            ShadButton.outline(
+                                              onPressed: () {
+                                                var defaultTarget =
+                                                    _targetType == 'individual'
+                                                    ? 'individual'
+                                                    : 'team';
+                                                if (_targetType == 'both' &&
+                                                    _criteria.any(
+                                                      (c) =>
+                                                          c.targetType ==
+                                                          'team',
+                                                    ) &&
+                                                    !_criteria.any(
+                                                      (c) =>
+                                                          c.targetType ==
+                                                          'individual',
+                                                    )) {
+                                                  defaultTarget = 'individual';
+                                                }
+                                                setState(
+                                                  () => _criteria.add(
+                                                    RubricCriterionDraft(
+                                                      scales: _scales,
+                                                      name: '',
+                                                      scale: _rubricScale,
+                                                      maxScore: _rubricMaxScore,
+                                                      weight: 10,
+                                                      displayOrder:
+                                                          _criteria.length,
+                                                      targetType: defaultTarget,
+                                                    ),
+                                                  ),
+                                                );
+                                                _attachCriteriaListeners();
+                                                _markDirty();
+                                                WidgetsBinding.instance
+                                                    .addPostFrameCallback((_) {
+                                                      if (mounted) {
+                                                        _criteria
+                                                            .last
+                                                            .editorKey
+                                                            .currentState
+                                                            ?.focusName();
+                                                      }
+                                                    });
+                                              },
+                                              leading: const Icon(
+                                                LucideIcons.plus,
+                                                size: 16,
+                                              ),
+                                              child: const Text(
+                                                'Add criterion',
                                               ),
                                             ),
-                                          );
-                                          _attachCriteriaListeners();
-                                          _markDirty();
-                                          WidgetsBinding.instance
-                                              .addPostFrameCallback((_) {
-                                                if (mounted) {
-                                                  _criteria
-                                                      .last
-                                                      .editorKey
-                                                      .currentState
-                                                      ?.focusName();
-                                                }
-                                              });
-                                        },
-                                        leading: const Icon(
-                                          LucideIcons.plus,
-                                          size: 16,
-                                        ),
-                                        child: const Text('Add criterion'),
+                                          Text(
+                                            '${_criteria.length} ${_criteria.length == 1 ? 'criterion' : 'criteria'} · ${formatRubricPercentage(_totalCriteriaWeight)}% total weight',
+                                            style: DefensysTokens.caption
+                                                .copyWith(
+                                                  color: _textSecondaryColor,
+                                                ),
+                                          ),
+                                        ],
                                       ),
-                                    Text(
-                                      '${_criteria.length} ${_criteria.length == 1 ? 'criterion' : 'criteria'} · ${formatRubricPercentage(_totalCriteriaWeight)}% total weight',
-                                      style: DefensysTokens.caption.copyWith(
-                                        color: _textSecondaryColor,
+                                    ],
+                                  ),
+                          ),
+                          const SizedBox(height: 24),
+                          Divider(height: 1, color: _borderColor),
+                          const SizedBox(height: 20),
+                          Wrap(
+                            alignment: WrapAlignment.spaceBetween,
+                            spacing: 20,
+                            runSpacing: 16,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  if (widget.workspaceHeader == null ||
+                                      !widget.readOnly)
+                                    ShadButton.ghost(
+                                      enabled: !saving,
+                                      onPressed: saving ? null : _handleBack,
+                                      child: Text(
+                                        widget.workspaceHeader != null
+                                            ? 'Discard changes'
+                                            : widget.readOnly
+                                            ? 'Back'
+                                            : 'Cancel',
+                                      ),
+                                    ),
+                                  if (widget.onDelete != null)
+                                    _deleteAction(saving: saving),
+                                ],
+                              ),
+                              if (!widget.readOnly)
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 12,
+                                  children: [
+                                    ShadButton.outline(
+                                      enabled: !saving,
+                                      onPressed: saving
+                                          ? null
+                                          : () => _save('draft'),
+                                      child: const Text('Save as Draft'),
+                                    ),
+                                    ShadButton(
+                                      enabled: !saving,
+                                      backgroundColor: DefensysTokens.maroonOf(
+                                        context,
+                                      ),
+                                      foregroundColor: Colors.white,
+                                      onPressed: saving
+                                          ? null
+                                          : () => _save('published'),
+                                      leading: const Icon(
+                                        LucideIcons.check,
+                                        size: 16,
+                                      ),
+                                      child: Text(
+                                        saving
+                                            ? 'Saving...'
+                                            : widget.workspaceHeader != null
+                                            ? 'Review & publish'
+                                            : 'Publish Rubric',
                                       ),
                                     ),
                                   ],
                                 ),
-                              ],
-                            ),
-                    ),
-                    const SizedBox(height: 24),
-                    Divider(height: 1, color: _borderColor),
-                    const SizedBox(height: 20),
-                    Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      spacing: 20,
-                      runSpacing: 16,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            ShadButton.ghost(
-                              enabled: !saving,
-                              onPressed: saving ? null : _handleBack,
-                              child: Text(widget.readOnly ? 'Back' : 'Cancel'),
-                            ),
-                            if (widget.onDelete != null)
-                              _deleteAction(saving: saving),
-                          ],
-                        ),
-                        if (!widget.readOnly)
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 12,
-                            children: [
-                              ShadButton.outline(
-                                enabled: !saving,
-                                onPressed: saving ? null : () => _save('draft'),
-                                child: const Text('Save as Draft'),
-                              ),
-                              ShadButton(
-                                enabled: !saving,
-                                backgroundColor: DefensysTokens.maroonOf(
-                                  context,
-                                ),
-                                foregroundColor: Colors.white,
-                                onPressed: saving
-                                    ? null
-                                    : () => _save('published'),
-                                leading: const Icon(
-                                  LucideIcons.check,
-                                  size: 16,
-                                ),
-                                child: Text(
-                                  saving ? 'Saving...' : 'Publish Rubric',
-                                ),
-                              ),
                             ],
                           ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -2661,10 +2765,12 @@ class RubricCriterionDraft {
 class _CloneRubricDialog extends StatefulWidget {
   const _CloneRubricDialog({
     required this.availableRubrics,
+    required this.evaluationType,
     required this.onClone,
   });
 
   final List<Map<String, dynamic>> availableRubrics;
+  final String evaluationType;
   final ValueChanged<Map<String, dynamic>> onClone;
 
   @override
@@ -2680,6 +2786,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
   String _searchQuery = '';
   String _selectedScope = 'all';
   String _selectedSemester = 'all';
+  bool _sameEvaluation = true;
   Map<String, dynamic>? _selectedRubric;
 
   @override
@@ -2699,6 +2806,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
               name.contains(query) ||
               semester.toLowerCase().contains(query)) &&
           (_selectedScope == 'all' || r['scope'] == _selectedScope) &&
+          (!_sameEvaluation || r['evaluation_type'] == widget.evaluationType) &&
           (_selectedSemester == 'all' || semester == _selectedSemester);
     }).toList();
     final list = Column(
@@ -2749,6 +2857,22 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
             ),
           ],
         ),
+        if (widget.availableRubrics.any(
+          (rubric) => rubric['evaluation_type'] != widget.evaluationType,
+        )) ...[
+          const SizedBox(height: 12),
+          ShadCheckbox(
+            key: const ValueKey('copy-same-evaluation'),
+            value: _sameEvaluation,
+            onChanged: (value) => setState(() {
+              _sameEvaluation = value;
+              _selectedRubric = null;
+            }),
+            label: Text(
+              '${_evaluationLabel(widget.evaluationType)} rubrics only',
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         Expanded(
           child: filtered.isEmpty

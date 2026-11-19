@@ -117,13 +117,15 @@ def _scopes_for_user(user):
 
 def options_payload(user=None):
     from .pit_assignment import pit_event_options
+    from .workspace_options import stage_workspace_options
     semesters = Semester.objects.select_related('school_year').order_by('-school_year__label', 'label')
     from defense.stages.context import stages_for_semester
-    stages = stages_for_semester(active_semester()).filter(is_active=True)
+    semester = active_semester()
+    stages = stages_for_semester(semester).filter(is_active=True)
     return {
-        'active_semester': SemesterSerializer(active_semester()).data if active_semester() else None,
+        'active_semester': SemesterSerializer(semester).data if semester else None,
         'semesters': SemesterSerializer(semesters, many=True).data,
-        'defense_stages': DefenseStageSerializer(stages, many=True).data,
+        'defense_stages': stage_workspace_options(stages, semester),
         'pit_events': pit_event_options(user),
         'scopes': _scopes_for_user(user),
         'evaluation_types': [
@@ -174,7 +176,7 @@ def list_payload(queryset=None, stats_base=None, counts_queryset=None, user=None
     }
 
 
-def filter_rubrics(request, queryset=None, *, apply_evaluation_type=True):
+def filter_rubrics(request, queryset=None, *, apply_evaluation_type=True, apply_term_context=True):
     queryset = queryset if queryset is not None else rubric_queryset()
     search = request.query_params.get('search', '').strip()
     scope = request.query_params.get('scope', '').strip()
@@ -197,13 +199,13 @@ def filter_rubrics(request, queryset=None, *, apply_evaluation_type=True):
     if apply_evaluation_type and evaluation_type:
         queryset = queryset.filter(evaluation_type=evaluation_type)
 
-    if term_context == 'active':
+    if apply_term_context and term_context == 'active':
         active = active_semester()
         if active:
             queryset = queryset.filter(semester=active)
         else:
             queryset = queryset.none()
-    elif term_context == 'history':
+    elif apply_term_context and term_context == 'history':
         active = active_semester()
         if active:
             queryset = queryset.exclude(semester=active)

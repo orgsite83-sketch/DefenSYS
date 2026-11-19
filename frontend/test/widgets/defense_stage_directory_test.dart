@@ -71,20 +71,30 @@ void main() {
   Future<void> pumpDirectory(
     WidgetTester tester, {
     double width = 1440,
+    double height = 1500,
     bool dark = false,
+    bool reduceMotion = false,
+    double textScale = 1,
     DefenseStagesState state = const DefenseStagesState(stages: stages),
     ValueChanged<Map<String, dynamic>>? configure,
     Future<void> Function()? refresh,
     StageMutation? publish,
     StageMutation? delete,
   }) async {
-    tester.view.physicalSize = Size(width, 1500);
+    tester.view.physicalSize = Size(width, height);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
         theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            disableAnimations: reduceMotion,
+            textScaler: TextScaler.linear(textScale),
+          ),
+          child: child!,
+        ),
         home: Scaffold(
           body: RepaintBoundary(
             key: const ValueKey('directory-preview'),
@@ -122,6 +132,238 @@ void main() {
       isFalse,
     );
   });
+
+  final reviewStages = <Map<String, dynamic>>[
+    for (var i = 0; i < 3; i++)
+      {
+        ...stages.first,
+        'id': 10 + i,
+        'label': 'Recorded stage ${i + 1}',
+        'is_officially_complete': true,
+      },
+    stages[1],
+  ];
+
+  for (final (width, dark, textScale) in [
+    (320.0, false, 1.0),
+    (390.0, true, 1.3),
+    (1280.0, false, 1.0),
+    (1920.0, true, 1.0),
+  ]) {
+    testWidgets('review issue reveals and briefly highlights its stage at '
+        '$width dark=$dark scale=$textScale', (tester) async {
+      await loadPreviewFonts(force: true);
+      final state = DefenseStagesState(stages: reviewStages);
+      await pumpDirectory(
+        tester,
+        width: width,
+        height: 800,
+        dark: dark,
+        textScale: textScale,
+        state: state,
+      );
+      final scroll = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      expect(scroll.position.pixels, 0);
+      expect(find.text('Attach a panel evaluation rubric.'), findsNothing);
+      await capturePreview(
+        tester,
+        find.byKey(const ValueKey('directory-preview')),
+        'stage-attention-summary-${width.toInt()}-${dark ? 'dark' : 'light'}',
+        viewport: true,
+      );
+      await tester.tap(find.text('Needs attention'));
+      await tester.pumpAndSettle();
+      final target = find.byKey(const ValueKey('stage-card-2'));
+      expect(scroll.position.pixels, greaterThan(0));
+      expect(tester.getTopLeft(target).dy, inInclusiveRange(0, 250));
+      expect(
+        tester.getBottomLeft(find.text('Attach a panel evaluation rubric.')).dy,
+        lessThan(800),
+      );
+      expect(
+        find.descendant(of: target, matching: find.text('Hide requirements')),
+        findsOneWidget,
+      );
+      expect(find.text('Attach a panel evaluation rubric.'), findsOneWidget);
+      expect(
+        FocusManager.instance.primaryFocus?.debugLabel,
+        'Stage setup: Project Proposal',
+      );
+      expect(
+        tester.widget<ShadCard>(target).backgroundColor,
+        isNot(dark ? DefensysTokens.mistSurface : DefensysTokens.surface),
+      );
+      expect(tester.takeException(), isNull);
+      await capturePreview(
+        tester,
+        find.byKey(const ValueKey('directory-preview')),
+        'stage-attention-${width.toInt()}-${dark ? 'dark' : 'light'}',
+        viewport: true,
+      );
+      final offset = scroll.position.pixels;
+      await tester.pump(const Duration(seconds: 3));
+      expect(
+        tester.widget<ShadCard>(target).backgroundColor,
+        dark ? DefensysTokens.mistSurface : DefensysTokens.surface,
+      );
+      expect(find.text('Setup incomplete'), findsOneWidget);
+      expect(find.text('Attach a panel evaluation rubric.'), findsOneWidget);
+      expect(scroll.position.pixels, offset);
+      await pumpDirectory(
+        tester,
+        width: width,
+        height: 800,
+        dark: dark,
+        textScale: textScale,
+        state: state.copyWith(message: 'Refreshed'),
+      );
+      expect(scroll.position.pixels, offset);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('review issue supports keyboard navigation to configure', (
+    tester,
+  ) async {
+    Map<String, dynamic>? configured;
+    await pumpDirectory(
+      tester,
+      state: DefenseStagesState(stages: reviewStages),
+      configure: (stage) => configured = stage,
+    );
+    final action = find.byKey(const ValueKey('stage-review-issues'));
+    Focus.of(
+      tester.element(
+        find.descendant(of: action, matching: find.text('Needs attention')),
+      ),
+    ).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'Stage setup: Project Proposal',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(configured?['id'], 2);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('next issue follows phase order and skips completed stages', (
+    tester,
+  ) async {
+    final completed = {
+      ...stages.first,
+      'semester_id': 3,
+      'history_read_only': true,
+      'is_officially_complete': true,
+      'setup_readiness': {
+        'ready': false,
+        'issues': ['Old requirement'],
+      },
+    };
+    final firstIssue = {...stages[1], 'semester_id': 4};
+    final nextIssue = {
+      ...stages[1],
+      'id': 3,
+      'semester_id': 4,
+      'label': 'Final Defense',
+      'previous_stage_label': 'Project Proposal',
+    };
+    await pumpDirectory(
+      tester,
+      state: DefenseStagesState(
+        stages: [completed, firstIssue, nextIssue],
+        phaseGroups: [
+          {
+            'phase_label': 'Capstone 1',
+            'display_semester': 'Previous semester',
+            'read_only': true,
+            'stages': [completed],
+          },
+          {
+            'phase_label': 'Capstone 2',
+            'display_semester': 'Current semester',
+            'stages': [firstIssue, nextIssue],
+          },
+        ],
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('stage-review-issues')));
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'Stage setup: Project Proposal',
+    );
+    expect(find.text('Old requirement'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('stage-next-issue-2')));
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'Stage setup: Final Defense',
+    );
+    await tester.tap(find.byKey(const ValueKey('stage-next-issue-3')));
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'Stage setup: Project Proposal',
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('reduced motion reveals the issue without a scroll animation', (
+    tester,
+  ) async {
+    await pumpDirectory(
+      tester,
+      height: 800,
+      reduceMotion: true,
+      state: DefenseStagesState(stages: reviewStages),
+    );
+    await tester.tap(find.byKey(const ValueKey('stage-review-issues')));
+    await tester.pump();
+    await tester.pump();
+    final target = find.byKey(const ValueKey('stage-card-2'));
+    expect(tester.getTopLeft(target).dy, inInclusiveRange(0, 250));
+    final position = tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position;
+    expect(position.isScrollingNotifier.value, isFalse);
+    expect(find.text('Attach a panel evaluation rubric.'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets(
+    'resolving or removing an issue clears its review action safely',
+    (tester) async {
+      await pumpDirectory(tester);
+      await tester.tap(find.byKey(const ValueKey('stage-review-issues')));
+      await tester.pumpAndSettle();
+      await pumpDirectory(
+        tester,
+        state: DefenseStagesState(
+          stages: [
+            stages.first,
+            {
+              ...stages[1],
+              'setup_readiness': {'ready': true, 'issues': []},
+            },
+          ],
+        ),
+      );
+      expect(find.byKey(const ValueKey('stage-review-issues')), findsNothing);
+      expect(find.text('All stage setups are ready'), findsOneWidget);
+      await pumpDirectory(tester, state: const DefenseStagesState());
+      await tester.pump(const Duration(seconds: 4));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final (width, dark) in [(320.0, false), (1440.0, false), (1440.0, true)]) {
     testWidgets(
@@ -260,6 +502,64 @@ void main() {
       expect(find.text('Proposal manuscript'), findsNothing);
     },
   );
+
+  for (final width in [320.0, 1440.0, 1920.0]) {
+    for (final dark in [false, true]) {
+      testWidgets(
+        'stage actions stay compact and aligned at $width dark=$dark',
+        (tester) async {
+          await loadPreviewFonts();
+          await pumpDirectory(
+            tester,
+            width: width,
+            height: 1000,
+            dark: dark,
+            state: DefenseStagesState(
+              stages: [{...stages[1], 'is_active': true}],
+            ),
+          );
+          final trigger = find.byKey(const ValueKey('stage-menu-2'));
+          await tester.ensureVisible(trigger);
+          await tester.tap(trigger);
+          await tester.pumpAndSettle();
+          final menu = find.ancestor(
+            of: find.text('Stage actions'),
+            matching: find.byType(ShadDecorator),
+          ).first;
+          final bounds = tester.getRect(menu);
+          expect(bounds.width, lessThanOrEqualTo(280));
+          expect(bounds.left, greaterThanOrEqualTo(0));
+          expect(bounds.right, lessThanOrEqualTo(width));
+          if (tester.getRect(trigger).right >= bounds.width) {
+            expect(bounds.right, closeTo(tester.getRect(trigger).right, 1));
+          } else {
+            expect(bounds.left, 0);
+          }
+          expect(bounds.top, greaterThanOrEqualTo(0));
+          expect(bounds.bottom, lessThanOrEqualTo(1000));
+          expect(
+            bounds.top > tester.getRect(trigger).bottom ||
+                bounds.bottom < tester.getRect(trigger).top,
+            isTrue,
+          );
+          expect(find.text('Move earlier'), findsOneWidget);
+          expect(find.text('Move later'), findsOneWidget);
+          expect(find.text('Delete stage'), findsOneWidget);
+          expect(find.text('Stage code: project-proposal'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await capturePreview(
+            tester,
+            find.byKey(const ValueKey('directory-preview')),
+            'stage-actions-${width.toInt()}-${dark ? 'dark' : 'light'}',
+            viewport: true,
+          );
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await tester.pumpAndSettle();
+          expect(find.text('Stage actions'), findsNothing);
+        },
+      );
+    }
+  }
 
   testWidgets(
     'incomplete draft cannot publish or move across locked preceding stage',

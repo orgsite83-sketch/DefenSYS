@@ -7,11 +7,14 @@ import 'package:defensys/screens/web/admin/defense_stages/defense_stages_screen.
 import 'package:defensys/screens/web/admin/defense_stages/defense_stage_editor_screen.dart';
 import 'package:defensys/screens/web/admin/defense_stages/widgets/stage_minutes_settings.dart';
 import 'package:defensys/screens/web/admin/defense_stages/widgets/stage_weekly_settings.dart';
+import 'package:defensys/widgets/repository/deliverable_timing_fields.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/services/rubric_engine_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/utils/stage_setup_draft.dart';
+import 'package:defensys/widgets/repository/deliverable_template.dart';
+import 'package:defensys/widgets/repository/repository_archive_naming_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -232,6 +235,138 @@ Map<String, dynamic> _readyConceptDraft() => {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  for (final editing in [false, true]) {
+    for (final dark in [false, true]) {
+      for (final size in [const Size(1280, 800), const Size(390, 844), const Size(320, 740)]) {
+        testWidgets('shared publication and issue focus in ${editing ? 'editor' : 'creation'} at ${size.width} dark=$dark', (tester) async {
+
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await tester.runAsync(() => loadPreviewFonts(force: true));
+          final settings = {..._readyConceptDraft(), 'deliverables': [
+            {'deliverable_id': 'PAPER', 'label': '', 'deliverable_type': 'pre', 'required': true},
+          ]};
+          final stages = _StagesNotifier(published: false, conceptSelection: true,
+            gradingConfig: {'panel_rubric_id': 1}, requirementSettings: settings);
+          if (editing) {
+            await tester.pumpWidget(ProviderScope(overrides: [
+              ...authTestOverrides(), defenseStagesProvider.overrideWith(() => stages),
+              academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+              rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+            ], child: MaterialApp(theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+              home: Scaffold(body: DefenseStageEditorScreen(stageId: 9, onBack: () {})))));
+            await tester.pumpAndSettle();
+          } else {
+            await StageSetupDraftStore(userId: '1', semesterId: 3).save(StageSetupDraft(fields: settings, tab: 0));
+            await _pumpCreation(tester, stages, dark: dark);
+            await tester.tap(find.text('Resume draft'));
+            await tester.pumpAndSettle();
+          }
+          expect(find.text('Review issues'), findsOneWidget);
+          expect(find.textContaining('left to publish'), findsNothing);
+          expect(find.text('Enter a name for this deliverable.'), findsNothing);
+          await tester.tap(find.text('Review issues'));
+          await tester.pumpAndSettle();
+          expect(find.text('Enter a name for this deliverable.'), findsOneWidget);
+          final focused = find.byWidgetPredicate((w) => w is EditableText && w.focusNode.hasFocus);
+          expect(focused, findsOneWidget);
+          expect(tester.widget<EditableText>(focused).controller.text, isEmpty);
+          await tester.enterText(focused, 'Colloquium manuscript');
+          await tester.pumpAndSettle();
+          expect(find.textContaining('Ready to publish'), findsNothing);
+          expect(find.text('Review issues'), findsNothing);
+          expect(find.byKey(const ValueKey('stage-deliverable-defense-material')), findsOneWidget);
+          expect(find.text('Fewer options'), findsNothing);
+          expect(find.text('Enter a name for this deliverable.'), findsNothing);
+          expect(tester.widget<Text>(find.byKey(const ValueKey('stage-setup-step-status-2'))).data, 'Complete');
+          final publication = find.byKey(const ValueKey('stage-publication-switch'));
+          await tester.tap(publication);
+          await tester.pumpAndSettle();
+          final originalPosition = tester.getTopLeft(publication);
+          expect(tester.widget<Text>(find.byKey(const ValueKey('stage-saved-publication-status'))).data, 'Draft');
+          expect(stages.saves, isEmpty);
+          final scroll = find.byKey(ValueKey('stage-${editing ? 'editor' : 'dialog'}-step-2'));
+          await tester.drag(scroll, const Offset(0, -450));
+          await tester.pumpAndSettle();
+          expect(tester.getTopLeft(publication), originalPosition);
+          expect(tester.getBottomRight(find.text('Publish stage')).dy, lessThan(size.height));
+          await capturePreview(tester, find.byType(Scaffold).first,
+            'stage-flow-${editing ? 'editor' : 'creation'}-${size.width.toInt()}-${dark ? 'dark' : 'light'}', viewport: true);
+          expect(tester.takeException(), isNull);
+        });
+      }
+    }
+  }
+  testWidgets('Next focuses the missing stage name while browser draft remains available', (tester) async {
+    final stages = _StagesNotifier();
+    await _pumpCreation(tester, stages);
+    await tester.tap(find.text('Add stage'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Next: Grading & Rubrics'));
+    await tester.pumpAndSettle();
+    final name = find.byWidgetPredicate((w) => w is EditableText && w.focusNode.hasFocus);
+    expect(name, findsOneWidget);
+    expect(tester.widget<EditableText>(name).controller.text, isEmpty);
+    expect(find.text('Enter a stage name.'), findsOneWidget);
+    await tester.tap(find.text('Save draft'));
+    await tester.pumpAndSettle();
+    expect(await StageSetupDraftStore(userId: '1', semesterId: 3).load(), isNotNull);
+    expect(stages.saves, isEmpty);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+  for (final editing in [false, true]) {
+    for (final archive in [false, true]) {
+      testWidgets('issue review opens ${archive ? 'archive naming' : 'weekly template'} in ${editing ? 'editor' : 'creation'}', (tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final settings = {..._readyConceptDraft(),
+          if (archive) 'deliverables': [
+            {'deliverable_id': 'MANUSCRIPT', 'label': 'Final manuscript', 'deliverable_type': 'post',
+              'required': true, 'archive_file_template': '{year}_{course}_{project}_{stage}'},
+          ] else ...{
+            'weekly_reporting': {'enabled': true, 'starts_on': '2026-10-25', 'total_weeks': 16,
+              'required_start': 1, 'required_end': 2, 'due_weekday': 6, 'due_time': '23:59'},
+            'weekly_template': <String, dynamic>{},
+          },
+        };
+        final stages = _StagesNotifier(published: false, conceptSelection: true,
+          gradingConfig: {'panel_rubric_id': 1}, requirementSettings: settings);
+        if (editing) {
+          await tester.pumpWidget(ProviderScope(overrides: [
+            ...authTestOverrides(), defenseStagesProvider.overrideWith(() => stages),
+            academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+            rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+          ], child: MaterialApp(theme: AppTheme.lightTheme,
+            home: Scaffold(body: DefenseStageEditorScreen(stageId: 9, onBack: () {})))));
+          await tester.pumpAndSettle();
+        } else {
+          await StageSetupDraftStore(userId: '1', semesterId: 3).save(StageSetupDraft(fields: settings, tab: 0));
+          await _pumpCreation(tester, stages);
+          await tester.tap(find.text('Resume draft'));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.text('Review issues'));
+        await tester.pumpAndSettle();
+        if (archive) {
+          expect(find.byType(RepositoryArchiveNamingPanel), findsOneWidget);
+          expect(find.text('Fewer options'), findsOneWidget);
+          expect(FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<RepositoryArchiveNamingPanel>(), isNotNull);
+        } else {
+          expect(find.text('Report template (required)'), findsOneWidget);
+          expect(FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<DeliverableTemplateEditor>(), isNotNull);
+        }
+        await capturePreview(tester, find.byType(Scaffold).first,
+          'stage-issue-${archive ? 'archive' : 'weekly'}-${editing ? 'editor' : 'creation'}', viewport: true);
+        expect(stages.saves, isEmpty);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
   testWidgets('unscheduled stage with used files can save all three grading roles', (tester) async {
     tester.view.physicalSize = const Size(1366, 1100);
     tester.view.devicePixelRatio = 1;
@@ -276,6 +411,66 @@ void main() {
     expect(tester.takeException(), isNull);
   });
   for (final editing in [false, true]) {
+    for (final dark in [false, true]) {
+      testWidgets('visible deliverable access settings save from ${editing ? 'editor' : 'creation'} dark=$dark', (tester) async {
+        tester.view.physicalSize = const Size(320, 740);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.runAsync(() => loadPreviewFonts(force: true));
+        final settings = {..._readyConceptDraft(), 'deliverables': [
+          {'deliverable_id': 'REPORT', 'label': 'Progress report', 'deliverable_type': 'pre', 'required': true},
+          {'deliverable_id': 'CODE', 'label': 'Source code', 'deliverable_type': 'post', 'required': true,
+            'archive_file_template': '{project}'},
+        ]};
+        final stages = _StagesNotifier(published: false, conceptSelection: true,
+          gradingConfig: {'panel_rubric_id': 1}, requirementSettings: settings);
+        if (editing) {
+          await tester.pumpWidget(ProviderScope(overrides: [
+            ...authTestOverrides(), defenseStagesProvider.overrideWith(() => stages),
+            academicPeriodProvider.overrideWith(_PeriodsNotifier.new),
+            rubricEngineProvider.overrideWith(_RubricsNotifier.new),
+          ], child: MaterialApp(theme: dark ? AppTheme.mistDarkTheme : AppTheme.lightTheme,
+            home: Scaffold(body: DefenseStageEditorScreen(stageId: 9, initialTab: 2, onBack: () {})))));
+          await tester.pumpAndSettle();
+        } else {
+          await StageSetupDraftStore(userId: '1', semesterId: 3).save(StageSetupDraft(fields: settings, tab: 2));
+          await _pumpCreation(tester, stages, dark: dark);
+          await tester.tap(find.text('Resume draft'));
+          await tester.pumpAndSettle();
+        }
+        await tester.ensureVisible(find.text('Progress report'));
+        await tester.tap(find.text('Progress report'));
+        await tester.pumpAndSettle();
+        final material = find.byKey(const ValueKey('stage-deliverable-defense-material'));
+        await tester.ensureVisible(material);
+        expect(find.text('Fewer options'), findsNothing);
+        await tester.tap(find.descendant(of: material, matching: find.byType(ShadCheckbox)));
+        await tester.pumpAndSettle();
+        expect(tester.widget<DefenseMaterialToggle>(material).value, isTrue);
+        await capturePreview(tester, find.byType(Scaffold).first,
+          'stage-visible-material-${editing ? 'editor' : 'creation'}-${dark ? 'dark' : 'light'}', viewport: true);
+        await tester.ensureVisible(find.text('Source code'));
+        await tester.tap(find.text('Source code'));
+        await tester.pumpAndSettle();
+        final restricted = find.byKey(const ValueKey('stage-deliverable-restricted'));
+        await tester.ensureVisible(restricted);
+        expect(find.text('Fewer options'), findsNothing);
+        await tester.tap(restricted);
+        await tester.pumpAndSettle();
+        expect(tester.widget<ShadCheckbox>(restricted).value, isTrue);
+        await capturePreview(tester, find.byType(Scaffold).first,
+          'stage-visible-restriction-${editing ? 'editor' : 'creation'}-${dark ? 'dark' : 'light'}', viewport: true);
+        await tester.tap(find.text(editing ? 'Save changes' : 'Save as draft'));
+        await tester.pumpAndSettle();
+        final savedFiles = (stages.saved!['deliverables'] as List).cast<Map>();
+        expect(savedFiles.firstWhere((item) => item['deliverable_id'] == 'REPORT')['is_defense_material'], isTrue);
+        expect(savedFiles.firstWhere((item) => item['deliverable_id'] == 'CODE')['is_restricted'], isTrue);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+  for (final editing in [false, true]) {
     for (final concept in [false, true]) {
       testWidgets(
         'Select later publishes ${concept ? 'concept' : 'standard'} stage from ${editing ? 'editor' : 'creation'} without rubrics',
@@ -319,6 +514,8 @@ void main() {
           }
 
           expect(find.text('Select later'), findsNWidgets(concept ? 1 : 3));
+          expect(tester.widget<Text>(find.byKey(const ValueKey('stage-setup-step-status-1'))).data, 'Needs setup');
+          expect(find.textContaining('Ready to publish'), findsNothing);
           await tester.ensureVisible(find.text('Next: Deliverables'));
           await tester.tap(find.text('Next: Deliverables'));
           await tester.pumpAndSettle();
@@ -412,6 +609,8 @@ void main() {
             await capturePreview(tester,
               find.byKey(const ValueKey('stage-layout-preview')),
               '$previewName-deliverables');
+            await tester.ensureVisible(weeklyRow);
+            await tester.pumpAndSettle();
             await tester.tap(weeklyRow);
             await tester.pumpAndSettle();
 
@@ -500,10 +699,10 @@ void main() {
         final publication = find.byKey(const ValueKey('stage-publication-switch'));
         await tester.ensureVisible(publication);
         await tester.pumpAndSettle();
-        expect(find.text('Published stage'), findsOneWidget);
+        expect(find.text('Publish on save'), findsOneWidget);
         expect(find.text('Review stage setup'), findsNothing);
         expect(tester.getTopLeft(publication).dy,
-          greaterThan(tester.getTopLeft(find.text('Stage description')).dy));
+          lessThan(tester.getTopLeft(concept).dy));
         await capturePreview(tester, find.byKey(const ValueKey('stage-layout-preview')),
           'stage-publication-${size.width.toInt()}-${dark ? 'dark' : 'light'}');
         expect(tester.takeException(), isNull);
@@ -531,7 +730,7 @@ void main() {
       await chooseStagePublication(tester, true);
       expect(stagePublishEnabled(tester), isTrue);
       expect(find.text('Review stage setup'), findsNothing);
-      expect(find.byKey(const ValueKey('stage-publication-switch')), findsNothing);
+      expect(find.byKey(const ValueKey('stage-publication-switch')), findsOneWidget);
       await capturePreview(tester, find.byKey(const ValueKey('stage-layout-preview')),
         'stage-final-review');
       await tester.tap(find.text('Publish stage'));
@@ -877,6 +1076,9 @@ void main() {
           );
         }
         await tester.tap(find.text(requiredMinutes ? 'Resume draft' : 'Add stage'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Additional stage information'));
+        await tester.tap(find.text('Additional stage information'));
         await tester.pumpAndSettle();
         expect(find.text('Position 1 of 1'), findsOneWidget);
         await tester.enterText(

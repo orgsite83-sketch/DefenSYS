@@ -210,6 +210,28 @@ class _ExternalMinutes extends _Minutes {
   }
 }
 
+class _ThreePanelMinutes extends _Minutes {
+  @override
+  DocumenterState build() {
+    final base = super.build();
+    return base.copyWith(
+      activeMinutes: {
+        ...base.activeMinutes!,
+        'panelist_comments': [
+          ...base.activeMinutes!['panelist_comments'] as List,
+          for (var id = 2; id <= 3; id++)
+            {
+              'id': id,
+              'panelist_role_snapshot': 'Panelist',
+              'panelist_name_snapshot': 'Panel member $id',
+              'comments': '',
+            },
+        ],
+      },
+    );
+  }
+}
+
 class _AppDocumenter extends _Assignments {
   @override
   Future<void> fetchMinutesDetail(int id) async {
@@ -701,6 +723,74 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+  testWidgets('third panelist comment stays above the phone keyboard', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    await pumpDefensysWidget(
+      tester,
+      MinutesFormScreen(scheduleId: 20, onBack: () {}),
+      overrides: [
+        authProvider.overrideWith(_Doc.new),
+        documenterProvider.overrideWith(_ThreePanelMinutes.new),
+      ],
+    );
+    final comment = find.byKey(const ValueKey('minutes-comment-3'));
+    final editable = find.descendant(
+      of: comment,
+      matching: find.byType(EditableText),
+    );
+    await Scrollable.ensureVisible(tester.element(comment), alignment: 1);
+    expect(tester.getRect(comment).bottom, greaterThan(544));
+    await tester.tap(editable);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    expect(tester.widget<EditableText>(editable).focusNode.hasFocus, isTrue);
+    expect(tester.getRect(comment).top, greaterThanOrEqualTo(56));
+    expect(tester.getRect(comment).bottom, lessThanOrEqualTo(544));
+
+    // Growing notes and an additional keyboard resize must keep typing visible.
+    await tester.enterText(
+      comment,
+      List.generate(16, (index) => 'Recommendation ${index + 1}').join('\n'),
+    );
+    tester.view.viewInsets = const FakeViewPadding(bottom: 360);
+    await tester.pumpAndSettle();
+    final renderEditable = tester
+        .state<EditableTextState>(editable)
+        .renderEditable;
+    final selection = tester
+        .widget<EditableText>(editable)
+        .controller
+        .selection;
+    final caret = renderEditable.getLocalRectForCaret(selection.extent);
+    final caretBottom = renderEditable.localToGlobal(caret.bottomLeft).dy;
+    expect(caretBottom, greaterThan(56));
+    expect(caretBottom, lessThanOrEqualTo(484));
+
+    final secondComment = find.byKey(const ValueKey('minutes-comment-2'));
+    final secondEditable = find.descendant(
+      of: secondComment,
+      matching: find.byType(EditableText),
+    );
+    await Scrollable.ensureVisible(tester.element(secondComment), alignment: 1);
+    await tester.tap(secondEditable);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<EditableText>(secondEditable).focusNode.hasFocus,
+      isTrue,
+    );
+    expect(tester.widget<EditableText>(editable).focusNode.hasFocus, isFalse);
+    expect(tester.getRect(secondComment).top, greaterThanOrEqualTo(56));
+    expect(tester.getRect(secondComment).bottom, lessThanOrEqualTo(484));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('external panelists have roster entries and comment fields', (
     tester,
   ) async {

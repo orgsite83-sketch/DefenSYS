@@ -160,11 +160,14 @@ class StudentTeamsHeaderActions extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (onCreateTeam != null) ...[
-          OutlinedButton.icon(
-            onPressed: canTapActions ? onCreateTeam : null,
-            style: DefensysButtonStyles.secondary(context),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Create New Team'),
+          DefensysShadcnScope(
+            maroonActions: true,
+            child: ShadButton.outline(
+              enabled: canTapActions,
+              onPressed: onCreateTeam,
+              leading: const Icon(LucideIcons.plus, size: 16),
+              child: const Text('Add team'),
+            ),
           ),
           const SizedBox(width: 10),
         ],
@@ -341,7 +344,10 @@ class PitTeamScopeToggle extends StatelessWidget {
         ? DefensysTokens.textPrimaryDark
         : DefensysUi.textDark;
 
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Container(
           width: 168,
@@ -372,7 +378,6 @@ class PitTeamScopeToggle extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 8),
         SizedBox(
           height: 42,
           child: OutlinedButton.icon(

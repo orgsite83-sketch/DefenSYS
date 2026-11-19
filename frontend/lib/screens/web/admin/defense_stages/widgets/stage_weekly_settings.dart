@@ -85,6 +85,9 @@ class StageWeeklySettings extends StatefulWidget {
     required this.onTemplateChanged,
     this.semesterLabel,
     this.compact = false,
+    this.revealSettings = 0,
+    this.showValidationErrors = true,
+    this.templateBuilder,
   });
 
   final Map<String, dynamic> value;
@@ -94,6 +97,9 @@ class StageWeeklySettings extends StatefulWidget {
   final VoidCallback onTemplateChanged;
   final String? semesterLabel;
   final bool compact;
+  final int revealSettings;
+  final bool showValidationErrors;
+  final Widget Function(Widget child)? templateBuilder;
 
   @override
   State<StageWeeklySettings> createState() => _StageWeeklySettingsState();
@@ -129,6 +135,7 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
   void initState() {
     super.initState();
     _syncReportCount();
+    _expanded = widget.revealSettings > 0;
   }
 
   void _syncReportCount() {
@@ -142,6 +149,7 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
   @override
   void didUpdateWidget(covariant StageWeeklySettings oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.revealSettings != oldWidget.revealSettings) _expanded = true;
     _syncReportCount();
     for (final entry in _controllers.entries) {
       final text = _displayValue(entry.key);
@@ -621,7 +629,7 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
                       style: description,
                     ),
                   ],
-                  if (!_expanded)
+                  if (!_expanded && widget.showValidationErrors)
                     if (weeklySettingsError(value, widget.template)
                         case final String error)
                       Padding(
@@ -679,13 +687,7 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
                   },
                 ),
                 const Divider(height: 16),
-                DeliverableTemplateEditor(
-                  item: widget.template,
-                  enabled: enabled,
-                  label: 'Report template',
-                  requiredTemplate: true,
-                  onChanged: widget.onTemplateChanged,
-                ),
+                _templateEditor(enabled),
                 const SizedBox(height: 8),
                 Text(
                   'Students obtain the adviser’s physical signature, then upload a signed PDF.',
@@ -697,6 +699,17 @@ class _StageWeeklySettingsState extends State<StageWeeklySettings> {
         ),
       ),
     );
+  }
+
+  Widget _templateEditor(bool enabled) {
+    final editor = DeliverableTemplateEditor(
+      item: widget.template,
+      enabled: enabled,
+      label: 'Report template',
+      requiredTemplate: true,
+      onChanged: widget.onTemplateChanged,
+    );
+    return widget.templateBuilder?.call(editor) ?? editor;
   }
 }
 

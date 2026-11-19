@@ -37,11 +37,17 @@ class GradingSetupSection extends StatelessWidget {
     this.enabled = true,
     this.canManageRubrics = true,
     this.panelOnly = false,
+    this.fieldBuilder,
+    this.showValidationErrors = true,
+    this.onCreateRubric,
   });
   final List<GradingRoleSetup> roles;
   final String resetLabel;
   final VoidCallback onReset, onManageRubrics;
   final bool enabled, canManageRubrics, panelOnly;
+  final Widget Function(String target, Widget child)? fieldBuilder;
+  final bool showValidationErrors;
+  final ValueChanged<String>? onCreateRubric;
 
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(
@@ -90,10 +96,14 @@ class GradingSetupSection extends StatelessWidget {
                         ),
                       ),
                     ),
-                    ShadButton.ghost(
+                    ShadButton.outline(
                       size: ShadButtonSize.sm,
                       enabled: canManageRubrics,
                       onPressed: canManageRubrics ? onManageRubrics : null,
+                      leading: Icon(
+                        noRubrics ? LucideIcons.plus : LucideIcons.settings2,
+                        size: 14,
+                      ),
                       child: Text(
                         noRubrics ? 'Create rubric' : 'Manage rubrics',
                         style: DefensysTokens.tableCell.copyWith(
@@ -147,8 +157,31 @@ class GradingSetupSection extends StatelessWidget {
                       compact: compact,
                       enabled: enabled,
                       fixedWeight: panelOnly,
+                      fieldBuilder: fieldBuilder,
                     ),
                   ),
+                  if (onCreateRubric != null &&
+                      canManageRubrics &&
+                      role.rubricId == null &&
+                      (panelOnly ||
+                          (int.tryParse(role.weightController.text.trim()) ??
+                                  0) >
+                              0))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: ShadButton.outline(
+                          key: ValueKey('create-${role.role}-rubric'),
+                          size: ShadButtonSize.sm,
+                          onPressed: () => onCreateRubric!(role.role),
+                          leading: const Icon(LucideIcons.plus, size: 14),
+                          child: Text(
+                            'Create ${role.label.toLowerCase()} rubric',
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
                 Divider(height: 1, color: DefensysTokens.borderOf(context)),
                 const SizedBox(height: 8),
@@ -167,7 +200,7 @@ class GradingSetupSection extends StatelessWidget {
                         key: const ValueKey('grading-weight-total'),
                         style: DefensysTokens.caption.copyWith(
                           fontWeight: FontWeight.w600,
-                          color: valid
+                          color: valid || !showValidationErrors
                               ? DefensysTokens.textPrimaryOf(context)
                               : (DefensysTokens.isDark(context)
                                     ? DefensysTokens.danger
@@ -176,10 +209,11 @@ class GradingSetupSection extends StatelessWidget {
                       ),
                     ),
                     if (!panelOnly)
-                      ShadButton.ghost(
+                      ShadButton.outline(
                         size: ShadButtonSize.sm,
                         enabled: enabled,
                         onPressed: enabled ? onReset : null,
+                        leading: const Icon(LucideIcons.rotateCcw, size: 14),
                         child: Text(
                           resetLabel,
                           style: DefensysTokens.tableCell.copyWith(
@@ -213,13 +247,15 @@ class _GradingRoleRow extends StatelessWidget {
     required this.compact,
     required this.enabled,
     this.fixedWeight = false,
+    this.fieldBuilder,
   });
   final GradingRoleSetup role;
   final bool compact, enabled, fixedWeight;
+  final Widget Function(String target, Widget child)? fieldBuilder;
 
   @override
   Widget build(BuildContext context) {
-    final weight = Semantics(
+    final weightControl = Semantics(
       label: '${role.label} grade weight',
       child: fixedWeight
           ? Text(
@@ -247,7 +283,13 @@ class _GradingRoleRow extends StatelessWidget {
               onChanged: role.onWeightChanged,
             ),
     );
-    final rubric = _RubricSelect(role: role, enabled: enabled);
+    final weight =
+        fieldBuilder?.call('${role.role}-weight', weightControl) ??
+        weightControl;
+    final rubricControl = _RubricSelect(role: role, enabled: enabled);
+    final rubric =
+        fieldBuilder?.call('${role.role}-rubric', rubricControl) ??
+        rubricControl;
     final label = Text(
       role.label,
       style: DefensysTokens.tableCell.copyWith(

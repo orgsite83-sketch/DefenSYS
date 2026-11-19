@@ -40,8 +40,9 @@ class _Users extends UserManagementNotifier {
   @override
   Future<List<Map<String, dynamic>>> previewEnrollmentSections(
     List<Map<String, dynamic>> students,
-    int semesterId,
-  ) async => [
+    int semesterId, {
+    bool unifiedEnrollment = false,
+  }) async => [
     for (final s in students)
       resolution(
         s['section']?.toString().isNotEmpty == true

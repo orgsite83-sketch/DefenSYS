@@ -67,9 +67,10 @@ def previous_evidence(student_id, *, exclude_team=None):
     return list(teams)
 
 
-def validate_roster(student_ids, term, *, team=None):
-    """Shared by preview and commit. No client-supplied sequence or override."""
-    students = {s.pk: s for s in get_user_model().objects.filter(pk__in=student_ids, role='student', is_active=True)}
+def roster_issues(student_ids, term, *, team=None):
+    """Canonical eligibility shared by writes and attention projections, batched."""
+    from .participation_read import roster_facts
+    students, participations, placements, history, old_intakes, failures = roster_facts(student_ids, team=team)
     if set(students) != set(student_ids):
         raise ValidationError({'member_ids': 'All members must be active student accounts.'})
     if team:
@@ -77,42 +78,53 @@ def validate_roster(student_ids, term, *, team=None):
             require_open(team)
         except DomainValidationError as exc:
             raise ValidationError({'member_ids': exc.messages}) from exc
-    errors = []
+    errors = {}
+    current_intake = intake_for(team) if team else None
     for student_id in sorted(student_ids):
         person = students[student_id]
         label = f'{person.get_full_name() or person.username} ({person.username})'
-        participation = Participation.objects.filter(student_id=student_id).select_related(
-            'intake_semester__school_year').order_by('-number').first()
-        current_intake = intake_for(team) if team else None
+        participation = participations.get(student_id)
+        previous_placements = placements[participation.pk] if participation else []
+        if participation and team and team.capstone_registration_semester_id and any(
+                p.team_id == team.pk and p.ended_at is None for p in previous_placements):
+            if participation.state != Participation.ACTIVE:
+                errors[student_id] = f'{label}: this participation is closed.'
+            continue
+        other_placements = [p for p in previous_placements if p.ended_at is None and (team is None or p.team_id != team.pk)]
         if participation and current_intake and participation.intake_semester_id == current_intake.pk:
             if participation.state != Participation.ACTIVE:
-                errors.append(f'{label}: this participation is {participation.get_state_display()}. Join a new Capstone 1 intake.')
+                errors[student_id] = f'{label}: this participation is {participation.get_state_display()}. Join a new Capstone 1 intake.'
                 continue
-            placement = participation.placements.filter(ended_at__isnull=True).exclude(team=team).first()
-            if placement:
-                errors.append(f'{label} already belongs to another team in this intake.')
+            if other_placements:
+                errors[student_id] = f'{label} already belongs to another team in this intake.'
             continue
         if term.label != Semester.SECOND:
-            errors.append(f'{label} cannot start a Capstone participation in Capstone 2. Include the student in a new Capstone 1 intake roster.')
+            errors[student_id] = f'{label} cannot start a Capstone participation in Capstone 2. Include the student in a new Capstone 1 intake roster.'
             continue
         if participation:
             if participation.intake_semester_id == term.pk:
                 if participation.state != Participation.ACTIVE:
-                    errors.append(f'{label}: a finalized participation cannot be reopened or transferred in the same intake.')
-                elif participation.placements.filter(ended_at__isnull=True).exclude(team=team).exists():
-                    errors.append(f'{label} already belongs to another team in this intake.')
-            elif participation.state != Participation.FAILED or term_key(term) <= term_key(participation.intake_semester):
-                errors.append(f'{label}: the previous participation is not a finalized Failed participation eligible for this new intake.')
-            elif any(term_key(p.team.semester) >= term_key(term) for p in participation.placements.select_related('team__semester__school_year')):
-                errors.append(f'{label}: this intake must be after the previous participation ended.')
+                    errors[student_id] = f'{label}: a finalized participation cannot be reopened or transferred in the same intake.'
+                elif other_placements:
+                    errors[student_id] = f'{label} already belongs to another team in this intake.'
+            elif participation.state != Participation.FAILED or (participation.intake_semester_id and term_key(term) <= term_key(participation.intake_semester)):
+                errors[student_id] = f'{label}: the previous participation is not a finalized Failed participation eligible for this new intake.'
+            elif any(term_key(p.team.semester) >= term_key(term) for p in previous_placements):
+                errors[student_id] = f'{label}: this intake must be after the previous participation ended.'
         else:
-            for old in previous_evidence(student_id, exclude_team=team.pk if team else None):
-                old_intake = intake_for(old)
-                if not old_intake or term_key(term) <= term_key(old_intake) or not closed_failure(old):
-                    errors.append(f'{label}: previous Capstone history requires review before placement in this intake.')
+            for old in history[student_id]:
+                old_intake = old_intakes[old.pk]
+                if not old_intake or term_key(term) <= term_key(old_intake) or old.pk not in failures:
+                    errors[student_id] = f'{label}: previous Capstone history requires review before placement in this intake.'
                     break
+    return errors
+
+
+def validate_roster(student_ids, term, *, team=None):
+    """Shared by preview and commit. No client-supplied sequence or override."""
+    errors = roster_issues(student_ids, term, team=team)
     if errors:
-        raise ValidationError({'member_ids': errors, 'code': 'capstone_placement_ineligible'})
+        raise ValidationError({'member_ids': list(errors.values()), 'code': 'capstone_placement_ineligible'})
 
 
 @transaction.atomic
@@ -124,6 +136,13 @@ def confirm_roster(team, student_ids, *, actor=None):
     list(get_user_model().objects.select_for_update().filter(pk__in=student_ids).order_by('pk'))
     team = StudentTeam.objects.select_for_update(of=('self',)).select_related('semester__school_year', 'intake_semester__school_year').get(pk=team.pk)
     validate_roster(student_ids, team.semester, team=team)
+    if team.capstone_registration_semester_id:
+        # Ordinary edits may retain existing verified placements, never allocate
+        # new unconfirmed members through this allocator.
+        now = timezone.now()
+        Placement.objects.filter(team=team, ended_at__isnull=True).exclude(
+            participation__student_id__in=student_ids).update(ended_at=now)
+        return
     intake = intake_for(team)
     if not intake:
         raise ValidationError('The original Capstone intake requires review.')
@@ -148,7 +167,8 @@ def confirm_roster(team, student_ids, *, actor=None):
                             snapshot={'team_name': old.name, 'project_title': old.project_title, 'semester_id': old.semester_id})
             previous = Participation.objects.filter(student_id=student_id).order_by('-number').first()
             participation = Participation.objects.create(student_id=student_id, intake_semester=intake,
-                number=previous.number + 1 if previous else 1, previous=previous, confirmed_by=actor)
+                number=previous.number + 1 if previous else 1, previous=previous, confirmed_by=actor,
+                history_complete=previous.history_complete if previous else True)
         Placement.objects.get_or_create(participation=participation, team=team, ended_at=None,
             defaults={'snapshot': {'team_name': team.name, 'project_title': team.project_title, 'semester_id': team.semester_id}})
 
@@ -173,10 +193,21 @@ def close_placements(team, state):
         'project_title': team.project_title, 'semester_id': team.semester_id})
 
 
+def verification_for(participation_id):
+    from .models import CapstoneRosterConfirmation
+    rows = CapstoneRosterConfirmation.objects.filter(
+        member_evidence__contains=[{'participation_id': participation_id}]).select_related('actor')
+    row = rows.exclude(reference='').order_by('pk').first() or rows.order_by('-pk').first()
+    return {'actor': row.actor.get_full_name() or row.actor.username,
+            'at': row.confirmed_at.isoformat(), 'reference': row.reference} if row else None
+
+
 def student_history(student_id):
     rows = Participation.objects.filter(student_id=student_id).select_related('intake_semester__school_year').prefetch_related('placements__team__semester__school_year')
-    return [{'id': row.pk, 'number': row.number, 'state': row.state,
-        'intake_semester_id': row.intake_semester_id, 'intake': row.intake_semester.display_name,
+    return [{'id': row.pk, 'number': row.number if row.history_complete else None, 'state': row.state,
+        'origin': row.origin, 'history_complete': row.history_complete,
+        'verification': verification_for(row.pk),
+        'intake_semester_id': row.intake_semester_id, 'intake': row.intake_semester.display_name if row.intake_semester_id else 'Verified prior completion',
         'placements': [{'team_id': p.team_id, 'team_name': p.team.name if row.state == 'active' and not p.ended_at else p.snapshot.get('team_name', p.team.name),
             'project_title': p.snapshot.get('project_title', p.team.project_title),
             'ended_at': p.ended_at.isoformat() if p.ended_at else None} for p in row.placements.all()]} for row in rows]
@@ -184,7 +215,8 @@ def student_history(student_id):
 
 def member_participation(team, student_id):
     row = Participation.objects.filter(student_id=student_id, placements__team=team).order_by('-number').first()
-    return {'number': row.number if row else None, 'state': row.state if row else 'needs_review',
+    return {'number': row.number if row and row.history_complete else None, 'state': row.state if row else 'needs_review',
+            'origin': row.origin if row else None,
             'intake_semester_id': row.intake_semester_id if row else None}
 
 
@@ -203,7 +235,7 @@ def roster_preview(student_ids, term):
             number = len(intakes) + 1
         person = students[student_id]
         result.append({'student_id': student_id, 'name': person.get_full_name() or person.username,
-            'username': person.username, 'number': number, 'returning': number > 1,
+            'username': person.username, 'number': number if not latest or latest.history_complete else None, 'returning': number > 1,
             'already_confirmed': same, 'proposed': not same})
     return result
 

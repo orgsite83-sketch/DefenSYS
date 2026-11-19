@@ -1,0 +1,181 @@
+<div id="rubric-setup-preview" class="viz-dotted-background">
+  <style>
+    #rubric-setup-preview { color-scheme:light dark; --rs-bg:light-dark(#f7f8fa,#16191f); --rs-surface:light-dark(#ffffff,#20242c); --rs-soft:light-dark(#f0f2f5,#292e38); --rs-text:light-dark(#172033,#edf0f5); --rs-sub:light-dark(#53617a,#b6c0d0); --rs-border:light-dark(#dce2ea,#454e5d); --rs-maroon:light-dark(#83170f,#d98c85); --rs-action:light-dark(#83170f,#a94339); --rs-white:#fff; color:var(--rs-text); font-family:Inter,Arial,sans-serif; padding:14px; }
+    #rubric-setup-preview * { box-sizing:border-box; }
+    #rubric-setup-preview [hidden] { display:none!important; }
+    #rubric-setup-preview .rs-app { background:var(--rs-bg); border:1px solid var(--rs-border); border-radius:9px; padding:20px; display:grid; gap:18px; font-size:14px; line-height:1.5; }
+    #rubric-setup-preview h2,#rubric-setup-preview h3,#rubric-setup-preview p { margin:0; }
+    #rubric-setup-preview h2 { font-size:20px; font-weight:600; }
+    #rubric-setup-preview h3 { font-size:15px; font-weight:600; }
+    #rubric-setup-preview .rs-sub { color:var(--rs-sub); font-size:12px; }
+    #rubric-setup-preview .rs-header { display:grid; gap:4px; padding-right:70px; }
+    #rubric-setup-preview .rs-panel { background:var(--rs-surface); border:1px solid var(--rs-border); border-radius:7px; padding:18px; display:grid; gap:16px; }
+    #rubric-setup-preview .rs-line { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    #rubric-setup-preview .rs-group { margin:0; padding:0; border:0; min-width:0; }
+    #rubric-setup-preview legend,#rubric-setup-preview label { font-size:12px; font-weight:600; margin-bottom:7px; }
+    #rubric-setup-preview .rs-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+    #rubric-setup-preview button { font:inherit; color:var(--rs-text); background:var(--rs-surface); border:1px solid var(--rs-border); border-radius:5px; padding:8px 12px; min-height:38px; cursor:pointer; text-align:left; }
+    #rubric-setup-preview button:focus-visible,#rubric-setup-preview input:focus-visible,#rubric-setup-preview summary:focus-visible { outline:2px solid var(--rs-maroon); outline-offset:3px; }
+    #rubric-setup-preview button:hover:not(:disabled) { background:var(--rs-soft); }
+    #rubric-setup-preview button[aria-checked="true"] { border-color:var(--rs-maroon); background:var(--rs-soft); box-shadow:inset 0 0 0 1px var(--rs-maroon); }
+    #rubric-setup-preview .rs-choice { display:grid; gap:3px; }
+    #rubric-setup-preview button:disabled { cursor:default; opacity:.55; }
+    #rubric-setup-preview .rs-link { border:0; padding:3px 0; min-height:28px; color:var(--rs-maroon); background:transparent; font-size:12px; }
+    #rubric-setup-preview .rs-primary { background:var(--rs-action); border-color:var(--rs-action); color:var(--rs-white); text-align:center; }
+    #rubric-setup-preview .rs-primary:hover:not(:disabled) { background:var(--rs-action); filter:brightness(1.08); }
+    #rubric-setup-preview .rs-name { display:grid; gap:5px; }
+    #rubric-setup-preview input { width:100%; min-width:0; padding:10px 12px; color:var(--rs-text); background:var(--rs-surface); font:inherit; border:1px solid var(--rs-border); border-radius:5px; }
+    #rubric-setup-preview .rs-auto { font-weight:400; color:var(--rs-sub); font-size:12px; }
+    #rubric-setup-preview .rs-copy { display:grid; gap:8px; padding-top:12px; border-top:1px solid var(--rs-border); }
+    #rubric-setup-preview .rs-copy button { display:grid; gap:3px; }
+    #rubric-setup-preview details { border-top:1px solid var(--rs-border); padding-top:12px; }
+    #rubric-setup-preview summary { cursor:pointer; color:var(--rs-text); }
+    #rubric-setup-preview .rs-setting-fields { display:grid; gap:14px; padding-top:14px; }
+    #rubric-setup-preview .rs-setting-options { display:flex; gap:7px; flex-wrap:wrap; }
+    #rubric-setup-preview .rs-setting-options button { font-size:12px; }
+    #rubric-setup-preview .rs-message { color:var(--rs-maroon); font-size:12px; }
+    #rubric-setup-preview .rs-criteria-head { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; }
+    #rubric-setup-preview .rs-criteria { width:100%; border-collapse:collapse; table-layout:fixed; color:var(--rs-text); }
+    #rubric-setup-preview th,#rubric-setup-preview td { padding:10px 0; text-align:left; border-bottom:1px solid var(--rs-border); overflow-wrap:anywhere; }
+    #rubric-setup-preview th { color:var(--rs-sub); font-size:12px; font-weight:500; }
+    #rubric-setup-preview th:last-child,#rubric-setup-preview td:last-child { width:70px; text-align:right; }
+    #rubric-setup-preview .rs-footer { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+    #rubric-setup-preview .rs-review { background:var(--rs-soft); padding:14px; border-radius:5px; display:grid; gap:8px; }
+    #rubric-setup-preview .rs-review strong { font-weight:600; }
+    @media(max-width:570px) { #rubric-setup-preview { padding:5px; } #rubric-setup-preview .rs-app { padding:12px; } #rubric-setup-preview .rs-panel { padding:14px; } #rubric-setup-preview .rs-options { grid-template-columns:1fr; } #rubric-setup-preview .rs-choice { grid-template-columns:1fr auto; align-items:center; } #rubric-setup-preview .rs-header { padding-right:45px; } }
+    @media(pointer:coarse) { #rubric-setup-preview button { min-height:44px; } #rubric-setup-preview input { font-size:16px; } }
+  </style>
+  <div class="rs-app">
+    <header class="rs-header"><h2>Create rubric</h2><p class="rs-sub">Capstone · 1st Semester, A.Y. 2026–2027</p><p class="rs-sub">Interactive proposal · sample stages</p></header>
+    <section class="rs-panel" aria-label="Rubric setup">
+      <h3>Rubric setup</h3>
+      <fieldset class="rs-group"><legend>Defense stage</legend>
+        <div class="rs-options" role="radiogroup" aria-label="Defense stage">
+          <button class="rs-choice" type="button" role="radio" aria-checked="false" data-stage="concept">Concept selection<span class="rs-sub">Panel only</span></button>
+          <button class="rs-choice" type="button" role="radio" aria-checked="false" data-stage="proposal">Proposal Defense<span class="rs-sub">1 rubric needed</span></button>
+          <button class="rs-choice" type="button" role="radio" aria-checked="true" data-stage="final">Final Defense<span class="rs-sub">2 rubrics needed</span></button>
+        </div>
+      </fieldset>
+      <fieldset class="rs-group"><legend>Evaluation type</legend>
+        <div class="rs-options" role="radiogroup" aria-label="Evaluation type">
+          <button class="rs-choice" type="button" role="radio" aria-checked="false" data-role="panel">Panel<span class="rs-sub" data-role-status="panel">Assigned</span></button>
+          <button class="rs-choice" type="button" role="radio" aria-checked="false" data-role="adviser">Adviser<span class="rs-sub" data-role-status="adviser">Rubric needed</span></button>
+          <button class="rs-choice" type="button" role="radio" aria-checked="true" data-role="peer">Peer<span class="rs-sub" data-role-status="peer">Rubric needed</span></button>
+        </div>
+      </fieldset>
+      <p id="rs-replacement" class="rs-message" hidden>Saving will replace the rubric currently assigned to this evaluation.</p>
+      <div class="rs-name">
+        <div class="rs-line"><label for="rs-rubric-name">Rubric name <span id="rs-name-mode" class="rs-auto">· Automatic</span></label><button type="button" class="rs-link" id="rs-use-auto" hidden>Use stage name</button></div>
+        <input id="rs-rubric-name" maxlength="160" value="Final Defense — Peer Rubric" />
+      </div>
+      <div class="rs-line"><span id="rs-source-summary" class="rs-sub">Starting with blank criteria</span><button id="rs-copy-toggle" type="button" aria-expanded="false" aria-controls="rs-copy-sources">Copy from rubric</button></div>
+      <div id="rs-copy-sources" class="rs-copy" hidden>
+        <div class="rs-line"><h3>Copy criteria and scoring</h3><span id="rs-copy-type" class="rs-sub">Peer rubrics</span></div>
+        <button type="button" id="rs-copy-source"><span id="rs-copy-source-name">Project — Peer Rubric</span><span class="rs-sub">2nd Semester, A.Y. 2025–2026</span></button>
+      </div>
+      <details id="rs-scoring"><summary>Scoring settings <span id="rs-score-summary" class="rs-sub">· Standard criteria · 10-point · Individual</span></summary>
+        <div class="rs-setting-fields">
+          <fieldset class="rs-group"><legend>Scoring setup</legend><div class="rs-setting-options" role="radiogroup" aria-label="Scoring setup"><button type="button" role="radio" aria-checked="true" data-mode="standard">Standard criteria</button><button type="button" role="radio" aria-checked="false" data-mode="sections">Weighted sections</button></div></fieldset>
+          <fieldset id="rs-max-points" class="rs-group"><legend>Maximum points per criterion</legend><div class="rs-setting-options" role="radiogroup" aria-label="Maximum points"><button type="button" role="radio" aria-checked="false" data-points="5">5-point</button><button type="button" role="radio" aria-checked="true" data-points="10">10-point</button><button type="button" role="radio" aria-checked="false" data-points="100">100-point</button></div></fieldset>
+          <fieldset class="rs-group"><legend>Score recipient</legend><p id="rs-peer-recipient">Individual scoring</p><div id="rs-recipients" class="rs-setting-options" role="radiogroup" aria-label="Score recipient" hidden><button type="button" role="radio" aria-checked="true" data-recipient="team">Team</button><button type="button" role="radio" aria-checked="false" data-recipient="individual">Individual</button><button type="button" role="radio" aria-checked="false" data-recipient="both">Team + individual</button></div></fieldset>
+        </div>
+      </details>
+    </section>
+    <section class="rs-panel" aria-label="Criteria preview">
+      <div class="rs-criteria-head"><h3>Evaluation criteria</h3><span class="rs-sub">Existing criterion editor</span></div>
+      <table class="rs-criteria"><thead><tr><th scope="col">Criterion</th><th scope="col">Weight</th></tr></thead><tbody id="rs-criteria-body"><tr><td>New criterion</td><td>100%</td></tr></tbody></table>
+    </section>
+    <p class="rs-message" id="rs-feedback" role="status" aria-live="polite"></p>
+    <div id="rs-review" class="rs-review" hidden aria-live="polite"><strong id="rs-review-title"></strong><p class="rs-sub" id="rs-review-detail"></p><p class="rs-sub">Preview only · no changes saved</p></div>
+    <footer class="rs-footer"><button type="button" id="rs-draft">Save draft</button><button type="button" class="rs-primary" id="rs-publish">Review &amp; publish</button></footer>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('rubric-setup-preview');
+      const $ = selector => root.querySelector(selector);
+      const stages = { concept:{label:'Concept selection',assigned:[],allowed:['panel']}, proposal:{label:'Proposal Defense',assigned:['panel','adviser'],allowed:['panel','adviser','peer']}, final:{label:'Final Defense',assigned:['panel'],allowed:['panel','adviser','peer']} };
+      const roles = {panel:'Panel',adviser:'Adviser',peer:'Peer'};
+      const recipients = {team:'Team',individual:'Individual',both:'Team + individual'};
+      let state = {stage:'final',role:'peer',custom:false,name:'',copied:false,sourceRole:'peer',mode:'standard',points:'10',recipient:'individual'};
+      function restore(saved) {
+        const value = saved?.modelContent?.rubricSetup;
+        if (!value || !stages[value.stage] || !roles[value.role]) return;
+        state = {...state, stage:value.stage, role:value.role, custom:value.custom === true, name:typeof value.name === 'string' ? value.name.slice(0,160) : '', copied:value.copied === true, sourceRole:roles[value.sourceRole] ? value.sourceRole : value.role, mode:value.mode === 'sections' ? 'sections' : 'standard', points:['5','10','100'].includes(value.points) ? value.points : '10', recipient:recipients[value.recipient] ? value.recipient : 'team'};
+        render();
+      }
+      const automaticName = () => `${stages[state.stage].label} — ${roles[state.role]} Rubric`;
+      function persist() {
+        if (window.openai?.setWidgetState) window.openai.setWidgetState({modelContent:{rubricSetup:{...state,name:$('#rs-rubric-name').value}},privateContent:null}).catch(() => {});
+      }
+      function render() {
+        const stage = stages[state.stage];
+        if (!stage.allowed.includes(state.role)) state.role = 'panel';
+        if (state.role === 'peer') state.recipient = 'individual';
+        root.querySelectorAll('[data-stage]').forEach(button => button.setAttribute('aria-checked',String(button.dataset.stage === state.stage)));
+        root.querySelectorAll('[data-role]').forEach(button => {
+          const role = button.dataset.role;
+          button.disabled = !stage.allowed.includes(role);
+          button.setAttribute('aria-checked',String(role === state.role));
+          button.querySelector('[data-role-status]').textContent = !stage.allowed.includes(role) ? 'Not required' : stage.assigned.includes(role) ? 'Assigned' : 'Rubric needed';
+        });
+        $('#rs-rubric-name').value = state.custom ? state.name : automaticName();
+        $('#rs-name-mode').textContent = state.custom ? '· Custom' : '· Automatic';
+        $('#rs-use-auto').hidden = !state.custom;
+        $('#rs-replacement').hidden = !stage.assigned.includes(state.role);
+        $('#rs-copy-source-name').textContent = `Project — ${roles[state.role]} Rubric`;
+        $('#rs-copy-type').textContent = `${roles[state.role]} rubrics`;
+        $('#rs-source-summary').textContent = state.copied ? `Copied from Project — ${roles[state.sourceRole]} Rubric` : 'Starting with blank criteria';
+        const modeLabel = state.mode === 'sections' ? 'Weighted sections' : 'Standard criteria';
+        $('#rs-score-summary').textContent = `· ${modeLabel}${state.mode === 'standard' ? ` · ${state.points}-point` : ''} · ${recipients[state.recipient]}`;
+        $('#rs-max-points').hidden = state.mode === 'sections';
+        $('#rs-peer-recipient').hidden = state.role !== 'peer';
+        $('#rs-recipients').hidden = state.role === 'peer';
+        [['mode',state.mode],['points',state.points],['recipient',state.recipient]].forEach(([key,value]) => root.querySelectorAll(`[data-${key}]`).forEach(button => button.setAttribute('aria-checked',String(button.dataset[key] === value))));
+        const names = state.sourceRole === 'peer' ? ['Contribution','Collaboration'] : state.sourceRole === 'adviser' ? ['Project progress','Professional practice'] : ['Technical quality','Presentation'];
+        const body = $('#rs-criteria-body');
+        body.replaceChildren();
+        (state.copied ? names : ['New criterion']).forEach((name,index) => {
+          const row = document.createElement('tr');
+          const title = document.createElement('td'); title.textContent = name;
+          const weight = document.createElement('td'); weight.textContent = state.copied ? (index === 0 ? '60%' : '40%') : '100%';
+          row.append(title,weight); body.append(row);
+        });
+      }
+      function clearFeedback() { $('#rs-feedback').textContent = ''; $('#rs-review').hidden = true; }
+      root.querySelectorAll('[data-stage]').forEach(button => button.addEventListener('click',() => { state.stage = button.dataset.stage; clearFeedback(); render(); persist(); }));
+      root.querySelectorAll('[data-role]').forEach(button => button.addEventListener('click',() => { state.role = button.dataset.role; state.recipient = state.role === 'peer' ? 'individual' : 'team'; clearFeedback(); render(); if (state.copied) $('#rs-feedback').textContent = 'Evaluation changed. Review the copied criteria and score recipients.'; persist(); }));
+      $('#rs-rubric-name').addEventListener('input',event => { state.custom = true; state.name = event.target.value; $('#rs-name-mode').textContent = '· Custom'; $('#rs-use-auto').hidden = false; clearFeedback(); persist(); });
+      $('#rs-use-auto').addEventListener('click',() => { state.custom = false; clearFeedback(); render(); persist(); });
+      $('#rs-copy-toggle').addEventListener('click',() => { const open = $('#rs-copy-sources').hidden; $('#rs-copy-sources').hidden = !open; $('#rs-copy-toggle').setAttribute('aria-expanded',String(open)); });
+      $('#rs-copy-source').addEventListener('click',() => {
+        state.copied = true; state.sourceRole = state.role; state.mode = 'standard'; state.points = '10';
+        state.recipient = state.role === 'peer' ? 'individual' : 'team';
+        $('#rs-copy-sources').hidden = true; $('#rs-copy-toggle').setAttribute('aria-expanded','false');
+        clearFeedback(); render();
+        $('#rs-feedback').textContent = `Criteria and scoring copied for ${stages[state.stage].label} · ${roles[state.role]} evaluation. The destination is retained.`;
+        persist();
+      });
+      ['mode','points','recipient'].forEach(key => root.querySelectorAll(`[data-${key}]`).forEach(button => button.addEventListener('click',() => { state[key] = button.dataset[key]; clearFeedback(); render(); persist(); })));
+      function review(draft) {
+        clearFeedback();
+        if (!$('#rs-rubric-name').value.trim()) { $('#rs-feedback').textContent = 'Enter a rubric name.'; $('#rs-rubric-name').focus(); return; }
+        $('#rs-review-title').textContent = draft ? 'Review draft destination' : 'Review rubric before publishing';
+        $('#rs-review-detail').textContent = `${$('#rs-rubric-name').value} · ${stages[state.stage].label} · ${roles[state.role]} evaluation.${stages[state.stage].assigned.includes(state.role) ? ' Saving replaces the assigned rubric.' : ' Saving assigns this rubric to the selected evaluation.'}`;
+        $('#rs-review').hidden = false;
+      }
+      $('#rs-draft').addEventListener('click',() => review(true));
+      $('#rs-publish').addEventListener('click',() => review(false));
+      root.querySelectorAll('[role="radiogroup"]').forEach(group => group.addEventListener('keydown',event => {
+        if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)) return;
+        const buttons = [...group.querySelectorAll('[role="radio"]:not(:disabled)')];
+        const index = buttons.indexOf(document.activeElement); if (index < 0) return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length-1 : (index + (['ArrowLeft','ArrowUp'].includes(event.key) ? -1 : 1) + buttons.length) % buttons.length;
+        buttons[next].focus(); buttons[next].click();
+      }));
+      render();
+      restore(window.openai?.widgetState);
+      window.addEventListener('openai:set_globals',event => { if (event.detail?.globals?.widgetState) restore(event.detail.globals.widgetState); });
+    })();
+  </script>
+</div>

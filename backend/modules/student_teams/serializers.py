@@ -377,7 +377,14 @@ class StudentTeamSerializer(serializers.ModelSerializer):
         return team_is_editable(user, obj)
 
 
+class Capstone2ConfirmationSerializer(serializers.Serializer):
+    confirmed = serializers.BooleanField()
+    reference = serializers.CharField(required=False, allow_blank=True, max_length=500)
+    request_id = serializers.UUIDField()
+
+
 class StudentTeamWriteSerializer(serializers.Serializer):
+    capstone2_confirmation = Capstone2ConfirmationSerializer(required=False, write_only=True)
     name = serializers.CharField(max_length=120)
     project_title = serializers.CharField(required=False, allow_blank=True, max_length=255)
     level = serializers.ChoiceField(
@@ -446,6 +453,9 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             from .adviser_assignments import validate_adviser_capacity
             from django.core.exceptions import ValidationError as ModelValidationError
             candidate = self.instance or StudentTeam(level=attrs.get('level', ''), semester=semester)
+            if attrs.get('capstone2_confirmation') and self.context.get('manual_team_entry') and self.instance is None:
+                from .manual_capstone import capacity_candidate
+                candidate = capacity_candidate(attrs)
             try:
                 validate_adviser_capacity(candidate, adviser_id)
             except ModelValidationError as exc:
@@ -541,11 +551,25 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         if user_is_pit_lead_only(user) and 'Capstone' in attrs['level']:
             raise serializers.ValidationError({'level': 'PIT Leads can only manage PIT teams.'})
 
-        if 'Capstone' in attrs['level']:
+        confirmation = attrs.get('capstone2_confirmation')
+        if confirmation:
+            if not self.context.get('manual_team_entry') or 'Capstone' not in attrs['level']:
+                raise serializers.ValidationError({'capstone2_confirmation': 'This confirmation is only available for manual Capstone 2 placement.'})
+            from .manual_capstone import validate_confirmation
+            validate_confirmation(user, semester, set(member_ids), confirmation, target=self.instance)
+            if self.instance is None:
+                if attrs.get('status', StudentTeam.STATUS_PENDING) != StudentTeam.STATUS_PENDING:
+                    raise serializers.ValidationError({'status': 'New registration cannot assign an academic result.'})
+                if not attrs.get('project_title', '').strip():
+                    raise serializers.ValidationError({'project_title': 'Enter the existing approved project title.'})
+                if attrs.get('ready_for_stage') or attrs.get('current_defense_stage'):
+                    raise serializers.ValidationError('Registration cannot mark a stage ready or completed.')
+
+        if 'Capstone' in attrs['level'] and not confirmation:
             from .participation import validate_roster
             validate_roster(set(member_ids), semester, team=self.instance)
 
-        if self.instance is None and attrs.get('level') and 'Capstone' in attrs['level']:
+        if not confirmation and self.instance is None and attrs.get('level') and 'Capstone' in attrs['level']:
             from academic_period_management.capstone_mode import assert_capstone_team_creation_allowed
             try:
                 assert_capstone_team_creation_allowed(semester)
@@ -592,11 +616,26 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        confirmation = validated_data.pop('capstone2_confirmation', None)
+        if confirmation:
+            # The normal create method already owns the transaction. Lock the
+            # same resources before recognizing/reconciling source identities.
+            list(Semester.objects.select_for_update().order_by('pk'))
+            self._lock_members(validated_data['member_ids'], validated_data['semester'])
+            from .manual_capstone import reconcile_source
+            existing = reconcile_source(validated_data, self.context.get('assigned_by') or self.context.get('user'),
+                                        confirmation, self.initial_data)
+            if existing:
+                self._ensure_adviser_role(existing.adviser,
+                    changed_by=self.context.get('assigned_by') or self.context.get('user'))
+                return existing
         list(Semester.objects.select_for_update().order_by('pk'))
         from .adviser_assignments import validate_adviser_capacity
         from django.core.exceptions import ValidationError as ModelValidationError
         try:
-            validate_adviser_capacity(StudentTeam(level=validated_data['level'], semester=validated_data['semester']),
+            from .manual_capstone import capacity_candidate
+            candidate = capacity_candidate(validated_data) if confirmation else StudentTeam(level=validated_data['level'], semester=validated_data['semester'])
+            validate_adviser_capacity(candidate,
                 getattr(validated_data.get('adviser'), 'pk', None))
         except ModelValidationError as exc:
             raise serializers.ValidationError({'adviser_id': exc.message_dict['adviser']})
@@ -605,6 +644,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         member_ids = validated_data.pop('member_ids')
         self._lock_members(member_ids, validated_data['semester'])
         reason = validated_data.pop('adviser_change_reason', '')
+        from .manual_capstone import recorded_intake_id
         team = StudentTeam.objects.create(
             name=validated_data['name'],
             project_title=(validated_data.get('project_title', '') if (validated_data.get('setup_pending') or validated_data.get('project_pending'))
@@ -616,6 +656,8 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             year_level=validated_data['year_level'],
             section=validated_data.get('section', ''),
             semester=validated_data['semester'],
+            capstone_registration_semester=validated_data['semester'] if confirmation else None,
+            intake_semester_id=recorded_intake_id(member_ids) if confirmation else None,
             leader=validated_data['leader'],
             adviser=validated_data.get('adviser'),
             status=validated_data.get('status', StudentTeam.STATUS_PENDING),
@@ -624,7 +666,11 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             current_defense_stage=validated_data.get('current_defense_stage') or None,
         )
         self._sync_members(team, member_ids, validated_data['leader'].id)
-        if team.is_capstone:
+        if confirmation:
+            from .manual_capstone import confirm
+            confirm(team, set(member_ids), self.context.get('assigned_by') or self.context.get('user'),
+                    confirmation, self.initial_data)
+        elif team.is_capstone:
             from .participation import confirm_roster
             confirm_roster(team, set(member_ids), actor=self.context.get('assigned_by') or self.context.get('user'))
         # Capture staff-supplied input explicitly. Display titles may later be
@@ -654,6 +700,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        confirmation = validated_data.pop('capstone2_confirmation', None)
         list(Semester.objects.select_for_update().order_by('pk'))
         instance = StudentTeam.objects.select_for_update().get(pk=instance.pk)
         self._assert_write_scope(validated_data['semester'], instance)
@@ -709,7 +756,11 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         from .continuation_sections import mark_admin_section_change
         mark_admin_section_change(instance, previous_section)
         self._sync_members(instance, member_ids, validated_data['leader'].id)
-        if instance.is_capstone:
+        if confirmation:
+            from .manual_capstone import confirm
+            confirm(instance, set(member_ids), self.context.get('assigned_by') or self.context.get('user'),
+                    confirmation, self.initial_data)
+        elif instance.is_capstone:
             from .participation import confirm_roster
             confirm_roster(instance, set(member_ids), actor=self.context.get('assigned_by') or self.context.get('user'))
         assigned_by = self.context.get('assigned_by') or self.context.get('user')

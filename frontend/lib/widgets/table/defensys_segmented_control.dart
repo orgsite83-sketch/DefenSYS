@@ -3,6 +3,7 @@ import '../../theme/defensys_tokens.dart';
 
 /// Item descriptor for [DefensysSegmentedControl].
 class DefensysSegmentItem<T> {
+  final Key? key;
   final T value;
   final String label;
   final String? subtitle;
@@ -11,6 +12,7 @@ class DefensysSegmentItem<T> {
   final Widget? badge;
 
   const DefensysSegmentItem({
+    this.key,
     required this.value,
     required this.label,
     this.subtitle,
@@ -63,6 +65,7 @@ class DefensysSegmentedControl<T> extends StatelessWidget {
           for (var index = 0; index < items.length; index++) ...[
             if (index > 0) const SizedBox(width: 6),
             _SegmentButton<T>(
+              key: items[index].key,
               item: items[index],
               selected: items[index].value == value,
               enabled: enabled,
@@ -93,6 +96,7 @@ class _SegmentButton<T> extends StatelessWidget {
   final VoidCallback onTap;
 
   const _SegmentButton({
+    super.key,
     required this.item,
     required this.selected,
     required this.enabled,

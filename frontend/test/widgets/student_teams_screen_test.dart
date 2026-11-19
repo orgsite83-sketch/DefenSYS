@@ -339,10 +339,42 @@ void main() {
       ],
     );
 
-    await tester.tap(find.text('Create New Team'));
+    await tester.tap(find.text('Add team'));
     await tester.pumpAndSettle();
 
     expect(find.text('Capstone team creation closed'), findsOneWidget);
+  });
+
+  testWidgets('Capstone 2 manual capability opens the single add form', (
+    tester,
+  ) async {
+    await pumpTeamsScreen(
+      tester,
+      mode: TeamListMode.capstoneAdmin,
+      overrides: [
+        studentTeamsProvider.overrideWith(
+          () => _FakeStudentTeamsNotifier(
+            const StudentTeamsState(
+              level: 'Capstone',
+              capstoneMode: 'capstone_2_continue',
+              canCreateCapstoneTeams: false,
+              canAddCapstone2Team: true,
+              activeSemester: {
+                'label': '1st Semester',
+                'school_year': '2026–2027',
+              },
+            ),
+          ),
+        ),
+        dashboardProvider(
+          'admin',
+        ).overrideWith(_FakeAdminDashboardNotifier.new),
+      ],
+    );
+    await tester.tap(find.text('Add team'));
+    await tester.pumpAndSettle();
+    expect(find.text('Add Capstone 2 team'), findsOneWidget);
+    expect(find.text('Capstone team creation closed'), findsNothing);
   });
 
   testWidgets('PIT lead mode uses PIT copy and hides capstone filter', (

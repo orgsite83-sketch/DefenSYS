@@ -60,7 +60,8 @@ class StudentAcademicRecordListSerializer(serializers.ListSerializer):
         placed = set(StudentCapstonePlacement.objects.filter(ended_at__isnull=True,
             participation_id__in=[p.pk for p in latest.values()]).values_list('participation_id', flat=True))
         self.child._capstone_participations_by_student = {sid: {
-            'number': p.number, 'state': p.state, 'returning': p.state == 'failed',
+            'number': p.number if p.history_complete else None, 'origin': p.origin,
+            'state': p.state, 'returning': p.state == 'failed',
             'has_current_team': p.state == 'active' and p.pk in placed,
         } for sid, p in latest.items()}
         return super().to_representation(records)
@@ -114,7 +115,7 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
         row = StudentCapstoneParticipation.objects.filter(student_id=obj.student_id).order_by('-number').first()
         if not row:
             return None
-        return {'number': row.number, 'state': row.state,
+        return {'number': row.number if row.history_complete else None, 'origin': row.origin, 'state': row.state,
             'returning': row.state == 'failed',
             'has_current_team': row.state == 'active' and row.placements.filter(ended_at__isnull=True).exists()}
 
