@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/defense/re_demo_workspace.dart';
 import '../../widgets/branding/defensys_mobile_brand.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1448,6 +1449,23 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             ),
             title: _buildAppBarTitle(),
             actions: [
+              IconButton(
+                tooltip: 'Re-demo appointments',
+                icon: const Icon(Icons.fact_check_outlined),
+                onPressed: () async {
+                  final saved =
+                      await (_gradeSheetKey.currentState
+                              ?.savePendingChanges() ??
+                          Future.value(true));
+                  if (saved && context.mounted) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ReDemoWorkspaceScreen(),
+                      ),
+                    );
+                  }
+                },
+              ),
               if (!_isGuest)
                 const NotificationsBell(
                   workspace: 'panelist',

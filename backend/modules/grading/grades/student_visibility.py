@@ -1,7 +1,7 @@
 """Student assessment values come only from an explicitly released snapshot."""
 from defensys_backend.read_projection import read_memoize
 
-PRIVATE = {'score', 'scores', 'final_grade', 'student_scores', 'student_grades', 'peerScore',
+PRIVATE = {'deliberation', 'score', 'scores', 'final_grade', 'student_scores', 'student_grades', 'peerScore',
            'students', 'peer_per_student', 'breakdowns', 'criterion_scores', 'qualifies', 'ranking',
            'rank', 'outcome_rule', 'peer_rating_evidence', 'assessment_policy'}
 PUBLIC_RESULT = {'verdict', 'hearing_outcome', 'result', 'outcome', 'published_result', 'approved_title',
@@ -13,6 +13,7 @@ DEPENDENT_FLAGS = {'passed_and_cleared', 'revisions_pending', 'redefense_ready',
                    'is_officially_complete', 'is_completed', 'is_defense_done', 'concept_revisions_cleared',
                    'section_revisions_pending', 'shared_revisions_pending', 'post_defense_complete'}
 RESULT_STATUSES = {'approved', 'approved_with_revisions', 'for_redefense', 'redefense_required', 'failed',
+                   're_demo_required', 're_demo_scheduled',
                    'project_rejected', 'passed', 'completed', 'revisions_pending', 'pending_post_defense',
                    'awaiting_completion', 'ready_to_schedule_redefense', 'replacement_concepts_needed'}
 
@@ -93,6 +94,15 @@ def student_assessment_payload(value, actor, *, grade=None, team=None, stage=Non
         approved = next((c for c in released.get('concepts', []) if c.get('decision') in ('approved','approved_with_revisions')), {}) if released else {}
         result = {}
         for key, child in item.items():
+            if key == 're_demo':
+                decision = (released or {}).get('panel_decision') or {}
+                result[key] = public(child, sid) if isinstance(child, dict) and (
+                    decision.get('id') == child.get('source_outcome_id') and
+                    decision.get('revision') == child.get('source_revision')) else None
+                continue
+            if key == 'panel_decision':
+                result[key] = (released or {}).get('panel_decision')
+                continue
             if key in ('peer_criteria', 'my_peer_submissions'):
                 from copy import deepcopy
                 result[key] = deepcopy(child)

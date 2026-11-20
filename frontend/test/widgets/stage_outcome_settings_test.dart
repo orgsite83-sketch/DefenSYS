@@ -1,4 +1,5 @@
 import 'package:defensys/screens/web/admin/defense_stages/widgets/stage_outcome_settings.dart';
+import 'package:defensys/screens/web/admin/defense_stages/widgets/future_defense_rules_dialog.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,66 @@ import '../helpers/capture_preview.dart';
 
 void main() {
   setUpAll(loadPreviewFonts);
+  for (final width in [320.0, 1100.0]) {
+    testWidgets(
+      'locked stages can save future policy without structural changes at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await loadPreviewFonts(force: true);
+        Map<String, dynamic>? saved;
+        await pumpDefensysWidget(
+          tester,
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showFutureDefenseRulesDialog(
+                context,
+                stage: {
+                  'is_locked': true,
+                  'qualifying_score': 75,
+                  'score_carryover': 'reassess',
+                  'revision_areas': [
+                    {'id': 'system', 'label': 'System', 'allows_demo': true},
+                    {
+                      'id': 'manuscript',
+                      'label': 'Manuscript',
+                      'allows_demo': false,
+                    },
+                  ],
+                },
+                onSave: (payload) async {
+                  saved = payload;
+                  return null;
+                },
+              ),
+              child: const Text('Edit future rules'),
+            ),
+          ),
+          theme: width == 320 ? AppTheme.mistDarkTheme : AppTheme.theme,
+        );
+        await tester.tap(find.text('Edit future rules'));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('revision-area-system')),
+          'Software',
+        );
+        await tester.ensureVisible(find.text('Save rules'));
+        await tester.tap(find.text('Save rules'));
+        await tester.pumpAndSettle();
+        expect(saved?.keys.toSet(), {
+          'qualifying_score',
+          'score_carryover',
+          'revision_areas',
+        });
+        expect((saved?['revision_areas'] as List).first['id'], 'system');
+        expect((saved?['revision_areas'] as List).first['label'], 'Software');
+        expect((saved?['revision_areas'] as List).first['allows_demo'], true);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   test('qualifying score accepts boundaries and rejects invalid input', () {
     for (final score in ['0', '50', '75', '99.99', '100']) {
       expect(StageOutcomeSettings.validateScore(score), isNull);

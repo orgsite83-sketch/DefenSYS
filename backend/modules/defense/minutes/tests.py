@@ -40,6 +40,7 @@ class DocumenterDashboardApiTests(APITestCase):
             first_name='Albert',
             last_name='Einstein',
             is_documenter=False,
+            is_adviser=True,
         )
         self.student = User.objects.create_user(
             username='student-user',
@@ -177,6 +178,7 @@ class MinutesCrudApiTests(APITestCase):
             first_name='Albert',
             last_name='Einstein',
             is_documenter=False,
+            is_adviser=True,
             e_signature=sig_file_adv,
         )
         self.panelist_1 = User.objects.create_user(

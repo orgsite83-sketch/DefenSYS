@@ -43,7 +43,10 @@ def eligible_failure(grade):
     if grade.schedule.status != 'done' or grade.schedule.operation_state != 'normal':
         return False
     rule = outcome_payload(grade)
-    if not rule or not rule['panel_complete'] or rule['outcome'] != 'for_redefense':
+    from .outcome_rules import deliberation_policy
+    from .outcome_models import DefenseOutcome
+    if not rule or not rule['panel_complete'] or (rule['outcome'] != 'for_redefense' and not (
+            deliberation_policy(grade.schedule) and DefenseOutcome.objects.filter(schedule_id=grade.schedule_id, verdict='for_redefense').exists())):
         return False
     from defense.scheduler.models import DefenseSchedule
     return not DefenseSchedule.objects.filter(team_id=grade.team_id, semester_id=grade.semester_id,

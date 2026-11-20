@@ -502,6 +502,7 @@ class _ExternalAssignmentDialogState
         _expiry.isAfter(DateTime.now());
     final sessionWord = scope == 'pit' ? 'events' : 'stages';
     return DefensysShadcnScope(
+      maroonActions: true,
       child: Dialog(
         elevation: 0,
         insetPadding: const EdgeInsets.all(16),

@@ -1,7 +1,7 @@
 """Correct shared choices through the chair while preserving proposal identities."""
 from copy import deepcopy
 from django.core.exceptions import ValidationError
-from django.test import override_settings
+from django.test import override_settings, tag
 from rest_framework.test import APITestCase, APITransactionTestCase
 
 from defense.scheduler.panelist_evaluation import evaluation_context, save_evaluation_draft, draft_payload
@@ -248,6 +248,7 @@ class SharedSelectionCorrectionTests(APITestCase):
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
+@tag('serialized_db')
 class SharedSelectionCorrectionConcurrencyTests(APITransactionTestCase):
     # Inhibit post-migrate content-type recreation before restoring the snapshot.
     serialized_rollback = True

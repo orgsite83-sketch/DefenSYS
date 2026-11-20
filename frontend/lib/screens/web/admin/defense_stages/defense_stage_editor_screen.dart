@@ -3,6 +3,7 @@ import '../../../../services/defense/template_configuration.dart';
 import 'widgets/stage_minutes_settings.dart';
 import 'widgets/stage_weekly_settings.dart';
 import 'widgets/stage_outcome_settings.dart';
+import 'widgets/future_defense_rules_dialog.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
 import '../../../../widgets/repository/shared_deliverables_editor.dart';
@@ -76,6 +77,7 @@ class _DefenseStageEditorScreenState
   Map<String, dynamic> _conceptConfig = {};
   final _qualifyingScore = TextEditingController();
   String _scoreCarryover = 'reassess';
+  List<Map<String, dynamic>> _revisionAreas = [];
   final _panel = TextEditingController(text: '50');
   final _adviser = TextEditingController(text: '30');
   final _peer = TextEditingController(text: '20');
@@ -196,6 +198,7 @@ class _DefenseStageEditorScreenState
       },
       'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
       'score_carryover': _scoreCarryover,
+      'revision_areas': _revisionAreas,
       'minutes_deliverable_id': _minutesNumber.text,
       'minutes_deliverable_label': _minutesName.text,
       'deliverables': _deliverables,
@@ -247,10 +250,13 @@ class _DefenseStageEditorScreenState
     if (_isLocked || await _saveDraft()) {
       if (mounted) {
         context.go(
-          Uri(path: AdminRoutes.rubrics, queryParameters: {
-            'stage': '${widget.stageId}',
-            if (evaluationType != null) 'evaluation': evaluationType,
-          }).toString(),
+          Uri(
+            path: AdminRoutes.rubrics,
+            queryParameters: {
+              'stage': '${widget.stageId}',
+              if (evaluationType != null) 'evaluation': evaluationType,
+            },
+          ).toString(),
         );
       }
     }
@@ -561,6 +567,10 @@ class _DefenseStageEditorScreenState
               : []),
     );
     _qualifyingScore.text = stage['qualifying_score']?.toString() ?? '';
+    _revisionAreas = (stage['revision_areas'] as List? ?? [])
+        .whereType<Map>()
+        .map((area) => Map<String, dynamic>.from(area))
+        .toList();
     _scoreCarryover =
         stage['score_carryover']?.toString() ??
         _conceptConfig['score_carryover']?.toString() ??
@@ -714,6 +724,7 @@ class _DefenseStageEditorScreenState
           },
           'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
           'score_carryover': _scoreCarryover,
+          'revision_areas': _revisionAreas,
           'minutes_deliverable_id': _minutesNumber.text.trim(),
           'minutes_deliverable_label': _minutesName.text.trim(),
         },
@@ -1063,6 +1074,56 @@ class _DefenseStageEditorScreenState
                 ),
               const SizedBox(height: 20),
               if (_structureLocked) _buildLockedBanner(),
+              if (_structureLocked &&
+                  !widget.readOnly &&
+                  _semesterId ==
+                      _asInt(
+                        ref.watch(academicPeriodProvider).activeSemester?['id'],
+                      ))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: DefensysShadcnScope(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: ShadButton.outline(
+                        enabled: !_saving && !_savingDraft && !_isDirty,
+                        onPressed: () async {
+                          final changed = await showFutureDefenseRulesDialog(
+                            context,
+                            stage: _stage!,
+                            onSave: (payload) async {
+                              final ok = await ref
+                                  .read(defenseStagesProvider.notifier)
+                                  .updateStage(widget.stageId, payload);
+                              return ok
+                                  ? null
+                                  : ref.read(defenseStagesProvider).error ??
+                                        'Unable to save defense rules.';
+                            },
+                          );
+                          if (changed && mounted) {
+                            final detail = await ref
+                                .read(defenseStagesProvider.notifier)
+                                .fetchStageDetail(
+                                  widget.stageId,
+                                  semesterId: _semesterId,
+                                );
+                            if (mounted && detail?['stage'] is Map) {
+                              setState(
+                                () => _applyStage(
+                                  Map<String, dynamic>.from(
+                                    detail!['stage'] as Map,
+                                  ),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        child: const Text('Edit rules for new hearings'),
+                      ),
+                    ),
+                  ),
+                ),
               if (_savedDraft != null && !_isLocked) ...[
                 StageSetupDraftNotice(
                   title: 'Stage setup draft saved',
@@ -1451,6 +1512,13 @@ class _DefenseStageEditorScreenState
                                     _setupTargets.field(
                                       'score',
                                       StageOutcomeSettings(
+                                        revisionAreas: _revisionAreas,
+                                        onRevisionAreasChanged: (value) {
+                                          setState(
+                                            () => _revisionAreas = value,
+                                          );
+                                          _markDirty();
+                                        },
                                         scoreController: _qualifyingScore,
                                         showValidationErrors: _revealedSteps
                                             .contains(1),

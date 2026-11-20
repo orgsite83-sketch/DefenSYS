@@ -1,0 +1,181 @@
+<div id="ds-redemo-workspace" aria-label="Proposed re-demo panel workspace">
+  <div class="viz-controls" aria-label="Preview controls">
+    <label class="form-label">Example state
+      <select class="form-select" id="rd-case">
+        <option value="pending">Awaiting verification</option>
+        <option value="remaining">Further corrections required</option>
+        <option value="verified">System corrections verified</option>
+      </select>
+    </label>
+    <label class="form-label">View as
+      <select class="form-select" id="rd-role">
+        <option value="chair">Panel chair</option>
+        <option value="member">Panel member · Read-only</option>
+      </select>
+    </label>
+  </div>
+  <div class="rd-product" aria-label="DefenSYS re-demo appointment">
+    <header class="rd-chrome"><span class="rd-brand">DefenSYS</span><span class="rd-small">Proposal · Sample data</span><span class="rd-duty" id="rd-duty">Assigned panel chair</span></header>
+    <main class="rd-main">
+      <div class="rd-heading"><div class="rd-title-group"><p class="rd-small">Re-demo · Final defense follow-up</p><h2>Sample team · Service portal</h2><p class="rd-small">Scheduled appointment · IT Laboratory</p></div><span class="rd-badge" id="rd-status">Verification pending</span></div>
+      <div class="rd-source"><div><p class="rd-small">Original defense outcome</p><strong>Approved with revisions</strong></div><div class="rd-score"><strong>82<span class="rd-small"> / 100</span></strong><p class="rd-small">Original panel score · Retained</p></div></div>
+      <section id="rd-content" class="rd-content" aria-label="Re-demo verification"></section>
+      <details class="rd-original" id="rd-original"><summary class="cursor-interaction">Original defense decision</summary><div class="rd-detail"><table class="rd-table"><thead><tr><th>Revision area</th><th>Recorded requirement</th></tr></thead><tbody><tr><td>System</td><td>Minor revision · Re-demo required</td></tr><tr><td>Manuscript</td><td>Major revision · Document review pending</td></tr></tbody></table><p class="rd-small">Decision confirmed by the assigned panel chair after the original defense.</p></div></details>
+      <p id="rd-feedback" class="rd-feedback" aria-live="polite"></p>
+    </main>
+  </div>
+</div>
+<style>
+  #ds-redemo-workspace { display:grid; gap:16px; }
+  #ds-redemo-workspace .rd-product {
+    --rd-bg:light-dark(#f8fafc,#161618); --rd-surface:light-dark(#ffffff,#212024);
+    --rd-text:light-dark(#0f172a,#f4f4f5); --rd-muted:light-dark(#475569,#b5b3bd);
+    --rd-border:light-dark(#e2e8f0,#35343a); --rd-soft:light-dark(#f1f5f9,#28272d);
+    --rd-brand:light-dark(#7a110a,#c0392b); --rd-brand-text:light-dark(#7a110a,#f4a69c);
+    --rd-action-text:#ffffff; --rd-success:light-dark(#047857,#6ee7b7);
+    --rd-warning:light-dark(#92400e,#fbbf24); --rd-error:light-dark(#b91c1c,#fca5a5);
+    color:var(--rd-text); background:var(--rd-surface); border:1px solid var(--rd-border);
+    border-radius:12px; font:400 14px/1.5 Inter,Arial,sans-serif;
+  }
+  #ds-redemo-workspace .rd-product * { box-sizing:border-box; }
+  #ds-redemo-workspace .rd-product h2,#ds-redemo-workspace .rd-product h3,#ds-redemo-workspace .rd-product p { margin:0; }
+  #ds-redemo-workspace .rd-product strong { font-weight:500; }
+  #ds-redemo-workspace .rd-product h2 { font-size:20px; font-weight:500; }
+  #ds-redemo-workspace .rd-product h3 { font-size:15px; font-weight:500; }
+  #ds-redemo-workspace .rd-chrome { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 22px; border-bottom:1px solid var(--rd-border); background:var(--rd-bg); border-radius:12px 12px 0 0; }
+  #ds-redemo-workspace .rd-brand { font-size:18px; color:var(--rd-brand-text); font-weight:500; }
+  #ds-redemo-workspace .rd-small { font-size:12px; color:var(--rd-muted); }
+  #ds-redemo-workspace .rd-duty { font-size:12px; color:var(--rd-muted); margin-left:auto; }
+  #ds-redemo-workspace .rd-main { padding:24px; display:grid; gap:22px; }
+  #ds-redemo-workspace .rd-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+  #ds-redemo-workspace .rd-title-group { display:grid; gap:4px; min-width:0; }
+  #ds-redemo-workspace .rd-badge { display:inline-flex; border:1px solid var(--rd-border); padding:4px 9px; border-radius:20px; color:var(--rd-text); background:var(--rd-soft); font-size:12px; }
+  #ds-redemo-workspace .rd-source { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; padding:15px 16px; background:var(--rd-soft); border-radius:10px; }
+  #ds-redemo-workspace .rd-source strong { display:block; font-size:17px; }
+  #ds-redemo-workspace .rd-score { text-align:right; font-variant-numeric:tabular-nums; }
+  #ds-redemo-workspace .rd-score strong { font-size:20px; }
+  #ds-redemo-workspace .rd-content { display:grid; gap:18px; min-width:0; }
+  #ds-redemo-workspace .rd-section-title { display:grid; gap:4px; }
+  #ds-redemo-workspace .rd-fixes { display:grid; gap:0; }
+  #ds-redemo-workspace .rd-fix { display:grid; grid-template-columns:minmax(0,1fr) 190px; gap:22px; padding:15px 0; border-bottom:1px solid var(--rd-border); }
+  #ds-redemo-workspace .rd-fix:first-child { padding-top:0; }
+  #ds-redemo-workspace .rd-fix-description { display:grid; gap:4px; align-content:start; }
+  #ds-redemo-workspace .rd-field { display:grid; gap:6px; align-content:start; min-width:0; }
+  #ds-redemo-workspace .rd-product select,#ds-redemo-workspace .rd-product textarea { width:100%; min-width:0; font:inherit; background:var(--rd-surface); color:var(--rd-text); border:1px solid var(--rd-border); border-radius:7px; padding:10px 11px; }
+  #ds-redemo-workspace .rd-product textarea { min-height:86px; resize:vertical; }
+  #ds-redemo-workspace .rd-read-result { align-self:center; justify-self:start; font-size:13px; }
+  #ds-redemo-workspace .rd-success { color:var(--rd-success); }
+  #ds-redemo-workspace .rd-warning { color:var(--rd-warning); }
+  #ds-redemo-workspace .rd-actions { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+  #ds-redemo-workspace .rd-button { padding:10px 16px; border:1px solid var(--rd-brand); background:var(--rd-brand); color:var(--rd-action-text); border-radius:7px; font:500 14px/1.4 Inter,Arial,sans-serif; }
+  #ds-redemo-workspace .rd-button:disabled { opacity:.5; cursor:not-allowed; }
+  #ds-redemo-workspace .rd-recorded { display:grid; gap:5px; }
+  #ds-redemo-workspace .rd-original { border-top:1px solid var(--rd-border); padding-top:15px; min-width:0; }
+  #ds-redemo-workspace .rd-original summary { font-weight:500; }
+  #ds-redemo-workspace .rd-detail { display:grid; gap:10px; margin-top:12px; }
+  #ds-redemo-workspace .rd-table { border-collapse:collapse; width:100%; }
+  #ds-redemo-workspace .rd-table th { font-size:12px; color:var(--rd-muted); font-weight:400; text-align:left; }
+  #ds-redemo-workspace .rd-table td,#ds-redemo-workspace .rd-table th { padding:10px 0; border-bottom:1px solid var(--rd-border); vertical-align:top; overflow-wrap:anywhere; }
+  #ds-redemo-workspace .rd-table th+th,#ds-redemo-workspace .rd-table td+td { padding-left:16px; }
+  #ds-redemo-workspace .rd-table td:first-child { width:30%; }
+  #ds-redemo-workspace .rd-feedback { font-size:12px; color:var(--rd-muted); }
+  #ds-redemo-workspace .rd-feedback:empty { display:none; }
+  #ds-redemo-workspace .rd-feedback.rd-error { color:var(--rd-error); }
+  @media(max-width:560px) {
+    #ds-redemo-workspace .rd-main { padding:16px; gap:20px; }
+    #ds-redemo-workspace .rd-chrome { padding:12px 16px; gap:8px; }
+    #ds-redemo-workspace .rd-duty { width:100%; margin-left:0; }
+    #ds-redemo-workspace .rd-fix { grid-template-columns:1fr; gap:10px; }
+    #ds-redemo-workspace .rd-source { align-items:flex-start; }
+    #ds-redemo-workspace .rd-score { text-align:left; }
+    #ds-redemo-workspace .rd-actions { align-items:stretch; }
+    #ds-redemo-workspace .rd-button { width:100%; }
+  }
+  @media(pointer:coarse) {
+    #ds-redemo-workspace .rd-button,#ds-redemo-workspace .rd-original summary { min-height:44px; }
+    #ds-redemo-workspace .rd-product select,#ds-redemo-workspace .rd-product textarea { font-size:16px; }
+  }
+</style>
+<script>
+(() => {
+  const root=document.getElementById('ds-redemo-workspace');
+  const content=root.querySelector('#rd-content');
+  const feedback=root.querySelector('#rd-feedback');
+  const roleSelect=root.querySelector('#rd-role');
+  const caseSelect=root.querySelector('#rd-case');
+  const source=Object.freeze({verdict:'Approved with revisions',panelScore:82,systemRevision:'Minor revision',manuscriptRevision:'Major revision'});
+  const fixes=[
+    {title:'Report export',request:'Generate the missing report and demonstrate a complete PDF export.'},
+    {title:'Role access restrictions',request:'Demonstrate that restricted staff actions are unavailable to student accounts.'}
+  ];
+  const labels={'':'Not checked',satisfied:'Satisfied',remaining:'Needs work'};
+  let role='chair',example='pending';
+  let cases={
+    pending:{results:['',''],notes:'',recorded:false},
+    remaining:{results:['satisfied','remaining'],notes:'Report export demonstrated. Restricted staff actions are still accessible to student accounts.',recorded:true},
+    verified:{results:['satisfied','satisfied'],notes:'Report export and role access restrictions were demonstrated successfully.',recorded:true}
+  };
+  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const current=()=>cases[example];
+  function privateState(){return {kind:'redemo-panel',version:1,role,example,cases};}
+  function restore(saved){
+    const state=saved?.privateContent;
+    if(state?.kind!=='redemo-panel'||state.version!==1)return;
+    if(['chair','member'].includes(state.role))role=state.role;
+    if(['pending','remaining','verified'].includes(state.example))example=state.example;
+    for(const key of ['pending','remaining','verified']){
+      const item=state.cases?.[key];
+      if(item&&Array.isArray(item.results)&&item.results.length===fixes.length&&item.results.every(value=>Object.hasOwn(labels,value)))cases[key]={results:[...item.results],notes:String(item.notes??'').slice(0,1200),recorded:Boolean(item.recorded)};
+    }
+  }
+  function verified(record){return record.results.every(result=>result==='satisfied');}
+  function resultLabel(record){return !record.recorded?'Verification pending':verified(record)?'System corrections verified':'Further corrections required';}
+  function persist(){
+    if(!window.openai?.setWidgetState)return;
+    const record=current();
+    window.openai.setWidgetState({modelContent:{activity:'Re-demo verification',viewedAs:role,verification:resultLabel(record),recorded:record.recorded,requirements:fixes.map((fix,index)=>({requirement:fix.title,result:record.recorded||role==='chair'?labels[record.results[index]]:'Awaiting verification'})),originalDefense:source,manuscriptClearance:'Pending document review',proposedVerificationAuthority:'Assigned panel chair'},privateContent:privateState()}).catch(()=>{});
+  }
+  function announce(message,error=false){
+    feedback.textContent=message;
+    feedback.classList.toggle('rd-error',error);
+    if(error)feedback.setAttribute('role','alert');else feedback.removeAttribute('role');
+  }
+  function render(){
+    const record=current();
+    const editable=role==='chair'&&!record.recorded;
+    roleSelect.value=role;caseSelect.value=example;
+    root.querySelector('#rd-duty').textContent=role==='chair'?'Assigned panel chair':'Panel member · Read-only';
+    root.querySelector('#rd-status').textContent=resultLabel(record);
+    content.innerHTML=`<div class="rd-section-title"><h3>Requested system fixes</h3><p class="rd-small">From the confirmed defense decision · Verification only</p></div><div class="rd-fixes">${fixes.map((fix,index)=>`<div class="rd-fix"><div class="rd-fix-description"><strong>${esc(fix.title)}</strong><p class="rd-small">${esc(fix.request)}</p></div>${editable?`<label class="rd-field">Verification result<select data-fix="${index}">${Object.entries(labels).map(([value,label])=>`<option value="${value}" ${record.results[index]===value?'selected':''}>${label}</option>`).join('')}</select></label>`:`<span class="rd-read-result ${record.recorded?(record.results[index]==='satisfied'?'rd-success':'rd-warning'):''}">${record.recorded?esc(labels[record.results[index]]):'Awaiting verification'}</span>`}</div>`).join('')}</div>${editable?`<label class="rd-field">Verification remarks<textarea id="rd-notes" maxlength="1200" placeholder="Record what was demonstrated and any remaining corrections">${esc(record.notes)}</textarea></label><div class="rd-actions"><span class="rd-small">Record the panel’s verification after the demonstration.</span><button type="button" class="rd-button cursor-interaction" data-action="confirm-verification">Confirm verification</button></div>`:record.recorded?`<div class="rd-recorded"><h3>Recorded verification</h3><p>${esc(record.notes)||'No additional remarks recorded.'}</p><p class="rd-small">Recorded by the assigned panel chair</p></div><p class="rd-small">${verified(record)?'System corrections are verified. Manuscript revision clearance remains pending.':'Remaining corrections are recorded. Any further appointment is arranged through the administrator.'}</p>`:'<p class="rd-small">The panel discusses the demonstration in person. The assigned chair records the verification result.</p>'}`;
+    content.querySelectorAll('select').forEach(select=>select.classList.add('cursor-interaction'));
+  }
+  restore(window.openai?.widgetState);
+  render();
+  roleSelect.addEventListener('change',()=>{role=roleSelect.value;announce('');render();persist();});
+  caseSelect.addEventListener('change',()=>{example=caseSelect.value;announce('');render();persist();});
+  content.addEventListener('change',event=>{
+    if(role!=='chair'||current().recorded)return;
+    if(event.target.matches('[data-fix]')){current().results[Number(event.target.dataset.fix)]=event.target.value;announce('');persist();}
+    if(event.target.id==='rd-notes')persist();
+  });
+  content.addEventListener('input',event=>{
+    if(role==='chair'&&!current().recorded&&event.target.id==='rd-notes')current().notes=event.target.value;
+  });
+  content.addEventListener('click',event=>{
+    if(!event.target.closest('[data-action="confirm-verification"]')||role!=='chair'||current().recorded)return;
+    const record=current();
+    if(record.results.some(result=>!result))return announce('Record a verification result for each requested fix.',true);
+    record.notes=content.querySelector('#rd-notes').value.trim();
+    if(!verified(record)&&!record.notes)return announce('Describe the remaining corrections before confirming.',true);
+    record.recorded=true;
+    render();
+    announce(verified(record)?'System corrections verified. The original defense verdict and score are retained.':'Further corrections recorded. The original defense verdict and score are retained.');
+    persist();
+  });
+  window.addEventListener('openai:set_globals',event=>{
+    const incoming=event.detail?.globals?.widgetState;
+    if(incoming?.privateContent?.kind!=='redemo-panel'||JSON.stringify(incoming.privateContent)===JSON.stringify(privateState()))return;
+    restore(incoming);announce('');render();
+  });
+})();
+</script>

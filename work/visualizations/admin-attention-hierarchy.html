@@ -1,0 +1,162 @@
+<div id="ds-attention-hierarchy" class="viz-carousel" aria-label="Dashboard hierarchy alternatives">
+  <style>
+    #ds-attention-hierarchy .ds-page{--ds-bg:light-dark(#f8fafc,#161618);--ds-surface:light-dark(#ffffff,#212024);--ds-text:light-dark(#0f172a,#f4f4f5);--ds-muted:light-dark(#475569,#a1a1aa);--ds-border:light-dark(#e2e8f0,#35343a);--ds-soft:light-dark(#f1f5f9,#28272d);--ds-maroon:light-dark(#7a110a,#c0392b);--ds-link:light-dark(#7a110a,#f4a69c);--ds-on-brand:#fff;font-family:Inter,Arial,sans-serif;font-size:14px;line-height:1.5;color:var(--ds-text);background:var(--ds-bg);padding:22px;min-height:725px;color-scheme:light dark}
+    #ds-attention-hierarchy .ds-page *{box-sizing:border-box}
+    #ds-attention-hierarchy h2,#ds-attention-hierarchy h3,#ds-attention-hierarchy p{margin:0}
+    #ds-attention-hierarchy h2{font-size:25px;line-height:1.2;letter-spacing:-.5px;font-weight:650}
+    #ds-attention-hierarchy h3{font-size:14px;font-weight:600}
+    #ds-attention-hierarchy .ds-muted{color:var(--ds-muted);font-size:12px}
+    #ds-attention-hierarchy .ds-header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding-right:78px;margin-bottom:22px}
+    #ds-attention-hierarchy .ds-header p{margin-top:5px}
+    #ds-attention-hierarchy button{font:inherit;color:inherit;cursor:pointer}
+    #ds-attention-hierarchy button:focus-visible,#ds-attention-hierarchy summary:focus-visible{outline:2px solid var(--ds-link);outline-offset:3px}
+    #ds-attention-hierarchy .ds-program{display:flex;align-items:center;background:var(--ds-soft);padding:4px;border:1px solid var(--ds-border);border-radius:8px;gap:4px}
+    #ds-attention-hierarchy .ds-program span{padding:7px 16px;border-radius:6px;font-size:13px}
+    #ds-attention-hierarchy .ds-program .ds-selected{background:var(--ds-maroon);color:var(--ds-on-brand);font-weight:600}
+    #ds-attention-hierarchy .ds-section-label{font-size:13px;font-weight:500;margin-bottom:10px}
+    #ds-attention-hierarchy .ds-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:18px}
+    #ds-attention-hierarchy .ds-metric{background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:8px;padding:15px;text-align:left;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px;transition:background .15s}
+    #ds-attention-hierarchy .ds-metric:hover{background:var(--ds-soft)}
+    #ds-attention-hierarchy .ds-metric-title{display:flex;align-items:center;gap:7px;font-size:13px}
+    #ds-attention-hierarchy .ds-value{font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-.6px;font-variant-numeric:tabular-nums;margin-top:4px}
+    #ds-attention-hierarchy .ds-workbody{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:16px;align-items:stretch}
+    #ds-attention-hierarchy .ds-aux{display:flex;flex-direction:column;gap:16px;min-width:0}
+    #ds-attention-hierarchy .ds-panel{background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:10px;padding:18px;min-width:0}
+    #ds-attention-hierarchy .ds-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+    #ds-attention-hierarchy .ds-badge{display:inline-block;background:var(--ds-soft);color:var(--ds-muted);padding:2px 7px;border-radius:5px;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums}
+    #ds-attention-hierarchy .ds-readiness-main{display:flex;align-items:center;gap:12px;margin:14px 0}
+    #ds-attention-hierarchy .ds-ready-value{font-size:37px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+    #ds-attention-hierarchy .ds-ready-caption{font-size:13px}
+    #ds-attention-hierarchy .ds-ready-facts{display:flex;gap:5px 14px;flex-wrap:wrap;font-size:12px;color:var(--ds-muted);padding-top:12px;border-top:1px solid var(--ds-border)}
+    #ds-attention-hierarchy .ds-link{padding:5px 0;border:0;background:none;color:var(--ds-link);font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:5px;text-align:left;min-height:30px}
+    #ds-attention-hierarchy .ds-link:hover{text-decoration:underline;text-underline-offset:3px}
+    #ds-attention-hierarchy .ds-attention{padding:0;--ds-row-space:13px}
+    #ds-attention-hierarchy .ds-attention summary{list-style:none;padding:15px 18px;display:flex;align-items:center;gap:8px;cursor:pointer;min-height:52px}
+    #ds-attention-hierarchy .ds-attention summary::-webkit-details-marker{display:none}
+    #ds-attention-hierarchy .ds-attention-title{font-weight:600;font-size:13px}
+    #ds-attention-hierarchy .ds-attention-summary{display:none;color:var(--ds-muted);font-size:12px}
+    #ds-attention-hierarchy .ds-review{margin-left:auto;font-size:12px;color:var(--ds-link);display:flex;align-items:center;gap:5px}
+    #ds-attention-hierarchy details[open] .ds-chevron{transform:rotate(180deg)}
+    #ds-attention-hierarchy .ds-action{padding:var(--ds-row-space) 18px;border-top:1px solid var(--ds-border)}
+    #ds-attention-hierarchy .ds-action-title{font-size:13px;font-weight:500}
+    #ds-attention-hierarchy .ds-action p{margin-top:3px}
+    #ds-attention-hierarchy .ds-action .ds-link{margin-top:3px}
+    #ds-attention-hierarchy .ds-calendar{display:flex;flex-direction:column;min-height:416px}
+    #ds-attention-hierarchy .ds-calendar-controls{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:24px}
+    #ds-attention-hierarchy .ds-calendar-range{font-size:12px;font-weight:600}
+    #ds-attention-hierarchy .ds-calendar-nav{display:flex;gap:4px;align-items:center}
+    #ds-attention-hierarchy .ds-control{border:1px solid var(--ds-border);border-radius:6px;background:var(--ds-surface);padding:5px 9px;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:30px;font-size:12px}
+    #ds-attention-hierarchy .ds-control:hover{background:var(--ds-soft)}
+    #ds-attention-hierarchy .ds-calendar-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin-top:18px}
+    #ds-attention-hierarchy .ds-day{min-width:0;text-align:center}
+    #ds-attention-hierarchy .ds-day-name{font-size:11px;color:var(--ds-muted);margin-bottom:6px}
+    #ds-attention-hierarchy .ds-date{width:100%;border:1px solid var(--ds-border);border-radius:7px;background:var(--ds-surface);padding:12px 0;font-size:13px;font-variant-numeric:tabular-nums;min-height:44px}
+    #ds-attention-hierarchy .ds-date[aria-pressed=true]{border-color:var(--ds-muted);background:var(--ds-soft);font-weight:600}
+    #ds-attention-hierarchy .ds-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:7px;flex:1;min-height:145px;padding:26px 12px}
+    #ds-attention-hierarchy .ds-empty-icon{color:var(--ds-muted);margin-bottom:3px}
+    #ds-attention-hierarchy .ds-empty-label{font-size:13px;font-weight:500}
+    #ds-attention-hierarchy .ds-calendar-foot{border-top:1px solid var(--ds-border);padding-top:12px}
+    #ds-attention-hierarchy .ds-destination{padding:12px 0 0;color:var(--ds-muted);font-size:12px}
+    #ds-attention-hierarchy .ds-strip{margin-bottom:16px}
+    #ds-attention-hierarchy .ds-strip .ds-attention-summary{display:inline}
+    #ds-attention-hierarchy .ds-strip .ds-action-list{display:grid;grid-template-columns:1fr 1fr}
+    #ds-attention-hierarchy .ds-strip .ds-action + .ds-action{border-left:1px solid var(--ds-border)}
+    #ds-attention-hierarchy .ds-strip-page .ds-readiness{height:100%;display:flex;flex-direction:column}
+    #ds-attention-hierarchy .ds-strip-page .ds-ready-facts{display:flex;flex-direction:column;gap:12px;margin-bottom:auto}
+    #ds-attention-hierarchy .ds-strip-page .ds-readiness>.ds-link{margin-top:20px}
+    #ds-attention-hierarchy .ds-strip-page .ds-calendar{min-height:375px}
+    #ds-attention-hierarchy [hidden]{display:none!important}
+    @media(max-width:760px){#ds-attention-hierarchy .ds-page{padding:16px;min-height:840px}#ds-attention-hierarchy .ds-header{padding-right:0}#ds-attention-hierarchy .ds-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}#ds-attention-hierarchy .ds-workbody{grid-template-columns:1fr}#ds-attention-hierarchy .ds-calendar{min-height:345px}#ds-attention-hierarchy .ds-rail-page .ds-aux{display:contents}#ds-attention-hierarchy .ds-rail-page .ds-readiness{grid-row:1}#ds-attention-hierarchy .ds-rail-page .ds-attention{grid-row:2}#ds-attention-hierarchy .ds-rail-page .ds-calendar{grid-row:3}#ds-attention-hierarchy .ds-strip .ds-attention-summary{display:none}}
+    @media(max-width:430px){#ds-attention-hierarchy .ds-page{padding:12px;min-height:1190px}#ds-attention-hierarchy .ds-header{align-items:flex-start}#ds-attention-hierarchy .ds-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}#ds-attention-hierarchy .ds-metric{padding:12px}#ds-attention-hierarchy .ds-program span{padding:6px 11px}#ds-attention-hierarchy .ds-panel{padding:15px}#ds-attention-hierarchy .ds-attention{padding:0}#ds-attention-hierarchy .ds-attention summary{padding:13px 15px}#ds-attention-hierarchy .ds-action{padding:var(--ds-row-space) 15px}#ds-attention-hierarchy .ds-strip .ds-action-list{grid-template-columns:1fr}#ds-attention-hierarchy .ds-strip .ds-action + .ds-action{border-left:0}}
+    @media(pointer:coarse){#ds-attention-hierarchy .ds-link,#ds-attention-hierarchy .ds-control{min-height:44px}}
+  </style>
+  <section data-variant="Beside the calendar" aria-label="Overview with attention beside the calendar">
+    <div class="ds-page ds-rail-page">
+      <header class="ds-header">
+        <div><h2>Overview</h2><p class="ds-muted">2nd Semester, A.Y. 2025–2026</p></div>
+        <div class="ds-program" aria-label="Capstone overview"><span class="ds-selected">Capstone</span><span>PIT</span></div>
+      </header>
+      <p class="ds-section-label">Semester workflow</p>
+      <div class="ds-metrics">
+        <button class="ds-metric" type="button" data-destination="Users & Roles → enrolled students"><span class="ds-metric-title"><i data-lucide="users" aria-hidden="true"></i>Users</span><span class="ds-value">64</span><span class="ds-muted">Enrolled students</span><span class="ds-muted">All years · Active semester</span></button>
+        <button class="ds-metric" type="button" data-destination="Defense Stages → stage configuration"><span class="ds-metric-title"><i data-lucide="sliders-horizontal" aria-hidden="true"></i>Stage setup</span><span class="ds-value">0 / 0</span><span class="ds-muted">Stages configured</span><span class="ds-muted">No stages configured</span></button>
+        <button class="ds-metric" type="button" data-destination="Student Teams → Capstone"><span class="ds-metric-title"><i data-lucide="users-round" aria-hidden="true"></i>Teams</span><span class="ds-value">0</span><span class="ds-muted">Active teams</span><span class="ds-muted">0 advisers assigned</span></button>
+        <button class="ds-metric" type="button" data-destination="Defense Schedule → Capstone planning"><span class="ds-metric-title"><i data-lucide="calendar-check" aria-hidden="true"></i>Scheduling</span><span class="ds-value">0</span><span class="ds-muted">Teams scheduled</span><span class="ds-muted">0 ready to schedule</span></button>
+        <button class="ds-metric" type="button" data-destination="Evaluation & Grades → Capstone results"><span class="ds-metric-title"><i data-lucide="clipboard-check" aria-hidden="true"></i>Results</span><span class="ds-value">0</span><span class="ds-muted">Ready for release</span><span class="ds-muted">0 need review</span></button>
+      </div>
+      <div class="ds-workbody">
+        <div class="ds-aux">
+          <section class="ds-panel ds-readiness">
+            <div class="ds-panel-head"><h3>Team readiness</h3><span class="ds-badge">Waiting</span></div>
+            <div class="ds-readiness-main"><span class="ds-ready-value">0</span><div><p class="ds-ready-caption">Ready to schedule</p><p class="ds-muted">Capstone teams</p></div></div>
+            <div class="ds-ready-facts"><span>Active teams <strong>0</strong></span><span>Scheduled <strong>0</strong></span><span>Advisers assigned <strong>0</strong></span></div>
+            <button type="button" class="ds-link" data-destination="Defense Schedule → Capstone readiness">View readiness <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+          </section>
+          <details class="ds-panel ds-attention" open aria-label="Needs your attention">
+            <summary><span class="ds-attention-title">Needs your attention</span><span class="ds-badge">2</span><span class="ds-attention-summary">Enrollment and team assignments</span><span class="ds-review"><span class="ds-review-label">Hide</span><i class="ds-chevron" data-lucide="chevron-down" aria-hidden="true"></i></span></summary>
+            <div class="ds-action-list">
+              <div class="ds-action"><p class="ds-action-title">Enrollment to review</p><p class="ds-muted">No enrollment in 1st, 2nd and 4th Year.</p><button type="button" class="ds-link" data-destination="Users & Roles → Student enrollment · 1st, 2nd and 4th Year">Start enrollment <i data-lucide="arrow-right" aria-hidden="true"></i></button></div>
+              <div class="ds-action"><p class="ds-action-title">64 students without a team</p><p class="ds-muted">3rd Year · Capstone</p><button type="button" class="ds-link" data-destination="Student Teams → Capstone formation · 3rd Year · 64 unassigned students">Assign teams <i data-lucide="arrow-right" aria-hidden="true"></i></button></div>
+            </div>
+          </details>
+        </div>
+        <section class="ds-panel ds-calendar" aria-label="Defense schedule">
+          <div class="ds-panel-head"><h3>Defense schedule</h3><button type="button" class="ds-link" data-destination="Defense Schedule → shared calendar">Open schedule</button></div>
+          <div class="ds-calendar-controls"><span class="ds-calendar-range">November 16–22</span><div class="ds-calendar-nav"><button type="button" class="ds-control" data-week="today">Today</button><button type="button" class="ds-control" data-week="previous" aria-label="Previous week"><i data-lucide="chevron-left" aria-hidden="true"></i></button><button type="button" class="ds-control" data-week="next" aria-label="Next week"><i data-lucide="chevron-right" aria-hidden="true"></i></button></div></div>
+          <div class="ds-calendar-days" aria-label="Week of November 16, 2026"></div>
+          <div class="ds-empty"><i class="ds-empty-icon" data-lucide="calendar-days" aria-hidden="true"></i><p class="ds-empty-label">No defenses scheduled</p><p class="ds-muted ds-selected-date" aria-live="polite">Friday, November 20</p></div>
+          <p class="ds-muted ds-calendar-foot">Shared calendar · PIT and Capstone</p>
+        </section>
+      </div>
+      <p class="ds-destination" aria-live="polite" hidden></p>
+    </div>
+  </section>
+  <section data-variant="Compact strip" aria-label="Overview with compact expandable attention strip" hidden></section>
+  <script>
+    (()=>{
+      const root=document.getElementById('ds-attention-hierarchy');
+      const original=root.querySelector('.ds-page');
+      const compact=original.cloneNode(true);
+      compact.classList.replace('ds-rail-page','ds-strip-page');
+      const strip=compact.querySelector('.ds-attention');
+      strip.classList.add('ds-strip');strip.open=false;
+      strip.querySelector('.ds-review-label').textContent='Review';
+      compact.querySelector('.ds-workbody').before(strip);
+      root.querySelector('[data-variant="Compact strip"]').append(compact);
+      const saved=window.openai?.widgetState;
+      const state={density:saved?.privateContent?.density==='compact'?'compact':'comfortable',expanded:saved?.privateContent?.expanded||[true,false]};
+      const pages=[...root.querySelectorAll('.ds-page')];
+      const calendars=pages.map(()=>({offset:0,selected:4}));
+      const persist=()=>window.openai?.setWidgetState?.({modelContent:{attentionLayout:'Metrics lead; compact attention panel or expandable strip',density:state.density},privateContent:{density:state.density,expanded:state.expanded}})?.catch(()=>{});
+      function apply(){pages.forEach((page,index)=>{const detail=page.querySelector('details');detail.style.setProperty('--ds-row-space',state.density==='compact'?'8px':'13px');detail.open=state.expanded[index]??(index===0);detail.querySelector('.ds-review-label').textContent=detail.open?'Hide':'Review';});}
+      function drawCalendar(page,index){
+        const calendar=calendars[index],start=new Date(Date.UTC(2026,10,16+7*calendar.offset));
+        const end=new Date(start);end.setUTCDate(start.getUTCDate()+6);
+        const month=new Intl.DateTimeFormat('en',{month:'long',timeZone:'UTC'});
+        page.querySelector('.ds-calendar-range').textContent=month.format(start)+' '+start.getUTCDate()+'–'+(start.getUTCMonth()===end.getUTCMonth()?'':month.format(end)+' ')+end.getUTCDate();
+        const days=page.querySelector('.ds-calendar-days');days.replaceChildren();
+        days.setAttribute('aria-label','Week of '+month.format(start)+' '+start.getUTCDate()+', '+start.getUTCFullYear());
+        ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((label,day)=>{
+          const date=new Date(start);date.setUTCDate(start.getUTCDate()+day);
+          const full=new Intl.DateTimeFormat('en',{weekday:'long',month:'long',day:'numeric',timeZone:'UTC'}).format(date);
+          const cell=document.createElement('div');cell.className='ds-day';
+          const name=document.createElement('div');name.className='ds-day-name';name.textContent=label;
+          const button=document.createElement('button');button.type='button';button.className='ds-date';button.textContent=date.getUTCDate();button.setAttribute('aria-label',full);button.setAttribute('aria-pressed',String(calendar.selected===day));
+          button.addEventListener('click',()=>{calendar.selected=day;days.querySelectorAll('button').forEach((b,i)=>b.setAttribute('aria-pressed',String(i===day)));page.querySelector('.ds-selected-date').textContent=full;});
+          cell.append(name,button);days.append(cell);
+          if(calendar.selected===day)page.querySelector('.ds-selected-date').textContent=full;
+        });
+      }
+      apply();
+      pages.forEach((page,index)=>{
+        drawCalendar(page,index);
+        page.querySelector('details').addEventListener('toggle',event=>{const detail=event.currentTarget;detail.querySelector('.ds-review-label').textContent=detail.open?'Hide':'Review';if(state.expanded[index]!==detail.open){state.expanded[index]=detail.open;persist();}});
+        page.querySelectorAll('[data-destination]').forEach(button=>button.addEventListener('click',()=>{const output=page.querySelector('.ds-destination');output.hidden=false;output.textContent='Destination preview: '+button.dataset.destination;}));
+        page.querySelectorAll('[data-week]').forEach(button=>button.addEventListener('click',()=>{const key=button.dataset.week;calendars[index].offset=key==='today'?0:calendars[index].offset+(key==='next'?1:-1);calendars[index].selected=key==='today'?4:0;drawCalendar(page,index);}));
+      });
+      window.addEventListener('openai:set_globals',event=>{const next=event.detail?.globals?.widgetState?.privateContent;if(!next)return;state.density=next.density==='compact'?'compact':'comfortable';if(Array.isArray(next.expanded))state.expanded=next.expanded;apply();});
+      if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:()=>{apply();persist();}});tweak.addSelect(state,'density',{label:'Attention spacing',options:[{label:'Comfortable',value:'comfortable'},{label:'Compact',value:'compact'}]});}
+      if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});
+    })();
+  </script>
+</div>

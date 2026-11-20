@@ -35,6 +35,7 @@ class AdminOverviewWorkspace extends ConsumerStatefulWidget {
 class _AdminOverviewWorkspaceState
     extends ConsumerState<AdminOverviewWorkspace> {
   bool expandedActions = false;
+  bool attentionVisible = true;
   String get scope =>
       ref.watch(adminOverviewScopeProvider) == 'pit' ? 'pit' : 'capstone';
   Widget panel(String title, Widget child, {Widget? trailing, Key? key}) =>
@@ -116,92 +117,74 @@ class _AdminOverviewWorkspaceState
     ],
   );
 
-  Widget actionItem(Map<String, dynamic> item) => LayoutBuilder(
-    builder: (context, constraints) {
-      final summary = InkWell(
-        canRequestFocus: false,
-        onTap: () => widget.onAction(item),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-        child: Row(
+  Widget actionItem(Map<String, dynamic> item) {
+    final enrollmentReminder = RegExp(
+      r'^enrollment:\d+$',
+    ).hasMatch(item['id']?.toString() ?? '');
+    final teamAssignment =
+        item['kind'] == 'team_assignment' && item['affected_count'] is num;
+    final title = enrollmentReminder
+        ? 'Enrollment to review'
+        : teamAssignment
+        ? '${item['affected_count']} ${item['affected_count'] == 1 ? 'student' : 'students'} without a team'
+        : item['title']?.toString() ?? 'Action needed';
+    return ShadButton.ghost(
+      key: ValueKey('overview-attention-item-${item['id']}'),
+      width: double.infinity,
+      height: 0,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      hoverBackgroundColor: DefensysTokens.surfaceHigherOf(context),
+      pressedBackgroundColor: DefensysTokens.surfaceHigherOf(context),
+      onPressed: () => widget.onAction(item),
+      child: Expanded(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: DefensysTokens.surfaceHigherOf(context),
-                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-              ),
-              child: Icon(
-                item['target_section'] == 'defenseBoardReadiness'
-                    ? Icons.event_available_outlined
-                    : Icons.error_outline_rounded,
-                size: 20,
-                color: DefensysTokens.maroonTextOf(context),
+            Text(
+              title,
+              style: DefensysTokens.body.copyWith(
+                color: DefensysTokens.textPrimaryOf(context),
+                fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Preserve unscoped context, without repeating period setup.
-                  if (item['scope'] == null &&
-                      item['category_label'] != null &&
-                      item['id'] != 'no_active_period') ...[
-                    secondary(item['category_label'].toString()),
-                    const SizedBox(height: 4),
-                  ],
-                  Text(
-                    item['title']?.toString() ?? 'Action needed',
-                    style: DefensysTokens.sectionTitle.copyWith(
-                      color: DefensysTokens.textPrimaryOf(context),
-                      fontWeight: FontWeight.w600,
-                      height: 1.4,
-                    ),
-                  ),
-                  if (item['description'] != null) ...[
-                    const SizedBox(height: 4),
-                    secondary(item['description'].toString()),
-                  ],
-                ],
+            // Enrollment is already named in the title. Preserve context for
+            // independent, unscoped approvals and other administrative work.
+            if (item['scope'] == null &&
+                item['category_label'] != null &&
+                item['id'] != 'no_active_period' &&
+                !enrollmentReminder) ...[
+              const SizedBox(height: 3),
+              secondary(item['category_label'].toString()),
+            ],
+            if (teamAssignment) ...[
+              const SizedBox(height: 3),
+              secondary(
+                [
+                  if (item['year_level'] != null) item['year_level'].toString(),
+                  'Capstone',
+                ].join(' · '),
+              ),
+            ] else if (item['description'] != null) ...[
+              const SizedBox(height: 3),
+              secondary(item['description'].toString()),
+            ],
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                item['button_label']?.toString() ?? 'Review',
+                style: DefensysTokens.caption.copyWith(
+                  color: DefensysTokens.maroonTextOf(context),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ],
         ),
-      );
-      final action = ShadButton(
-        height: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        onPressed: () => widget.onAction(item),
-        child: Flexible(
-          child: Text(
-            item['button_label']?.toString() ?? 'Review',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-      return constraints.maxWidth < 600
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                summary,
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.only(left: 48),
-                  child: action,
-                ),
-              ],
-            )
-          : Row(
-              children: [
-                Expanded(child: summary),
-                const SizedBox(width: 20),
-                action,
-              ],
-            );
-    },
-  );
+      ),
+    );
+  }
 
   Widget attention(
     List<Map<String, dynamic>> items, {
@@ -217,53 +200,78 @@ class _AdminOverviewWorkspaceState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          padding: const EdgeInsets.fromLTRB(18, 10, 12, 10),
           child: Row(
             children: [
-              Flexible(
+              Expanded(
                 child: Semantics(
                   header: true,
-                  child: Text(
-                    'Needs your attention',
-                    style: DefensysTokens.body.copyWith(
-                      color: DefensysTokens.textPrimaryOf(context),
-                      fontWeight: FontWeight.w600,
-                    ),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Needs your attention',
+                          style: DefensysTokens.body.copyWith(
+                            color: DefensysTokens.textPrimaryOf(context),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (items.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Semantics(
+                          label:
+                              '${items.length} pending ${items.length == 1 ? 'action' : 'actions'}',
+                          excludeSemantics: true,
+                          child: ShadBadge.secondary(
+                            backgroundColor: DefensysTokens.surfaceHigherOf(
+                              context,
+                            ),
+                            hoverBackgroundColor:
+                                DefensysTokens.surfaceHigherOf(context),
+                            foregroundColor: DefensysTokens.textSecondaryOf(
+                              context,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                DefensysTokens.radiusSm,
+                              ),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            child: Text(
+                              '${items.length}',
+                              style: DefensysTokens.caption.copyWith(
+                                color: DefensysTokens.textSecondaryOf(context),
+                                fontWeight: FontWeight.w600,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
-              if (items.isNotEmpty) ...[
-                const SizedBox(width: 8),
+              if (items.isNotEmpty)
                 Semantics(
-                  label:
-                      '${items.length} pending ${items.length == 1 ? 'action' : 'actions'}',
-                  excludeSemantics: true,
-                  child: ShadBadge.secondary(
-                    backgroundColor: DefensysTokens.surfaceHigherOf(context),
-                    hoverBackgroundColor: DefensysTokens.surfaceHigherOf(
-                      context,
-                    ),
-                    foregroundColor: DefensysTokens.textSecondaryOf(context),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        DefensysTokens.radiusSm,
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 2,
-                    ),
-                    child: Text(
-                      '${items.length}',
-                      style: DefensysTokens.caption.copyWith(
-                        color: DefensysTokens.textSecondaryOf(context),
-                        fontWeight: FontWeight.w600,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
+                  expanded: attentionVisible,
+                  child: ShadButton.ghost(
+                    key: const ValueKey('overview-attention-toggle'),
+                    size: ShadButtonSize.sm,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    foregroundColor: DefensysTokens.maroonTextOf(context),
+                    hoverForegroundColor: DefensysTokens.maroonTextOf(context),
+                    onPressed: () =>
+                        setState(() => attentionVisible = !attentionVisible),
+                    child: Text(attentionVisible ? 'Hide' : 'Show'),
                   ),
                 ),
-              ],
             ],
           ),
         ),
@@ -276,19 +284,16 @@ class _AdminOverviewWorkspaceState
                   : 'No admin actions pending',
             ),
           )
-        else
+        else if (attentionVisible)
           for (
             var index = 0;
             index < (expandedActions ? items.length : items.length.clamp(0, 3));
             index++
           ) ...[
             Divider(height: 1, color: DefensysTokens.borderOf(context)),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: actionItem(items[index]),
-            ),
+            actionItem(items[index]),
           ],
-        if (items.length > 3) ...[
+        if (attentionVisible && items.length > 3) ...[
           Divider(height: 1, color: DefensysTokens.borderOf(context)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -335,71 +340,30 @@ class _AdminOverviewWorkspaceState
             Icons.event_available_outlined,
             Icons.fact_check_outlined,
           ];
-          return Wrap(
-            spacing: 12,
-            runSpacing: 12,
+          return Column(
             children: [
-              for (var i = 0; i < cards.length; i++)
-                SizedBox(
-                  width: width,
-                  child: ShadButton.outline(
-                    key: ValueKey('overview-workflow-${cards[i]['section']}'),
-                    backgroundColor: DefensysTokens.surfaceOf(context),
-                    hoverBackgroundColor: DefensysTokens.surfaceHigherOf(
-                      context,
-                    ),
-                    pressedBackgroundColor: DefensysTokens.surfaceHigherOf(
-                      context,
-                    ),
-                    height: 230 * MediaQuery.textScalerOf(context).scale(1),
-                    width: width,
-                    padding: const EdgeInsets.all(16),
-                    onPressed: () => open(cards[i]['section'].toString()),
-                    child: SizedBox(
-                      width: width - 34,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(icons[i], size: 19),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: copy(cards[i]['title'].toString()),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          metric(
-                            cards[i]['value'].toString(),
-                            cards[i]['label'].toString(),
-                          ),
-                          const SizedBox(height: 10),
-                          secondary(cards[i]['detail'].toString()),
-                          const Spacer(),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                cards[i]['action'] == true
-                                    ? Icons.error_outline
-                                    : Icons.info_outline,
-                                size: 15,
-                                color: cards[i]['action'] == true
-                                    ? DefensysTokens.maroonTextOf(context)
-                                    : DefensysTokens.textSecondaryOf(context),
-                              ),
-                              const SizedBox(width: 5),
-                              Expanded(
-                                child: secondary(cards[i]['status'].toString()),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+              for (var start = 0; start < cards.length; start += columns) ...[
+                if (start > 0) const SizedBox(height: 12),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var column = 0; column < columns; column++) ...[
+                        if (column > 0) const SizedBox(width: 12),
+                        Expanded(
+                          child: start + column >= cards.length
+                              ? const SizedBox.shrink()
+                              : workflowCard(
+                                  cards[start + column],
+                                  icons[start + column],
+                                  width,
+                                ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
+              ],
             ],
           );
         },
@@ -407,40 +371,56 @@ class _AdminOverviewWorkspaceState
     ],
   );
 
-  Widget readinessRow(
-    IconData icon,
+  Widget workflowCard(Map<String, dynamic> card, IconData icon, double width) =>
+      ShadButton.outline(
+        key: ValueKey('overview-workflow-${card['section']}'),
+        backgroundColor: DefensysTokens.surfaceOf(context),
+        hoverBackgroundColor: DefensysTokens.surfaceHigherOf(context),
+        pressedBackgroundColor: DefensysTokens.surfaceHigherOf(context),
+        height: 0,
+        width: width,
+        padding: const EdgeInsets.all(16),
+        onPressed: () => open(card['section'].toString()),
+        child: SizedBox(
+          width: width - 34,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 17),
+                  const SizedBox(width: 8),
+                  Expanded(child: copy(card['title'].toString())),
+                ],
+              ),
+              const SizedBox(height: 12),
+              metric(card['value'].toString(), card['label'].toString()),
+            ],
+          ),
+        ),
+      );
+
+  Widget readinessFact(
     String label,
     dynamic value, {
     bool needsAction = false,
-  }) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 12),
-    decoration: BoxDecoration(
-      border: Border(top: BorderSide(color: DefensysTokens.borderOf(context))),
-    ),
-    child: Row(
-      children: [
-        Icon(
-          icon,
-          size: 17,
+  }) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Flexible(child: secondary(label)),
+      const SizedBox(width: 5),
+      Text(
+        value?.toString() ?? '—',
+        style: DefensysTokens.caption.copyWith(
+          fontWeight: FontWeight.w600,
+          fontFeatures: const [FontFeature.tabularFigures()],
           color: needsAction
               ? DefensysTokens.maroonTextOf(context)
-              : DefensysTokens.textSecondaryOf(context),
+              : DefensysTokens.textPrimaryOf(context),
         ),
-        const SizedBox(width: 10),
-        Expanded(child: secondary(label)),
-        const SizedBox(width: 12),
-        Text(
-          value?.toString() ?? '—',
-          style: DefensysTokens.body.copyWith(
-            fontWeight: FontWeight.w600,
-            fontFeatures: const [FontFeature.tabularFigures()],
-            color: needsAction
-                ? DefensysTokens.maroonTextOf(context)
-                : DefensysTokens.textPrimaryOf(context),
-          ),
-        ),
-      ],
-    ),
+      ),
+    ],
   );
 
   Widget recentActivity(Map<String, dynamic> data) {
@@ -564,88 +544,83 @@ class _AdminOverviewWorkspaceState
       decoration: DefensysTokens.cardDecoration(
         context,
       ).copyWith(boxShadow: []),
-      child: LayoutBuilder(
-        builder: (context, constraints) => Column(
-          mainAxisSize: constraints.hasBoundedHeight
-              ? MainAxisSize.max
-              : MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.checklist_rounded, size: 19),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Team readiness',
-                    style: DefensysTokens.sectionTitle.copyWith(
-                      color: DefensysTokens.textPrimaryOf(context),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                badge(
-                  ready == null
-                      ? 'Unavailable'
-                      : ready > 0
-                      ? 'Ready'
-                      : 'Waiting',
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  ready?.toString() ?? '—',
-                  style: DefensysTokens.pageTitle.copyWith(
-                    fontSize: 44,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Team readiness',
+                  style: DefensysTokens.sectionTitle.copyWith(
                     color: DefensysTokens.textPrimaryOf(context),
                   ),
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      copy('Ready to schedule'),
-                      secondary('Capstone teams'),
-                    ],
-                  ),
+              ),
+              const SizedBox(width: 8),
+              badge(
+                ready == null
+                    ? 'Unavailable'
+                    : ready > 0
+                    ? 'Ready'
+                    : 'Waiting',
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                ready?.toString() ?? '—',
+                style: DefensysTokens.pageTitle.copyWith(
+                  fontSize: 36,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
-              ],
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    copy('Ready to schedule'),
+                    secondary('Capstone teams'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              readinessFact('Active teams', teams),
+              readinessFact('Scheduled', totals['scheduled_teams']),
+              readinessFact(
+                'Need adviser',
+                overview['missing_advisers'],
+                needsAction: (overview['missing_advisers'] as num? ?? 0) > 0,
+              ),
+            ],
+          ),
+          if (ready == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: secondary('Open readiness to check current requirements.'),
             ),
-            const SizedBox(height: 20),
-            readinessRow(Icons.groups_outlined, 'Active teams', teams),
-            readinessRow(
-              Icons.event_available_outlined,
-              'Scheduled teams',
-              totals['scheduled_teams'],
-            ),
-            readinessRow(
-              Icons.person_add_alt_1_outlined,
-              'Need adviser',
-              overview['missing_advisers'],
-              needsAction: (overview['missing_advisers'] as num? ?? 0) > 0,
-            ),
-            if (constraints.hasBoundedHeight)
-              const Spacer()
-            else
-              const SizedBox(height: 20),
-            if (teams == 0) secondary('No Capstone teams yet.'),
-            if (ready == null)
-              secondary('Open readiness to check current requirements.'),
-            ShadButton.link(
-              padding: EdgeInsets.zero,
-              foregroundColor: DefensysTokens.maroonTextOf(context),
-              hoverForegroundColor: DefensysTokens.maroonTextOf(context),
-              onPressed: () => open('defenseBoardReadiness'),
-              child: const Text('View readiness'),
-            ),
-          ],
-        ),
+          ShadButton.link(
+            padding: EdgeInsets.zero,
+            foregroundColor: DefensysTokens.maroonTextOf(context),
+            hoverForegroundColor: DefensysTokens.maroonTextOf(context),
+            onPressed: () => open('defenseBoardReadiness'),
+            child: const Text('View readiness'),
+          ),
+        ],
       ),
     );
     final schedule = panel(
@@ -716,15 +691,15 @@ class _AdminOverviewWorkspaceState
                       child: LinearProgressIndicator(),
                     )
                   else ...[
-                    attention(
-                      items,
-                      partial:
-                          overview['partial'] == true || widget.error != null,
-                    ),
-                    const SizedBox(height: 16),
                     if (scope == 'pit') ...[
                       AdminPitOverview(
                         cohorts: overview['pit_cohorts'] as List?,
+                      ),
+                      const SizedBox(height: 16),
+                      attention(
+                        items,
+                        partial:
+                            overview['partial'] == true || widget.error != null,
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -738,11 +713,35 @@ class _AdminOverviewWorkspaceState
                                 children: [
                                   readiness,
                                   const SizedBox(height: 16),
+                                  attention(
+                                    items,
+                                    partial:
+                                        overview['partial'] == true ||
+                                        widget.error != null,
+                                  ),
+                                  const SizedBox(height: 16),
                                   schedule,
                                 ],
                               )
                             : OverviewPanelRow(
-                                readiness: readiness,
+                                leading: Column(
+                                  key: const ValueKey(
+                                    'overview-readiness-attention',
+                                  ),
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    readiness,
+                                    const SizedBox(height: 16),
+                                    attention(
+                                      items,
+                                      partial:
+                                          overview['partial'] == true ||
+                                          widget.error != null,
+                                    ),
+                                  ],
+                                ),
                                 schedule: schedule,
                               ),
                       ),

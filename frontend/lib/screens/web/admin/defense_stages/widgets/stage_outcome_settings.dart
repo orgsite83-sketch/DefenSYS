@@ -3,6 +3,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../theme/defensys_tokens.dart';
 import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'stage_revision_areas.dart';
 
 class StageOutcomeSettings extends StatelessWidget {
   const StageOutcomeSettings({
@@ -14,6 +15,8 @@ class StageOutcomeSettings extends StatelessWidget {
     this.conceptSelection = false,
     this.enabled = true,
     this.showValidationErrors = true,
+    this.revisionAreas = const [],
+    this.onRevisionAreasChanged,
   });
   final TextEditingController scoreController;
   final String scoreCarryover;
@@ -21,6 +24,8 @@ class StageOutcomeSettings extends StatelessWidget {
   final VoidCallback onChanged;
   final bool conceptSelection, enabled;
   final bool showValidationErrors;
+  final List<Map<String, dynamic>> revisionAreas;
+  final ValueChanged<List<Map<String, dynamic>>>? onRevisionAreasChanged;
 
   static String? validateScore(String? text) {
     final value = double.tryParse(text?.trim() ?? '');
@@ -142,6 +147,14 @@ class StageOutcomeSettings extends StatelessWidget {
             ],
             const SizedBox(height: 8),
             Text('Panelists evaluate again on every attempt.', style: muted),
+            if (onRevisionAreasChanged != null) ...[
+              const SizedBox(height: 22),
+              StageRevisionAreas(
+                value: revisionAreas,
+                enabled: enabled,
+                onChanged: onRevisionAreasChanged!,
+              ),
+            ],
           ],
         );
       },

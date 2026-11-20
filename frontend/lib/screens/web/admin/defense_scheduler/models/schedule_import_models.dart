@@ -253,6 +253,8 @@ String getTeamStageStatus(Map<String, dynamic> team, String stageLabel) {
     'evaluating',
     'awaiting_verdict',
     'revisions_pending',
+    're_demo_required',
+    're_demo_scheduled',
     'redefense_required',
     'grading_incomplete',
     'awaiting_completion',
@@ -782,8 +784,9 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
         );
       }
       final account = result['account'];
-      if (account is Map && account['name'] != null)
+      if (account is Map && account['name'] != null) {
         resolvedNames[duty] = '${account['name']}';
+      }
       final warning = '${result['name_warning'] ?? ''}';
       if (warning.isNotEmpty) warnings.add(warning);
       return ImportNameMatch(

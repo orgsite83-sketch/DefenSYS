@@ -37,10 +37,12 @@ def capture_policy(schedule):
         return {}
     from .services import weights_for_schedule
     stage = schedule.defense_stage
+    if stage.revision_areas and stage.qualifying_score is None:
+        raise ValidationError('Configure the panel qualifying score before scheduling a stage with revision areas.')
     rubric = schedule.rubric
     from .evaluation_policy import concept_stage, PANEL_ONLY_CONCEPT, PANEL_ONLY_WEIGHTS
     panel_only = concept_stage(stage)
-    return {
+    policy = {
         'evaluation_mode': PANEL_ONLY_CONCEPT if panel_only else 'standard',
         'version': 1 if stage.qualifying_score is not None else 0,
         'repeat_files_version': 1,
@@ -57,6 +59,11 @@ def capture_policy(schedule):
                       'weight': str(c.weight) if c.weight is not None else None,
                       'target_type': c.target_type} for c in rubric.criteria.all()] if rubric else [],
     }
+    if stage.qualifying_score is not None and stage.revision_areas:
+        from copy import deepcopy
+        from defense.stages.revision_policy import validate_revision_areas
+        policy.update(deliberation_version=1, revision_areas=deepcopy(validate_revision_areas(stage.revision_areas)))
+    return policy
 
 
 def policy_for(schedule):
@@ -65,6 +72,10 @@ def policy_for(schedule):
 
 def automatic_outcomes(schedule):
     return bool(policy_for(schedule).get('version') == 1 and policy_for(schedule).get('automatic_outcomes'))
+
+
+def deliberation_policy(schedule):
+    return bool(schedule and schedule.scope == 'capstone' and policy_for(schedule).get('deliberation_version') == 1)
 
 
 @read_memoize(copy=True)
@@ -211,11 +222,12 @@ def outcome_payload(grade):
         str(grade.updated_at), evaluation_context(grade.schedule, grade), roster,
         complete, results, blocker], sort_keys=True).encode()).hexdigest()
     return {'qualifying_score': float(cutoff), 'per_concept': bool(policy.get('per_concept')),
-            'automatic': automatic_outcomes(grade.schedule), 'review_token': review_token,
+            'automatic': automatic_outcomes(grade.schedule), 'deliberation': deliberation_policy(grade.schedule), 'review_token': review_token,
             'panel_complete': complete, 'assessments': results,
             'reason': blocker,
             'outcome': ('approved' if qualifies else 'for_redefense') if available else 'pending',
-            'allowed_verdicts': (['approved', 'approved_with_revisions'] if qualifies else ['for_redefense']) if available else []}
+            'allowed_verdicts': ((['approved', 'approved_with_revisions', 'for_redefense'] if deliberation_policy(grade.schedule)
+                else ['approved', 'approved_with_revisions']) if qualifies else ['for_redefense']) if available else []}
 
 
 def validate_outcome(grade, verdict, decisions=None):

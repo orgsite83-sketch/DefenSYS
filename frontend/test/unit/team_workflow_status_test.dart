@@ -3,6 +3,28 @@ import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('re-demo takes priority over outstanding archive work', () {
+    for (final code in ['re_demo_required', 're_demo_scheduled']) {
+      expect(
+        TeamWorkflowStatus.fromStage({
+          'assessment_progress': {
+            'display_status': code,
+            'defense_approved': true,
+          },
+          'has_done_schedule': true,
+          'archive_complete': false,
+          'post': [
+            {
+              'type': 'post',
+              'required': true,
+              'submission': {'status': 'pending'},
+            },
+          ],
+        }).code,
+        code,
+      );
+    }
+  });
   test('optional archive reviews do not make a completed stage incomplete', () {
     final stage = {
       'assessment_progress': {
@@ -440,20 +462,26 @@ void main() {
     },
   );
 
-  test('retired material payloads do not add missing-file tasks to a scheduled defense', () {
-    final value = stage(fileStatus: 'accepted')
-      ..['assessment_progress'] = {
-        'display_status': 'scheduled',
-        'is_completed': false,
-      }
-      ..['materials_readiness'] = {'required_total': 1, 'submitted_total': 0};
-    expect(TeamWorkflowStatus.fromStage(value).code, 'scheduled');
-    expect(TeamWorkflowStatus.fromStage(value).tone, WorkflowStatusTone.active);
-    expect(
-      DeliverablesTriageHelper.isOverdueOrMissing({'selected_stage': value}),
-      isFalse,
-    );
-  });
+  test(
+    'retired material payloads do not add missing-file tasks to a scheduled defense',
+    () {
+      final value = stage(fileStatus: 'accepted')
+        ..['assessment_progress'] = {
+          'display_status': 'scheduled',
+          'is_completed': false,
+        }
+        ..['materials_readiness'] = {'required_total': 1, 'submitted_total': 0};
+      expect(TeamWorkflowStatus.fromStage(value).code, 'scheduled');
+      expect(
+        TeamWorkflowStatus.fromStage(value).tone,
+        WorkflowStatusTone.active,
+      );
+      expect(
+        DeliverablesTriageHelper.isOverdueOrMissing({'selected_stage': value}),
+        isFalse,
+      );
+    },
+  );
 
   test(
     'recorded assessment progress overrides legacy premature passed or ongoing labels',

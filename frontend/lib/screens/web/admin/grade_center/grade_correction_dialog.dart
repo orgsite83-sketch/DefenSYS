@@ -8,6 +8,7 @@ import '../../../../widgets/shadcn/defensys_action_menu.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../../widgets/shadcn/defensys_workflow_widgets.dart';
 import '../../../../widgets/feedback/defensys_loading.dart';
+import '../../../../widgets/grading/panel_deliberation_panel.dart';
 
 Future<void> showGradeCorrectionDialog(BuildContext context, int gradeId) =>
     showDialog<void>(
@@ -317,6 +318,37 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
   ) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      if (after['panel_decision'] is Map &&
+          '${(before['panel_decision'] as Map?)?['revision']}' !=
+              '${(after['panel_decision'] as Map)['revision']}') ...[
+        const Text(
+          'Current panel decision',
+          style: TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (before['panel_decision'] is Map)
+          DefenseDecisionSummary(
+            decision: Map<String, dynamic>.from(
+              before['panel_decision'] as Map,
+            ),
+          ),
+        const SizedBox(height: 18),
+        const Text(
+          'Requested panel decision',
+          style: TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        DefenseDecisionSummary(
+          decision: Map<String, dynamic>.from(after['panel_decision'] as Map),
+        ),
+        const SizedBox(height: 18),
+      ],
       for (final old in _maps(before['criteria']))
         for (final updated in _maps(after['criteria']))
           if (old['id'] == updated['id'] && old['score'] != updated['score'])
@@ -668,8 +700,12 @@ class _GradeCorrectionDialogState extends ConsumerState<GradeCorrectionDialog> {
   Widget _reviewForm() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      const WorkflowNotice(
-        title: 'Review a published grade change',
+      WorkflowNotice(
+        title:
+            (_reviewing!['changes'] as Map?)?.containsKey('panel_decision') ==
+                true
+            ? 'Review a panel decision amendment'
+            : 'Review a published grade change',
         message:
             'Check the source evidence and the recalculated grade before approving this request.',
       ),

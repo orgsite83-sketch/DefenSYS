@@ -120,6 +120,8 @@ class StageDeliverable(models.Model):
 
 
 class DefenseStage(models.Model):
+    from .revision_policy import validate_revision_areas
+    revision_areas = models.JSONField(default=list, blank=True, validators=[validate_revision_areas])
     weekly_reporting = models.JSONField(default=dict, blank=True)
     shared_deliverables = models.JSONField(null=True, blank=True, default=None)
     from django.core.validators import MinValueValidator, MaxValueValidator

@@ -11,6 +11,7 @@ import '../../../models/defense_workflow_labels.dart';
 import '../../../services/network/authenticated_client.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import '../../../widgets/defense/re_demo_workspace.dart';
 
 /// Shared dashboard calendar, with optional permission-scoped team records.
 class DashboardSchedulePlanner extends ConsumerStatefulWidget {
@@ -21,6 +22,7 @@ class DashboardSchedulePlanner extends ConsumerStatefulWidget {
     this.providedSessions,
     this.loading = false,
     this.errorMessage,
+    this.includeReDemos = false,
     this.onRetry,
     this.onOpenTeam,
     this.padding = const EdgeInsets.fromLTRB(16, 14, 16, 18),
@@ -32,6 +34,7 @@ class DashboardSchedulePlanner extends ConsumerStatefulWidget {
   final Object? refreshToken;
   final List<Map<String, dynamic>>? providedSessions;
   final bool loading;
+  final bool includeReDemos;
   final String? errorMessage;
   final VoidCallback? onRetry;
   final void Function(int teamId, String stageLabel)? onOpenTeam;
@@ -69,7 +72,9 @@ class _DashboardSchedulePlannerState
   bool _monthView = false;
   bool _loading = true;
   String? _error;
+  String? _demoError;
   List<Map<String, dynamic>> _sessions = const [];
+  List<Map<String, dynamic>> _demoSessions = const [];
   int _requestVersion = 0;
 
   @override
@@ -79,6 +84,7 @@ class _DashboardSchedulePlannerState
     _focusDay = DateTime(now.year, now.month, now.day);
     if (widget.isPersonal) {
       _readProvidedSessions();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) => _load());
     }
@@ -89,6 +95,9 @@ class _DashboardSchedulePlannerState
     super.didUpdateWidget(oldWidget);
     if (widget.isPersonal) {
       _readProvidedSessions();
+      if (oldWidget.refreshToken != widget.refreshToken) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+      }
       return;
     }
     if (oldWidget.refreshToken != widget.refreshToken ||
@@ -99,10 +108,9 @@ class _DashboardSchedulePlannerState
   }
 
   void _readProvidedSessions() {
-    _sessions = widget.providedSessions ?? const [];
+    _sessions = [...?widget.providedSessions, ..._demoSessions];
     _loading = widget.loading;
     _error = widget.errorMessage;
-    ++_requestVersion;
   }
 
   DateTime get _periodStart {
@@ -126,6 +134,80 @@ class _DashboardSchedulePlannerState
     if (!mounted) return;
     if (widget.isPersonal) {
       setState(_readProvidedSessions);
+      if (!widget.includeReDemos) return;
+      final version = ++_requestVersion;
+      try {
+        final response = await ref
+            .read(authenticatedHttpClientProvider)
+            .get(
+              Uri.parse('${ApiConfig.baseUrl}/defense/re-demos/').replace(
+                queryParameters: {
+                  'start': _iso(_periodStart),
+                  'end': _iso(_periodEnd),
+                  'limit': '200',
+                },
+              ),
+            )
+            .timeout(const Duration(seconds: 30));
+        if (!mounted || version != _requestVersion) return;
+        if (response.statusCode != 200) {
+          throw StateError('Unable to load re-demo appointments.');
+        }
+        final payload = jsonDecode(response.body) as Map;
+        final teamIds = (widget.providedSessions ?? [])
+            .map((row) => row['team_id'])
+            .toSet();
+        final rows = (payload['appointments'] as List? ?? [])
+            .whereType<Map>()
+            .where((row) => teamIds.contains(row['team_id']));
+        setState(() {
+          _demoError = null;
+          _demoSessions = [
+            for (final row in rows)
+              if (row['status'] != 'cancelled')
+                {
+                  'activity_type': 're_demo',
+                  'session_id': row['activity_id'],
+                  'source_schedule_id': row['source_schedule_id'],
+                  'team_id': row['team_id'],
+                  'team_name': row['team_name'],
+                  'date': row['scheduled_date'],
+                  'scope': 'capstone',
+                  'event_name': 'Re-demo · ${row['stage_label']}',
+                  'team_count': 1,
+                  'year_levels': <String>[],
+                  'room': row['room'],
+                  'can_open': true,
+                  'status_counts': {
+                    row['status'] == 'done' ? 'completed' : 'scheduled': 1,
+                  },
+                  'time_blocks': [
+                    {
+                      'start': '${row['scheduled_date']}T${row['start_time']}',
+                      'end':
+                          DateTime.parse(
+                                '${row['scheduled_date']}T${row['start_time']}',
+                              )
+                              .add(
+                                Duration(
+                                  minutes: (row['slot_duration'] as num)
+                                      .toInt(),
+                                ),
+                              )
+                              .toIso8601String(),
+                    },
+                  ],
+                },
+          ];
+          _readProvidedSessions();
+        });
+      } catch (_) {
+        if (mounted && version == _requestVersion) {
+          setState(
+            () => _demoError = 'Re-demo appointments could not be loaded.',
+          );
+        }
+      }
       return;
     }
     final version = ++_requestVersion;
@@ -193,6 +275,16 @@ class _DashboardSchedulePlannerState
 
   void _openSession(Map<String, dynamic> session) {
     if (!_canOpenSession(session)) return;
+    if (session['activity_type'] == 're_demo') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ReDemoWorkspaceScreen(
+            sourceScheduleId: (session['source_schedule_id'] as num).toInt(),
+          ),
+        ),
+      );
+      return;
+    }
     if (widget.isPersonal) {
       widget.onOpenTeam!(
         session['team_id'] as int,
@@ -215,7 +307,10 @@ class _DashboardSchedulePlannerState
   List<Map<String, dynamic>> _onDay(DateTime day) =>
       _sessions.where((session) => session['date'] == _iso(day)).toList();
 
-  bool _canOpenSession(Map<String, dynamic> session) => widget.isPersonal
+  bool _canOpenSession(Map<String, dynamic> session) =>
+      session['activity_type'] == 're_demo'
+      ? session['can_open'] == true
+      : widget.isPersonal
       ? widget.onOpenTeam != null &&
             session['team_id'] is int &&
             session['can_open'] == true
@@ -430,7 +525,11 @@ class _DashboardSchedulePlannerState
             (sum, session) =>
                 sum + ((session['team_count'] as num?)?.toInt() ?? 0),
           );
-    final noun = widget.isPersonal ? 'defense' : 'session';
+    final noun = daySessions.any((row) => row['activity_type'] == 're_demo')
+        ? 'activity'
+        : widget.isPersonal
+        ? 'defense'
+        : 'session';
 
     return Padding(
       padding: widget.padding,
@@ -580,6 +679,15 @@ class _DashboardSchedulePlannerState
               ),
             ),
             const SizedBox(height: 10),
+            if (_demoError != null)
+              Text(
+                _demoError!,
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  color: muted,
+                  fontSize: 12,
+                ),
+              ),
             if (_loading)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 22),
@@ -658,6 +766,19 @@ class _DashboardSchedulePlannerState
                                       height: 1.4,
                                     ),
                                   ),
+                                  if (session['materials_readiness']
+                                      is Map) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${(session['materials_readiness'] as Map)['submitted_total']}/${(session['materials_readiness'] as Map)['required_total']} defense materials uploaded',
+                                      style: TextStyle(
+                                        fontFamily:
+                                            DefensysTokens.fontFamilyInter,
+                                        color: muted,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
                                   if (!_canOpenSession(session)) ...[
                                     const SizedBox(height: 4),
                                     Text(

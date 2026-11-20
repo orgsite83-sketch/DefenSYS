@@ -714,6 +714,45 @@ class TeamGradeAssessmentView(APIView):
         return Response({'grade': TeamGradeSerializer(grade, context={'request': request}).data})
 
 
+class TeamGradePanelDecisionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, grade_id):
+        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        from .deliberation import confirm, decision_payload
+        from django.db import IntegrityError
+        try:
+            decision = confirm(grade, actor=request.user, data=request.data)
+        except PermissionError as exc:
+            return Response({'detail': str(exc)}, status=403)
+        except DjangoValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=400)
+        except IntegrityError:
+            return Response({'detail': 'The decision was changed concurrently. Refresh the official record before retrying.'}, status=409)
+        grade.refresh_from_db()
+        return Response({'decision': decision_payload(decision),
+            'grade': TeamGradeSerializer(grade, context={'request': request}).data})
+
+
+class PanelDecisionCorrectionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, grade_id):
+        from .defense_workflow import is_chair
+        from .corrections import request_correction
+        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        if not is_chair(grade, request.user):
+            return Response({'detail': 'Only the assigned panel chair can request a decision amendment.'}, status=403)
+        data = CorrectionActionSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        values = data.validated_data
+        if values['action'] != 'request' or set(values.get('changes', {})) != {'panel_decision'}:
+            return Response({'detail': 'Request one panel decision amendment for administrator review.'}, status=400)
+        if grade.corrections.filter(status='pending', changes__has_key='panel_decision').exists():
+            return Response({'detail': 'A decision amendment is already awaiting administrator review.'}, status=400)
+        return Response(request_correction(grade.pk, request.user, values, request=request))
+
+
 class TeamGradeWorkflowView(APIView):
     permission_classes = [IsAuthenticated]
 

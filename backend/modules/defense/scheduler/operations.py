@@ -267,6 +267,18 @@ def _validate_conflicts(items, new_panels, externals):
     for schedule in items:
         pids = set(new_panels.get(schedule.pk, schedule.panel_assignments.values_list('panelist_id', flat=True)))
         eids = set(externals.get(schedule.pk, schedule.guest_invitations.filter(is_active=True).values_list('evaluator_id', flat=True)))
+        if schedule.status == 'scheduled':
+            from defense.redemo.services import reservations
+            start, end = _interval(schedule)
+            people = pids | ({schedule.documenter_id} if schedule.documenter_id else set())
+            people |= {row.student_id for row in schedule.team.memberships.all()}
+            if schedule.team.adviser_id:
+                people.add(schedule.team.adviser_id)
+            for reservation in reservations(dates):
+                if start < reservation['end'] and reservation['start'] < end and (
+                        schedule.room.strip().casefold() == reservation['room'] or people & reservation['people']
+                        or eids & reservation['externals']):
+                    raise ValidationError(f'{schedule.team.name}: the slot conflicts with a re-demo appointment.')
         for other in others + [s for s in items if s.pk != schedule.pk]:
             if schedule.status != 'scheduled' or other.status != 'scheduled' or not _overlap(schedule, other):
                 continue
@@ -497,11 +509,13 @@ def execute_operation(actor, data, request=None):
                 for name in ('status', 'team_name', 'project_title', 'adviser_name', 'defense_stage_label', 'defense_date', 'defense_time', 'room', 'documenter_name',
                              'documenter_signed_at', 'documenter_signed_by_id', 'adviser_signed_at', 'adviser_signed_by_id', 'chairman_signed_at', 'chairman_signed_by_id')}
             signed_snapshot['comments'] = list(minutes.panelist_comments.values('panelist_id', 'guest_invitation_id', 'panelist_name_snapshot', 'panelist_role_snapshot', 'comments'))
+            signed_snapshot['outcome_snapshot'] = minutes.outcome_snapshot
             signed_snapshot['panelist_ids'] = old_values[schedule.pk]['panelist_ids']
             signed_snapshot['external_evaluator_ids'] = old_values[schedule.pk]['external_evaluator_ids']
             revision = DefenseMinutesRevision.objects.create(minutes=minutes, snapshot=signed_snapshot,
                 pdf_file=minutes.pdf_file.name if minutes.pdf_file else None, reason=data['reason'], actor=actor)
             minutes.status = 'draft'
+            minutes.outcome_snapshot = {}
             for role in ('documenter', 'adviser', 'chairman'):
                 setattr(minutes, f'{role}_signed_at', None)
                 setattr(minutes, f'{role}_signed_by', None)

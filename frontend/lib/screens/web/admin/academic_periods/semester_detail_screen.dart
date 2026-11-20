@@ -3,7 +3,19 @@ import 'widgets/semester_transition_dialog.dart';
 import 'widgets/semester_calendar_fields.dart';
 import 'widgets/semester_status_badge.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
-import 'package:shadcn_ui/shadcn_ui.dart' show ShadButton, ShadButtonSize;
+import 'package:shadcn_ui/shadcn_ui.dart'
+    show
+        ShadAccordion,
+        ShadAccordionItem,
+        ShadBorder,
+        ShadBorderSide,
+        ShadButton,
+        ShadButtonSize,
+        ShadDecoration,
+        ShadDialog,
+        ShadSwitch,
+        ShadTab,
+        ShadTabs;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -15,10 +27,8 @@ import '../../../../services/defense_stages_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
-import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../grade_center/grade_center_shared.dart'
     show showPeerGradingHelpDialog;
-import '../widgets/defensys_admin_shell.dart';
 import '../../../../widgets/shadcn/defensys_breadcrumb.dart';
 
 class SemesterDetailScreen extends ConsumerStatefulWidget {
@@ -36,39 +46,25 @@ class SemesterDetailScreen extends ConsumerStatefulWidget {
       _SemesterDetailScreenState();
 }
 
-class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen> {
+  int _selectedTab = 0;
   List<Map<String, dynamic>> _pitEventConfigs = [];
   bool _loadingPitConfigs = false;
 
-  static const _line = DefensysTokens.border;
-  static const _ink = DefensysUi.textDark;
-  static const _muted = DefensysUi.steelGrey;
-  static const _maroon = DefensysUi.primaryMaroon;
-
-  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : _line;
-  Color get _surfaceColor =>
-      _isDark ? DefensysTokens.mistSurface : Colors.white;
-  Color get _inkColor => _isDark ? const Color(0xFFF4F4F5) : _ink;
-  Color get _mutedColor => _isDark ? const Color(0xFFA1A1AA) : _muted;
-  Color get _panelBgColor =>
-      _isDark ? const Color(0xFF1B1B1F) : const Color(0xFFF9FAFB);
+  bool get _isDark => DefensysTokens.isDark(context);
+  Color get _borderColor => DefensysTokens.borderOf(context);
+  Color get _surfaceColor => DefensysTokens.surfaceOf(context);
+  Color get _inkColor => DefensysTokens.textPrimaryOf(context);
+  Color get _mutedColor => DefensysTokens.textSecondaryOf(context);
+  Color get _subtleSurface =>
+      _isDark ? DefensysTokens.mistPanel : DefensysTokens.background;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
     });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -130,35 +126,21 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     final semester = _findSemester(state);
 
     if (state.isLoading && semester == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: _maroon)),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
     if (semester == null) {
       return Scaffold(
-        backgroundColor: _isDark ? const Color(0xFF121214) : DefensysUi.bgLight,
+        backgroundColor: DefensysTokens.backgroundOf(context),
         body: Padding(
-          padding: const EdgeInsets.all(40),
-          child: Center(
-            child: DefensysEmptyState.table(
-              icon: Icons.error_outline_rounded,
-              title: 'Semester Not Found',
-              description:
-                  'The requested academic term does not exist or has been deleted.',
-              primaryAction: DefensysEmptyAction(
-                label: 'Back to academic periods',
-                icon: Icons.arrow_back_rounded,
-                onPressed: () {
-                  if (widget.onBack != null) {
-                    widget.onBack!();
-                  } else if (context.canPop()) {
-                    context.pop();
-                  } else {
-                    context.go(AdminRoutes.academicPeriods);
-                  }
-                },
-              ),
+          padding: const EdgeInsets.all(24),
+          child: DefensysEmptyState.table(
+            icon: Icons.error_outline_rounded,
+            title: 'Semester not found',
+            description: 'This semester does not exist or has been deleted.',
+            primaryAction: DefensysEmptyAction(
+              label: 'Back to academic periods',
+              icon: Icons.arrow_back_rounded,
+              onPressed: _goBack,
             ),
           ),
         ),
@@ -172,533 +154,1100 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     final termName = semester['label']?.toString() ?? 'Semester';
     final isActive = semester['is_active'] == true;
 
-    return Scaffold(
-      backgroundColor: _isDark ? const Color(0xFF121214) : DefensysUi.bgLight,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(28, 20, 28, 48),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top Breadcrumb & Back Action
-            DefensysBreadcrumb(
-              onBack: () {
-                if (widget.onBack != null) {
-                  widget.onBack!();
-                } else if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go(AdminRoutes.academicPeriods);
-                }
-              },
-              backLabel: 'Back to academic periods',
-              items: [
-                DefensysBreadcrumbItem(
-                  label: 'A.Y. $yearLabel',
-                  icon: const Icon(LucideIcons.calendar, size: 14),
-                  onTap: () {
-                    if (widget.onBack != null) {
-                      widget.onBack!();
-                    } else if (context.canPop()) {
-                      context.pop();
-                    } else {
-                      context.go(AdminRoutes.academicPeriods);
-                    }
-                  },
-                ),
-                DefensysBreadcrumbItem(label: termName, isCurrent: true),
-              ],
+    return DefensysShadcnScope(
+      maroonActions: true,
+      child: Scaffold(
+        backgroundColor: DefensysTokens.backgroundOf(context),
+        body: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              constraints.maxWidth < 600 ? 16 : 28,
+              20,
+              constraints.maxWidth < 600 ? 16 : 28,
+              48,
             ),
-            const SizedBox(height: 18),
-
-            // Header Banner
-            _buildTermHeader(
-              semester, yearLabel, termName, isActive, state.isSaving,
-            ),
-            const SizedBox(height: 20),
-            SemesterCalendarSummary(
-              semester: semester,
-              onEdit: state.isSaving
-                  ? null
-                  : () => showSemesterCalendarEditor(context, ref, semester),
-            ),
-            const SizedBox(height: 20),
-
-            // 3 KPI Overview Cards
-            _buildKpiOverviewRow(semester, isActive),
-            const SizedBox(height: 24),
-
-            // Segmented Tabs
-            _buildTabBar(),
-            const SizedBox(height: 20),
-
-            // Tab Content
-            AnimatedBuilder(
-              animation: _tabController,
-              builder: (context, _) {
-                switch (_tabController.index) {
-                  case 0:
-                    return _buildCapstoneTab(semester, state.isSaving);
-                  case 1:
-                    return _buildPitTab(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1440),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DefensysBreadcrumb(
+                      onBack: _goBack,
+                      backLabel: 'Back to academic periods',
+                      items: [DefensysBreadcrumbItem(label: 'A.Y. $yearLabel')],
+                    ),
+                    const SizedBox(height: 24),
+                    _buildTermHeader(
                       semester,
+                      termName,
+                      isActive,
                       state.isSaving,
-                      userState.users,
-                    );
-                  case 2:
-                  default:
-                    return _buildMasterControlsTab(semester, state.isSaving);
-                }
-              },
+                    ),
+                    const SizedBox(height: 24),
+                    _buildTabBar(),
+                    const SizedBox(height: 22),
+                    switch (_selectedTab) {
+                      0 => _buildCapstoneTab(semester, state.isSaving),
+                      1 => _buildPitTab(state.isSaving, userState.users),
+                      _ => _buildMasterControlsTab(semester, state.isSaving),
+                    },
+                  ],
+                ),
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildTermHeader(
-    Map<String, dynamic> semester,
-    String yearLabel,
-    String termName,
-    bool isActive,
-    bool isSaving,
-  ) => DefensysShadcnScope(
-    maroonActions: true,
-    child: Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final identity = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'A.Y. $yearLabel',
-                style: TextStyle(
-                  fontFamily: DefensysTokens.fontFamilyInter,
-                  color: _mutedColor,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text(
-                    termName,
-                    style: TextStyle(
-                      fontFamily: DefensysTokens.fontFamilyInter,
-                      color: _inkColor,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  SemesterStatusBadge(isActive: isActive),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                isActive
-                    ? 'Schedules, submissions, and grades use this semester.'
-                    : 'Review the semester setup before activating it.',
-                style: TextStyle(
-                  fontFamily: DefensysTokens.fontFamilyInter,
-                  color: _mutedColor,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          );
-          if (isActive) return identity;
-          final activate = ShadButton(
-            enabled: !isSaving,
-            size: ShadButtonSize.sm,
-            leading: const Icon(Icons.power_settings_new_rounded, size: 15),
-            onPressed: () => _activateThisSemester(semester),
-            child: const Text('Set as Active Semester'),
-          );
-          if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1) <
-              700) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [identity, const SizedBox(height: 16), activate],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: identity),
-              const SizedBox(width: 24),
-              activate,
-            ],
-          );
-        },
-      ),
+  void _goBack() {
+    if (widget.onBack != null) {
+      widget.onBack!();
+    } else if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AdminRoutes.academicPeriods);
+    }
+  }
+
+  Text _copy(
+    String text, {
+    bool muted = false,
+    double size = 14,
+    FontWeight weight = FontWeight.w400,
+  }) => Text(
+    text,
+    style: TextStyle(
+      fontFamily: DefensysTokens.fontFamilyInter,
+      fontSize: size,
+      fontWeight: weight,
+      color: muted ? _mutedColor : _inkColor,
     ),
   );
 
-  Widget _buildKpiOverviewRow(Map<String, dynamic> semester, bool isActive) {
-    final phase = semester['capstone_program_phase']?.toString();
-    String phaseLabel;
-    if (phase == 'capstone_1') {
-      phaseLabel = 'Capstone 1 Intake';
-    } else if (phase == 'capstone_2') {
-      phaseLabel = 'Capstone 2 Continue';
-    } else {
-      phaseLabel = 'Closed';
-    }
-
-    final stagesState = ref.watch(defenseStagesProvider);
-    final stagesCount = stagesState.stages.length;
-
-    return Row(
+  Widget _buildTermHeader(
+    Map<String, dynamic> semester,
+    String termName,
+    bool isActive,
+    bool isSaving,
+  ) {
+    final identity = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: _kpiCard(
-            icon: Icons.school_rounded,
-            iconBg: _isDark ? const Color(0xFF3B181F) : const Color(0xFFFEE2E2),
-            iconColor: _isDark ? const Color(0xFFF87171) : _maroon,
-            title: '🎓 Capstone Program',
-            value: phaseLabel,
-            subtitle: '4th Year Cohorts • Senior Project',
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _kpiCard(
-            icon: Icons.rocket_launch_rounded,
-            iconBg: _isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEEF2FF),
-            iconColor: _isDark
-                ? const Color(0xFFA5B4FC)
-                : const Color(0xFF4338CA),
-            title: '🚀 PIT Program Track',
-            value: '${_pitEventConfigs.length} Pitch Events',
-            subtitle: '1st, 2nd, and 3rd Year Cohorts',
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _kpiCard(
-            icon: Icons.timeline_rounded,
-            iconBg: _isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5),
-            iconColor: const Color(0xFF10B981),
-            title: '🛡️ Defense Stages',
-            value: '$stagesCount Stages Available',
-            subtitle: isActive ? 'Write-Enabled & Scheduled' : 'Configurable',
-          ),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _copy(termName, size: 30, weight: FontWeight.w600),
+            SemesterStatusBadge(isActive: isActive),
+          ],
         ),
       ],
     );
-  }
-
-  Widget _kpiCard({
-    required IconData icon,
-    required Color iconBg,
-    required Color iconColor,
-    required String title,
-    required String value,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final calendar = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _iconTile(LucideIcons.calendar, size: 42),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 18, color: iconColor),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    color: _inkColor,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+              _copy('Semester dates', muted: true, size: 12),
+              const SizedBox(height: 3),
+              _copy(
+                semesterDateRange(semester),
+                size: 13,
+                weight: FontWeight.w500,
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            value,
-            style: TextStyle(
-              color: _inkColor,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.2,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(subtitle, style: TextStyle(color: _mutedColor, fontSize: 12)),
-        ],
-      ),
+        ),
+        const SizedBox(width: 18),
+        ShadButton.outline(
+          size: ShadButtonSize.sm,
+          enabled: !isSaving,
+          onPressed: () => showSemesterCalendarEditor(context, ref, semester),
+          child: const Text('Edit dates'),
+        ),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow =
+            constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1) <
+            850;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (narrow) ...[
+              identity,
+              const SizedBox(height: 20),
+              calendar,
+            ] else
+              Row(
+                children: [
+                  Expanded(child: identity),
+                  const SizedBox(width: 24),
+                  calendar,
+                ],
+              ),
+            if (!isActive) ...[
+              const SizedBox(height: 18),
+              ShadButton(
+                size: ShadButtonSize.sm,
+                enabled: !isSaving,
+                onPressed: () => _activateThisSemester(semester),
+                child: const Text('Set as Active Semester'),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildTabBar() {
-    return AnimatedBuilder(
-      animation: _tabController,
-      builder: (context, _) => DefensysSegmentedControl<int>(
-        value: _tabController.index,
-        items: const [
-          DefensysSegmentItem(
-            value: 0,
-            label: 'Capstone',
-            icon: Icons.school_outlined,
+  Widget _buildTabBar() => Container(
+    width: double.infinity,
+    decoration: BoxDecoration(
+      border: Border(bottom: BorderSide(color: _borderColor)),
+    ),
+    child: ShadTabs<int>(
+      value: _selectedTab,
+      onChanged: (value) => setState(() => _selectedTab = value),
+      scrollable: true,
+      gap: 0,
+      tabsGap: 8,
+      padding: EdgeInsets.zero,
+      decoration: ShadDecoration.none,
+      tabBarAlignment: Alignment.centerLeft,
+      tabs: [
+        for (final entry in [
+          'Capstone',
+          'PIT',
+          'General settings',
+        ].asMap().entries)
+          ShadTab(
+            value: entry.key,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
+            height: 50,
+            selectedBackgroundColor: Colors.transparent,
+            selectedHoverBackgroundColor: Colors.transparent,
+            selectedForegroundColor: DefensysTokens.maroonTextOf(context),
+            foregroundColor: _mutedColor,
+            selectedShadows: const [],
+            decoration: ShadDecoration(
+              border: ShadBorder(
+                radius: BorderRadius.zero,
+                bottom: ShadBorderSide(
+                  color: DefensysTokens.maroonTextOf(context),
+                  width: entry.key == _selectedTab ? 2 : 0,
+                ),
+              ),
+            ),
+            child: Text(entry.value),
           ),
-          DefensysSegmentItem(
-            value: 1,
-            label: 'PIT',
-            icon: Icons.rocket_launch_outlined,
-          ),
-          DefensysSegmentItem(
-            value: 2,
-            label: 'Semester settings',
-            icon: Icons.settings_outlined,
-          ),
-        ],
-        onChanged: _tabController.animateTo,
-      ),
-    );
-  }
+      ],
+    ),
+  );
 
   Widget _buildCapstoneTab(Map<String, dynamic> semester, bool isSaving) {
     final semesterId = int.tryParse(semester['id']?.toString() ?? '');
     final phase = semester['capstone_program_phase']?.toString();
-    final teamCreationOn = semester['capstone_team_creation_enabled'] == true;
-    final peerOn = semester['capstone_peer_evaluation_enabled'] != false;
-    final adviserOn = semester['capstone_adviser_grading_enabled'] != false;
-
-    final stagesState = ref.watch(defenseStagesProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Two side-by-side policy cards
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Left: Capstone Cohort Policies
-            Expanded(
-              child: _card(
-                title: '⚙️ Capstone Cohort Policies',
-                description:
-                    'Configure cohort intake, team formation window, and degree rollover',
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
+    final isCapstone1 = phase == 'capstone_1';
+    final isCapstone2 = phase == 'capstone_2';
+    final canAdd = semester['capstone_team_creation_enabled'] == true;
+    final policies = _card(
+      title: 'Capstone this semester',
+      icon: LucideIcons.graduationCap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final course = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _copy('Course', muted: true, size: 12),
+                    const SizedBox(height: 8),
+                    _copy(
+                      isCapstone1
+                          ? 'Capstone 1'
+                          : isCapstone2
+                          ? 'Capstone 2'
+                          : 'Not offered',
+                      size: 24,
+                      weight: FontWeight.w600,
+                    ),
+                  ],
+                );
+                final intake = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _copy('Adding teams', muted: true, size: 12),
+                    const SizedBox(height: 10),
+                    _badge(
+                      isCapstone2
+                          ? 'Continuing teams only'
+                          : canAdd
+                          ? 'Allowed'
+                          : 'Not allowed',
+                      good: isCapstone1 && canAdd,
+                    ),
+                    const SizedBox(height: 8),
+                    _copy(
+                      isCapstone2
+                          ? 'Register verified continuing students in Student Teams.'
+                          : canAdd
+                          ? 'Create or import teams in Student Teams.'
+                          : 'New teams cannot be added this semester.',
+                      muted: true,
+                      size: 13,
+                    ),
+                  ],
+                );
+                if (constraints.maxWidth /
+                        MediaQuery.textScalerOf(context).scale(1) <
+                    490) {
+                  return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _settingRow(
-                        label: 'Program Phase',
-                        child: Text(
-                          phase == 'capstone_1'
-                              ? 'Capstone 1 (Intake - 3rd Year, 2nd Sem)'
-                              : (phase == 'capstone_2'
-                                    ? 'Capstone 2 (Continuation - 4th Year, 1st Sem)'
-                                    : 'Closed / Inactive'),
-                          style: TextStyle(
-                            color: _inkColor,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      _settingRow(
-                        label: 'Team Formation',
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: teamCreationOn
-                                    ? (_isDark
-                                          ? const Color(0xFF064E3B)
-                                          : const Color(0xFFECFDF5))
-                                    : (_isDark
-                                          ? const Color(0xFF27272A)
-                                          : const Color(0xFFF1F5F9)),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                teamCreationOn ? 'Open for Intake' : 'Closed',
-                                style: TextStyle(
-                                  color: teamCreationOn
-                                      ? (_isDark
-                                            ? const Color(0xFF34D399)
-                                            : const Color(0xFF047857))
-                                      : _mutedColor,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                teamCreationOn
-                                    ? 'Admins can create/import teams.'
-                                    : 'Creation follows academic calendar.',
-                                style: TextStyle(
-                                  color: _mutedColor,
-                                  fontSize: 11.5,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      _settingRow(
-                        label: 'Team Rollover',
-                        child: Text(
-                          'Capstone 2 automatically preserves teams & assigned advisers from Capstone 1.',
-                          style: TextStyle(
-                            color: _mutedColor,
-                            fontSize: 12,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+                    children: [course, const SizedBox(height: 24), intake],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 4, child: course),
+                    Container(
+                      width: 1,
+                      height: 86,
+                      color: _borderColor,
+                      margin: const EdgeInsets.symmetric(horizontal: 24),
+                    ),
+                    Expanded(flex: 6, child: intake),
+                  ],
+                );
+              },
             ),
-            const SizedBox(width: 18),
-
-            // Right: Term-wide Evaluation Switches
-            Expanded(
-              child: _card(
-                title: '📝 Term-Wide Evaluation Master Toggles',
-                description:
-                    'Master authorization switches controlling peer and adviser grading',
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    children: [
-                      _evaluationToggleTile(
-                        title: 'Student Peer Evaluation',
-                        subtitle:
-                            'Enables Peer Eval tab for enrolled students on Capstone teams.',
-                        value: peerOn,
-                        enabled: !isSaving && semesterId != null,
-                        helpTooltip: 'View Capstone Peer Evaluation Guide',
-                        onHelpTap: () =>
-                            showPeerGradingHelpDialog(context, isPit: false),
-                        onChanged: (val) {
-                          if (semesterId != null) {
-                            ref
-                                .read(academicPeriodProvider.notifier)
-                                .updateSemesterEvaluationSettings(
-                                  semesterId,
-                                  peerEvaluationEnabled: val,
-                                );
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      _evaluationToggleTile(
-                        title: 'Adviser Grading Submission',
-                        subtitle:
-                            'Allows assigned faculty advisers to submit rubric grades for their teams.',
-                        value: adviserOn,
-                        enabled: !isSaving && semesterId != null,
-                        onChanged: (val) {
-                          if (semesterId != null) {
-                            ref
-                                .read(academicPeriodProvider.notifier)
-                                .updateSemesterEvaluationSettings(
-                                  semesterId,
-                                  adviserGradingEnabled: val,
-                                );
-                          }
-                        },
-                      ),
-                    ],
-                  ),
+          ),
+          if (isCapstone1 || isCapstone2) ...[
+            Divider(height: 1, color: _borderColor),
+            Container(
+              color: _subtleSurface,
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: _disclosure(
+                key: 'capstone-continuation',
+                title: isCapstone1
+                    ? 'Continuing to Capstone 2'
+                    : 'Moving to the next semester',
+                child: _copy(
+                  isCapstone1
+                      ? 'You’ll review which teams can continue to Capstone 2 before activating the next semester.'
+                      : 'Review team outcomes before activating the next semester. Completed and failed teams keep their records in History.',
+                  muted: true,
+                  size: 13,
                 ),
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 22),
+        ],
+      ),
+    );
+    final evaluation = _card(
+      title: 'Evaluation access',
+      icon: LucideIcons.slidersHorizontal,
+      description: 'Capstone · this semester',
+      child: Column(
+        children: [
+          _evaluationToggleTile(
+            key: const ValueKey('capstone-peer-access'),
+            title: 'Student peer evaluation',
+            subtitle: 'Allow students to submit peer evaluations.',
+            value: semester['capstone_peer_evaluation_enabled'] != false,
+            enabled: !isSaving && semesterId != null,
+            onChanged: (value) => ref
+                .read(academicPeriodProvider.notifier)
+                .updateSemesterEvaluationSettings(
+                  semesterId!,
+                  peerEvaluationEnabled: value,
+                ),
+          ),
+          Divider(height: 1, color: _borderColor),
+          _evaluationToggleTile(
+            key: const ValueKey('capstone-adviser-access'),
+            title: 'Adviser grading',
+            subtitle: 'Allow assigned advisers to submit grades.',
+            value: semester['capstone_adviser_grading_enabled'] != false,
+            enabled: !isSaving && semesterId != null,
+            onChanged: (value) => ref
+                .read(academicPeriodProvider.notifier)
+                .updateSemesterEvaluationSettings(
+                  semesterId!,
+                  adviserGradingEnabled: value,
+                ),
+          ),
+          Divider(height: 1, color: _borderColor),
+          Container(
+            width: double.infinity,
+            color: _subtleSurface,
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _copy(
+                  'PIT peer evaluation is controlled per event.',
+                  muted: true,
+                  size: 13,
+                ),
+                const SizedBox(height: 8),
+                ShadButton.link(
+                  size: ShadButtonSize.sm,
+                  padding: EdgeInsets.zero,
+                  foregroundColor: DefensysTokens.maroonTextOf(context),
+                  hoverForegroundColor: DefensysTokens.maroonTextOf(context),
+                  onPressed: () =>
+                      showPeerGradingHelpDialog(context, isPit: false),
+                  child: const Text('Peer evaluation guide'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final left = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            policies,
+            const SizedBox(height: 24),
+            _buildDefenseStages(),
+          ],
+        );
+        if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1) <
+            850) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [left, const SizedBox(height: 24), evaluation],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 8, child: left),
+            const SizedBox(width: 24),
+            Expanded(flex: 5, child: evaluation),
+          ],
+        );
+      },
+    );
+  }
 
-        // Defense Stages Pipeline Summary Card
-        _card(
-          title: '🛡️ Capstone Defense Stages Pipeline',
-          description:
-              'Active defense stages configured for this academic period',
-          actionLabel: 'Configure Stages in Setup ↗',
-          onActionTap: () => context.push(AdminRoutes.defenseStages),
-          child: Column(
-            children: [
-              if (stagesState.isLoading)
-                const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(
-                    child: CircularProgressIndicator(color: _maroon),
+  Future<void> _openStages([Map<String, dynamic>? stage]) async {
+    final id = int.tryParse(stage?['id']?.toString() ?? '');
+    await context.push(
+      id == null ? AdminRoutes.defenseStages : AdminRoutes.defenseStageEdit(id),
+    );
+    if (mounted) ref.read(defenseStagesProvider.notifier).fetchStages();
+  }
+
+  Widget _buildDefenseStages() {
+    final state = ref.watch(defenseStagesProvider);
+    return _card(
+      title: 'Defense stages',
+      icon: LucideIcons.layers,
+      trailing: state.isLoading
+          ? null
+          : state.error != null
+          ? _badge('Could not load', warning: true)
+          : Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _badge(
+                  state.stages.isEmpty
+                      ? 'Not configured'
+                      : '${state.stages.length} configured',
+                  warning: state.stages.isEmpty,
+                ),
+                if (state.stages.isNotEmpty)
+                  ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    onPressed: () => _openStages(),
+                    child: const Text('Manage stages'),
                   ),
-                )
-              else if (stagesState.stages.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: DefensysEmptyState.table(
-                    icon: Icons.timeline_outlined,
-                    title: 'No Defense Stages Configured',
-                    description:
-                        'Create and order defense stages (e.g. Title Proposal, Outline Defense, Final Defense) in Defense Stages Setup.',
-                    primaryAction: DefensysEmptyAction(
-                      label: 'Open Defense Stages Setup',
-                      icon: Icons.launch_rounded,
-                      onPressed: () => context.push(AdminRoutes.defenseStages),
+              ],
+            ),
+      child: state.isLoading
+          ? const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          : state.error != null
+          ? Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _copy(
+                    'Could not load defense stages. Try again.',
+                    muted: true,
+                  ),
+                  const SizedBox(height: 12),
+                  ShadButton.outline(
+                    onPressed: () =>
+                        ref.read(defenseStagesProvider.notifier).fetchStages(),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          : state.stages.isEmpty
+          ? Container(
+              width: double.infinity,
+              color: _subtleSurface,
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _copy(
+                    'Set up the defense sequence',
+                    size: 18,
+                    weight: FontWeight.w600,
+                  ),
+                  const SizedBox(height: 10),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 440),
+                    child: _copy(
+                      'Add the stages and requirements students will use.',
+                      muted: true,
+                      size: 13,
                     ),
                   ),
-                )
-              else
-                ...stagesState.stages.asMap().entries.map((entry) {
-                  final index = entry.key + 1;
-                  final stage = entry.value;
-                  return _buildStagePipelineRow(index, stage);
-                }),
+                  const SizedBox(height: 24),
+                  ShadButton(
+                    onPressed: () => _openStages(),
+                    leading: const Icon(LucideIcons.plus, size: 16),
+                    child: const Text('Configure stages'),
+                  ),
+                ],
+              ),
+            )
+          : Column(
+              children: [
+                for (final entry in state.stages.asMap().entries)
+                  _buildStagePipelineRow(entry.key + 1, entry.value),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildPitTab(bool isSaving, List<Map<String, dynamic>> users) {
+    final userState = ref.watch(userManagementProvider);
+    final schedulerSaving = ref.watch(
+      defenseSchedulerProvider.select((state) => state.isSaving),
+    );
+    const years = {
+      '1st Year': 'Concept pitch',
+      '2nd Year': 'System design',
+      '3rd Year': 'Capstone readiness',
+    };
+    final matched = <Map<String, dynamic>>{};
+    final groups = <String, List<Map<String, dynamic>>>{};
+    for (final year in years.keys) {
+      groups[year] = _pitEventConfigs
+          .where((event) => _eventMatchesCohort(event, year))
+          .toList();
+      matched.addAll(groups[year]!);
+    }
+    final additional = _pitEventConfigs
+        .where((event) => !matched.contains(event))
+        .toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _card(
+          title: 'Year coordinators & events',
+          icon: LucideIcons.users,
+          description: 'Coordinators manage each year’s pitch events.',
+          child: Column(
+            children: [
+              for (final entry in years.entries) ...[
+                if (entry.key != years.keys.first)
+                  Divider(height: 1, color: _borderColor),
+                _buildPitCohort(
+                  entry.key,
+                  entry.value,
+                  _findPitLeadForYear(users, entry.key),
+                  groups[entry.key]!,
+                  isSaving || schedulerSaving,
+                  loadingLead: userState.isLoading,
+                  leadError: userState.error != null,
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (additional.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          _card(
+            title: 'Other PIT events',
+            child: Column(
+              children: [
+                for (final event in additional)
+                  _buildCohortEventItem(event, isSaving || schedulerSaving),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 18),
+        _copy(
+          'Panel and peer weights are configured per event. PIT does not use adviser grading.',
+          muted: true,
+          size: 13,
+        ),
+        const SizedBox(height: 16),
+        _disclosure(
+          key: 'pit-responsibilities',
+          title: 'Responsibilities & evaluation rules',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _copy(
+                'Coordinators manage teams, panel assignments, deliverables, and schedules. Administrators assign coordinators and oversee evaluation access.',
+                muted: true,
+                size: 12,
+              ),
+              const SizedBox(height: 10),
+              ShadButton.link(
+                size: ShadButtonSize.sm,
+                padding: EdgeInsets.zero,
+                foregroundColor: DefensysTokens.maroonTextOf(context),
+                hoverForegroundColor: DefensysTokens.maroonTextOf(context),
+                onPressed: () =>
+                    showPeerGradingHelpDialog(context, isPit: true),
+                child: const Text('PIT peer evaluation guide'),
+              ),
             ],
           ),
         ),
       ],
     );
   }
+
+  Future<void> _openCoordinators() async {
+    await context.push(AdminRoutes.users);
+    if (mounted) ref.read(userManagementProvider.notifier).fetchUsers();
+  }
+
+  Widget _buildPitCohort(
+    String year,
+    String course,
+    Map<String, dynamic>? lead,
+    List<Map<String, dynamic>> events,
+    bool isSaving, {
+    required bool loadingLead,
+    required bool leadError,
+  }) {
+    final identity = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _copy(year, size: 15, weight: FontWeight.w600),
+        const SizedBox(height: 5),
+        _copy(course, muted: true, size: 13),
+      ],
+    );
+    final coordinator = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (loadingLead)
+          _copy('Loading coordinator…', muted: true, size: 12)
+        else if (leadError)
+          _copy('Could not load coordinator.', muted: true, size: 12)
+        else if (lead == null)
+          _badge('No coordinator', warning: true)
+        else
+          _copy(_getUserDisplayName(lead), weight: FontWeight.w500),
+        const SizedBox(height: 4),
+        _copy(
+          _loadingPitConfigs
+              ? 'Loading events…'
+              : events.isEmpty
+              ? 'No events configured'
+              : '${events.length} ${events.length == 1 ? 'event' : 'events'} configured',
+          muted: true,
+          size: 12,
+        ),
+      ],
+    );
+    final action = ShadButton.outline(
+      size: ShadButtonSize.sm,
+      enabled: !loadingLead,
+      onPressed: _openCoordinators,
+      trailing: const Icon(LucideIcons.arrowUpRight, size: 14),
+      child: Text(
+        leadError
+            ? 'View users'
+            : lead == null
+            ? 'Assign lead'
+            : 'Manage lead',
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth /
+                      MediaQuery.textScalerOf(context).scale(1) <
+                  620) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    identity,
+                    const SizedBox(height: 12),
+                    coordinator,
+                    const SizedBox(height: 12),
+                    action,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: identity),
+                  const SizedBox(width: 16),
+                  Expanded(child: coordinator),
+                  const SizedBox(width: 16),
+                  action,
+                ],
+              );
+            },
+          ),
+          if (events.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            _disclosure(
+              key: 'pit-events-$year',
+              title: 'View events · $year',
+              child: Column(
+                children: [
+                  for (final config in events)
+                    _buildCohortEventItem(config, isSaving),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCohortEventItem(Map<String, dynamic> config, bool isSaving) {
+    final eventName = config['event_name']?.toString() ?? 'PIT event';
+    final panel = config['panel_weight']?.toString() ?? '—';
+    final peer = config['peer_weight']?.toString() ?? '—';
+    final isLocked = config['is_locked'] == true;
+    final peerEnabled = config['peer_grading_enabled'] != false;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _copy(eventName, weight: FontWeight.w500),
+          const SizedBox(height: 5),
+          _copy('Panel $panel% · Peer $peer%', muted: true, size: 12),
+          if (isLocked) ...[
+            const SizedBox(height: 7),
+            _badge('Settings locked', warning: true),
+            const SizedBox(height: 5),
+            _copy(
+              config['lock_reason']?.toString() ??
+                  'Defenses are scheduled for this event.',
+              muted: true,
+              size: 12,
+            ),
+          ],
+          _evaluationToggleTile(
+            key: ValueKey('pit-peer-${config['id'] ?? eventName}'),
+            title: 'Student peer evaluation',
+            subtitle: peerEnabled
+                ? 'Enabled for this event.'
+                : 'Disabled for this event.',
+            value: peerEnabled,
+            enabled: !isSaving && !isLocked,
+            padding: const EdgeInsets.only(top: 12),
+            onChanged: (value) => _togglePitEventPeerEval(config, value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMasterControlsTab(Map<String, dynamic> semester, bool isSaving) {
+    final isActive = semester['is_active'] == true;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _card(
+          title: 'Semester details',
+          icon: LucideIcons.calendar,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Wrap(
+                  spacing: 24,
+                  runSpacing: 14,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _copy('Semester dates', weight: FontWeight.w500),
+                        const SizedBox(height: 5),
+                        _copy(
+                          semesterDateRange(semester),
+                          muted: true,
+                          size: 12,
+                        ),
+                      ],
+                    ),
+                    ShadButton.outline(
+                      size: ShadButtonSize.sm,
+                      enabled: !isSaving,
+                      onPressed: () =>
+                          showSemesterCalendarEditor(context, ref, semester),
+                      child: const Text('Edit dates'),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: _borderColor),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _copy('Operating semester', weight: FontWeight.w500),
+                    const SizedBox(height: 5),
+                    _copy(
+                      isActive
+                          ? 'Schedules, submissions, and grades use this semester.'
+                          : 'This semester is inactive. Review its setup before activating it.',
+                      muted: true,
+                      size: 12,
+                    ),
+                    if (!isActive) ...[
+                      const SizedBox(height: 14),
+                      ShadButton(
+                        size: ShadButtonSize.sm,
+                        enabled: !isSaving,
+                        onPressed: () => _activateThisSemester(semester),
+                        child: const Text('Activate this semester'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (isActive)
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: _copy(
+              'To change the active semester, open another semester in Academic Periods and review its transition.',
+              muted: true,
+              size: 12,
+            ),
+          ),
+        const SizedBox(height: 24),
+        _disclosure(
+          key: 'semester-advanced',
+          title: 'Advanced settings',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _copy('Delete semester', weight: FontWeight.w500),
+              const SizedBox(height: 5),
+              _copy(
+                isActive
+                    ? 'The active semester cannot be deleted.'
+                    : 'Only semesters without teams, grades, or enrollments can be deleted.',
+                muted: true,
+                size: 12,
+              ),
+              const SizedBox(height: 14),
+              ShadButton.destructive(
+                size: ShadButtonSize.sm,
+                enabled: !isActive && !isSaving,
+                onPressed: () => _deleteThisSemester(semester),
+                child: const Text('Delete semester'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStagePipelineRow(
+    int index,
+    Map<String, dynamic> stage,
+  ) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final identity = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _subtleSurface,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: _copy(
+                '$index',
+                muted: true,
+                size: 13,
+                weight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _copy(
+                    stage['label']?.toString() ?? 'Stage',
+                    weight: FontWeight.w500,
+                  ),
+                  if (stage['description']?.toString().isNotEmpty == true) ...[
+                    const SizedBox(height: 4),
+                    _copy(
+                      stage['description'].toString(),
+                      muted: true,
+                      size: 12,
+                    ),
+                  ],
+                  if (stage['is_presentation_only'] == true) ...[
+                    const SizedBox(height: 5),
+                    _badge('Presentation only'),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        );
+        final action = ShadButton.outline(
+          size: ShadButtonSize.sm,
+          onPressed: () => _openStages(stage),
+          child: const Text('Configure'),
+        );
+        if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1) <
+            450) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [identity, const SizedBox(height: 12), action],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: identity),
+            const SizedBox(width: 14),
+            action,
+          ],
+        );
+      },
+    ),
+  );
+
+  Widget _card({
+    required String title,
+    required Widget child,
+    String? description,
+    Widget? trailing,
+    IconData? icon,
+  }) => Container(
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      color: _surfaceColor,
+      borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+      border: Border.all(color: _borderColor),
+      boxShadow: [
+        if (!_isDark)
+          BoxShadow(
+            color: DefensysTokens.textPrimary.withValues(alpha: 0.025),
+            blurRadius: 16,
+            offset: const Offset(0, 3),
+          ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final heading = Row(
+                children: [
+                  if (icon != null) ...[
+                    _iconTile(icon, size: 36),
+                    const SizedBox(width: 12),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _copy(title, size: 16, weight: FontWeight.w600),
+                        if (description != null) ...[
+                          const SizedBox(height: 4),
+                          _copy(description, muted: true, size: 13),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              );
+              if (trailing == null) return heading;
+              if (constraints.maxWidth /
+                      MediaQuery.textScalerOf(context).scale(1) <
+                  450) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [heading, const SizedBox(height: 12), trailing],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: heading),
+                  const SizedBox(width: 16),
+                  trailing,
+                ],
+              );
+            },
+          ),
+        ),
+        Divider(height: 1, color: _borderColor),
+        child,
+      ],
+    ),
+  );
+
+  Widget _iconTile(IconData icon, {double size = 44}) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: _subtleSurface,
+      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+    ),
+    child: Icon(
+      icon,
+      size: size > 40 ? 21 : 18,
+      color: DefensysTokens.maroonTextOf(context),
+    ),
+  );
+
+  Widget _badge(String label, {bool good = false, bool warning = false}) {
+    final color = good
+        ? (_isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
+        : warning
+        ? (_isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E))
+        : _mutedColor;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: good
+            ? (_isDark ? const Color(0xFF15382D) : const Color(0xFFECFDF5))
+            : warning
+            ? (_isDark ? const Color(0xFF372D1D) : const Color(0xFFFFFBEB))
+            : DefensysTokens.panelOf(context),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: DefensysTokens.fontFamilyInter,
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _disclosure({
+    required String key,
+    required String title,
+    required Widget child,
+  }) => ShadAccordion<String>(
+    children: [
+      ShadAccordionItem(
+        key: ValueKey(key),
+        value: key,
+        title: _copy(title, muted: true, size: 13),
+        underlineTitleOnHover: false,
+        separator: const SizedBox.shrink(),
+        child: Align(alignment: Alignment.centerLeft, child: child),
+      ),
+    ],
+  );
+
+  Widget _evaluationToggleTile({
+    Key? key,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required bool enabled,
+    required ValueChanged<bool> onChanged,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(
+      horizontal: 24,
+      vertical: 22,
+    ),
+  }) => Padding(
+    padding: padding,
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _copy(title, weight: FontWeight.w500),
+              const SizedBox(height: 6),
+              _copy(subtitle, muted: true, size: 13),
+            ],
+          ),
+        ),
+        const SizedBox(width: 14),
+        Semantics(
+          label: title,
+          child: ShadSwitch(
+            key: key,
+            value: value,
+            enabled: enabled,
+            thumbColor: Colors.white,
+            checkedTrackColor: DefensysTokens.maroonOf(context),
+            onChanged: enabled ? onChanged : null,
+          ),
+        ),
+      ],
+    ),
+  );
 
   Map<String, dynamic>? _findPitLeadForYear(
     List<Map<String, dynamic>> users,
@@ -844,1247 +1393,6 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     }
   }
 
-  Widget _buildPitTab(
-    Map<String, dynamic> semester,
-    bool isSaving,
-    List<Map<String, dynamic>> users,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildPitGovernanceBanner(),
-        const SizedBox(height: 20),
-        _buildPitPolicyOverviewCard(),
-        const SizedBox(height: 24),
-        ..._buildCohortCards(users, isSaving),
-      ],
-    );
-  }
-
-  Widget _buildPitGovernanceBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _isDark ? const Color(0xFF3730A3) : const Color(0xFFC7D2FE),
-          width: 1.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _isDark
-                      ? const Color(0xFF1E1B4B)
-                      : const Color(0xFFEEF2FF),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.admin_panel_settings_rounded,
-                  size: 20,
-                  color: Color(0xFF6366F1),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'Faculty Lead Ownership & Admin Oversight',
-                            style: TextStyle(
-                              color: _inkColor,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.2,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _isDark
-                                ? const Color(0xFF312E81)
-                                : const Color(0xFFE0E7FF),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Governance Model',
-                            style: TextStyle(
-                              color: _isDark
-                                  ? const Color(0xFFA5B4FC)
-                                  : const Color(0xFF4338CA),
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Operational responsibility is delegated to assigned PIT Year Coordinators. Admins maintain supervisory compliance and master review authorizations.',
-                      style: TextStyle(
-                        color: _mutedColor,
-                        fontSize: 12.5,
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              OutlinedButton.icon(
-                onPressed: () => context.push(AdminRoutes.users),
-                icon: const Icon(Icons.manage_accounts_outlined, size: 16),
-                label: const Text('Manage PIT Leads in User Management ↗'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _inkColor,
-                  side: BorderSide(color: _borderColor),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _panelBgColor,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _borderColor),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.person_pin_rounded,
-                        size: 18,
-                        color: Color(0xFF2563EB),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'PIT Coordinator (Faculty Lead)',
-                              style: TextStyle(
-                                color: _inkColor,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Operationally owns student team formation, assigns panel evaluators, oversees pitch deliverables, and guides defense schedules.',
-                              style: TextStyle(
-                                color: _mutedColor,
-                                fontSize: 11.5,
-                                height: 1.3,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _panelBgColor,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _borderColor),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.security_rounded,
-                        size: 18,
-                        color: Color(0xFF10B981),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Administrator (Institutional Oversight)',
-                              style: TextStyle(
-                                color: _inkColor,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Authorizes academic term activation, assigns faculty leads, audits grading completeness, and toggles event peer review permissions.',
-                              style: TextStyle(
-                                color: _mutedColor,
-                                fontSize: 11.5,
-                                height: 1.3,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPitPolicyOverviewCard() {
-    return _card(
-      title: '📌 PIT Cohort Structure (1st–3rd Year)',
-      description:
-          'Project in Lieu of Thesis / Practicum milestone demo structure & evaluation rubric weights',
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'About PIT Cohorts:',
-                    style: TextStyle(
-                      color: _inkColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'PIT runs parallel across 1st Year (CS 101 Concept Pitch), 2nd Year (CS 201 System Design / Architecture), and 3rd Year (CS 301 Capstone Readiness). Each event represents a course milestone defense.',
-                    style: TextStyle(
-                      color: _mutedColor,
-                      fontSize: 12.5,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _isDark
-                          ? const Color(0xFF1E1B4B).withValues(alpha: 0.3)
-                          : const Color(0xFFEEF2FF),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _isDark
-                            ? const Color(0xFF3730A3)
-                            : const Color(0xFFC7D2FE),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.info_outline_rounded,
-                          size: 18,
-                          color: Color(0xFF6366F1),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Note: PIT does NOT have assigned faculty advisers. PIT grading relies exclusively on Panel Evaluators (80%) + Student Peer Reviews (20%).',
-                            style: TextStyle(
-                              color: _isDark
-                                  ? const Color(0xFFA5B4FC)
-                                  : const Color(0xFF3730A3),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 24),
-            Expanded(
-              flex: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _panelBgColor,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: _borderColor),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Panelist Weight',
-                                style: TextStyle(
-                                  color: _mutedColor,
-                                  fontSize: 11,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '80%',
-                                style: TextStyle(
-                                  color: _inkColor,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              Text(
-                                'Defense Panel Rubric',
-                                style: TextStyle(
-                                  color: _mutedColor,
-                                  fontSize: 10.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _panelBgColor,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: _borderColor),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Peer Evaluation',
-                                style: TextStyle(
-                                  color: _mutedColor,
-                                  fontSize: 11,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '20%',
-                                style: TextStyle(
-                                  color: _inkColor,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              Text(
-                                'Student Peer Rubric',
-                                style: TextStyle(
-                                  color: _mutedColor,
-                                  fontSize: 10.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Peer Evaluation Help Guide:',
-                    style: TextStyle(
-                      color: _inkColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        showPeerGradingHelpDialog(context, isPit: true),
-                    icon: const Icon(Icons.help_outline_rounded, size: 15),
-                    label: const Text('View PIT Peer Evaluation Guide'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _inkColor,
-                      side: BorderSide(color: _borderColor),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      textStyle: const TextStyle(fontSize: 11.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _buildCohortCards(
-    List<Map<String, dynamic>> users,
-    bool isSaving,
-  ) {
-    final cohorts = [
-      {
-        'key': '1st Year',
-        'title': '1st Year Cohort — CS 101',
-        'course': 'Concept Pitch & Problem Formulation',
-        'desc':
-            'Freshman teams formulate problem statements, persona interviews, and initial technical feasibility.',
-      },
-      {
-        'key': '2nd Year',
-        'title': '2nd Year Cohort — CS 201',
-        'course': 'System Architecture & Design Prototype',
-        'desc':
-            'Sophomore teams present system architecture, ER diagrams, data flow models, and interactive UI mockups.',
-      },
-      {
-        'key': '3rd Year',
-        'title': '3rd Year Cohort — CS 301',
-        'course': 'Capstone Readiness & Prototype Validation',
-        'desc':
-            'Junior teams validate functional MVPs and readiness for Senior Capstone transition.',
-      },
-    ];
-
-    final matchedEventIds = <dynamic>{};
-    final cohortWidgets = <Widget>[];
-
-    for (final cohort in cohorts) {
-      final key = cohort['key'] as String;
-      final lead = _findPitLeadForYear(users, key);
-      final cohortEvents = _pitEventConfigs.where((c) {
-        final matches = _eventMatchesCohort(c, key);
-        if (matches) matchedEventIds.add(c['id'] ?? c['event_name']);
-        return matches;
-      }).toList();
-
-      cohortWidgets.add(
-        _card(
-          title: cohort['title'] as String,
-          description: '${cohort['course']} • ${cohort['desc']}',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: _buildCohortLeadBanner(lead, key),
-              ),
-              if (_loadingPitConfigs)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(
-                    child: CircularProgressIndicator(color: _maroon),
-                  ),
-                )
-              else if (cohortEvents.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: _panelBgColor,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: _borderColor),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline_rounded,
-                          size: 16,
-                          color: _mutedColor,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'No milestone pitch events scheduled for $key yet. The assigned PIT Coordinator manages pitch events and defense schedules for this cohort.',
-                            style: TextStyle(color: _mutedColor, fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                ...cohortEvents.map(
-                  (config) => _buildCohortEventItem(config, isSaving),
-                ),
-            ],
-          ),
-        ),
-      );
-      cohortWidgets.add(const SizedBox(height: 20));
-    }
-
-    // Unmatched events (if any)
-    final unmatched = _pitEventConfigs
-        .where((c) => !matchedEventIds.contains(c['id'] ?? c['event_name']))
-        .toList();
-    if (unmatched.isNotEmpty) {
-      cohortWidgets.add(
-        _card(
-          title: '📌 Additional PIT Events',
-          description:
-              'Events that are not specifically mapped to a 1st, 2nd, or 3rd year cohort title',
-          child: Column(
-            children: unmatched
-                .map((config) => _buildCohortEventItem(config, isSaving))
-                .toList(),
-          ),
-        ),
-      );
-    }
-
-    return cohortWidgets;
-  }
-
-  Widget _buildCohortLeadBanner(Map<String, dynamic>? lead, String yearKey) {
-    if (lead != null) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: _isDark
-              ? const Color(0xFF1E293B).withValues(alpha: 0.5)
-              : const Color(0xFFF0FDF4),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: _isDark ? const Color(0xFF334155) : const Color(0xFFBBF7D0),
-          ),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 13,
-              backgroundColor: _isDark
-                  ? const Color(0xFF0F172A)
-                  : const Color(0xFFDCFCE7),
-              child: const Icon(
-                Icons.person_rounded,
-                size: 15,
-                color: Color(0xFF16A34A),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Row(
-                children: [
-                  Text(
-                    'PIT Coordinator: ',
-                    style: TextStyle(
-                      color: _mutedColor,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Flexible(
-                    child: Text(
-                      _getUserDisplayName(lead),
-                      style: TextStyle(
-                        color: _inkColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (lead['email'] != null) ...[
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        '(${lead['email']})',
-                        style: TextStyle(color: _mutedColor, fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            TextButton.icon(
-              onPressed: () => context.push(AdminRoutes.users),
-              icon: const Icon(Icons.open_in_new_rounded, size: 13),
-              label: const Text('Coordinator Profile'),
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                textStyle: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: _isDark
-            ? const Color(0xFF3B2912).withValues(alpha: 0.4)
-            : const Color(0xFFFEF3C7),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: _isDark ? const Color(0xFF78350F) : const Color(0xFFFDE68A),
-        ),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.warning_amber_rounded,
-            size: 18,
-            color: Color(0xFFD97706),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'No PIT Coordinator assigned for $yearKey. Assign a faculty coordinator in User Management to manage this cohort.',
-              style: TextStyle(
-                color: _isDark
-                    ? const Color(0xFFFDE68A)
-                    : const Color(0xFF92400E),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: () => context.push(AdminRoutes.users),
-            icon: const Icon(Icons.person_add_outlined, size: 13),
-            label: const Text('Assign Lead ↗'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _isDark
-                  ? const Color(0xFFFDE68A)
-                  : const Color(0xFF92400E),
-              side: BorderSide(
-                color: _isDark
-                    ? const Color(0xFFB45309)
-                    : const Color(0xFFF59E0B),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              minimumSize: const Size(0, 30),
-              textStyle: const TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCohortEventItem(Map<String, dynamic> config, bool isSaving) {
-    final eventName = config['event_name']?.toString() ?? 'PIT Event';
-    final panelWeight = config['panel_weight']?.toString() ?? '80';
-    final peerWeight = config['peer_weight']?.toString() ?? '20';
-    final isLocked = config['is_locked'] == true;
-    final peerEnabled = config['peer_grading_enabled'] != false;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        border: Border(bottom: BorderSide(color: _borderColor)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: _isDark
-                  ? const Color(0xFF1E1B4B)
-                  : const Color(0xFFEEF2FF),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Icon(
-              Icons.flag_rounded,
-              size: 16,
-              color: Color(0xFF6366F1),
-            ),
-          ),
-          const SizedBox(width: 14),
-          // Event title and weights
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        eventName,
-                        style: TextStyle(
-                          color: _inkColor,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (isLocked) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2.5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _isDark
-                              ? const Color(0xFF3B181F)
-                              : const Color(0xFFFEE2E2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.lock_rounded,
-                              size: 11,
-                              color: _isDark
-                                  ? const Color(0xFFFCA5A5)
-                                  : _maroon,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Defenses Scheduled (Locked)',
-                              style: TextStyle(
-                                color: _isDark
-                                    ? const Color(0xFFFCA5A5)
-                                    : _maroon,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Weights: $panelWeight% Panel / $peerWeight% Peer',
-                  style: TextStyle(color: _mutedColor, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          // Interactive Peer Evaluation Switch
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: _panelBgColor,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _borderColor),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Peer Evaluation',
-                      style: TextStyle(
-                        color: _inkColor,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: peerEnabled
-                                ? const Color(0xFF10B981)
-                                : _mutedColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          peerEnabled ? 'OPEN' : 'CLOSED',
-                          style: TextStyle(
-                            color: peerEnabled
-                                ? (_isDark
-                                      ? const Color(0xFF34D399)
-                                      : const Color(0xFF047857))
-                                : _mutedColor,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 10),
-                Tooltip(
-                  message: isLocked
-                      ? (config['lock_reason']?.toString() ??
-                            'Locked: Defenses scheduled')
-                      : (peerEnabled
-                            ? 'Click to turn off student peer evaluation for this event'
-                            : 'Click to turn on student peer evaluation for this event'),
-                  child: Switch.adaptive(
-                    value: peerEnabled,
-                    activeTrackColor: const Color(0xFF10B981),
-                    onChanged: isSaving
-                        ? null
-                        : (val) => _togglePitEventPeerEval(config, val),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMasterControlsTab(Map<String, dynamic> semester, bool isSaving) {
-    final isActive = semester['is_active'] == true;
-    final termName = semester['label']?.toString() ?? 'Semester';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _card(
-          title: '⚙️ Semester Lifecycle & Status',
-          description:
-              'Activate, switch, or manage archive properties for this term',
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isActive
-                                ? 'This semester is currently LIVE'
-                                : 'This semester is currently INACTIVE',
-                            style: TextStyle(
-                              color: _inkColor,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            isActive
-                                ? 'All users (students, faculty, admins) operate inside this period. Switching to another semester will preserve historical records.'
-                                : 'Activating this semester will set it as the institutional active term.',
-                            style: TextStyle(
-                              color: _mutedColor,
-                              fontSize: 12.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    if (!isActive)
-                      ElevatedButton(
-                        onPressed: () => _activateThisSemester(semester),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _maroon,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Activate This Semester'),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        _card(
-          title: '⚠️ Danger Zone',
-          description: 'Irreversible administrative operations',
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Delete $termName',
-                        style: TextStyle(
-                          color: _inkColor,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        isActive
-                            ? 'Cannot delete the currently active semester. You must activate another semester first.'
-                            : 'Permanently remove this term configuration. Only permitted if no student teams, grades, or enrollments exist.',
-                        style: TextStyle(color: _mutedColor, fontSize: 12.5),
-                      ),
-                    ],
-                  ),
-                ),
-                OutlinedButton(
-                  onPressed: isActive
-                      ? null
-                      : () => _deleteThisSemester(semester),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFDC2626),
-                    side: const BorderSide(color: Color(0xFFF87171)),
-                  ),
-                  child: const Text('Delete Term'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStagePipelineRow(int index, Map<String, dynamic> stage) {
-    final label = stage['label']?.toString() ?? 'Stage';
-    final desc = stage['description']?.toString() ?? '';
-    final isPresentationOnly = stage['is_presentation_only'] == true;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        border: Border(bottom: BorderSide(color: _borderColor)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: _isDark
-                  ? const Color(0xFF27272A)
-                  : const Color(0xFFF1F5F9),
-              shape: BoxShape.circle,
-              border: Border.all(color: _borderColor),
-            ),
-            child: Center(
-              child: Text(
-                '$index',
-                style: TextStyle(
-                  color: _inkColor,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: _inkColor,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (isPresentationOnly)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _isDark
-                              ? const Color(0xFF3F3F46)
-                              : const Color(0xFFE2E8F0),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'Presentation Only',
-                          style: TextStyle(color: _mutedColor, fontSize: 10),
-                        ),
-                      ),
-                  ],
-                ),
-                if (desc.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    desc,
-                    style: TextStyle(color: _mutedColor, fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          OutlinedButton(
-            onPressed: () {
-              final stageId = int.tryParse(stage['id']?.toString() ?? '');
-              if (stageId != null) {
-                context.push(AdminRoutes.defenseStageEdit(stageId));
-              } else {
-                context.push(AdminRoutes.defenseStages);
-              }
-            },
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _inkColor,
-              side: BorderSide(color: _borderColor),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              minimumSize: const Size(0, 30),
-              textStyle: const TextStyle(fontSize: 11.5),
-            ),
-            child: const Text('Configure Stage'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _card({
-    required String title,
-    required Widget child,
-    String? description,
-    String? actionLabel,
-    VoidCallback? onActionTap,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: _inkColor,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      if (description != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          description,
-                          style: TextStyle(color: _mutedColor, fontSize: 12),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (actionLabel != null)
-                  OutlinedButton(
-                    onPressed: onActionTap,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _inkColor,
-                      side: BorderSide(color: _borderColor),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 6,
-                      ),
-                      minimumSize: const Size(0, 30),
-                      textStyle: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    child: Text(actionLabel),
-                  ),
-              ],
-            ),
-          ),
-          Divider(height: 1, color: _borderColor),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _settingRow({required String label, required Widget child}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 130,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: _mutedColor,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(child: child),
-      ],
-    );
-  }
-
-  Widget _evaluationToggleTile({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required bool enabled,
-    required ValueChanged<bool> onChanged,
-    VoidCallback? onHelpTap,
-    String? helpTooltip,
-  }) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-      decoration: BoxDecoration(
-        color: _panelBgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: _inkColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (onHelpTap != null) ...[
-                      const SizedBox(width: 6),
-                      Tooltip(
-                        message: helpTooltip ?? 'View Guide',
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(999),
-                          onTap: onHelpTap,
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(
-                              Icons.help_outline_rounded,
-                              size: 15,
-                              color: _mutedColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: _mutedColor,
-                    fontSize: 11.5,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: enabled ? onChanged : null,
-            activeThumbColor: _isDark ? const Color(0xFFF87171) : _maroon,
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _activateThisSemester(Map<String, dynamic> semester) async {
     final semesterId = int.tryParse(semester['id']?.toString() ?? '');
     if (semesterId == null) return;
@@ -2105,27 +1413,24 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surfaceColor,
-        title: Text('Delete Semester', style: TextStyle(color: _inkColor)),
-        content: Text(
-          'Are you sure you want to delete this semester configuration?',
-          style: TextStyle(color: _mutedColor),
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+      builder: (ctx) => DefensysShadcnScope(
+        maroonActions: true,
+        child: ShadDialog(
+          title: const Text('Delete semester?'),
+          description: const Text(
+            'Permanently delete this semester configuration.',
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              foregroundColor: Colors.white,
+          actions: [
+            ShadButton.outline(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
+            ShadButton.destructive(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
       ),
     );
 

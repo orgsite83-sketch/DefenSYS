@@ -72,6 +72,8 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
   int? _activeScheduleId;
   int _detailVersion = 0;
   int _assignmentsVersion = 0;
+  final Map<int, String> _reviewTokens = {};
+  final Map<int, int> _previewVersions = {};
 
   bool _isCurrent(int scheduleId, int version) =>
       _activeScheduleId == scheduleId && _detailVersion == version;
@@ -88,6 +90,17 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
 
   AuthenticatedHttpClient get _client =>
       ref.read(authenticatedHttpClientProvider);
+
+  Future<http.Response> _signRequest(Uri uri, int scheduleId) {
+    final token = _reviewTokens[scheduleId];
+    return (token ?? '').isEmpty
+        ? _client.post(uri)
+        : _client.post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'review_token': token}),
+          );
+  }
 
   Future<void> fetchAssignments() async {
     final version = ++_assignmentsVersion;
@@ -191,6 +204,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
     int scheduleId,
     List<Map<String, dynamic>> comments,
   ) async {
+    _reviewTokens.remove(scheduleId);
     final version = _detailVersion;
     state = state.copyWith(
       isLoading: true,
@@ -238,6 +252,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
     int scheduleId,
     List<Map<String, dynamic>> comments,
   ) async {
+    _reviewTokens.remove(scheduleId);
     final version = _detailVersion;
     state = state.copyWith(isSavingAuto: true);
     try {
@@ -277,12 +292,10 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
       clearMessage: true,
     );
     try {
-      final response = await _client
-          .post(
-            Uri.parse('$minutesUrl/$scheduleId/submit/'),
-            headers: {'Content-Type': 'application/json'},
-          )
-          .timeout(_requestTimeout);
+      final response = await _signRequest(
+        Uri.parse('$minutesUrl/$scheduleId/submit/'),
+        scheduleId,
+      ).timeout(_requestTimeout);
       if (!_isCurrent(scheduleId, version)) return response.statusCode == 200;
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = jsonDecode(response.body);
@@ -320,12 +333,10 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
       clearMessage: true,
     );
     try {
-      final response = await _client
-          .post(
-            Uri.parse('$minutesUrl/$scheduleId/sign-adviser/'),
-            headers: {'Content-Type': 'application/json'},
-          )
-          .timeout(_requestTimeout);
+      final response = await _signRequest(
+        Uri.parse('$minutesUrl/$scheduleId/sign-adviser/'),
+        scheduleId,
+      ).timeout(_requestTimeout);
       if (!_isCurrent(scheduleId, version)) return response.statusCode == 200;
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = jsonDecode(response.body);
@@ -362,12 +373,10 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
       clearMessage: true,
     );
     try {
-      final response = await _client
-          .post(
-            Uri.parse('$minutesUrl/$scheduleId/sign-chairman/'),
-            headers: {'Content-Type': 'application/json'},
-          )
-          .timeout(_requestTimeout);
+      final response = await _signRequest(
+        Uri.parse('$minutesUrl/$scheduleId/sign-chairman/'),
+        scheduleId,
+      ).timeout(_requestTimeout);
       if (!_isCurrent(scheduleId, version)) return response.statusCode == 200;
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = jsonDecode(response.body);
@@ -405,11 +414,19 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
   }
 
   Future<Uint8List?> previewPdf(int scheduleId) async {
+    final version = (_previewVersions[scheduleId] ?? 0) + 1;
+    _previewVersions[scheduleId] = version;
     try {
       final response = await _client
           .get(Uri.parse('$minutesUrl/$scheduleId/preview/'))
           .timeout(_requestTimeout);
-      return response.statusCode == 200 ? response.bodyBytes : null;
+      if (response.statusCode == 200 &&
+          _previewVersions[scheduleId] == version) {
+        final token = response.headers['x-minutes-review-token'];
+        if (token != null) _reviewTokens[scheduleId] = token;
+        return response.bodyBytes;
+      }
+      return null;
     } catch (_) {
       return null;
     }

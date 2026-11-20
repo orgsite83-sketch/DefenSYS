@@ -406,6 +406,42 @@ DefenseSchedulerState readinessState({String capstoneStatus = 'ready'}) =>
     );
 
 void main() {
+  for (final width in [390.0, 1400.0]) {
+    testWidgets('team re-demo status exposes scheduling at $width', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        external: _External(),
+        width: width,
+        schedules: [
+          {
+            ..._defense(1, days: -4, display: 're_demo_required'),
+            'status': 'done',
+            'assessment': {
+              'verdict': 'approved_with_revisions',
+              're_demo': {
+                'state': 'required',
+                'outstanding_count': 2,
+                'can_schedule': true,
+              },
+            },
+          },
+        ],
+      );
+      expect(find.text('Re-demo required'), findsWidgets);
+      expect(find.text('Schedule re-demo'), findsOneWidget);
+      expect(find.text('2 required demonstrations'), findsOneWidget);
+      expect(find.text('Re-demo appointments'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await capturePreview(
+        tester,
+        find.byKey(const ValueKey('board-session-preview')),
+        're-demo-team-status-${width.toInt()}',
+      );
+    });
+  }
+
   for (final config in [
     (1440.0, false, 1.0),
     (1100.0, false, 1.0),
@@ -939,7 +975,7 @@ void main() {
         findsOneWidget,
       ); // Schedule scope remains available.
       expect(find.byType(DefensysSegmentedControl<String>), findsOneWidget);
-      expect(find.text('Readiness · 1 ready'), findsOneWidget);
+      expect(find.text('Team Status'), findsOneWidget);
       expect(find.text('1 team ready to schedule'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('board-view-readiness')));
       await tester.pumpAndSettle();
@@ -947,7 +983,7 @@ void main() {
       expect(find.text('PIT Presentation'), findsNothing);
       expect(find.text('PIT Section'), findsNothing);
       expect(find.text('Capstone Section'), findsOneWidget);
-      expect(find.text('Deliverables & readiness'), findsOneWidget);
+      expect(find.text('Team status'), findsOneWidget);
       expect(find.text('Schedule 1 ready team'), findsOneWidget);
       final tracker = tester.widget<TeamReadinessTracker>(
         find.byType(TeamReadinessTracker),
@@ -987,7 +1023,7 @@ void main() {
         schedules: [],
         schedulerState: readinessState(capstoneStatus: status),
       );
-      expect(find.text('Readiness'), findsOneWidget);
+      expect(find.text('Team Status'), findsOneWidget);
       expect(find.textContaining('teams ready to schedule'), findsNothing);
       expect(find.text('Review readiness'), findsNothing);
       expect(tester.takeException(), isNull);
@@ -1029,20 +1065,26 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('board-view-readiness')));
     await tester.pumpAndSettle();
-    final queue = find.byType(TeamReadinessTracker);
-    expect(
-      find.descendant(of: queue, matching: find.text('Complete')),
-      findsNWidgets(2),
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('readiness-stage-selector')),
+        matching: find.byType(ShadSelect<String>),
+      ),
     );
-    expect(
-      find.descendant(of: queue, matching: find.text('16 pending')),
-      findsOneWidget,
-    );
+    await tester.pumpAndSettle();
+    expect(find.text('Complete'), findsNWidgets(2));
+    expect(find.text('16 before scheduling'), findsOneWidget);
 
     await tester.tap(find.text('Project Proposal'));
     await tester.pumpAndSettle();
-    expect(find.text('16 completed this stage'), findsOneWidget);
-    expect(find.text('Completed'), findsNWidgets(2));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('team-status-group-completed')),
+        matching: find.text('16'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Completed'), findsNWidgets(3));
     expect(find.text('Needs Endorsement'), findsNothing);
     final tracker = tester.widget<TeamReadinessTracker>(
       find.byType(TeamReadinessTracker),
@@ -1052,6 +1094,7 @@ void main() {
   });
 
   testWidgets('PIT lead retains PIT readiness and counts', (tester) async {
+    final scheduler = readinessState();
     await _pump(
       tester,
       external: _External(),
@@ -1063,9 +1106,18 @@ void main() {
         'pit_lead_year': '1st Year',
       },
       width: 1920,
-      schedulerState: readinessState(),
+      schedulerState: scheduler.copyWith(
+        pitEvents: [
+          ...scheduler.pitEvents,
+          {
+            'event_name': 'Prototype Review',
+            'year_level': '1st Year',
+            'deliverables': [],
+          },
+        ],
+      ),
     );
-    expect(find.text('Readiness · 2 ready'), findsOneWidget);
+    expect(find.text('Team Status'), findsOneWidget);
     expect(find.text('2 teams ready to schedule'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('board-view-readiness')));
     await tester.pumpAndSettle();
@@ -1077,8 +1129,47 @@ void main() {
     expect(find.text('PIT Section'), findsOneWidget);
     expect(find.text('Capstone Section'), findsNothing);
     expect(find.text('Schedule 2 ready teams'), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('readiness-stage-selector')),
+        matching: find.byType(ShadSelect<String>),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Prototype Review'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TeamReadinessTracker>(find.byType(TeamReadinessTracker))
+          .activeStageOrEventName,
+      'Prototype Review',
+    );
+    expect(
+      tester
+          .widget<ReportExportMenu>(find.byType(ReportExportMenu))
+          .params['stage'],
+      'Prototype Review',
+    );
     expect(tester.takeException(), isNull);
   });
+
+  for (final width in [320.0, 1280.0]) {
+    testWidgets(
+      'readiness stage selector is disabled without stages at $width',
+      (tester) async {
+        await _pump(tester, external: _External(), schedules: [], width: width);
+        await tester.tap(find.byKey(const ValueKey('board-view-readiness')));
+        await tester.pumpAndSettle();
+        final selector = find.descendant(
+          of: find.byKey(const ValueKey('readiness-stage-selector')),
+          matching: find.byType(ShadSelect<String>),
+        );
+        expect(tester.widget<ShadSelect<String>>(selector).enabled, isFalse);
+        expect(find.text('No stages configured'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   for (final width in [1200.0, 1920.0]) {
     testWidgets('PIT lead has no program switcher at width $width', (

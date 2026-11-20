@@ -3,7 +3,7 @@ from django.utils import timezone
 from grading.grades.models import TeamGrade, GradeAttemptHistory
 
 DISPLAY_STATUSES = ['scheduled', 'awaiting_evaluation', 'evaluating', 'awaiting_verdict', 'awaiting_concept_selection',
-    'revisions_pending', 'redefense_required', 'grading_incomplete', 'awaiting_completion',
+    'revisions_pending', 'redefense_required', 're_demo_required', 're_demo_scheduled', 'grading_incomplete', 'awaiting_completion',
     'pending_post_defense',
     'failed', 'project_rejected', 'assessed', 'completed', 'paused', 'postponed', 'no_show',
     'cancelled', 'archived']
@@ -57,6 +57,13 @@ def schedule_progress(schedule, *, reconcile_status=True):
         if evidence and result['verdict'] in TeamGrade.PASSING_VERDICTS else ''
     )
     completed = False
+    demo = None
+    if grade and verdict == 'approved_with_revisions':
+        source = getattr(schedule, 'official_outcome', None)
+        if source and source.grade_id == grade.pk and source.re_demo_required:
+            from defense.redemo.services import team_progress
+            demo = team_progress(source)
+    result['re_demo'] = demo
     if grade:
         from grading.grades.services import team_grading_readiness
         readiness = team_grading_readiness(grade, grade.semester, grade.scope)
@@ -103,6 +110,8 @@ def schedule_progress(schedule, *, reconcile_status=True):
             display = verdict
         elif completed:
             display = 'completed'
+        elif demo and demo['state'] in ('required', 'scheduled'):
+            display = f"re_demo_{demo['state']}"
         elif verdict == 'approved_with_revisions' and not grade.revisions_cleared_at:
             display = 'revisions_pending'
         elif (approved or legacy_pass) and not post_complete:
@@ -112,7 +121,9 @@ def schedule_progress(schedule, *, reconcile_status=True):
         elif not uses_verdict and readiness['ready']:
             display = 'awaiting_completion'
         elif readiness['panel_complete']:
-            if rule and rule['automatic']:
+            if rule and rule.get('deliberation'):
+                display = 'awaiting_verdict'
+            elif rule and rule['automatic']:
                 display = 'awaiting_concept_selection' if rule['per_concept'] else 'evaluating'
             else:
                 display = ('awaiting_concept_selection' if rule and rule['per_concept']

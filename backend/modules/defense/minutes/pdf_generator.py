@@ -69,6 +69,30 @@ def generate_minutes_pdf(minutes, signatories=None, include_signatures=True, dra
     ]
     builder.add_metadata_grid(metadata_rows)
 
+    from .outcome import for_minutes
+    from grading.grades.outcome_rules import deliberation_policy
+    official = for_minutes(minutes)
+    if official or deliberation_policy(minutes.schedule):
+        builder.add_section_header('OFFICIAL PANEL DECISION')
+        if not official:
+            builder.add_metadata_grid([('Outcome', 'Awaiting chair confirmation')])
+        else:
+            labels = {'approved': 'Approved', 'approved_with_revisions': 'Approved with revisions',
+                      'for_redefense': 'For re-defense', 'none': 'No revision', 'minor': 'Minor revision', 'major': 'Major revision'}
+            decision_rows = [('Outcome', labels.get(official['verdict'], official['verdict']))]
+            if official.get('selected_title'):
+                decision_rows.append(('Selected concept', escape(official['selected_title'])))
+            decision_rows.extend((escape(row['label']), labels[row['severity']]) for row in official['revision_entries'])
+            builder.add_metadata_grid(decision_rows)
+            for label, text in [('Decision reason', official.get('reason')), ('Panel instructions', official.get('instructions'))]:
+                if text:
+                    builder.add_subsection_header(label)
+                    builder.add_paragraph(escape(text).replace('\n', '<br/>'))
+            if official.get('demo_requirements'):
+                builder.add_subsection_header('Required demonstrations')
+                for row in official['demo_requirements']:
+                    builder.add_paragraph(escape(row['text']))
+
     # 3. Panelist Comments / Suggestions Table
     builder.add_section_header("PANELIST COMMENTS & SUGGESTIONS")
 

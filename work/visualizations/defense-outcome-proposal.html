@@ -1,0 +1,348 @@
+<div id="ds-outcome-proposal" aria-label="Proposed DefenSYS defense outcome workflow">
+  <div class="viz-controls" aria-label="Preview controls">
+    <label class="form-label">Scenario
+      <select class="form-select" id="ds-scenario">
+        <option value="final">Final defense · Revisions and re-demo</option>
+        <option value="concept">Concept proposal · Several qualify</option>
+        <option value="shared">Concept proposal · Shared system</option>
+        <option value="repeat">Below cutoff · Re-defense</option>
+      </select>
+    </label>
+    <label class="form-label">View as
+      <select class="form-select" id="ds-role">
+        <option value="chair">Panel chair</option>
+        <option value="panelist">Panel member · Evaluation only</option>
+        <option value="documenter">Documenter</option>
+        <option value="admin">Administrator</option>
+      </select>
+    </label>
+  </div>
+  <div class="ds-product" aria-label="DefenSYS workspace preview">
+    <header class="ds-chrome">
+      <span class="ds-wordmark">DefenSYS</span>
+      <span class="ds-preview-label">Proposal · Sample data</span>
+      <span id="ds-duty" class="ds-duty">Panel chair</span>
+    </header>
+    <main class="ds-main">
+      <div class="ds-heading">
+        <div><p class="ds-eyebrow" id="ds-stage">Final defense</p><h2 id="ds-title">Sample team</h2></div>
+        <span class="ds-pill" id="ds-record-state">Awaiting chair confirmation</span>
+      </div>
+      <nav class="ds-tabs" id="ds-chair-tabs" role="tablist" aria-label="Chair workspace">
+        <button id="ds-tab-evaluation" type="button" role="tab" data-tab="evaluation" aria-controls="ds-panel" aria-selected="false">Your evaluation</button>
+        <button id="ds-tab-outcome" type="button" role="tab" data-tab="outcome" aria-controls="ds-panel" aria-selected="true">Team outcome</button>
+        <button id="ds-tab-shared" type="button" role="tab" data-tab="shared" aria-controls="ds-panel" aria-selected="false" hidden>Shared systems</button>
+      </nav>
+      <section id="ds-panel" class="ds-panel" role="tabpanel" aria-labelledby="ds-tab-outcome"></section>
+      <p id="ds-notice" class="ds-notice" aria-live="polite"></p>
+    </main>
+  </div>
+</div>
+<style>
+  #ds-outcome-proposal { display:grid; gap:16px; }
+  #ds-outcome-proposal .ds-product {
+    --ds-bg:light-dark(#f8fafc,#161618); --ds-surface:light-dark(#ffffff,#212024);
+    --ds-text:light-dark(#0f172a,#f4f4f5); --ds-muted:light-dark(#475569,#b5b3bd);
+    --ds-line:light-dark(#e2e8f0,#35343a); --ds-soft:light-dark(#f1f5f9,#28272d);
+    --ds-brand:light-dark(#7a110a,#c0392b); --ds-brand-text:light-dark(#7a110a,#f4a69c);
+    --ds-action-text:#ffffff; --ds-success:light-dark(#047857,#6ee7b7);
+    --ds-warning:light-dark(#92400e,#fbbf24); --ds-error:light-dark(#b91c1c,#fca5a5);
+    --ds-radius:10px;
+    color:var(--ds-text); background:var(--ds-surface); border:1px solid var(--ds-line);
+    border-radius:12px; font:400 14px/1.5 Inter,Arial,sans-serif; overflow:clip;
+  }
+  #ds-outcome-proposal .ds-product * { box-sizing:border-box; }
+  #ds-outcome-proposal .ds-product [hidden] { display:none !important; }
+  #ds-outcome-proposal .ds-product h2,#ds-outcome-proposal .ds-product h3,
+  #ds-outcome-proposal .ds-product p { margin:0; }
+  #ds-outcome-proposal .ds-product h2 { font-size:20px; font-weight:500; }
+  #ds-outcome-proposal .ds-product h3 { font-size:15px; font-weight:500; }
+  #ds-outcome-proposal .ds-product strong { font-weight:500; }
+  #ds-outcome-proposal .ds-chrome { display:flex; align-items:center; gap:14px; padding:14px 22px; background:var(--ds-bg); border-bottom:1px solid var(--ds-line); flex-wrap:wrap; }
+  #ds-outcome-proposal .ds-wordmark { font-size:18px; font-weight:500; color:var(--ds-brand-text); }
+  #ds-outcome-proposal .ds-preview-label { font-size:12px; color:var(--ds-muted); }
+  #ds-outcome-proposal .ds-duty { margin-left:auto; color:var(--ds-muted); font-size:12px; }
+  #ds-outcome-proposal .ds-main { padding:24px; }
+  #ds-outcome-proposal .ds-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+  #ds-outcome-proposal .ds-eyebrow { color:var(--ds-muted); font-size:12px; margin-bottom:3px !important; }
+  #ds-outcome-proposal .ds-pill { display:inline-flex; align-items:center; border:1px solid var(--ds-line); border-radius:20px; padding:4px 9px; font-size:12px; background:var(--ds-soft); color:var(--ds-text); }
+  #ds-outcome-proposal .ds-tabs { display:flex; gap:4px; border-bottom:1px solid var(--ds-line); margin-bottom:22px; flex-wrap:wrap; }
+  #ds-outcome-proposal .ds-tabs button { border:0; border-bottom:2px solid transparent; border-radius:0; color:var(--ds-muted); background:transparent; font:inherit; padding:11px 14px; }
+  #ds-outcome-proposal .ds-tabs button[aria-selected="true"] { border-bottom-color:var(--ds-brand); color:var(--ds-brand-text); font-weight:500; }
+  #ds-outcome-proposal .ds-panel { display:grid; gap:20px; min-width:0; }
+  #ds-outcome-proposal .ds-row { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+  #ds-outcome-proposal .ds-sub { font-size:12px; color:var(--ds-muted); }
+  #ds-outcome-proposal .ds-heading-group { display:grid; gap:4px; }
+  #ds-outcome-proposal .ds-summary { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; padding:16px; background:var(--ds-soft); border-radius:var(--ds-radius); }
+  #ds-outcome-proposal .ds-verdict { font-size:20px; font-weight:500; margin-top:3px !important; }
+  #ds-outcome-proposal .ds-score { align-self:center; text-align:right; font-variant-numeric:tabular-nums; }
+  #ds-outcome-proposal .ds-score strong { font-size:20px; }
+  #ds-outcome-proposal .ds-stack { display:grid; gap:12px; min-width:0; }
+  #ds-outcome-proposal .ds-field { display:grid; gap:6px; font-weight:400; min-width:0; }
+  #ds-outcome-proposal .ds-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+  #ds-outcome-proposal .ds-product select,#ds-outcome-proposal .ds-product input:not([type="radio"]):not([type="checkbox"]),#ds-outcome-proposal .ds-product textarea { width:100%; min-width:0; color:var(--ds-text); background:var(--ds-surface); border:1px solid var(--ds-line); border-radius:7px; font:inherit; padding:10px 11px; }
+  #ds-outcome-proposal .ds-product textarea { min-height:88px; resize:vertical; }
+  #ds-outcome-proposal .ds-product input[type="radio"],#ds-outcome-proposal .ds-product input[type="checkbox"] { accent-color:var(--ds-brand); width:17px; height:17px; flex:0 0 auto; }
+  #ds-outcome-proposal .ds-check { display:flex; gap:9px; align-items:flex-start; padding:8px 0; }
+  #ds-outcome-proposal .ds-check input { margin-top:2px; }
+  #ds-outcome-proposal .ds-choices { display:grid; gap:0; }
+  #ds-outcome-proposal .ds-choice { display:flex; gap:10px; align-items:flex-start; border-bottom:1px solid var(--ds-line); padding:13px 0; }
+  #ds-outcome-proposal .ds-choice input { margin-top:3px; }
+  #ds-outcome-proposal .ds-choice-body { display:grid; gap:3px; flex:1; min-width:0; }
+  #ds-outcome-proposal .ds-choice-score { white-space:nowrap; font-variant-numeric:tabular-nums; }
+  #ds-outcome-proposal .ds-dim { color:var(--ds-muted); }
+  #ds-outcome-proposal .ds-table { width:100%; border-collapse:collapse; font-size:14px; }
+  #ds-outcome-proposal .ds-table th { color:var(--ds-muted); font-weight:400; font-size:12px; text-align:left; }
+  #ds-outcome-proposal .ds-table th,#ds-outcome-proposal .ds-table td { padding:10px 0; border-bottom:1px solid var(--ds-line); vertical-align:top; overflow-wrap:anywhere; }
+  #ds-outcome-proposal .ds-table th+th,#ds-outcome-proposal .ds-table td+td { padding-left:16px; }
+  #ds-outcome-proposal .ds-table td:first-child { width:34%; }
+  #ds-outcome-proposal .ds-actions { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding-top:4px; }
+  #ds-outcome-proposal .ds-button { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:10px 16px; border:1px solid var(--ds-line); border-radius:7px; background:var(--ds-surface); color:var(--ds-text); font:500 14px/1.4 Inter,Arial,sans-serif; }
+  #ds-outcome-proposal .ds-primary { background:var(--ds-brand); border-color:var(--ds-brand); color:var(--ds-action-text); }
+  #ds-outcome-proposal .ds-button:disabled { opacity:.5; }
+  #ds-outcome-proposal .ds-success { color:var(--ds-success); }
+  #ds-outcome-proposal .ds-warning { color:var(--ds-warning); }
+  #ds-outcome-proposal .ds-error { color:var(--ds-error); }
+  #ds-outcome-proposal .ds-line { height:1px; border:0; background:var(--ds-line); width:100%; margin:0; }
+  #ds-outcome-proposal .ds-notice { font-size:12px; margin-top:14px; min-height:0; color:var(--ds-muted); }
+  #ds-outcome-proposal .ds-notice:empty { display:none; }
+  #ds-outcome-proposal .ds-flow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--ds-muted); }
+  #ds-outcome-proposal .ds-flow strong { color:var(--ds-text); }
+  #ds-outcome-proposal .ds-record { display:grid; gap:10px; }
+  #ds-outcome-proposal .ds-product button:disabled { cursor:not-allowed; }
+  @media(max-width:560px) {
+    #ds-outcome-proposal .ds-main { padding:16px; }
+    #ds-outcome-proposal .ds-chrome { padding:12px 16px; gap:8px; }
+    #ds-outcome-proposal .ds-duty { width:100%; margin-left:0; }
+    #ds-outcome-proposal .ds-grid { grid-template-columns:1fr; }
+    #ds-outcome-proposal .ds-tabs { gap:0; }
+    #ds-outcome-proposal .ds-tabs button { padding:10px 9px; font-size:13px; }
+    #ds-outcome-proposal .ds-summary { grid-template-columns:1fr; gap:10px; }
+    #ds-outcome-proposal .ds-score { text-align:left; }
+    #ds-outcome-proposal .ds-actions { align-items:stretch; }
+    #ds-outcome-proposal .ds-actions .ds-button { width:100%; }
+  }
+  @media(pointer:coarse) {
+    #ds-outcome-proposal .ds-product button,#ds-outcome-proposal .ds-choice,#ds-outcome-proposal .ds-check { min-height:44px; }
+    #ds-outcome-proposal .ds-product input:not([type="radio"]):not([type="checkbox"]),#ds-outcome-proposal .ds-product select,#ds-outcome-proposal .ds-product textarea { font-size:16px; }
+  }
+</style>
+<script>
+(() => {
+  const root = document.getElementById('ds-outcome-proposal');
+  const panel = root.querySelector('#ds-panel');
+  const scenarioControl = root.querySelector('#ds-scenario');
+  const roleControl = root.querySelector('#ds-role');
+  const notice = root.querySelector('#ds-notice');
+  const templates = {
+    final: { stage:'Final defense', title:'Sample team · Service portal', score:82, cutoff:75, areas:['System','Manuscript'], revisions:['minor','major'], notes:'System: demonstrate the missing report export. Manuscript: revise results, figures, and supporting discussion.', demo:true, concepts:[], selected:'', shared:false },
+    concept: { stage:'Concept proposal · Independent', title:'Sample team · Concept hearing', score:null, cutoff:75, areas:['Concept'], revisions:['minor'], notes:'Refine the selected concept’s scope and identify its intended users.', demo:false, concepts:[{key:'a',title:'Campus service request portal',score:86},{key:'b',title:'Laboratory equipment tracker',score:82},{key:'c',title:'Student appointment assistant',score:71}], selected:'', shared:false },
+    shared: { stage:'Concept proposal · Shared project', title:'Sample team · Module hearing', score:82, cutoff:75, areas:['Module concept'], revisions:['minor'], notes:'Clarify the module’s boundaries and connection to the selected shared system.', demo:false, concepts:[], selected:'', shared:true },
+    repeat: { stage:'Final defense · Sample cutoff policy', title:'Sample team · Service portal', score:68, cutoff:75, areas:['System','Manuscript'], revisions:['major','minor'], notes:'Complete the missing core functionality and prepare fresh materials for the next assessed defense.', demo:false, concepts:[], selected:'', shared:false }
+  };
+  let scenario = 'final', role = 'chair', tab = 'outcome';
+  let records = {};
+  const areaLabels = { none:'No revision', minor:'Minor revision', major:'Major revision', '':'Not recorded' };
+  const systems = [
+    { key:'services', title:'Campus services suite', module:'Service request module', moduleScore:82 },
+    { key:'operations', title:'Campus operations platform', module:'Inventory module', moduleScore:78 }
+  ];
+  function createRecord(key) {
+    return { ...structuredClone(templates[key]), confirmed:false, sectionKey:'', sectionConfirmed:false, sectionChoice:'', appointment:null, minutesStatus:'draft', minutesNotes:'', evaluationFeedback:'Review the supporting evidence and address the points discussed during the presentation.' };
+  }
+  Object.keys(templates).forEach(key => records[key] = createRecord(key));
+  function restore(saved) {
+    const s = saved?.privateContent;
+    if (!s || s.version !== 2) return;
+    if (templates[s.scenario]) scenario = s.scenario;
+    if (['chair','panelist','documenter','admin'].includes(s.role)) role = s.role;
+    if (['evaluation','outcome','shared'].includes(s.tab)) tab = s.tab;
+    if (s.records && typeof s.records === 'object') {
+      Object.keys(templates).forEach(key => {
+        const entry = s.records[key];
+        if (!entry || !Array.isArray(entry.revisions) || entry.revisions.length !== templates[key].areas.length) return;
+        records[key] = { ...createRecord(key), ...entry, areas:templates[key].areas, concepts:templates[key].concepts };
+      });
+    }
+  }
+  restore(window.openai?.widgetState);
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const record = () => records[scenario];
+  const selectedConcept = r => r.concepts.find(c => c.key === r.selected);
+  const selectedSystem = r => systems.find(s => s.key === r.sectionKey);
+  const scoreFor = r => r.concepts.length ? selectedConcept(r)?.score ?? null : r.shared ? (r.sectionConfirmed ? selectedSystem(r)?.moduleScore ?? null : null) : r.score;
+  const below = r => scoreFor(r) !== null && scoreFor(r) < r.cutoff && !r.concepts.length;
+  const completeAreas = r => r.revisions.every(v => ['none','minor','major'].includes(v));
+  function ready(r) {
+    if (r.shared && !r.sectionConfirmed) return false;
+    if (r.concepts.length && !selectedConcept(r)) return false;
+    return below(r) || completeAreas(r);
+  }
+  function outcome(r) {
+    if (r.concepts.length && !selectedConcept(r)) return 'Concept selection pending';
+    if (below(r)) return 'For re-defense';
+    if (!completeAreas(r)) return 'Revision details pending';
+    return r.revisions.some(v => v !== 'none') ? 'Approved with revisions' : 'Approved';
+  }
+  function persist() {
+    if (!window.openai?.setWidgetState) return;
+    const r = record();
+    window.openai.setWidgetState({
+      modelContent:{ scenario:templates[scenario].stage, viewedAs:role, chairTab:tab, proposedOutcome:outcome(r), confirmed:r.confirmed, decisionEnteredBy:'Assigned panel chair', selectedConcept:selectedConcept(r)?.title ?? null, sharedSystem:selectedSystem(r)?.title ?? null, revisions:r.areas.map((area,i) => ({area,requirement:areaLabels[r.revisions[i]]})), reDemoRequired:r.demo, reDemoScheduled:Boolean(r.appointment), minutesStatus:r.minutesStatus },
+      privateContent:{version:2,scenario,role,tab,records}
+    }).catch(() => {});
+  }
+  function revisionTable(r) {
+    return `<table class="ds-table"><thead><tr><th>Revision area</th><th>Panel’s agreed requirement</th></tr></thead><tbody>${r.areas.map((area,i) => `<tr><td>${esc(area)}</td><td>${esc(areaLabels[r.revisions[i]])}</td></tr>`).join('')}</tbody></table>`;
+  }
+  function summary(r) {
+    const score = scoreFor(r);
+    return `<div class="ds-summary"><div><p class="ds-sub">${r.confirmed ? 'Official defense outcome' : 'Proposed defense outcome'}</p><p class="ds-verdict">${esc(outcome(r))}</p><p class="ds-sub">${r.confirmed ? 'Confirmed by the assigned panel chair' : below(r) ? 'Required by this sample hearing’s captured cutoff policy' : 'Awaiting the panel chair’s confirmation'}</p></div><div class="ds-score">${score === null ? '<strong>Selection pending</strong>' : `<strong>${score}<span class="ds-sub"> / 100</span></strong>`}<p class="ds-sub">Panel assessment · cutoff ${r.cutoff}</p></div></div>`;
+  }
+  function linkedChoice(r) {
+    if (r.shared && r.sectionConfirmed) {
+      const s = selectedSystem(r);
+      return `<div class="ds-heading-group"><p class="ds-sub">Section’s confirmed shared system</p><strong>${esc(s.title)}</strong><p class="ds-sub">This team: ${esc(s.module)}</p></div>`;
+    }
+    if (!r.concepts.length) return '';
+    if (r.confirmed) return `<div class="ds-heading-group"><p class="ds-sub">Official selected concept</p><strong>${esc(selectedConcept(r).title)}</strong></div>`;
+    return `<div class="ds-stack"><div class="ds-heading-group"><h3>Select the agreed concept</h3><p class="ds-sub">Two concepts qualify. Confirm one with the team outcome.</p></div><div class="ds-choices">${r.concepts.map(c => `<label class="ds-choice${c.score < r.cutoff ? ' ds-dim' : ''}"><input type="radio" name="ds-concept" value="${c.key}" ${r.selected === c.key ? 'checked' : ''} ${c.score < r.cutoff ? 'disabled' : ''}><span class="ds-choice-body"><strong>${esc(c.title)}</strong><span class="ds-sub">${c.score < r.cutoff ? 'Below qualifying score' : 'Qualifies'}</span></span><span class="ds-choice-score">${c.score}/100</span></label>`).join('')}</div></div>`;
+  }
+  function followup(r) {
+    if (below(r)) return `<div class="ds-heading-group"><h3>Next activity: Re-defense</h3><p class="ds-sub">A fresh assessed attempt, using the existing re-defense preparation and scheduling flow.</p></div>`;
+    if (!r.demo) return '';
+    return `<div class="ds-row"><div class="ds-heading-group"><h3>Re-demo required</h3><p class="ds-sub">Verify the missing functionality. Original scores are retained.</p></div><span class="ds-pill">${r.appointment ? 'Scheduled' : 'Needs scheduling'}</span></div>`;
+  }
+  function chairOutcome(r) {
+    if (r.shared && !r.sectionConfirmed) return `<div class="ds-heading-group"><h3>Awaiting shared-system selection</h3><p class="ds-sub">The section’s system determines this team’s official module.</p></div><div><button class="ds-button ds-primary" type="button" data-action="open-shared">Review shared systems</button></div><div class="ds-flow"><span>Your evaluation</span><span aria-hidden="true">→</span><strong>Shared systems</strong><span aria-hidden="true">→</span><span>Team outcome</span></div>`;
+    const decisionFields = r.confirmed
+      ? `${revisionTable(r)}<p>${esc(r.notes)}</p>`
+      : `<div class="ds-grid">${r.areas.map((area,i) => `<label class="ds-field">${esc(area)}<select data-area="${i}"><option value="">Select requirement</option>${Object.entries(areaLabels).filter(([key]) => key).map(([key,label]) => `<option value="${key}" ${r.revisions[i] === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>`).join('')}</div><label class="ds-field">Panel instructions<textarea id="ds-chair-notes">${esc(r.notes)}</textarea></label>${scenario === 'final' ? `<label class="ds-check"><input type="checkbox" id="ds-demo-required" ${r.demo ? 'checked' : ''}><span>Re-demo required for the system<span class="ds-sub" style="display:block">Verification only; original scores are retained.</span></span></label>` : ''}`;
+    return `${summary(r)}${linkedChoice(r)}<div class="ds-stack"><div class="ds-heading-group"><h3>${r.confirmed ? 'Confirmed panel decision' : 'Record the in-person panel decision'}</h3><p class="ds-sub">${r.confirmed ? 'Entered and confirmed by the assigned panel chair' : 'The chair records the outcome agreed during deliberation.'}</p></div>${decisionFields}</div>${r.confirmed || below(r) ? followup(r) : ''}<hr class="ds-line"><div class="ds-actions"><span class="ds-sub">${r.confirmed ? `Minutes: ${r.minutesStatus === 'draft' ? 'Draft · Prepared separately by the documenter' : 'Submitted · Awaiting adviser signature'}` : 'Confirms the panel’s collective decision. Minutes can be finalized later.'}</span><button class="ds-button ds-primary" type="button" data-action="confirm" ${r.confirmed ? 'disabled' : ''}>${r.confirmed ? 'Panel decision confirmed' : 'Confirm panel decision'}</button></div>`;
+  }
+  function evaluation(r) {
+    const rows = r.concepts.length ? r.concepts.map(c => `<tr><td>${esc(c.title)}</td><td>${c.score}/100</td></tr>`).join('') : r.shared ? systems.map(s => `<tr><td>${esc(s.module)}</td><td>${s.moduleScore}/100</td></tr>`).join('') : `<tr><td>Defense assessment</td><td>${r.score}/100</td></tr>`;
+    return `<div class="ds-row"><div class="ds-heading-group"><h3>Your submitted evaluation</h3><p class="ds-sub">Rubric scores and evaluator feedback</p></div><span class="ds-pill">Submitted</span></div><table class="ds-table"><thead><tr><th>Assessment</th><th>Your score</th></tr></thead><tbody>${rows}</tbody></table><div class="ds-heading-group"><h3>Your evaluation comments</h3><p>${esc(r.evaluationFeedback)}</p></div><p class="ds-sub">${role === 'panelist' ? 'Panel members evaluate in the system and deliberate in person. The assigned chair records the collective decision.' : 'Record the collective decision separately in Team outcome.'}</p>`;
+  }
+  function sharedPanel(r) {
+    if (r.sectionConfirmed) {
+      const s = selectedSystem(r);
+      return `<div class="ds-row"><h3>Section shared-system decision</h3><span class="ds-pill">Confirmed</span></div><div class="ds-heading-group"><p class="ds-sub">Selected parent system</p><strong>${esc(s.title)}</strong><p class="ds-sub">This team’s linked module: ${esc(s.module)}</p></div><div><button class="ds-button ds-primary" type="button" data-action="open-outcome">Continue to Team outcome</button></div>`;
+    }
+    return `<div class="ds-heading-group"><h3>Choose the section’s shared system</h3><p class="ds-sub">One section-wide decision. Each team retains its own module assessment.</p></div><div class="ds-choices">${systems.map(s => `<label class="ds-choice"><input type="radio" name="ds-system" value="${s.key}" ${r.sectionChoice === s.key ? 'checked' : ''}><span class="ds-choice-body"><strong>${esc(s.title)}</strong><span class="ds-sub">This team’s linked module: ${esc(s.module)}</span></span></label>`).join('')}</div><div class="ds-actions"><span class="ds-sub">System selection does not award a module score.</span><button class="ds-button ds-primary" type="button" data-action="confirm-system">Confirm shared system</button></div>`;
+  }
+  function documenter(r) {
+    const signed = r.minutesStatus === 'submitted';
+    const officialRecord = r.confirmed
+      ? `${summary(r)}${r.concepts.length || r.shared ? linkedChoice(r) : ''}<div class="ds-stack"><div class="ds-row"><h3>Decision included in minutes</h3><span class="ds-sub">Read-only · From panel chair</span></div>${revisionTable(r)}<p>${esc(r.notes)}</p>${followup(r)}</div>`
+      : '<div class="ds-heading-group"><h3>Official outcome · Awaiting panel chair</h3><p class="ds-sub">The confirmed decision will appear here automatically. Minutes preparation can continue.</p></div>';
+    return `<div class="ds-row"><div class="ds-heading-group"><h3>Minutes of defense</h3><p class="ds-sub">Document the presentation, comments, and proceedings.</p></div><span class="ds-pill">${signed ? 'Submitted · Awaiting adviser' : 'Minutes draft'}</span></div>${officialRecord}<hr class="ds-line"><label class="ds-field">Minutes notes and panelist comments<textarea id="ds-minutes-notes" placeholder="Record the defense proceedings and panelist comments" ${signed ? 'readonly' : ''}>${esc(r.minutesNotes)}</textarea></label>${signed ? '<p class="ds-sub">Documenter signed. Adviser review and program-chairperson signature follow.</p>' : `<div class="ds-actions"><button class="ds-button" type="button" data-action="save-minutes">Save minutes draft</button><button class="ds-button ds-primary" type="button" data-action="submit-minutes" ${r.confirmed ? '' : 'disabled'}>Submit and sign minutes</button></div><p class="ds-sub">${r.confirmed ? 'Signing certifies this record. The official verdict is already confirmed.' : 'Signing becomes available after the chair confirms the official outcome.'}</p>`}`;
+  }
+  function administrator(r) {
+    if (!r.confirmed) return `<div class="ds-heading-group"><h3>Awaiting the panel’s official outcome</h3><p class="ds-sub">The assigned panel chair records and confirms the decision after in-person deliberation.</p></div>`;
+    if (below(r)) return `${summary(r)}<div class="ds-heading-group"><h3>Re-defense preparation</h3><p class="ds-sub">Use the existing fresh-material review, endorsement, and assessed-defense scheduling process.</p></div>`;
+    if (!r.demo) return `${summary(r)}<div class="ds-heading-group"><h3>No re-demo requested</h3><p class="ds-sub">Continue the existing revision review, clearance, and outcome-dissemination workflow.</p></div>`;
+    if (r.appointment) {
+      const a = r.appointment;
+      return `${summary(r)}<div class="ds-row"><h3>Re-demo appointment</h3><span class="ds-pill">Scheduled</span></div><table class="ds-table"><tbody><tr><td>Date</td><td>${esc(a.date)}</td></tr><tr><td>Time</td><td>${esc(a.time)} · Asia/Manila</td></tr><tr><td>Venue</td><td>${esc(a.venue)}</td></tr><tr><td>Verifier</td><td>${esc(a.verifier)}</td></tr></tbody></table><p class="ds-sub">Awaiting verification of the missing functionality. The original verdict and scores remain recorded.</p>`;
+    }
+    return `${summary(r)}<div class="ds-row"><h3>Schedule re-demo</h3><span class="ds-pill">Needs scheduling</span></div><form id="ds-schedule-form" class="ds-stack"><div class="ds-grid"><label class="ds-field">Date<input type="date" name="date" required></label><label class="ds-field">Time<input type="time" name="time" required></label><label class="ds-field">Venue<input name="venue" placeholder="Room or meeting location" required></label><label class="ds-field">Assigned verifier<input name="verifier" placeholder="Name of authorized verifier" required></label></div><div class="ds-actions"><span class="ds-sub">Confirmed outcome · Minutes may still be in draft</span><button class="ds-button ds-primary" type="button" data-action="schedule">Schedule re-demo</button></div></form>`;
+  }
+  function render() {
+    const r = record();
+    if (!r.shared && tab === 'shared') tab = 'outcome';
+    scenarioControl.value = scenario;
+    roleControl.value = role;
+    root.querySelector('#ds-duty').textContent = {chair:'Assigned panel chair',panelist:'Panel member · Evaluation only',documenter:'Assigned documenter',admin:'Administrator'}[role];
+    root.querySelector('#ds-stage').textContent = r.stage;
+    root.querySelector('#ds-title').textContent = r.title;
+    root.querySelector('#ds-record-state').textContent = role === 'panelist' ? 'Your evaluation submitted' : r.confirmed ? 'Panel decision confirmed' : 'Awaiting chair confirmation';
+    root.querySelector('#ds-chair-tabs').hidden = role !== 'chair';
+    root.querySelector('#ds-tab-shared').hidden = !r.shared;
+    root.querySelectorAll('[data-tab]').forEach(button => button.setAttribute('aria-selected',String(button.dataset.tab === tab)));
+    if (role === 'chair') {
+      panel.setAttribute('role','tabpanel');
+      panel.setAttribute('aria-labelledby',`ds-tab-${tab}`);
+      panel.removeAttribute('aria-label');
+      panel.innerHTML = tab === 'evaluation' ? evaluation(r) : tab === 'shared' ? sharedPanel(r) : chairOutcome(r);
+    } else {
+      panel.setAttribute('role','region');
+      panel.removeAttribute('aria-labelledby');
+      panel.setAttribute('aria-label',role === 'documenter' ? 'Documenter minutes' : role === 'panelist' ? 'Panel member evaluation' : 'Administrator follow-up scheduling');
+      panel.innerHTML = role === 'documenter' ? documenter(r) : role === 'panelist' ? evaluation(r) : administrator(r);
+    }
+    root.querySelectorAll('.ds-product button,.ds-choice,.ds-check').forEach(element => element.classList.add('cursor-interaction'));
+    root.querySelectorAll('.ds-product textarea').forEach(element => {element.maxLength=1200;});
+    root.querySelectorAll('.ds-product input:not([type])').forEach(element => {element.maxLength=120;});
+  }
+  function announce(message, error=false) {
+    notice.textContent = message;
+    notice.classList.toggle('ds-error',error);
+    if (error) notice.setAttribute('role','alert'); else notice.removeAttribute('role');
+  }
+  scenarioControl.addEventListener('change',() => {scenario=scenarioControl.value;tab='outcome';announce('');render();persist();});
+  roleControl.addEventListener('change',() => {role=roleControl.value;announce('');render();persist();});
+  root.querySelector('#ds-chair-tabs').addEventListener('click',event => {
+    const target = event.target.closest('[data-tab]');
+    if (!target) return;
+    tab=target.dataset.tab;announce('');render();persist();
+  });
+  panel.addEventListener('change',event => {
+    const r=record();
+    if (role !== 'chair') return;
+    if (event.target.name === 'ds-concept' && !r.confirmed) {r.selected=event.target.value;announce('');render();persist();}
+    if (event.target.name === 'ds-system' && !r.sectionConfirmed) {r.sectionChoice=event.target.value;persist();}
+    if (event.target.matches('[data-area]') && !r.confirmed) {r.revisions[Number(event.target.dataset.area)]=event.target.value;announce('');render();persist();}
+    if (event.target.id === 'ds-demo-required' && !r.confirmed) {r.demo=event.target.checked;announce('');render();persist();}
+    if (event.target.id === 'ds-chair-notes' && !r.confirmed) persist();
+  });
+  panel.addEventListener('input',event => {
+    const r=record();
+    if (role === 'chair' && !r.confirmed && event.target.id === 'ds-chair-notes') r.notes=event.target.value;
+  });
+  panel.addEventListener('click',event => {
+    const target = event.target.closest('[data-action]');
+    if (!target) return;
+    const r=record();
+    const action=target.dataset.action;
+    if (action==='open-shared') {tab='shared';render();announce('');persist();}
+    if (action==='open-outcome') {tab='outcome';render();announce('');persist();}
+    if (action==='confirm-system' && role==='chair') {
+      if (!r.sectionChoice) return announce('Select the section’s shared system first.',true);
+      r.sectionKey=r.sectionChoice;r.sectionConfirmed=true;render();announce('Shared-system decision recorded in this preview. Continue to Team outcome.');persist();
+    }
+    if (action==='confirm' && role==='chair' && !r.confirmed) {
+      if (!ready(r)) return announce(r.concepts.length && !r.selected ? 'Select one qualifying concept before confirming.' : 'Record all revision requirements before confirming.',true);
+      if (r.demo && r.revisions[0]==='none') return announce('Record the system correction that requires re-demo before confirming.',true);
+      r.confirmed=true;render();announce(r.demo ? 'Chair’s decision confirmed. Re-demo scheduling is available even while minutes remain in draft.' : 'Chair’s decision confirmed. The documenter can finalize the minutes separately.');persist();
+    }
+    if (action==='save-minutes' && role==='documenter' && r.minutesStatus==='draft') {
+      r.minutesNotes=panel.querySelector('#ds-minutes-notes').value;
+      render();announce('Minutes draft saved. The panel’s outcome remains a separate chair-confirmed record.');persist();
+    }
+    if (action==='submit-minutes' && role==='documenter' && r.minutesStatus==='draft' && r.confirmed) {
+      const notes=panel.querySelector('#ds-minutes-notes').value.trim();
+      if (!notes) return announce('Record the defense proceedings and panelist comments before signing.',true);
+      r.minutesNotes=notes;r.minutesStatus='submitted';
+      render();announce('Minutes submitted and documenter-signed in this preview. The official outcome is unchanged.');persist();
+    }
+    if (action==='schedule' && role==='admin' && r.confirmed && r.demo && !below(r)) {
+      const form=panel.querySelector('#ds-schedule-form');
+      if (!form || !form.reportValidity()) return;
+      const data=new FormData(form);
+      r.appointment={date:String(data.get('date')),time:String(data.get('time')),venue:String(data.get('venue')).trim(),verifier:String(data.get('verifier')).trim()};
+      render();announce('Re-demo scheduled in this preview. The original assessment was retained.');persist();
+    }
+  });
+  panel.addEventListener('submit',event => {
+    event.preventDefault();
+  });
+  window.addEventListener('openai:set_globals',event => {
+    const incoming=event.detail?.globals?.widgetState;
+    if (!incoming) return;
+    if (JSON.stringify(incoming.privateContent)===JSON.stringify({version:2,scenario,role,tab,records})) return;
+    restore(incoming);announce('');render();
+  });
+  render();
+})();
+</script>

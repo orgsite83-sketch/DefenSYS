@@ -246,6 +246,13 @@ class TeamGrade(models.Model):
                 return 'failed'
             if self.verdict == self.VERDICT_APPROVED_WITH_REVISIONS and not self.revisions_cleared_at:
                 return 'revisions_pending'
+            if self.verdict == self.VERDICT_APPROVED_WITH_REVISIONS and self.revisions_cleared_at:
+                from .deliberation import source_for
+                source = source_for(self.schedule)
+                if source and source.re_demo_required:
+                    from defense.redemo.services import outstanding
+                    if outstanding(source):
+                        return 'revisions_pending'
             if self.verdict in self.PASSING_VERDICTS:
                 return 'passed'
             if self.verdict == self.VERDICT_FOR_REDEFENSE:

@@ -27,13 +27,20 @@ def board_queryset_for_user(user, *, workspace=''):
     return schedule_queryset(workspace_schedules_for(user, workspace))
 
 
-def counts_payload(base_queryset, current_queryset=None):
+def display_status_for(schedule, actor=None):
+    from defense.scheduler.progress import schedule_progress
+    from grading.grades.student_visibility import student_assessment_payload
+    return student_assessment_payload(schedule_progress(schedule, reconcile_status=False),
+        actor, schedule=schedule)['display_status']
+
+
+def counts_payload(base_queryset, current_queryset=None, *, actor=None):
     current = current_queryset if current_queryset is not None else base_queryset
     from collections import Counter
-    from defense.scheduler.progress import schedule_progress, DISPLAY_STATUSES
-    counts = Counter(schedule_progress(s, reconcile_status=False)['display_status'] for s in current)
+    counts = Counter(display_status_for(s, actor) for s in current)
     return {'all': base_queryset.count(), 'filtered': len(current),
             **{key: counts[key] for key in DISPLAY_STATUSES},
+            **({'awaiting_release': counts['awaiting_release']} if counts['awaiting_release'] else {}),
             'ongoing': counts['evaluating'], 'done': counts['completed']}
 
 
@@ -148,9 +155,8 @@ def filter_board_queryset(request, queryset):
     if section:
         queryset = queryset.filter(team__section__iexact=section)
     if status_filter:
-        from defense.scheduler.progress import schedule_progress
         expected = {'ongoing': 'evaluating', 'done': 'completed'}.get(status_filter, status_filter)
-        ids = [s.pk for s in queryset if schedule_progress(s, reconcile_status=False)['display_status'] == expected]
+        ids = [s.pk for s in queryset if display_status_for(s, request.user) == expected]
         queryset = queryset.filter(pk__in=ids)
     if scope:
         queryset = queryset.filter(scope=scope)
@@ -201,6 +207,7 @@ def board_payload(request, queryset=None, *, workspace=None):
         pk__in=current.values('pk'),
     ).values_list('pk', flat=True)) if workspace in ('', 'operations', 'pit_lead') else set()
     schedules = DefenseScheduleSerializer(current, many=True, context={
+        'request': request,
         'latest_changes': latest_schedule_changes(current.filter(pk__in=manageable_ids)),
     }).data
     for row in schedules:
@@ -210,7 +217,7 @@ def board_payload(request, queryset=None, *, workspace=None):
     # legacy `all` retains its authorized-workspace meaning for other callers.
     scope = request.query_params.get('scope', '').strip()
     scoped = base.filter(scope=scope) if scope in ('capstone', 'pit') else base
-    counts = counts_payload(base, current)
+    counts = counts_payload(base, current, actor=request.user)
     counts['scope_total'] = scoped.count() if scope else counts['all']
     return {
         'schedules': schedules,

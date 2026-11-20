@@ -37,12 +37,15 @@ class DefensysShadcnScope extends StatelessWidget {
                 hoverForegroundColor: DefensysTokens.textPrimaryOf(context),
               )
             : null,
-        outlineButtonTheme: maroonActions
-            ? ShadButtonTheme(
-                foregroundColor: DefensysTokens.textPrimaryOf(context),
-                hoverForegroundColor: DefensysTokens.textPrimaryOf(context),
-              )
-            : null,
+        outlineButtonTheme: ShadButtonTheme(
+          backgroundColor: dark ? null : DefensysTokens.surface,
+          foregroundColor: maroonActions
+              ? DefensysTokens.textPrimaryOf(context)
+              : null,
+          hoverForegroundColor: maroonActions
+              ? DefensysTokens.textPrimaryOf(context)
+              : null,
+        ),
         colorScheme: scheme.copyWith(
           primary: maroonActions ? DefensysTokens.maroon : scheme.primary,
           primaryForeground: maroonActions

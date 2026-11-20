@@ -1191,6 +1191,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         setup?['score_carryover']?.toString() ??
         (setup?['concept_config'] as Map?)?['score_carryover']?.toString() ??
         'reassess';
+    var revisionAreas = (setup?['revision_areas'] as List? ?? [])
+        .whereType<Map>()
+        .map((area) => Map<String, dynamic>.from(area))
+        .toList();
     final wasPublished = stage?['is_active'] == true;
     var isActive = setup?['is_active'] == true;
     var conceptConfig = Map<String, dynamic>.from(
@@ -1295,6 +1299,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         },
         'qualifying_score': double.tryParse(qualifyingScoreCtrl.text.trim()),
         'score_carryover': scoreCarryover,
+        'revision_areas': revisionAreas,
         'minutes_deliverable_id': minutesNumber.text,
         'minutes_deliverable_label': minutesName.text,
         'deliverables': deliverables,
@@ -1968,6 +1973,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     setupTargets.field(
                                       'score',
                                       StageOutcomeSettings(
+                                        revisionAreas: revisionAreas,
+                                        onRevisionAreasChanged: (value) =>
+                                            setDialogState(
+                                              () => revisionAreas = value,
+                                            ),
                                         scoreController: qualifyingScoreCtrl,
                                         showValidationErrors: revealedSteps
                                             .contains(1),
@@ -2443,6 +2453,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       },
       'qualifying_score': double.tryParse(qualifyingScoreCtrl.text.trim()),
       'score_carryover': scoreCarryover,
+      'revision_areas': revisionAreas,
       'minutes_deliverable_id': minutesNumber.text.trim(),
       'minutes_deliverable_label': minutesName.text.trim(),
       'deliverables': deliverables,

@@ -15,10 +15,14 @@ from .views import (
     TeamGradeVerdictView,
     TeamGradeWorkflowView,
     TeamGradeAssessmentView,
+    TeamGradePanelDecisionView,
+    PanelDecisionCorrectionView,
 )
 
 
 urlpatterns = [
+    path('<int:grade_id>/panel-decision/correction/', PanelDecisionCorrectionView.as_view()),
+    path('<int:grade_id>/panel-decision/', TeamGradePanelDecisionView.as_view(), name='panel_decision'),
     path('outcome-dissemination/preview/', OutcomePreviewView.as_view()),
     path('outcome-dissemination/confirm/', OutcomeConfirmView.as_view()),
     path('outcome-dissemination/history/', OutcomeHistoryView.as_view()),

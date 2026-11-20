@@ -155,8 +155,12 @@ class MinutesDetailView(APIView):
         serializer = DefenseMinutesSerializer(minutes)
         return Response(serializer.data)
 
+    @transaction.atomic
     def patch(self, request, schedule_id):
         schedule = get_object_or_404(DefenseSchedule, pk=schedule_id)
+        from student_teams.models import StudentTeam
+        StudentTeam.objects.select_for_update().get(pk=schedule.team_id)
+        schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
         
         if schedule.scope != DefenseSchedule.SCOPE_CAPSTONE:
             return Response(
@@ -177,7 +181,7 @@ class MinutesDetailView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
             
-        minutes = get_object_or_404(DefenseMinutes, schedule=schedule)
+        minutes = get_object_or_404(DefenseMinutes.objects.select_for_update(), schedule=schedule)
         
         if minutes.status != DefenseMinutes.STATUS_DRAFT:
             return Response(
@@ -189,7 +193,8 @@ class MinutesDetailView(APIView):
         if isinstance(comments_data, dict):
             comments_data = comments_data.get('comments', [])
             
-        if not isinstance(comments_data, list):
+        if not isinstance(comments_data, list) or any(not isinstance(row, dict) or
+                not isinstance(row.get('comments', ''), str) for row in comments_data):
             return Response(
                 {"detail": "Expected a list of comment updates."},
                 status=status.HTTP_400_BAD_REQUEST
@@ -275,6 +280,17 @@ class MinutesSubmitView(APIView):
                 
         with transaction.atomic():
             minutes.status = DefenseMinutes.STATUS_SUBMITTED
+            from .outcome import require_review
+            try:
+                # Validate the draft before its status changes in memory.
+                minutes.status = DefenseMinutes.STATUS_DRAFT
+                require_review(minutes, request.data.get('review_token'), freeze=True)
+            except Exception as exc:
+                from django.core.exceptions import ValidationError
+                if not isinstance(exc, ValidationError):
+                    raise
+                return Response({'detail': ' '.join(exc.messages)}, status=400)
+            minutes.status = DefenseMinutes.STATUS_SUBMITTED
             minutes.documenter_signed_at = timezone.now()
             minutes.documenter_signed_by = request.user
             minutes.save()
@@ -342,6 +358,14 @@ class MinutesSignAdviserView(APIView):
             
         with transaction.atomic():
             minutes.status = DefenseMinutes.STATUS_ADVISER_SIGNED
+            from .outcome import require_review
+            try:
+                require_review(minutes, request.data.get('review_token'))
+            except Exception as exc:
+                from django.core.exceptions import ValidationError
+                if not isinstance(exc, ValidationError):
+                    raise
+                return Response({'detail': ' '.join(exc.messages)}, status=400)
             minutes.adviser_signed_at = timezone.now()
             minutes.adviser_signed_by = request.user
             minutes.save()
@@ -412,6 +436,14 @@ class MinutesSignChairmanView(APIView):
             
         with transaction.atomic():
             minutes.status = DefenseMinutes.STATUS_COMPLETED
+            from .outcome import require_review
+            try:
+                require_review(minutes, request.data.get('review_token'))
+            except Exception as exc:
+                from django.core.exceptions import ValidationError
+                if not isinstance(exc, ValidationError):
+                    raise
+                return Response({'detail': ' '.join(exc.messages)}, status=400)
             minutes.chairman_signed_at = timezone.now()
             minutes.chairman_signed_by = request.user
             
@@ -462,10 +494,16 @@ class MinutesPdfView(APIView):
                 {"detail": "You do not have permission to download the minutes for this defense schedule."},
                 status=status.HTTP_403_FORBIDDEN
             )
+        if getattr(request.user, 'role', None) == 'student':
+            from grading.grades.outcome_rules import deliberation_policy
+            from grading.grades.dissemination import latest_release
+            if deliberation_policy(schedule) and not latest_release(schedule.pk, actor=request.user):
+                return Response({'detail': 'The official outcome has not been released.'}, status=403)
             
         minutes = get_object_or_404(DefenseMinutes, schedule=schedule)
         revision_id = request.query_params.get('revision_id')
         pdf_file = minutes.pdf_file
+        pdf_outcome = minutes.outcome_snapshot
         if revision_id is not None:
             from .models import DefenseMinutesRevision
             try:
@@ -474,6 +512,14 @@ class MinutesPdfView(APIView):
                 return Response({'detail': 'Invalid minutes revision.'}, status=400)
             revision = get_object_or_404(DefenseMinutesRevision, pk=revision_id, minutes=minutes)
             pdf_file = revision.pdf_file
+            pdf_outcome = revision.snapshot.get('outcome_snapshot')
+        if getattr(request.user, 'role', None) == 'student' and deliberation_policy(schedule):
+            from grading.grades.dissemination_models import OutcomeRelease
+            if not pdf_outcome or not OutcomeRelease.objects.filter(control__schedule=schedule,
+                    recipient_ids__contains=[request.user.pk],
+                    snapshot__panel_decision__id=pdf_outcome.get('id'),
+                    snapshot__panel_decision__revision=pdf_outcome.get('revision')).exists():
+                return Response({'detail': 'This minutes decision version has not been released.'}, status=403)
         
         if (revision_id is None and minutes.status != DefenseMinutes.STATUS_COMPLETED) or not pdf_file:
             return Response(
@@ -510,6 +556,11 @@ class MinutesPreviewView(APIView):
         ).prefetch_related('panelist_comments').filter(schedule=schedule).first()
         if minutes is None:
             return Response({'detail': 'Minutes have not been prepared yet.'}, status=404)
+        from .outcome import for_minutes, review_token
+        # Bind rendering and its token to one decision snapshot. A decision
+        # changed during PDF generation must require another review.
+        minutes._preview_outcome = for_minutes(minutes)
+        reviewed_token = review_token(minutes)
         if minutes.status == DefenseMinutes.STATUS_COMPLETED and minutes.pdf_file:
             response = MinutesPdfView().get(request, schedule_id)
         else:
@@ -517,5 +568,6 @@ class MinutesPreviewView(APIView):
             response['Content-Disposition'] = 'inline; filename="minutes_preview.pdf"'
         # Review actions must reflect this PDF's record, not an older board row.
         response['X-Minutes-Status'] = minutes.status
+        response['X-Minutes-Review-Token'] = reviewed_token
         response['Cache-Control'] = 'no-store'
         return response

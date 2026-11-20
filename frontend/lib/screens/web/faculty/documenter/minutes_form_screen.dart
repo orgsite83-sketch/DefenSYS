@@ -1,6 +1,7 @@
 import 'package:defensys/navigation/workspace_http_context.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../../widgets/grading/panel_deliberation_panel.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
@@ -282,6 +283,11 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
                   _controllers[comment['id']]?.text.trim().isNotEmpty == true,
           },
           hasSignature: user?['e_signature']?.toString().isNotEmpty == true,
+          outcomeReady:
+              ref.read(documenterProvider).activeMinutes?['outcome_required'] !=
+                  true ||
+              ref.read(documenterProvider).activeMinutes?['official_outcome'] !=
+                  null,
         ),
       );
       if (sign == true && mounted && scheduleId == widget.scheduleId) {
@@ -322,7 +328,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
     });
 
     // 1. Save current comments first
-    final saved = await _saveDraft(silent: true);
+    final saved = _isReviewing || await _saveDraft(silent: true);
     if (!saved || !mounted) {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -637,6 +643,17 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
           // Horizontal Progress Step Header
           _buildSigningFlowStepper(status),
           const SizedBox(height: 24),
+          if (minutes['outcome_required'] == true) ...[
+            if (minutes['official_outcome'] is Map)
+              DefenseDecisionSummary(
+                decision: Map<String, dynamic>.from(
+                  minutes['official_outcome'] as Map,
+                ),
+              )
+            else
+              const Text('Official outcome: Awaiting chair confirmation'),
+            const SizedBox(height: 24),
+          ],
           if ((minutes['revisions'] as List? ?? []).isNotEmpty) ...[
             DefensysShadcnScope(
               child: Column(

@@ -12,6 +12,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/grade_center_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'package:shadcn_ui/shadcn_ui.dart'
+    show LucideIcons, ShadButton, ShadButtonSize, ShadDialog;
 import '../../../../widgets/dialogs/confirm_dialog.dart';
 import '../widgets/defensys_admin_shell.dart';
 
@@ -3856,230 +3859,202 @@ Widget groupToggleRow({
 }
 
 void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
-  showDialog(
+  final steps = [
+    (
+      title: isPit
+          ? 'Enable access for the event'
+          : 'Enable access for the semester',
+      description: isPit
+          ? 'Manage peer evaluation for each event in PIT Events Setup or Evaluation & Grades.'
+          : 'Enable peer evaluation for this semester in Academic Periods.',
+    ),
+    (
+      title: 'Wait for panel evaluations',
+      description: isPit
+          ? 'Students can begin after every assigned faculty and external panelist has evaluated their scheduled defense. The event also needs a peer rubric and a positive peer weight.'
+          : 'Students can begin after every assigned faculty and external panelist has evaluated their scheduled defense.',
+    ),
+    (
+      title: 'Complete all peer ratings',
+      description:
+          'In Peer Eval, each student rates themselves and every current teammate. Each received rating carries equal weight. Teams await any required ratings that are still missing.',
+    ),
+    (
+      title: isPit ? 'Complete the event' : 'Complete the stage',
+      description: isPit
+          ? 'Panel and peer scores are combined using the event’s weights. Official completion locks peer grading and prepares the team for archiving.'
+          : 'Grades combine the required panel, adviser, and peer scores. Officially completing the stage locks grading.',
+    ),
+  ];
+
+  showDialog<void>(
     context: context,
-    builder: (dialogCtx) => Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 6,
-      backgroundColor: Colors.white,
-      clipBehavior: Clip.antiAlias,
-      child: ConstrainedBox(
+    builder: (dialogContext) => DefensysShadcnScope(
+      maroonActions: true,
+      child: ShadDialog(
         constraints: BoxConstraints(
-          maxWidth: 600,
-          maxHeight: MediaQuery.sizeOf(dialogCtx).height * 0.90,
+          maxWidth: 640,
+          maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
         ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        scrollable: true,
+        titlePinned: true,
+        actionsPinned: true,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        title: Padding(
+          padding: const EdgeInsets.only(right: 28),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: isPit
-                          ? const Color(0xFFFEF3C7)
-                          : const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.help_outline_rounded,
-                      color: isPit
-                          ? const Color(0xFFB45309)
-                          : const Color(0xFF1D4ED8),
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isPit
-                              ? 'PIT Peer Evaluation Guide'
-                              : 'Capstone Peer Evaluation Guide',
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            color: DefensysTokens.textPrimary,
-                            fontFamily: DefensysTokens.fontFamily,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          isPit
-                              ? 'How peer grading operates across PIT exhibitions and events'
-                              : 'How student peer evaluation operates for Capstone stages',
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            color: Color(0xFF64748B),
-                            fontFamily: DefensysTokens.fontFamily,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(dialogCtx).pop(),
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      size: 20,
-                      color: Color(0xFF94A3B8),
-                    ),
-                    tooltip: 'Close',
-                  ),
-                ],
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: DefensysTokens.isDark(dialogContext)
+                      ? DefensysTokens.mistPanel
+                      : DefensysTokens.background,
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                ),
+                child: Icon(
+                  LucideIcons.bookOpen,
+                  size: 19,
+                  color: DefensysTokens.maroonTextOf(dialogContext),
+                ),
               ),
-              const SizedBox(height: 20),
-              _buildHelpStepCard(
-                stepNum: '1',
-                title: isPit ? 'Configured Per Event' : 'Configured Term-Wide',
-                description: isPit
-                    ? 'Peer access is enabled by default for new events with a positive peer weight. The setting is kept when a peer rubric is attached later. Leads can close or reopen access in PIT Events Setup or Grade Center.'
-                    : 'Peer evaluation is enabled in Academic Periods. Each team can grade teammates only after its scheduled defense has been evaluated by all assigned panelists.',
-                icon: Icons.tune_rounded,
-                color: const Color(0xFF059669),
-                bgColor: const Color(0xFFECFDF5),
-              ),
-              const SizedBox(height: 10),
-              _buildHelpStepCard(
-                stepNum: '2',
-                title: 'Student Access & Criteria',
-                description: isPit
-                    ? 'With access enabled, a peer rubric assigned and a positive peer weight, students can grade each teammate after all assigned faculty and external panelists finish evaluating their scheduled defense. Scheduling alone does not unlock peer grading.'
-                    : 'After all assigned faculty and external panelists finish evaluating the scheduled defense, each student must grade themselves and every teammate on individual contribution in the Peer Eval tab. All ratings count equally.',
-                icon: Icons.people_outline_rounded,
-                color: const Color(0xFF2563EB),
-                bgColor: const Color(0xFFEFF6FF),
-              ),
-              const SizedBox(height: 10),
-              _buildHelpStepCard(
-                stepNum: '3',
-                title: 'Post-Defense "Awaiting Peers" Alert',
-                description: isPit
-                    ? 'After the scheduled defense has been fully evaluated by the panel, students grade their teammates. Teams await any remaining peer grades before grades can be finalized. Official event completion is a later step.'
-                    : 'When panelists submit scores, teams transition to "Awaiting Peers", showing a red "Due Soon" alert on student dashboards to prompt any remaining evaluations before grades finalize.',
-                icon: Icons.notifications_active_outlined,
-                color: const Color(0xFFD97706),
-                bgColor: const Color(0xFFFFFBEB),
-              ),
-              const SizedBox(height: 10),
-              _buildHelpStepCard(
-                stepNum: '4',
-                title: isPit
-                    ? 'Grade Calculation & Event Archival'
-                    : 'Grade Finalization & Safe Lock',
-                description: isPit
-                    ? 'Once all peer scores are in, composite grades calculate automatically based on panel and peer weights. Marking the event officially complete locks peer grading and readies teams for project archive.'
-                    : 'Once panel, adviser, and peer scores are in, composite grades calculate automatically. Marking the stage officially complete locks grading and advances passing teams to the next stage.',
-                icon: Icons.lock_outline_rounded,
-                color: DefensysUi.primaryMaroon,
-                bgColor: const Color(0xFFFEF2F2),
-              ),
-              const SizedBox(height: 20),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(dialogCtx).pop(),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: DefensysUi.primaryMaroon,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                  ),
-                  child: const Text(
-                    'Got it',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isPit
+                      ? 'PIT peer evaluation guide'
+                      : 'Capstone peer evaluation guide',
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.textPrimaryOf(dialogContext),
                   ),
                 ),
               ),
             ],
           ),
+        ),
+        closeIcon: Tooltip(
+          message: 'Close',
+          child: ShadButton.ghost(
+            width: 32,
+            height: 32,
+            padding: EdgeInsets.zero,
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Icon(
+              LucideIcons.x,
+              size: 18,
+              color: DefensysTokens.textSecondaryOf(dialogContext),
+            ),
+          ),
+        ),
+        description: Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 4),
+          child: Text(
+            isPit
+                ? 'How peer evaluation works for PIT events.'
+                : 'How peer evaluation works for Capstone stages.',
+            style: TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontSize: 13,
+              height: 1.45,
+              color: DefensysTokens.textSecondaryOf(dialogContext),
+            ),
+          ),
+        ),
+        actions: [
+          ShadButton(
+            size: ShadButtonSize.sm,
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final entry in steps.asMap().entries) ...[
+              if (entry.key > 0)
+                Divider(
+                  height: 1,
+                  color: DefensysTokens.borderOf(dialogContext),
+                ),
+              _buildPeerGuideStep(
+                context: dialogContext,
+                stepNum: '${entry.key + 1}',
+                title: entry.value.title,
+                description: entry.value.description,
+              ),
+            ],
+          ],
         ),
       ),
     ),
   );
 }
 
-Widget _buildHelpStepCard({
+Widget _buildPeerGuideStep({
+  required BuildContext context,
   required String stepNum,
   required String title,
   required String description,
-  required IconData icon,
-  required Color color,
-  required Color bgColor,
-}) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-    decoration: BoxDecoration(
-      color: bgColor,
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: color.withValues(alpha: 0.25), width: 1),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          child: Center(
-            child: Text(
-              stepNum,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w900,
+}) => Padding(
+  padding: const EdgeInsets.symmetric(vertical: 16),
+  child: Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        width: 28,
+        height: 28,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: DefensysTokens.isDark(context)
+              ? DefensysTokens.mistPanel
+              : DefensysTokens.background,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          stepNum,
+          style: TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+      ),
+      const SizedBox(width: 14),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(icon, size: 14, color: color),
-                  const SizedBox(width: 5),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: color,
-                      fontFamily: DefensysTokens.fontFamily,
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 6),
+            Text(
+              description,
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                fontSize: 13,
+                height: 1.5,
+                color: DefensysTokens.textSecondaryOf(context),
               ),
-              const SizedBox(height: 3),
-              Text(
-                description,
-                style: const TextStyle(
-                  fontSize: 12,
-                  height: 1.4,
-                  color: Color(0xFF334155),
-                  fontFamily: DefensysTokens.fontFamily,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
-    ),
-  );
-}
+      ),
+    ],
+  ),
+);
 
 Widget gradeScoreSummaryCard({
   required String title,

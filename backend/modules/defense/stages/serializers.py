@@ -151,6 +151,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'is_active',
             'is_presentation_only',
             'concept_config',
+            'revision_areas',
             'shared_deliverables',
             'qualifying_score',
             'score_carryover',
@@ -398,7 +399,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DefenseStage
-        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'weekly_reporting', 'deliverables']
+        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'revision_areas', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'weekly_reporting', 'deliverables']
         validators = []
         extra_kwargs = {
             'label': {'validators': []},
@@ -420,6 +421,13 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         if queryset.exists():
             raise serializers.ValidationError('A defense stage with this label already exists.')
         return value.strip()
+
+    def validate_revision_areas(self, value):
+        from .revision_policy import validate_revision_areas
+        try:
+            return validate_revision_areas(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages) from exc
 
     def validate_is_presentation_only(self, value):
         if value:
@@ -499,7 +507,11 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         cutoff = attrs.get('qualifying_score')
         if cutoff is not None and (not cutoff.is_finite() or not 0 <= cutoff <= 100):
             raise serializers.ValidationError({'qualifying_score': 'Enter a qualifying score between 0 and 100%.'})
-        if self.instance and set(self.initial_data).issubset({'qualifying_score', 'score_carryover'}):
+        revision_areas = attrs.get('revision_areas', self.instance.revision_areas if self.instance else [])
+        cutoff = attrs.get('qualifying_score', self.instance.qualifying_score if self.instance else None)
+        if revision_areas and cutoff is None:
+            raise serializers.ValidationError({'qualifying_score': 'Configure the panel qualifying score for chair deliberation.'})
+        if self.instance and set(self.initial_data).issubset({'qualifying_score', 'score_carryover', 'revision_areas'}):
             # Future-hearing policy edits must not regenerate legacy deliverables
             # or change any requirements attached to a locked historical stage.
             return attrs
@@ -559,7 +571,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError('The stage name and code are retained because submissions or linked history exist.')
             structure_locked, reason = check_stage_structure_locked(self.instance)
             if structure_locked and any(getattr(self.instance, key) != value for key, value in attrs.items()
-                    if key not in ('deliverables', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'weekly_reporting')):
+                    if key not in ('deliverables', 'shared_deliverables', 'qualifying_score', 'score_carryover', 'revision_areas', 'weekly_reporting')):
                 raise serializers.ValidationError(reason)
             if structure_locked and 'weekly_reporting' in attrs:
                 from defense.weekly_reporting import policy_payload

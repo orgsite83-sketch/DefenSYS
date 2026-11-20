@@ -7,6 +7,11 @@ import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/services/admin/user_management_provider.dart';
+import 'package:defensys/screens/web/admin/academic_periods/semester_detail_screen.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
+
+import '../helpers/capture_preview.dart';
 
 class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
   @override
@@ -23,7 +28,7 @@ class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
               'label': '1st Semester',
               'is_active': true,
               'capstone_program_phase': 'capstone_2',
-              'capstone_team_creation_enabled': true,
+              'capstone_team_creation_enabled': false,
               'capstone_peer_evaluation_enabled': true,
               'capstone_adviser_grading_enabled': true,
             },
@@ -32,7 +37,7 @@ class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
               'label': '2nd Semester',
               'is_active': false,
               'capstone_program_phase': 'capstone_1',
-              'capstone_team_creation_enabled': false,
+              'capstone_team_creation_enabled': true,
               'capstone_peer_evaluation_enabled': false,
               'capstone_adviser_grading_enabled': false,
             },
@@ -52,7 +57,7 @@ class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
         'school_year_id': 1,
         'display_name': '1st Semester, A.Y. 2026-2027',
         'capstone_program_phase': 'capstone_2',
-        'capstone_team_creation_enabled': true,
+        'capstone_team_creation_enabled': false,
         'capstone_peer_evaluation_enabled': true,
         'capstone_adviser_grading_enabled': true,
       },
@@ -61,6 +66,43 @@ class _FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
 
   @override
   Future<void> fetchPeriods({String? successMessage}) async {}
+
+  Map<String, dynamic>? evaluationUpdate;
+
+  @override
+  Future<bool> updateSemesterEvaluationSettings(
+    int semesterId, {
+    bool? peerEvaluationEnabled,
+    bool? adviserGradingEnabled,
+  }) async {
+    evaluationUpdate = {
+      'semester_id': semesterId,
+      if (peerEvaluationEnabled != null) 'peer': peerEvaluationEnabled,
+      if (adviserGradingEnabled != null) 'adviser': adviserGradingEnabled,
+    };
+    state = state.copyWith(
+      schoolYears: [
+        for (final year in state.schoolYears)
+          {
+            ...year,
+            'semesters': [
+              for (final semester in year['semesters'] as List)
+                if (semester['id'] == semesterId)
+                  {
+                    ...semester as Map<String, dynamic>,
+                    if (peerEvaluationEnabled != null)
+                      'capstone_peer_evaluation_enabled': peerEvaluationEnabled,
+                    if (adviserGradingEnabled != null)
+                      'capstone_adviser_grading_enabled': adviserGradingEnabled,
+                  }
+                else
+                  semester,
+            ],
+          },
+      ],
+    );
+    return true;
+  }
 }
 
 class _FakeDefenseStagesNotifier extends DefenseStagesNotifier {
@@ -126,7 +168,14 @@ class _FakeUserManagementNotifier extends UserManagementNotifier {
   }) async {}
 }
 
+class _EmptyDefenseStagesNotifier extends _FakeDefenseStagesNotifier {
+  @override
+  DefenseStagesState build() => const DefenseStagesState();
+}
+
 class _FakeDefenseSchedulerNotifier extends DefenseSchedulerNotifier {
+  Map<String, dynamic>? savedPayload;
+  bool saveSucceeds = true;
   final List<Map<String, dynamic>> _configs = [
     {
       'id': 201,
@@ -162,11 +211,13 @@ class _FakeDefenseSchedulerNotifier extends DefenseSchedulerNotifier {
 
   @override
   Future<bool> savePitEventConfig(Map<String, dynamic> payload) async {
-    return true;
+    savedPayload = payload;
+    return saveSucceeds;
   }
 }
 
 void main() {
+  tearDown(() => toastification.dismissAll(delayForAnimation: false));
   testWidgets(
     'AcademicPeriod Redesign: Accordion renders and drill-down into SemesterDetailScreen shows Capstone and PIT tabs',
     (tester) async {
@@ -233,15 +284,15 @@ void main() {
       expect(find.text('Back to academic periods'), findsOneWidget);
       expect(find.text('Capstone'), findsOneWidget);
       expect(find.text('PIT'), findsOneWidget);
-      expect(find.text('Semester settings'), findsOneWidget);
+      expect(find.text('General settings'), findsOneWidget);
 
       // 5. In Capstone Tab (default selected): verify policies and defense stages pipeline
-      expect(find.text('⚙️ Capstone Cohort Policies'), findsOneWidget);
-      expect(
-        find.text('📝 Term-Wide Evaluation Master Toggles'),
-        findsOneWidget,
-      );
-      expect(find.text('🛡️ Capstone Defense Stages Pipeline'), findsOneWidget);
+      expect(find.text('Capstone this semester'), findsOneWidget);
+      expect(find.text('Course'), findsOneWidget);
+      expect(find.text('Capstone 2'), findsOneWidget);
+      expect(find.text('Continuing teams only'), findsOneWidget);
+      expect(find.text('Evaluation access'), findsOneWidget);
+      expect(find.text('Defense stages'), findsOneWidget);
       expect(find.text('Title Proposal'), findsOneWidget);
       expect(find.text('Outline Defense'), findsOneWidget);
       expect(find.text('Final Defense'), findsOneWidget);
@@ -250,64 +301,78 @@ void main() {
       await tester.tap(find.text('PIT'));
       await tester.pumpAndSettle();
 
-      // Verify PIT Governance Banner
-      expect(
-        find.text('Faculty Lead Ownership & Admin Oversight'),
-        findsOneWidget,
-      );
-      expect(find.text('Governance Model'), findsOneWidget);
-      expect(find.text('PIT Coordinator (Faculty Lead)'), findsOneWidget);
-      expect(
-        find.text('Administrator (Institutional Oversight)'),
-        findsOneWidget,
-      );
-
-      // Verify PIT-specific rules: 80% Panelist, 20% Peer, and NO adviser note
-      expect(
-        find.text('📌 PIT Cohort Structure (1st–3rd Year)'),
-        findsOneWidget,
-      );
-      expect(find.text('80%'), findsOneWidget);
-      expect(find.text('20%'), findsOneWidget);
-      expect(
-        find.textContaining(
-          'Note: PIT does NOT have assigned faculty advisers.',
-        ),
-        findsOneWidget,
-      );
-
-      // Verify 3 Cohort breakdown cards
-      expect(find.text('1st Year Cohort — CS 101'), findsOneWidget);
-      expect(find.text('2nd Year Cohort — CS 201'), findsOneWidget);
-      expect(find.text('3rd Year Cohort — CS 301'), findsOneWidget);
+      expect(find.text('Year coordinators & events'), findsOneWidget);
+      expect(find.text('1st Year'), findsOneWidget);
+      expect(find.text('2nd Year'), findsOneWidget);
+      expect(find.text('3rd Year'), findsOneWidget);
+      expect(find.text('No events configured'), findsOneWidget);
 
       // Verify Assigned Coordinator for 1st Year (Prof. Alan Turing)
       expect(find.text('Prof. Alan Turing'), findsOneWidget);
 
       // Verify Unassigned Coordinator prompt for cohorts without assigned lead
-      expect(find.text('Assign Lead ↗'), findsWidgets);
+      expect(find.text('Assign lead'), findsNWidgets(2));
+
+      await tester.tap(find.text('View events · 1st Year'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('View events · 2nd Year'));
+      await tester.pumpAndSettle();
 
       // Verify Configured PIT Events for cohorts
       expect(find.text('CS 101 Concept Pitch'), findsOneWidget);
       expect(find.text('CS 201 Architecture Demo'), findsOneWidget);
-      expect(find.text('Defenses Scheduled (Locked)'), findsOneWidget);
+      expect(find.text('Settings locked'), findsOneWidget);
+      expect(find.text('Panel 80% · Peer 20%'), findsNWidgets(2));
 
       // Verify interactive Peer Evaluation switches
-      final switches = find.byType(Switch);
-      expect(switches, findsWidgets);
+      final peerSwitch = find.byKey(const ValueKey('pit-peer-201'));
+      final lockedSwitch = tester.widget<ShadSwitch>(
+        find.byKey(const ValueKey('pit-peer-202')),
+      );
+      expect(lockedSwitch.enabled, isFalse);
 
       // Tap peer evaluation toggle on 1st event
-      await tester.ensureVisible(switches.first);
-      await tester.tap(switches.first);
+      await tester.ensureVisible(peerSwitch);
+      await tester.tap(peerSwitch);
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SemesterDetailScreen)),
+      );
+      final scheduler =
+          container.read(defenseSchedulerProvider.notifier)
+              as _FakeDefenseSchedulerNotifier;
+      expect(scheduler.savedPayload, containsPair('semester_id', 10));
+      expect(
+        scheduler.savedPayload,
+        containsPair('peer_grading_enabled', false),
+      );
+      scheduler.saveSucceeds = false;
+      await tester.tap(peerSwitch);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<ShadSwitch>(peerSwitch).value,
+        isFalse,
+        reason: 'A failed save must restore the previous event access setting.',
+      );
+      await tester.pump(const Duration(seconds: 7));
       await tester.pumpAndSettle();
 
       // 7. Switch to Semester settings
-      await tester.ensureVisible(find.text('Semester settings'));
-      await tester.tap(find.text('Semester settings'));
+      await tester.ensureVisible(find.text('General settings'));
+      await tester.tap(find.text('General settings'));
       await tester.pumpAndSettle();
 
-      expect(find.text('⚙️ Semester Lifecycle & Status'), findsOneWidget);
-      expect(find.text('⚠️ Danger Zone'), findsOneWidget);
+      expect(find.text('Semester details'), findsOneWidget);
+      await tester.tap(find.text('Advanced settings'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('The active semester cannot be deleted.'),
+        findsOneWidget,
+      );
+      final delete = tester.widget<ShadButton>(
+        find.widgetWithText(ShadButton, 'Delete semester'),
+      );
+      expect(delete.enabled, isFalse);
 
       // 8. Test Back Button returns to Academic Cycles Hub
       await tester.tap(find.text('Back to academic periods'));
@@ -354,4 +419,141 @@ void main() {
       expect(find.text('2nd Semester'), findsWidgets);
     },
   );
+
+  testWidgets('Capstone 1 explains adding teams and offers defense setup', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await loadPreviewFonts(force: true);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          academicPeriodProvider.overrideWith(_FakeAcademicPeriodNotifier.new),
+          defenseStagesProvider.overrideWith(_EmptyDefenseStagesNotifier.new),
+          userManagementProvider.overrideWith(_FakeUserManagementNotifier.new),
+          defenseSchedulerProvider.overrideWith(
+            _FakeDefenseSchedulerNotifier.new,
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.theme,
+          home: const SemesterDetailScreen(semesterId: 11),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Course'), findsOneWidget);
+    expect(find.text('Capstone 1'), findsOneWidget);
+    expect(find.text('Allowed'), findsOneWidget);
+    expect(
+      find.text('Create or import teams in Student Teams.'),
+      findsOneWidget,
+    );
+    expect(find.text('Not configured'), findsOneWidget);
+    expect(find.text('Configure stages'), findsOneWidget);
+    await capturePreview(
+      tester,
+      find.byType(SemesterDetailScreen),
+      'semester-setup-capstone-intake-refined-light',
+      viewport: true,
+    );
+    await tester.tap(find.text('Continuing to Capstone 2'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'You’ll review which teams can continue to Capstone 2 before activating the next semester.',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Semester setup keeps controls usable across widths and themes', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await loadPreviewFonts(force: true);
+    for (final config in [
+      (1280.0, false, 1.0),
+      (1280.0, true, 1.0),
+      (600.0, false, 1.0),
+      (320.0, false, 1.25),
+      (320.0, true, 1.25),
+    ]) {
+      final (width, dark, scale) = config;
+      tester.view.physicalSize = Size(width, 1100);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            academicPeriodProvider.overrideWith(
+              _FakeAcademicPeriodNotifier.new,
+            ),
+            defenseStagesProvider.overrideWith(_FakeDefenseStagesNotifier.new),
+            userManagementProvider.overrideWith(
+              _FakeUserManagementNotifier.new,
+            ),
+            defenseSchedulerProvider.overrideWith(
+              _FakeDefenseSchedulerNotifier.new,
+            ),
+          ],
+          child: MaterialApp(
+            theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(scale)),
+              child: child!,
+            ),
+            home: const SemesterDetailScreen(semesterId: 10),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SemesterDetailScreen)),
+      );
+      final peerAccess = find.byKey(const ValueKey('capstone-peer-access'));
+      await tester.ensureVisible(peerAccess);
+      await tester.tap(peerAccess);
+      await tester.pumpAndSettle();
+      expect(
+        (container.read(academicPeriodProvider.notifier)
+                as _FakeAcademicPeriodNotifier)
+            .evaluationUpdate,
+        {'semester_id': 10, 'peer': false},
+      );
+      expect(tester.widget<ShadSwitch>(peerAccess).value, isFalse);
+      for (final tab in ['Capstone', 'PIT', 'General settings']) {
+        await tester.ensureVisible(find.text(tab));
+        await tester.tap(find.text(tab));
+        await tester.pumpAndSettle();
+        if (tab == 'PIT') {
+          await tester.ensureVisible(find.text('View events · 1st Year'));
+          await tester.tap(find.text('View events · 1st Year'));
+          await tester.pumpAndSettle();
+          expect(find.text('CS 101 Concept Pitch'), findsOneWidget);
+        }
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '$tab / width=$width / dark=$dark / scale=$scale',
+        );
+        await tester.ensureVisible(find.text('Back to academic periods'));
+        await tester.pumpAndSettle();
+        await capturePreview(
+          tester,
+          find.byType(SemesterDetailScreen),
+          'semester-setup-${tab.split(' ').first.toLowerCase()}-${width.toInt()}-${dark ? 'dark' : 'light'}',
+          viewport: true,
+        );
+      }
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    }
+  });
 }

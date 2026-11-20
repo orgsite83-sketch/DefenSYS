@@ -170,8 +170,9 @@ class _Grades extends GradeCenterNotifier {
     this.empty = false,
     this.individual = false,
     this.concepts = false,
+    this.decisionAmendment = false,
   });
-  final bool pending, empty, individual, concepts;
+  final bool pending, empty, individual, concepts, decisionAmendment;
   final List<Map<String, dynamic>> calls = [];
   @override
   GradeCenterState build() => const GradeCenterState();
@@ -259,8 +260,33 @@ class _Grades extends GradeCenterNotifier {
               'requested_by_name': 'Admin Reyes',
               'created_at': '2026-10-04 1:00 PM',
               'reason': 'Score confirmed against the signed grading sheet',
-              'before': _before(),
-              'after': _after(),
+              if (decisionAmendment) 'changes': {'panel_decision': {}},
+              'before': {
+                ..._before(),
+                if (decisionAmendment)
+                  'panel_decision': {
+                    'revision': 1,
+                    'verdict': 'approved_with_revisions',
+                    'instructions': 'Current panel instructions',
+                    'revision_entries': [],
+                    'demo_requirements': [],
+                  },
+              },
+              'after': {
+                ...(decisionAmendment ? _before() : _after()),
+                if (decisionAmendment)
+                  'panel_decision': {
+                    'revision': 2,
+                    'verdict': 'approved_with_revisions',
+                    'instructions': 'Requested system changes',
+                    'revision_entries': [
+                      {'label': 'System', 'severity': 'minor'},
+                    ],
+                    'demo_requirements': [
+                      {'text': 'Demonstrate the corrected export.'},
+                    ],
+                  },
+              },
             },
           ]
         : [],
@@ -556,6 +582,26 @@ void main() {
       await _tap(tester, 'Approve correction');
       expect(grades.calls.single['action'], 'approve');
       expect(grades.calls.single['acknowledge_published_change'], true);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'panel decision amendments show the current and requested instructions before review',
+    (tester) async {
+      await _pump(
+        tester,
+        const GradeCorrectionDialog(gradeId: 1),
+        grades: _Grades(pending: true, decisionAmendment: true),
+        width: 560,
+        dark: true,
+      );
+      await _tap(tester, 'History (1 pending)');
+      await _tap(tester, 'Review request');
+      expect(find.text('Review a panel decision amendment'), findsOneWidget);
+      expect(find.text('Current panel instructions'), findsOneWidget);
+      expect(find.text('Requested system changes'), findsOneWidget);
+    expect(find.textContaining('Demonstrate the corrected export.'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

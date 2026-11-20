@@ -35,22 +35,25 @@ def session_context(schedule):
             'session_end_time': end.time().isoformat()}
 
 
-def validate_plan_conflicts(entries):
+def validate_plan_conflicts(entries, *, exclude_redemo_id=None):
     if not entries:
         return
     dates = {entry['scheduled_date'] + timedelta(days=offset)
              for entry in entries for offset in (-1, 0, 1)}
     existing = DefenseSchedule.objects.filter(
         scheduled_date__in=dates, status__in=['scheduled', 'done'],
-    ).prefetch_related('panel_assignments', 'guest_invitations')
-    reservations = []
+    ).select_related('team').prefetch_related('panel_assignments', 'guest_invitations', 'team__memberships')
+    from defense.redemo.services import reservations as demo_reservations
+    reservations = demo_reservations(dates, exclude=exclude_redemo_id)
     for schedule in existing:
         start = datetime.combine(schedule.scheduled_date, schedule.start_time)
         reservations.append({
             'start': start, 'end': start + timedelta(minutes=schedule.slot_duration),
             'room': schedule.room.strip().casefold(),
             'people': {assignment.panelist_id for assignment in schedule.panel_assignments.all()}
-                      | ({schedule.documenter_id} if schedule.documenter_id else set()),
+                      | ({schedule.documenter_id} if schedule.documenter_id else set())
+                      | {membership.student_id for membership in schedule.team.memberships.all()}
+                      | ({schedule.team.adviser_id} if schedule.team.adviser_id else set()),
             'externals': {inv.evaluator_id for inv in schedule.guest_invitations.all()
                           if inv.is_active and inv.evaluator_id},
         })
@@ -63,6 +66,10 @@ def validate_plan_conflicts(entries):
                       | ({entry['documenter'].pk} if entry.get('documenter') else set()),
             'externals': {person.pk for person in entry.get('external_evaluators', [])},
         }
+        if entry.get('team'):
+            reservation['people'] |= {membership.student_id for membership in entry['team'].memberships.all()}
+            if entry['team'].adviser_id:
+                reservation['people'].add(entry['team'].adviser_id)
         for other in reservations:
             if start >= other['end'] or other['start'] >= reservation['end']:
                 continue

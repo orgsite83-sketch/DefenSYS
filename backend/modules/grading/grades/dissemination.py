@@ -77,7 +77,10 @@ def snapshot(grade):
     notes = grade.verdict_remarks or (hearing.remarks if hearing else '')
     plan = {'source_round': hearing.number, 'concepts': [{'key': c['key'], 'action': c['next_action'],
             'feedback': c.get('remarks') or notes} for c in concepts if c.get('next_action') in ('revise','replace')]} if hearing and verdict == 'for_redefense' else None
-    return {**context_for(grade), 'grade_id': grade.pk, 'team_name': grade.team.name, 'verdict': verdict,
+    from .deliberation import source_for, decision_payload
+    official = source_for(grade.schedule)
+    return {**({'panel_decision': decision_payload(official, public=True)} if official else {}),
+            **context_for(grade), 'grade_id': grade.pk, 'team_name': grade.team.name, 'verdict': verdict,
             'result': 'failed' if verdict in ('failed', 'project_rejected') else 'for_redefense' if verdict == 'for_redefense'
                 else 'revisions_pending' if verdict == 'approved_with_revisions' and not grade.revisions_cleared_at else 'passed' if verdict else 'pending',
             'verdict_remarks': notes, 'shared_selection': shared, 'redefense_plan': plan,

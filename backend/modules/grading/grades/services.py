@@ -2314,7 +2314,9 @@ def cohort_grading_teams_for_group(
         post_completion = None
         if grade.uses_defense_verdict:
             if not grade.verdict:
-                missing.append('concept_selection' if automatic_outcomes(grade.schedule) else 'verdict')
+                from .outcome_rules import deliberation_policy
+                missing.append('verdict' if deliberation_policy(grade.schedule) else
+                               'concept_selection' if automatic_outcomes(grade.schedule) else 'verdict')
             elif grade.verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
                 missing.append('redefense')
             elif grade.verdict in TeamGrade.PASSING_VERDICTS:

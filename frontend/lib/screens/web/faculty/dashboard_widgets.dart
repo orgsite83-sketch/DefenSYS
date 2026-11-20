@@ -286,10 +286,11 @@ class TeamRequirementSummary {
           (submission is Map ? submission['status'] : item['submission_status'])
               ?.toString()
               .toLowerCase();
-      final submitted = item['uploaded'] == true &&
-                status != 'rejected' &&
-                status != 'needs revision' &&
-                status != 'needs_revision';
+      final submitted =
+          item['uploaded'] == true &&
+          status != 'rejected' &&
+          status != 'needs revision' &&
+          status != 'needs_revision';
       if (!submitted) {
         final ids = endorsementIds;
         ids.add(
@@ -404,6 +405,7 @@ class DefenseScheduleCalendar extends StatelessWidget {
           ? 'assessed'
           : 'scheduled';
       result.add({
+        'materials_readiness': schedule['materials_readiness'],
         'session_id':
             schedule['id']?.toString() ??
             '$teamId-${schedule['stage_label']}-$date-$rawTime',
@@ -463,7 +465,9 @@ class DefenseScheduleCalendar extends StatelessWidget {
         ),
         DashboardSchedulePlanner(
           workspace: 'faculty',
+          includeReDemos: programScope == 'capstone',
           providedSessions: _sessions(),
+          refreshToken: schedules,
           loading: loading,
           errorMessage: hasError ? 'The calendar could not be loaded.' : null,
           description: subtitle,

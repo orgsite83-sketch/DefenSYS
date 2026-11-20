@@ -46,6 +46,10 @@ class TeamWorkflowStatus {
       'Review the submitted post-defense files for archiving. Accept each archive submission or request corrections.',
     'revisions_pending' =>
       'Complete and clear the revisions required by the defense decision.',
+    're_demo_required' =>
+      'The administrator can schedule the re-demo without another adviser approval.',
+    're_demo_scheduled' =>
+      'Demonstrate the required features to the assigned panel.',
     'redefense_required' =>
       'Review re-defense requirements and authorization before scheduling another attempt.',
     'completed' =>
@@ -72,6 +76,16 @@ class TeamWorkflowStatus {
   };
 
   static TeamWorkflowStatus describe(String code) => switch (code) {
+    're_demo_required' => const TeamWorkflowStatus(
+      're_demo_required',
+      'Re-demo required',
+      WorkflowStatusTone.attention,
+    ),
+    're_demo_scheduled' => const TeamWorkflowStatus(
+      're_demo_scheduled',
+      'Re-demo scheduled',
+      WorkflowStatusTone.active,
+    ),
     'not_configured' => const TeamWorkflowStatus(
       'not_configured',
       'Not configured',
@@ -471,6 +485,8 @@ class TeamWorkflowStatus {
           'for_redefense',
           'redefense_required',
           'revisions_pending',
+          're_demo_required',
+          're_demo_scheduled',
           'cancelled',
           'archived',
         }.contains(recordedStatus)) {
@@ -503,6 +519,8 @@ class TeamWorkflowStatus {
           'for_redefense',
           'redefense_required',
           'revisions_pending',
+          're_demo_required',
+          're_demo_scheduled',
           'cancelled',
           'archived',
         }.contains(recordedStatus)) {
@@ -549,6 +567,8 @@ class TeamWorkflowStatus {
       'for_redefense',
       'redefense_required',
       'revisions_pending',
+      're_demo_required',
+      're_demo_scheduled',
       'pending_post_defense',
       'passed',
       'completed',

@@ -112,8 +112,10 @@ def schedule_queryset(queryset=None):
             'rubric',
             'created_by',
             'planning_batch',
+            'official_outcome',
+            'official_outcome__grade',
         )
-        .prefetch_related('panel_assignments', 'panel_assignments__panelist',
+        .prefetch_related('official_outcome__re_demos', 'panel_assignments', 'panel_assignments__panelist',
                           Prefetch('grade_records', queryset=TeamGrade.objects.with_relations()),
                           'team__memberships__student',
                           Prefetch('team__deliverable_submissions', queryset=DeliverableSubmission.objects
@@ -201,6 +203,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
     scheduled_stages = serializers.SerializerMethodField()
     redefense_stages = serializers.SerializerMethodField()
     stage_progress = serializers.SerializerMethodField()
+    re_demo_stages = serializers.SerializerMethodField()
     stage_verdicts = serializers.SerializerMethodField()
     eligible_stages = serializers.SerializerMethodField()
 
@@ -228,6 +231,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'scheduled_stages',
             'redefense_stages',
             'stage_progress',
+            're_demo_stages',
             'stage_verdicts',
             'eligible_stages',
             'concept_workflows',
@@ -344,6 +348,19 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
                     redefense.add(label)
         return sorted(list(redefense))
 
+    def get_re_demo_stages(self, obj):
+        from .progress import schedule_progress
+        result = {}
+        schedules = sorted(obj.defense_schedules.all(), key=lambda row: (row.created_at, row.pk), reverse=True)
+        for schedule in schedules:
+            if (schedule.semester_id != obj.semester_id or schedule.project_version != obj.project_version
+                    or schedule.status in ('cancelled', 'archived') or schedule.stage_label in result):
+                continue
+            demo = schedule_progress(schedule, reconcile_status=False).get('re_demo')
+            if demo:
+                result[schedule.stage_label] = demo
+        return result
+
     def get_stage_progress(self, obj):
         from .progress import schedule_progress
         from grading.grades.models import TeamGrade
@@ -449,6 +466,17 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
                     data['stage_progress'][label] = 'pending'
             for label in eligible:
                 data['stage_progress'].setdefault(label, 'ready')
+        # Read-only detail for the Team Status workspace. Keep scheduling
+        # eligibility independent of the display of missing/reviewed files.
+        from .team_status import stage_status_details
+        if instance.is_capstone:
+            stages = self.context.get('_scheduler_readiness_stages', {})
+            labels = [stage.label for key, stage in stages.items()
+                      if str(key) in data['stage_readiness']]
+        else:
+            from .event_scope import pit_events_for_team
+            labels = [event.event_name for event in pit_events_for_team(instance)]
+        data['stage_status_details'] = stage_status_details(instance, labels, data['stage_progress'])
         return data
 
 
@@ -1027,6 +1055,11 @@ class ScheduleBaseSerializer(serializers.Serializer):
         return intervals_overlap(start_minutes, end_minutes, other_start, other_end)
 
     def _validate_room_overlap(self, attrs, slot_intervals, error_field='start_time'):
+        from defense.redemo.models import ReDemoAppointment
+        demos = ReDemoAppointment.objects.filter(scheduled_date=attrs['scheduled_date'],
+            status__in=['scheduled', 'done'], room__iexact=attrs['room'])
+        if any(self._schedule_overlaps(demo, start, end) for start, end in slot_intervals for demo in demos):
+            raise serializers.ValidationError({error_field: 'This room has a re-demo during that time.'})
         schedules = DefenseSchedule.objects.filter(
             scheduled_date=attrs['scheduled_date'],
             room__iexact=attrs['room'],
@@ -1039,6 +1072,15 @@ class ScheduleBaseSerializer(serializers.Serializer):
                 })
 
     def _validate_panelist_overlap(self, attrs, slot_intervals, error_field='panelist_ids'):
+        from defense.redemo.models import ReDemoAppointment
+        from django.db.models import Q
+        demo_filter = Q(panelists__in=attrs['panelists'])
+        for evaluator in attrs.get('external_evaluators', []):
+            demo_filter |= Q(external_ids__contains=[evaluator.pk])
+        demos = ReDemoAppointment.objects.filter(demo_filter, scheduled_date=attrs['scheduled_date'],
+            status__in=['scheduled', 'done']).distinct()
+        if any(self._schedule_overlaps(demo, start, end) for start, end in slot_intervals for demo in demos):
+            raise serializers.ValidationError({error_field: 'A panel member has a re-demo during that time.'})
         external_ids = [e.pk for e in attrs.get('external_evaluators', [])]
         external_schedules = DefenseSchedule.objects.filter(
             scheduled_date=attrs['scheduled_date'], status__in=ACTIVE_STATUSES,

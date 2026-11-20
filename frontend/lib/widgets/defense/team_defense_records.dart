@@ -9,6 +9,7 @@ import '../../services/defense/team_defense_provider.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../toasts/feedback_toast.dart';
 import '../minutes/minutes_pdf_dialog.dart';
+import 're_demo_workspace.dart';
 import 'concept_hearing_history.dart';
 import 'defense_history_menu.dart';
 import 'panel_recommendations.dart';
@@ -148,6 +149,23 @@ class TeamDefenseRecordsView extends ConsumerWidget {
                     : () => ref.read(teamDefenseProvider.notifier).fetch(),
                 icon: const Icon(Icons.refresh_rounded, size: 19),
               ),
+              if (records.current != null &&
+                  (records.current!['assessment'] as Map?)?['re_demo'] is Map)
+                IconButton(
+                  tooltip: 'Re-demo requirements & schedule',
+                  icon: const Icon(Icons.fact_check_outlined, size: 19),
+                  onPressed: () async {
+                    await showReDemoWorkspace(
+                      context,
+                      sourceScheduleId: defenseRecordId(
+                        records.current!['id'],
+                      )!,
+                    );
+                    if (context.mounted) {
+                      await ref.read(teamDefenseProvider.notifier).fetch();
+                    }
+                  },
+                ),
             ],
           ),
         ),

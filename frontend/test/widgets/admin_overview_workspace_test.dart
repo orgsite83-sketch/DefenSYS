@@ -11,13 +11,15 @@ import '../helpers/capture_preview.dart';
 
 void main() {
   testWidgets(
-    'Readiness follows week and month height without duplicate totals',
+    'Workflow leads; readiness and attention stay beside a growing calendar',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 1200);
       await loadPreviewFonts();
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      Map<String, dynamic>? selected;
+      var actionCalls = 0;
       await pumpDefensysWidget(
         tester,
         AdminOverviewWorkspace(
@@ -27,13 +29,39 @@ void main() {
               'totals': {
                 'capstone': {'teams': 12, 'ready': 3, 'scheduled_teams': 4},
               },
+              'action_items': [
+                {
+                  'id': 'enrollment:1',
+                  'title': 'Enrollment required',
+                  'description':
+                      'No students are enrolled in 1st Year this semester.',
+                  'category_label': 'ENROLLMENT',
+                  'button_label': 'Start enrollment',
+                  'target_route':
+                      '/admin/users?tab=students&view=enrollment&semester_id=1',
+                },
+                {
+                  'id': 'team_assignment:1:capstone:3rd Year',
+                  'kind': 'team_assignment',
+                  'scope': 'capstone',
+                  'year_level': '3rd Year',
+                  'affected_count': 64,
+                  'title': '3rd Year students without a team',
+                  'button_label': 'Assign teams',
+                  'target_route':
+                      '/admin/student-teams/creation?attention=team_assignment&year_level=3rd+Year',
+                },
+              ],
             },
           },
           error: null,
           loading: false,
           refreshing: false,
           onRefresh: () {},
-          onAction: (_) {},
+          onAction: (item) {
+            selected = item;
+            actionCalls++;
+          },
         ),
         overrides: [
           authenticatedHttpClientProvider.overrideWithValue(
@@ -43,11 +71,32 @@ void main() {
       );
       final readiness = find.byKey(const ValueKey('overview-team-readiness'));
       final schedule = find.byKey(const ValueKey('overview-defense-schedule'));
+      final attention = find.byKey(const ValueKey('overview-attention'));
+      final leading = find.byKey(
+        const ValueKey('overview-readiness-attention'),
+      );
       expect(find.text('Semester at a glance'), findsNothing);
       expect(
-        tester.getSize(readiness).height,
+        tester.getRect(find.text('Semester workflow')).bottom,
+        lessThan(tester.getRect(readiness).top),
+      );
+      expect(
+        tester.getRect(readiness).bottom,
+        lessThan(tester.getRect(attention).top),
+      );
+      expect(
+        tester.getRect(attention).right,
+        lessThan(tester.getRect(schedule).left),
+      );
+      expect(find.text('Enrollment to review'), findsOneWidget);
+      expect(find.text('64 students without a team'), findsOneWidget);
+      expect(find.text('3rd Year · Capstone'), findsOneWidget);
+      expect(find.text('ENROLLMENT'), findsNothing);
+      expect(
+        tester.getSize(leading).height,
         closeTo(tester.getSize(schedule).height, 0.1),
       );
+      final readinessHeight = tester.getSize(readiness).height;
       final weekHeight = tester.getSize(schedule).height;
       await capturePreview(
         tester,
@@ -59,10 +108,7 @@ void main() {
       await tester.tap(find.text('Month'));
       await tester.pumpAndSettle();
       expect(tester.getSize(schedule).height, greaterThan(weekHeight));
-      expect(
-        tester.getSize(readiness).height,
-        closeTo(tester.getSize(schedule).height, 0.1),
-      );
+      expect(tester.getSize(readiness).height, closeTo(readinessHeight, 0.1));
       await tester.ensureVisible(schedule);
       await capturePreview(
         tester,
@@ -74,7 +120,50 @@ void main() {
       await tester.tap(find.text('Week'));
       await tester.pumpAndSettle();
       expect(tester.getSize(schedule).height, closeTo(weekHeight, 0.1));
-      expect(tester.getSize(readiness).height, closeTo(weekHeight, 0.1));
+      expect(tester.getSize(readiness).height, closeTo(readinessHeight, 0.1));
+      final toggle = find.byKey(const ValueKey('overview-attention-toggle'));
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(find.text('64 students without a team'), findsNothing);
+      expect(find.text('Needs your attention'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      Focus.of(tester.element(find.text('Show'))).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('64 students without a team'), findsOneWidget);
+      for (final id in [
+        'enrollment:1',
+        'team_assignment:1:capstone:3rd Year',
+      ]) {
+        final row = find.byKey(ValueKey('overview-attention-item-$id'));
+        await tester.ensureVisible(row);
+        await tester.pumpAndSettle();
+        final rect = tester.getRect(row);
+        for (final point in [
+          rect.topLeft + const Offset(4, 4),
+          rect.centerRight - const Offset(4, 0),
+          rect.bottomRight - const Offset(4, 4),
+        ]) {
+          final previousCalls = actionCalls;
+          selected = null;
+          await tester.tapAt(point);
+          expect(selected?['id'], id);
+          expect(actionCalls, previousCalls + 1);
+        }
+      }
+      final assign = find.text('Assign teams');
+      await tester.ensureVisible(assign);
+      await tester.tap(assign);
+      expect(selected?['target_route'], contains('year_level=3rd+Year'));
+      Focus.of(tester.element(assign)).requestFocus();
+      await tester.pump();
+      for (final key in [LogicalKeyboardKey.enter, LogicalKeyboardKey.space]) {
+        selected = null;
+        await tester.sendKeyEvent(key);
+        expect(selected?['id'], 'team_assignment:1:capstone:3rd Year');
+      }
       expect(tester.takeException(), isNull);
     },
   );
@@ -141,6 +230,7 @@ void main() {
     );
     expect(find.text('All programs'), findsNothing);
     expect(find.text('Issue 3'), findsNothing);
+    await tester.ensureVisible(find.text('View all 6 actions'));
     await tester.tap(find.text('View all 6 actions'));
     await tester.pumpAndSettle();
     expect(find.text('Issue 5'), findsOneWidget);
@@ -317,8 +407,13 @@ void main() {
             ),
           ],
         );
-        expect(find.text('Waiting for teams'), findsOneWidget);
+        expect(find.text('0 ready to schedule'), findsNothing);
+        expect(find.text('All years · Active semester'), findsNothing);
+        expect(find.text('1 stage missing rubrics'), findsNothing);
+        expect(find.text('Enrolled students'), findsOneWidget);
         expect(find.textContaining('Complete'), findsNothing);
+        await tester.ensureVisible(find.text('Create rubrics'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Create rubrics'));
         expect(selected?['target_route'], contains('/7/edit?tab=1'));
         await capturePreview(

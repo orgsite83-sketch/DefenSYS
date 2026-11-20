@@ -13,6 +13,7 @@ import '../shadcn/defensys_shadcn_scope.dart';
 import '../dialogs/confirm_dialog.dart';
 import '../repository/section_concept_workspace.dart';
 import 'shared_selection_correction_dialog.dart';
+import 'panel_deliberation_panel.dart';
 
 /// Score-derived results and chair decisions submitted with optional feedback.
 class AutomaticAssessmentPanel extends ConsumerStatefulWidget {
@@ -147,7 +148,11 @@ class _AutomaticAssessmentPanelState
       'direction': _direction,
       'source_round_id': direction['source_round_id'],
       'review_token': direction['review_token'],
-      'recommendations': _notes.text.trim(),
+      'recommendations':
+          ((_grade['workflow'] as Map?)?['deliberation'] as Map?)?['enabled'] ==
+              true
+          ? '${_grade['verdict_remarks'] ?? ''}'
+          : _notes.text.trim(),
     };
     final independent = _direction == 'independent';
     final impact = direction['impact'] as Map? ?? {};
@@ -411,6 +416,31 @@ class _AutomaticAssessmentPanelState
 
   @override
   Widget build(BuildContext context) {
+    if ((_grade['workflow'] as Map?)?['deliberation'] != null) {
+      final direction =
+          (_grade['workflow'] as Map?)?['redefense_direction'] as Map?;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PanelDeliberationPanel(
+            grade: _grade,
+            isChair: widget.isChair,
+            onUpdated: widget.onUpdated,
+          ),
+          if (direction != null && _grade['verdict'] == 'for_redefense') ...[
+            _nextAttempt(direction),
+            if (widget.isChair && direction['can_decide'] == true) ...[
+              const SizedBox(height: 14),
+              ShadButton(
+                enabled: !_busy,
+                onPressed: () => _confirmDirection(direction),
+                child: const Text('Confirm next attempt'),
+              ),
+            ],
+          ],
+        ],
+      );
+    }
     final workflow = (_grade['workflow'] as Map?) ?? const {};
     final rule = (workflow['outcome_rule'] as Map?) ?? const {};
     final concepts = (workflow['concept_workflow'] as Map?) ?? const {};

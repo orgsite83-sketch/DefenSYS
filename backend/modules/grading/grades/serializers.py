@@ -14,6 +14,7 @@ def _closed_grade_term(team_id, semester_id, project_version):
 
 
 class GradeAttemptHistorySerializer(serializers.ModelSerializer):
+    panel_decision = serializers.SerializerMethodField()
     verdict_by_name = serializers.SerializerMethodField()
     scheduled_date = serializers.DateField(source='schedule.scheduled_date', read_only=True, allow_null=True)
     room = serializers.CharField(source='schedule.room', read_only=True, allow_null=True)
@@ -21,6 +22,7 @@ class GradeAttemptHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = GradeAttemptHistory
         fields = [
+            'panel_decision',
             'id',
             'attempt_number',
             'project_version',
@@ -47,6 +49,12 @@ class GradeAttemptHistorySerializer(serializers.ModelSerializer):
             'revision_deadline',
             'snapshotted_at',
         ]
+
+    def get_panel_decision(self, obj):
+        from .deliberation import source_for, version_payload
+        source = source_for(obj.schedule)
+        return version_payload(source, obj.outcome_metadata.get('official_outcome_revision', source.revision),
+                               public=True) if source else None
 
     def get_verdict_by_name(self, obj):
         return display_name(obj.verdict_by) if obj.verdict_by else None

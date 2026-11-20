@@ -501,7 +501,17 @@ def build_plan(actor, payload):
             'externals': {p.pk for p in externals}})
         revisions.append([pk, team.project_version, batch_id(team), team.adviser_id,
             team.updated_at, applicable, assignment.pk, assignment.revision, roster])
-    reservations = []
+    from defense.redemo.services import reservations as demo_reservations
+    reservation_dates = {data['start_date'] - timedelta(days=1) + timedelta(days=offset)
+        for offset in range((term.ends_on - data['start_date']).days + 3)}
+    reservations = demo_reservations(reservation_dates)
+    from django.db.models import prefetch_related_objects
+    prefetch_related_objects(list(teams.values()), 'memberships')
+    for item in queue:
+        team = teams[item['team_id']]
+        item['people'] |= {row.student_id for row in team.memberships.all()}
+        if team.adviser_id:
+            item['people'].add(team.adviser_id)
     for schedule in DefenseSchedule.objects.filter(scheduled_date__gte=data['start_date'] - timedelta(days=1),
             scheduled_date__lte=term.ends_on, status__in=['scheduled', 'done']).prefetch_related('panel_assignments', 'guest_invitations'):
         start = datetime.combine(schedule.scheduled_date, schedule.start_time)

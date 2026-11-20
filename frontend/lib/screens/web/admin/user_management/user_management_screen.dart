@@ -8,7 +8,7 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
 import 'package:defensys/services/user_management_provider.dart';
-import 'package:defensys/theme/defensys_button_styles.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 import 'package:defensys/widgets/table/defensys_segmented_control.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
@@ -359,6 +359,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     if (_currentTab == UserManagementTab.students) {
       final studentState = ref.watch(studentAcademicRecordsProvider);
       return DefensysShadcnScope(
+        maroonActions: true,
         child: Wrap(
           spacing: 12,
           runSpacing: 8,
@@ -382,36 +383,44 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
 
     if (_currentTab == UserManagementTab.faculty) {
-      return Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        alignment: WrapAlignment.end,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          OutlinedButton.icon(
-            onPressed: state.isSaving ? null : _openPanelistAccess,
-            icon: const Icon(LucideIcons.shieldCheck),
-            label: const Text('Panelist access'),
-            style: DefensysButtonStyles.secondary(context),
-          ),
-          OutlinedButton.icon(
-            onPressed: state.isSaving ? null : () => _openBulkImport('faculty'),
-            icon: const Icon(Icons.file_upload_outlined),
-            label: const Text('Bulk Import Faculty'),
-            style: DefensysButtonStyles.secondary(context),
-          ),
-          ElevatedButton.icon(
-            onPressed: state.isSaving ? null : () => _showUserDialog(),
-            icon: const Icon(Icons.person_add_alt_1_rounded),
-            label: const Text('Add Single Faculty'),
-            style: DefensysButtonStyles.primary(context),
-          ),
-        ],
+      return DefensysShadcnScope(
+        maroonActions: true,
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            ShadButton.outline(
+              onPressed: state.isSaving ? null : _openPanelistAccess,
+              height: DefensysTokens.buttonHeightPrimary,
+              backgroundColor: DefensysTokens.surfaceOf(context),
+              leading: const Icon(LucideIcons.shieldCheck, size: 18),
+              child: const Text('Panelist access'),
+            ),
+            ShadButton.outline(
+              onPressed: state.isSaving ? null : () => _showUserDialog(),
+              height: DefensysTokens.buttonHeightPrimary,
+              backgroundColor: DefensysTokens.surfaceOf(context),
+              leading: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+              child: const Text('Add Single Faculty'),
+            ),
+            ShadButton(
+              onPressed: state.isSaving
+                  ? null
+                  : () => _openBulkImport('faculty'),
+              height: DefensysTokens.buttonHeightPrimary,
+              leading: const Icon(Icons.file_upload_outlined, size: 18),
+              child: const Text('Bulk Import Faculty'),
+            ),
+          ],
+        ),
       );
     }
 
     if (_currentTab == UserManagementTab.guests) {
       return DefensysShadcnScope(
+        maroonActions: true,
         child: ShadButton(
           onPressed: () => ExternalEvaluatorCreateDialog.show(context),
           leading: const Icon(LucideIcons.plus, size: 16),

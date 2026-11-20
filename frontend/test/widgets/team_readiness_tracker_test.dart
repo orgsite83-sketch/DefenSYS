@@ -7,6 +7,17 @@ import 'package:defensys/theme/app_theme.dart';
 import '../helpers/capture_preview.dart';
 import '../helpers/auth_test_overrides.dart';
 
+Finder rowStatuses(String label) => find.descendant(
+  of: find.byWidgetPredicate(
+    (widget) =>
+        widget.key is ValueKey<String> &&
+        (widget.key as ValueKey<String>).value.startsWith(
+          'team-defense-status-',
+        ),
+  ),
+  matching: find.text(label),
+);
+
 void main() {
   for (final width in [390.0, 1280.0, 1580.0]) {
     for (final dark in [false, true]) {
@@ -52,6 +63,11 @@ void main() {
                               ][id % 3],
                               'eligible_stages': <String>[],
                               'stage_progress': {'Project Proposal': 'pending'},
+                              'stage_status_details': {
+                                'Project Proposal': {
+                                  'requirements_status': 'awaiting_endorsement',
+                                },
+                              },
                             },
                         ],
                       ),
@@ -71,7 +87,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
           expect(find.text('Team 1'), findsOneWidget);
-          expect(find.text('Awaiting Endorsement'), findsNWidgets(9));
+          expect(rowStatuses('Awaiting endorsement'), findsNWidgets(9));
           await capturePreview(
             tester,
             find.byType(Scaffold),
@@ -80,10 +96,10 @@ void main() {
           );
           await tester.tap(find.text('ARNEL MANGGA'));
           await tester.pumpAndSettle();
-          expect(find.text('Awaiting Endorsement'), findsNWidgets(3));
+          expect(rowStatuses('Awaiting endorsement'), findsNWidgets(3));
           await tester.tap(find.text('All'));
           await tester.pumpAndSettle();
-          expect(find.text('Awaiting Endorsement'), findsNWidgets(9));
+          expect(rowStatuses('Awaiting endorsement'), findsNWidgets(9));
           await tester.tap(find.text('BSIT-3A'));
           await tester.pumpAndSettle();
           await tester.ensureVisible(find.text('BSIT-3B'));
@@ -112,145 +128,249 @@ void main() {
       ('awaiting_review', 'Shared files awaiting review', 'awaiting review'),
       ('changes_requested', 'Shared changes requested', 'changes requested'),
     ]) {
-      testWidgets('section and endorsed team show ${scenario.$1} at $width', (tester) async {
+      testWidgets('section and endorsed team show ${scenario.$1} at $width', (
+        tester,
+      ) async {
         tester.view.physicalSize = Size(width, 1100);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
-        await tester.pumpWidget(ProviderScope(
-          overrides: authTestOverrides(),
-          child: MaterialApp(home: Scaffold(body: SingleChildScrollView(child: TeamReadinessTracker(
-            state: DefenseSchedulerState(
-              teams: [{
-                'id': 1, 'name': 'Team UniConnectClinic',
-                'level': '1st Year PIT', 'year_level': '1st Year', 'section': 'BSIT-1B',
-                'ready_for_stage': 'IT Concept Defense',
-                'shared_readiness': {'IT Concept Defense': {
-                  'section': 'BSIT-1B', 'complete': false, 'project_manager_name': 'Lance San Pedro',
-                  'requirements': [{'label': 'Concept Paper', 'status': scenario.$1}],
-                }},
-              }],
-              pitEvents: const [{
-                'event_name': 'IT Concept Defense', 'year_level': '1st Year',
-                'deliverables': [{'deliverable_type': 'pre', 'required': true}],
-              }],
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: authTestOverrides(),
+            child: MaterialApp(
+              home: Scaffold(
+                body: SingleChildScrollView(
+                  child: TeamReadinessTracker(
+                    state: DefenseSchedulerState(
+                      teams: [
+                        {
+                          'id': 1,
+                          'name': 'Team UniConnectClinic',
+                          'level': '1st Year PIT',
+                          'year_level': '1st Year',
+                          'section': 'BSIT-1B',
+                          'ready_for_stage': 'IT Concept Defense',
+                          'shared_readiness': {
+                            'IT Concept Defense': {
+                              'section': 'BSIT-1B',
+                              'complete': false,
+                              'project_manager_name': 'Lance San Pedro',
+                              'requirements': [
+                                {
+                                  'label': 'Concept Paper',
+                                  'status': scenario.$1,
+                                },
+                              ],
+                            },
+                          },
+                        },
+                      ],
+                      pitEvents: const [
+                        {
+                          'event_name': 'IT Concept Defense',
+                          'year_level': '1st Year',
+                          'deliverables': [
+                            {'deliverable_type': 'pre', 'required': true},
+                          ],
+                        },
+                      ],
+                    ),
+                    scope: 'pit',
+                    activeStageOrEventName: 'IT Concept Defense',
+                    onReviewTeamDeliverables: (_, _) {},
+                    onSendReminder: (_, _) {},
+                    isSendingReminder: false,
+                  ),
+                ),
+              ),
             ),
-            scope: 'pit', activeStageOrEventName: 'IT Concept Defense',
-            onReviewTeamDeliverables: (_, _) {}, onSendReminder: (_, _) {}, isSendingReminder: false,
-          )))),
-        ));
+          ),
+        );
         await tester.pumpAndSettle();
         expect(find.text(scenario.$2), findsOneWidget);
-        expect(find.textContaining('Concept Paper — ${scenario.$3}'), findsOneWidget);
         expect(find.text('Ready'), findsNothing);
         expect(find.text('Needs Endorsement'), findsNothing);
         await tester.tap(find.text('BSIT-1B'));
         await tester.pumpAndSettle();
-        final status = find.byKey(const ValueKey('team-defense-status-1-IT Concept Defense'));
-        expect(find.descendant(of: status, matching: find.text(scenario.$2)), findsOneWidget);
-        expect(find.text('Ready to Schedule'), findsNothing);
-        expect(find.text('Awaiting Endorsement'), findsNothing);
+        expect(
+          find.textContaining('Concept Paper — ${scenario.$3}'),
+          findsOneWidget,
+        );
+        final status = find.byKey(
+          const ValueKey('team-defense-status-1-IT Concept Defense'),
+        );
+        expect(
+          find.descendant(of: status, matching: find.text(scenario.$2)),
+          findsOneWidget,
+        );
+        expect(find.text('Ready to schedule'), findsNothing);
+        expect(find.text('Awaiting endorsement'), findsNothing);
       });
     }
   }
 
-  testWidgets('PIT concept filters retain only matching teams in the event year', (tester) async {
-    tester.view.physicalSize = const Size(1280, 1100);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(ProviderScope(
-      overrides: authTestOverrides(),
-      child: MaterialApp(home: Scaffold(body: SingleChildScrollView(child: TeamReadinessTracker(
-        state: DefenseSchedulerState(
-          teams: [
-            for (final entry in [
-              (1, 'Replacement team', '1st Year', 'replacement_concepts_needed'),
-              (2, 'Review team', '1st Year', 'concept_review_pending'),
-              (3, 'Other year team', '2nd Year', 'replacement_concepts_needed'),
-            ]) {
-              'id': entry.$1, 'name': entry.$2,
-              'level': '${entry.$3} PIT', 'year_level': entry.$3, 'section': 'Concept Section',
-              'concept_workflows': {'PIT Concepts': {'enabled': true, 'status': entry.$4}},
-            },
-          ],
-          pitEvents: const [{
-            'event_name': 'PIT Concepts', 'year_level': '1st Year',
-            'concept_config': {'enabled': true}, 'deliverables': [],
-          }],
-        ),
-        scope: 'pit', activeStageOrEventName: 'PIT Concepts',
-        onReviewTeamDeliverables: (_, _) {}, onSendReminder: (_, _) {}, isSendingReminder: false,
-      )))),
-    ));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('All defense workflows'));
-    await tester.pumpAndSettle();
-    expect(find.text('Instructor review pending'), findsOneWidget);
-    await tester.tap(find.text('Replacement concepts needed').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Concept Section'));
-    await tester.pumpAndSettle();
-    expect(find.text('Replacement team'), findsOneWidget);
-    expect(find.text('Review team'), findsNothing);
-    expect(find.text('Other year team'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('PIT event without required pre-defense files is ready without endorsement', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1400, 1000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: authTestOverrides(),
-        child: MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: TeamReadinessTracker(
-                state: DefenseSchedulerState(
-                  teams: const [{
-                    'id': 1,
-                    'name': 'Team Alpha',
-                    'level': '1st Year PIT',
-                    'year_level': '1st Year',
-                    'section': 'BSIT-1A',
-                  }],
-                  pitEvents: const [{
-                    'event_name': 'System Concept Pitching',
-                    'year_level': '1st Year',
-                    'deliverables': [],
-                  }],
+  testWidgets(
+    'PIT concept filters retain only matching teams in the event year',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: authTestOverrides(),
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: TeamReadinessTracker(
+                  state: DefenseSchedulerState(
+                    teams: [
+                      for (final entry in [
+                        (
+                          1,
+                          'Replacement team',
+                          '1st Year',
+                          'replacement_concepts_needed',
+                        ),
+                        (
+                          2,
+                          'Review team',
+                          '1st Year',
+                          'concept_review_pending',
+                        ),
+                        (
+                          3,
+                          'Other year team',
+                          '2nd Year',
+                          'replacement_concepts_needed',
+                        ),
+                      ])
+                        {
+                          'id': entry.$1,
+                          'name': entry.$2,
+                          'level': '${entry.$3} PIT',
+                          'year_level': entry.$3,
+                          'section': 'Concept Section',
+                          'concept_workflows': {
+                            'PIT Concepts': {
+                              'enabled': true,
+                              'status': entry.$4,
+                            },
+                          },
+                        },
+                    ],
+                    pitEvents: const [
+                      {
+                        'event_name': 'PIT Concepts',
+                        'year_level': '1st Year',
+                        'concept_config': {'enabled': true},
+                        'deliverables': [],
+                      },
+                    ],
+                  ),
+                  scope: 'pit',
+                  activeStageOrEventName: 'PIT Concepts',
+                  onReviewTeamDeliverables: (_, _) {},
+                  onSendReminder: (_, _) {},
+                  isSendingReminder: false,
                 ),
-                scope: 'pit',
-                activeStageOrEventName: 'System Concept Pitching',
-                onReviewTeamDeliverables: (_, _) {},
-                onSendReminder: (_, _) {},
-                isSendingReminder: false,
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('BSIT-1A'));
-    await tester.pumpAndSettle();
-    final statusCell = find.byKey(
-      const ValueKey('team-defense-status-1-System Concept Pitching'),
-    );
-    expect(
-      find.descendant(of: statusCell, matching: find.text('Ready to Schedule')),
-      findsOneWidget,
-    );
-    expect(find.text('Awaiting Endorsement'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('All statuses'));
+      await tester.pumpAndSettle();
+      expect(find.text('Instructor review pending'), findsOneWidget);
+      await tester.tap(find.text('Replacement concepts needed').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Concept Section'));
+      await tester.pumpAndSettle();
+      expect(find.text('Replacement team'), findsOneWidget);
+      expect(find.text('Review team'), findsNothing);
+      expect(find.text('Other year team'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'PIT event without required pre-defense files is ready without endorsement',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: authTestOverrides(),
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: TeamReadinessTracker(
+                  state: DefenseSchedulerState(
+                    teams: const [
+                      {
+                        'id': 1,
+                        'name': 'Team Alpha',
+                        'level': '1st Year PIT',
+                        'year_level': '1st Year',
+                        'section': 'BSIT-1A',
+                      },
+                    ],
+                    pitEvents: const [
+                      {
+                        'event_name': 'System Concept Pitching',
+                        'year_level': '1st Year',
+                        'deliverables': [],
+                      },
+                    ],
+                  ),
+                  scope: 'pit',
+                  activeStageOrEventName: 'System Concept Pitching',
+                  onReviewTeamDeliverables: (_, _) {},
+                  onSendReminder: (_, _) {},
+                  isSendingReminder: false,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('BSIT-1A'));
+      await tester.pumpAndSettle();
+      final statusCell = find.byKey(
+        const ValueKey('team-defense-status-1-System Concept Pitching'),
+      );
+      expect(
+        find.descendant(
+          of: statusCell,
+          matching: find.text('Ready to schedule'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Awaiting endorsement'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final scenario in [
+    (
+      're_demo_required',
+      false,
+      'Re-demo required',
+      'approved_with_revisions',
+      'Approved with Revisions',
+    ),
+    (
+      're_demo_scheduled',
+      false,
+      'Re-demo scheduled',
+      'approved_with_revisions',
+      'Approved with Revisions',
+    ),
     (
       'awaiting_completion',
       false,
@@ -269,14 +389,14 @@ void main() {
     (
       'redefense_required',
       false,
-      'Awaiting re-defense eligibility',
+      'Re-defense required',
       'for_redefense',
       'For Re-defense',
     ),
     (
       'redefense_required',
       true,
-      'Ready for Re-defense',
+      'Ready to schedule re-defense',
       'for_redefense',
       'For Re-defense',
     ),
@@ -285,11 +405,11 @@ void main() {
     (
       'project_rejected',
       false,
-      'Project Rejected',
+      'Project rejected',
       'project_rejected',
-      'Project Rejected',
+      'Project rejected',
     ),
-    ('failed', true, 'Ready for Retake', 'failed', 'Failed'),
+    ('failed', true, 'Ready to schedule retake', 'failed', 'Failed'),
   ]) {
     testWidgets('queue displays ${scenario.$3} after assessment', (
       tester,
@@ -347,7 +467,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Ready for Defense'), findsNothing);
-      expect(find.text('Awaiting Endorsement'), findsNothing);
+      expect(find.text('Awaiting endorsement'), findsNothing);
       expect(find.text('Remind'), findsNothing);
       expect(find.text('Needs Endorsement'), findsNothing);
       expect(tester.takeException(), isNull);

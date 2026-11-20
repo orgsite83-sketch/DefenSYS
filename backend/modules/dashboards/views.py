@@ -152,6 +152,21 @@ class SchedulePlannerView(APIView):
                 for room, slots in sorted(group.pop('venue_slots').items())
             ]
             result.append(group)
+        if is_admin:
+            from defense.redemo.services import visible
+            for demo in visible(user).filter(source__schedule__semester=semester,
+                    scheduled_date__range=(start, end)).exclude(status='cancelled'):
+                slot_start = datetime.combine(demo.scheduled_date, demo.start_time)
+                blocks = _planner_time_blocks([(slot_start, slot_start + timedelta(minutes=demo.slot_duration))])
+                result.append({'activity_type': 're_demo', 'activity_id': f'redemo:{demo.pk}',
+                    'session_id': f'redemo:{demo.pk}', 'source_schedule_id': demo.source.schedule_id,
+                    'date': demo.scheduled_date.isoformat(), 'scope': 'capstone',
+                    'event_name': f'Re-demo · {demo.source.schedule.stage_label}',
+                    'team_id': demo.source.schedule.team_id, 'team_name': demo.source.schedule.team.name,
+                    'team_count': 1, 'year_levels': [], 'room': demo.room,
+                    'status_counts': {'completed' if demo.status == 'done' else 'scheduled': 1},
+                    'can_open': True, 'time_blocks': blocks,
+                    'venues': [{'room': demo.room, 'time_blocks': blocks}]})
         return Response({'sessions': result})
 
 

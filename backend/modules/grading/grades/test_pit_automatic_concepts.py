@@ -41,6 +41,17 @@ class PitAutomaticConceptTests(APITestCase):
                 panelist=panelist or self.panelist, concept_key=f'c{i}')
         self.grade.refresh_from_db()
 
+    def release_outcome(self):
+        """Student repeat/post-defense work follows explicit dissemination."""
+        import uuid
+        from types import SimpleNamespace
+        from . import dissemination
+        request = SimpleNamespace(user=self.admin)
+        reviewed = dissemination.preview(request, {'filters': {'scope': 'pit', 'entity': 'teams',
+            'semester_id': self.semester.pk, 'pit_event_config_id': self.event.pk, 'coverage': 'assessment'},
+            'grade_ids': [self.grade.pk]})
+        dissemination.confirm(request, {'review_token': reviewed['review_token'], 'batch_id': str(uuid.uuid4())})
+
     def test_one_qualifies_and_only_selected_concept_becomes_team_grade(self):
         self.submit([6, 8, 7])
         self.assertEqual(self.grade.verdict, 'approved')
@@ -107,6 +118,7 @@ class PitAutomaticConceptTests(APITestCase):
 
     def test_repeat_hearing_preserves_attempt_and_starts_fresh_in_same_event(self):
         self.submit([6, 5, 7])
+        self.release_outcome()
         self.prepare()
         following = self.schedule(day=1)
         self.grade.refresh_from_db()
@@ -122,6 +134,7 @@ class PitAutomaticConceptTests(APITestCase):
         from repository.deliverables.services import upsert_submission, review_submission
         from .services import StageCompletionService
         self.submit([6, 8, 7])
+        self.release_outcome()
         post = upsert_submission(self.team, self.event.label, 'APPROVED_CONCEPT',
             'approved.pdf', '10 B', self.team.leader,
             file=SimpleUploadedFile('approved.pdf', b'%PDF-1.4 selected concept'))

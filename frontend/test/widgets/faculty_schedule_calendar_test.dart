@@ -2,11 +2,17 @@ import 'package:defensys/screens/web/faculty/dashboard_widgets.dart';
 import 'package:defensys/screens/web/shared/dashboard_schedule_planner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:defensys/services/authenticated_client.dart';
+import 'package:http/http.dart' as http;
+import 'package:mocktail/mocktail.dart';
 
 import '../helpers/capture_preview.dart';
 import '../helpers/pump_app.dart';
 
+class _CalendarClient extends Mock implements AuthenticatedHttpClient {}
+
 void main() {
+  setUpAll(() => registerFallbackValue(Uri()));
   for (final scope in ['pit', 'capstone']) {
     for (final dark in [false, true]) {
       for (final width in [320.0, 680.0]) {
@@ -57,6 +63,10 @@ void main() {
             };
             int? openedTeam;
             String? openedStage;
+            final calendarClient = _CalendarClient();
+            when(() => calendarClient.get(any())).thenAnswer(
+              (_) async => http.Response('{"appointments": []}', 200),
+            );
             await pumpDefensysWidget(
               tester,
               SingleChildScrollView(
@@ -88,6 +98,11 @@ void main() {
                 brightness: dark ? Brightness.dark : Brightness.light,
                 fontFamily: 'Inter',
               ),
+              overrides: [
+                authenticatedHttpClientProvider.overrideWithValue(
+                  calendarClient,
+                ),
+              ],
             );
             expect(find.byType(DashboardSchedulePlanner), findsOneWidget);
             expect(find.text('Today'), findsOneWidget);

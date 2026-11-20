@@ -283,6 +283,7 @@ class _GuestInvitationDialogState extends State<GuestInvitationDialog> {
         portal.isNotEmpty &&
         ['localhost', '127.0.0.1', '0.0.0.0'].contains(Uri.parse(portal).host);
     return DefensysShadcnScope(
+      maroonActions: true,
       child: Dialog(
         elevation: 0,
         insetPadding: const EdgeInsets.all(16),
@@ -1092,6 +1093,7 @@ class _ExternalEvaluatorDirectoryState
         )
         .toList();
     return DefensysShadcnScope(
+      maroonActions: true,
       child: Container(
         padding: EdgeInsets.all(
           MediaQuery.sizeOf(context).width < 600 ? 16 : 24,

@@ -18,6 +18,9 @@ class FacultyCalendarScopeTests(APITestCase):
         return {item['id'] for item in response.data['schedules']}
 
     def test_calendar_scopes_do_not_inherit_other_faculty_duties(self):
+        self.lead.is_adviser = True
+        self.lead.is_panelist = True
+        self.lead.save(update_fields=['is_adviser', 'is_panelist'])
         advised = self.schedule(scope='capstone', year='4th Year')
         advised.team.adviser = self.lead
         advised.team.save()
@@ -71,7 +74,8 @@ class FacultyCalendarScopeTests(APITestCase):
                 self.assertEqual(response.status_code, 200, response.data)
                 self.assertNotIn(other.pk, {row['id'] for row in response.data['schedules']})
                 self.assertEqual(response.data['counts']['all'], 1)
-                self.assertEqual(response.data['stage_options'], ['Third Year Hearing'])
+                self.assertEqual(response.data['stage_options'],
+                                 [] if filters.get('scope') == 'capstone' else ['Third Year Hearing'])
                 self.assertEqual(response.data['sections'], [])
         self.assertEqual(self.rows('operations'), {own.pk})
 

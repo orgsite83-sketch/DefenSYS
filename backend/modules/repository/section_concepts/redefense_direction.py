@@ -66,7 +66,7 @@ def _unavailable(grade, source, following):
     from grading.grades.outcome_rules import outcome_payload
     assessment = outcome_payload(grade)
     if (source.verdict != 'for_redefense' or not assessment or not assessment['panel_complete']
-            or assessment['outcome'] != 'for_redefense'):
+            or (assessment['outcome'] != 'for_redefense' and not grade.schedule.assessment_policy.get('deliberation_version'))):
         return 'The linked-module assessment changed. Review its complete result first.'
     if not following or following.schedule_id or following.verdict:
         return 'The next attempt has started or is unavailable. Refresh the assessment.'
@@ -242,7 +242,12 @@ def confirm(grade, *, actor, direction, source_round_id, review_token,
         # The reviewed direction was validated under these locks. Saving its
         # feedback here keeps both atomic and leaves idempotent retries above
         # unable to overwrite recommendations edited after confirmation.
-        grade = save_recommendations(grade, actor=actor, notes=recommendations)
+        from grading.grades.outcome_rules import deliberation_policy
+        if deliberation_policy(grade.schedule):
+            if recommendations != grade.verdict_remarks:
+                raise ValidationError('The confirmed panel instructions are read-only. Use their correction process.')
+        else:
+            grade = save_recommendations(grade, actor=actor, notes=recommendations)
     audit(grade, actor, 'defense.redefense_direction_confirmed',
         direction=direction, source_round_id=source.pk, next_round_id=following.pk,
         decision_id=decision.pk)

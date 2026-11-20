@@ -1,0 +1,34 @@
+<div id="ds-capstone-copy-preview" class="viz-dotted-background" aria-label="Clearer Capstone semester information">
+  <style>
+    #ds-capstone-copy-preview{padding:24px 0;color-scheme:light dark}
+    #ds-capstone-copy-preview .ds-card{--ds-surface:light-dark(#fff,#212024);--ds-text:light-dark(#0f172a,#f4f4f5);--ds-muted:light-dark(#475569,#a1a1aa);--ds-line:light-dark(#e2e8f0,#35343a);--ds-green:light-dark(#047857,#6ee7b7);--ds-green-bg:light-dark(#ecfdf5,#15382d);--ds-focus:light-dark(#7a110a,#f4a69c);font-family:Inter,Arial,sans-serif;font-size:14px;line-height:1.5;color:var(--ds-text);background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:8px;max-width:650px;margin:0 auto}
+    #ds-capstone-copy-preview *{box-sizing:border-box}
+    #ds-capstone-copy-preview h2{font-size:14px;font-weight:600;margin:0;padding:17px 18px;border-bottom:1px solid var(--ds-line)}
+    #ds-capstone-copy-preview dl{display:grid;gap:20px;margin:0;padding:20px 18px}
+    #ds-capstone-copy-preview .ds-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px}
+    #ds-capstone-copy-preview dt{font-size:12px;color:var(--ds-muted)}
+    #ds-capstone-copy-preview dd{font-size:13px;font-weight:500;margin:0}
+    #ds-capstone-copy-preview .ds-badge{display:inline-block;padding:3px 7px;border-radius:4px;background:var(--ds-green-bg);color:var(--ds-green);font-size:11px}
+    #ds-capstone-copy-preview p{font-size:12px;font-weight:400;color:var(--ds-muted);margin:5px 0 0;max-width:65ch}
+    #ds-capstone-copy-preview details{padding:14px 18px;border-top:1px solid var(--ds-line)}
+    #ds-capstone-copy-preview summary{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ds-muted);list-style:none}
+    #ds-capstone-copy-preview summary::-webkit-details-marker{display:none}
+    #ds-capstone-copy-preview summary:focus-visible{outline:2px solid var(--ds-focus);outline-offset:4px}
+    #ds-capstone-copy-preview summary i{width:14px;height:14px}
+    #ds-capstone-copy-preview details[open] summary i{transform:rotate(90deg)}
+    #ds-capstone-copy-preview details p{margin-top:10px}
+    @media(max-width:400px){#ds-capstone-copy-preview .ds-row{grid-template-columns:85px minmax(0,1fr);gap:10px}}
+    @media(pointer:coarse){#ds-capstone-copy-preview summary{min-height:44px}}
+  </style>
+  <section class="ds-card">
+    <h2>Capstone this semester</h2>
+    <dl>
+      <div class="ds-row"><dt>Course</dt><dd>Capstone 1</dd></div>
+      <div class="ds-row"><dt>Adding teams</dt><dd><span class="ds-badge">Allowed</span><p>Create or import teams in Student Teams.</p></dd></div>
+    </dl>
+    <details open>
+      <summary class="cursor-interaction"><i data-lucide="chevron-right" aria-hidden="true"></i>Continuing to Capstone 2</summary>
+      <p>You’ll review which teams can continue to Capstone 2 before activating the next semester.</p>
+    </details>
+  </section>
+</div>

@@ -45,8 +45,14 @@ def calendar_schedule_issues(semester):
     schedules = semester.defense_schedules.filter(
         Q(scheduled_date__lt=semester.starts_on) | Q(scheduled_date__gt=semester.ends_on)
     ).order_by('pk')
-    return {'calendar_configured': True, 'out_of_range_count': schedules.count(),
-            'schedule_ids': list(schedules.values_list('pk', flat=True))}
+    from defense.redemo.models import ReDemoAppointment
+    demos = ReDemoAppointment.objects.filter(source__schedule__semester=semester).filter(
+        Q(scheduled_date__lt=semester.starts_on) | Q(scheduled_date__gt=semester.ends_on))
+    result = {'calendar_configured': True, 'out_of_range_count': schedules.count() + demos.count(),
+              'schedule_ids': list(schedules.values_list('pk', flat=True))}
+    if demos.exists():
+        result['re_demo_ids'] = list(demos.order_by('pk').values_list('pk', flat=True))
+    return result
 
 
 def schedule_time_payload(schedule):

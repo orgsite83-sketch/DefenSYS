@@ -62,6 +62,8 @@ def snapshot(grade):
     values['published_at'] = grade.published_at.isoformat() if grade.published_at else None
     values['schedule_id'] = grade.schedule_id
     values['schedule_revision'] = grade.schedule.revision if grade.schedule_id else None
+    from .deliberation import source_for, decision_payload
+    values['panel_decision'] = decision_payload(source_for(grade.schedule))
     values['team_status'] = grade.team.status
     values['criteria'] = [{'id': row.pk, 'submission_id': row.submission_id, 'score': str(row.score), 'max_score': str(row.max_score_snapshot),
                            'criterion': row.criterion_name_snapshot,
@@ -147,10 +149,14 @@ def _source_breakdowns(submission, score=None):
     return rows
 
 
-def _perform_change(grade, changes):
+def _perform_change(grade, changes, actor=None):
     from .services import recompute_panel_score
     if not isinstance(changes, dict) or len(changes) != 1:
         raise ValidationError('Correct one criterion, one evaluation, or aggregate scores per request.')
+    if 'panel_decision' in changes:
+        from .deliberation_corrections import amend
+        amend(grade, changes['panel_decision'], actor=actor)
+        return
     if 'criterion' in changes or 'section' in changes:
         is_section = 'section' in changes
         item = changes['section' if is_section else 'criterion']
@@ -230,10 +236,10 @@ def _perform_change(grade, changes):
             raise ValidationError('This correction changes defense qualification. Reopen and reconcile the recorded outcome before applying it.') from exc
 
 
-def _change(grade, changes):
+def _change(grade, changes, actor=None):
     from django.core.exceptions import ValidationError as DjangoValidationError
     try:
-        _perform_change(grade, changes)
+        _perform_change(grade, changes, actor=actor)
     except DjangoValidationError as exc:
         raise ValidationError(exc.message_dict if hasattr(exc, 'message_dict') else exc.messages) from exc
 
@@ -270,11 +276,11 @@ def request_correction(grade_id, actor, data, request=None):
     if data.get('expected_updated_at') != before['updated_at']:
         raise StaleOperation()
     from .services import group_settings_for_grade
-    protected = protected_grade(grade)
+    protected = protected_grade(grade) or 'panel_decision' in (data.get('changes') or {})
     changes = data.get('changes')
     # Calculate a real preview inside a savepoint; never persist preview writes.
     with transaction.atomic():
-        _change(grade, changes)
+        _change(grade, changes, actor=actor)
         after = snapshot(grade)
         _check_progression(before, after, protected)
         transaction.set_rollback(True)
@@ -292,7 +298,7 @@ def request_correction(grade_id, actor, data, request=None):
 
 
 def _apply(correction, grade, actor, approval_reason, request):
-    _change(grade, correction.changes)
+    _change(grade, correction.changes, actor=correction.requested_by)
     after = snapshot(grade)
     _check_progression(correction.before, after, correction.requires_approval)
     if 'void_submission' in correction.changes:

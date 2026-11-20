@@ -922,6 +922,7 @@ class _DefenseSchedulerScreenState
                           const SizedBox(height: 20),
                           TeamReadinessTracker(
                             state: state,
+                            onReDemoChanged: () => ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
                             scope: _scope,
                             activeStageOrEventName: activeStageOrEventName,
                             onReviewTeamDeliverables: (team, stageLabel) =>

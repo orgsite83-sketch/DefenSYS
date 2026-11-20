@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -62,6 +63,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
   bool _isSigning = false, _pdfReady = false;
   int _reviewVersion = 0;
   String? _minutesStatus;
+  String? _minutesReviewToken;
 
   bool get _finalized => widget.finalized || _minutesStatus == 'completed';
 
@@ -104,15 +106,19 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
       final endpoint = widget.allowChairmanSigning
           ? 'sign-chairman'
           : 'sign-adviser';
-      final response = await ref
-          .read(authenticatedHttpClientProvider)
-          .post(
-            Uri.parse(
-              '${ApiConfig.defenseMinutesUrl}/${widget.scheduleId}/$endpoint/',
-            ),
-            headers: {'Content-Type': 'application/json'},
-          )
-          .timeout(const Duration(seconds: 30));
+      final client = ref.read(authenticatedHttpClientProvider);
+      final uri = Uri.parse(
+        '${ApiConfig.defenseMinutesUrl}/${widget.scheduleId}/$endpoint/',
+      );
+      final response =
+          await ((_minutesReviewToken ?? '').isEmpty
+                  ? client.post(uri)
+                  : client.post(
+                      uri,
+                      headers: {'Content-Type': 'application/json'},
+                      body: jsonEncode({'review_token': _minutesReviewToken}),
+                    ))
+              .timeout(const Duration(seconds: 30));
       if (!mounted || version != _reviewVersion) return;
       if (response.statusCode == 200) {
         setState(() => _isSigning = false);
@@ -163,6 +169,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
       _signError = null;
       _isSigning = false;
       _minutesStatus = null;
+      _minutesReviewToken = null;
     });
     try {
       final endpoint = widget.finalized ? 'pdf' : 'preview';
@@ -180,6 +187,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
         if (response.statusCode == 200) {
           _bytes = response.bodyBytes;
           _minutesStatus = response.headers['x-minutes-status'];
+          _minutesReviewToken = response.headers['x-minutes-review-token'];
         } else if (response.statusCode == 404) {
           _missing = true;
         } else {

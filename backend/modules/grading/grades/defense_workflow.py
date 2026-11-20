@@ -31,7 +31,7 @@ def passed_and_cleared(grade):
     if grade.verdict == TeamGrade.VERDICT_APPROVED:
         return True
     if grade.verdict == TeamGrade.VERDICT_APPROVED_WITH_REVISIONS:
-        return bool(grade.revisions_cleared_at)
+        return bool(grade.revisions_cleared_at) and grade.result == 'passed'
     return False
 
 
@@ -79,7 +79,7 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
 
 @transaction.atomic
 def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verification_required=False,
-                    concept_decisions=None, replacement_concepts_required=False, automatic=False):
+                    concept_decisions=None, replacement_concepts_required=False, automatic=False, panel_decision=False):
     StudentTeam.objects.select_for_update().get(pk=grade.team_id)
     if grade.schedule_id:
         from defense.scheduler.models import DefenseSchedule
@@ -88,6 +88,8 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
     require_current(grade)
     if not grade.uses_defense_verdict:
         raise ValidationError('PIT events do not use official defense verdicts.')
+    if panel_decision and not is_chair(grade, actor):
+        raise PermissionError('Only the assigned panel chair can confirm the panel decision.')
     if not automatic and not (is_admin(actor) or is_chair(grade, actor)):
         raise PermissionError('Only the panel chair or an administrator can record a verdict.')
     if verdict not in dict(TeamGrade.VERDICT_CHOICES):
@@ -100,12 +102,12 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
     from .services import team_grading_readiness
     if grade.schedule_id:
         from defense.scheduler.panelist_evaluation import assessment_unavailable_reason
-        reason = (assessment_unavailable_reason if automatic else verdict_unavailable_reason)(grade.schedule, grade)
+        reason = (assessment_unavailable_reason if automatic or panel_decision else verdict_unavailable_reason)(grade.schedule, grade)
         if reason:
             raise ValidationError(reason)
     elif not team_grading_readiness(grade, grade.semester, grade.scope)['panel_complete']:
         raise ValidationError('Every required panel evaluation must be submitted before a verdict.')
-    if not automatic and verdict in (TeamGrade.VERDICT_FOR_REDEFENSE, TeamGrade.VERDICT_FAILED, TeamGrade.VERDICT_PROJECT_REJECTED) and not remarks.strip():
+    if not automatic and not panel_decision and verdict in (TeamGrade.VERDICT_FOR_REDEFENSE, TeamGrade.VERDICT_FAILED, TeamGrade.VERDICT_PROJECT_REJECTED) and not remarks.strip():
         raise ValidationError('Record the reason and required action for this outcome.')
     from .outcome_rules import validate_outcome, policy_for
     validate_outcome(grade, verdict, concept_decisions)
@@ -119,6 +121,8 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
     if automatic:
         grade.outcome_metadata = {**grade.outcome_metadata, 'source': 'automatic',
             'selected_by': actor.pk if actor else None}
+    if panel_decision:
+        grade.outcome_metadata = {**grade.outcome_metadata, 'source': 'panel_deliberation'}
     grade.revision_deadline = deadline if verdict == TeamGrade.VERDICT_APPROVED_WITH_REVISIONS else None
     grade.revisions_cleared_at = None
     grade.revisions_cleared_by = None
@@ -131,7 +135,7 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
     grade.redefense_verified_at = None
     grade.redefense_verified_by = None
     from repository.deliverables.concepts import record_outcome
-    record_outcome(grade, concept_decisions, replacement_required=replacement_concepts_required, automatic=automatic)
+    record_outcome(grade, concept_decisions, replacement_required=replacement_concepts_required, automatic=automatic or panel_decision)
     from repository.deliverables.concepts import enabled as concepts_enabled, context_for_grade
     if (not concepts_enabled(context_for_grade(grade)) and policy_for(grade.schedule).get('version') == 1
             and policy_for(grade.schedule).get('repeat_files_version') == 1):
@@ -162,7 +166,7 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
 
 
 def workflow_payload(grade, actor=None):
-    from .outcome_rules import outcome_payload, policy_for
+    from .outcome_rules import outcome_payload, policy_for, deliberation_policy
     from defense.scheduler.progress import schedule_progress
     from student_teams.services import is_stage_ready
     from repository.deliverables.models import DeliverableSubmission
@@ -190,14 +194,19 @@ def workflow_payload(grade, actor=None):
                     'section_selected': hearing.section_round.selected_key == c['key']}
                     for c in concept_workflow['hearing_concepts']]
             concept_workflow['hearing_round'] = hearing.number
+    from .deliberation import payload as deliberation_payload
+    from .deliberation import source_for, decision_payload
     data = {
+        'panel_decision': decision_payload(source_for(grade.schedule), public=True),
+        'deliberation': deliberation_payload(grade, actor),
         'concept_workflow': concept_workflow,
         'outcome_rule': outcome_payload(grade),
         'assessment_policy': policy_for(grade.schedule),
         'outcome_metadata': grade.outcome_metadata,
         'redefense_direction': direction_payload(grade, actor),
         'shared_selection_correction': selection_correction(grade, actor),
-        'can_save_recommendations': (automatic_outcomes(grade.schedule) and actor is not None
+        'can_save_recommendations': (automatic_outcomes(grade.schedule) and not deliberation_policy(grade.schedule)
+            and actor is not None
             and not recommendations_unavailable_reason(grade, actor)),
         'assessment_progress': schedule_progress(grade.schedule, reconcile_status=False) if grade.schedule_id else None,
         'chair_id': grade.schedule.panel_assignments.filter(is_chair=True).values_list('panelist_id', flat=True).first() if grade.schedule_id else None,
@@ -248,6 +257,12 @@ def apply_workflow_action(grade, *, actor, action, reason='', review_date=None):
         if grade.status == 'published':
             raise ValidationError('This assessment is finalized.')
         if action == 'clear_revisions':
+            from .deliberation import source_for
+            source = source_for(grade.schedule)
+            if source and source.re_demo_required:
+                from defense.redemo.services import outstanding
+                if outstanding(source):
+                    raise ValidationError('Verify the required re-demo demonstrations before clearing revisions.')
             if not reason.strip():
                 raise ValidationError('Record which corrections and evidence were verified.')
             from repository.deliverables.concepts import context_for_grade, enabled

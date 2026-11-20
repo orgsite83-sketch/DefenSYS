@@ -1,5 +1,6 @@
 """Automatic outcomes reuse real concept, evaluation, and repeat services."""
 from django.core.exceptions import ValidationError
+from django.test import tag
 from rest_framework.test import APITestCase, APITransactionTestCase
 
 from defense.scheduler.models import SchedulePanelist
@@ -455,6 +456,7 @@ class AutomaticStageOutcomeTests(APITestCase):
         self.assertEqual(self.grade.panel_score, Decimal('74.90'))
 
 
+@tag('serialized_db')
 class AutomaticOutcomeConcurrencyTests(APITransactionTestCase):
     serialized_rollback = True
     _rubric = AutomaticConceptOutcomeTests._rubric

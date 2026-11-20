@@ -2,14 +2,14 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
-/// Shares the panels' natural height without asking the calendar's
-/// LayoutBuilder for unsupported intrinsic dimensions or fixing its height.
+/// Keeps the calendar at least as tall as the readiness/attention column.
+/// The leading panels retain their natural heights when Month view grows.
 class OverviewPanelRow extends MultiChildRenderObjectWidget {
   OverviewPanelRow({
     super.key,
-    required Widget readiness,
+    required Widget leading,
     required Widget schedule,
-  }) : super(children: [readiness, schedule]);
+  }) : super(children: [leading, schedule]);
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
@@ -58,10 +58,6 @@ class _OverviewPanelRowRender extends RenderBox
     );
     final height = math.max(left.size.height, right.size.height);
     size = constraints.constrain(Size(width, height));
-    left.layout(
-      BoxConstraints.tight(Size(leftWidth, height)),
-      parentUsesSize: true,
-    );
     right.layout(
       // Keep height unbounded so internal calendar changes (Month/Week or
       // selected-session details) propagate layout invalidation to this row.

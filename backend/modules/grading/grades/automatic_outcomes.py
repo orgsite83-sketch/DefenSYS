@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from .models import TeamGrade
-from .outcome_rules import automatic_outcomes, hearing_concepts, outcome_payload
+from .outcome_rules import automatic_outcomes, hearing_concepts, outcome_payload, deliberation_policy
 
 
 def notify_assessment(grade):
@@ -50,6 +50,10 @@ def _locked_grade(grade):
 
 @transaction.atomic
 def resolve_outcome(grade, *, actor=None, selected_key=None, review_token=None):
+    if deliberation_policy(grade.schedule):
+        if selected_key is not None:
+            raise ValidationError('Confirm the concept and panel decision together in Team outcome.')
+        return grade
     if not automatic_outcomes(grade.schedule):
         return grade
     grade = _locked_grade(grade)
@@ -104,6 +108,8 @@ def resolve_outcome(grade, *, actor=None, selected_key=None, review_token=None):
 def save_recommendations(grade, *, actor, notes, review_token=None):
     if not automatic_outcomes(grade.schedule):
         raise ValidationError('This hearing uses the captured manual assessment workflow.')
+    if deliberation_policy(grade.schedule):
+        raise ValidationError('Record instructions with the panel decision. Confirmed instructions use the correction process.')
     if not isinstance(notes, str) or len(notes) > 5000:
         raise ValidationError('Enter recommendations of up to 5000 characters.')
     grade = _locked_grade(grade)

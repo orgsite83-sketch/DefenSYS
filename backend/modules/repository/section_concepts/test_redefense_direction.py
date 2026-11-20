@@ -2,7 +2,7 @@
 from copy import deepcopy
 
 from django.core.exceptions import ValidationError
-from django.test import override_settings
+from django.test import override_settings, tag
 from rest_framework.test import APITestCase, APITransactionTestCase
 
 from defense.scheduler.panelist_evaluation import (
@@ -55,6 +55,17 @@ class SharedRedefenseDirectionTests(APITestCase):
         return confirm(self.grade, actor=self.chair, direction=direction,
             source_round_id=current['source_round_id'],
             review_token=kwargs.pop('review_token', current['review_token']), **kwargs)
+
+    def release_outcome(self):
+        import uuid
+        from types import SimpleNamespace
+        from grading.grades import dissemination
+        self.grade.refresh_from_db()
+        request = SimpleNamespace(user=self.admin)
+        reviewed = dissemination.preview(request, {'filters': {'scope': 'capstone', 'entity': 'teams',
+            'semester_id': self.semester.pk, 'defense_stage_id': self.stage.pk, 'coverage': 'assessment'},
+            'grade_ids': [self.grade.pk]})
+        dissemination.confirm(request, {'review_token': reviewed['review_token'], 'batch_id': str(uuid.uuid4())})
 
     def test_selection_narrows_required_work_and_reuses_submitted_selected_score(self):
         self.assertEqual(concept_keys(self.schedule), ['c1', 'c2', 'c3'])
@@ -152,7 +163,7 @@ class SharedRedefenseDirectionTests(APITestCase):
         self.assertEqual(services.module_blocker(self.team, self.stage, following), '')
         from student_teams.capstone_lifecycle import team_snapshot
         self.assertEqual(team_snapshot(self.team)['project_direction'], 'independent')
-        state = concepts.payload(self.team, self.stage, actor=self.student)
+        state = concepts.payload(self.team, self.stage, actor=self.chair)
         self.assertEqual(state['selection_mode'], 'team_concept')
         self.assertFalse(state['shared_import_pending'])
         self.assertEqual(state['history'][0]['next_attempt_direction']['direction'], 'independent')
@@ -300,6 +311,7 @@ class SharedRedefenseDirectionTests(APITestCase):
         self.prepare_redefense()
         self.decide()
         for attempt in (2, 3):
+            self.release_outcome()
             self.assertFalse(is_stage_ready(self.team, self.stage))
             for key in services.KEYS:
                 title_workflow.team_action(self.team, self.stage, self.student, 'submit_title', key,
@@ -498,6 +510,7 @@ class SharedRedefenseDirectionTests(APITestCase):
 
 
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
+@tag('serialized_db')
 class SharedDirectionConcurrencyTests(APITransactionTestCase):
     # Suppress post_migrate during the flush below: it would recreate content
     # types with new IDs before restoring the serialized migration fixtures.

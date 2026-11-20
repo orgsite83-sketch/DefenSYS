@@ -250,7 +250,7 @@ class DefenseBoardApiTests(APITestCase):
         TeamGrade.objects.filter(pk=grade.pk).update(verdict='approved_with_revisions',
             verdict_remarks='Calibrate the soil sensors.', revision_deadline=date(2099, 5, 22))
         DefenseSchedule.objects.filter(pk=self.capstone_schedule.pk).update(status='done')
-        self.client.force_authenticate(self.student)
+        self.client.force_authenticate(self.admin)
         response = self.client.get('/api/defense/board/', {'scope': 'capstone'})
         record = response.data['schedules'][0]
         self.assertEqual(record['display_status'], 'revisions_pending')
@@ -272,7 +272,7 @@ class DefenseBoardApiTests(APITestCase):
             revision_deadline=date(2099, 5, 22))
         TeamGrade.objects.filter(pk=grade.pk).update(schedule=None, verdict='approved', status='published', final_grade=80)
         DefenseSchedule.objects.filter(pk=self.capstone_schedule.pk).update(status='archived')
-        self.client.force_authenticate(self.student)
+        self.client.force_authenticate(self.admin)
         response = self.client.get('/api/defense/board/', {'scope': 'capstone'})
         record = response.data['schedules'][0]
         self.assertEqual(record['display_status'], 'archived')

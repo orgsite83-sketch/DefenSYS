@@ -10,6 +10,7 @@ import 'components/session_evaluator_access_dialog.dart';
 import 'components/schedule_manager_dialog.dart';
 import '../grade_center/grade_correction_dialog.dart';
 import 'package:flutter/material.dart';
+import '../../../../widgets/defense/re_demo_workspace.dart';
 import '../../../../models/defense_workflow_labels.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -29,6 +30,7 @@ import '../defense_scheduler/dialogs/manual_slot_editor_dialog.dart';
 import '../defense_scheduler/dialogs/panelist_pool_dialog.dart';
 import '../defense_scheduler/dialogs/team_deliverables_review_dialog.dart';
 import '../defense_scheduler/models/schedule_import_models.dart';
+import '../defense_scheduler/models/team_status.dart';
 import '../grade_center/grade_center_team_detail_screen.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../../../../widgets/feedback/empty_state.dart';
@@ -388,21 +390,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               isTeamStageReady(t, activeStageName),
         )
         .toList();
-    final completedTeamsForActiveStage = scopeTeams
-        .where(
-          (t) =>
-              activeStageName.isNotEmpty &&
-              isTeamStageCompleted(t, activeStageName),
-        )
-        .toList();
-    final pendingTeamsForActiveStage = scopeTeams
-        .where(
-          (t) =>
-              activeStageName.isNotEmpty &&
-              getTeamStageStatus(t, activeStageName) == 'pending',
-        )
-        .toList();
-
     final totalReadyAcrossAllStages = scopeTeams.where((t) {
       final readyStage = t['ready_for_stage']?.toString() ?? '';
       return readyStage.isNotEmpty && isTeamStageReady(t, readyStage);
@@ -454,17 +441,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                         ),
                         const SizedBox(height: 16),
                       ],
-                      _buildViewSwitcher(scopeTeams, currentView),
+                      _buildViewSwitcher(currentView),
                       const SizedBox(height: 20),
                       if (currentView == DefenseOperationsView.schedules) ...[
                         _buildReadinessCalloutBanner(totalReadyAcrossAllStages),
                       ] else ...[
-                        _buildReadinessSummary(
-                          scopeTeams.length,
-                          readyTeamsForActiveStage.length,
-                          completedTeamsForActiveStage.length,
-                          pendingTeamsForActiveStage.length,
-                        ),
                         if (schedState.error != null) ...[
                           const SizedBox(height: 12),
                           _buildLoadError(
@@ -496,15 +477,23 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             state: schedState,
                             scope: effectiveReadinessScope,
                             activeStageOrEventName: activeStageName,
-                            title: 'Deliverables & readiness',
+                            title: 'Team status',
                             subtitle:
-                                'Review requirements and endorsements before scheduling.',
-                            stageSelector: _buildStagePillsRow(
+                                'Completed applies to the selected stage or event.',
+                            stageSelector: _buildReadinessStageDropdown(
                               schedState,
                               effectiveReadinessScope,
                               activeStageName,
                             ),
                             headerAction: null,
+                            onReDemoChanged: () {
+                              ref
+                                  .read(defenseBoardProvider.notifier)
+                                  .fetchBoard();
+                              ref
+                                  .read(defenseSchedulerProvider.notifier)
+                                  .fetchSchedules();
+                            },
                             onReviewTeamDeliverables: (team, stageLabel) =>
                                 TeamDeliverablesReviewDialog.show(
                                   context,
@@ -526,14 +515,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
-  Widget _buildViewSwitcher(
-    List<Map<String, dynamic>> readinessTeams,
-    DefenseOperationsView currentView,
-  ) {
-    final ready = readinessTeams.where((team) {
-      final stage = team['ready_for_stage']?.toString() ?? '';
-      return stage.isNotEmpty && isTeamStageReady(team, stage);
-    }).length;
+  Widget _buildViewSwitcher(DefenseOperationsView currentView) {
     return Container(
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: _borderColor)),
@@ -566,7 +548,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   child: Text(
                     view == DefenseOperationsView.schedules
                         ? 'Schedules'
-                        : 'Readiness${ready > 0 ? ' · $ready ready' : ''}',
+                        : 'Team Status',
                   ),
                 ),
               ),
@@ -700,231 +682,128 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             onPressed: () => ref
                 .read(defenseBoardActiveViewProvider.notifier)
                 .setView(DefenseOperationsView.readiness),
-            child: const Text('Review readiness'),
+            child: const Text('View team status'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStagePillsRow(
+  Widget _buildReadinessStageDropdown(
     DefenseSchedulerState schedState,
     String scope,
     String activeStageName,
   ) {
+    final capstone = scope == 'capstone';
+    final items = capstone ? schedState.defenseStages : schedState.pitEvents;
+    String labelOf(Map<String, dynamic> item) =>
+        (item[capstone ? 'label' : 'event_name'] ?? '').toString();
+    final choices = <String, Map<String, dynamic>>{
+      for (final entry in items.asMap().entries)
+        if (labelOf(entry.value).isNotEmpty)
+          capstone
+                  ? 'stage:${asInt(entry.value['id']) ?? entry.key}'
+                  : 'event:${labelOf(entry.value)}':
+              entry.value,
+    };
+    String? selected;
+    for (final entry in choices.entries) {
+      if (labelOf(entry.value) == activeStageName &&
+          (!capstone ||
+              asInt(entry.value['id']) == _selectedReadinessStageId)) {
+        selected = entry.key;
+        break;
+      }
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: _isDark
-                ? DefensysTokens.mistSurface
-                : const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _borderColor),
-          ),
+        final width = constraints.maxWidth.clamp(0.0, 440.0).toDouble();
+        return SizedBox(
+          key: const ValueKey('readiness-stage-selector'),
+          width: width,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.tune_rounded,
-                    size: 16,
-                    color: _textSecondaryColor,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    scope == 'capstone'
-                        ? 'Target Capstone Defense Milestone:'
-                        : 'Target PIT Event:',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: _textSecondaryColor,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ],
+              Text(
+                capstone ? 'Defense stage' : 'PIT event',
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: _textSecondaryColor,
+                ),
               ),
-              const SizedBox(height: 10),
-              if (scope == 'capstone') ...[
-                if (schedState.defenseStages.isEmpty)
-                  Text(
-                    'No defense stages configured. Go to Defense Stages Setup to create milestones.',
-                    style: TextStyle(fontSize: 12, color: _textSecondaryColor),
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: schedState.defenseStages.map((stage) {
-                      final stageId = asInt(stage['id']);
-                      final stageLabel = stage['label']?.toString() ?? '';
-                      final isSelected =
-                          stageId == _selectedReadinessStageId ||
-                          (stageId == null && stageLabel == activeStageName);
-
-                      final readyCountForStage = teamsForScope(
-                        schedState,
-                        'capstone',
-                      ).where((t) => isTeamStageReady(t, stageLabel)).length;
-                      final completedCountForStage =
-                          teamsForScope(schedState, 'capstone')
-                              .where((t) => isTeamStageCompleted(t, stageLabel))
-                              .length;
-                      final pendingCountForStage =
-                          teamsForScope(schedState, 'capstone')
-                              .where(
-                                (t) =>
-                                    getTeamStageStatus(t, stageLabel) ==
-                                    'pending',
-                              )
-                              .length;
-                      final stageTeamCount = teamsForScope(
-                        schedState,
-                        'capstone',
-                      ).length;
-                      final awaitingCompletionCount =
-                          teamsForScope(schedState, 'capstone')
-                              .where(
-                                (t) =>
-                                    getTeamStageStatus(t, stageLabel) ==
-                                    'awaiting_completion',
-                              )
-                              .length;
-
-                      String badgeText;
-                      Color badgeColor;
-                      Color badgeTextColor;
-
-                      if (readyCountForStage > 0) {
-                        badgeText = '$readyCountForStage ready';
-                        badgeColor = _isDark
-                            ? const Color(0xFF064E3B).withValues(alpha: 0.5)
-                            : const Color(0xFFDEF7EC);
-                        badgeTextColor = _isDark
-                            ? const Color(0xFF6EE7B7)
-                            : const Color(0xFF03543F);
-                      } else if (stageTeamCount > 0 &&
-                          completedCountForStage == stageTeamCount) {
-                        badgeText = 'Complete';
-                        badgeColor = _isDark
-                            ? const Color(0xFF064E3B).withValues(alpha: 0.5)
-                            : const Color(0xFFDEF7EC);
-                        badgeTextColor = _isDark
-                            ? const Color(0xFF6EE7B7)
-                            : const Color(0xFF03543F);
-                      } else {
-                        badgeText = awaitingCompletionCount > 0
-                            ? '$awaitingCompletionCount awaiting completion'
-                            : pendingCountForStage > 0
-                            ? '$pendingCountForStage pending'
-                            : '${stageTeamCount - completedCountForStage} in progress';
-                        badgeColor = _isDark
-                            ? const Color(0xFF78350F).withValues(alpha: 0.5)
-                            : const Color(0xFFFEF3C7);
-                        badgeTextColor = _isDark
-                            ? const Color(0xFFFDE68A)
-                            : const Color(0xFF92400E);
-                      }
-
-                      return _stageFilterPill(
-                        label: stageLabel,
-                        badgeText: badgeText,
-                        badgeColor: badgeColor,
-                        badgeTextColor: badgeTextColor,
-                        isSelected: isSelected,
-                        onTap: () {
-                          setState(() {
-                            _selectedReadinessStageId = stageId;
-                          });
-                        },
-                      );
-                    }).toList(),
+              const SizedBox(height: 6),
+              ShadSelect<String>(
+                key: ValueKey('readiness-stage-select-$scope-$selected'),
+                initialValue: selected,
+                enabled: choices.isNotEmpty && !schedState.isLoading,
+                minWidth: width,
+                maxWidth: width,
+                maxHeight: 320,
+                placeholder: Text(
+                  schedState.isLoading
+                      ? (capstone ? 'Loading stages…' : 'Loading events…')
+                      : choices.isEmpty
+                      ? (capstone
+                            ? 'No stages configured'
+                            : 'No events configured')
+                      : (capstone ? 'Select a stage' : 'Select an event'),
+                ),
+                selectedOptionBuilder: (context, value) => Tooltip(
+                  message: labelOf(choices[value]!),
+                  child: Text(
+                    labelOf(choices[value]!),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-              ] else ...[
-                if (schedState.pitEvents.isEmpty)
-                  Text(
-                    'No PIT events configured for this term.',
-                    style: TextStyle(fontSize: 12, color: _textSecondaryColor),
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: schedState.pitEvents.map((evt) {
-                      final eventName = evt['event_name']?.toString() ?? '';
-                      final isSelected = eventName == activeStageName;
-                      final readyCountForEvent = teamsForScope(
-                        schedState,
-                        'pit',
-                      ).where((t) => isTeamStageReady(t, eventName)).length;
-                      final completedCountForEvent = teamsForScope(
-                        schedState,
-                        'pit',
-                      ).where((t) => isTeamStageCompleted(t, eventName)).length;
-                      final pendingCountForEvent =
-                          teamsForScope(schedState, 'pit')
-                              .where(
-                                (t) =>
-                                    getTeamStageStatus(t, eventName) ==
-                                    'pending',
-                              )
-                              .length;
-                      final eventTeamCount = teamsForScope(
-                        schedState,
-                        'pit',
-                      ).length;
-
-                      String badgeText;
-                      Color badgeColor;
-                      Color badgeTextColor;
-
-                      if (readyCountForEvent > 0) {
-                        badgeText = '$readyCountForEvent ready';
-                        badgeColor = _isDark
-                            ? const Color(0xFF064E3B).withValues(alpha: 0.5)
-                            : const Color(0xFFDEF7EC);
-                        badgeTextColor = _isDark
-                            ? const Color(0xFF6EE7B7)
-                            : const Color(0xFF03543F);
-                      } else if (eventTeamCount > 0 &&
-                          completedCountForEvent == eventTeamCount) {
-                        badgeText = 'Complete';
-                        badgeColor = _isDark
-                            ? const Color(0xFF064E3B).withValues(alpha: 0.5)
-                            : const Color(0xFFDEF7EC);
-                        badgeTextColor = _isDark
-                            ? const Color(0xFF6EE7B7)
-                            : const Color(0xFF03543F);
-                      } else {
-                        badgeText = pendingCountForEvent > 0
-                            ? '$pendingCountForEvent pending'
-                            : '${eventTeamCount - completedCountForEvent} in progress';
-                        badgeColor = _isDark
-                            ? const Color(0xFF78350F).withValues(alpha: 0.5)
-                            : const Color(0xFFFEF3C7);
-                        badgeTextColor = _isDark
-                            ? const Color(0xFFFDE68A)
-                            : const Color(0xFF92400E);
-                      }
-
-                      return _stageFilterPill(
-                        label: eventName,
-                        badgeText: badgeText,
-                        badgeColor: badgeColor,
-                        badgeTextColor: badgeTextColor,
-                        isSelected: isSelected,
-                        onTap: () {
-                          setState(() {
-                            _selectedReadinessEventName = eventName;
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-              ],
+                ),
+                options: choices.entries
+                    .map(
+                      (entry) => ShadOption<String>(
+                        value: entry.key,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              labelOf(entry.value),
+                              style: const TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _readinessStageSummary(
+                                schedState,
+                                scope,
+                                entry.value,
+                              ),
+                              style: TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                                fontSize: 12,
+                                color: _textSecondaryColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  final item = choices[value];
+                  if (item == null) return;
+                  setState(() {
+                    if (capstone) {
+                      _selectedReadinessStageId = asInt(item['id']);
+                    } else {
+                      _selectedReadinessEventName = labelOf(item);
+                    }
+                  });
+                },
+              ),
             ],
           ),
         );
@@ -932,101 +811,62 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
-  Widget _stageFilterPill({
-    required String label,
-    required String badgeText,
-    required Color badgeColor,
-    required Color badgeTextColor,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.maroon
-              : (_isDark ? DefensysTokens.mistInputFill : Colors.white),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? AppColors.maroon : _borderColor,
-            width: isSelected ? 1.5 : 1.0,
+  String _readinessStageSummary(
+    DefenseSchedulerState state,
+    String scope,
+    Map<String, dynamic> item,
+  ) {
+    final capstone = scope == 'capstone';
+    final label = (item[capstone ? 'label' : 'event_name'] ?? '').toString();
+    final teams = teamsForScope(
+      state,
+      scope,
+    ).where((team) => capstone || teamMatchesStatusEvent(team, item)).toList();
+    final statuses = teams
+        .map(
+          (team) => TeamStatus.fromTeam(
+            team,
+            label,
+            scope: scope,
+            event: capstone ? const {} : item,
           ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: AppColors.maroon.withValues(alpha: 0.2),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? Colors.white : _textPrimaryColor,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? Colors.white.withValues(alpha: 0.2)
-                    : badgeColor,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                badgeText,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  color: isSelected ? Colors.white : badgeTextColor,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+        )
+        .toList();
+    final ready = capstone
+        ? teams.where((team) => isTeamStageReady(team, label)).length
+        : statuses
+              .where(
+                (status) => {
+                  'ready_to_schedule',
+                  'ready_to_schedule_redefense',
+                  'ready_for_retake',
+                }.contains(status.code),
+              )
+              .length;
+    final completed = capstone
+        ? teams.where((team) => isTeamStageCompleted(team, label)).length
+        : statuses
+              .where((status) => status.group == TeamStatusGroup.completed)
+              .length;
+    final pending = statuses
+        .where((status) => status.group == TeamStatusGroup.beforeScheduling)
+        .length;
+    final awaitingCompletion = capstone
+        ? teams
+              .where(
+                (team) =>
+                    getTeamStageStatus(team, label) == 'awaiting_completion',
+              )
+              .length
+        : 0;
+    if (ready > 0) return '$ready ready';
+    if (teams.isNotEmpty && completed == teams.length) return 'Complete';
+    if (awaitingCompletion > 0) {
+      return '$awaitingCompletion awaiting completion';
+    }
+    if (pending > 0) return '$pending before scheduling';
+    return '${teams.length - completed} remaining';
   }
-
-  Widget _buildReadinessSummary(
-    int totalScopeTeams,
-    int readyCount,
-    int completedCount,
-    int pendingCount,
-  ) => Wrap(
-    spacing: 24,
-    runSpacing: 8,
-    children: [
-      Text(
-        '$totalScopeTeams ${totalScopeTeams == 1 ? 'team' : 'teams'}',
-        style: DefensysTokens.body.copyWith(color: _textPrimaryColor),
-      ),
-      Text(
-        '$readyCount ready to schedule',
-        style: DefensysTokens.subtitle.copyWith(color: _textSecondaryColor),
-      ),
-      Text(
-        '$completedCount completed this stage',
-        style: DefensysTokens.subtitle.copyWith(color: _textSecondaryColor),
-      ),
-      Text(
-        '$pendingCount pending',
-        style: DefensysTokens.subtitle.copyWith(color: _textSecondaryColor),
-      ),
-    ],
-  );
 
   Widget _buildHeader(
     DefenseBoardState state,
@@ -1257,6 +1097,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       'grading_incomplete',
       'awaiting_completion',
       'revisions_pending',
+      're_demo_required',
+      're_demo_scheduled',
       'changes_requested',
       'needs_review',
       'redefense_required',
@@ -2889,6 +2731,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           icon: LucideIcons.info,
           onPressed: () => _showDefenseDetailsDialog(schedule, group),
         ),
+        if ((schedule['assessment'] as Map?)?['re_demo'] is Map)
+          DefensysMenuItem(
+            label: 'Re-demo requirements & schedule',
+            icon: LucideIcons.listChecks,
+            onPressed: () => _openReDemo(schedule),
+          ),
         DefensysMenuItem(
           label: 'Review deliverables',
           icon: LucideIcons.folderCheck,
@@ -3514,15 +3362,38 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
+  Future<void> _openReDemo(
+    Map<String, dynamic> schedule, {
+    bool scheduleNow = false,
+  }) async {
+    final id = _asInt(schedule['id']);
+    if (id == null) return;
+    await showReDemoWorkspace(
+      context,
+      sourceScheduleId: id,
+      scheduleNow: scheduleNow,
+    );
+    if (!mounted) return;
+    await Future.wait([
+      ref.read(defenseBoardProvider.notifier).fetchBoard(),
+      ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
+    ]);
+  }
+
   Widget _progressCell(Map<String, dynamic> schedule) {
     final status = (schedule['display_status'] ?? schedule['status'] ?? '')
         .toString();
     final assessment = schedule['assessment'];
+    final demo = assessment is Map ? assessment['re_demo'] as Map? : null;
     String? detail;
     if (assessment is Map) {
       final required = _asInt(assessment['panel_evaluators_required']);
       final submitted = _asInt(assessment['panel_evaluators_submitted']);
-      if (required != null &&
+      if (demo != null && status.startsWith('re_demo_')) {
+        detail = demo['state'] == 'scheduled'
+            ? '${demo['scheduled_date']} · ${demo['start_time']?.toString().split(':').take(2).join(':')} · ${demo['room']}'
+            : '${demo['outstanding_count']} required demonstrations';
+      } else if (required != null &&
           required > 0 &&
           submitted != null &&
           const [
@@ -3549,6 +3420,22 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           Text(
             detail,
             style: DefensysTokens.caption.copyWith(color: _textSecondaryColor),
+          ),
+        ],
+        if (demo != null && status.startsWith('re_demo_')) ...[
+          const SizedBox(height: 8),
+          ShadButton.outline(
+            size: ShadButtonSize.sm,
+            onPressed: () => _openReDemo(
+              schedule,
+              scheduleNow:
+                  _canManageSchedule(schedule) && demo['can_schedule'] == true,
+            ),
+            child: Text(
+              _canManageSchedule(schedule) && demo['can_schedule'] == true
+                  ? 'Schedule re-demo'
+                  : 'View re-demo',
+            ),
           ),
         ],
       ],
@@ -3582,6 +3469,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       case 'needs_review':
       case 'awaiting_completion':
       case 'revisions_pending':
+      case 're_demo_required':
+      case 're_demo_scheduled':
       case 'grading_incomplete':
       case 'pending_post_defense':
       case 'awaiting_endorsement':

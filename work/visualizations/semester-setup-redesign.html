@@ -1,0 +1,195 @@
+<div id="ds-semester-redesign" aria-label="DefenSYS semester setup proposal">
+  <style>
+    #ds-semester-redesign{--ds-bg:light-dark(#f8fafc,#161618);--ds-surface:light-dark(#fff,#212024);--ds-text:light-dark(#0f172a,#f4f4f5);--ds-muted:light-dark(#475569,#a1a1aa);--ds-line:light-dark(#e2e8f0,#35343a);--ds-soft:light-dark(#f1f5f9,#28272d);--ds-brand:light-dark(#7a110a,#c0392b);--ds-brand-text:light-dark(#7a110a,#f4a69c);--ds-brand-soft:light-dark(#faf0ef,#382321);--ds-green:light-dark(#047857,#6ee7b7);--ds-green-bg:light-dark(#ecfdf5,#15382d);--ds-amber:light-dark(#92400e,#fcd34d);--ds-amber-bg:light-dark(#fffbeb,#372d1d);--ds-white:#fff;color-scheme:light dark;font-family:Inter,Arial,sans-serif;font-size:14px;line-height:1.5;color:var(--ds-text)}
+    #ds-semester-redesign *{box-sizing:border-box}
+    #ds-semester-redesign [hidden]{display:none!important}
+    #ds-semester-redesign h1,#ds-semester-redesign h2,#ds-semester-redesign h3,#ds-semester-redesign p{margin:0}
+    #ds-semester-redesign button,#ds-semester-redesign input{font:inherit}
+    #ds-semester-redesign button{color:inherit}
+    #ds-semester-redesign button:focus-visible,#ds-semester-redesign input:focus-visible,#ds-semester-redesign summary:focus-visible{outline:2px solid var(--ds-brand-text);outline-offset:4px}
+    #ds-semester-redesign .ds-shell{display:grid;grid-template-columns:170px minmax(0,1fr);background:var(--ds-bg);min-height:790px}
+    #ds-semester-redesign .ds-sidebar{background:var(--ds-surface);border-right:1px solid var(--ds-line);padding:21px 12px;display:flex;flex-direction:column;gap:26px}
+    #ds-semester-redesign .ds-logo{display:flex;align-items:center;gap:8px;padding:0 8px;font-weight:650;letter-spacing:-.3px}
+    #ds-semester-redesign .ds-logo i{color:var(--ds-brand-text)}
+    #ds-semester-redesign .ds-small{font-size:12px;color:var(--ds-muted)}
+    #ds-semester-redesign .ds-navgroup{display:grid;gap:5px}
+    #ds-semester-redesign .ds-navlabel{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--ds-muted);padding:0 9px 6px}
+    #ds-semester-redesign .ds-navitem{display:flex;align-items:center;gap:8px;padding:9px;border-radius:6px;font-size:12px;color:var(--ds-muted)}
+    #ds-semester-redesign .ds-navitem.ds-active{background:var(--ds-brand);color:var(--ds-white);font-weight:600}
+    #ds-semester-redesign .ds-profile{border-top:1px solid var(--ds-line);padding:15px 8px 0;margin-top:auto;display:flex;align-items:center;gap:9px;font-size:12px}
+    #ds-semester-redesign .ds-avatar{width:27px;height:27px;display:grid;place-items:center;background:var(--ds-brand-soft);color:var(--ds-brand-text);border-radius:50%;font-weight:600}
+    #ds-semester-redesign .ds-workspace{min-width:0}
+    #ds-semester-redesign .ds-topbar{display:flex;align-items:center;gap:9px;padding:19px 25px;background:var(--ds-surface);border-bottom:1px solid var(--ds-line);padding-right:100px;min-height:76px}
+    #ds-semester-redesign .ds-institution{font-weight:600;font-size:13px}
+    #ds-semester-redesign .ds-main{padding:23px 25px 28px;max-width:1200px;margin:auto}
+    #ds-semester-redesign .ds-crumb{display:flex;align-items:center;gap:6px;margin-bottom:23px;font-size:12px;color:var(--ds-muted)}
+    #ds-semester-redesign .ds-crumb i{width:13px;height:13px}
+    #ds-semester-redesign .ds-titleline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    #ds-semester-redesign h1{font-size:25px;line-height:1.25;letter-spacing:-.55px;font-weight:650}
+    #ds-semester-redesign .ds-badge{font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border-radius:4px;white-space:nowrap;background:var(--ds-soft);color:var(--ds-muted)}
+    #ds-semester-redesign .ds-good{color:var(--ds-green);background:var(--ds-green-bg)}
+    #ds-semester-redesign .ds-warning{color:var(--ds-amber);background:var(--ds-amber-bg)}
+    #ds-semester-redesign .ds-meta{display:flex;align-items:center;gap:7px 14px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--ds-muted)}
+    #ds-semester-redesign .ds-meta>span{display:inline-flex;gap:6px;align-items:center}
+    #ds-semester-redesign .ds-btn{border:1px solid var(--ds-line);border-radius:6px;background:var(--ds-surface);padding:7px 11px;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:12px;font-weight:500;min-height:34px;transition:background .15s}
+    #ds-semester-redesign .ds-btn:hover{background:var(--ds-soft)}
+    #ds-semester-redesign .ds-btn.ds-primary{background:var(--ds-brand);border-color:var(--ds-brand);color:var(--ds-white)}
+    #ds-semester-redesign .ds-btn.ds-primary:hover{filter:brightness(.92)}
+    #ds-semester-redesign .ds-textbtn{background:none;border:0;padding:3px 0;color:var(--ds-brand-text);font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:5px;text-align:left}
+    #ds-semester-redesign .ds-textbtn:hover{text-decoration:underline;text-underline-offset:3px}
+    #ds-semester-redesign .ds-tabs{display:flex;gap:24px;border-bottom:1px solid var(--ds-line);margin:24px 0 22px}
+    #ds-semester-redesign .ds-tab{border:0;border-bottom:2px solid transparent;background:none;padding:0 0 11px;color:var(--ds-muted);font-size:13px;white-space:nowrap}
+    #ds-semester-redesign .ds-tab[aria-selected=true]{border-bottom-color:var(--ds-brand-text);color:var(--ds-brand-text);font-weight:600}
+    #ds-semester-redesign .ds-contentgrid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;align-items:start}
+    #ds-semester-redesign .ds-stack{display:grid;gap:18px;min-width:0}
+    #ds-semester-redesign .ds-panel{background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:8px;min-width:0}
+    #ds-semester-redesign .ds-panelhead{padding:17px 18px 14px;border-bottom:1px solid var(--ds-line);display:flex;align-items:center;justify-content:space-between;gap:9px;flex-wrap:wrap}
+    #ds-semester-redesign h2{font-size:14px;font-weight:600;letter-spacing:-.1px}
+    #ds-semester-redesign h3{font-size:13px;font-weight:600}
+    #ds-semester-redesign .ds-body{padding:17px 18px}
+    #ds-semester-redesign .ds-facts{margin:0;display:grid;gap:17px}
+    #ds-semester-redesign .ds-fact{display:grid;grid-template-columns:100px minmax(0,1fr);gap:10px}
+    #ds-semester-redesign dt{font-size:12px;color:var(--ds-muted)}
+    #ds-semester-redesign dd{margin:0;font-size:13px;font-weight:500}
+    #ds-semester-redesign dd .ds-small{font-weight:400;margin-top:3px}
+    #ds-semester-redesign .ds-disclosure{border-top:1px solid var(--ds-line);padding:13px 18px;font-size:12px}
+    #ds-semester-redesign summary{display:flex;align-items:center;gap:7px;list-style:none;color:var(--ds-muted)}
+    #ds-semester-redesign summary::-webkit-details-marker{display:none}
+    #ds-semester-redesign summary i{width:14px;height:14px}
+    #ds-semester-redesign details[open] summary i{transform:rotate(90deg)}
+    #ds-semester-redesign details p{margin-top:10px;color:var(--ds-muted);max-width:65ch}
+    #ds-semester-redesign .ds-empty{padding:25px 18px 22px;display:flex;flex-direction:column;align-items:flex-start;gap:9px}
+    #ds-semester-redesign .ds-empty p{max-width:43ch}
+    #ds-semester-redesign .ds-empty .ds-btn{margin-top:5px}
+    #ds-semester-redesign .ds-setting{padding:17px 18px;display:flex;gap:14px;align-items:flex-start}
+    #ds-semester-redesign .ds-setting+.ds-setting{border-top:1px solid var(--ds-line)}
+    #ds-semester-redesign .ds-settingcopy{flex:1;min-width:0;font-size:13px;font-weight:500}
+    #ds-semester-redesign .ds-settingcopy .ds-small{font-weight:400;margin-top:4px}
+    #ds-semester-redesign .ds-switch{appearance:none;width:32px;height:19px;min-width:32px;border:0;border-radius:11px;background:var(--ds-line);position:relative;margin:2px 0 0;transition:background .15s}
+    #ds-semester-redesign .ds-switch:before{content:'';width:13px;height:13px;border-radius:50%;background:var(--ds-white);position:absolute;left:3px;top:3px;transition:transform .15s}
+    #ds-semester-redesign .ds-switch:checked{background:var(--ds-brand)}
+    #ds-semester-redesign .ds-switch:checked:before{transform:translateX(13px)}
+    #ds-semester-redesign .ds-scope{padding:11px 18px;border-top:1px solid var(--ds-line);font-size:11px;color:var(--ds-muted)}
+    #ds-semester-redesign .ds-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+    #ds-semester-redesign .ds-intro p{margin-top:4px;max-width:65ch}
+    #ds-semester-redesign .ds-cohort{padding:16px 18px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:15px;align-items:center}
+    #ds-semester-redesign .ds-cohort+.ds-cohort{border-top:1px solid var(--ds-line)}
+    #ds-semester-redesign .ds-cohort .ds-small{margin-top:4px}
+    #ds-semester-redesign .ds-cohortaction{display:flex;justify-content:flex-end}
+    #ds-semester-redesign .ds-cohortdetail{padding:0 18px 17px;display:grid;gap:10px}
+    #ds-semester-redesign .ds-cohortdetail .ds-small{max-width:65ch}
+    #ds-semester-redesign .ds-inline-note{border-left:2px solid var(--ds-line);padding-left:12px;font-size:12px;color:var(--ds-muted);margin-top:18px}
+    #ds-semester-redesign .ds-generalrow{padding:17px 18px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+    #ds-semester-redesign .ds-generalrow+.ds-generalrow{border-top:1px solid var(--ds-line)}
+    #ds-semester-redesign .ds-generalrow p{margin-top:5px;max-width:65ch}
+    #ds-semester-redesign .ds-editor{border-top:1px solid var(--ds-line);padding:17px 18px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+    #ds-semester-redesign .ds-field{display:grid;gap:5px;flex:1;min-width:165px;font-size:12px;color:var(--ds-muted)}
+    #ds-semester-redesign .ds-field input{width:100%;border:1px solid var(--ds-line);border-radius:5px;padding:7px;color:var(--ds-text);background:var(--ds-surface);font-size:13px;min-height:35px}
+    #ds-semester-redesign .ds-advanced{margin-top:24px;font-size:12px;border-top:1px solid var(--ds-line);padding-top:17px}
+    #ds-semester-redesign .ds-advanced .ds-generalrow{padding-left:0;padding-right:0}
+    #ds-semester-redesign .ds-btn:disabled{opacity:.5;cursor:not-allowed}
+    #ds-semester-redesign .ds-previewstatus{margin-top:17px;padding:10px 12px;border-left:2px solid var(--ds-brand-text);background:var(--ds-brand-soft);font-size:12px;color:var(--ds-brand-text)}
+    #ds-semester-redesign .ds-footnote{display:flex;align-items:center;gap:5px;margin-top:22px;font-size:11px;color:var(--ds-muted)}
+    #ds-semester-redesign i{width:16px;height:16px;flex-shrink:0}
+    @media(max-width:850px){#ds-semester-redesign .ds-shell{grid-template-columns:145px minmax(0,1fr)}#ds-semester-redesign .ds-contentgrid{grid-template-columns:1fr}#ds-semester-redesign .ds-topbar{padding-left:20px}#ds-semester-redesign .ds-main{padding:20px}#ds-semester-redesign .ds-navitem{font-size:11px}}
+    @media(max-width:600px){#ds-semester-redesign .ds-shell{grid-template-columns:1fr}#ds-semester-redesign .ds-sidebar{display:none}#ds-semester-redesign .ds-topbar{padding:16px 100px 16px 17px}#ds-semester-redesign .ds-main{padding:19px 16px 25px}#ds-semester-redesign .ds-cohort{grid-template-columns:minmax(0,1fr) auto;gap:10px}#ds-semester-redesign .ds-cohortstate{grid-column:1;grid-row:2}#ds-semester-redesign .ds-cohortaction{grid-column:2;grid-row:1/3}#ds-semester-redesign .ds-tabs{gap:21px}#ds-semester-redesign .ds-tab{font-size:12px}#ds-semester-redesign .ds-fact{grid-template-columns:85px minmax(0,1fr)}}
+    @media(pointer:coarse){#ds-semester-redesign .ds-btn,#ds-semester-redesign .ds-tab,#ds-semester-redesign summary,#ds-semester-redesign .ds-textbtn{min-height:44px}#ds-semester-redesign .ds-switch{margin:12px 6px}#ds-semester-redesign .ds-field input{font-size:16px}}
+    @media(prefers-reduced-motion:reduce){#ds-semester-redesign *{transition:none!important}}
+  </style>
+  <div class="ds-shell">
+    <aside class="ds-sidebar" aria-label="Application navigation context">
+      <div class="ds-logo"><i data-lucide="layers" aria-hidden="true"></i>DefenSYS</div>
+      <div class="ds-navgroup"><span class="ds-navitem"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>Overview</span></div>
+      <div class="ds-navgroup"><p class="ds-navlabel">Semester setup</p><span class="ds-navitem ds-active" aria-current="page"><i data-lucide="calendar-days" aria-hidden="true"></i>Academic Periods</span><span class="ds-navitem"><i data-lucide="layers" aria-hidden="true"></i>Defense Stages</span><span class="ds-navitem"><i data-lucide="list-checks" aria-hidden="true"></i>Rubrics</span></div>
+      <div class="ds-navgroup"><p class="ds-navlabel">Roster &amp; teams</p><span class="ds-navitem"><i data-lucide="users" aria-hidden="true"></i>Users &amp; Roles</span><span class="ds-navitem"><i data-lucide="users-round" aria-hidden="true"></i>Student Teams</span></div>
+      <div class="ds-navgroup"><p class="ds-navlabel">Defense &amp; grading</p><span class="ds-navitem"><i data-lucide="calendar" aria-hidden="true"></i>Defense Schedule</span><span class="ds-navitem"><i data-lucide="clipboard-check" aria-hidden="true"></i>Evaluation &amp; Grades</span></div>
+      <div class="ds-profile"><span class="ds-avatar">A</span><div>admin<p class="ds-small">Academic Portal</p></div></div>
+    </aside>
+    <div class="ds-workspace">
+      <div class="ds-topbar"><div><p class="ds-institution">USTP Oroquieta</p><p class="ds-small">Department of Information Technology</p></div></div>
+      <main class="ds-main">
+        <div class="ds-crumb"><span>Academic Periods</span><i data-lucide="chevron-right" aria-hidden="true"></i><span>A.Y. 2025–2026</span></div>
+        <header>
+          <div class="ds-titleline"><h1>2nd Semester</h1><span class="ds-badge ds-good">● Active</span></div>
+          <div class="ds-meta"><span>A.Y. 2025–2026</span><span><i data-lucide="calendar" aria-hidden="true"></i><span data-date-label>Aug 1 – Dec 19, 2025</span></span><button type="button" class="ds-textbtn cursor-interaction" data-edit-dates>Edit dates</button></div>
+        </header>
+        <div class="ds-tabs" role="tablist" aria-label="Semester setup areas">
+          <button type="button" id="ds-tab-capstone" class="ds-tab cursor-interaction" role="tab" aria-selected="true" aria-controls="ds-capstone" data-tab="capstone">Capstone</button>
+          <button type="button" id="ds-tab-pit" class="ds-tab cursor-interaction" role="tab" aria-selected="false" aria-controls="ds-pit" data-tab="pit">PIT</button>
+          <button type="button" id="ds-tab-general" class="ds-tab cursor-interaction" role="tab" aria-selected="false" aria-controls="ds-general" data-tab="general">General settings</button>
+        </div>
+        <section id="ds-capstone" role="tabpanel" aria-labelledby="ds-tab-capstone">
+          <div class="ds-contentgrid">
+            <div class="ds-stack">
+              <section class="ds-panel"><div class="ds-panelhead"><h2>Capstone this semester</h2></div><div class="ds-body"><dl class="ds-facts"><div class="ds-fact"><dt>Course</dt><dd>Capstone 1</dd></div><div class="ds-fact"><dt>Adding teams</dt><dd><span class="ds-badge ds-good">Allowed</span><p class="ds-small">Create or import teams in Student Teams.</p></dd></div></dl></div><details class="ds-disclosure"><summary class="cursor-interaction"><i data-lucide="chevron-right" aria-hidden="true"></i>Continuing to Capstone 2</summary><p>You’ll review which teams can continue to Capstone 2 before activating the next semester.</p></details></section>
+              <section class="ds-panel"><div class="ds-panelhead"><h2>Defense stages</h2><span class="ds-badge ds-warning">Not configured</span></div><div class="ds-empty"><h3>Set up the defense sequence</h3><p class="ds-small">No stages are configured. Add the stages and requirements this semester will use.</p><button type="button" class="ds-btn ds-primary cursor-interaction" data-route="Defense Stages → stage setup for 2nd Semester, A.Y. 2025–2026."><i data-lucide="plus" aria-hidden="true"></i>Configure stages<i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div></section>
+            </div>
+            <section class="ds-panel"><div class="ds-panelhead"><div><h2>Evaluation access</h2><p class="ds-small">Capstone · this semester</p></div></div><label class="ds-setting"><span class="ds-settingcopy">Student peer evaluation<p class="ds-small">Allow students to submit peer evaluations.</p></span><input class="ds-switch cursor-interaction" type="checkbox" role="switch" id="ds-peer" aria-label="Student peer evaluation" checked></label><label class="ds-setting"><span class="ds-settingcopy">Adviser grading<p class="ds-small">Allow assigned advisers to submit grades.</p></span><input class="ds-switch cursor-interaction" type="checkbox" role="switch" id="ds-adviser" aria-label="Adviser grading" checked></label><div class="ds-scope">PIT peer evaluation is controlled per event.</div></section>
+          </div>
+        </section>
+        <section id="ds-pit" role="tabpanel" aria-labelledby="ds-tab-pit" hidden>
+          <div class="ds-intro"><div><h2>Year coordinators &amp; events</h2><p class="ds-small">Assign a coordinator for each year. Coordinators manage their pitch events.</p></div></div>
+          <section class="ds-panel" aria-label="PIT year coordinators">
+            <div class="ds-cohort"><div><h3>1st Year</h3><p class="ds-small">Concept pitch</p></div><div class="ds-cohortstate"><span class="ds-badge ds-warning">No coordinator</span><p class="ds-small">No events configured</p></div><div class="ds-cohortaction"><button type="button" class="ds-btn cursor-interaction" data-route="Users &amp; Roles → assign the 1st Year PIT coordinator.">Assign lead<i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div></div>
+            <div class="ds-cohort"><div><h3>2nd Year</h3><p class="ds-small">System design</p></div><div class="ds-cohortstate"><span class="ds-badge ds-warning">No coordinator</span><p class="ds-small">No events configured</p></div><div class="ds-cohortaction"><button type="button" class="ds-btn cursor-interaction" data-route="Users &amp; Roles → assign the 2nd Year PIT coordinator.">Assign lead<i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div></div>
+            <div class="ds-cohort"><div><h3>3rd Year</h3><p class="ds-small">Capstone readiness</p></div><div class="ds-cohortstate"><span class="ds-badge ds-warning">No coordinator</span><p class="ds-small">No events configured</p></div><div class="ds-cohortaction"><button type="button" class="ds-btn cursor-interaction" data-route="Users &amp; Roles → assign the 3rd Year PIT coordinator.">Assign lead<i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div></div>
+          </section>
+          <p class="ds-inline-note">Panel and peer weights are configured per event. PIT does not use adviser grading.</p>
+          <details class="ds-advanced"><summary class="cursor-interaction"><i data-lucide="chevron-right" aria-hidden="true"></i>Responsibilities &amp; evaluation rules</summary><p>Coordinators manage teams, panel assignments, deliverables, and schedules. Administrators assign coordinators and oversee evaluation access. Open an event to review its rubric weights and peer evaluation settings.</p></details>
+        </section>
+        <section id="ds-general" role="tabpanel" aria-labelledby="ds-tab-general" hidden>
+          <section class="ds-panel"><div class="ds-panelhead"><h2>Semester details</h2></div><div class="ds-generalrow"><div><h3>Semester dates</h3><p class="ds-small" data-date-label>Aug 1 – Dec 19, 2025</p></div><button type="button" class="ds-btn cursor-interaction" data-edit-dates>Edit dates</button></div><div id="ds-date-editor" class="ds-editor" role="group" aria-label="Edit semester dates" hidden><label class="ds-field">Start date<input type="date" id="ds-start" value="2025-08-01" required></label><label class="ds-field">End date<input type="date" id="ds-end" value="2025-12-19" required></label><button type="button" id="ds-save-dates" class="ds-btn ds-primary cursor-interaction">Save dates</button><button type="button" class="ds-textbtn cursor-interaction" id="ds-cancel-dates">Cancel</button></div><div class="ds-generalrow"><div><h3>Operating semester</h3><p class="ds-small">This is the active semester for schedules, submissions, and grades.</p></div><span class="ds-badge ds-good">Active</span></div></section>
+          <div class="ds-inline-note">To change the active semester, select another semester in Academic Periods and review its transition.</div>
+          <details class="ds-advanced"><summary class="cursor-interaction"><i data-lucide="chevron-right" aria-hidden="true"></i>Advanced settings</summary><div class="ds-generalrow"><div><h3>Delete semester</h3><p class="ds-small">The active semester cannot be deleted.</p></div><button type="button" class="ds-btn" disabled>Delete semester</button></div></details>
+        </section>
+        <div id="ds-preview-status" class="ds-previewstatus" role="status" aria-live="polite" hidden></div>
+        <div class="ds-footnote"><i data-lucide="mouse-pointer-2" aria-hidden="true"></i>Design preview · sample state from the screenshots</div>
+      </main>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('ds-semester-redesign');
+      const state = {tab:'capstone', peer:true, adviser:true, start:'2025-08-01', end:'2025-12-19'};
+      const tabs = ['capstone','pit','general'];
+      const status = root.querySelector('#ds-preview-status');
+      const editor = root.querySelector('#ds-date-editor');
+      const start = root.querySelector('#ds-start');
+      const end = root.querySelector('#ds-end');
+      function render() {
+        tabs.forEach(tab => {
+          root.querySelector('[data-tab="'+tab+'"]').setAttribute('aria-selected',String(tab===state.tab));
+          root.querySelector('#ds-'+tab).hidden = tab!==state.tab;
+        });
+        root.querySelector('#ds-peer').checked = state.peer;
+        root.querySelector('#ds-adviser').checked = state.adviser;
+        const format = value => new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
+        root.querySelectorAll('[data-date-label]').forEach(node => node.textContent=format(state.start)+' – '+format(state.end));
+      }
+      function announce(message) {status.textContent=message;status.hidden=false;}
+      function save() {
+        if (window.openai?.setWidgetState) window.openai.setWidgetState({modelContent:{proposal:'Semester setup',selectedTab:state.tab},privateContent:{...state}}).catch(()=>{});
+      }
+      function restore(snapshot) {
+        const candidate=snapshot?.privateContent;
+        if(!candidate) return;
+        if(tabs.includes(candidate.tab)) state.tab=candidate.tab;
+        ['peer','adviser'].forEach(key=>{if(typeof candidate[key]==='boolean')state[key]=candidate[key];});
+        const validDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'));
+        if(validDate(candidate.start)&&validDate(candidate.end)&&candidate.end>candidate.start){state.start=candidate.start;state.end=candidate.end;}
+        render();
+      }
+      root.querySelectorAll('[data-tab]').forEach(button=>button.addEventListener('click',()=>{state.tab=button.dataset.tab;status.hidden=true;render();save();}));
+      root.querySelectorAll('.ds-switch').forEach(control=>control.addEventListener('change',()=>{const key=control.id==='ds-peer'?'peer':'adviser';state[key]=control.checked;announce('Preview: '+control.getAttribute('aria-label')+' '+(control.checked?'enabled':'disabled')+'.');save();}));
+      root.querySelectorAll('[data-route]').forEach(button=>button.addEventListener('click',()=>announce('Opens '+button.dataset.route)));
+      root.querySelectorAll('[data-edit-dates]').forEach(button=>button.addEventListener('click',()=>{state.tab='general';render();editor.hidden=false;start.value=state.start;end.value=state.end;start.focus();save();}));
+      root.querySelector('#ds-cancel-dates').addEventListener('click',()=>{editor.hidden=true;});
+      [start,end].forEach(input=>input.addEventListener('input',()=>end.setCustomValidity('')));
+      root.querySelector('#ds-save-dates').addEventListener('click',()=>{if(!start.reportValidity()||!end.reportValidity())return;if(end.value<=start.value){end.setCustomValidity('End date must be after start date.');end.reportValidity();return;}end.setCustomValidity('');state.start=start.value;state.end=end.value;editor.hidden=true;render();announce('Preview dates updated.');save();});
+      render();
+      restore(window.openai?.widgetState);
+      window.addEventListener('openai:set_globals',event=>{if(event.detail?.globals?.widgetState)restore(event.detail.globals.widgetState);});
+      if(globalThis.Tweak){const design={compact:false};const tweak=new Tweak({container:root,onChange:()=>root.querySelector('.ds-main').style.padding=design.compact?'18px 20px 22px':''});tweak.addToggle(design,'compact',{label:'Compact spacing'});}
+    })();
+  </script>
+</div>

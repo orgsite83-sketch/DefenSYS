@@ -21,6 +21,14 @@ class DefenseSummaryStatus {
         WorkflowStatusTone.neutral,
       );
     }
+    if (progress == 're_demo_required' || progress == 're_demo_scheduled') {
+      return DefenseSummaryStatus(
+        progress == 're_demo_required'
+            ? 'Re-demo required'
+            : 'Re-demo scheduled',
+        WorkflowStatusTone.attention,
+      );
+    }
     if (verdict == 'approved') {
       return DefenseSummaryStatus(
         concept ? 'Concept approved' : 'Approved',
