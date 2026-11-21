@@ -325,16 +325,13 @@ class _CurriculumAnalyticsScreenState
               ? (constraints.maxWidth - 72).clamp(120.0, 260.0).toDouble()
               : 190.0;
           return SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(
-              narrow ? 16 : 24,
-              22,
-              narrow ? 16 : 24,
-              32,
-            ),
+            padding: narrow
+                ? const EdgeInsets.fromLTRB(16, 20, 16, 36)
+                : DefensysTokens.contentPadding,
             child: Align(
               alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1440),
+              child: SizedBox(
+                width: double.infinity,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [

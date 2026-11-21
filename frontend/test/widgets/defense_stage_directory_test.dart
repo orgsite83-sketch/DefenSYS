@@ -352,6 +352,7 @@ void main() {
             stages.first,
             {
               ...stages[1],
+              'is_active': true,
               'setup_readiness': {'ready': true, 'issues': []},
             },
           ],
@@ -602,6 +603,10 @@ void main() {
       state: DefenseStagesState(stages: [stages.first, readyDraft]),
       publish: (stage) async => published = stage,
     );
+    expect(find.text('Ready to publish'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('stage-review-issues')));
+    await tester.pumpAndSettle();
+    expect(find.text('Draft stage: publish after completing setup.'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('stage-menu-2')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Publish stage'));

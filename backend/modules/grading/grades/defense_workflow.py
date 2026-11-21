@@ -79,7 +79,8 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
 
 @transaction.atomic
 def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verification_required=False,
-                    concept_decisions=None, replacement_concepts_required=False, automatic=False, panel_decision=False):
+                    concept_decisions=None, replacement_concepts_required=False, automatic=False, panel_decision=False,
+                    documented_decision=False):
     StudentTeam.objects.select_for_update().get(pk=grade.team_id)
     if grade.schedule_id:
         from defense.scheduler.models import DefenseSchedule
@@ -88,9 +89,14 @@ def _record_outcome(grade, *, actor, verdict, remarks='', deadline=None, verific
     require_current(grade)
     if not grade.uses_defense_verdict:
         raise ValidationError('PIT events do not use official defense verdicts.')
-    if panel_decision and not is_chair(grade, actor):
+    from .outcome_rules import documenter_policy
+    documenter = bool(documented_decision and documenter_policy(grade.schedule)
+        and grade.schedule.documenter_id == actor.pk)
+    if documented_decision and not documenter:
+        raise PermissionError('Only the assigned documenter can record the announced panel outcome.')
+    if panel_decision and not (documenter or is_chair(grade, actor)):
         raise PermissionError('Only the assigned panel chair can confirm the panel decision.')
-    if not automatic and not (is_admin(actor) or is_chair(grade, actor)):
+    if not automatic and not (documenter or is_admin(actor) or is_chair(grade, actor)):
         raise PermissionError('Only the panel chair or an administrator can record a verdict.')
     if verdict not in dict(TeamGrade.VERDICT_CHOICES):
         raise ValidationError('Select a valid defense verdict.')

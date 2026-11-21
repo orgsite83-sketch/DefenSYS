@@ -1087,11 +1087,12 @@ class AdminDashboardView(APIView):
                 )
             )
         from defense.stages.context import stages_for_semester
-        active_stages = list(
-            stages_for_semester(active_sem).filter(is_active=True)
+        setup_stages = list(
+            stages_for_semester(active_sem)
             .prefetch_related(*active_stage_prefetch)
             .order_by('display_order', 'id')
         )
+        active_stages = [stage for stage in setup_stages if stage.is_active]
         capstone_teams = StudentTeam.objects.filter(level__icontains='Capstone')
         schedulable_teams = capstone_teams.filter(semester=active_sem) if active_sem else capstone_teams.none()
         from student_teams.models import TeamTermParticipation
@@ -1105,6 +1106,8 @@ class AdminDashboardView(APIView):
             applicable_ids = {requirement['id'] for team in current_teams
                 for requirement in phase_requirements(team)}
             active_stages = [stage for stage in active_stages if stage.pk in applicable_ids]
+            setup_stages = [stage for stage in setup_stages
+                            if not stage.is_active or stage.pk in applicable_ids]
         # Without a roster, retain setup prompts for the initial configuration.
         stage_count = len(active_stages)
         stage_distribution = []
@@ -1310,7 +1313,7 @@ class AdminDashboardView(APIView):
         ]
 
         from .overview import admin_overview
-        overview = admin_overview(active_sem, active_stages, action_items, ready_capstone_count)
+        overview = admin_overview(active_sem, setup_stages, action_items, ready_capstone_count)
 
         return Response({
             'overview': overview,

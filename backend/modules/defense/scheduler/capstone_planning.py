@@ -204,6 +204,7 @@ def workspace(actor, term_id=None):
         config = config_for(stage, term)
         stages.append({'id': stage.pk, 'label': stage.label, 'order': stage.display_order,
             'minutes_required': stage.minutes_required,
+            'documenter_required': stage.minutes_required or stage.qualifying_score is not None,
             'default_slot_duration_minutes': config.default_slot_duration_minutes if config else None,
             'configuration_revision': str(config.updated_at) if config else None})
     rows = []
@@ -303,8 +304,10 @@ def save_assignments(actor, payload):
                 raise ValidationError({'defense_stage_id': 'Stage does not apply to this project.'})
             candidate = data.get('roster', {})
         roster, people, externals, doc = validate_roster(team, candidate, actor)
-        if doc is None and DefenseStage.objects.filter(pk=data['defense_stage_id'], minutes_required=True).exists():
-            raise ValidationError({'documenter_id': 'Assign a documenter: this configured stage requires signed minutes.'})
+        from django.db.models import Q
+        if doc is None and DefenseStage.objects.filter(pk=data['defense_stage_id']).filter(
+                Q(minutes_required=True) | Q(qualifying_score__isnull=False)).exists():
+            raise ValidationError({'documenter_id': 'Assign a documenter to record the panel outcome and minutes.'})
         if old and before == roster:
             continue
         if old:

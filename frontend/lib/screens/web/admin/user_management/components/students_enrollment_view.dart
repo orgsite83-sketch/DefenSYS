@@ -1,4 +1,3 @@
-import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -41,8 +40,10 @@ class _StudentsEnrollmentViewState
   int _rowsPerPage = 10;
   final List<int> _rowsPerPageOptions = const [10, 25, 50, 100];
 
-  String _yearLevelFilter = 'ALL';
-  String _sectionFilter = 'ALL';
+  String get _yearLevelFilter =>
+      ref.read(studentAcademicRecordsProvider).yearLevelFilter;
+  String get _sectionFilter =>
+      ref.read(studentAcademicRecordsProvider).sectionFilter;
   bool _returningCapstoneOnly = false;
 
   @override
@@ -170,20 +171,6 @@ class _StudentsEnrollmentViewState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: ReportExportMenu(
-              reportId: 'student-enrollment',
-              params: {
-                'term_context': state.termContext,
-                'year_level': _yearLevelFilter,
-                'section': _sectionFilter,
-                'school_year': state.schoolYear,
-                'semester': state.semester,
-              },
-            ),
-          ),
-          const SizedBox(height: 12),
           LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.maxWidth >= 700
@@ -281,8 +268,6 @@ class _StudentsEnrollmentViewState
                       onChanged: (value) {
                         setState(() {
                           _page = 0;
-                          _yearLevelFilter = 'ALL';
-                          _sectionFilter = 'ALL';
                         });
                         ref
                             .read(studentAcademicRecordsProvider.notifier)
@@ -340,10 +325,11 @@ class _StudentsEnrollmentViewState
                           _searchCtrl.clear();
                           setState(() {
                             _page = 0;
-                            _yearLevelFilter = 'ALL';
-                            _sectionFilter = 'ALL';
                             _returningCapstoneOnly = false;
                           });
+                          ref
+                              .read(studentAcademicRecordsProvider.notifier)
+                              .setListFilters(yearLevel: 'ALL', section: 'ALL');
                           ref
                               .read(studentAcademicRecordsProvider.notifier)
                               .fetchRecords(
@@ -527,10 +513,12 @@ class _StudentsEnrollmentViewState
       '3rd Year': '3rd Year',
       '4th Year': '4th Year',
     },
-    onChanged: (value) => setState(() {
-      _yearLevelFilter = value;
-      _page = 0;
-    }),
+    onChanged: (value) {
+      setState(() => _page = 0);
+      ref
+          .read(studentAcademicRecordsProvider.notifier)
+          .setListFilters(yearLevel: value);
+    },
   );
 
   Widget _sectionDropdown(List<Map<String, dynamic>> records) {
@@ -549,10 +537,12 @@ class _StudentsEnrollmentViewState
         'UNASSIGNED': 'Unassigned section',
         for (final section in sections) section: section,
       },
-      onChanged: (value) => setState(() {
-        _sectionFilter = value;
-        _page = 0;
-      }),
+      onChanged: (value) {
+        setState(() => _page = 0);
+        ref
+            .read(studentAcademicRecordsProvider.notifier)
+            .setListFilters(section: value);
+      },
     );
   }
 

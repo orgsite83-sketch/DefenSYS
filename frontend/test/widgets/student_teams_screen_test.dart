@@ -339,6 +339,8 @@ void main() {
       ],
     );
 
+    await tester.tap(find.text('Team options'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Add team'));
     await tester.pumpAndSettle();
 
@@ -371,6 +373,8 @@ void main() {
         ).overrideWith(_FakeAdminDashboardNotifier.new),
       ],
     );
+    await tester.tap(find.text('Team options'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Add team'));
     await tester.pumpAndSettle();
     expect(find.text('Add Capstone 2 team'), findsOneWidget);

@@ -13,7 +13,6 @@ from grading.grades.models import TeamGrade
 
 def review_row(grade):
     from grading.grades.defense_workflow import require_current
-    from defense.stages.revision_policy import validate_revision_areas
     from defense.stages.models import StageGradingConfig
     from defense.minutes.models import DefenseMinutes
     from grading.grades.dissemination_models import OutcomeRelease
@@ -21,19 +20,17 @@ def review_row(grade):
     from django.core.exceptions import ValidationError
     schedule = grade.schedule
     blockers = []
-    areas = []
+    if not schedule.documenter_id:
+        blockers.append('Assign the documenter who will record the panel outcome')
     try:
-        areas = validate_revision_areas(grade.defense_stage.revision_areas)
         require_current(grade)
     except ValidationError as exc:
         blockers.extend(exc.messages)
-    if not areas:
-        blockers.append('Configure revision areas before adoption')
     if not grade.semester.is_active or grade.team.semester_id != grade.semester_id:
         blockers.append('The hearing is not in the active team participation')
     if schedule.status != 'scheduled' or schedule.operation_state != 'normal':
         blockers.append('The hearing is not open and normal')
-    if schedule.assessment_policy.get('deliberation_version') == 1:
+    if schedule.assessment_policy.get('deliberation_version') in (1, 2, 3):
         blockers.append('The hearing already uses chair deliberation')
     if (grade.verdict or grade.closed_as_failed or grade.status == 'published'
             or hasattr(schedule, 'official_outcome') or OutcomeRelease.objects.filter(control__schedule=schedule).exists()):
@@ -65,7 +62,7 @@ def review_row(grade):
             break
     return {'grade_id': grade.pk, 'schedule_id': schedule.pk, 'team_name': grade.team.name,
         'stage_label': grade.stage_label, 'eligible': not blockers, 'blockers': blockers,
-        'revision_areas': areas, 'review_context': [context, schedule.assessment_policy, schedule.revision,
+        'revision_mode': 'documenter', 'review_context': [context, schedule.assessment_policy, schedule.revision,
             str(schedule.updated_at), str(grade.updated_at),
             list(schedule.evaluation_drafts.order_by('pk').values('pk', 'updated_at', 'context_signature', 'submissions'))]}
 
@@ -117,8 +114,7 @@ class Command(BaseCommand):
                 from grading.grades.defense_workflow import audit
                 for grade, row in zip(grades, rows):
                     before = grade.schedule.assessment_policy
-                    policy = {**before, 'deliberation_version': 1, 'automatic_outcomes': True,
-                        'revision_areas': row['revision_areas'],
+                    policy = {**before, 'deliberation_version': 3, 'automatic_outcomes': True,
                         'deliberation_adoption': {'actor_id': actor.pk, 'reason': options['reason'].strip(),
                                                  'at': timezone.now().isoformat()}}
                     DefenseSchedule.objects.filter(pk=grade.schedule_id).update(assessment_policy=policy,

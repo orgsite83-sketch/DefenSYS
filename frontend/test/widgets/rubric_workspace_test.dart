@@ -741,6 +741,19 @@ void main() {
           'rubric-workspace-${dark ? 'dark' : 'light'}-${width.toInt()}',
           viewport: true,
         );
+        final bar = find.byKey(const ValueKey('rubric-editor-actions'));
+        final before = tester.getRect(bar);
+        expect(find.text('Save as Draft').hitTestable(), findsOneWidget);
+        final scroll = find.ancestor(
+          of: find.byKey(const ValueKey('rubric-editor-content')),
+          matching: find.byType(SingleChildScrollView),
+        ).first;
+        await tester.drag(scroll, const Offset(0, -500));
+        await tester.pumpAndSettle();
+        expect(tester.getRect(bar), before);
+        expect(find.text('Save as Draft').hitTestable(), findsOneWidget);
+        expect(find.text('Review & publish').hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
       });
     }
   }

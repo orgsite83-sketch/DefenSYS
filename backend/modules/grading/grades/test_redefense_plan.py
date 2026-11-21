@@ -19,6 +19,18 @@ from .defense_workflow import record_verdict
 from .services import GradeContextService, submit_panelist_grade
 
 
+def release_outcome(test, grade):
+    """Student repeat preparation starts after the existing official release."""
+    import uuid
+    from types import SimpleNamespace
+    from .dissemination import preview, confirm
+    request = SimpleNamespace(user=test.admin)
+    reviewed = preview(request, {'filters': {'scope': 'capstone', 'entity': 'teams',
+        'semester_id': test.semester.pk, 'defense_stage_id': test.stage.pk, 'coverage': 'assessment'},
+        'grade_ids': [grade.pk]})
+    confirm(request, {'review_token': reviewed['review_token'], 'batch_id': str(uuid.uuid4())})
+
+
 class FocusedRepeatAssessmentTests(APITestCase):
     _rubric = fixtures.PerConceptOutcomeTests._rubric
     prepare = fixtures.PerConceptOutcomeTests.prepare
@@ -31,6 +43,7 @@ class FocusedRepeatAssessmentTests(APITestCase):
         grade = record_verdict(self.grade, actor=self.admin, verdict='for_redefense', remarks='Revise Concept 2.',
             concept_decisions=[{'key': f'c{i}', 'decision': 'rejected', 'remarks': 'Narrow the scope.',
                 'next_action': 'revise' if i == 2 else 'omit'} for i in range(1, 4)])
+        release_outcome(self, grade)
         first = concepts.latest_round(self.capstone_team, self.stage)
         self.assertEqual([c['key'] for c in first.concepts], ['c2'])
         sub = upsert_submission(self.capstone_team, self.stage.label, 'CONCEPTS', 'revised2.pdf', '10 B', self.student,
@@ -40,6 +53,9 @@ class FocusedRepeatAssessmentTests(APITestCase):
         endorse_team(self.capstone_team, self.stage.label, self.adviser)
         next_schedule = DefenseSchedule.objects.create(team=self.capstone_team, semester=self.semester,
             defense_stage=self.stage, rubric=self.panel_rubric, scheduled_date='2026-05-16', start_time='11:00', room='Repeat')
+        # Retain coverage of a repeat already captured under the chair policy.
+        next_schedule.assessment_policy['deliberation_version'] = 2
+        next_schedule.save(update_fields=['assessment_policy'])
         SchedulePanelist.objects.create(schedule=next_schedule, panelist=self.panelist, is_chair=True)
         next_grade, _, _ = GradeContextService.get_or_create_for_schedule(next_schedule)
         self.assertIsNone(next_grade.panel_score)
@@ -47,8 +63,16 @@ class FocusedRepeatAssessmentTests(APITestCase):
                  'criteria_scores': [{'criterion_id': self.panel_rubric.criteria.first().pk, 'score': 8}]}]
         validate_evaluation_submissions(next_schedule, rows)
         submit_panelist_grade(next_schedule, next_grade, rows[0]['criteria_scores'], panelist=self.panelist, concept_key='c2')
-        # The new hearing captures automatic outcomes while preserving the
-        # earlier panel's narrower concept set and evidence.
+        # A new hearing keeps the narrower concept set and now waits for the
+        # assigned chair's explicit confirmation after its fresh assessment.
+        import uuid
+        from .deliberation import confirm
+        from .outcome_rules import outcome_payload
+        next_grade.refresh_from_db()
+        self.assertEqual(next_grade.verdict, '')
+        confirm(next_grade, actor=self.panelist, data={'request_id': str(uuid.uuid4()),
+            'review_token': outcome_payload(next_grade)['review_token'], 'verdict': 'approved',
+            'revision_entries': []})
         next_grade.refresh_from_db()
         approved = next_grade
         self.assertEqual(approved.verdict, 'approved')
@@ -106,6 +130,7 @@ class GeneralRepeatFilesTests(APITestCase):
                     file_name=submission.file_name, status='accepted')
         self.submit(5)
         self.grade = record_verdict(self.grade, actor=self.admin, verdict='for_redefense', remarks='Revise the panel materials.')
+        release_outcome(self, self.grade)
 
     def test_reuses_general_file_and_refreshes_materials_without_concept_selection(self):
         general = self.capstone_team.deliverable_submissions.get(deliverable_id='GENERAL')

@@ -51,6 +51,21 @@ class _AttentionPeriods extends AcademicPeriodNotifier {
       state = const AcademicPeriodState(activeSemester: {'id': 2});
 }
 
+class _RubricAttentionDashboard extends _AttentionDashboard {
+  @override
+  DashboardState build() => DashboardState(data: {
+    'overview': {
+      'semester_id': null,
+      'action_items': [
+        {'id': 'stage_setup:1', 'target_section': 'defenseStages',
+          'related_sections': ['rubrics'], 'scope': 'capstone'},
+        {'id': 'stage_setup:2', 'target_section': 'defenseStages',
+          'related_sections': [], 'scope': 'capstone'},
+      ],
+    },
+  });
+}
+
 class FakeNotificationsNotifier extends NotificationsNotifier {
   FakeNotificationsNotifier([super.workspace = 'admin']);
   @override
@@ -69,6 +84,39 @@ class FakeNotificationsNotifier extends NotificationsNotifier {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('Rubrics counts related stage tasks and clears when resolved', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    DefensysAdminSection? navigated;
+    await pumpDefensysWidget(tester, DefensysAdminShell(
+      activeSection: DefensysAdminSection.overview,
+      activeSemesterLabel: 'Not configured',
+      onNavigate: (section) => navigated = section,
+      onLogout: () {}, child: const Text('Workspace'),
+    ), overrides: [
+      ...authTestOverrides(),
+      connectivityProvider.overrideWith(_Online.new),
+      academicPeriodProvider.overrideWith(_AttentionPeriods.new),
+      dashboardProvider('admin').overrideWith(_RubricAttentionDashboard.new),
+      notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
+    ]);
+    final container = ProviderScope.containerOf(tester.element(find.byType(DefensysAdminShell)));
+    container.read(adminOverviewScopeProvider.notifier).select('capstone');
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('1 administrative task'), findsOneWidget);
+    expect(find.byTooltip('2 administrative tasks'), findsOneWidget);
+    await tester.tap(find.text('Rubrics'));
+    expect(navigated, DefensysAdminSection.rubrics);
+    container.read(adminOverviewScopeProvider.notifier).select('pit');
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('1 administrative task'), findsNothing);
+    container.read(adminOverviewScopeProvider.notifier).select('capstone');
+    (container.read(dashboardProvider('admin').notifier) as _AttentionDashboard).resolve();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('1 administrative task'), findsNothing);
+  });
   for (final dark in [false, true]) {
     testWidgets(
       'Academic Periods attention badge survives scope and collapse dark=$dark',

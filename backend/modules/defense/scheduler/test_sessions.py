@@ -173,7 +173,7 @@ class SessionSchedulingTests(APITestCase):
         first = DefenseSchedule.objects.get(team=self.team)
         later = DefenseSchedule.objects.get(team=second)
         self.assertEqual(first.panelists.count(), 2)
-        self.assertIsNone(first.documenter_id)
+        self.assertEqual(first.documenter.username, 'fixture-outcome-documenter')
         self.assertEqual(list(later.panelists.values_list('pk', flat=True)), [self.second_panelist.pk])
         self.assertEqual(later.panel_assignments.get().is_chair, True)
         self.assertEqual(later.documenter_id, doc.pk)
@@ -229,7 +229,7 @@ class SessionSchedulingTests(APITestCase):
         second = self.create_ready_team()
         response = self.post_plan([
             self.session('first', panelist_ids=[self.panelist.pk]),
-            self.session('second', room='Lab 2', panelist_ids=[self.second_panelist.pk]),
+            self.session('second', room='Lab 2', panelist_ids=[self.second_panelist.pk], documenter_id=self.admin.pk),
         ], [{'team_id': self.team.pk, 'session_key': 'first'}, {'team_id': second.pk, 'session_key': 'second'}])
         self.assertEqual(response.status_code, 201, response.data)
 

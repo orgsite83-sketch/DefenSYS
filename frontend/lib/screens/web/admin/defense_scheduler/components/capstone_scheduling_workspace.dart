@@ -380,7 +380,9 @@ class _CapstoneSchedulingWorkspaceState
 
   bool _formComplete(CapstoneRosterDraft roster) =>
       roster.complete &&
-      (_stageData?['minutes_required'] != true || roster.documenter != null);
+      ((_stageData?['minutes_required'] != true &&
+          _stageData?['documenter_required'] != true) ||
+          roster.documenter != null);
 
   String _replacementReason(String scope, {int? teamId}) => _replacementEvents
       .where(

@@ -10,6 +10,7 @@ import '../shared/dashboard_schedule_planner.dart';
 import 'audit_compliance/components/audit_format_utils.dart';
 import 'widgets/overview_panel_row.dart';
 import 'widgets/admin_pit_overview.dart';
+import 'widgets/admin_overview_skeleton.dart';
 
 /// Overview presents administrative work separately from academic readiness.
 class AdminOverviewWorkspace extends ConsumerStatefulWidget {
@@ -685,11 +686,13 @@ class _AdminOverviewWorkspaceState
                     ),
                     const SizedBox(height: 16),
                   ],
-                  if (!known)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: LinearProgressIndicator(),
+                  if (!known && widget.error == null)
+                    AdminOverviewSkeleton(
+                      key: const ValueKey('overview-loading-skeleton'),
+                      scope: scope,
                     )
+                  else if (!known)
+                    const SizedBox.shrink()
                   else ...[
                     if (scope == 'pit') ...[
                       AdminPitOverview(

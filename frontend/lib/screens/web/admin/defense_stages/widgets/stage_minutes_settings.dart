@@ -60,7 +60,7 @@ class StageMinutesSettings extends StatelessWidget {
           const SizedBox(height: 6),
           Text(requiredMinutes
               ? 'Adds signed minutes in Step 3. A documenter is required when scheduling.'
-              : 'No documenter assignment or signed-minutes deliverable.',
+              : 'Signed minutes are not required for stage completion.',
             style: theme.textTheme.bodySmall?.copyWith(color: textSecondary)),
         ]),
       ));
@@ -207,7 +207,7 @@ class StageMinutesSettings extends StatelessWidget {
                 final no = option(
                   false,
                   'Minutes not required',
-                  'No documenter assignment or signed-minutes deliverable.',
+                  'Signed minutes are not required for stage completion.',
                 );
                 return constraints.maxWidth < 600
                     ? Column(children: [yes, const SizedBox(height: 10), no])

@@ -35,6 +35,7 @@ class MinutesPanelistCommentSerializer(serializers.ModelSerializer):
 
 
 class DefenseMinutesSerializer(serializers.ModelSerializer):
+    decision_context = serializers.SerializerMethodField()
     official_outcome = serializers.SerializerMethodField()
     outcome_required = serializers.SerializerMethodField()
     revisions = serializers.SerializerMethodField()
@@ -47,7 +48,7 @@ class DefenseMinutesSerializer(serializers.ModelSerializer):
     class Meta:
         model = DefenseMinutes
         fields = [
-            'official_outcome', 'outcome_required',
+            'official_outcome', 'outcome_required', 'decision_context',
             'id',
             'revisions',
             'schedule',
@@ -86,8 +87,12 @@ class DefenseMinutesSerializer(serializers.ModelSerializer):
         return display_name(obj.documenter_signed_by)
 
     def get_official_outcome(self, obj):
-        from .outcome import for_minutes
-        return for_minutes(obj)
+        from grading.grades.deliberation import source_for, decision_payload
+        return obj.outcome_snapshot or decision_payload(source_for(obj.schedule), public=True)
+
+    def get_decision_context(self, obj):
+        from .decision import context
+        return context(obj)
 
     def get_outcome_required(self, obj):
         from grading.grades.outcome_rules import deliberation_policy

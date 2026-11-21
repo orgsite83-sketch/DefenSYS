@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
-import 'package:defensys/widgets/export/export_dropdown_button.dart';
+import 'package:defensys/widgets/shadcn/defensys_action_menu.dart';
 
 class AuditHeaderAndExport extends StatelessWidget {
   final VoidCallback onExportExcel;
   final VoidCallback onExportPdf;
   final VoidCallback onOpenReportCenter;
+  final VoidCallback onRefresh;
+  final bool isRefreshing;
 
   const AuditHeaderAndExport({
     super.key,
     required this.onExportExcel,
     required this.onExportPdf,
     required this.onOpenReportCenter,
+    required this.onRefresh,
+    this.isRefreshing = false,
   });
 
   @override
@@ -32,8 +37,9 @@ class AuditHeaderAndExport extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Audit Trail',
+                    'Logs',
                     style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: isCompact ? 24 : 28,
                       fontWeight: FontWeight.w800,
                       color: DefensysTokens.textPrimaryOf(context),
@@ -42,8 +48,9 @@ class AuditHeaderAndExport extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Review administrative activity and system changes.',
+                    'Recorded activity and system changes.',
                     style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: 14,
                       color: isDark
                           ? const Color(0xFF94A3B8)
@@ -57,22 +64,43 @@ class AuditHeaderAndExport extends StatelessWidget {
 
             const SizedBox(width: 16),
 
-            ExportDropdownButton(
-              tooltip: 'Export Options',
-              reportCenterLabel: 'Report center',
-              onSelected: (value) {
-                switch (value) {
-                  case 'xlsx':
-                    onExportExcel();
-                    break;
-                  case 'pdf':
-                    onExportPdf();
-                    break;
-                  case 'report_center':
-                    onOpenReportCenter();
-                    break;
-                }
-              },
+            Wrap(
+              spacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Tooltip(
+                  message: 'Refresh logs',
+                  child: ShadButton.ghost(
+                    onPressed: isRefreshing ? null : onRefresh,
+                    width: 36,
+                    height: 36,
+                    padding: EdgeInsets.zero,
+                    child: const Icon(Icons.refresh_rounded, size: 18),
+                  ),
+                ),
+                DefensysActionMenu(
+                  label: 'Export Options',
+                  triggerLabel: 'Export',
+                  triggerIcon: Icons.keyboard_arrow_down_rounded,
+                  items: [
+                    DefensysMenuItem(
+                      label: 'Export Excel',
+                      icon: Icons.table_view_outlined,
+                      onPressed: onExportExcel,
+                    ),
+                    DefensysMenuItem(
+                      label: 'Export PDF',
+                      icon: Icons.picture_as_pdf_outlined,
+                      onPressed: onExportPdf,
+                    ),
+                    DefensysMenuItem(
+                      label: 'Report Center',
+                      icon: Icons.summarize_outlined,
+                      onPressed: onOpenReportCenter,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ],
         );

@@ -41,7 +41,7 @@ void main() {
       expect(requiredMinutes, isFalse);
       expect(tester.widget<ShadSwitch>(toggle).value, isFalse);
       expect(
-        find.text('No documenter assignment or signed-minutes deliverable.'),
+        find.text('Signed minutes are not required for stage completion.'),
         findsOneWidget,
       );
     },

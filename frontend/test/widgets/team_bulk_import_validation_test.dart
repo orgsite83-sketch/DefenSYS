@@ -10,6 +10,7 @@ import 'package:defensys/services/academic/student_academic_records_provider.dar
 import 'package:defensys/screens/web/admin/admin_shell.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -220,8 +221,8 @@ void main() {
     expect(view(tester).bulkPreview?['rows'][0]['row'], 2);
     expect(view(tester).bulkPreview?['summary']['ready'], 1);
     expect(view(tester).isPreviewLoading, isTrue);
-      expect(find.text('Ready'), findsOneWidget);
-      expect(find.text('Checking…'), findsOneWidget);
+    expect(find.text('Ready'), findsOneWidget);
+    expect(find.text('Checking…'), findsOneWidget);
     view(tester).onImportBulkTeams();
     expect(notifier.imports, isEmpty);
     await tester.pump(const Duration(milliseconds: 501));
@@ -296,11 +297,11 @@ void main() {
       expect(view(tester).isPreviewLoading, isTrue);
       expect(
         tester
-            .widget<ElevatedButton>(
-              find.byKey(const ValueKey('top_import_ready_teams_btn')),
+            .widget<ShadButton>(
+              find.byKey(const ValueKey('import_ready_teams_btn')),
             )
-            .onPressed,
-        isNull,
+            .enabled,
+        isFalse,
       );
       await tester.pump(const Duration(milliseconds: 501));
       expect(notifier.requests.last.map((row) => row['team_name']), [
@@ -341,7 +342,7 @@ void main() {
       notifier.fail(1);
       await tester.pumpAndSettle();
       expect(find.text('Preview service unavailable.'), findsOneWidget);
-      expect(find.text('Awaiting Validation'), findsOneWidget);
+      expect(find.text('Not checked 2'), findsOneWidget);
       expect(find.text('Needs Fix'), findsNothing);
       expect(find.text('Retry validation'), findsOneWidget);
       view(tester).onRetryPreview!();

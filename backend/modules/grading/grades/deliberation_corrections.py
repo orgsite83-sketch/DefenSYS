@@ -5,15 +5,17 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from .deliberation import _entries, _text, decision_payload, source_for
-from .outcome_rules import outcome_payload, policy_for
+from .outcome_rules import outcome_payload, policy_for, documenter_policy
 
 
 def amend(grade, data, *, actor):
     from .defense_workflow import is_chair, require_current, _record_outcome
     from .models import TeamGrade
     source = source_for(grade.schedule)
-    if not source or not is_chair(grade, actor):
-        raise ValidationError('An outcome amendment must be requested by the assigned panel chair.')
+    documented = documenter_policy(grade.schedule)
+    authorized = grade.schedule.documenter_id == actor.pk if documented else is_chair(grade, actor)
+    if not source or not authorized:
+        raise ValidationError('The assigned recorder must request an outcome amendment.')
     require_current(grade)
     if not isinstance(data, dict) or set(data) - {'source_revision', 'review_token', 'verdict',
             'selected_key', 'reason', 'instructions', 'revision_entries', 'demo_requirements', 're_demo_required'}:
@@ -71,7 +73,7 @@ def amend(grade, data, *, actor):
                     row['decision'] = 'revise' if row['key'] in required else 'not_selected'
                     row['next_action'] = 'revise' if row['key'] in required else 'omit'
         _record_outcome(grade, actor=actor, verdict=verdict, remarks=instructions or reason,
-                        concept_decisions=decisions, panel_decision=True)
+                        concept_decisions=decisions, panel_decision=True, documented_decision=documented)
         grade.refresh_from_db()
     else:
         grade.verdict_remarks, grade.verdict_by, grade.verdict_at = instructions or reason, actor, timezone.now()
@@ -85,7 +87,10 @@ def amend(grade, data, *, actor):
     source.verdict, source.reason, source.instructions = verdict, reason, instructions
     source.selected_key = source.selected_key if verdict != 'for_redefense' else ''
     source.revision_entries, source.demo_requirements = entries, requirements
-    source.confirmed_by, source.confirmed_at = actor, timezone.now()
+    source.confirmed_by = None if documented else actor
+    if documented:
+        source.recorded_by = actor
+    source.confirmed_at = timezone.now()
     source.revision += 1
     source.save()
     TeamGrade.objects.filter(pk=grade.pk).update(outcome_metadata={**grade.outcome_metadata,

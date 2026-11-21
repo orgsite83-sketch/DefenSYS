@@ -516,6 +516,16 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             color: DefensysTokens.textPrimaryOf(context),
           ),
         ),
+        if (_scope == 'capstone' &&
+            (selected['concept_config'] as Map?)?['enabled'] == true) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Concept selection requires only a panel evaluation rubric.',
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         LayoutBuilder(
           builder: (context, constraints) {

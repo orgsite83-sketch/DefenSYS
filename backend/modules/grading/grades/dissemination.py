@@ -114,7 +114,9 @@ def metadata(grade, *, panel_complete=None):
         state, reason = 'held', control.hold_reason or 'This outcome is on hold.'
     else:
         state = 'updated' if latest else 'ready'
-    return {'status': state, 'label': STATUSES[state], 'can_release': state in ('ready', 'updated'),
+    from .outcome_rules import documenter_policy
+    label = 'Awaiting recorded panel outcome' if state == 'awaiting_decision' and documenter_policy(grade.schedule) else STATUSES[state]
+    return {'status': state, 'label': label, 'can_release': state in ('ready', 'updated'),
             'reason': reason, 'schedule_id': grade.schedule_id, 'attempt': grade.attempt_count,
             'version': version, 'released_at': latest.created_at.isoformat() if latest else None,
             'release_id': latest.pk if latest else None}

@@ -1226,10 +1226,12 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           DefensysPageHeader(
             icon: Icons.groups_2_rounded,
             title: 'Student Teams',
+            actionsBreakpoint: 1000,
             subtitle: _isCapstoneAdmin
                 ? 'Manage capstone project teams, assign advisers, and review defense context.'
                 : 'Manage PIT teams and PIT events setup for your assigned year level.',
             actions: Wrap(
+              alignment: WrapAlignment.end,
               spacing: 12,
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,

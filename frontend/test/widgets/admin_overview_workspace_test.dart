@@ -10,6 +10,55 @@ import '../helpers/pump_app.dart';
 import '../helpers/capture_preview.dart';
 
 void main() {
+  testWidgets('Initial load shows responsive skeletons; failure offers retry', (
+    tester,
+  ) async {
+    await loadPreviewFonts(force: true);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    Widget workspace({String? error}) => AdminOverviewWorkspace(
+      data: null,
+      error: error,
+      loading: error == null,
+      refreshing: false,
+      onRefresh: () {},
+      onAction: (_) {},
+    );
+    for (final width in [320.0, 800.0, 1280.0]) {
+      tester.view.physicalSize = Size(width, 1200);
+      for (final theme in [AppTheme.theme, AppTheme.mistDarkTheme]) {
+        await pumpDefensysWidget(tester, workspace(), theme: theme);
+        expect(
+          find.byKey(const ValueKey('overview-loading-skeleton')),
+          findsOneWidget,
+        );
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+        expect(find.text('Summary unavailable'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('PIT'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('overview-skeleton-card-2')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('overview-skeleton-schedule')),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+        // Reset the provider scope before checking the next viewport/theme.
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    }
+    await pumpDefensysWidget(tester, workspace(error: 'Unavailable'));
+    expect(find.text('Retry'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('overview-loading-skeleton')),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'Workflow leads; readiness and attention stay beside a growing calendar',
     (tester) async {

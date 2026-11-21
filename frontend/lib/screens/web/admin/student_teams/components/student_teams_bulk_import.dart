@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/widgets/shadcn/defensys_action_menu.dart';
 import 'package:defensys/widgets/team_import_format_guide.dart';
 import 'package:defensys/widgets/team_import_review.dart';
 import 'package:defensys/widgets/team_import_reference_corrections.dart';
@@ -160,9 +162,6 @@ class StudentTeamsBulkImportView extends StatefulWidget {
 
 class _StudentTeamsBulkImportViewState
     extends State<StudentTeamsBulkImportView> {
-  static const Color _ink = DefensysUi.textDark;
-  static const Color _line = Color(0xFFE2E8F0);
-  static const Color _maroon = DefensysUi.primaryMaroon;
   static const Color _muted = DefensysUi.steelGrey;
 
   final TextEditingController _searchCtrl = TextEditingController();
@@ -170,7 +169,6 @@ class _StudentTeamsBulkImportViewState
   String _selectedAdviserFilter = 'all';
   String _groupBy = 'none'; // 'none' | 'section' | 'adviser'
   String _reviewFilter = 'all';
-  final _reviewAnchor = GlobalKey();
   final _reviewTable = GlobalKey<TeamBulkImportReviewTableState>();
   final Set<String> _customSections = {};
 
@@ -180,8 +178,6 @@ class _StudentTeamsBulkImportViewState
           .toList();
   int get _readyCount =>
       _previewRows.where((row) => row['ready'] == true).length;
-  int get _issueCount =>
-      _previewRows.where((row) => row['ready'] == false).length;
   int get _pendingCount => (widget.parsedBulkRows.length - _previewRows.length)
       .clamp(0, widget.parsedBulkRows.length);
 
@@ -245,7 +241,14 @@ class _StudentTeamsBulkImportViewState
         ),
       );
     }
-    return DefensysShadcnScope(child: Builder(builder: _buildImport));
+    return DefensysShadcnScope(
+      maroonActions: true,
+      neutralActionText: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) =>
+            _buildImport(context, constraints.maxWidth),
+      ),
+    );
   }
 
   Widget _reviewToolbar() => TeamImportValidationToolbar(
@@ -254,9 +257,9 @@ class _StudentTeamsBulkImportViewState
     filter: widget.showIssuesOnly ? 'issues' : _reviewFilter,
     checking: widget.isPreviewLoading,
     showRetainedValidation: true,
-    error: widget.fileImportError ?? widget.state.error,
-    onRetry: widget.isPreviewLoading ? null : widget.onRetryPreview,
+    embedded: true,
     onFilter: (value) {
+      if (widget.state.isSaving) return;
       widget.onShowIssuesOnlyChanged(false);
       setState(() => _reviewFilter = value);
     },
@@ -272,20 +275,10 @@ class _StudentTeamsBulkImportViewState
         (_) => _reviewTable.currentState?.goToFirstIssue(),
       );
     },
-    action: ShadButton(
-      size: ShadButtonSize.sm,
-      enabled:
-          !widget.state.isSaving &&
-          !widget.isPreviewLoading &&
-          widget.fileImportError == null &&
-          _readyCount > 0,
-      onPressed: widget.onImportBulkTeams,
-      child: Text(widget.state.isSaving ? 'Importing…' : 'Import Ready'),
-    ),
   );
 
-  Widget _buildImport(BuildContext context) {
-    final activeSemLabel = _getActiveSemLabel();
+  Widget _buildImport(BuildContext context, double width) {
+    final horizontalPadding = width < 720 ? 16.0 : 40.0;
 
     return PopScope(
       canPop: !widget.isBulkImportDirty,
@@ -293,156 +286,146 @@ class _StudentTeamsBulkImportViewState
         if (didPop) return;
         await widget.onRequestClose();
       },
-      child: TeamImportStickyReview(
-        anchor: _reviewAnchor,
-        toolbar: _reviewToolbar(),
-        enabled: widget.parsedBulkRows.isNotEmpty,
-        child: SingleChildScrollView(
-          padding: DefensysUi.contentPadding,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              DefensysPageHeader(
-                icon: Icons.groups_2_rounded,
-                title: 'Bulk Import Student Teams',
-                subtitle: widget.isCapstoneAdmin
-                    ? 'Upload team spreadsheets, validate member details and advisers inline, then import ready teams into the active capstone term.'
-                    : 'Import teams for all sections in your PIT year, including each section\'s instructor. Existing students are linked and blank section assignments are filled from the roster.',
-                actions: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (activeSemLabel.isNotEmpty) ...[
-                      _headerPill(activeSemLabel),
-                      const SizedBox(width: 10),
-                    ],
-                    OutlinedButton.icon(
-                      onPressed: widget.state.isSaving
-                          ? null
-                          : () => widget.onRequestClose(),
-                      icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                      label: Text(
+      child: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              key: const ValueKey('team_import_scroll'),
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                20,
+                horizontalPadding,
+                24,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DefensysPageHeader(
+                    icon: Icons.groups_2_rounded,
+                    title: 'Bulk Import Student Teams',
+                    actionsBreakpoint: 900,
+                    subtitle: widget.isCapstoneAdmin
+                        ? 'Upload team spreadsheets, validate member details and advisers inline, then import ready teams into the active capstone term.'
+                        : 'Import teams for all sections in your PIT year, including each section\'s instructor. Existing students are linked and blank section assignments are filled from the roster.',
+                    actions: ShadButton.outline(
+                      enabled: !widget.state.isSaving,
+                      onPressed: () => widget.onRequestClose(),
+                      leading: const Icon(LucideIcons.arrowLeft, size: 16),
+                      child: Text(
                         widget.isPitInstructor
                             ? 'Back to Deliverables'
                             : 'Back to Teams',
                       ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _ink,
-                        side: const BorderSide(color: _line),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
                     ),
-                  ],
-                ),
-              ),
-              if (widget.state.error != null &&
-                  widget.parsedBulkRows.isEmpty) ...[
-                const SizedBox(height: 14),
-                _notice(widget.state.error!, warning: true),
-              ],
-              if (widget.fileImportError != null &&
-                  widget.parsedBulkRows.isEmpty) ...[
-                const SizedBox(height: 12),
-                _notice(widget.fileImportError!, warning: true),
-              ],
-              if (widget.state.message != null) ...[
-                const SizedBox(height: 14),
-                _notice(widget.state.message!),
-              ],
-              const SizedBox(height: 20),
-
-              if (!widget.isCapstoneAdmin) ...[
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 440),
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey(
-                      'import-event-${widget.state.eventName ?? ''}',
-                    ),
-                    initialValue: widget.state.eventName ?? '',
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Import roster for',
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('Unassigned roster'),
-                      ),
-                      for (final event in widget.state.pitEvents.where(
-                        (e) =>
-                            widget.pitLeadYear == null ||
-                            e['year_level'] == widget.pitLeadYear,
-                      ))
-                        DropdownMenuItem(
-                          value: '${event['event_name']}',
-                          child: Text(
-                            '${event['event_name']}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                    ],
-                    onChanged: widget.state.isSaving || widget.isPreviewLoading
-                        ? null
-                        : widget.onEventChanged,
                   ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Unassigned rosters are checked against existing PIT teams in this semester. '
-                  'Choose a different event explicitly when creating another roster for the same students.',
-                  style: TextStyle(fontSize: 12, color: _muted, height: 1.5),
-                ),
-                const SizedBox(height: 20),
-              ],
+                  if (widget.state.error != null &&
+                      widget.parsedBulkRows.isEmpty) ...[
+                    const SizedBox(height: 14),
+                    _notice(widget.state.error!, warning: true),
+                  ],
+                  if (widget.fileImportError != null &&
+                      widget.parsedBulkRows.isEmpty) ...[
+                    const SizedBox(height: 12),
+                    _notice(widget.fileImportError!, warning: true),
+                  ],
+                  if (widget.state.message != null) ...[
+                    const SizedBox(height: 14),
+                    _notice(widget.state.message!),
+                  ],
+                  const SizedBox(height: 20),
 
-              // Top 2-Column Section: Left is Smart Format Guide, Right is Primary Upload Action
-              if (widget.attentionContext != null) ...[
-                AdminAttentionStudents(context: widget.attentionContext!),
-                const SizedBox(height: 20),
-              ],
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isWide = constraints.maxWidth >= 960;
-                  if (!isWide) {
-                    return Column(
-                      children: [
-                        _buildTeamFormatCard(activeSemLabel),
-                        const SizedBox(height: 18),
-                        _buildTeamUploadCard(context),
-                      ],
-                    );
-                  }
-
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 5,
-                        child: _buildTeamFormatCard(activeSemLabel),
+                  if (!widget.isCapstoneAdmin) ...[
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey(
+                          'import-event-${widget.state.eventName ?? ''}',
+                        ),
+                        initialValue: widget.state.eventName ?? '',
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Import roster for',
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: '',
+                            child: Text('Unassigned roster'),
+                          ),
+                          for (final event in widget.state.pitEvents.where(
+                            (e) =>
+                                widget.pitLeadYear == null ||
+                                e['year_level'] == widget.pitLeadYear,
+                          ))
+                            DropdownMenuItem(
+                              value: '${event['event_name']}',
+                              child: Text(
+                                '${event['event_name']}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged:
+                            widget.state.isSaving || widget.isPreviewLoading
+                            ? null
+                            : widget.onEventChanged,
                       ),
-                      const SizedBox(width: 20),
-                      Expanded(flex: 6, child: _buildTeamUploadCard(context)),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Unassigned rosters are checked against existing PIT teams in this semester. '
+                      'Choose a different event explicitly when creating another roster for the same students.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _muted,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
 
-              // Bottom Full-Width Preflight Review Table Card
-              if (widget.parsedBulkRows.isNotEmpty) ...[
-                SizedBox(key: _reviewAnchor),
-                _reviewToolbar(),
-                const SizedBox(height: 14),
-              ],
-              _buildPreflightReviewCard(),
-            ],
+                  // Top 2-Column Section: Left is Smart Format Guide, Right is Primary Upload Action
+                  if (widget.attentionContext != null) ...[
+                    AdminAttentionStudents(context: widget.attentionContext!),
+                    const SizedBox(height: 20),
+                  ],
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isWide = constraints.maxWidth >= 960;
+                      if (!isWide) {
+                        return Column(
+                          children: [
+                            _buildTeamFormatCard(_getActiveSemLabel()),
+                            const SizedBox(height: 18),
+                            _buildTeamUploadCard(context),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: _buildTeamFormatCard(_getActiveSemLabel()),
+                          ),
+                          const SizedBox(width: 20),
+                          Expanded(
+                            flex: 6,
+                            child: _buildTeamUploadCard(context),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  _buildPreflightReviewCard(),
+                ],
+              ),
+            ),
           ),
-        ),
+          if (widget.parsedBulkRows.isNotEmpty) _buildImportActionBar(context),
+        ],
       ),
     );
   }
@@ -455,46 +438,6 @@ class _StudentTeamsBulkImportViewState
         text,
         style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w500),
       ),
-    );
-  }
-
-  Widget _buildTeamStatItem(String label, int count, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 7,
-          height: 7,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF64748B),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          '$count',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTeamStatDivider() {
-    return Container(
-      height: 14,
-      width: 1,
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      color: const Color(0xFFCBD5E1),
     );
   }
 
@@ -689,9 +632,7 @@ class _StudentTeamsBulkImportViewState
   Widget _buildPreflightReviewCard() {
     final activeSemLabel = _getActiveSemLabel();
     final previewRows = _previewRows;
-    final readyCount = _readyCount;
     final totalRows = widget.parsedBulkRows.length;
-    final issueCount = _issueCount;
 
     final uniqueSections = <String>{};
     for (final r in widget.parsedBulkRows) {
@@ -713,220 +654,32 @@ class _StudentTeamsBulkImportViewState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Table Header (Unified with Capstone Stages style)
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
               children: [
-                const Icon(
-                  Icons.table_chart_outlined,
-                  color: DefensysUi.primaryMaroon,
-                  size: 22,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Review teams',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: DefensysUi.textDark,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      const Text(
-                        'Verify student team assignments and resolve any roster or leadership issues before importing.',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: DefensysUi.steelGrey,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
+                Text(
+                  'Review teams',
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
                 ),
-                if (activeSemLabel.isNotEmpty) ...[
-                  const SizedBox(width: 10),
-                  _headerPill(activeSemLabel),
-                ],
-                const SizedBox(width: 8),
-                _headerPill(
-                  totalRows == 0
-                      ? '0 teams staged'
-                      : (readyCount > 0
-                            ? '$readyCount / $totalRows ready'
-                            : '$totalRows teams staged'),
-                ),
-                if (widget.parsedBulkRows.isNotEmpty) ...[
-                  const SizedBox(width: 12),
-                  ElevatedButton.icon(
-                    key: const ValueKey('top_import_ready_teams_btn'),
-                    onPressed:
-                        widget.state.isSaving ||
-                            widget.isPreviewLoading ||
-                            widget.parsedBulkRows.isEmpty ||
-                            widget.templateWarning != null ||
-                            readyCount == 0
-                        ? null
-                        : widget.onImportBulkTeams,
-                    icon: widget.state.isSaving
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.cloud_upload_rounded, size: 15),
-                    label: Text(
-                      readyCount > 0
-                          ? 'Import $readyCount Ready'
-                          : 'Import Ready',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _maroon,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      disabledForegroundColor: const Color(0xFF94A3B8),
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ],
+                if (activeSemLabel.isNotEmpty) _headerPill(activeSemLabel),
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-
-          if (totalRows > 0 && (widget.isPreviewLoading || _pendingCount > 0))
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
-              child: Row(
-                children: [
-                  if (widget.isPreviewLoading) ...[
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    child: Text(
-                      widget.isPreviewLoading
-                          ? 'Validating teams…'
-                          : 'Validation has not completed. Retry to see which teams can be imported.',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // Team Intake Snapshot Strip
           if (totalRows > 0)
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 9,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(7),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.analytics_outlined,
-                        size: 15,
-                        color: Color(0xFF475569),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Validation Snapshot:',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF334155),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      _buildTeamStatItem(
-                        'Ready to Import',
-                        readyCount,
-                        const Color(0xFF16A34A),
-                      ),
-                      if (_pendingCount > 0) ...[
-                        _buildTeamStatDivider(),
-                        _buildTeamStatItem(
-                          'Awaiting Validation',
-                          _pendingCount,
-                          _muted,
-                        ),
-                      ],
-                      if (issueCount > 0) ...[
-                        _buildTeamStatDivider(),
-                        _buildTeamStatItem(
-                          'Needs Fix',
-                          issueCount,
-                          const Color(0xFFD97706),
-                        ),
-                      ],
-                      if (sortedSections.isNotEmpty) ...[
-                        _buildTeamStatDivider(),
-                        _buildTeamStatItem(
-                          sortedSections.length == 1 ? 'Section' : 'Sections',
-                          sortedSections.length,
-                          _muted,
-                        ),
-                      ],
-                      if (sortedAdvisers.isNotEmpty) ...[
-                        _buildTeamStatDivider(),
-                        _buildTeamStatItem(
-                          widget.isCapstoneAdmin
-                              ? (sortedAdvisers.length == 1
-                                    ? 'Adviser'
-                                    : 'Advisers')
-                              : (sortedAdvisers.length == 1
-                                    ? 'Instructor'
-                                    : 'Instructors'),
-                          sortedAdvisers.length,
-                          _muted,
-                        ),
-                      ],
-                      _buildTeamStatDivider(),
-                      _buildTeamStatItem(
-                        'Total Staged',
-                        totalRows,
-                        const Color(0xFF64748B),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: _reviewToolbar(),
             ),
-
           if (((widget.bulkPreview?['summary'] as Map?)?['concept_sections']
                       as Map?)
                   ?.isNotEmpty ==
@@ -952,68 +705,32 @@ class _StudentTeamsBulkImportViewState
 
           // Search + Filter Toolbar
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
             child: Wrap(
               spacing: 10,
               runSpacing: 10,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minWidth: 260,
-                    maxWidth: 360,
-                  ),
-                  child: SizedBox(
-                    height: 40,
-                    child: TextField(
-                      controller: _searchCtrl,
-                      onChanged: (_) => setState(() {}),
-                      style: const TextStyle(fontSize: 13),
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(
-                          Icons.search_rounded,
-                          size: 18,
-                          color: _muted,
-                        ),
-                        suffixIcon: _searchCtrl.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.clear_rounded,
-                                  size: 16,
-                                  color: _muted,
-                                ),
-                                onPressed: () {
-                                  _searchCtrl.clear();
-                                  setState(() {});
-                                },
-                              )
-                            : null,
-                        hintText:
-                            'Search by team, project, section, ${widget.isCapstoneAdmin ? 'adviser' : 'instructor'}...',
-                        hintStyle: const TextStyle(fontSize: 12, color: _muted),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFFF9FAFB),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(7),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFD1D5DB),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(7),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFD1D5DB),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(7),
-                          borderSide: const BorderSide(color: _maroon),
-                        ),
-                      ),
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: ShadInput(
+                    key: const ValueKey('team_import_search'),
+                    controller: _searchCtrl,
+                    enabled: !widget.state.isSaving,
+                    onChanged: (_) => setState(() {}),
+                    leading: const Icon(LucideIcons.search, size: 16),
+                    placeholder: const Text(
+                      'Search teams, projects or members',
                     ),
+                    trailing: _searchCtrl.text.isEmpty
+                        ? null
+                        : ShadButton.ghost(
+                            width: 24,
+                            height: 24,
+                            padding: EdgeInsets.zero,
+                            onPressed: () => setState(_searchCtrl.clear),
+                            child: const Icon(LucideIcons.x, size: 14),
+                          ),
                   ),
                 ),
                 if (sortedSections.isNotEmpty)
@@ -1114,54 +831,15 @@ class _StudentTeamsBulkImportViewState
                     if (v != null) setState(() => _groupBy = v);
                   },
                 ),
-                FilterChip(
-                  label: Text(
-                    issueCount > 0
-                        ? 'Issues only ($issueCount)'
-                        : 'Issues only',
-                  ),
-                  selected: widget.showIssuesOnly,
-                  onSelected: widget.state.isSaving
-                      ? null
-                      : widget.onShowIssuesOnlyChanged,
-                  selectedColor: const Color(0xFFFEF2F2),
-                  checkmarkColor: const Color(0xFFDC2626),
-                  side: BorderSide(
-                    color: widget.showIssuesOnly
-                        ? const Color(0xFFFECACA)
-                        : const Color(0xFFCBD5E1),
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                  labelStyle: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: widget.showIssuesOnly
-                        ? const Color(0xFFDC2626)
-                        : const Color(0xFF475569),
-                  ),
-                ),
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(24, 10, 24, 16),
-            child: Text(
-              'Review team rosters, verify leader designations, and resolve any membership conflicts before importing.',
-              style: TextStyle(
-                color: Color(0xFF98A2B3),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                height: 1.35,
-              ),
-            ),
-          ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          const SizedBox(height: 16),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
 
           // Content body
           if (widget.parsedBulkRows.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 48, horizontal: 24),
               child: Center(
                 child: Column(
@@ -1176,9 +854,10 @@ class _StudentTeamsBulkImportViewState
                     Text(
                       'No Team Records Staged',
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: _ink,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
                     ),
                     SizedBox(height: 4),
@@ -1229,155 +908,165 @@ class _StudentTeamsBulkImportViewState
                 ],
               ),
             ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-
-          // Table Footer Actions Toolbar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 14,
-                  color: Color(0xFF667085),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    widget.parsedBulkRows.isNotEmpty
-                        ? '$readyCount of $totalRows teams ready to import'
-                        : 'Review team details and verify leader designations before confirming import.',
-                    style: const TextStyle(
-                      color: Color(0xFF667085),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                if (widget.onSaveDraft != null &&
-                    widget.parsedBulkRows.isNotEmpty) ...[
-                  OutlinedButton.icon(
-                    onPressed: widget.state.isSaving
-                        ? null
-                        : widget.onSaveDraft,
-                    icon: const Icon(Icons.save_as_rounded, size: 14),
-                    label: const Text('Save Draft'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _ink,
-                      side: const BorderSide(color: Color(0xFFD0D5DD)),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                if (widget.parsedBulkRows.isNotEmpty &&
-                    widget.templateWarning == null) ...[
-                  OutlinedButton.icon(
-                    onPressed: widget.onExportBulkCsv,
-                    icon: const Icon(Icons.file_download_rounded, size: 14),
-                    label: const Text('Export CSV'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _ink,
-                      side: const BorderSide(color: Color(0xFFD0D5DD)),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                OutlinedButton(
-                  onPressed: widget.state.isSaving
-                      ? null
-                      : () => widget.onRequestClose(),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _ink,
-                    side: const BorderSide(color: Color(0xFFD0D5DD)),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
-                  ),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed:
-                      widget.state.isSaving ||
-                          widget.isPreviewLoading ||
-                          widget.parsedBulkRows.isEmpty ||
-                          widget.templateWarning != null ||
-                          readyCount == 0
-                      ? null
-                      : widget.onImportBulkTeams,
-                  icon: widget.state.isSaving
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.check_circle_outline_rounded,
-                          size: 16,
-                        ),
-                  label: Text(
-                    widget.state.isSaving
-                        ? 'Importing Teams...'
-                        : (readyCount > 0
-                              ? 'Import $readyCount Ready Team${readyCount == 1 ? '' : 's'}'
-                              : 'Import Ready Teams'),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _maroon,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 11,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
+      ),
+    );
+  }
+
+  /// Lives outside the scroll view so it reserves its own viewport space.
+  Widget _buildImportActionBar(BuildContext context) {
+    final colors = ShadTheme.of(context).colorScheme;
+    final ready = _readyCount;
+    final total = widget.parsedBulkRows.length;
+    final failure =
+        widget.fileImportError ?? widget.state.error ?? widget.templateWarning;
+    final feedback =
+        failure ??
+        (widget.isPreviewLoading
+            ? 'Validating teams\u2026'
+            : _pendingCount > 0
+            ? '$_pendingCount team${_pendingCount == 1 ? '' : 's'} not checked. Retry validation.'
+            : null);
+    final canImport =
+        !widget.state.isSaving &&
+        !widget.isPreviewLoading &&
+        widget.fileImportError == null &&
+        widget.templateWarning == null &&
+        ready > 0;
+    return Material(
+      key: const ValueKey('team_import_action_bar'),
+      color: colors.background,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: colors.border)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = constraints.maxWidth < 720;
+              final summary = Text(
+                '$ready of $total team${total == 1 ? '' : 's'} ready',
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: colors.foreground,
+                ),
+              );
+              final importButton = ShadButton(
+                key: const ValueKey('import_ready_teams_btn'),
+                enabled: canImport,
+                onPressed: canImport ? widget.onImportBulkTeams : null,
+                leading: widget.state.isSaving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(LucideIcons.upload, size: 16),
+                child: Text(
+                  widget.state.isSaving
+                      ? 'Importing\u2026'
+                      : ready > 0
+                      ? 'Import $ready ready team${ready == 1 ? '' : 's'}'
+                      : 'Import ready teams',
+                ),
+              );
+              final more = DefensysActionMenu(
+                label: 'More import actions',
+                enabled: !widget.state.isSaving,
+                items: [
+                  if (narrow && widget.onSaveDraft != null)
+                    DefensysMenuItem(
+                      label: 'Save draft',
+                      icon: LucideIcons.save,
+                      onPressed: widget.onSaveDraft,
+                    ),
+                  if (widget.templateWarning == null)
+                    DefensysMenuItem(
+                      label: 'Export CSV',
+                      icon: LucideIcons.download,
+                      onPressed: widget.onExportBulkCsv,
+                    ),
+                  DefensysMenuItem(
+                    label: 'Cancel import',
+                    icon: LucideIcons.x,
+                    onPressed: () => widget.onRequestClose(),
+                  ),
+                ],
+              );
+              final actions = Row(
+                mainAxisSize: narrow ? MainAxisSize.max : MainAxisSize.min,
+                children: [
+                  if (!narrow && widget.onSaveDraft != null) ...[
+                    ShadButton.outline(
+                      enabled: !widget.state.isSaving,
+                      onPressed: widget.onSaveDraft,
+                      child: const Text('Save draft'),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  more,
+                  const SizedBox(width: 8),
+                  if (narrow) Expanded(child: importButton) else importButton,
+                ],
+              );
+              return Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: narrow ? 16 : 40,
+                  vertical: 12,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (feedback != null) ...[
+                      Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          feedback,
+                          style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                            fontSize: 12,
+                            color: failure != null
+                                ? colors.destructive
+                                : colors.mutedForeground,
+                          ),
+                        ),
+                      ),
+                      if (!widget.isPreviewLoading &&
+                          widget.onRetryPreview != null &&
+                          widget.templateWarning == null)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: ShadButton.ghost(
+                            size: ShadButtonSize.sm,
+                            enabled: !widget.state.isSaving,
+                            onPressed: widget.onRetryPreview,
+                            child: const Text('Retry validation'),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (narrow) ...[
+                      summary,
+                      const SizedBox(height: 8),
+                      actions,
+                    ] else
+                      Row(
+                        children: [
+                          Expanded(child: summary),
+                          const SizedBox(width: 16),
+                          actions,
+                        ],
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }

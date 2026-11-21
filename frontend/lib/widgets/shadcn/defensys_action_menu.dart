@@ -14,6 +14,8 @@ class DefensysActionMenu extends StatefulWidget {
     this.triggerLabel,
     this.triggerIcon,
     this.triggerForegroundColor,
+    this.triggerBackgroundColor,
+    this.triggerHoverBackgroundColor,
     this.wrapLabel = false,
     this.primary = false,
   });
@@ -23,6 +25,8 @@ class DefensysActionMenu extends StatefulWidget {
   final String? triggerLabel;
   final IconData? triggerIcon;
   final Color? triggerForegroundColor;
+  final Color? triggerBackgroundColor;
+  final Color? triggerHoverBackgroundColor;
   final bool wrapLabel;
   final bool primary;
 
@@ -91,6 +95,11 @@ class _DefensysActionMenuState extends State<DefensysActionMenu> {
                       ? ShadButton(
                           enabled: widget.enabled,
                           height: widget.wrapLabel ? 0 : 36,
+                          backgroundColor: widget.triggerBackgroundColor,
+                          hoverBackgroundColor:
+                              widget.triggerHoverBackgroundColor,
+                          foregroundColor: widget.triggerForegroundColor,
+                          hoverForegroundColor: widget.triggerForegroundColor,
                           onPressed: widget.enabled ? _controller.toggle : null,
                           trailing: Icon(
                             widget.triggerIcon ?? LucideIcons.chevronDown,
@@ -108,10 +117,14 @@ class _DefensysActionMenuState extends State<DefensysActionMenu> {
                       : ShadButton.outline(
                           enabled: widget.enabled,
                           height: widget.wrapLabel ? 0 : 36,
+                          backgroundColor: widget.triggerBackgroundColor,
                           foregroundColor: widget.triggerForegroundColor,
                           hoverForegroundColor: widget.triggerForegroundColor,
-                          hoverBackgroundColor: widget.triggerForegroundColor
-                              ?.withValues(alpha: .10),
+                          hoverBackgroundColor:
+                              widget.triggerHoverBackgroundColor ??
+                              widget.triggerForegroundColor?.withValues(
+                                alpha: .10,
+                              ),
                           onPressed: widget.enabled ? _controller.toggle : null,
                           trailing: Icon(
                             widget.triggerIcon ?? LucideIcons.ellipsis,
@@ -132,7 +145,10 @@ class _DefensysActionMenuState extends State<DefensysActionMenu> {
                     height: 32,
                     padding: EdgeInsets.zero,
                     onPressed: widget.enabled ? _controller.toggle : null,
-                    child: Icon(widget.triggerIcon ?? LucideIcons.ellipsis, size: 18),
+                    child: Icon(
+                      widget.triggerIcon ?? LucideIcons.ellipsis,
+                      size: 18,
+                    ),
                   ),
           ),
         ),

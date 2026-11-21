@@ -1468,8 +1468,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               ),
               _FacultyNavEntry(
                 section: 'audit_compliance',
-                icon: Icons.verified_user_outlined,
-                label: 'Audit Trail',
+                icon: Icons.summarize_outlined,
+                label: 'Reports & Logs',
                 isActive: _activeSection == 'audit_compliance',
                 onTap: () => _afterSidebarAction(
                   isWide,

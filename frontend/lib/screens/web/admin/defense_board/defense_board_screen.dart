@@ -914,6 +914,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             label: 'Scheduling options',
             triggerLabel: 'Scheduling options',
             triggerIcon: LucideIcons.chevronDown,
+            triggerBackgroundColor: DefensysTokens.surfaceOf(context),
+            triggerHoverBackgroundColor: DefensysTokens.surfaceOf(context),
             enabled: !state.isSaving,
             items: [
               DefensysMenuItem(

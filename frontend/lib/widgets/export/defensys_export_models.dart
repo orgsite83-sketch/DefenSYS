@@ -125,6 +125,8 @@ class DefensysExportConfig {
 
   /// Initial query/filter parameters
   final Map<String, String> initialParams;
+  final String? Function(Map<String, String> params)? selectionHint;
+  final String? Function()? previewError;
 
   /// Callback to fetch structured live preview data for the right pane / main pane
   final Future<ReportPreviewData?> Function(Map<String, String> currentParams)
@@ -164,6 +166,8 @@ class DefensysExportConfig {
     this.allowSignatoryCustomization = true,
     this.initialIncludeSignatures = false,
     this.initialParams = const {},
+    this.selectionHint,
+    this.previewError,
     required this.onFetchPreview,
     required this.onDownload,
     this.leftPaneBuilder,

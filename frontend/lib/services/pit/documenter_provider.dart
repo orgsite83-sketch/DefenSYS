@@ -74,6 +74,22 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
   int _assignmentsVersion = 0;
   final Map<int, String> _reviewTokens = {};
   final Map<int, int> _previewVersions = {};
+  final Map<int, Map<String, dynamic>> _decisionDrafts = {};
+
+  void updateDecisionDraft(int scheduleId, Map<String, dynamic> draft) {
+    _decisionDrafts[scheduleId] = Map<String, dynamic>.from(draft);
+    _reviewTokens.remove(scheduleId);
+    _previewVersions[scheduleId] = (_previewVersions[scheduleId] ?? 0) + 1;
+  }
+
+  Map<String, dynamic> _draftPayload(
+    int scheduleId,
+    List<Map<String, dynamic>> comments,
+  ) => {
+    'comments': comments,
+    if (_decisionDrafts.containsKey(scheduleId))
+      'decision_draft': _decisionDrafts[scheduleId],
+  };
 
   bool _isCurrent(int scheduleId, int version) =>
       _activeScheduleId == scheduleId && _detailVersion == version;
@@ -162,6 +178,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
       if (!_isCurrent(scheduleId, version)) return;
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = jsonDecode(response.body);
+        _decisionDrafts.remove(scheduleId);
         state = state.copyWith(
           isLoading: false,
           activeMinutes: data,
@@ -216,7 +233,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
           .patch(
             Uri.parse('$minutesUrl/$scheduleId/'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'comments': comments}),
+            body: jsonEncode(_draftPayload(scheduleId, comments)),
           )
           .timeout(_requestTimeout);
       if (!_isCurrent(scheduleId, version)) return response.statusCode == 200;
@@ -260,7 +277,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
           .patch(
             Uri.parse('$minutesUrl/$scheduleId/'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'comments': comments}),
+            body: jsonEncode(_draftPayload(scheduleId, comments)),
           )
           .timeout(_requestTimeout);
       if (!_isCurrent(scheduleId, version)) return response.statusCode == 200;

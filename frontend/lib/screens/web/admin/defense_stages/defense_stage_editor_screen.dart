@@ -77,7 +77,6 @@ class _DefenseStageEditorScreenState
   Map<String, dynamic> _conceptConfig = {};
   final _qualifyingScore = TextEditingController();
   String _scoreCarryover = 'reassess';
-  List<Map<String, dynamic>> _revisionAreas = [];
   final _panel = TextEditingController(text: '50');
   final _adviser = TextEditingController(text: '30');
   final _peer = TextEditingController(text: '20');
@@ -198,7 +197,6 @@ class _DefenseStageEditorScreenState
       },
       'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
       'score_carryover': _scoreCarryover,
-      'revision_areas': _revisionAreas,
       'minutes_deliverable_id': _minutesNumber.text,
       'minutes_deliverable_label': _minutesName.text,
       'deliverables': _deliverables,
@@ -567,10 +565,6 @@ class _DefenseStageEditorScreenState
               : []),
     );
     _qualifyingScore.text = stage['qualifying_score']?.toString() ?? '';
-    _revisionAreas = (stage['revision_areas'] as List? ?? [])
-        .whereType<Map>()
-        .map((area) => Map<String, dynamic>.from(area))
-        .toList();
     _scoreCarryover =
         stage['score_carryover']?.toString() ??
         _conceptConfig['score_carryover']?.toString() ??
@@ -724,7 +718,6 @@ class _DefenseStageEditorScreenState
           },
           'qualifying_score': double.tryParse(_qualifyingScore.text.trim()),
           'score_carryover': _scoreCarryover,
-          'revision_areas': _revisionAreas,
           'minutes_deliverable_id': _minutesNumber.text.trim(),
           'minutes_deliverable_label': _minutesName.text.trim(),
         },
@@ -1512,13 +1505,6 @@ class _DefenseStageEditorScreenState
                                     _setupTargets.field(
                                       'score',
                                       StageOutcomeSettings(
-                                        revisionAreas: _revisionAreas,
-                                        onRevisionAreasChanged: (value) {
-                                          setState(
-                                            () => _revisionAreas = value,
-                                          );
-                                          _markDirty();
-                                        },
                                         scoreController: _qualifyingScore,
                                         showValidationErrors: _revealedSteps
                                             .contains(1),

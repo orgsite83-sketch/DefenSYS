@@ -78,7 +78,7 @@ class AuditFilterToolbar extends StatelessWidget {
                   ),
                   decoration: InputDecoration(
                     hintText:
-                        'Search audit logs (e.g. rubric, user, action, project...)',
+                        'Search logs (e.g. user, action, project...)',
                     hintStyle: TextStyle(
                       fontSize: 13,
                       color: isDark

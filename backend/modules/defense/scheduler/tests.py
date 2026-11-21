@@ -149,6 +149,10 @@ class DefenseSchedulerApiTests(APITestCase):
             'panelist_ids': [self.panelist.id, self.second_panelist.id],
         }
         payload.update(overrides)
+        if payload['scope'] == DefenseSchedule.SCOPE_CAPSTONE and 'documenter_id' not in payload:
+            documenter, _ = User.objects.get_or_create(username='fixture-outcome-documenter',
+                defaults={'role': 'faculty', 'is_documenter': True})
+            payload['documenter_id'] = documenter.pk
         return payload
 
     def create_ready_team(self, name='Team MirrorSync', username='2024-0002', adviser=None):

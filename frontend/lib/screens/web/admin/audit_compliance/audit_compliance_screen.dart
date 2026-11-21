@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
@@ -13,13 +14,12 @@ import 'package:defensys/services/reports_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/table/defensys_segmented_control.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/screens/web/admin/admin_shell.dart';
 
 import 'components/audit_header_and_export.dart';
-import 'components/audit_kpi_metrics.dart';
 import 'components/audit_filter_toolbar.dart';
-import 'components/audit_status_tabs.dart';
 import 'components/audit_trail_table.dart';
 import 'components/event_details_panel.dart';
 import 'components/audit_report_center_tab.dart';
@@ -40,8 +40,8 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
   Map<String, String> _reportQuery = {};
   bool _didReadReportContext = false;
   final _searchController = TextEditingController();
+  final _eventDetailsKey = GlobalKey();
   Timer? _refreshTimer;
-  final Set<int> _updatingReviews = {};
 
   @override
   void initState() {
@@ -50,7 +50,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       _checkAndFetchAudit(ref.read(authProvider));
     });
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (!mounted || _selectedTabIndex != 0 || !TickerMode.of(context)) return;
+      if (!mounted || _selectedTabIndex != 1 || !TickerMode.of(context)) return;
       final auth = ref.read(authProvider);
       final user = auth.user;
       if (auth.isRestoring || user == null) return;
@@ -59,14 +59,14 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
           user['is_pit_lead'] != true) {
         return;
       }
-      if (!ref.read(systemAuditProvider).isLoading &&
-          _updatingReviews.isEmpty) {
+      if (!ref.read(systemAuditProvider).isLoading) {
         ref.read(systemAuditProvider.notifier).fetch();
       }
     });
   }
 
   void _checkAndFetchAudit(AuthState authState) {
+    if (_selectedTabIndex != 1) return;
     if (authState.isRestoring) return;
     if (_didInitialFetch) return;
 
@@ -98,6 +98,23 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     context.push(route);
   }
 
+  void _selectLog(Map<String, dynamic> log) {
+    ref.read(systemAuditProvider.notifier).selectLog(log);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _selectedTabIndex != 1) return;
+      final detailsContext = _eventDetailsKey.currentContext;
+      if (detailsContext == null) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          detailsContext,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          alignment: 0.05,
+        ),
+      );
+    });
+  }
+
   Future<void> _exportSingleLogPdf(Map<String, dynamic> log) async {
     final logId = log['id']?.toString() ?? '';
     if (logId.isEmpty) return;
@@ -118,8 +135,6 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     final auditState = ref.read(systemAuditProvider);
     final queryParams = <String, String>{
       if (auditState.category.isNotEmpty) 'category': auditState.category,
-      if (auditState.reviewStatus.isNotEmpty)
-        'review_status': auditState.reviewStatus,
       if (auditState.action.isNotEmpty) 'action': auditState.action,
       if (auditState.search.isNotEmpty) 'search': auditState.search,
       if (auditState.startDate.isNotEmpty) 'start_date': auditState.startDate,
@@ -142,96 +157,12 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     _showDownloadResultToast(success, format);
   }
 
-  Future<void> _updateReviewStatus(
-    Map<String, dynamic> log,
-    String newStatus,
-  ) async {
-    final logId = log['id'] as int?;
-    if (logId == null || _updatingReviews.contains(logId)) return;
-    String? reason;
-    if (newStatus != 'reviewed' && log['review_status'] == 'reviewed') {
-      reason = await _askReopenReason();
-      if (!mounted || reason == null) return;
-    }
-
-    _updatingReviews.add(logId);
-    final success = await ref
-        .read(systemAuditProvider.notifier)
-        .updateReviewStatus(logId, newStatus, reason: reason);
-    _updatingReviews.remove(logId);
-    if (!mounted) return;
-
-    if (success) {
-      ToastService.success(
-        context,
-        newStatus == 'reviewed'
-            ? 'Event #$logId marked as reviewed'
-            : 'Event #$logId reopened for review',
-      );
-    } else {
-      ToastService.error(
-        context,
-        ref.read(systemAuditProvider).error ?? 'Failed to update review status',
-      );
-    }
-  }
-
-  Future<String?> _askReopenReason() async {
-    final controller = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reopen audit review'),
-        content: SizedBox(
-          width: 420,
-          child: Form(
-            key: formKey,
-            child: TextFormField(
-              controller: controller,
-              autofocus: true,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Reason',
-                hintText: 'Explain what needs another review.',
-              ),
-              validator: (value) => value == null || value.trim().isEmpty
-                  ? 'Enter a reason to reopen this review.'
-                  : null,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(context, controller.text.trim());
-              }
-            },
-            child: const Text('Reopen review'),
-          ),
-        ],
-      ),
-    );
-    // The dialog finishes its closing animation before releasing its controller.
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    controller.dispose();
-    return result;
-  }
-
   void _showDownloadResultToast(bool success, [String format = 'pdf']) {
     if (!mounted) return;
     final error = ref.read(reportsProvider).error;
     final fmtUpper = format.toUpperCase();
     if (success) {
-      ToastService.success(
-        context,
-        '$fmtUpper downloaded successfully.',
-      );
+      ToastService.success(context, '$fmtUpper downloaded successfully.');
     } else {
       ToastService.error(
         context,
@@ -247,7 +178,13 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       final router = GoRouter.maybeOf(context);
       if (router != null) {
         _reportQuery = GoRouterState.of(context).uri.queryParameters;
-        if (_reportQuery['tab'] == 'reports') _selectedTabIndex = 1;
+        if (const [
+          'logs',
+          'audit',
+          'audit-trail',
+        ].contains(_reportQuery['tab'])) {
+          _selectedTabIndex = 1;
+        }
       }
     }
     final authState = ref.watch(authProvider);
@@ -290,30 +227,33 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       );
     }
 
-    return SingleChildScrollView(
-      padding: DefensysUi.contentPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Portal-consistent Tab Switcher
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _ExecutiveTabBar(
-              selectedIndex: _selectedTabIndex,
-              onTabSelected: (index) {
-                if (_selectedTabIndex != index) {
-                  setState(() => _selectedTabIndex = index);
-                }
-              },
+    return DefensysShadcnScope(
+      child: SingleChildScrollView(
+        padding: DefensysUi.contentPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Portal-consistent Tab Switcher
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _ExecutiveTabBar(
+                selectedIndex: _selectedTabIndex,
+                onTabSelected: (index) {
+                  if (_selectedTabIndex != index) {
+                    setState(() => _selectedTabIndex = index);
+                    _checkAndFetchAudit(ref.read(authProvider));
+                  }
+                },
+              ),
             ),
-          ),
-          const SizedBox(height: 18),
+            const SizedBox(height: 18),
 
-          if (_selectedTabIndex == 0)
-            _buildAuditTrailWorkspace(context)
-          else
-            AuditReportCenterTab(reportQuery: _reportQuery),
-        ],
+            if (_selectedTabIndex == 0)
+              AuditReportCenterTab(reportQuery: _reportQuery)
+            else
+              _buildAuditTrailWorkspace(context),
+          ],
+        ),
       ),
     );
   }
@@ -324,41 +264,43 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     final user = ref.watch(authProvider).user;
     final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
 
-    final selectedLog =
-        auditState.selectedLog ??
-        (auditState.logs.isNotEmpty ? auditState.logs.first : null);
+    final selectedLog = auditState.selectedLog;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 1. Header with Title, Subtitle, and Export Dropdown Menu
         AuditHeaderAndExport(
+          onRefresh: () => notifier.fetch(),
+          isRefreshing: auditState.isLoading,
           onExportExcel: () => _exportAuditRegister(format: 'xlsx'),
           onExportPdf: () => _exportAuditRegister(format: 'pdf'),
           onOpenReportCenter: () {
-            final params = reportSourceParams(ref, 'audit-trail')..removeWhere((key, value) => value.isEmpty);
+            final params = reportSourceParams(ref, 'audit-trail')
+              ..removeWhere((key, value) => value.isEmpty);
             final router = GoRouter.maybeOf(context);
             if (router != null) {
-              context.push(reportCenterLocation(admin: isAdmin, reportId: 'audit-trail', params: params, source: GoRouterState.of(context).uri.toString()));
+              context.push(
+                reportCenterLocation(
+                  admin: isAdmin,
+                  reportId: 'audit-trail',
+                  params: params,
+                  source: GoRouterState.of(context).uri
+                      .replace(queryParameters: const {'tab': 'logs'})
+                      .toString(),
+                ),
+              );
             } else {
-              setState(() { _selectedTabIndex = 1; _reportQuery = {'report': 'audit-trail', ...params}; });
+              setState(() {
+                _selectedTabIndex = 0;
+                _reportQuery = {'report': 'audit-trail', ...params};
+              });
             }
           },
         ),
         const SizedBox(height: 20),
 
-        // 2. Four scope cards double as an overview and direct filter shortcuts.
-        AuditKpiMetrics(
-          state: auditState,
-          isAdmin: isAdmin,
-          onSelectScope: isAdmin
-              ? (track, year) => notifier.setScope(track, yearLevel: year)
-              : null,
-          onRefresh: () => notifier.fetch(),
-        ),
-        const SizedBox(height: 18),
-
-        // 3. Search and Filters Toolbar
+        // Search and filters apply equally to the register and its exports.
         AuditFilterToolbar(
           state: auditState,
           searchController: _searchController,
@@ -396,51 +338,42 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
         ),
         const SizedBox(height: 16),
 
-        // 4. Status Tab Ribbon (All Events, Needs Review, Reviewed)
-        AuditStatusTabs(
+        if (auditState.error != null) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  auditState.error!,
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+              ShadButton.outline(
+                onPressed: () => notifier.fetch(),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+        ],
+        AuditTrailTable(
           state: auditState,
-          onStatusSelected: (status) => notifier.setReviewStatus(status),
+          onSelectLog: _selectLog,
+          onPageChanged: (page) => notifier.setPage(page),
+          onPageSizeChanged: (size) => notifier.setPageSize(size),
         ),
-        const SizedBox(height: 14),
-
-        // 5. Master-Detail Workspace: Table & Event Details Panel
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 1100;
-
-            final table = AuditTrailTable(
-              state: auditState,
-              onSelectLog: (log) => notifier.selectLog(log),
-              onPageChanged: (page) => notifier.setPage(page),
-              onPageSizeChanged: (size) => notifier.setPageSize(size),
-              onQuickReviewStatus: (log, status) =>
-                  _updateReviewStatus(log, status),
-            );
-
-            final details = EventDetailsPanel(
-              log: selectedLog,
-              onUpdateReviewStatus: (log, status) =>
-                  _updateReviewStatus(log, status),
-              onExportPdf: (log) => _exportSingleLogPdf(log),
-              onNavigateToResource: _navigateToResource,
-            );
-
-            if (!isWide) {
-              return Column(
-                children: [table, const SizedBox(height: 16), details],
-              );
-            }
-
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 3, child: table),
-                const SizedBox(width: 16),
-                Expanded(flex: 2, child: details),
-              ],
-            );
-          },
-        ),
+        if (selectedLog != null) ...[
+          const SizedBox(height: 16),
+          EventDetailsPanel(
+            key: _eventDetailsKey,
+            log: selectedLog,
+            onClose: notifier.clearSelectedLog,
+            onExportPdf: (log) => _exportSingleLogPdf(log),
+            onNavigateToResource: _navigateToResource,
+          ),
+        ],
       ],
     );
   }
@@ -462,15 +395,17 @@ class _ExecutiveTabBar extends StatelessWidget {
       items: const [
         DefensysSegmentItem(
           value: 0,
-          label: 'Audit Trail',
-          badgeLabel: 'Live Logs',
-          icon: Icons.receipt_long_outlined,
+          key: ValueKey('report-center-tab'),
+          label: 'Report Center',
+          badgeLabel: 'PDF · Excel',
+          icon: Icons.summarize_outlined,
         ),
         DefensysSegmentItem(
           value: 1,
-          label: 'Report Center',
-          badgeLabel: 'PDF Center',
-          icon: Icons.summarize_outlined,
+          key: ValueKey('logs-tab'),
+          label: 'Logs',
+          badgeLabel: 'Live',
+          icon: Icons.receipt_long_outlined,
         ),
       ],
       onChanged: onTabSelected,

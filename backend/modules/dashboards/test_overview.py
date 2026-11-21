@@ -4,6 +4,39 @@ from . import test_read_performance as performance
 
 
 class AdminOverviewTests(performance.DashboardReadPerformanceTests):
+    def test_empty_stages_add_one_stage_task_without_rubric_task(self):
+        from defense.stages.models import DefenseStage
+        DefenseStage.objects.all().delete()
+        payload, _, _ = self.dashboard()
+        overview = payload['overview']
+        self.assertEqual(overview['action_counts']['defenseStages'], 1)
+        self.assertNotIn('rubrics', overview['action_counts'])
+        self.assertTrue(any(item['id'] == 'stage_setup_empty' for item in overview['action_items']))
+
+    def test_draft_stage_counts_with_roster_but_is_not_schedulable(self):
+        from defense.stages.models import DefenseStage
+        draft = DefenseStage.objects.create(label='Draft proposal', code='draft-proposal',
+            display_order=10, is_active=False, setup_semester=self.semester)
+        self.add_teams(1)
+        payload, _, _ = self.dashboard()
+        task = next(item for item in payload['overview']['action_items']
+                    if item['id'] == f'stage_setup:{draft.pk}')
+        self.assertIn('rubrics', task['related_sections'])
+        self.assertNotIn(draft.label, [row['label'] for row in payload['team_pipeline']['stage_distribution']])
+
+    def test_configured_published_stages_clear_badges_but_draft_needs_publication(self):
+        from defense.stages.models import DefenseStage
+        with patch('defense.stages.readiness.stage_setup_readiness', return_value={
+            'ready': True, 'issues': [], 'required_rubric_roles': [],
+        }):
+            payload, _, _ = self.dashboard()
+            self.assertNotIn('defenseStages', payload['overview']['action_counts'])
+            self.assertNotIn('rubrics', payload['overview']['action_counts'])
+            DefenseStage.objects.filter(pk=DefenseStage.objects.first().pk).update(is_active=False)
+            payload, _, _ = self.dashboard()
+        self.assertEqual(payload['overview']['action_counts']['defenseStages'], 1)
+        self.assertNotIn('rubrics', payload['overview']['action_counts'])
+
     def test_users_card_counts_enrollment_across_all_years_without_teams(self):
         from django.contrib.auth import get_user_model
         from user_management.academic_records.models import StudentAcademicRecord
@@ -55,6 +88,19 @@ class AdminOverviewTests(performance.DashboardReadPerformanceTests):
             self.assertIn(f'semester_id={self.semester.pk}', task['target_route'])
             self.assertIn('fromOverview=1', task['target_route'])
         self.assertEqual(payload['overview']['action_counts']['defenseStages'], len(stage_tasks))
+        self.assertEqual(payload['overview']['action_counts']['rubrics'], len(stage_tasks))
+        for task in stage_tasks:
+            self.assertIn('rubrics', task['related_sections'])
+
+    def test_non_rubric_stage_issues_do_not_count_toward_rubrics(self):
+        with patch('defense.stages.readiness.stage_setup_readiness', return_value={
+            'ready': False, 'issues': ['Add student file submission requirements.'],
+            'required_rubric_roles': [],
+        }):
+            payload, _, _ = self.dashboard()
+        overview = payload['overview']
+        self.assertGreater(overview['action_counts']['defenseStages'], 0)
+        self.assertNotIn('rubrics', overview['action_counts'])
 
     def test_previous_semester_teams_do_not_enter_overview_totals(self):
         from academic_period_management.models import SchoolYear, Semester

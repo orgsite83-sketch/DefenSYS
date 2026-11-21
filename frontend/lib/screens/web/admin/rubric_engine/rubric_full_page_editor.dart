@@ -2313,6 +2313,59 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 ? 'Update rubric details, criteria, and evaluation settings.'
                 : _createSubtitle()),
     );
+    final actionBar = Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      spacing: 20,
+      runSpacing: 16,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            if (widget.workspaceHeader == null || !widget.readOnly)
+              ShadButton.ghost(
+                enabled: !saving,
+                onPressed: saving ? null : _handleBack,
+                child: Text(
+                  widget.workspaceHeader != null
+                      ? 'Discard changes'
+                      : widget.readOnly
+                      ? 'Back'
+                      : 'Cancel',
+                ),
+              ),
+            if (widget.onDelete != null) _deleteAction(saving: saving),
+          ],
+        ),
+        if (!widget.readOnly)
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              ShadButton.outline(
+                enabled: !saving,
+                onPressed: saving ? null : () => _save('draft'),
+                child: const Text('Save as Draft'),
+              ),
+              ShadButton(
+                enabled: !saving,
+                backgroundColor: DefensysTokens.maroonOf(context),
+                foregroundColor: Colors.white,
+                onPressed: saving ? null : () => _save('published'),
+                leading: const Icon(LucideIcons.check, size: 16),
+                child: Text(
+                  saving
+                      ? 'Saving...'
+                      : widget.workspaceHeader != null
+                      ? 'Review & publish'
+                      : 'Publish Rubric',
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
     return PopScope(
       canPop: widget.readOnly || !_isDirty,
       onPopInvokedWithResult: (didPop, _) async {
@@ -2323,283 +2376,260 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         child: ColoredBox(
           color: DefensysTokens.backgroundOf(context),
           child: LayoutBuilder(
-            builder: (context, viewport) => SingleChildScrollView(
-              padding: viewport.maxWidth < 600
-                  ? const EdgeInsets.fromLTRB(16, 20, 16, 36)
-                  : DefensysUi.contentPadding,
-              child: SizedBox(
-                key: const ValueKey('rubric-editor-content'),
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (widget.workspaceHeader != null)
-                      widget.workspaceHeader!
-                    else
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          if (constraints.maxWidth < 720) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                actions,
-                                const SizedBox(height: 20),
-                                header,
-                              ],
-                            );
-                          }
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(child: header),
-                              const SizedBox(width: 24),
-                              actions,
-                            ],
-                          );
-                        },
-                      ),
-                    if (widget.workspaceStageHeader != null)
-                      const SizedBox(height: 20),
-                    _stageSurface(
-                      Column(
+            builder: (context, viewport) => Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: viewport.maxWidth < 600
+                        ? const EdgeInsets.fromLTRB(16, 20, 16, 36)
+                        : DefensysUi.contentPadding,
+                    child: SizedBox(
+                      key: const ValueKey('rubric-editor-content'),
+                      width: double.infinity,
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (widget.readOnly ||
-                              widget.rubric?['is_locked'] == true) ...[
-                            const SizedBox(height: 24),
-                            _lockedBanner(),
-                          ] else if (widget.workspaceHeader == null &&
-                              (widget.rubric?['is_soft_locked'] == true ||
-                                  widget.rubric?['is_assigned'] == true)) ...[
-                            const SizedBox(height: 24),
-                            _softLockedBanner(),
-                          ],
-                          const SizedBox(height: 28),
-                          _sectionCard(
-                            icon: LucideIcons.fileText,
-                            title: 'Rubric details',
-                            trailing: Wrap(
-                              spacing: 12,
-                              runSpacing: 12,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                _buildScopeHeaderWidget(
-                                  canSwitchScope: canSwitchScope,
-                                  state: state,
-                                  pitYear: pitYear,
-                                ),
-                                if (widget.workspaceHeader != null &&
-                                    detailsExport != null)
-                                  detailsExport,
-                                _buildCloneDropdown(state),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (_copiedFromName != null) ...[
-                                  Text(
-                                    'Copied from $_copiedFromName',
-                                    style: DefensysTokens.caption.copyWith(
-                                      color: _textSecondaryColor,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                ],
-                                _detailsFields(state, pitYear, canEdit),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          _sectionCard(
-                            icon: LucideIcons.listChecks,
-                            title: _rubricScale == 'Points-Based (Sections)'
-                                ? 'Weighted sections (${_sections.length})'
-                                : 'Evaluation criteria (${_criteria.length})',
-                            child: _rubricScale == 'Points-Based (Sections)'
-                                ? _buildSectionedCriteriaEditor(canEdit)
-                                : Column(
+                          if (widget.workspaceHeader != null)
+                            widget.workspaceHeader!
+                          else
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                if (constraints.maxWidth < 720) {
+                                  return Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
-                                      _buildWeightAssistantBar(
-                                        enabled: canEdit,
+                                      actions,
+                                      const SizedBox(height: 20),
+                                      header,
+                                    ],
+                                  );
+                                }
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: header),
+                                    const SizedBox(width: 24),
+                                    actions,
+                                  ],
+                                );
+                              },
+                            ),
+                          if (widget.workspaceStageHeader != null)
+                            const SizedBox(height: 20),
+                          _stageSurface(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (widget.readOnly ||
+                                    widget.rubric?['is_locked'] == true) ...[
+                                  const SizedBox(height: 24),
+                                  _lockedBanner(),
+                                ] else if (widget.workspaceHeader == null &&
+                                    (widget.rubric?['is_soft_locked'] == true ||
+                                        widget.rubric?['is_assigned'] ==
+                                            true)) ...[
+                                  const SizedBox(height: 24),
+                                  _softLockedBanner(),
+                                ],
+                                const SizedBox(height: 28),
+                                _sectionCard(
+                                  icon: LucideIcons.fileText,
+                                  title: 'Rubric details',
+                                  trailing: Wrap(
+                                    spacing: 12,
+                                    runSpacing: 12,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      _buildScopeHeaderWidget(
+                                        canSwitchScope: canSwitchScope,
+                                        state: state,
+                                        pitYear: pitYear,
                                       ),
-                                      RubricCriterionHeader(
-                                        showTarget: _targetType == 'both',
-                                      ),
-                                      ..._criteria.asMap().entries.map((entry) {
-                                        final i = entry.key;
-                                        final draft = entry.value;
-                                        return _criterionCard(
-                                          draft,
-                                          i,
-                                          enabled: canEdit,
-                                          onRemove:
-                                              !canEdit || _criteria.length == 1
-                                              ? null
-                                              : () {
-                                                  setState(() {
-                                                    draft.dispose();
-                                                    _criteria.removeAt(i);
-                                                    _reassignDisplayOrders();
-                                                  });
-                                                  _attachCriteriaListeners();
-                                                  _markDirty();
-                                                },
-                                          onChanged: () {
-                                            setState(() {});
-                                            _markDirty();
-                                          },
-                                        );
-                                      }),
-                                      Wrap(
-                                        alignment: WrapAlignment.spaceBetween,
-                                        crossAxisAlignment:
-                                            WrapCrossAlignment.center,
-                                        spacing: 16,
-                                        runSpacing: 12,
-                                        children: [
-                                          if (canEdit)
-                                            ShadButton.outline(
-                                              onPressed: () {
-                                                var defaultTarget =
-                                                    _targetType == 'individual'
-                                                    ? 'individual'
-                                                    : 'team';
-                                                if (_targetType == 'both' &&
-                                                    _criteria.any(
-                                                      (c) =>
-                                                          c.targetType ==
-                                                          'team',
-                                                    ) &&
-                                                    !_criteria.any(
-                                                      (c) =>
-                                                          c.targetType ==
-                                                          'individual',
-                                                    )) {
-                                                  defaultTarget = 'individual';
-                                                }
-                                                setState(
-                                                  () => _criteria.add(
-                                                    RubricCriterionDraft(
-                                                      scales: _scales,
-                                                      name: '',
-                                                      scale: _rubricScale,
-                                                      maxScore: _rubricMaxScore,
-                                                      weight: 10,
-                                                      displayOrder:
-                                                          _criteria.length,
-                                                      targetType: defaultTarget,
-                                                    ),
-                                                  ),
-                                                );
-                                                _attachCriteriaListeners();
-                                                _markDirty();
-                                                WidgetsBinding.instance
-                                                    .addPostFrameCallback((_) {
-                                                      if (mounted) {
-                                                        _criteria
-                                                            .last
-                                                            .editorKey
-                                                            .currentState
-                                                            ?.focusName();
-                                                      }
-                                                    });
-                                              },
-                                              leading: const Icon(
-                                                LucideIcons.plus,
-                                                size: 16,
-                                              ),
-                                              child: const Text(
-                                                'Add criterion',
-                                              ),
-                                            ),
-                                          Text(
-                                            '${_criteria.length} ${_criteria.length == 1 ? 'criterion' : 'criteria'} · ${formatRubricPercentage(_totalCriteriaWeight)}% total weight',
-                                            style: DefensysTokens.caption
-                                                .copyWith(
-                                                  color: _textSecondaryColor,
-                                                ),
-                                          ),
-                                        ],
-                                      ),
+                                      if (widget.workspaceHeader != null &&
+                                          detailsExport != null)
+                                        detailsExport,
+                                      _buildCloneDropdown(state),
                                     ],
                                   ),
-                          ),
-                          const SizedBox(height: 24),
-                          Divider(height: 1, color: _borderColor),
-                          const SizedBox(height: 20),
-                          Wrap(
-                            alignment: WrapAlignment.spaceBetween,
-                            spacing: 20,
-                            runSpacing: 16,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  if (widget.workspaceHeader == null ||
-                                      !widget.readOnly)
-                                    ShadButton.ghost(
-                                      enabled: !saving,
-                                      onPressed: saving ? null : _handleBack,
-                                      child: Text(
-                                        widget.workspaceHeader != null
-                                            ? 'Discard changes'
-                                            : widget.readOnly
-                                            ? 'Back'
-                                            : 'Cancel',
-                                      ),
-                                    ),
-                                  if (widget.onDelete != null)
-                                    _deleteAction(saving: saving),
-                                ],
-                              ),
-                              if (!widget.readOnly)
-                                Wrap(
-                                  spacing: 12,
-                                  runSpacing: 12,
-                                  children: [
-                                    ShadButton.outline(
-                                      enabled: !saving,
-                                      onPressed: saving
-                                          ? null
-                                          : () => _save('draft'),
-                                      child: const Text('Save as Draft'),
-                                    ),
-                                    ShadButton(
-                                      enabled: !saving,
-                                      backgroundColor: DefensysTokens.maroonOf(
-                                        context,
-                                      ),
-                                      foregroundColor: Colors.white,
-                                      onPressed: saving
-                                          ? null
-                                          : () => _save('published'),
-                                      leading: const Icon(
-                                        LucideIcons.check,
-                                        size: 16,
-                                      ),
-                                      child: Text(
-                                        saving
-                                            ? 'Saving...'
-                                            : widget.workspaceHeader != null
-                                            ? 'Review & publish'
-                                            : 'Publish Rubric',
-                                      ),
-                                    ),
-                                  ],
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (_copiedFromName != null) ...[
+                                        Text(
+                                          'Copied from $_copiedFromName',
+                                          style: DefensysTokens.caption
+                                              .copyWith(
+                                                color: _textSecondaryColor,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      _detailsFields(state, pitYear, canEdit),
+                                    ],
+                                  ),
                                 ),
-                            ],
+                                const SizedBox(height: 24),
+                                _sectionCard(
+                                  icon: LucideIcons.listChecks,
+                                  title:
+                                      _rubricScale == 'Points-Based (Sections)'
+                                      ? 'Weighted sections (${_sections.length})'
+                                      : 'Evaluation criteria (${_criteria.length})',
+                                  child:
+                                      _rubricScale == 'Points-Based (Sections)'
+                                      ? _buildSectionedCriteriaEditor(canEdit)
+                                      : Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            _buildWeightAssistantBar(
+                                              enabled: canEdit,
+                                            ),
+                                            RubricCriterionHeader(
+                                              showTarget: _targetType == 'both',
+                                            ),
+                                            ..._criteria.asMap().entries.map((
+                                              entry,
+                                            ) {
+                                              final i = entry.key;
+                                              final draft = entry.value;
+                                              return _criterionCard(
+                                                draft,
+                                                i,
+                                                enabled: canEdit,
+                                                onRemove:
+                                                    !canEdit ||
+                                                        _criteria.length == 1
+                                                    ? null
+                                                    : () {
+                                                        setState(() {
+                                                          draft.dispose();
+                                                          _criteria.removeAt(i);
+                                                          _reassignDisplayOrders();
+                                                        });
+                                                        _attachCriteriaListeners();
+                                                        _markDirty();
+                                                      },
+                                                onChanged: () {
+                                                  setState(() {});
+                                                  _markDirty();
+                                                },
+                                              );
+                                            }),
+                                            Wrap(
+                                              alignment:
+                                                  WrapAlignment.spaceBetween,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              spacing: 16,
+                                              runSpacing: 12,
+                                              children: [
+                                                if (canEdit)
+                                                  ShadButton.outline(
+                                                    onPressed: () {
+                                                      var defaultTarget =
+                                                          _targetType ==
+                                                              'individual'
+                                                          ? 'individual'
+                                                          : 'team';
+                                                      if (_targetType ==
+                                                              'both' &&
+                                                          _criteria.any(
+                                                            (c) =>
+                                                                c.targetType ==
+                                                                'team',
+                                                          ) &&
+                                                          !_criteria.any(
+                                                            (c) =>
+                                                                c.targetType ==
+                                                                'individual',
+                                                          )) {
+                                                        defaultTarget =
+                                                            'individual';
+                                                      }
+                                                      setState(
+                                                        () => _criteria.add(
+                                                          RubricCriterionDraft(
+                                                            scales: _scales,
+                                                            name: '',
+                                                            scale: _rubricScale,
+                                                            maxScore:
+                                                                _rubricMaxScore,
+                                                            weight: 10,
+                                                            displayOrder:
+                                                                _criteria
+                                                                    .length,
+                                                            targetType:
+                                                                defaultTarget,
+                                                          ),
+                                                        ),
+                                                      );
+                                                      _attachCriteriaListeners();
+                                                      _markDirty();
+                                                      WidgetsBinding.instance
+                                                          .addPostFrameCallback((
+                                                            _,
+                                                          ) {
+                                                            if (mounted) {
+                                                              _criteria
+                                                                  .last
+                                                                  .editorKey
+                                                                  .currentState
+                                                                  ?.focusName();
+                                                            }
+                                                          });
+                                                    },
+                                                    leading: const Icon(
+                                                      LucideIcons.plus,
+                                                      size: 16,
+                                                    ),
+                                                    child: const Text(
+                                                      'Add criterion',
+                                                    ),
+                                                  ),
+                                                Text(
+                                                  '${_criteria.length} ${_criteria.length == 1 ? 'criterion' : 'criteria'} · ${formatRubricPercentage(_totalCriteriaWeight)}% total weight',
+                                                  style: DefensysTokens.caption
+                                                      .copyWith(
+                                                        color:
+                                                            _textSecondaryColor,
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
+                Container(
+                  key: const ValueKey('rubric-editor-actions'),
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: _surfaceColor,
+                    border: Border(top: BorderSide(color: _borderColor)),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: viewport.maxWidth < 600 ? 16 : 24,
+                        vertical: 12,
+                      ),
+                      child: actionBar,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

@@ -70,12 +70,15 @@ def generate_minutes_pdf(minutes, signatories=None, include_signatures=True, dra
     builder.add_metadata_grid(metadata_rows)
 
     from .outcome import for_minutes
-    from grading.grades.outcome_rules import deliberation_policy
+    from grading.grades.outcome_rules import deliberation_policy, documenter_policy
+    from grading.grades.deliberation import source_for
     official = for_minutes(minutes)
     if official or deliberation_policy(minutes.schedule):
-        builder.add_section_header('OFFICIAL PANEL DECISION')
+        documented = documenter_policy(minutes.schedule)
+        builder.add_section_header(('PANEL DECISION - DRAFT' if not source_for(minutes.schedule)
+            else 'RECORDED PANEL DECISION') if documented else 'OFFICIAL PANEL DECISION')
         if not official:
-            builder.add_metadata_grid([('Outcome', 'Awaiting chair confirmation')])
+            builder.add_metadata_grid([('Outcome', 'Awaiting documenter recording' if documenter_policy(minutes.schedule) else 'Awaiting chair confirmation')])
         else:
             labels = {'approved': 'Approved', 'approved_with_revisions': 'Approved with revisions',
                       'for_redefense': 'For re-defense', 'none': 'No revision', 'minor': 'Minor revision', 'major': 'Major revision'}
@@ -84,6 +87,10 @@ def generate_minutes_pdf(minutes, signatories=None, include_signatures=True, dra
                 decision_rows.append(('Selected concept', escape(official['selected_title'])))
             decision_rows.extend((escape(row['label']), labels[row['severity']]) for row in official['revision_entries'])
             builder.add_metadata_grid(decision_rows)
+            for row in official['revision_entries']:
+                if row.get('instructions'):
+                    builder.add_subsection_header(escape(row['label']))
+                    builder.add_paragraph(escape(row['instructions']).replace('\n', '<br/>'))
             for label, text in [('Decision reason', official.get('reason')), ('Panel instructions', official.get('instructions'))]:
                 if text:
                     builder.add_subsection_header(label)

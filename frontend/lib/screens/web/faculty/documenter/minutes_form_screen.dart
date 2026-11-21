@@ -12,6 +12,8 @@ import '../../../../utils/universal_file_viewer.dart';
 import '../e_signature_upload_dialog.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/minutes/minutes_review_dialog.dart';
+import '../../../../widgets/minutes/documenter_decision_fields.dart';
+import '../../../../widgets/minutes/documenter_outcome_correction.dart';
 
 class MinutesFormScreen extends ConsumerStatefulWidget {
   final int scheduleId;
@@ -37,6 +39,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
   bool _hydrating = false, _saveFailed = false;
   Future<bool>? _autoSavePending;
   DateTime? _lastSavedAt;
+  Map<String, dynamic> _decisionDraft = {};
 
   void _queueAutoSave() {
     if (_hydrating) return;
@@ -116,6 +119,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
         controller.dispose();
       }
       _controllers.clear();
+      _decisionDraft = {};
       _editVersion = _savedVersion = 0;
       _lastSavedAt = null;
       _saveFailed = false;
@@ -187,6 +191,9 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
     if (comments == null) return;
 
     _hydrating = true;
+    _decisionDraft = Map<String, dynamic>.from(
+      (minutes['decision_context'] as Map?)?['draft'] as Map? ?? {},
+    );
     for (final comment in comments) {
       final id = comment['id'] as int;
       final text = comment['comments']?.toString() ?? '';
@@ -283,11 +290,19 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
                   _controllers[comment['id']]?.text.trim().isNotEmpty == true,
           },
           hasSignature: user?['e_signature']?.toString().isNotEmpty == true,
+          outcomeReadyLabel:
+              ref.read(documenterProvider).activeMinutes?['decision_context'] !=
+                  null
+              ? 'Panel decision entered in the draft'
+              : 'Panel decision confirmed',
           outcomeReady:
               ref.read(documenterProvider).activeMinutes?['outcome_required'] !=
                   true ||
               ref.read(documenterProvider).activeMinutes?['official_outcome'] !=
-                  null,
+                  null ||
+              (ref.read(documenterProvider).activeMinutes?['decision_context']
+                      as Map?)?['draft_ready'] ==
+                  true,
         ),
       );
       if (sign == true && mounted && scheduleId == widget.scheduleId) {
@@ -643,7 +658,8 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
           // Horizontal Progress Step Header
           _buildSigningFlowStepper(status),
           const SizedBox(height: 24),
-          if (minutes['outcome_required'] == true) ...[
+          if (minutes['outcome_required'] == true &&
+              minutes['decision_context'] == null) ...[
             if (minutes['official_outcome'] is Map)
               DefenseDecisionSummary(
                 decision: Map<String, dynamic>.from(
@@ -699,6 +715,72 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
               final editor = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (minutes['decision_context'] is Map) ...[
+                    if (minutes['official_outcome'] is Map)
+                      DefenseDecisionSummary(
+                        decision: Map<String, dynamic>.from(
+                          minutes['official_outcome'] as Map,
+                        ),
+                      )
+                    else if (isDocumenter && status == 'draft')
+                      DocumenterDecisionFields(
+                        key: ValueKey(
+                          'documenter-decision-${widget.scheduleId}',
+                        ),
+                        value: _decisionDraft,
+                        contextData: Map<String, dynamic>.from(
+                          minutes['decision_context'] as Map,
+                        ),
+                        enabled:
+                            !isCancelled &&
+                            !_isSavingDraft &&
+                            !_isSubmitting &&
+                            !_isReviewing,
+                        onChanged: (value) {
+                          _decisionDraft = value;
+                          ref
+                              .read(documenterProvider.notifier)
+                              .updateDecisionDraft(widget.scheduleId, value);
+                          _queueAutoSave();
+                        },
+                      )
+                    else
+                      const Text(
+                        'Awaiting the documenter’s recorded panel outcome.',
+                      ),
+                    if (isDocumenter &&
+                        (minutes['decision_context']
+                                as Map)['can_request_correction'] ==
+                            true &&
+                        minutes['official_outcome'] is Map) ...[
+                      const SizedBox(height: 12),
+                      ShadButton.outline(
+                        onPressed: () async {
+                          final requested = await showDialog<bool>(
+                            context: context,
+                            builder: (_) => DocumenterOutcomeCorrection(
+                              scheduleId: widget.scheduleId,
+                              decision: Map<String, dynamic>.from(
+                                minutes['official_outcome'] as Map,
+                              ),
+                              contextData: Map<String, dynamic>.from(
+                                minutes['decision_context'] as Map,
+                              ),
+                            ),
+                          );
+                          if (requested == true && mounted && context.mounted) {
+                            showSuccessToast(
+                              context,
+                              'Outcome correction requested for administrator review.',
+                            );
+                            await _fetchDetail();
+                          }
+                        },
+                        child: const Text('Request outcome correction'),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                  ],
                   DefensysShadcnScope(
                     child: _buildCommentsSection(
                       minutes,

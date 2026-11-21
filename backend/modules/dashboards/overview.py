@@ -57,14 +57,23 @@ def admin_overview(semester, stages, legacy_items, ready_count):
                     'tab': 'import', 'level': f'{year} Capstone', 'attention': 'team_assignment',
                     'year_level': year, 'semester_id': semester.pk, 'fromOverview': 1}),
                 'button_label': 'Assign teams'})
+    if semester and not stages:
+        items.append({'id': 'stage_setup_empty', 'title': 'Set up defense stages',
+            'description': 'Add a defense stage for the current semester.',
+            'scope': 'capstone', 'severity': 'warning', 'category_label': 'STAGE SETUP',
+            'target_section': 'defenseStages',
+            'target_route': f'/admin/defense-stages?semester_id={semester.pk}&fromOverview=1',
+            'button_label': 'Set up stages'})
     for stage in stages if semester else []:
         config = stage.active_configs[0] if getattr(stage, 'active_configs', None) else None
         if config and config.is_officially_complete:
             continue
         readiness = stage_setup_readiness(stage, config, semester)
-        if readiness['ready']:
+        if readiness['ready'] and stage.is_active:
             continue
-        issues = readiness['issues']
+        issues = list(readiness['issues'])
+        if not stage.is_active:
+            issues.append('Publish this draft stage when setup is complete.')
         grading_issues = [issue for issue in issues if any(word in issue.lower() for word in ('rubric', 'grading', 'weights'))]
         tab = 1 if grading_issues else 2 if any('submission' in issue.lower() for issue in issues) else 0
         missing_rubrics = config is None or any(
@@ -72,6 +81,7 @@ def admin_overview(semester, stages, legacy_items, ready_count):
         items.append({'id': f'stage_setup:{stage.pk}', 'title': stage.label,
             'description': ('Missing required evaluation rubrics' if missing_rubrics else grading_issues[0]) if tab == 1 else issues[0], 'reasons': issues, 'scope': 'capstone',
             'severity': 'danger', 'category_label': 'STAGE SETUP', 'target_section': 'defenseStages',
+            'related_sections': ['rubrics'] if any('rubric' in issue.lower() for issue in issues) else [],
             'target_route': f'/admin/defense-stages/{stage.pk}/edit?tab={tab}&semester_id={semester.pk}&fromOverview=1',
             'button_label': ('Create rubrics' if missing_rubrics else 'Review grading') if tab == 1 else 'Review requirements' if tab == 2 else 'Review stage'})
     team_counts = teams.aggregate(all_count=Count('pk'),
@@ -118,8 +128,8 @@ def admin_overview(semester, stages, legacy_items, ready_count):
     items.sort(key=lambda item: priority.get(item.get('severity'), 3))
     counts = {}
     for item in items:
-        section = item['target_section']
-        counts[section] = counts.get(section, 0) + 1
+        for section in {item['target_section'], *item.get('related_sections', [])}:
+            counts[section] = counts.get(section, 0) + 1
     totals = {}
     for scope in ('all', 'capstone', 'pit'):
         scoped_schedules = schedules if scope == 'all' else schedules.filter(scope=scope)

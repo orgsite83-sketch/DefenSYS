@@ -332,7 +332,7 @@ class DefenseScheduleReportView(ReportAPIView):
             queryset = queryset.filter(scheduled_date__lte=request.query_params['end_date'])
             
         schedules = list(
-            queryset.select_related('team', 'defense_stage', 'team__adviser')
+            queryset.select_related('team', 'defense_stage', 'team__adviser', 'documenter')
             .prefetch_related('panel_assignments', 'panel_assignments__panelist')
             .order_by('scheduled_date', 'start_time')
         )
@@ -405,6 +405,7 @@ class DefenseScheduleReportView(ReportAPIView):
 
         include_signatures, signatories = _parse_signature_params(request)
 
+        from reports.import_template_exports import generate_schedule_import_xlsx
         return handle_export_or_preview(
             export_format=export_format,
             title="Defense Timetable & Schedule Summary",
@@ -415,6 +416,9 @@ class DefenseScheduleReportView(ReportAPIView):
             rows=rows,
             filename=filename, generated_by=generated_by,
             include_signatures=include_signatures, signatories=signatories,
+            xlsx_generator_func=lambda: generate_schedule_import_xlsx(
+                schedules, filename, default_scope=scope or 'capstone',
+                include_signatures=include_signatures, signatories=signatories, generated_by=generated_by),
             pdf_generator_func=lambda: generate_defense_schedule_pdf(
                 semester, schedules, generated_by, signatories=signatories, include_signatures=include_signatures
             ),
@@ -574,6 +578,7 @@ class TeamRosterReportView(ReportAPIView):
 
         include_signatures, signatories = _parse_signature_params(request)
 
+        from reports.import_template_exports import generate_team_import_xlsx
         return handle_export_or_preview(
             export_format=export_format,
             title="Student Team Directory Roster",
@@ -584,6 +589,9 @@ class TeamRosterReportView(ReportAPIView):
             rows=rows,
             filename=filename, generated_by=generated_by,
             include_signatures=include_signatures, signatories=signatories,
+            xlsx_generator_func=lambda: generate_team_import_xlsx(
+                teams, filename, default_scope='pit' if 'pit' in level.lower() else 'capstone',
+                include_signatures=include_signatures, signatories=signatories, generated_by=generated_by),
             pdf_generator_func=lambda: generate_team_roster_pdf(
                 semester, teams, generated_by, signatories=signatories, include_signatures=include_signatures
             ),

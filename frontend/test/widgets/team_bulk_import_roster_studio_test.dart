@@ -238,19 +238,35 @@ void main() {
     await tester.pumpAndSettle();
 
     // With default page size 5, only teams 1 through 5 are visible
-    expect(find.text('Showing 1–5 of 8 staged teams'), findsWidgets);
+    expect(find.text('Showing 1–5 of 8 staged teams'), findsOneWidget);
     expect(find.text('Team Number 1'), findsWidgets);
     expect(find.text('Team Number 5'), findsWidgets);
     expect(find.text('Team Number 6'), findsNothing);
 
-    // Tap Next page
-    await tester.tap(find.byKey(const ValueKey('next_page_top')));
+    // Only the bottom pager remains, and navigation returns to the list start.
+    expect(find.byKey(const ValueKey('page_size_top')), findsNothing);
+    await tester.ensureVisible(find.byKey(const ValueKey('next_page_bottom')));
+    await tester.tap(find.byKey(const ValueKey('next_page_bottom')));
     await tester.pumpAndSettle();
 
     // Page 2 shows teams 6 through 8
-    expect(find.text('Showing 6–8 of 8 staged teams'), findsWidgets);
+    expect(find.text('Showing 6–8 of 8 staged teams'), findsOneWidget);
     expect(find.text('Team Number 6'), findsWidgets);
+    expect(find.text('Team Number 6').hitTestable(), findsWidgets);
     expect(find.text('Team Number 8'), findsWidgets);
     expect(find.text('Team Number 1'), findsNothing);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('prev_page_bottom')));
+    await tester.tap(find.byKey(const ValueKey('prev_page_bottom')));
+    await tester.pumpAndSettle();
+    expect(find.text('Team Number 1').hitTestable(), findsWidgets);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('page_size_bottom')));
+    await tester.tap(find.byKey(const ValueKey('page_size_bottom')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('10').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Team Number 8'), findsWidgets);
+    expect(find.byKey(const ValueKey('next_page_bottom')), findsNothing);
   });
 }

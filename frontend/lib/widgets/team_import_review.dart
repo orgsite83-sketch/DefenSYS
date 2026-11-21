@@ -245,7 +245,8 @@ class TeamImportValidationToolbar extends StatelessWidget {
     required this.filter,
     required this.onFilter,
     required this.onFirstIssue,
-    required this.action,
+    this.action,
+    this.embedded = false,
     this.checking = false,
     this.showRetainedValidation = false,
     this.error,
@@ -255,8 +256,12 @@ class TeamImportValidationToolbar extends StatelessWidget {
   final String filter;
   final ValueChanged<String> onFilter;
   final VoidCallback onFirstIssue;
-  final Widget action;
+  final Widget? action;
+
+  /// Integrates the summary and filters into an existing review panel.
+  final bool embedded;
   final bool checking;
+
   /// The caller must exclude results affected by edits from [previewRows].
   final bool showRetainedValidation;
   final String? error;
@@ -281,17 +286,26 @@ class TeamImportValidationToolbar extends StatelessWidget {
     final dark = DefensysTokens.isDark(context);
     Widget count(String label, int value, Color color) => Text(
       '$label $value',
-      style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600),
+      style: TextStyle(
+        fontFamily: DefensysTokens.fontFamilyInter,
+        fontSize: 12,
+        color: color,
+        fontWeight: FontWeight.w600,
+      ),
     );
     return Material(
       color: colors.background,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          border: Border.all(color: colors.border),
-          borderRadius: BorderRadius.circular(8),
-        ),
+        padding: embedded
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: embedded
+            ? null
+            : BoxDecoration(
+                border: Border.all(color: colors.border),
+                borderRadius: BorderRadius.circular(8),
+              ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -300,8 +314,13 @@ class TeamImportValidationToolbar extends StatelessWidget {
               runSpacing: 6,
               children: [
                 Text(
-                  'Batch: ${rows.length} teams',
-                  style: const TextStyle(fontSize: 12),
+                  embedded
+                      ? '${rows.length} team${rows.length == 1 ? '' : 's'} staged'
+                      : 'Batch: ${rows.length} teams',
+                  style: const TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    fontSize: 12,
+                  ),
                 ),
                 count(
                   'Ready',
@@ -349,15 +368,16 @@ class TeamImportValidationToolbar extends StatelessWidget {
                         onPressed: () => onFilter(entry.key),
                         child: Text(entry.value),
                       ),
-                    ShadButton.ghost(
-                      size: ShadButtonSize.sm,
-                      enabled: !checking && (issues > 0 || warnings > 0),
-                      onPressed: onFirstIssue,
-                      child: const Text('Go to first issue'),
-                    ),
+                    if (!embedded || issues > 0 || warnings > 0)
+                      ShadButton.ghost(
+                        size: ShadButtonSize.sm,
+                        enabled: !checking && (issues > 0 || warnings > 0),
+                        onPressed: onFirstIssue,
+                        child: const Text('Go to first issue'),
+                      ),
                   ],
                 ),
-                action,
+                if (action != null) action!,
               ],
             ),
             if (error != null) ...[

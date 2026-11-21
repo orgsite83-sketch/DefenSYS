@@ -124,7 +124,7 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
     _requestId++;
     final isAdmin = identity.$2 == 'admin' || identity.$3 == true;
     return SystemAuditState(
-      track: isAdmin ? 'capstone' : (identity.$4 == true ? 'pit' : ''),
+      track: !isAdmin && identity.$4 == true ? 'pit' : '',
       yearLevel: !isAdmin && identity.$4 == true
           ? identity.$5?.toString() ?? ''
           : '',
@@ -143,7 +143,6 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
       'page': targetPage.toString(),
       'page_size': state.pageSize.toString(),
       if (state.category.isNotEmpty) 'category': state.category,
-      if (state.reviewStatus.isNotEmpty) 'review_status': state.reviewStatus,
       if (state.action.isNotEmpty) 'action': state.action,
       if (state.search.isNotEmpty) 'search': state.search,
       if (state.startDate.isNotEmpty) 'start_date': state.startDate,
@@ -271,6 +270,10 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
 
   void selectLog(Map<String, dynamic> log) {
     state = state.copyWith(selectedLog: log);
+  }
+
+  void clearSelectedLog() {
+    state = state.copyWith(clearSelectedLog: true);
   }
 
   Future<bool> updateReviewStatus(

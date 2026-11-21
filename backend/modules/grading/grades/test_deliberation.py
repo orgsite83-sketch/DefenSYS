@@ -13,6 +13,13 @@ from .models import TeamGrade
 from django.test import override_settings
 
 
+def legacy_policy(schedule):
+    """Exercise saved v1 hearings independently of the policy for new bookings."""
+    from copy import deepcopy
+    return {**capture_policy(schedule), 'deliberation_version': 1,
+            'revision_areas': deepcopy(schedule.defense_stage.revision_areas)}
+
+
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class PanelDeliberationTests(APITestCase):
     _rubric = fixtures.ConfiguredOutcomeTests._rubric
@@ -28,7 +35,7 @@ class PanelDeliberationTests(APITestCase):
             {'id': 'system', 'label': 'System', 'allows_demo': True},
             {'id': 'manuscript', 'label': 'Manuscript', 'allows_demo': False}]
         self.stage.save(update_fields=['revision_areas'])
-        self.capstone_schedule.assessment_policy = capture_policy(self.capstone_schedule)
+        self.capstone_schedule.assessment_policy = legacy_policy(self.capstone_schedule)
         self.capstone_schedule.save(update_fields=['assessment_policy'])
         self.grade = TeamGrade.objects.select_related('schedule').get(pk=self.grade.pk)
 
@@ -402,8 +409,12 @@ class PanelDeliberationTests(APITestCase):
         policy = dict(self.capstone_schedule.assessment_policy)
         policy.pop('deliberation_version')
         policy.pop('revision_areas')
+        self.stage.revision_areas = []
+        self.stage.save(update_fields=['revision_areas'])
         self.capstone_schedule.assessment_policy = policy
-        self.capstone_schedule.save(update_fields=['assessment_policy'])
+        self.capstone_schedule.documenter = self.panelist.__class__.objects.create_user(
+            username='adoption-documenter', role='faculty', is_documenter=True)
+        self.capstone_schedule.save(update_fields=['assessment_policy', 'documenter'])
         report = StringIO()
         call_command('panel_deliberation_adoption', schedule_id=[self.capstone_schedule.pk], stdout=report)
         reviewed = json.loads(report.getvalue())
@@ -417,7 +428,7 @@ class PanelDeliberationTests(APITestCase):
         call_command('panel_deliberation_adoption', schedule_id=[self.capstone_schedule.pk], apply=True,
             actor_id=self.admin.pk, reason='Adopt the reviewed hearing', review_token=reviewed['review_token'], stdout=StringIO())
         self.capstone_schedule.refresh_from_db()
-        self.assertEqual(self.capstone_schedule.assessment_policy['deliberation_version'], 1)
+        self.assertEqual(self.capstone_schedule.assessment_policy['deliberation_version'], 3)
         self.assertEqual(self.capstone_schedule.assessment_policy['qualifying_score'], policy['qualifying_score'])
 
     def test_students_receive_only_released_decision_and_redemo(self):
@@ -459,7 +470,7 @@ class ConceptDeliberationTests(APITestCase):
         fixtures.PerConceptOutcomeTests.setUp(self)
         self.stage.revision_areas = [{'id': 'concept', 'label': 'Concept', 'allows_demo': False}]
         self.stage.save(update_fields=['revision_areas'])
-        self.capstone_schedule.assessment_policy = capture_policy(self.capstone_schedule)
+        self.capstone_schedule.assessment_policy = legacy_policy(self.capstone_schedule)
         self.capstone_schedule.save(update_fields=['assessment_policy'])
         self.grade.refresh_from_db()
 
@@ -508,7 +519,7 @@ class SharedDeliberationTests(APITestCase):
         self.fixture.setUp(self)
         self.stage.revision_areas = [{'id': 'module', 'label': 'Module', 'allows_demo': True}]
         self.stage.save(update_fields=['revision_areas'])
-        self.schedule.assessment_policy = capture_policy(self.schedule)
+        self.schedule.assessment_policy = legacy_policy(self.schedule)
         self.schedule.save(update_fields=['assessment_policy'])
 
     def test_qualifying_module_can_enter_existing_panel_directed_repeat_route(self):

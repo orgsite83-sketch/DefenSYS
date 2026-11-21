@@ -57,10 +57,6 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
   String? _selectedPitYearLevel;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _selectedFilterBackground =>
-      _isDark ? DefensysTokens.mistTextPrimary : DefensysTokens.mistBackground;
-  Color get _selectedFilterForeground =>
-      _isDark ? DefensysTokens.mistBackground : Colors.white;
 
   @override
   void didUpdateWidget(covariant TeamReadinessTracker oldWidget) {
@@ -212,24 +208,35 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
         ).label,
     }.entries.toList()..sort((a, b) => a.value.compareTo(b.value));
 
+    Widget labelled(String label, Widget control) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          label,
+          style: DefensysTokens.caption.copyWith(
+            color: DefensysTokens.textSecondaryOf(context),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 6),
+        control,
+      ],
+    );
+
     return DefensysShadcnScope(
       child: _schedulerCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 10,
-              runSpacing: 12,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: _isDark
-                        ? DefensysTokens.mistMaroon.withValues(alpha: 0.18)
-                        : DefensysTokens.maroonOf(
-                            context,
-                          ).withValues(alpha: 0.08),
+                    color: DefensysTokens.maroonOf(
+                      context,
+                    ).withValues(alpha: .08),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
@@ -238,13 +245,16 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                     size: 20,
                   ),
                 ),
-                const SizedBox(width: 10),
-                Text(
-                  widget.title ?? 'Team status',
-                  style: DefensysTokens.sectionTitle.copyWith(
-                    color: DefensysTokens.textPrimaryOf(context),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    widget.title ?? 'Team status',
+                    style: DefensysTokens.sectionTitle.copyWith(
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
                   ),
                 ),
+                const SizedBox(width: 12),
                 ReportExportMenu(
                   reportId: 'readiness',
                   params: {
@@ -254,56 +264,116 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                     'level': _selectedPitYearLevel ?? '',
                   },
                 ),
-                const SizedBox(width: 10),
-                if (widget.headerAction != null) ...[
-                  widget.headerAction!,
-                  const SizedBox(width: 10),
-                ],
-                if (widget.scope == 'pit' && pitYearLevels.length > 1)
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 200),
-                    child: WorkflowChoice(
-                      value: _selectedPitYearLevel ?? 'all',
-                      options: {
-                        'all': 'All year levels',
-                        for (final year in pitYearLevels) year: year,
-                      },
-                      onChanged: (value) => setState(() {
-                        _selectedPitYearLevel = value == 'all' ? null : value;
-                        _statusFilter = 'all';
-                        _statusGroup = TeamStatusGroup.all;
-                      }),
-                    ),
-                  ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 260),
-                  child: ShadInput(
-                    key: const ValueKey('team-status-search'),
-                    controller: _trackerSearchController,
-                    placeholder: const Text('Search teams or projects...'),
-                    leading: const Icon(Icons.search_rounded, size: 16),
-                    onChanged: (_) => setState(() {}),
-                    trailing: _trackerSearchController.text.isEmpty
-                        ? null
-                        : ShadButton.ghost(
-                            size: ShadButtonSize.sm,
-                            onPressed: () => setState(
-                              () => _trackerSearchController.clear(),
-                            ),
-                            child: const Icon(
-                              Icons.close_rounded,
-                              size: 14,
-                              semanticLabel: 'Clear search',
-                            ),
-                          ),
-                  ),
-                ),
               ],
             ),
-            if (widget.stageSelector != null) ...[
-              const SizedBox(height: 14),
-              widget.stageSelector!,
+            if (widget.headerAction != null) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: widget.headerAction!,
+              ),
             ],
+            const SizedBox(height: 20),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 900;
+                final split = constraints.maxWidth >= 600;
+                final width = constraints.maxWidth;
+                return Wrap(
+                  key: const ValueKey('team-status-toolbar'),
+                  spacing: 12,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.end,
+                  children: [
+                    if (widget.stageSelector != null)
+                      SizedBox(
+                        width: wide ? (width - 24) * .3 : width,
+                        child: widget.stageSelector!,
+                      ),
+                    SizedBox(
+                      width: wide
+                          ? (widget.stageSelector == null
+                                ? (width - 12) * .6
+                                : (width - 24) * .42)
+                          : split
+                          ? (width - 12) * .6
+                          : width,
+                      child: labelled(
+                        'Search',
+                        ShadInput(
+                          key: const ValueKey('team-status-search'),
+                          controller: _trackerSearchController,
+                          placeholder: const Text(
+                            'Search teams or projects...',
+                          ),
+                          leading: const Icon(Icons.search_rounded, size: 16),
+                          onChanged: (_) => setState(() {}),
+                          trailing: _trackerSearchController.text.isEmpty
+                              ? null
+                              : ShadButton.ghost(
+                                  size: ShadButtonSize.sm,
+                                  onPressed: () => setState(
+                                    () => _trackerSearchController.clear(),
+                                  ),
+                                  child: const Icon(
+                                    Icons.close_rounded,
+                                    size: 14,
+                                    semanticLabel: 'Clear search',
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: wide
+                          ? (widget.stageSelector == null
+                                ? (width - 12) * .4
+                                : (width - 24) * .28)
+                          : split
+                          ? (width - 12) * .4
+                          : width,
+                      child: labelled(
+                        'Status',
+                        WorkflowChoice(
+                          key: const ValueKey('team-status-filter'),
+                          value: _statusFilter,
+                          options: {
+                            'all': 'All statuses',
+                            for (final option in statusOptions)
+                              option.key: option.value,
+                          },
+                          onChanged: (value) => setState(() {
+                            _statusFilter = value;
+                            _statusGroup = TeamStatusGroup.all;
+                          }),
+                        ),
+                      ),
+                    ),
+                    if (widget.scope == 'pit' && pitYearLevels.length > 1)
+                      SizedBox(
+                        width: split ? 200 : width,
+                        child: labelled(
+                          'Year level',
+                          WorkflowChoice(
+                            value: _selectedPitYearLevel ?? 'all',
+                            options: {
+                              'all': 'All year levels',
+                              for (final year in pitYearLevels) year: year,
+                            },
+                            onChanged: (value) => setState(() {
+                              _selectedPitYearLevel = value == 'all'
+                                  ? null
+                                  : value;
+                              _statusFilter = 'all';
+                              _statusGroup = TeamStatusGroup.all;
+                            }),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
             const SizedBox(height: 14),
             Wrap(
               spacing: 6,
@@ -315,17 +385,22 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                     child: ShadButton.ghost(
                       key: ValueKey('team-status-group-${group.name}'),
                       size: ShadButtonSize.sm,
-                      backgroundColor: _statusGroup == group
-                          ? _selectedFilterBackground
-                          : Colors.transparent,
+                      backgroundColor: Colors.transparent,
+                      decoration: ShadDecoration(
+                        border: ShadBorder.all(
+                          color: _statusGroup == group
+                              ? DefensysTokens.textPrimaryOf(context)
+                              : Colors.transparent,
+                        ),
+                      ),
                       foregroundColor: _statusGroup == group
-                          ? _selectedFilterForeground
+                          ? DefensysTokens.textPrimaryOf(context)
                           : DefensysTokens.textSecondaryOf(context),
                       hoverBackgroundColor: _statusGroup == group
-                          ? _selectedFilterBackground.withValues(alpha: 0.9)
+                          ? DefensysTokens.surfaceHigherOf(context)
                           : null,
                       hoverForegroundColor: _statusGroup == group
-                          ? _selectedFilterForeground
+                          ? DefensysTokens.textPrimaryOf(context)
                           : DefensysTokens.textSecondaryOf(context),
                       onPressed: () => setState(() {
                         _statusGroup = group;
@@ -346,18 +421,6 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
               ],
             ),
             const SizedBox(height: 12),
-            WorkflowChoice(
-              key: const ValueKey('team-status-filter'),
-              value: _statusFilter,
-              options: {
-                'all': 'All statuses',
-                for (final option in statusOptions) option.key: option.value,
-              },
-              onChanged: (value) => setState(() {
-                _statusFilter = value;
-                _statusGroup = TeamStatusGroup.all;
-              }),
-            ),
             const SizedBox(height: 10),
             Text(
               widget.subtitle ??

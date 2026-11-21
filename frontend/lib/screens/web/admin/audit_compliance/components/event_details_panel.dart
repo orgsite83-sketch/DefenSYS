@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/widgets/shadcn/defensys_action_menu.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import '../dialogs/audit_raw_json_dialog.dart';
@@ -6,14 +9,14 @@ import 'audit_format_utils.dart';
 
 class EventDetailsPanel extends StatelessWidget {
   final Map<String, dynamic>? log;
-  final Function(Map<String, dynamic> log, String status)? onUpdateReviewStatus;
+  final VoidCallback? onClose;
   final Function(Map<String, dynamic> log)? onExportPdf;
   final Function(String route)? onNavigateToResource;
 
   const EventDetailsPanel({
     super.key,
     required this.log,
-    this.onUpdateReviewStatus,
+    this.onClose,
     this.onExportPdf,
     this.onNavigateToResource,
   });
@@ -43,6 +46,7 @@ class EventDetailsPanel extends StatelessWidget {
             Text(
               'Select an event to view details',
               style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: DefensysTokens.textPrimaryOf(context),
@@ -59,7 +63,6 @@ class EventDetailsPanel extends StatelessWidget {
     final resourceSubtitle = AuditFormatUtils.extractResourceSubtitle(item);
     final processArea = AuditFormatUtils.formatProcessArea(item);
     final actor = item['actor_name']?.toString() ?? 'System';
-    final status = item['review_status']?.toString() ?? 'needs_review';
     final evidence = item['evidence'] is Map
         ? item['evidence'] as Map
         : const {};
@@ -139,6 +142,7 @@ class EventDetailsPanel extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: 14.5,
                       fontWeight: FontWeight.w800,
                       color: DefensysTokens.textPrimaryOf(context),
@@ -146,9 +150,20 @@ class EventDetailsPanel extends StatelessWidget {
                     ),
                   ),
                 ),
-                _buildStatusBadge(context, status),
-                const SizedBox(width: 4),
-                _buildHeaderMenu(context, item, status, isDelete: isDelete),
+                _buildHeaderMenu(context, item, isDelete: isDelete),
+                if (onClose != null)
+                  Tooltip(
+                    message: 'Close event details',
+                    child: DefensysShadcnScope(
+                      child: ShadButton.ghost(
+                        onPressed: onClose,
+                        width: 32,
+                        height: 32,
+                        padding: EdgeInsets.zero,
+                        child: const Icon(Icons.close_rounded, size: 16),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -187,6 +202,7 @@ class EventDetailsPanel extends StatelessWidget {
                       Text(
                         actionLabel,
                         style: TextStyle(
+                          fontFamily: DefensysTokens.fontFamilyInter,
                           fontSize: 19,
                           fontWeight: FontWeight.w800,
                           color: isDelete
@@ -201,6 +217,7 @@ class EventDetailsPanel extends StatelessWidget {
                       Text(
                         resourceSubtitle,
                         style: TextStyle(
+                          fontFamily: DefensysTokens.fontFamilyInter,
                           fontSize: 13,
                           color: isDark
                               ? const Color(0xFF94A3B8)
@@ -282,35 +299,6 @@ class EventDetailsPanel extends StatelessWidget {
                                   ? 'Not required for this event'
                                   : 'No reason recorded')),
                 ),
-                const SizedBox(height: 8),
-                _buildMetaRow(
-                  context,
-                  icon: Icons.fact_check_outlined,
-                  label: 'Human review',
-                  value: status == 'reviewed' ? 'Reviewed' : 'Pending review',
-                ),
-                if (item['reviewed_at'] != null || status == 'reviewed') ...[
-                  const SizedBox(height: 8),
-                  _buildMetaRow(
-                    context,
-                    icon: Icons.verified_outlined,
-                    label: status == 'reviewed'
-                        ? 'Reviewed by'
-                        : 'Last reviewed by',
-                    value: (item['reviewed_by_name']?.toString() ?? '').isEmpty
-                        ? 'Reviewer not recorded'
-                        : '${item['reviewed_by_name']} · ${AuditFormatUtils.reviewRole(item['reviewed_by_role']?.toString(), item['reviewed_by_year']?.toString())}',
-                  ),
-                  const SizedBox(height: 8),
-                  _buildMetaRow(
-                    context,
-                    icon: Icons.schedule_rounded,
-                    label: 'Review date & time',
-                    value: AuditFormatUtils.formatTimestamp(
-                      item['reviewed_at']?.toString(),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -336,145 +324,6 @@ class EventDetailsPanel extends StatelessWidget {
                   )
                 else
                   _buildCreateSection(context, item, activeAttributes),
-              ],
-            ),
-          ),
-
-          const Divider(height: 1),
-
-          // 5. Footer Actions (Primary Review Workflow)
-          if ((item['review_history'] as List? ?? []).isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Review history',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 10),
-                  for (final entry
-                      in (item['review_history'] as List).whereType<Map>())
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${entry['to_status'] == 'reviewed' ? 'Reviewed' : 'Reopened for review'} by ${entry['reviewer_name']}',
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            '${AuditFormatUtils.reviewRole(entry['reviewer_role']?.toString(), entry['reviewer_year']?.toString())} · ${AuditFormatUtils.formatTimestamp(entry['created_at']?.toString())}',
-                            style: const TextStyle(fontSize: 11.5),
-                          ),
-                          if ((entry['reason']?.toString() ?? '').isNotEmpty)
-                            Text(
-                              entry['reason'].toString(),
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E1D24) : const Color(0xFFF8FAFC),
-              border: Border(
-                top: BorderSide(color: DefensysTokens.borderOf(context)),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Review Status Context Hint
-                Expanded(
-                  child: Row(
-                    children: [
-                      Icon(
-                        status == 'reviewed'
-                            ? Icons.verified_outlined
-                            : Icons.pending_actions_outlined,
-                        size: 16,
-                        color: status == 'reviewed'
-                            ? const Color(0xFF059669)
-                            : (isDark
-                                  ? const Color(0xFF94A3B8)
-                                  : DefensysTokens.steelGrey),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          status == 'reviewed'
-                              ? 'Review completed'
-                              : 'Pending review',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: status == 'reviewed'
-                                ? const Color(0xFF059669)
-                                : (isDark
-                                      ? const Color(0xFF94A3B8)
-                                      : DefensysTokens.steelGrey),
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-
-                // Primary Review Action: "Mark as reviewed" or "Reopen review"
-                if (status != 'reviewed')
-                  FilledButton.icon(
-                    onPressed: onUpdateReviewStatus != null
-                        ? () => onUpdateReviewStatus!(item, 'reviewed')
-                        : null,
-                    icon: const Icon(Icons.check_rounded, size: 15),
-                    label: const Text('Mark as reviewed'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF059669),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          DefensysTokens.radiusMd,
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  OutlinedButton.icon(
-                    onPressed: onUpdateReviewStatus != null
-                        ? () => onUpdateReviewStatus!(item, 'needs_review')
-                        : null,
-                    icon: const Icon(Icons.replay_rounded, size: 15),
-                    label: const Text('Reopen review'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFD97706),
-                      side: const BorderSide(color: Color(0xFFF59E0B)),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          DefensysTokens.radiusMd,
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -510,6 +359,7 @@ class EventDetailsPanel extends StatelessWidget {
                 child: Text(
                   label,
                   style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 12.5,
                     color: isDark
                         ? const Color(0xFF94A3B8)
@@ -542,6 +392,7 @@ class EventDetailsPanel extends StatelessWidget {
                     child: Text(
                       value,
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: DefensysTokens.textPrimaryOf(context),
@@ -552,6 +403,7 @@ class EventDetailsPanel extends StatelessWidget {
               : Text(
                   value,
                   style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: DefensysTokens.textPrimaryOf(context),
@@ -602,6 +454,7 @@ class EventDetailsPanel extends StatelessWidget {
                     const Text(
                       'This resource has been deleted',
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFFDC2626),
@@ -611,6 +464,7 @@ class EventDetailsPanel extends StatelessWidget {
                     Text(
                       'The item has been removed from the portal and is no longer available for active defense use.',
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 12,
                         color: isDark
                             ? const Color(0xFFFCA5A5)
@@ -646,6 +500,7 @@ class EventDetailsPanel extends StatelessWidget {
                     child: Text(
                       'Last Known State',
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: DefensysTokens.textPrimaryOf(context),
@@ -702,6 +557,7 @@ class EventDetailsPanel extends StatelessWidget {
             Text(
               'Change Diff',
               style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: DefensysTokens.textPrimaryOf(context),
@@ -721,6 +577,7 @@ class EventDetailsPanel extends StatelessWidget {
             child: Text(
               'No individual field values modified in payload snapshot.',
               style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
                 fontSize: 12,
                 color: isDark
                     ? const Color(0xFF94A3B8)
@@ -753,6 +610,7 @@ class EventDetailsPanel extends StatelessWidget {
                         child: Text(
                           'Field',
                           style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF64748B),
@@ -764,6 +622,7 @@ class EventDetailsPanel extends StatelessWidget {
                         child: Text(
                           'Before',
                           style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF64748B),
@@ -776,6 +635,7 @@ class EventDetailsPanel extends StatelessWidget {
                           child: Text(
                             '→',
                             style: TextStyle(
+                              fontFamily: DefensysTokens.fontFamilyInter,
                               fontSize: 11,
                               color: Color(0xFF64748B),
                             ),
@@ -787,6 +647,7 @@ class EventDetailsPanel extends StatelessWidget {
                         child: Text(
                           'After',
                           style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF64748B),
@@ -820,6 +681,7 @@ class EventDetailsPanel extends StatelessWidget {
                           child: Text(
                             diff.field,
                             style: TextStyle(
+                              fontFamily: DefensysTokens.fontFamilyInter,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: DefensysTokens.textPrimaryOf(context),
@@ -831,6 +693,7 @@ class EventDetailsPanel extends StatelessWidget {
                           child: Text(
                             diff.before,
                             style: TextStyle(
+                              fontFamily: DefensysTokens.fontFamilyInter,
                               fontSize: 12,
                               color: isDark
                                   ? const Color(0xFF94A3B8)
@@ -866,6 +729,7 @@ class EventDetailsPanel extends StatelessWidget {
                             child: Text(
                               diff.after,
                               style: TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
                                 color: isDark
@@ -899,6 +763,7 @@ class EventDetailsPanel extends StatelessWidget {
             Text(
               'Other Details',
               style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: DefensysTokens.textPrimaryOf(context),
@@ -944,6 +809,7 @@ class EventDetailsPanel extends StatelessWidget {
             Text(
               'Resource Details',
               style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: DefensysTokens.textPrimaryOf(context),
@@ -972,6 +838,7 @@ class EventDetailsPanel extends StatelessWidget {
                     child: Text(
                       'Initial State (${attributes.length} attributes)',
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: DefensysTokens.textPrimaryOf(context),
@@ -1019,6 +886,7 @@ class EventDetailsPanel extends StatelessWidget {
         child: Text(
           'No additional attributes recorded.',
           style: TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
             fontSize: 12,
             color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
           ),
@@ -1044,6 +912,7 @@ class EventDetailsPanel extends StatelessWidget {
                   child: Text(
                     'Field',
                     style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF64748B),
@@ -1055,6 +924,7 @@ class EventDetailsPanel extends StatelessWidget {
                   child: Text(
                     'Value',
                     style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF64748B),
@@ -1080,6 +950,7 @@ class EventDetailsPanel extends StatelessWidget {
                     child: Text(
                       entry.key,
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
                         color: DefensysTokens.textPrimaryOf(context),
@@ -1091,6 +962,7 @@ class EventDetailsPanel extends StatelessWidget {
                     child: Text(
                       entry.value,
                       style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 12.5,
                         color: isDark
                             ? const Color(0xFFCBD5E1)
@@ -1107,219 +979,35 @@ class EventDetailsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusBadge(
-    BuildContext context,
-    String status, {
-    bool isDelete = false,
-  }) {
-    final isDark = DefensysTokens.isDark(context);
-
-    if (isDelete) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0x33DC2626) : const Color(0xFFFEE2E2),
-          borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.close_rounded, size: 12, color: Color(0xFFDC2626)),
-            SizedBox(width: 4),
-            Text(
-              'Deleted',
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFFDC2626),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (status == 'reviewed') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7),
-          borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_rounded, size: 12, color: Color(0xFF059669)),
-            SizedBox(width: 4),
-            Text(
-              'Reviewed',
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF059669),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF451A03) : const Color(0xFFFEF3C7),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.access_time_rounded, size: 12, color: Color(0xFFD97706)),
-          SizedBox(width: 4),
-          Text(
-            'Needs review',
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFFD97706),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildHeaderMenu(
     BuildContext context,
-    Map<String, dynamic> item,
-    String status, {
+    Map<String, dynamic> item, {
     bool isDelete = false,
   }) {
-    final isDark = DefensysTokens.isDark(context);
     final navRoute = _resolveNavigationRoute(item);
-
-    return PopupMenuButton<String>(
-      tooltip: 'More options',
-      icon: Icon(
-        Icons.more_vert_rounded,
-        size: 18,
-        color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
-      ),
-      splashRadius: 18,
-      constraints: const BoxConstraints(minWidth: 180, maxWidth: 260),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        side: BorderSide(color: DefensysTokens.borderOf(context)),
-      ),
-      color: DefensysTokens.surfaceOf(context),
-      onSelected: (val) {
-        if (val == 'open_resource') {
-          if (navRoute != null && onNavigateToResource != null) {
-            onNavigateToResource!(navRoute);
-          }
-        } else if (val == 'json') {
-          AuditRawJsonDialog.show(
+    return DefensysActionMenu(
+      label: 'More options',
+      items: [
+        if (!isDelete && navRoute != null && onNavigateToResource != null)
+          DefensysMenuItem(
+            label: _resolveActionText(item),
+            icon: Icons.open_in_new_rounded,
+            onPressed: () => onNavigateToResource!(navRoute),
+          ),
+        DefensysMenuItem(
+          label: 'View Raw JSON',
+          icon: Icons.code_rounded,
+          onPressed: () => AuditRawJsonDialog.show(
             context,
-            title: 'Raw Audit Log Payload',
+            title: 'Raw Log Payload',
             data: item,
-          );
-        } else if (val == 'pdf') {
-          if (onExportPdf != null) {
-            onExportPdf!(item);
-          }
-        } else if (val == 'reviewed' || val == 'needs_review') {
-          if (onUpdateReviewStatus != null) {
-            onUpdateReviewStatus!(item, val);
-          }
-        }
-      },
-      itemBuilder: (context) => [
-        if (!isDelete && navRoute != null)
-          PopupMenuItem(
-            value: 'open_resource',
-            child: Row(
-              children: [
-                const Icon(Icons.open_in_new_rounded, size: 16),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _resolveActionText(item),
-                    style: const TextStyle(fontSize: 13),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        const PopupMenuItem(
-          value: 'json',
-          child: Row(
-            children: [
-              Icon(Icons.code_rounded, size: 16),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'View Raw JSON',
-                  style: TextStyle(fontSize: 13),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
           ),
         ),
-        const PopupMenuItem(
-          value: 'pdf',
-          child: Row(
-            children: [
-              Icon(Icons.picture_as_pdf_outlined, size: 16),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Export Evidence PDF',
-                  style: TextStyle(fontSize: 13),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(height: 1),
-        if (status != 'reviewed')
-          const PopupMenuItem(
-            value: 'reviewed',
-            child: Row(
-              children: [
-                Icon(
-                  Icons.check_circle_outline_rounded,
-                  size: 16,
-                  color: Color(0xFF059669),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Mark as reviewed',
-                    style: TextStyle(fontSize: 13),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          const PopupMenuItem(
-            value: 'needs_review',
-            child: Row(
-              children: [
-                Icon(Icons.replay_rounded, size: 16, color: Color(0xFFD97706)),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Reopen review',
-                    style: TextStyle(fontSize: 13),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
+        if (onExportPdf != null)
+          DefensysMenuItem(
+            label: 'Export Evidence PDF',
+            icon: Icons.picture_as_pdf_outlined,
+            onPressed: () => onExportPdf!(item),
           ),
       ],
     );

@@ -321,8 +321,8 @@ abstract final class ReportCatalog {
     ),
     ReportDefinition(
       'audit-trail',
-      'Audit Trail Export',
-      'Recorded system events, evidence and review history.',
+      'Logs Export',
+      'Recorded system activity and change evidence.',
       'governance',
       managerOnly: true,
       legacy: true,
@@ -331,7 +331,6 @@ abstract final class ReportCatalog {
         'year_level',
         'category',
         'action',
-        'review_status',
         'search',
         'start_date',
         'end_date',

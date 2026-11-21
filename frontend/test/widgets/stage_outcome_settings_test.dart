@@ -51,21 +51,17 @@ void main() {
         );
         await tester.tap(find.text('Edit future rules'));
         await tester.pumpAndSettle();
+        expect(find.text('Revision areas'), findsNothing);
+        expect(find.text('Add revision area'), findsNothing);
         await tester.enterText(
-          find.byKey(const ValueKey('revision-area-system')),
-          'Software',
+          find.byKey(const ValueKey('minimum-qualifying-score')),
+          '80',
         );
         await tester.ensureVisible(find.text('Save rules'));
         await tester.tap(find.text('Save rules'));
         await tester.pumpAndSettle();
-        expect(saved?.keys.toSet(), {
-          'qualifying_score',
-          'score_carryover',
-          'revision_areas',
-        });
-        expect((saved?['revision_areas'] as List).first['id'], 'system');
-        expect((saved?['revision_areas'] as List).first['label'], 'Software');
-        expect((saved?['revision_areas'] as List).first['allows_demo'], true);
+        expect(saved?.keys.toSet(), {'qualifying_score', 'score_carryover'});
+        expect(saved?['qualifying_score'], 80);
         expect(tester.takeException(), isNull);
       },
     );

@@ -55,6 +55,8 @@ class SharedSelectionCorrectionTests(APITestCase):
         endorse_team(team, self.stage.label, self.adviser)
         schedule = DefenseSchedule.objects.create(team=team, semester=self.semester, defense_stage=self.stage,
             rubric=self.schedule.rubric, scheduled_date=self.schedule.scheduled_date, start_time='10:00', room=self.schedule.room)
+        schedule.assessment_policy.pop('deliberation_version', None)
+        schedule.save(update_fields=['assessment_policy'])
         SchedulePanelist.objects.create(schedule=schedule, panelist=self.chair, is_chair=True)
         grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
         services.schedule_hearing(self.project, self.admin, [self.schedule.pk, schedule.pk])
@@ -204,6 +206,7 @@ class SharedSelectionCorrectionTests(APITestCase):
         individual = RubricCriterion.objects.create(rubric=rubric, name='Individual defense',
             scale=rubric.SCALE_10, max_score=10, target_type='individual', display_order=1)
         self.schedule.assessment_policy = capture_policy(self.schedule)
+        self.schedule.assessment_policy.pop('deliberation_version', None)
         self.schedule.save(update_fields=['assessment_policy'])
         self.score(key='c2', score=9)
         self.choose()

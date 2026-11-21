@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:defensys/screens/web/admin/user_management/user_management_screen.dart';
 import 'package:defensys/screens/web/admin/user_management/bulk_import/bulk_import_view.dart';
 import 'package:defensys/screens/web/admin/widgets/file_import_staging_modal.dart';
@@ -281,6 +283,45 @@ void main() {
     expect(find.text('Enroll students'), findsOneWidget);
     expect(find.text('Add Single Student'), findsOneWidget);
     expect(find.text('Juan Dela Cruz'), findsOneWidget);
+
+    final export = find.byType(ReportExportMenu);
+    expect(export, findsOneWidget);
+    expect(
+      tester.getCenter(export).dy,
+      tester.getCenter(find.text('Enroll students')).dy,
+    );
+    expect(
+      tester.getTopLeft(export).dx,
+      lessThan(tester.getTopLeft(find.text('Add Single Student')).dx),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('Year level-ALL')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ShadOption<String>, '4th Year'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('Section-ALL')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ShadOption<String>, 'BSIT-4A'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ReportExportMenu>(export).params, {
+      'term_context': 'current',
+      'year_level': '4th Year',
+      'section': 'BSIT-4A',
+      'school_year': '',
+      'semester': '',
+    });
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ReportExportMenu>(export).params['year_level'], 'ALL');
+    expect(tester.widget<ReportExportMenu>(export).params['section'], 'ALL');
+
+    tester.view.physicalSize = const Size(390, 900);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getBottomLeft(export).dy,
+      lessThan(tester.getTopLeft(find.text('Enrolled this semester')).dy),
+    );
   });
 
   testWidgets(

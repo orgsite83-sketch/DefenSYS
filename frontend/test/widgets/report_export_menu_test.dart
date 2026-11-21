@@ -207,29 +207,30 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
-  testWidgets(
-    'Projects & Concepts appears in the Report Center category and search',
-    (tester) async {
-      tester.view.physicalSize = const Size(1500, 1100);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await pumpDefensysWidget(
-        tester,
-        const SingleChildScrollView(child: AuditReportCenterTab()),
-        overrides: [
-          authProvider.overrideWith(() => FakeAuthNotifier({'role': 'admin'})),
-          academicPeriodProvider.overrideWith(FakeAcademicPeriodNotifier.new),
-          studentTeamsProvider.overrideWith(FakeStudentTeamsNotifier.new),
-          defenseStagesProvider.overrideWith(FakeDefenseStagesNotifier.new),
-          gradeCenterProvider.overrideWith(FakeGradeCenterNotifier.new),
-          reportsProvider.overrideWith(_Reports.new),
-        ],
-      );
-      expect(find.text('PROJECTS & CONCEPTS'), findsOneWidget);
-      expect(find.text('Concept Project Register'), findsOneWidget);
-    },
-  );
+  testWidgets('Project reports are available inside Projects and submissions', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1500, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpDefensysWidget(
+      tester,
+      const SingleChildScrollView(child: AuditReportCenterTab()),
+      overrides: [
+        authProvider.overrideWith(() => FakeAuthNotifier({'role': 'admin'})),
+        academicPeriodProvider.overrideWith(FakeAcademicPeriodNotifier.new),
+        studentTeamsProvider.overrideWith(FakeStudentTeamsNotifier.new),
+        defenseStagesProvider.overrideWith(FakeDefenseStagesNotifier.new),
+        gradeCenterProvider.overrideWith(FakeGradeCenterNotifier.new),
+        reportsProvider.overrideWith(_Reports.new),
+      ],
+    );
+    expect(find.text('Projects & submissions'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('report-group-projects')));
+    await tester.pumpAndSettle();
+    expect(find.text('Concept decisions & intake roster'), findsOneWidget);
+  });
   testWidgets('Quick assessment export preserves all-record coverage', (
     tester,
   ) async {
@@ -301,10 +302,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('EXPORT FILTERS'), findsOneWidget);
+    expect(find.text('Choose records'), findsOneWidget);
     expect(find.text('Proposal Quality Guide'), findsOneWidget);
     expect(reports.endpoint, 'rubrics/17/');
-    await tester.tap(find.text('Cancel').last);
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Back to source'));
     await tester.pumpAndSettle();
@@ -441,7 +442,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Report Center'));
       await tester.pumpAndSettle();
-      expect(find.text('EXPORT FILTERS'), findsOneWidget);
+      expect(find.text('Choose records'), findsOneWidget);
       expect(find.text('Proposal Quality Guide'), findsOneWidget);
       expect(reports.endpoint, 'rubrics/17/');
       expect(reports.params?['semester_id'], '3');
@@ -449,10 +450,10 @@ void main() {
         find.text('Selected record unavailable for these filters'),
         findsNothing,
       );
-      await tester.tap(find.text('Cancel').last);
+      await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(find.text('Rubric Catalog'), findsOneWidget);
-      expect(find.text('Project Archive Register'), findsOneWidget);
+      expect(find.text('Rubric catalog'), findsOneWidget);
+      expect(find.text('Individual rubric'), findsOneWidget);
       await tester.tap(find.text('Back to source'));
       await tester.pumpAndSettle();
       expect(router.routeInformationProvider.value.uri.path, '/admin/rubrics');

@@ -668,7 +668,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     final stage = widget.state.defenseStages
         .where((s) => asInt(s['id']) == widget.stageId)
         .firstOrNull;
-    return stage?['minutes_required'] == true;
+    return stage?['minutes_required'] == true || stage?['qualifying_score'] != null;
   }
 
   List<Map<String, dynamic>> _rubricsForContext() {
@@ -852,7 +852,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             )) {
       showValidationToast(
         context,
-        'Assign a documenter to every session. This stage requires signed minutes.',
+        'Assign a documenter to every session to record the panel outcome and minutes.',
       );
       return null;
     }
@@ -1397,7 +1397,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     final missingPitRubrics = <String>[];
     if (_validRubricId() == null) missingPitRubrics.add('Panel');
     if (pitScheduleRequiresPeer(state, widget.eventController.text) &&
-        _validPeerRubricId() == null) missingPitRubrics.add('Peer');
+        _validPeerRubricId() == null) {
+      missingPitRubrics.add('Peer');
+    }
 
     final warnings = <Widget>[];
 

@@ -3,6 +3,7 @@ from django.db import models
 
 class DefenseMinutes(models.Model):
     outcome_snapshot = models.JSONField(default=dict, blank=True)
+    decision_draft = models.JSONField(default=dict, blank=True)
     STATUS_DRAFT = 'draft'
     STATUS_SUBMITTED = 'submitted'           # Documenter signed
     STATUS_ADVISER_SIGNED = 'adviser_signed'  # Adviser signed

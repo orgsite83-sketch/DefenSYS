@@ -38,6 +38,16 @@ class SharedHearingFlowTests(APITestCase):
         response = self.decision(outcomes=[self.outcome(self.team), self.outcome(self.module_team,
             'approved_with_revisions', 'Clarify the module architecture.')])
         self.assertEqual(response.status_code, 200, response.data)
+        # Student final-paper actions follow the existing explicit release for
+        # both teams; the section decision itself does not disseminate it.
+        import uuid
+        from types import SimpleNamespace
+        from grading.grades import dissemination
+        request = SimpleNamespace(user=self.admin)
+        reviewed = dissemination.preview(request, {'filters': {'scope': 'pit', 'entity': 'teams',
+            'semester_id': self.semester.pk, 'pit_event_config_id': self.event.pk, 'coverage': 'assessment'},
+            'grade_ids': [schedule.grade_records.get().pk for schedule in services.latest(self.project).schedules.all()]})
+        dissemination.confirm(request, {'review_token': reviewed['review_token'], 'batch_id': str(uuid.uuid4())})
         return response
 
     def test_setup_adds_both_required_definitions_once_and_keeps_authored_final_id(self):
@@ -308,6 +318,9 @@ class CapstoneSharedHearingFlowTests(APITestCase):
             panel_rubric=rubric, panel_weight=100, adviser_weight=0, peer_weight=0)
         schedule = DefenseSchedule.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
             rubric=rubric, scheduled_date=timezone.localdate(), start_time='09:00', room='Shared Capstone')
+        # These historical flow regressions exercise pre-deliberation hearings.
+        schedule.assessment_policy.pop('deliberation_version', None)
+        schedule.save(update_fields=['assessment_policy'])
         self.chair = get_user_model().objects.create_user(username='shared-capstone-chair', role='faculty')
         SchedulePanelist.objects.create(schedule=schedule, panelist=self.chair, is_chair=True)
         grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
@@ -325,6 +338,8 @@ class CapstoneSharedHearingFlowTests(APITestCase):
         record_verdict(grade, actor=self.chair, verdict='approved_with_revisions', remarks='Clarify module scope.',
             concept_decisions=[{'key': key, 'decision': 'approved_with_revisions' if key == 'c2' else 'not_selected',
                 'remarks': 'Clarify module scope.' if key == 'c2' else ''} for key in services.KEYS])
+        from grading.grades.test_redefense_plan import release_outcome
+        release_outcome(self, grade)
         self.assertTrue(archive_unlocked(self.team, self.stage.label))
         sub = upsert_submission(self.team, self.stage.label, 'FINAL_CONCEPT', 'final.pdf', '10 B', self.student,
             file=SimpleUploadedFile('final.pdf', b'%PDF-1.4 corrected module'))

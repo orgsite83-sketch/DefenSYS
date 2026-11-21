@@ -238,6 +238,7 @@ class DefensysPageHeader extends StatelessWidget {
   final String subtitle;
   final IconData? icon;
   final Widget? actions;
+  final double? actionsBreakpoint;
   final String? programScope;
 
   const DefensysPageHeader({
@@ -246,55 +247,76 @@ class DefensysPageHeader extends StatelessWidget {
     required this.subtitle,
     this.icon,
     this.actions,
+    this.actionsBreakpoint,
     this.programScope,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Row(
+    final heading = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  if (icon != null) ...[
-                    Icon(
-                      icon,
-                      color: programScope != null
-                          ? ProgramColors.of(context, scope: programScope).text
-                          : isDark ? DefensysTokens.mistMaroon : DefensysUi.primaryMaroon,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Flexible(
-                    child: Text(
-                      title,
-                      style: DefensysUi.pageTitle.copyWith(
-                        color: DefensysTokens.textPrimaryOf(context),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+        Row(
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                color: programScope != null
+                    ? ProgramColors.of(context, scope: programScope).text
+                    : isDark
+                    ? DefensysTokens.mistMaroon
+                    : DefensysUi.primaryMaroon,
+                size: 20,
               ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: DefensysUi.subtitle.copyWith(
-                  color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary,
-                ),
-              ),
+              const SizedBox(width: 8),
             ],
+            Flexible(
+              child: Text(
+                title,
+                style: DefensysUi.pageTitle.copyWith(
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: DefensysUi.subtitle.copyWith(
+            color: isDark
+                ? const Color(0xFFA1A1AA)
+                : DefensysTokens.textSecondary,
           ),
         ),
-        if (actions != null) ...[const SizedBox(width: 20), actions!],
       ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (actionsBreakpoint != null &&
+            constraints.maxWidth < actionsBreakpoint!) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              heading,
+              if (actions != null) ...[
+                const SizedBox(height: 16),
+                Align(alignment: Alignment.centerRight, child: actions!),
+              ],
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: heading),
+            if (actions != null) ...[const SizedBox(width: 20), actions!],
+          ],
+        );
+      },
     );
   }
 }
@@ -615,8 +637,8 @@ class _Sidebar extends StatelessWidget {
           ),
           _NavEntry(
             section: DefensysAdminSection.auditCompliance,
-            icon: Icons.verified_user_outlined,
-            label: 'Audit Trail',
+            icon: Icons.summarize_outlined,
+            label: 'Reports & Logs',
           ),
         ],
       ),
@@ -1542,6 +1564,7 @@ class _OverviewTaskBadge extends ConsumerWidget {
     final key = switch (section) {
       DefensysAdminSection.academicPeriods => 'academicPeriods',
       DefensysAdminSection.defenseStages => 'defenseStages',
+      DefensysAdminSection.rubrics => 'rubrics',
       DefensysAdminSection.studentTeams => 'studentTeams',
       DefensysAdminSection.userManagement => 'userManagement',
       DefensysAdminSection.gradeCenter => 'gradeCenter',
@@ -1550,7 +1573,9 @@ class _OverviewTaskBadge extends ConsumerWidget {
     };
     final scope = ref.watch(adminOverviewScopeProvider);
     final tasks = (data?['overview'] as Map?)?['action_items'] as List?;
-    final count = tasks == null ? (counts[key] as int? ?? 0) : tasks.whereType<Map>().where((item) => item['target_section'] == key && (scope == 'all' || item['scope'] == null || item['scope'] == scope)).length;
+    final count = tasks == null ? (counts[key] as int? ?? 0) : tasks.whereType<Map>().where((item) =>
+      (item['target_section'] == key || (item['related_sections'] is List && (item['related_sections'] as List).contains(key))) &&
+      (scope == 'all' || item['scope'] == null || item['scope'] == scope)).length;
     if (count == 0) return const SizedBox.shrink();
     final foreground = color ?? DefensysTokens.textPrimaryOf(context);
     final enrollmentOnly = key == 'userManagement' && count == 1 &&

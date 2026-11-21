@@ -32,6 +32,12 @@ List<String> stageSetupIssues(Map<String, dynamic> stage) {
   return readiness['ready'] == true ? [] : ['Review stage configuration.'];
 }
 
+List<String> stageAttentionIssues(Map<String, dynamic> stage) => [
+  ...stageSetupIssues(stage),
+  if (!stagePublished(stage) && stage['is_officially_complete'] != true)
+    'Draft stage: publish after completing setup.',
+];
+
 List<Map<String, dynamic>> _rows(dynamic value) => value is List
     ? value
           .whereType<Map>()
@@ -84,7 +90,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
       ? widget.state.stages
       : widget.state.phaseGroups.expand((g) => _rows(g['stages'])).toList();
   List<Map<String, dynamic>> get _attentionStages => _visibleStages
-      .where((stage) => stageSetupIssues(stage).isNotEmpty)
+      .where((stage) => stageAttentionIssues(stage).isNotEmpty)
       .toList();
   Object _stageIdentity(Map<String, dynamic> stage) =>
       (stage['semester_id'], stage['id'] ?? stage['code'] ?? stage['label']);
@@ -809,13 +815,18 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   Widget _readiness(Map<String, dynamic> stage) {
     final issues = stageSetupIssues(stage);
     final ready = issues.isEmpty;
+    final draft = !stagePublished(stage) && stage['is_officially_complete'] != true;
     return Tooltip(
       key: ValueKey('stage-setup-status-${stage['id']}'),
       triggerMode: TooltipTriggerMode.tap,
-      message: ready
+      message: draft
+          ? stageAttentionIssues(stage).join('\n')
+          : ready
           ? 'Required grading and deliverable settings are configured.'
           : issues.join('\n'),
-      child: ready
+      child: ready && draft
+          ? const StatusBadge.warning(label: 'Ready to publish')
+          : ready
           ? const StatusBadge.success(label: 'Setup ready')
           : const StatusBadge.warning(label: 'Setup incomplete'),
     );
@@ -856,7 +867,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     final identity = _stageIdentity(stage);
     final expanded = _expanded.contains(identity);
     final highlighted = _highlightedStage == identity;
-    final issues = stageSetupIssues(stage);
+    final issues = stageAttentionIssues(stage);
     final managed = _rows(stage['system_deliverables']);
     final deliverables = [
       ..._rows(stage['deliverables']),

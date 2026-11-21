@@ -38,6 +38,10 @@ void main() {
           onBulkImport: () => imports++,
         ),
       );
+      expect(find.text('Team options'), findsOneWidget);
+      expect(find.text('Import teams'), findsNothing);
+      await tester.tap(find.text('Team options'));
+      await tester.pumpAndSettle();
       expect(find.text('Import teams'), findsOneWidget);
       expect(find.text('Download template'), findsOneWidget);
       expect(find.text('Team Creation'), findsNothing);

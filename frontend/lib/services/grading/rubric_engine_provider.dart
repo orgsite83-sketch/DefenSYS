@@ -359,6 +359,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
 
   void _markDependentDataChanged() {
     ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
       DataArea.grades,
       DataArea.defenseStages,
       DataArea.scheduler,

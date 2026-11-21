@@ -46,12 +46,23 @@ class DefenseDecisionSummary extends StatelessWidget {
         for (final area in areas)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 5),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: Text('${area['label']}')),
-                Expanded(
-                  child: Text(severities[area['severity']] ?? 'Not recorded'),
+                Row(
+                  children: [
+                    Expanded(child: Text('${area['label']}')),
+                    Expanded(
+                      child: Text(
+                        severities[area['severity']] ?? 'Not recorded',
+                      ),
+                    ),
+                  ],
                 ),
+                if ('${area['instructions'] ?? ''}'.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('${area['instructions']}'),
+                ],
               ],
             ),
           ),
@@ -89,6 +100,17 @@ class DefenseDecisionSummary extends StatelessWidget {
             ),
           ),
         ],
+        if (decision['recording_method'] == 'documenter_minutes') ...[
+          const SizedBox(height: 12),
+          Text(
+            decision['recorded_by_name'] != null
+                ? 'Panel decision recorded by ${decision['recorded_by_name']}'
+                : 'Panel decision recorded in the minutes',
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -116,6 +138,19 @@ class _DemoEntry {
   final text = TextEditingController();
 }
 
+class _RevisionEntry {
+  _RevisionEntry({String? id}) : id = id ?? newOperationRequestId();
+  final String id;
+  final label = TextEditingController();
+  final instructions = TextEditingController();
+  String severity = '';
+
+  void dispose() {
+    label.dispose();
+    instructions.dispose();
+  }
+}
+
 class _PanelDeliberationPanelState
     extends ConsumerState<PanelDeliberationPanel> {
   late Map<String, dynamic> _grade;
@@ -124,16 +159,29 @@ class _PanelDeliberationPanelState
   final _amendmentReason = TextEditingController();
   final Map<String, String> _levels = {};
   final List<_DemoEntry> _requirements = [];
+  final List<_RevisionEntry> _revisions = [];
   String _verdict = 'approved_with_revisions';
   String _selectedKey = '';
   String _requestId = newOperationRequestId();
   bool _demo = false, _busy = false, _amending = false;
+  String? _error;
 
   Map get _workflow => _grade['workflow'] as Map? ?? {};
   Map get _policy => _workflow['deliberation'] as Map? ?? {};
   Map get _rule => _workflow['outcome_rule'] as Map? ?? {};
-  List<Map> get _areas =>
-      (_policy['revision_areas'] as List? ?? []).whereType<Map>().toList();
+  bool get _chairRevisions => _policy['revision_mode'] == 'chair';
+  List<Map> get _areas => _chairRevisions
+      ? [
+          for (var i = 0; i < _revisions.length; i++)
+            {
+              'id': _revisions[i].id,
+              'label': _revisions[i].label.text.trim().isEmpty
+                  ? 'Revision area ${i + 1}'
+                  : _revisions[i].label.text.trim(),
+              'allows_demo': true,
+            },
+        ]
+      : (_policy['revision_areas'] as List? ?? []).whereType<Map>().toList();
   List<Map> get _qualifiers => (_rule['assessments'] as List? ?? [])
       .whereType<Map>()
       .where((row) => row['qualifies'] == true)
@@ -169,6 +217,13 @@ class _PanelDeliberationPanelState
       _selectedKey = '';
       _instructions.clear();
       _reason.clear();
+      _amendmentReason.clear();
+      _amending = false;
+      _error = null;
+      for (final item in _revisions) {
+        item.dispose();
+      }
+      _revisions.clear();
       for (final item in _requirements) {
         item.text.dispose();
       }
@@ -184,6 +239,9 @@ class _PanelDeliberationPanelState
     _instructions.dispose();
     _reason.dispose();
     _amendmentReason.dispose();
+    for (final item in _revisions) {
+      item.dispose();
+    }
     for (final item in _requirements) {
       item.text.dispose();
     }
@@ -192,6 +250,22 @@ class _PanelDeliberationPanelState
 
   Future<void> _confirm() async {
     if (_busy) return;
+    if (_chairRevisions &&
+        _verdict == 'approved_with_revisions' &&
+        (_revisions.isEmpty ||
+            _revisions.any(
+              (item) =>
+                  item.label.text.trim().isEmpty ||
+                  item.severity.isEmpty ||
+                  item.instructions.text.trim().isEmpty,
+            ))) {
+      setState(
+        () => _error =
+            'Add each revision area, choose Minor or Major, and describe the corrections.',
+      );
+      return;
+    }
+    setState(() => _error = null);
     final decision = {
       'request_id': _requestId,
       'review_token': _rule['review_token'],
@@ -200,9 +274,20 @@ class _PanelDeliberationPanelState
       'reason': _reason.text.trim(),
       'instructions': _instructions.text.trim(),
       'revision_entries': [
-        for (final entry in _levels.entries)
-          if (entry.value.isNotEmpty && _verdict != 'for_redefense')
-            {'area_id': entry.key, 'severity': entry.value},
+        if (_chairRevisions) ...[
+          if (_verdict == 'approved_with_revisions')
+            for (final entry in _revisions)
+              {
+                'area_id': entry.id,
+                'label': entry.label.text.trim(),
+                'severity': entry.severity,
+                'instructions': entry.instructions.text.trim(),
+              },
+        ] else ...[
+          for (final entry in _levels.entries)
+            if (entry.value.isNotEmpty && _verdict != 'for_redefense')
+              {'area_id': entry.key, 'severity': entry.value},
+        ],
       ],
       're_demo_required': _verdict == 'approved_with_revisions' && _demo,
       'demo_requirements': [
@@ -278,9 +363,125 @@ class _PanelDeliberationPanelState
     ),
   );
 
+  Widget _revisionFields() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SizedBox(height: 20),
+      Text(
+        'Required corrections',
+        style: DefensysTokens.sectionTitle.copyWith(
+          color: DefensysTokens.textPrimaryOf(context),
+        ),
+      ),
+      for (final item in _revisions)
+        Padding(
+          key: ValueKey('chair-revision-${item.id}'),
+          padding: const EdgeInsets.only(top: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Divider(height: 1, color: DefensysTokens.borderOf(context)),
+              _label(
+                'Revision area',
+                ShadInput(
+                  key: ValueKey('chair-area-${item.id}'),
+                  controller: item.label,
+                  enabled: !_busy,
+                  maxLength: 80,
+                  placeholder: const Text('For example: System or Manuscript'),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              _label(
+                'Revision level',
+                ShadSelect<String>(
+                  key: ValueKey('chair-severity-${item.id}-${item.severity}'),
+                  initialValue: item.severity.isEmpty ? null : item.severity,
+                  enabled: !_busy,
+                  placeholder: const Text('Choose Minor or Major'),
+                  options: const [
+                    ShadOption(value: 'minor', child: Text('Minor revision')),
+                    ShadOption(value: 'major', child: Text('Major revision')),
+                  ],
+                  selectedOptionBuilder: (_, value) => Text(
+                    value == 'minor' ? 'Minor revision' : 'Major revision',
+                  ),
+                  onChanged: (value) {
+                    if (value != null) setState(() => item.severity = value);
+                  },
+                ),
+              ),
+              _label(
+                'Required corrections',
+                ShadInput(
+                  key: ValueKey('chair-instructions-${item.id}'),
+                  controller: item.instructions,
+                  enabled: !_busy,
+                  maxLines: 3,
+                  maxLength: 2000,
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: ShadButton.ghost(
+                  enabled: !_busy,
+                  onPressed: () => setState(() {
+                    _revisions.remove(item);
+                    final removed = _requirements
+                        .where((row) => row.areaId == item.id)
+                        .toList();
+                    _requirements.removeWhere((row) => row.areaId == item.id);
+                    if (_revisions.isEmpty) _demo = false;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      item.dispose();
+                      for (final row in removed) {
+                        row.text.dispose();
+                      }
+                    });
+                  }),
+                  child: const Text('Remove revision area'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      const SizedBox(height: 12),
+      ShadButton.outline(
+        enabled: !_busy && _revisions.length < 12,
+        onPressed: () => setState(() => _revisions.add(_RevisionEntry())),
+        child: const Text('Add revision area'),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     final official = _policy['decision'] as Map?;
+    if (_policy['revision_mode'] == 'documenter') {
+      return DefensysShadcnScope(
+        child: official != null
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DefenseDecisionSummary(
+                    decision: Map<String, dynamic>.from(official),
+                  ),
+                  if (official['re_demo_required'] == true) ...[
+                    const SizedBox(height: 14),
+                    ShadButton.outline(
+                      onPressed: () => showReDemoWorkspace(
+                        context,
+                        sourceScheduleId: (_grade['schedule_id'] as num)
+                            .toInt(),
+                      ),
+                      child: const Text('Re-demo requirements & schedule'),
+                    ),
+                  ],
+                ],
+              )
+            : const Text('Awaiting the documenter’s recorded panel outcome.'),
+      );
+    }
     final allowed = _rule['allowed_verdicts'] as List? ?? [];
     final complete = _rule['panel_complete'] == true;
     final needsReason =
@@ -306,12 +507,28 @@ class _PanelDeliberationPanelState
                   _selectedKey = '${official['selected_key'] ?? ''}';
                   _reason.text = '${official['reason'] ?? ''}';
                   _instructions.text = '${official['instructions'] ?? ''}';
+                  for (final item in _revisions) {
+                    item.dispose();
+                  }
+                  _revisions.clear();
+                  _levels.clear();
                   for (final area
                       in (official['revision_entries'] as List? ?? [])
                           .whereType<Map>()) {
                     _levels['${area['area_id']}'] = '${area['severity']}';
+                    if (_chairRevisions) {
+                      _revisions.add(
+                        _RevisionEntry(id: '${area['area_id']}')
+                          ..label.text = '${area['label']}'
+                          ..severity = '${area['severity']}'
+                          ..instructions.text = '${area['instructions'] ?? ''}',
+                      );
+                    }
                   }
                   _demo = official['re_demo_required'] == true;
+                  for (final item in _requirements) {
+                    item.text.dispose();
+                  }
                   _requirements.clear();
                   for (final item
                       in (official['demo_requirements'] as List? ?? [])
@@ -394,7 +611,12 @@ class _PanelDeliberationPanelState
                       ),
                   ],
                   onChanged: (value) {
-                    if (value != null) setState(() => _verdict = value);
+                    if (value != null) {
+                      setState(() {
+                        _verdict = value;
+                        _error = null;
+                      });
+                    }
                   },
                 ),
               ),
@@ -421,7 +643,9 @@ class _PanelDeliberationPanelState
                     },
                   ),
                 ),
-              if (_verdict != 'for_redefense')
+              if (_chairRevisions && _verdict == 'approved_with_revisions')
+                _revisionFields(),
+              if (!_chairRevisions && _verdict != 'for_redefense')
                 for (final area in _areas)
                   _label(
                     '${area['label']}',
@@ -486,7 +710,12 @@ class _PanelDeliberationPanelState
                 ShadCheckbox(
                   value: _demo,
                   enabled: !_busy,
-                  onChanged: (value) => setState(() => _demo = value),
+                  onChanged: (value) => setState(() {
+                    _demo = value;
+                    if (value && _requirements.isEmpty) {
+                      _requirements.add(_DemoEntry('${demoAreas.first['id']}'));
+                    }
+                  }),
                   label: const Text('Re-demo required · Verification only'),
                 ),
                 if (_demo) ...[
@@ -498,7 +727,11 @@ class _PanelDeliberationPanelState
                         children: [
                           if (demoAreas.length > 1)
                             ShadSelect<String>(
+                              key: ValueKey(
+                                'demo-area-${item.areaId}-${demoAreas.map((area) => area['id']).join()}',
+                              ),
                               initialValue: item.areaId,
+                              enabled: !_busy,
                               options: [
                                 for (final area in demoAreas)
                                   ShadOption(
@@ -551,6 +784,22 @@ class _PanelDeliberationPanelState
                 ],
               ],
               const SizedBox(height: 22),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        color: DefensysTokens.isDark(context)
+                            ? DefensysTokens.danger
+                            : DefensysTokens.dangerText,
+                      ),
+                    ),
+                  ),
+                ),
               if ('${_policy['unavailable_reason'] ?? ''}'.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),

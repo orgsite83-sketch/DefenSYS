@@ -14,10 +14,6 @@ Future<bool> showFutureDefenseRulesDialog(
     text: '${stage['qualifying_score'] ?? ''}',
   );
   var carryover = '${stage['score_carryover'] ?? 'reassess'}';
-  var areas = (stage['revision_areas'] as List? ?? [])
-      .whereType<Map>()
-      .map((row) => Map<String, dynamic>.from(row))
-      .toList();
   var busy = false;
   String? error;
   final changed = await showDialog<bool>(
@@ -53,7 +49,6 @@ Future<bool> showFutureDefenseRulesDialog(
                   final failure = await onSave({
                     'qualifying_score': double.parse(score.text.trim()),
                     'score_carryover': carryover,
-                    'revision_areas': areas,
                   });
                   if (!dialogContext.mounted) return;
                   if (failure == null) {
@@ -93,9 +88,6 @@ Future<bool> showFutureDefenseRulesDialog(
                   onChanged: () => update(() {}),
                   onCarryoverChanged: (value) =>
                       update(() => carryover = value),
-                  revisionAreas: areas,
-                  onRevisionAreasChanged: (value) =>
-                      update(() => areas = value),
                 ),
                 if (error != null)
                   Padding(

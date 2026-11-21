@@ -18,8 +18,10 @@ class DefenseOutcome(models.Model):
     assessment_snapshot = models.JSONField(default=dict)
     revision = models.PositiveIntegerField(default=1)
     history = models.JSONField(default=list)
-    confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+    confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
                                     related_name='confirmed_defense_outcomes')
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name='recorded_defense_outcomes')
     confirmed_at = models.DateTimeField(auto_now_add=True)
     request_id = models.UUIDField(unique=True)
     request_digest = models.CharField(max_length=64)

@@ -365,11 +365,15 @@ class ReportsApiTests(APITestCase):
                     self.assertIn('spreadsheetml', response['Content-Type'])
                     workbook = openpyxl.load_workbook(io.BytesIO(response.content))
                     sheet = workbook.active
+                    import_template = endpoint in ('/api/reports/defense-schedules/', '/api/reports/team-roster/')
+                    if import_template and enabled == 'true':
+                        self.assertIn('Signatories', workbook.sheetnames)
+                        sheet = workbook['Signatories']
                     values = [cell.value for row in sheet for cell in row]
                     for text in ('Verified by:', 'Custom Report Reviewer', 'Quality Officer'):
                         self.assertEqual(text in values, enabled == 'true')
                     self.assertNotIn('Prepared by:', values)
-                    if enabled == 'true':
+                    if enabled == 'true' and not import_template:
                         data_end = openpyxl.utils.range_boundaries(sheet.auto_filter.ref)[3]
                         signer = next(cell for row in sheet for cell in row if cell.value == 'Custom Report Reviewer')
                         self.assertGreater(signer.row, data_end)

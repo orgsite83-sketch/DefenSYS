@@ -10,11 +10,13 @@ class MinutesReviewDialog extends StatelessWidget {
     required this.panelists,
     required this.hasSignature,
     this.outcomeReady = true,
+    this.outcomeReadyLabel = 'Panel decision confirmed',
   });
   final Uint8List pdfBytes;
   final Map<String, bool> panelists;
   final bool hasSignature;
   final bool outcomeReady;
+  final String outcomeReadyLabel;
   bool get ready =>
       panelists.isNotEmpty &&
       panelists.values.every((done) => done) &&
@@ -35,7 +37,7 @@ class MinutesReviewDialog extends StatelessWidget {
         for (final panelist in panelists.entries)
           _check(panelist.key, panelist.value),
         _check('E-signature uploaded', hasSignature),
-        if (!outcomeReady) _check('Panel decision confirmed', false),
+        if (!outcomeReady) _check(outcomeReadyLabel, false),
         const SizedBox(height: 12),
         const Text(
           'Signing locks these minutes and sends them to the project adviser for review. The administrator signs last as chairman.',

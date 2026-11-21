@@ -269,6 +269,41 @@ void main() {
 
   for (final dark in [false, true]) {
     testWidgets(
+      'analytics fills a wide workspace in ${dark ? 'dark' : 'light'} mode',
+      (tester) async {
+        await _mount(tester, width: 1920, dark: dark, startAtAssessment: false);
+        final performance = find
+            .ancestor(
+              of: find.text('Performance by academic year'),
+              matching: find.byType(ShadCard),
+            )
+            .first;
+        expect(tester.getRect(performance).left, 40);
+        expect(tester.getRect(performance).right, 1880);
+        await _capture(
+          tester,
+          dark ? 'wide-performance-dark' : 'wide-performance-light',
+        );
+        await tester.tap(find.text('Project insights'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View yearly output'));
+        await tester.pumpAndSettle();
+        final projects = find
+            .ancestor(
+              of: find.text('Projects by academic year'),
+              matching: find.byType(ShadCard),
+            )
+            .first;
+        expect(tester.getRect(projects).left, 40);
+        expect(tester.getRect(projects).right, 1880);
+        expect(tester.takeException(), isNull);
+        await _capture(
+          tester,
+          dark ? 'wide-projects-dark' : 'wide-projects-light',
+        );
+      },
+    );
+    testWidgets(
       'workspace overview and mix fit 320px in ${dark ? 'dark' : 'light'} mode',
       (tester) async {
         await _mount(tester, width: 320, dark: dark, startAtAssessment: false);

@@ -507,10 +507,6 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         cutoff = attrs.get('qualifying_score')
         if cutoff is not None and (not cutoff.is_finite() or not 0 <= cutoff <= 100):
             raise serializers.ValidationError({'qualifying_score': 'Enter a qualifying score between 0 and 100%.'})
-        revision_areas = attrs.get('revision_areas', self.instance.revision_areas if self.instance else [])
-        cutoff = attrs.get('qualifying_score', self.instance.qualifying_score if self.instance else None)
-        if revision_areas and cutoff is None:
-            raise serializers.ValidationError({'qualifying_score': 'Configure the panel qualifying score for chair deliberation.'})
         if self.instance and set(self.initial_data).issubset({'qualifying_score', 'score_carryover', 'revision_areas'}):
             # Future-hearing policy edits must not regenerate legacy deliverables
             # or change any requirements attached to a locked historical stage.

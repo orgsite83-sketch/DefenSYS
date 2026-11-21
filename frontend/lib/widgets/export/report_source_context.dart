@@ -20,7 +20,6 @@ Map<String, String> reportSourceParams(WidgetRef ref, String reportId) {
     final state = ref.read(systemAuditProvider);
     return {
       'category': state.category,
-      'review_status': state.reviewStatus,
       'action': state.action,
       'search': state.search,
       'start_date': state.startDate,

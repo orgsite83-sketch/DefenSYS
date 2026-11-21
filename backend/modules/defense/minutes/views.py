@@ -191,7 +191,24 @@ class MinutesDetailView(APIView):
             
         comments_data = request.data
         if isinstance(comments_data, dict):
+            if 'decision_draft' in comments_data:
+                from grading.grades.outcome_rules import documenter_policy
+                from .decision import validate_draft
+                from grading.grades.deliberation import source_for
+                if not documenter_policy(schedule) or source_for(schedule):
+                    return Response({'detail': 'This hearing retains its recorded outcome. Use the correction process.'}, status=400)
+                try:
+                    draft = validate_draft(comments_data['decision_draft'])
+                except Exception as exc:
+                    from django.core.exceptions import ValidationError
+                    if not isinstance(exc, ValidationError):
+                        raise
+                    return Response({'detail': ' '.join(exc.messages)}, status=400)
+            else:
+                draft = None
             comments_data = comments_data.get('comments', [])
+        else:
+            draft = None
             
         if not isinstance(comments_data, list) or any(not isinstance(row, dict) or
                 not isinstance(row.get('comments', ''), str) for row in comments_data):
@@ -205,6 +222,9 @@ class MinutesDetailView(APIView):
             return Response({'detail': 'The panel assignment changed. Refresh the minutes before saving.'},
                 status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
+            if draft is not None:
+                minutes.decision_draft = draft
+                minutes.save(update_fields=['decision_draft', 'updated_at'])
             for c_data in comments_data:
                 comment_id = c_data.get('id')
                 text = c_data.get('comments', '')
@@ -224,8 +244,12 @@ class MinutesDetailView(APIView):
 class MinutesSubmitView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request, schedule_id):
         schedule = get_object_or_404(DefenseSchedule, pk=schedule_id)
+        from student_teams.models import StudentTeam
+        StudentTeam.objects.select_for_update().get(pk=schedule.team_id)
+        schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
         
         if schedule.scope != DefenseSchedule.SCOPE_CAPSTONE:
             return Response(
@@ -246,7 +270,7 @@ class MinutesSubmitView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
             
-        minutes = get_object_or_404(DefenseMinutes, schedule=schedule)
+        minutes = get_object_or_404(DefenseMinutes.objects.select_for_update(), schedule=schedule)
         
         if minutes.status != DefenseMinutes.STATUS_DRAFT:
             return Response(
@@ -284,11 +308,18 @@ class MinutesSubmitView(APIView):
             try:
                 # Validate the draft before its status changes in memory.
                 minutes.status = DefenseMinutes.STATUS_DRAFT
-                require_review(minutes, request.data.get('review_token'), freeze=True)
+                from grading.grades.outcome_rules import documenter_policy
+                from grading.grades.deliberation import source_for
+                if documenter_policy(schedule) and not source_for(schedule):
+                    from .decision import record_on_submission
+                    record_on_submission(minutes, request.user, request.data.get('review_token'))
+                else:
+                    require_review(minutes, request.data.get('review_token'), freeze=True)
             except Exception as exc:
                 from django.core.exceptions import ValidationError
                 if not isinstance(exc, ValidationError):
                     raise
+                transaction.set_rollback(True)
                 return Response({'detail': ' '.join(exc.messages)}, status=400)
             minutes.status = DefenseMinutes.STATUS_SUBMITTED
             minutes.documenter_signed_at = timezone.now()
@@ -313,6 +344,31 @@ class MinutesSubmitView(APIView):
                 
         serializer = DefenseMinutesSerializer(minutes)
         return Response(serializer.data)
+
+
+class MinutesDecisionCorrectionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, schedule_id):
+        schedule = get_object_or_404(DefenseSchedule, pk=schedule_id)
+        from grading.grades.outcome_rules import documenter_policy
+        if not documenter_policy(schedule) or schedule.documenter_id != request.user.pk:
+            return Response({'detail': 'Only the assigned documenter can request this outcome correction.'}, status=403)
+        from .decision import grade_for
+        from grading.grades.corrections import request_correction
+        from grading.grades.views import CorrectionActionSerializer
+        minutes = get_object_or_404(DefenseMinutes, schedule=schedule)
+        grade = grade_for(minutes)
+        if grade is None:
+            return Response({'detail': 'This hearing has no current assessment.'}, status=400)
+        data = CorrectionActionSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        values = data.validated_data
+        if values['action'] != 'request' or set(values.get('changes', {})) != {'panel_decision'}:
+            return Response({'detail': 'Request one panel outcome correction for administrator review.'}, status=400)
+        if grade.corrections.filter(status='pending', changes__has_key='panel_decision').exists():
+            return Response({'detail': 'An outcome correction is already awaiting review.'}, status=400)
+        return Response(request_correction(grade.pk, request.user, values, request=request))
 
 
 class MinutesSignAdviserView(APIView):

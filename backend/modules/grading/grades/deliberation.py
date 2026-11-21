@@ -7,13 +7,13 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from .outcome_models import DefenseOutcome
-from .outcome_rules import deliberation_policy, outcome_payload, policy_for, hearing_concepts, concept_keys
+from .outcome_rules import deliberation_policy, documenter_policy, outcome_payload, policy_for, hearing_concepts, concept_keys
 
 
 def source_for(schedule):
     if not schedule or not deliberation_policy(schedule):
         return None
-    return DefenseOutcome.objects.filter(schedule_id=schedule.pk).select_related('confirmed_by').first()
+    return DefenseOutcome.objects.filter(schedule_id=schedule.pk).select_related('confirmed_by', 'recorded_by').first()
 
 
 def decision_payload(outcome, *, public=False):
@@ -27,10 +27,16 @@ def decision_payload(outcome, *, public=False):
         'revision_entries': outcome.revision_entries, 'demo_requirements': outcome.demo_requirements,
         're_demo_required': outcome.re_demo_required,
         'confirmed_at': outcome.confirmed_at.isoformat()}
+    if outcome.recorded_by_id:
+        result['recording_method'] = 'documenter_minutes'
     if not public:
         result.update(confirmed_by=outcome.confirmed_by_id,
-            confirmed_by_name=outcome.confirmed_by.get_full_name() or outcome.confirmed_by.username,
+            confirmed_by_name=(outcome.confirmed_by.get_full_name() or outcome.confirmed_by.username) if outcome.confirmed_by_id else None,
             decision_source=outcome.decision_source)
+        if outcome.recorded_by_id:
+            result.update(recorded_by=outcome.recorded_by_id,
+                recorded_by_name=outcome.recorded_by.get_full_name() or outcome.recorded_by.username,
+                announced_by_name=outcome.assessment_snapshot.get('announced_by_name', ''))
     return result
 
 
@@ -52,15 +58,18 @@ def payload(grade, actor=None):
     official = source_for(grade.schedule)
     rule = outcome_payload(grade)
     reason = assessment_unavailable_reason(grade.schedule, grade)
-    return {'enabled': True, 'revision_areas': policy_for(grade.schedule)['revision_areas'],
+    policy = policy_for(grade.schedule)
+    documented = documenter_policy(grade.schedule)
+    return {'enabled': True, 'revision_areas': policy.get('revision_areas', []),
+        'revision_mode': 'documenter' if documented else 'chair' if policy.get('deliberation_version') == 2 else 'stage',
         'decision': decision_payload(official),
-        'can_request_correction': bool(official and actor and is_chair(grade, actor)
+        'can_request_correction': bool(official and actor and not documented and is_chair(grade, actor)
             and not grade.closed_as_failed and grade.schedule.status != 'archived'
             and not grade.corrections.filter(status='pending', changes__has_key='panel_decision').exists()),
-        'can_confirm': bool(actor and is_chair(grade, actor) and not official and not grade.verdict
+        'can_confirm': bool(not documented and actor and is_chair(grade, actor) and not official and not grade.verdict
                             and not reason and rule and rule['allowed_verdicts']),
         'unavailable_reason': reason,
-        'requires_chair_confirmation': official is None}
+        'requires_chair_confirmation': not documented and official is None}
 
 
 def _text(value, label, maximum=5000):
@@ -69,7 +78,42 @@ def _text(value, label, maximum=5000):
     return value.strip()
 
 
+def _chair_entries(data, verdict, *, instructions_required=True):
+    """Validate chair-authored corrections without inferring a stage template."""
+    from defense.stages.revision_policy import validate_revision_areas
+    entries = data.get('revision_entries', [])
+    if not isinstance(entries, list) or len(entries) > 12:
+        raise ValidationError('Record up to 12 revision areas.')
+    if verdict != 'approved_with_revisions' and entries:
+        raise ValidationError('Revision requirements apply only to Approved with revisions.')
+    areas, details = [], []
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) - {'area_id', 'label', 'severity', 'instructions'}:
+            raise ValidationError('Each revision needs an area, severity, and correction instructions.')
+        severity = entry.get('severity')
+        instructions = _text(entry.get('instructions', ''), 'Correction instructions', 2000)
+        if severity not in ('minor', 'major') or (instructions_required and not instructions):
+            raise ValidationError('Choose Minor or Major and describe the required corrections.')
+        areas.append({'id': entry.get('area_id'), 'label': entry.get('label'), 'allows_demo': True})
+        details.append({'severity': severity, 'instructions': instructions})
+    validated = validate_revision_areas(areas)
+    if len({area['label'].casefold() for area in validated}) != len(validated):
+        raise ValidationError('Use a different label for each revision area.')
+    if verdict == 'approved_with_revisions' and not validated:
+        raise ValidationError('Record at least one required correction.')
+    return [{**area, 'area_id': area['id'], **detail} for area, detail in zip(validated, details)]
+
+
 def _entries(policy, data, verdict):
+    if policy.get('deliberation_version') in (2, 3):
+        result = _chair_entries(data, verdict, instructions_required=policy.get('deliberation_version') != 3)
+    else:
+        result = _stage_entries(policy, data, verdict)
+    return result, _demonstrations(data, verdict, result, unscoped=policy.get('deliberation_version') == 3)
+
+
+def _stage_entries(policy, data, verdict):
+    """Retain validation of categories captured by the original policy."""
     areas = {area['id']: area for area in policy['revision_areas']}
     entries = data.get('revision_entries', [])
     if not isinstance(entries, list) or len(entries) > len(areas):
@@ -90,6 +134,10 @@ def _entries(policy, data, verdict):
         raise ValidationError('Use Approved with revisions when corrections are required.')
     if verdict == 'approved_with_revisions' and not any(entry['severity'] != 'none' for entry in result):
         raise ValidationError('Record at least one minor or major revision.')
+    return result
+
+
+def _demonstrations(data, verdict, result, *, unscoped=False):
     requirements = data.get('demo_requirements', [])
     if not isinstance(requirements, list) or len(requirements) > 40:
         raise ValidationError('Record up to 40 required demonstrations.')
@@ -98,11 +146,11 @@ def _entries(policy, data, verdict):
     for item in requirements:
         if not isinstance(item, dict) or set(item) - {'area_id', 'text'}:
             raise ValidationError('Each demonstration needs a revision area and requirement text.')
-        key = item.get('area_id')
+        key = item.get('area_id', '') if unscoped else item.get('area_id')
         if not isinstance(key, str):
             raise ValidationError('Choose a configured revision area for each demonstration.')
         area = by_area.get(key, {})
-        if not area.get('allows_demo') or area.get('severity') not in ('minor', 'major'):
+        if not unscoped and (not area.get('allows_demo') or area.get('severity') not in ('minor', 'major')):
             raise ValidationError('Demonstrations must belong to an eligible area requiring revision.')
         text = _text(item.get('text'), 'Demonstration requirement', 1000)
         if not text:
@@ -115,17 +163,22 @@ def _entries(policy, data, verdict):
         raise ValidationError('Re-demo requires an explicit, nonempty list of demonstrations.')
     if demonstrations and verdict != 'approved_with_revisions':
         raise ValidationError('Re-demo is a follow-up under Approved with revisions.')
-    return result, demonstrations
+    return demonstrations
 
 
 @transaction.atomic
-def confirm(grade, *, actor, data):
+def confirm(grade, *, actor, data, minutes=None):
     from .automatic_outcomes import _locked_grade
     from .defense_workflow import is_chair, require_current, _record_outcome
     if not deliberation_policy(grade.schedule):
         raise ValidationError('This hearing retains its captured outcome policy.')
     grade = _locked_grade(grade)
-    if not is_chair(grade, actor):
+    documented = documenter_policy(grade.schedule)
+    if documented:
+        if (minutes is None or minutes.schedule_id != grade.schedule_id or minutes.status != 'draft'
+                or grade.schedule.documenter_id != actor.pk or data != minutes.decision_draft):
+            raise PermissionError('The assigned documenter records this outcome when submitting its minutes.')
+    elif not is_chair(grade, actor):
         raise PermissionError('Only the assigned panel chair can confirm the panel decision.')
     allowed_fields = {'request_id', 'review_token', 'verdict', 'selected_key', 'reason', 'instructions',
                       'revision_entries', 'demo_requirements', 're_demo_required'}
@@ -138,7 +191,7 @@ def confirm(grade, *, actor, data):
     digest = hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()
     previous = DefenseOutcome.objects.filter(request_id=request_id).first()
     if previous:
-        if previous.schedule_id != grade.schedule_id or previous.confirmed_by_id != actor.pk or previous.request_digest != digest:
+        if previous.schedule_id != grade.schedule_id or (previous.recorded_by_id or previous.confirmed_by_id) != actor.pk or previous.request_digest != digest:
             raise ValidationError('This request identity belongs to a different panel decision.')
         return previous
     require_current(grade)
@@ -183,20 +236,27 @@ def confirm(grade, *, actor, data):
     elif key:
         raise ValidationError('This hearing does not select an official concept.')
     result = _record_outcome(grade, actor=actor, verdict=verdict, remarks=instructions or reason,
-        concept_decisions=decisions, replacement_concepts_required=replacement, panel_decision=True)
+        concept_decisions=decisions, replacement_concepts_required=replacement, panel_decision=True,
+        documented_decision=documented)
+    chair = grade.schedule.panel_assignments.filter(is_chair=True).select_related('panelist').first()
+    if documented and not chair:
+        raise ValidationError('Assign the panel chair who announced the outcome before submitting minutes.')
     outcome = DefenseOutcome.objects.create(schedule_id=result.schedule_id, grade=result,
         project_version=result.project_version, verdict=verdict,
         decision_source=(('shared_system' if rule['reason'] else 'cutoff_required')
                          if rule['outcome'] == 'for_redefense' else 'panel_deliberation'),
         selected_key=key, reason=reason or (rule['reason'] if rule['outcome'] == 'for_redefense' else ''),
         instructions=instructions, revision_entries=entries, demo_requirements=demonstrations,
-        assessment_snapshot={**rule, 'student_ids': list(result.student_grades.values_list('student_id', flat=True))},
-        confirmed_by=actor, request_id=request_id, request_digest=digest)
+        assessment_snapshot={**rule, 'student_ids': list(result.student_grades.values_list('student_id', flat=True)),
+            **({'announced_by_id': chair.panelist_id,
+                'announced_by_name': chair.panelist.get_full_name() or chair.panelist.username} if documented else {})},
+        confirmed_by=None if documented else actor, recorded_by=actor if documented else None,
+        request_id=request_id, request_digest=digest)
     from .models import TeamGrade
     TeamGrade.objects.filter(pk=result.pk).update(outcome_metadata={**result.outcome_metadata,
         'official_outcome_id': outcome.pk, 'official_outcome_revision': outcome.revision})
     from .defense_workflow import audit
-    audit(result, actor, 'defense.panel_decision_confirmed', decision=decision_payload(outcome),
+    audit(result, actor, 'defense.panel_decision_recorded' if documented else 'defense.panel_decision_confirmed', decision=decision_payload(outcome),
           assessment_review_token=rule['review_token'])
     from .automatic_outcomes import notify_assessment
     transaction.on_commit(lambda: notify_assessment(result))

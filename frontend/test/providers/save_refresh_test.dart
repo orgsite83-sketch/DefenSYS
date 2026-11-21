@@ -137,6 +137,7 @@ void main() {
         isTrue,
       );
       final revision = container.read(dataRefreshProvider)[DataArea.scheduler]!;
+      expect(container.read(dataRefreshProvider)[DataArea.dashboard], 1);
       expect(gate.activate('scheduler', revision: revision), isTrue);
       await container.read(defenseSchedulerProvider.notifier).fetchSchedules();
 
@@ -200,6 +201,7 @@ void main() {
         'Updated stage',
       );
       expect(container.read(dataRefreshProvider)[DataArea.scheduler], 1);
+      expect(container.read(dataRefreshProvider)[DataArea.dashboard], 1);
     },
   );
 

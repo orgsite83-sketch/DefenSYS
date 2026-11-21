@@ -25,6 +25,8 @@ class StudentAcademicRecordsState {
   final String schoolYear;
   final String semester;
   final String termContext;
+  final String yearLevelFilter;
+  final String sectionFilter;
   final String? error;
   final String? message;
 
@@ -41,6 +43,8 @@ class StudentAcademicRecordsState {
     this.schoolYear = '',
     this.semester = '',
     this.termContext = 'current',
+    this.yearLevelFilter = 'ALL',
+    this.sectionFilter = 'ALL',
     this.error,
     this.message,
   });
@@ -58,6 +62,8 @@ class StudentAcademicRecordsState {
     String? schoolYear,
     String? semester,
     String? termContext,
+    String? yearLevelFilter,
+    String? sectionFilter,
     String? error,
     String? message,
     bool clearError = false,
@@ -79,6 +85,8 @@ class StudentAcademicRecordsState {
       schoolYear: schoolYear ?? this.schoolYear,
       semester: semester ?? this.semester,
       termContext: termContext ?? this.termContext,
+      yearLevelFilter: yearLevelFilter ?? this.yearLevelFilter,
+      sectionFilter: sectionFilter ?? this.sectionFilter,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -152,12 +160,18 @@ class StudentAcademicRecordsNotifier
   Future<void> selectTermContext(String context) async {
     state = state.copyWith(
       termContext: context == 'history' ? 'history' : 'current',
+      yearLevelFilter: 'ALL',
+      sectionFilter: 'ALL',
       schoolYear: '',
       semester: '',
       records: [],
       isLoading: true,
     );
     await fetchRecords();
+  }
+
+  void setListFilters({String? yearLevel, String? section}) {
+    state = state.copyWith(yearLevelFilter: yearLevel, sectionFilter: section);
   }
 
   Future<List<Map<String, dynamic>>> fetchStudentHistory(

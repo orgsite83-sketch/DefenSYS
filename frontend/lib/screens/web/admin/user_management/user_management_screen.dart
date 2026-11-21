@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:go_router/go_router.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic_period_provider.dart';
@@ -364,7 +365,18 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           spacing: 12,
           runSpacing: 8,
           alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            ReportExportMenu(
+              reportId: 'student-enrollment',
+              params: {
+                'term_context': studentState.termContext,
+                'year_level': studentState.yearLevelFilter,
+                'section': studentState.sectionFilter,
+                'school_year': studentState.schoolYear,
+                'semester': studentState.semester,
+              },
+            ),
             ShadButton.outline(
               onPressed: studentState.isSaving ? null : _showAddStudentDialog,
               leading: const Icon(Icons.person_add_rounded, size: 16),
@@ -613,6 +625,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           // Screen Header
           DefensysPageHeader(
             title: 'User & Team Management',
+            actionsBreakpoint: 1000,
             subtitle:
                 'Manage system access, assign faculty roles, and configure student capstone teams.',
             actions: _buildHeaderActions(state),

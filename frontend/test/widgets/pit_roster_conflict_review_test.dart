@@ -2,6 +2,7 @@ import 'package:defensys/screens/web/admin/student_teams/components/student_team
 import 'package:defensys/screens/web/admin/widgets/team_bulk_import_review_table.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/capture_preview.dart';
@@ -95,11 +96,11 @@ void main() {
       expect(find.text('Unassigned roster'), findsOneWidget);
       expect(
         tester
-            .widget<ElevatedButton>(
-              find.byKey(const ValueKey('top_import_ready_teams_btn')),
+            .widget<ShadButton>(
+              find.byKey(const ValueKey('import_ready_teams_btn')),
             )
-            .onPressed,
-        isNull,
+            .enabled,
+        isFalse,
       );
       await tester.tap(find.text('Unassigned roster'));
       await tester.pumpAndSettle();

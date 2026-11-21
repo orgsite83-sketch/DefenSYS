@@ -37,8 +37,6 @@ def capture_policy(schedule):
         return {}
     from .services import weights_for_schedule
     stage = schedule.defense_stage
-    if stage.revision_areas and stage.qualifying_score is None:
-        raise ValidationError('Configure the panel qualifying score before scheduling a stage with revision areas.')
     rubric = schedule.rubric
     from .evaluation_policy import concept_stage, PANEL_ONLY_CONCEPT, PANEL_ONLY_WEIGHTS
     panel_only = concept_stage(stage)
@@ -59,10 +57,10 @@ def capture_policy(schedule):
                       'weight': str(c.weight) if c.weight is not None else None,
                       'target_type': c.target_type} for c in rubric.criteria.all()] if rubric else [],
     }
-    if stage.qualifying_score is not None and stage.revision_areas:
-        from copy import deepcopy
-        from defense.stages.revision_policy import validate_revision_areas
-        policy.update(deliberation_version=1, revision_areas=deepcopy(validate_revision_areas(stage.revision_areas)))
+    if stage.qualifying_score is not None:
+        # Revision requirements belong to the chair's decision, not stage setup.
+        # Existing schedules keep their captured v1 categories and validation.
+        policy.update(deliberation_version=3)
     return policy
 
 
@@ -75,7 +73,11 @@ def automatic_outcomes(schedule):
 
 
 def deliberation_policy(schedule):
-    return bool(schedule and schedule.scope == 'capstone' and policy_for(schedule).get('deliberation_version') == 1)
+    return bool(schedule and schedule.scope == 'capstone' and policy_for(schedule).get('deliberation_version') in (1, 2, 3))
+
+
+def documenter_policy(schedule):
+    return bool(deliberation_policy(schedule) and policy_for(schedule).get('deliberation_version') == 3)
 
 
 @read_memoize(copy=True)

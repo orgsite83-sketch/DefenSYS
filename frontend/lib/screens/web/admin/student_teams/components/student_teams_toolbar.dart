@@ -5,6 +5,7 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/theme/defensys_button_styles.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
+import 'package:defensys/widgets/shadcn/defensys_action_menu.dart';
 
 class StudentTeamsListToolbar extends StatelessWidget {
   const StudentTeamsListToolbar({
@@ -156,36 +157,41 @@ class StudentTeamsHeaderActions extends StatelessWidget {
       );
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (onCreateTeam != null) ...[
-          DefensysShadcnScope(
-            maroonActions: true,
-            child: ShadButton.outline(
-              enabled: canTapActions,
-              onPressed: onCreateTeam,
-              leading: const Icon(LucideIcons.plus, size: 16),
-              child: const Text('Add team'),
-            ),
+    if (onCreateTeam == null &&
+        onDownloadTemplate == null &&
+        onBulkImport == null) {
+      return const SizedBox.shrink();
+    }
+
+    return DefensysActionMenu(
+      label: 'Team options',
+      triggerLabel: 'Team options',
+      triggerIcon: LucideIcons.chevronDown,
+      primary: true,
+      triggerBackgroundColor: DefensysTokens.maroonOf(context),
+      triggerHoverBackgroundColor: DefensysTokens.maroonOf(
+        context,
+      ).withValues(alpha: .9),
+      triggerForegroundColor: Colors.white,
+      enabled: canTapActions,
+      items: [
+        if (onCreateTeam != null)
+          DefensysMenuItem(
+            label: 'Add team',
+            icon: LucideIcons.plus,
+            onPressed: onCreateTeam,
           ),
-          const SizedBox(width: 10),
-        ],
-        if (onDownloadTemplate != null) ...[
-          OutlinedButton.icon(
-            onPressed: canTapActions ? onDownloadTemplate : null,
-            style: DefensysButtonStyles.secondary(context),
-            icon: const Icon(Icons.download_outlined),
-            label: const Text('Download template'),
+        if (onDownloadTemplate != null)
+          DefensysMenuItem(
+            label: 'Download template',
+            icon: LucideIcons.download,
+            onPressed: onDownloadTemplate,
           ),
-          const SizedBox(width: 10),
-        ],
         if (onBulkImport != null)
-          ElevatedButton.icon(
-            onPressed: canTapActions ? onBulkImport : null,
-            style: DefensysButtonStyles.primary(context),
-            icon: const Icon(Icons.upload_file_outlined),
-            label: Text(importLabel),
+          DefensysMenuItem(
+            label: importLabel,
+            icon: LucideIcons.upload,
+            onPressed: onBulkImport,
           ),
       ],
     );

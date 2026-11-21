@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/services/admin/system_audit_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'audit_format_utils.dart';
@@ -8,7 +10,6 @@ class AuditTrailTable extends StatelessWidget {
   final ValueChanged<Map<String, dynamic>> onSelectLog;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onPageSizeChanged;
-  final Function(Map<String, dynamic> log, String status)? onQuickReviewStatus;
 
   const AuditTrailTable({
     super.key,
@@ -16,7 +17,6 @@ class AuditTrailTable extends StatelessWidget {
     required this.onSelectLog,
     required this.onPageChanged,
     required this.onPageSizeChanged,
-    this.onQuickReviewStatus,
   });
 
   String _formatDateTime(dynamic value) {
@@ -35,8 +35,7 @@ class AuditTrailTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = DefensysTokens.isDark(context);
     final logs = state.logs;
-    final selectedLog =
-        state.selectedLog ?? (logs.isNotEmpty ? logs.first : null);
+    final selectedLog = state.selectedLog;
     final selectedId = selectedLog?['id'];
 
     return Container(
@@ -56,7 +55,7 @@ class AuditTrailTable extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header: Audit Trail Register + entries badge (matching original design)
+          // Activity register and matching entry count.
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
@@ -79,8 +78,9 @@ class AuditTrailTable extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Audit Trail Register',
+                  'Activity register',
                   style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 14.5,
                     fontWeight: FontWeight.w700,
                     color: DefensysTokens.textPrimaryOf(context),
@@ -104,6 +104,7 @@ class AuditTrailTable extends StatelessWidget {
                   child: Text(
                     '${state.totalCount} entries',
                     style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: isDark
@@ -138,8 +139,9 @@ class AuditTrailTable extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'No audit records found',
+                    'No logs found',
                     style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: DefensysTokens.textPrimaryOf(context),
@@ -149,6 +151,7 @@ class AuditTrailTable extends StatelessWidget {
                   Text(
                     'Try adjusting your search query, process area, or date filter.',
                     style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: 13,
                       color: isDark
                           ? const Color(0xFF94A3B8)
@@ -178,19 +181,19 @@ class AuditTrailTable extends StatelessWidget {
                       horizontalMargin: margin,
                       columnSpacing: dynamicSpacing,
                       headingRowHeight: 42,
-                      dataRowMinHeight: 48,
-                      dataRowMaxHeight: 52,
+                      dataRowMinHeight: 60,
+                      dataRowMaxHeight: 64,
                       headingRowColor: WidgetStateProperty.all(
                         isDark
                             ? const Color(0xFF1E1D24)
                             : const Color(0xFFF8FAFC),
                       ),
                       columns: [
-                        _buildColumnHeader(context, 'DATE / TIME'),
-                        _buildColumnHeader(context, 'PROCESS AREA'),
-                        _buildColumnHeader(context, 'CONTROL ACTIVITY'),
-                        _buildColumnHeader(context, 'RESPONSIBLE USER'),
-                        _buildColumnHeader(context, 'REVIEW STATUS'),
+                        _buildColumnHeader(context, 'Date / time'),
+                        _buildColumnHeader(context, 'Process area'),
+                        _buildColumnHeader(context, 'Activity'),
+                        _buildColumnHeader(context, 'Actor'),
+                        _buildColumnHeader(context, 'Details'),
                       ],
                       rows: logs.map((log) {
                         final id = log['id'];
@@ -219,6 +222,7 @@ class AuditTrailTable extends StatelessWidget {
       label: Text(
         text,
         style: const TextStyle(
+          fontFamily: DefensysTokens.fontFamilyInter,
           fontSize: 11,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.5,
@@ -238,7 +242,6 @@ class AuditTrailTable extends StatelessWidget {
     final actionLabel = AuditFormatUtils.formatAction(rawAction, log);
     final processArea = AuditFormatUtils.formatProcessArea(log);
     final actor = log['actor_name']?.toString() ?? 'System';
-    final status = log['review_status']?.toString() ?? 'needs_review';
     final timestamp = _formatDateTime(log['created_at']);
     final isDelete = AuditFormatUtils.isDeleteAction(rawAction);
 
@@ -284,6 +287,7 @@ class AuditTrailTable extends StatelessWidget {
               Text(
                 timestamp,
                 style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
                   fontSize: 12.5,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                   color: DefensysTokens.textPrimaryOf(context),
@@ -311,6 +315,7 @@ class AuditTrailTable extends StatelessWidget {
                 child: Text(
                   processArea,
                   style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                     color: DefensysTokens.textPrimaryOf(context),
@@ -327,19 +332,37 @@ class AuditTrailTable extends StatelessWidget {
         DataCell(
           Tooltip(
             message: rawAction,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220),
-              child: Text(
-                actionLabel,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: isDelete
-                      ? const Color(0xFFDC2626)
-                      : DefensysTokens.textPrimaryOf(context),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            child: SizedBox(
+              width: 260,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    actionLabel,
+                    style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDelete
+                          ? Theme.of(context).colorScheme.error
+                          : DefensysTokens.textPrimaryOf(context),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    log['target_label']?.toString() ??
+                        AuditFormatUtils.extractResourceSubtitle(log),
+                    style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      fontSize: 11,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ),
@@ -363,6 +386,7 @@ class AuditTrailTable extends StatelessWidget {
                 child: Text(
                   actor.isNotEmpty ? actor[0].toUpperCase() : 'U',
                   style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 10.5,
                     fontWeight: FontWeight.w800,
                     color: DefensysTokens.maroonOf(context),
@@ -375,6 +399,7 @@ class AuditTrailTable extends StatelessWidget {
                 child: Text(
                   actor,
                   style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                     color: DefensysTokens.textPrimaryOf(context),
@@ -387,109 +412,17 @@ class AuditTrailTable extends StatelessWidget {
           ),
         ),
 
-        // 5. REVIEW STATUS: Pill badge (Needs Review, Reviewed, or Deleted)
         DataCell(
-          Tooltip(
-            message: (log['reviewed_by_name']?.toString() ?? '').isEmpty
-                ? (status == 'reviewed'
-                      ? 'Reviewer not recorded'
-                      : 'Pending review')
-                : 'Reviewed by ${log['reviewed_by_name']} · ${AuditFormatUtils.reviewRole(log['reviewed_by_role']?.toString(), log['reviewed_by_year']?.toString())}\n${AuditFormatUtils.formatTimestamp(log['reviewed_at']?.toString())}',
-            child: _buildStatusBadge(context, status),
+          DefensysShadcnScope(
+            child: ShadButton.ghost(
+              onPressed: () => onSelectLog(log),
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: const Text('Details'),
+            ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildStatusBadge(
-    BuildContext context,
-    String status, {
-    bool isDelete = false,
-  }) {
-    final isDark = DefensysTokens.isDark(context);
-
-    if (isDelete) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0x33DC2626) : const Color(0xFFFEE2E2),
-          borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-          border: Border.all(
-            color: isDark ? const Color(0x66EF4444) : const Color(0xFFFECACA),
-          ),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.close_rounded, size: 12, color: Color(0xFFDC2626)),
-            SizedBox(width: 4),
-            Text(
-              'Deleted',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFFDC2626),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (status == 'reviewed') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7),
-          borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-          border: Border.all(
-            color: isDark ? const Color(0xFF065F46) : const Color(0xFFBBF7D0),
-          ),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_rounded, size: 12, color: Color(0xFF059669)),
-            SizedBox(width: 4),
-            Text(
-              'Reviewed',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF059669),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Default: Needs review
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF451A03) : const Color(0xFFFEF3C7),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        border: Border.all(
-          color: isDark ? const Color(0xFF78350F) : const Color(0xFFFDE68A),
-        ),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.access_time_rounded, size: 12, color: Color(0xFFD97706)),
-          SizedBox(width: 4),
-          Text(
-            'Needs Review',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFFD97706),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -521,6 +454,7 @@ class AuditTrailTable extends StatelessWidget {
                 Text(
                   'Rows: ',
                   style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 12,
                     color: isDark
                         ? const Color(0xFF94A3B8)
@@ -533,6 +467,7 @@ class AuditTrailTable extends StatelessWidget {
                   underline: const SizedBox(),
                   isDense: true,
                   style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: DefensysTokens.textPrimaryOf(context),
@@ -554,6 +489,7 @@ class AuditTrailTable extends StatelessWidget {
                   child: Text(
                     'Showing $start–$end of $total',
                     style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: 12,
                       color: isDark
                           ? const Color(0xFF94A3B8)
@@ -581,6 +517,7 @@ class AuditTrailTable extends StatelessWidget {
               Text(
                 '$page / ${totalPages > 0 ? totalPages : 1}',
                 style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: DefensysTokens.textPrimaryOf(context),

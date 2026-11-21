@@ -336,6 +336,9 @@ class SharedRedefenseDirectionTests(APITestCase):
                 defense_stage=self.stage, rubric=self.schedule.rubric,
                 scheduled_date=self.schedule.scheduled_date, start_time=f'{8 + attempt}:00',
                 room=f'Independent {attempt}')
+            # This historical chain predates documenter-recorded outcomes.
+            schedule.assessment_policy['deliberation_version'] = 2
+            schedule.save(update_fields=['assessment_policy'])
             SchedulePanelist.objects.create(schedule=schedule, panelist=self.chair, is_chair=True)
             grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
             current = ConceptRound.objects.get(schedule=schedule)
@@ -345,6 +348,15 @@ class SharedRedefenseDirectionTests(APITestCase):
                 submit_panelist_grade(schedule, grade, [{'criterion_id': self.criterion.pk,
                     'score': 6 if attempt == 2 or key != 'c2' else 8}],
                     panelist=self.chair, concept_key=key)
+            grade.refresh_from_db()
+            # Newly scheduled independent repeats use chair confirmation even
+            # when their source hearing retained automatic outcomes.
+            import uuid
+            from grading.grades.deliberation import confirm as confirm_panel
+            rule = outcome_payload(grade)
+            self.assertEqual(grade.verdict, '')
+            confirm_panel(grade, actor=self.chair, data={'request_id': str(uuid.uuid4()),
+                'review_token': rule['review_token'], 'verdict': rule['outcome'], 'revision_entries': []})
             grade.refresh_from_db()
             self.assertEqual(grade.verdict, 'for_redefense' if attempt == 2 else 'approved')
             if attempt == 2:
@@ -480,6 +492,7 @@ class SharedRedefenseDirectionTests(APITestCase):
         individual = RubricCriterion.objects.create(rubric=rubric, name='Individual defense',
             max_score=10, scale=rubric.SCALE_10, target_type='individual', display_order=1)
         self.schedule.assessment_policy = capture_policy(self.schedule)
+        self.schedule.assessment_policy.pop('deliberation_version', None)
         self.schedule.save(update_fields=['assessment_policy'])
         invitation = GuestPanelistCode.objects.create(guest_name='Selected module external panel',
             defense_schedule=self.schedule)

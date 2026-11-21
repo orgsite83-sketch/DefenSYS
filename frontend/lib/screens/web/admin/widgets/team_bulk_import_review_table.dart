@@ -92,6 +92,7 @@ class TeamBulkImportReviewTable extends StatefulWidget {
 
 class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
   final _rowAnchors = <int, GlobalKey>{};
+  final _pageAnchor = GlobalKey();
   List<int> _visibleIndices = [];
 
   void goToFirstIssue() {
@@ -133,7 +134,9 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.statusFilter != widget.statusFilter ||
         oldWidget.sectionFilter != widget.sectionFilter ||
-        oldWidget.searchQuery != widget.searchQuery) {
+        oldWidget.searchQuery != widget.searchQuery ||
+        oldWidget.adviserFilter != widget.adviserFilter ||
+        oldWidget.groupBy != widget.groupBy) {
       _currentPage = 0;
     }
   }
@@ -557,14 +560,7 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (totalItems > 0)
-          _buildPaginationBar(
-            totalItems: totalItems,
-            totalPages: totalPages,
-            startIndex: startIndex,
-            endIndex: endIndex,
-            isTop: true,
-          ),
+        SizedBox(key: _pageAnchor),
         ...bodyContent,
         if (totalItems > 0)
           _buildPaginationBar(
@@ -572,7 +568,6 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             totalPages: totalPages,
             startIndex: startIndex,
             endIndex: endIndex,
-            isTop: false,
           ),
         const SizedBox(height: 12),
         _buildAddRowButton(),
@@ -740,79 +735,102 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 ),
                 border: Border(bottom: BorderSide(color: _line)),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          teamTitle.isNotEmpty
-                              ? teamTitle
-                              : 'Unnamed team $rowNumber',
-                          style: TextStyle(
-                            color: _ink,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.2,
-                          ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final identity = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        teamTitle.isNotEmpty
+                            ? teamTitle
+                            : 'Unnamed team $rowNumber',
+                        style: TextStyle(
+                          color: _ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.2,
                         ),
-                        const SizedBox(height: 9),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            _contextBadge('Row $rowNumber'),
-                            if (shared)
-                              _contextBadge(
-                                'System: ${widget.sectionSummaries.where((s) => s['section'] == sectionValue).firstOrNull?['system_name'] ?? row['system_name'] ?? 'Not supplied'}',
-                                icon: Icons.hub_outlined,
-                              ),
-                            if (teamTitle.isEmpty || projectTitle.isEmpty)
-                              _contextBadge(
-                                'Leader completes: ${[if (teamTitle.isEmpty) 'team name', if (projectTitle.isEmpty) 'project setup'].join(' + ')}',
-                                icon: Icons.pending_actions_outlined,
-                              ),
+                      ),
+                      const SizedBox(height: 9),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _contextBadge('Row $rowNumber'),
+                          if (shared)
                             _contextBadge(
-                              '${(preview?['concept_requirement'] as Map?)?['label'] ?? (projectTitle.isEmpty ? 'Concept titles needed · Stage requirements apply' : 'Project/module title supplied · Stage requirements apply')}',
-                              icon: Icons.description_outlined,
+                              'System: ${widget.sectionSummaries.where((s) => s['section'] == sectionValue).firstOrNull?['system_name'] ?? row['system_name'] ?? 'Not supplied'}',
+                              icon: Icons.hub_outlined,
                             ),
-                            if (sectionValue.isNotEmpty)
-                              _contextBadge(
-                                'Sec: $sectionValue',
-                                icon: Icons.meeting_room_outlined,
-                              ),
-                            if (adviserValue.isNotEmpty)
-                              _contextBadge(
-                                '${rowIsPit ? 'Instructor' : 'Adviser'}: $adviserValue',
-                                icon: Icons.person_outline,
-                              ),
-                            if (currentProgram.isNotEmpty)
-                              _contextBadge(
-                                currentProgram,
-                                icon: Icons.school_outlined,
-                              ),
-                          ],
+                          if (teamTitle.isEmpty || projectTitle.isEmpty)
+                            _contextBadge(
+                              'Leader completes: ${[if (teamTitle.isEmpty) 'team name', if (projectTitle.isEmpty) 'project setup'].join(' + ')}',
+                              icon: Icons.pending_actions_outlined,
+                            ),
+                          _contextBadge(
+                            '${(preview?['concept_requirement'] as Map?)?['label'] ?? (projectTitle.isEmpty ? 'Concept titles needed · Stage requirements apply' : 'Project/module title supplied · Stage requirements apply')}',
+                            icon: Icons.description_outlined,
+                          ),
+                          if (sectionValue.isNotEmpty)
+                            _contextBadge(
+                              'Sec: $sectionValue',
+                              icon: Icons.meeting_room_outlined,
+                            ),
+                          if (adviserValue.isNotEmpty)
+                            _contextBadge(
+                              '${rowIsPit ? 'Instructor' : 'Adviser'}: $adviserValue',
+                              icon: Icons.person_outline,
+                            ),
+                          if (currentProgram.isNotEmpty)
+                            _contextBadge(
+                              currentProgram,
+                              icon: Icons.school_outlined,
+                            ),
+                        ],
+                      ),
+                    ],
+                  );
+                  final actions = Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _statusBadge(ready, issues.length, warnings.length),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Delete team row',
+                        onPressed: () => widget.onDeleteRow(index),
+                        icon: Icon(
+                          Icons.delete_outline,
+                          size: 17,
+                          color: _muted,
                         ),
+                        constraints: const BoxConstraints(
+                          minWidth: 30,
+                          minHeight: 30,
+                        ),
+                        padding: const EdgeInsets.all(6),
+                      ),
+                    ],
+                  );
+                  if (constraints.maxWidth < 480) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(alignment: Alignment.centerRight, child: actions),
+                        const SizedBox(height: 8),
+                        identity,
                       ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  _statusBadge(ready, issues.length, warnings.length),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: 'Delete team row',
-                    onPressed: () => widget.onDeleteRow(index),
-                    icon: Icon(Icons.delete_outline, size: 17, color: _muted),
-                    constraints: const BoxConstraints(
-                      minWidth: 30,
-                      minHeight: 30,
-                    ),
-                    padding: const EdgeInsets.all(6),
-                  ),
-                ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: identity),
+                      const SizedBox(width: 12),
+                      actions,
+                    ],
+                  );
+                },
               ),
             ),
 
@@ -866,12 +884,14 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                           color: _red,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          '${issues.length} issue${issues.length == 1 ? ' requires' : 's require'} correction:',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: _red,
+                        Expanded(
+                          child: Text(
+                            '${issues.length} issue${issues.length == 1 ? ' requires' : 's require'} correction:',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: _red,
+                            ),
                           ),
                         ),
                       ],
@@ -917,12 +937,14 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                           color: _amber,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          '${warnings.length} warning${warnings.length == 1 ? '' : 's'}:',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: _amber,
+                        Expanded(
+                          child: Text(
+                            '${warnings.length} warning${warnings.length == 1 ? '' : 's'}:',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: _amber,
+                            ),
                           ),
                         ),
                       ],
@@ -2716,15 +2738,31 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     );
   }
 
+  void _showPage(int page, {int? pageSize}) {
+    setState(() {
+      if (pageSize != null) _pageSize = pageSize;
+      _currentPage = page;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final anchor = _pageAnchor.currentContext;
+      if (mounted && anchor != null) {
+        Scrollable.ensureVisible(
+          anchor,
+          duration: const Duration(milliseconds: 250),
+          alignment: 0,
+        );
+      }
+    });
+  }
+
   Widget _buildPaginationBar({
     required int totalItems,
     required int totalPages,
     required int startIndex,
     required int endIndex,
-    required bool isTop,
   }) {
     return Container(
-      margin: EdgeInsets.only(top: isTop ? 0 : 12, bottom: isTop ? 14 : 6),
+      margin: const EdgeInsets.only(top: 12, bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: _panel,
@@ -2733,163 +2771,99 @@ class TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 620;
-
-          final infoWidget = Text(
+          final info = Text(
             totalItems == 1
                 ? 'Showing 1 team'
-                : 'Showing ${startIndex + 1}–$endIndex of $totalItems staged teams',
+                : 'Showing ${startIndex + 1}\u2013$endIndex of $totalItems staged teams',
             style: TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
               fontSize: 12,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               color: _ink,
             ),
           );
-
-          final controlsWidget = Row(
-            mainAxisSize: MainAxisSize.min,
+          final controls = Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text(
-                'Per page: ',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: _muted,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Container(
-                height: 28,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: _surface,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _line),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<int>(
-                    dropdownColor: _surface,
-                    key: ValueKey(isTop ? 'page_size_top' : 'page_size_bottom'),
-                    value: _pageSize,
-                    isDense: true,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Per page:',
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: DefensysTokens.fontFamilyInter,
                       fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: _ink,
+                      color: _muted,
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 5, child: Text('5')),
-                      DropdownMenuItem(value: 10, child: Text('10')),
-                      DropdownMenuItem(value: 20, child: Text('20')),
-                      DropdownMenuItem(value: 0, child: Text('All')),
+                  ),
+                  const SizedBox(width: 8),
+                  ShadSelect<int>(
+                    key: const ValueKey('page_size_bottom'),
+                    initialValue: _pageSize,
+                    minWidth: 60,
+                    options: [
+                      for (final size in const [5, 10, 20, 0])
+                        ShadOption(
+                          value: size,
+                          child: Text(size == 0 ? 'All' : '$size'),
+                        ),
                     ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _pageSize = val;
-                          _currentPage = 0;
-                        });
-                      }
+                    selectedOptionBuilder: (context, value) =>
+                        Text(value == 0 ? 'All' : '$value'),
+                    onChanged: (value) {
+                      if (value != null) _showPage(0, pageSize: value);
                     },
                   ),
-                ),
+                ],
               ),
-              if (totalPages > 1) ...[
-                const SizedBox(width: 12),
-                OutlinedButton(
-                  key: ValueKey(isTop ? 'prev_page_top' : 'prev_page_bottom'),
-                  onPressed: _currentPage > 0
-                      ? () => setState(() => _currentPage--)
-                      : null,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+              if (totalPages > 1)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ShadButton.outline(
+                      key: const ValueKey('prev_page_bottom'),
+                      size: ShadButtonSize.sm,
+                      enabled: _currentPage > 0,
+                      onPressed: _currentPage > 0
+                          ? () => _showPage(_currentPage - 1)
+                          : null,
+                      leading: const Icon(LucideIcons.chevronLeft, size: 14),
+                      child: const Text('Prev'),
                     ),
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    minimumSize: const Size(0, 28),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.chevron_left_rounded, size: 16),
-                      Text(
-                        'Prev',
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        '${_currentPage + 1} / $totalPages',
                         style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
+                          fontFamily: DefensysTokens.fontFamilyInter,
+                          fontSize: 12,
+                          color: _ink,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _surface,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: _line),
-                  ),
-                  child: Text(
-                    '${_currentPage + 1} / $totalPages',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: _ink,
                     ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                OutlinedButton(
-                  key: ValueKey(isTop ? 'next_page_top' : 'next_page_bottom'),
-                  onPressed: _currentPage < totalPages - 1
-                      ? () => setState(() => _currentPage++)
-                      : null,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                    ShadButton.outline(
+                      key: const ValueKey('next_page_bottom'),
+                      size: ShadButtonSize.sm,
+                      enabled: _currentPage < totalPages - 1,
+                      onPressed: _currentPage < totalPages - 1
+                          ? () => _showPage(_currentPage + 1)
+                          : null,
+                      trailing: const Icon(LucideIcons.chevronRight, size: 14),
+                      child: const Text('Next'),
                     ),
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    minimumSize: const Size(0, 28),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Next',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Icon(Icons.chevron_right_rounded, size: 16),
-                    ],
-                  ),
+                  ],
                 ),
-              ],
             ],
           );
-
-          if (isNarrow) {
+          if (constraints.maxWidth < 620) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [infoWidget, const SizedBox(height: 8), controlsWidget],
+              children: [info, const SizedBox(height: 8), controls],
             );
           }
-
-          return Row(children: [infoWidget, const Spacer(), controlsWidget]);
+          return Row(children: [info, const Spacer(), controls]);
         },
       ),
     );

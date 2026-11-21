@@ -1,0 +1,122 @@
+<style>
+#minutes-wireframe{--paper:light-dark(#fff,#171717);--ink:light-dark(#222,#eee);--quiet:light-dark(#666,#bbb);--line:light-dark(#c9c9c9,#555);--wash:light-dark(#f3f3f3,#242424);--action:light-dark(#790f0b,#ba3c31);font-family:Inter,Arial,sans-serif;color:var(--ink);font-size:14px;line-height:1.5;color-scheme:light dark}
+#minutes-wireframe *{box-sizing:border-box}
+#minutes-wireframe .window{background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+#minutes-wireframe header{padding:20px 24px 16px;padding-right:105px;border-bottom:1px solid var(--line)}
+#minutes-wireframe h2{font-size:20px;font-weight:600;margin:4px 0}
+#minutes-wireframe h3{font-size:15px;font-weight:600;margin:0 0 12px}
+#minutes-wireframe p{margin:0}
+#minutes-wireframe .muted{color:var(--quiet);font-size:12px}
+#minutes-wireframe .navigation{display:flex;gap:0;background:var(--wash);border-bottom:1px solid var(--line);flex-wrap:wrap}
+#minutes-wireframe button,#minutes-wireframe input,#minutes-wireframe select,#minutes-wireframe textarea{font:inherit;color:var(--ink)}
+#minutes-wireframe button{padding:9px 13px;border:1px solid var(--line);border-radius:4px;background:var(--paper);cursor:pointer;min-height:40px}
+#minutes-wireframe button:disabled{opacity:.55;cursor:default}
+#minutes-wireframe .navigation button{border:0;border-radius:0;background:transparent;border-bottom:2px solid transparent;flex:1}
+#minutes-wireframe .navigation button[aria-selected=true]{border-bottom-color:var(--ink);background:var(--paper);font-weight:600}
+#minutes-wireframe main{padding:24px;display:grid;gap:24px}
+#minutes-wireframe section.part{padding-bottom:24px;border-bottom:1px solid var(--line)}
+#minutes-wireframe label{display:grid;gap:6px}
+#minutes-wireframe input:not([type=checkbox]),#minutes-wireframe select,#minutes-wireframe textarea{width:100%;padding:9px 10px;background:var(--paper);border:1px solid var(--line);border-radius:4px;min-width:0}
+#minutes-wireframe textarea{resize:vertical;min-height:70px}
+#minutes-wireframe .stack{display:grid;gap:12px}
+#minutes-wireframe .area{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,.7fr) auto;align-items:end;gap:10px}
+#minutes-wireframe .task{display:flex;gap:10px;align-items:start}
+#minutes-wireframe .task label{flex:1;min-width:0}
+#minutes-wireframe .check{display:flex;align-items:center;gap:9px}
+#minutes-wireframe .check input{width:17px;height:17px;accent-color:var(--action)}
+#minutes-wireframe .subarea{margin-top:16px;padding-left:16px;border-left:2px solid var(--line)}
+#minutes-wireframe .row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#minutes-wireframe .actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+#minutes-wireframe .primary{background:var(--action);color:#fff;border-color:var(--action)}
+#minutes-wireframe .link{border:0;background:transparent;text-decoration:underline;color:var(--quiet);padding-left:0}
+#minutes-wireframe fieldset{border:0;padding:0;margin:0;min-width:0}
+#minutes-wireframe [hidden]{display:none!important}
+#minutes-wireframe .summary{display:grid;gap:12px}
+#minutes-wireframe .summaryline{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:9px}
+#minutes-wireframe .summaryline span:last-child{font-weight:600;text-align:right}
+#minutes-wireframe .empty{padding:32px 0;text-align:center;color:var(--quiet)}
+#minutes-wireframe ul{padding-left:22px;margin:8px 0}
+#minutes-wireframe .preview{padding:16px;background:var(--wash);border:1px dashed var(--line)}
+#minutes-wireframe .error{color:light-dark(#9b1915,#ffb9b3)}
+#minutes-wireframe .verifyrow{display:grid;grid-template-columns:1fr 155px;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+@media(max-width:520px){#minutes-wireframe header{padding-left:16px}#minutes-wireframe main{padding:16px}#minutes-wireframe .area{grid-template-columns:1fr 1fr}#minutes-wireframe .area button{grid-column:1/-1;justify-self:end}#minutes-wireframe .verifyrow{grid-template-columns:1fr}#minutes-wireframe input,#minutes-wireframe select,#minutes-wireframe textarea{font-size:16px}#minutes-wireframe .navigation button{font-size:12px;padding:12px 6px}#minutes-wireframe button{min-height:44px}#minutes-wireframe .actions button{flex:1}}
+</style>
+<div id="minutes-wireframe" class="viz-dotted-background">
+ <div class="window">
+  <header><p class="muted">DefenSYS / Documenter · Draft minutes</p><h2>Minutes of defense</h2><p>Team Inventory · Final defense</p></header>
+  <nav class="navigation" role="tablist" aria-label="Defense workflow views">
+   <button type="button" role="tab" id="wf-doc-tab" aria-controls="wf-doc" aria-selected="true" data-view="doc">Documenter</button>
+   <button type="button" role="tab" id="wf-chair-tab" aria-controls="wf-chair" aria-selected="false" data-view="chair">Panel chair · Read only</button>
+   <button type="button" role="tab" id="wf-demo-tab" aria-controls="wf-demo" aria-selected="false" data-view="demo">Next re-demo</button>
+  </nav>
+  <main id="wf-doc" role="tabpanel" aria-labelledby="wf-doc-tab">
+   <form id="wf-form" class="stack">
+    <fieldset id="wf-fields" class="stack">
+     <section class="part stack"><div><h3>Panel decision</h3><p class="muted">Record the outcome announced by the assigned panel chair.</p></div>
+      <label>Verdict<select id="wf-verdict"><option value="approved">Approved</option><option value="revisions" selected>Approved with revisions</option><option value="redefense">For re-defense</option></select></label>
+      <div id="wf-revisions" class="stack"><div class="row"><span>Revision summary</span><span class="muted">Detailed recommendations below</span></div><div id="wf-areas" class="stack"></div><div><button type="button" id="wf-add-area" class="link">+ Add revision area</button></div>
+       <label class="check"><input type="checkbox" id="wf-demo-required" checked>Re-demo required</label>
+       <div id="wf-demo-fields" class="subarea stack"><div><h3>Required demonstrations</h3><p class="muted">These items appear in the next verification appointment.</p></div><div id="wf-tasks" class="stack"></div><div><button type="button" id="wf-add-task" class="link">+ Add demonstration</button></div></div>
+      </div>
+      <label id="wf-repeat-field" hidden>Required next action<textarea id="wf-repeat">Complete the core workflow and prepare for a fresh panel assessment.</textarea></label>
+     </section>
+     <section class="part stack"><h3>Minutes &amp; panel recommendations</h3><label>Panel chair<textarea id="wf-chair-notes">Revise the manuscript's testing discussion and include the updated results.</textarea></label><label>Panel members<textarea id="wf-member-notes">Correct report exports and restrict them to authorized users.</textarea></label></section>
+    </fieldset>
+    <p class="muted">Decision by the panel · Announced by the panel chair · Recorded by the documenter</p>
+    <p id="wf-error" class="error" role="alert" hidden></p>
+    <p id="wf-status" aria-live="polite" class="muted">Draft · Not submitted</p>
+    <div class="actions"><button type="button" id="wf-save">Save draft</button><button type="button" id="wf-preview-button">Preview minutes</button><button type="submit" id="wf-submit" class="primary">Submit minutes</button></div>
+   </form>
+   <section id="wf-preview" class="preview" aria-label="Minutes preview" hidden></section>
+  </main>
+  <main id="wf-chair" role="tabpanel" aria-labelledby="wf-chair-tab" hidden><div class="row"><h3>Team outcome</h3><span class="muted">Read only</span></div><div id="wf-chair-content"></div></main>
+  <main id="wf-demo" role="tabpanel" aria-labelledby="wf-demo-tab" hidden><div><h3>Re-demo verification</h3><p class="muted">Assigned verification chair</p></div><div id="wf-verification"></div></main>
+ </div>
+</div>
+<script>
+(()=>{
+ const root=document.getElementById('minutes-wireframe');
+ const q=s=>root.querySelector(s);
+ const labels={approved:'Approved',revisions:'Approved with revisions',redefense:'For re-defense'};
+ const saved=window.openai?.widgetState?.modelContent;
+ const state={view:'doc',submitted:false,verdict:'revisions',demo:true,areas:[{label:'Manuscript',level:'Major revision'},{label:'System',level:'Minor revision'}],tasks:['Demonstrate the corrected report exports.','Demonstrate role-based access restrictions.'],...saved};
+ if(!Array.isArray(state.areas)||!Array.isArray(state.tasks)||!labels[state.verdict])return;
+ let record=window.openai?.widgetState?.privateContent?.record||null;
+ const persist=()=>{const p=window.openai?.setWidgetState?.({modelContent:state,privateContent:{record}});p?.catch?.(()=>{});};
+ const escape=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ function areas(){q('#wf-areas').innerHTML='';state.areas.forEach((area,i)=>{
+   const row=document.createElement('div');row.className='area';
+   row.innerHTML=`<label>Area<input maxlength="80" aria-label="Revision area ${i+1}" value="${escape(area.label)}"></label><label>Level<select aria-label="Revision level ${i+1}"><option>Minor revision</option><option>Major revision</option></select></label><button type="button" aria-label="Remove revision area ${i+1}">Remove</button>`;
+   row.querySelector('select').value=area.level;
+   row.querySelector('input').oninput=e=>{area.label=e.target.value;persist();};
+   row.querySelector('select').onchange=e=>{area.level=e.target.value;persist();};
+   row.querySelector('button').onclick=()=>{state.areas.splice(i,1);areas();persist();};q('#wf-areas').append(row);
+ });}
+ function tasks(){q('#wf-tasks').innerHTML='';state.tasks.forEach((text,i)=>{
+   const row=document.createElement('div');row.className='task';row.innerHTML=`<label>Demonstration ${i+1}<textarea maxlength="1000">${escape(text)}</textarea></label><button type="button" aria-label="Remove demonstration ${i+1}">Remove</button>`;
+   row.querySelector('textarea').oninput=e=>{state.tasks[i]=e.target.value;persist();};row.querySelector('button').onclick=()=>{state.tasks.splice(i,1);tasks();persist();};q('#wf-tasks').append(row);
+ });}
+ function conditional(){q('#wf-verdict').value=state.verdict;q('#wf-demo-required').checked=state.demo;q('#wf-revisions').hidden=state.verdict!=='revisions';q('#wf-demo-fields').hidden=!state.demo;q('#wf-repeat-field').hidden=state.verdict!=='redefense';q('#wf-error').hidden=true;}
+ function summary(r){return `<div class="summary"><div class="summaryline"><span>Verdict</span><span>${labels[r.verdict]}</span></div>${r.areas.map(a=>`<div class="summaryline"><span>${escape(a.label)}</span><span>${escape(a.level)}</span></div>`).join('')}${r.tasks.length?'<div><h3>Required demonstrations</h3><ul>'+r.tasks.map(t=>'<li>'+escape(t)+'</li>').join('')+'</ul></div>':''}${r.nextAction?'<div><h3>Required next action</h3><p>'+escape(r.nextAction)+'</p></div>':''}</div>`;}
+ function collect(){return {verdict:state.verdict,areas:state.verdict==='revisions'?state.areas.map(a=>({...a})):[],tasks:state.verdict==='revisions'&&state.demo?[...state.tasks]:[],nextAction:state.verdict==='redefense'?q('#wf-repeat').value:'',chairNotes:q('#wf-chair-notes').value,memberNotes:q('#wf-member-notes').value};}
+ function destinations(){
+   q('#wf-chair-content').innerHTML=record?summary(record)+'<p class="muted" style="margin-top:16px">Panel decision recorded by the assigned documenter.</p>':'<p class="empty">Awaiting the documenter’s recorded outcome.</p>';
+   const target=q('#wf-verification');
+   if(!record){target.innerHTML='<p class="empty">The demonstration checklist appears after the documenter submits the outcome.</p>';return;}
+   if(!record.tasks.length){target.innerHTML='<p class="empty">No re-demo required for this outcome.</p>';return;}
+   target.innerHTML='<div class="summaryline"><span>Original outcome</span><span>'+labels[record.verdict]+'</span></div>'+record.tasks.map((t,i)=>`<div class="verifyrow"><span>${i+1}. ${escape(t)}</span><label><span class="muted">Verification result</span><select aria-label="Result for demonstration ${i+1}"><option value="">Not checked</option><option value="satisfied">Satisfied</option><option value="needs-work">Needs work</option></select></label></div>`).join('')+'<label style="margin-top:16px">Verification remarks<textarea id="wf-remarks"></textarea></label><div class="actions" style="margin-top:16px"><button class="primary" id="wf-verify" type="button">Record verification</button></div><p id="wf-verify-status" aria-live="polite" class="muted"></p>';
+   q('#wf-verify').onclick=()=>{const values=[...target.querySelectorAll('select')].map(s=>s.value);const status=q('#wf-verify-status');status.textContent=values.some(v=>!v)?'Check every demonstration before recording verification.':values.includes('needs-work')&&!q('#wf-remarks').value.trim()?'Describe the work still needed.':values.includes('needs-work')?'Verification recorded · Follow-up work remains.':'Verification recorded · Required demonstrations satisfied.';};
+ }
+ function view(name){state.view=['doc','chair','demo'].includes(name)?name:'doc';root.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.view===state.view)));['doc','chair','demo'].forEach(v=>q('#wf-'+v).hidden=v!==state.view);}
+ root.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view(b.dataset.view);persist();});
+ q('#wf-verdict').onchange=e=>{state.verdict=e.target.value;conditional();persist();};
+ q('#wf-demo-required').onchange=e=>{state.demo=e.target.checked;conditional();persist();};
+ q('#wf-add-area').onclick=()=>{state.areas.push({label:'',level:'Minor revision'});areas();persist();};
+ q('#wf-add-task').onclick=()=>{state.tasks.push('');tasks();persist();};
+ q('#wf-save').onclick=()=>{q('#wf-status').textContent='Draft saved · Not submitted';persist();};
+ q('#wf-preview-button').onclick=()=>{const r=record||collect();q('#wf-preview').hidden=false;q('#wf-preview').innerHTML='<h3>Minutes preview</h3>'+summary(r)+'<hr><h3>Panel recommendations</h3><p>'+escape(r.chairNotes)+'</p><p style="margin-top:12px">'+escape(r.memberNotes)+'</p>';};
+ q('#wf-form').onsubmit=e=>{e.preventDefault();const draft=collect();let error='';if(draft.verdict==='revisions'&&(!draft.areas.length||draft.areas.some(a=>!a.label.trim())))error='Enter the applicable revision areas.';if(state.verdict==='revisions'&&state.demo&&(!draft.tasks.length||draft.tasks.some(t=>!t.trim())))error='Describe every required demonstration.';if(error){q('#wf-error').hidden=false;q('#wf-error').textContent=error;return;}record=draft;state.submitted=true;submitted();destinations();persist();};
+ function submitted(){q('#wf-fields').disabled=state.submitted;q('#wf-submit').disabled=state.submitted;q('#wf-save').disabled=state.submitted;q('#wf-submit').textContent=state.submitted?'Submitted':'Submit minutes';q('#wf-status').textContent=state.submitted?'Outcome recorded · Minutes awaiting remaining signatures':'Draft · Not submitted';}
+ areas();tasks();conditional();submitted();destinations();view(state.view);
+})();
+</script>

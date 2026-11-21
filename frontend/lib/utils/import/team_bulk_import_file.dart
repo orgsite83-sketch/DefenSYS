@@ -1,4 +1,3 @@
-
 import 'package:excel/excel.dart' as xl;
 
 import '../csv_file_io.dart';
@@ -19,9 +18,7 @@ String readTeamImportFiles(
       if (!file.isXlsx && !file.isCsv) {
         throw const FormatException('Choose a .csv or .xlsx team roster.');
       }
-      final csv = file.isXlsx
-          ? teamXlsxToCsv(file.bytes)
-          : file.decodedText;
+      final csv = file.isXlsx ? teamXlsxToCsv(file.bytes) : file.decodedText;
       if (csv.trim().isEmpty) {
         throw const FormatException('The file contains no team data.');
       }
@@ -55,6 +52,13 @@ String readTeamImportFiles(
   }
   // Normalize each file independently. Concatenating raw sheets can align a
   // second file's unrelated columns with the first file's table blocks.
+  return _teamRowsToCsv(rows, includeFileSources: includeFileSources);
+}
+
+String _teamRowsToCsv(
+  List<Map<String, dynamic>> rows, {
+  bool includeFileSources = false,
+}) {
   final fields = [
     'team_name',
     'project_title',
@@ -95,7 +99,39 @@ String teamXlsxToCsv(List<int> bytes, {bool preserveTeamGroups = true}) {
   if (workbook.tables.isEmpty) {
     throw const FormatException('The workbook has no worksheets.');
   }
-  final sheet = workbook.tables.values.first;
+  final rosters = workbook.tables.values
+      .where(
+        (sheet) => sheet.rows
+            .take(10)
+            .any(
+              (row) =>
+                  row.any(
+                    (cell) => isTeamImportNameHeader(_cellText(cell?.value)),
+                  ) &&
+                  row.any(
+                    (cell) => isTeamImportMemberHeader(_cellText(cell?.value)),
+                  ),
+            ),
+      )
+      .toList();
+  if (rosters.length > 1) {
+    final rows = <Map<String, dynamic>>[];
+    for (var index = 0; index < rosters.length; index++) {
+      final csv = _teamSheetToCsv(
+        rosters[index],
+        preserveTeamGroups: preserveTeamGroups,
+      );
+      rows.addAll(parseTeamBulkCsv(csv, sourceKey: 'sheet$index').rows);
+    }
+    return _teamRowsToCsv(rows);
+  }
+  return _teamSheetToCsv(
+    rosters.firstOrNull ?? workbook.tables.values.first,
+    preserveTeamGroups: preserveTeamGroups,
+  );
+}
+
+String _teamSheetToCsv(xl.Sheet sheet, {required bool preserveTeamGroups}) {
   // Import-only group columns preserve the semantic Team Name merges. They
   // are omitted from the public CSV/copy template and never added to Excel.
   final groupColumns = <int, Map<int, String>>{};
